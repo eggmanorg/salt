@@ -30,7 +30,7 @@
     SheetTitle,
     Spinner,
     Switch,
-    TextArea,
+    Textarea,
     TextField,
     EmptyState,
     createListSelection,
@@ -1314,7 +1314,7 @@
       </div>
       <div class="flex flex-col gap-1.5">
         <label class="text-sm font-medium" for="edit-item-notes">Notes</label>
-        <TextArea
+        <Textarea
           id="edit-item-notes"
           bind:value={editNotes}
           placeholder="Any notes…"

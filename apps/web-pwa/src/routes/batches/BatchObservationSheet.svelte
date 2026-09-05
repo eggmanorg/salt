@@ -9,7 +9,7 @@
     SheetFooter,
     SheetHeader,
     SheetTitle,
-    TextArea,
+    Textarea,
     TextField,
     type ImageCropperHandle,
   } from '@salt/ui-components';
@@ -204,7 +204,7 @@
         data-testid="batch-log-weight"
       />
 
-      <TextArea
+      <Textarea
         label="Notes"
         rows={3}
         placeholder="e.g. Open crumb, a bit pale on the base…"

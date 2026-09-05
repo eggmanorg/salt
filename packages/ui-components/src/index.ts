@@ -88,7 +88,7 @@ export { default as TabsList } from './primitives/Tabs/TabsList.svelte';
 export { default as TabsTrigger } from './primitives/Tabs/TabsTrigger.svelte';
 export { default as TabsContent } from './primitives/Tabs/TabsContent.svelte';
 export { default as Text } from './primitives/Text/Text.svelte';
-export { default as TextArea } from './primitives/Textarea/Textarea.svelte';
+export { default as Textarea } from './primitives/Textarea/Textarea.svelte';
 export { default as TextField } from './primitives/TextField/TextField.svelte';
 export { default as Toast } from './primitives/Toast/Toast.svelte';
 export { default as ToastAction } from './primitives/Toast/ToastAction.svelte';

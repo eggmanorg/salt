@@ -1,6 +1,12 @@
 // spec: ui-spec-v03.md §6 v0.3
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import * as pkg from '../src/index.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const INDEX_SOURCE = readFileSync(join(__dirname, '../src/index.ts'), 'utf-8');
 
 describe('@salt/ui-components', () => {
   it('is importable', () => {
@@ -45,7 +51,7 @@ describe('@salt/ui-components', () => {
     it('exports Progress', () => expect(pkg.Progress).toBeDefined());
     it('exports Spinner', () => expect(pkg.Spinner).toBeDefined());
     it('exports Switch', () => expect(pkg.Switch).toBeDefined());
-    it('exports TextArea', () => expect(pkg.TextArea).toBeDefined());
+    it('exports Textarea', () => expect(pkg.Textarea).toBeDefined());
     it('exports TextField', () => expect(pkg.TextField).toBeDefined());
     it('exports Tooltip and parts', () => {
       expect(pkg.Tooltip).toBeDefined();
@@ -112,5 +118,36 @@ describe('@salt/ui-components', () => {
     it('exports cn helper', () => expect(pkg.cn).toBeDefined());
     it('exports useId helper', () => expect(pkg.useId).toBeDefined());
     it('exports tokens namespace', () => expect(pkg.tokens).toBeDefined());
+  });
+
+  describe('export identity (#1062)', () => {
+    // A component becomes public by being named on src/index.ts, leaf file by
+    // leaf file (ui-spec-v02 §3.2) — so the exported name and the source
+    // filename should always agree. TextArea was an unnoticed exception among
+    // 100+ exports; nothing caught it for the life of the package.
+    //
+    // Sheet is a second, deliberate exception: it is built directly on Dialog
+    // (bits-ui) and reuses four of its sub-parts wholesale rather than
+    // duplicating them. Adding a name here is a decision, not a shortcut —
+    // it must show up in the diff for review.
+    const KNOWN_ALIASES: Record<string, string> = {
+      SheetClose: 'DialogClose',
+      SheetDescription: 'DialogDescription',
+      SheetHeader: 'DialogHeader',
+      SheetTitle: 'DialogTitle',
+    };
+
+    it('every component export name matches its source filename, or is a documented exception', () => {
+      const componentExportPattern = /export \{ default as (\w+) \} from '.*\/(\w+)\.svelte';/g;
+      const mismatches: string[] = [];
+      for (const match of INDEX_SOURCE.matchAll(componentExportPattern)) {
+        const [, exportedName, fileName] = match;
+        if (!exportedName || !fileName) continue;
+        if (exportedName === fileName) continue;
+        if (KNOWN_ALIASES[exportedName] === fileName) continue;
+        mismatches.push(`${exportedName} (file: ${fileName}.svelte)`);
+      }
+      expect(mismatches).toEqual([]);
+    });
   });
 });

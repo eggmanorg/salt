@@ -13,7 +13,7 @@
     SelectItem,
     SelectTrigger,
     Spinner,
-    TextArea,
+    Textarea,
     TextField,
   } from '@salt/ui-components';
   import { goBack } from '../../lib/nav.js';
@@ -607,7 +607,7 @@
                 data-testid="guided-plan-prep-entry"
               >
                 <div class="flex items-start gap-2">
-                  <TextArea
+                  <Textarea
                     label={`Prep step ${i + 1}`}
                     rows={2}
                     autoresize

@@ -17,7 +17,7 @@
     SelectTrigger,
     SortableList,
     Switch,
-    TextArea,
+    Textarea,
     TextField,
     type ComboboxItemType,
   } from '@salt/ui-components';
@@ -748,7 +748,7 @@
         autofocus={openedFromStash}
         data-testid="recipe-title-input"
       />
-      <TextArea
+      <Textarea
         label="Description"
         placeholder="A short description (optional)"
         value={draft.description ?? ''}
@@ -900,7 +900,7 @@
               Paste an ingredient list. The AI will detect groups and structure each ingredient
               while preserving the original text.
             </p>
-            <TextArea
+            <Textarea
               label="Ingredient list"
               placeholder="e.g. 1 cup plain flour, sifted&#10;2 eggs&#10;&#10;For the sauce:&#10;2 cloves garlic, crushed"
               value={pasteText}
@@ -1072,7 +1072,7 @@
           >
             <div class="flex items-start gap-2">
               <span class="mt-2 text-sm font-medium text-muted-foreground">{sIdx + 1}.</span>
-              <TextArea
+              <Textarea
                 label="Step"
                 placeholder="Describe this step"
                 value={step.text}
@@ -1139,7 +1139,7 @@
             </div>
 
             <div class="pl-6">
-              <TextArea
+              <Textarea
                 label="Note (optional)"
                 placeholder="Any note for this step"
                 value={step.note ?? ''}
@@ -1445,7 +1445,7 @@
         <!-- The toolbar drives the textarea's DOM node, so it is rendered only
              beside a live one; in preview there is no selection to act on. -->
         <NotesFormattingToolbar element={notesEl} />
-        <TextArea
+        <Textarea
           bind:element={notesEl}
           label="Notes"
           placeholder="Anything else worth remembering"

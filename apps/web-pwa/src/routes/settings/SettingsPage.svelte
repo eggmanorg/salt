@@ -8,7 +8,7 @@
     CardDescription,
     CardContent,
     CardFooter,
-    TextArea,
+    Textarea,
     Button,
     Switch,
     RadioGroup,
@@ -214,7 +214,7 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-3">
-      <TextArea
+      <Textarea
         label="Your message"
         placeholder="What went wrong, or what would you like to see?"
         rows={4}

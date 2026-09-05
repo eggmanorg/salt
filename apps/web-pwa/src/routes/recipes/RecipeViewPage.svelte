@@ -28,7 +28,7 @@
     TabsContent,
     TabsList,
     TabsTrigger,
-    TextArea,
+    Textarea,
     TextField,
     type ChipTone,
     type IconName,
@@ -3030,7 +3030,7 @@
         Generate. autoresize + rows=6 so a one-paragraph brief is visible whole
         without scrolling, which is the point — you cannot edit what you cannot read.
       -->
-      <TextArea
+      <Textarea
         label="Scene brief"
         placeholder="e.g. Served in a deep bowl on a sunlit table, steam rising, shot from above."
         rows={6}

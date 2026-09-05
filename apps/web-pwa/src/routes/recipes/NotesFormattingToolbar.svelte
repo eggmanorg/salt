@@ -7,7 +7,7 @@
   // field ever wants the same three buttons, promote this then.
 
   interface Props {
-    /** The notes <textarea>, via `bind:element` on the shared TextArea. */
+    /** The notes <textarea>, via `bind:element` on the shared Textarea. */
     element: HTMLTextAreaElement | undefined;
   }
   let { element }: Props = $props();
@@ -16,7 +16,7 @@
   // string, because what it needs — where the caret is, what is selected — only
   // exists on the node. `setRangeText` deliberately does not fire an `input`
   // event, so each action dispatches one; that is what feeds the edit back
-  // through TextArea's own handler into `draft.notes`, keeping one source of
+  // through Textarea's own handler into `draft.notes`, keeping one source of
   // truth for the text.
   //
   // Selection is read before focusing: a textarea keeps `selectionStart` /

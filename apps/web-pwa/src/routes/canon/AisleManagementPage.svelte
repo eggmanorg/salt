@@ -20,7 +20,7 @@
     SelectItem,
     SelectTrigger,
     SortableList,
-    TextArea,
+    Textarea,
     createListSelection,
     type BulkAction,
   } from '@salt/ui-components';
@@ -356,7 +356,7 @@
           <DialogTitle>Add aisles</DialogTitle>
         </DialogHeader>
         <div class="py-2">
-          <TextArea
+          <Textarea
             label="Aisle name(s)"
             description="Enter one per line to add multiple at once."
             placeholder="e.g. Produce&#10;Dairy&#10;Bakery"

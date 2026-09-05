@@ -1,14 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/svelte-vite';
 // Rule 7: primitives are consumed ONLY through @salt/ui-components.
-import { TextArea } from '@salt/ui-components';
+import { Textarea } from '@salt/ui-components';
 
 // Standard CSF3 (.stories.ts) — see Button.stories.ts for why Svelte CSF is not
-// used under Vite 8. TextArea mirrors TextField: a plain form primitive with no
+// used under Vite 8. Textarea mirrors TextField: a plain form primitive with no
 // compound children, so it is driven directly (no wrapper). A label is always
 // supplied so the rendered <textarea> has an accessible name.
 const meta = {
-  title: 'Primitives/TextArea',
-  component: TextArea,
+  title: 'Primitives/Textarea',
+  component: Textarea,
   args: {
     label: 'Notes',
     placeholder: 'Add a note for the family…',
@@ -33,12 +33,12 @@ const meta = {
     disabled: { control: 'boolean' },
     readonly: { control: 'boolean' },
   },
-} satisfies Meta<typeof TextArea>;
+} satisfies Meta<typeof Textarea>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-// Live playground: the Controls panel drives real TextArea props.
+// Live playground: the Controls panel drives real Textarea props.
 export const Playground: Story = {};
 
 // Empty vs filled, snapshotted as a named pair (#821) — see TextField.stories.ts.

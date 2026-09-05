@@ -11,7 +11,7 @@
     DialogHeader,
     DialogTitle,
     Icon,
-    TextArea,
+    Textarea,
     TextField,
   } from '@salt/ui-components';
   // TYPE-ONLY, so all three are fully erased, and the components are pulled in
@@ -462,7 +462,7 @@
             What this piece of kit looks like. Correct anything wrong here, then draw it — getting
             the words right costs a moment; getting the picture wrong costs a redraw.
           </p>
-          <TextArea
+          <Textarea
             bind:value={briefDraft}
             label=""
             aria-label="Appliance description"
