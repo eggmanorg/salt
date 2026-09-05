@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, CanonIcon, Icon } from '@salt/ui-components';
+  import { Button, CanonIcon, EmptyState, Icon } from '@salt/ui-components';
   import { onDestroy, onMount } from 'svelte';
   import {
     cookSession,
@@ -762,11 +762,11 @@
         onkeydown={deck.handleKeyDown}
       >
         {#if recipe.steps.length === 0}
-          <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <p class="text-base font-semibold">This recipe has no steps</p>
-            <p class="text-sm text-muted-foreground">
-              There's nothing to guide through — tap Finish cooking when you're done.
-            </p>
+          <div class="flex h-full flex-col items-center justify-center p-6">
+            <EmptyState
+              title="This recipe has no steps"
+              description="There's nothing to guide through — tap Finish cooking when you're done."
+            />
           </div>
         {/if}
         <!-- The deck's trailing padding is what lets the LAST step still align to the

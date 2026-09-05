@@ -828,9 +828,12 @@
 {/snippet}
 
 {#if !$isLoadingShoppingList && currentList === null}
-  <div class="p-4 sm:p-6 flex flex-col gap-3">
-    <p class="text-sm text-muted-foreground">List not found.</p>
-    <Button variant="outline" onclick={() => push('/shopping')}>Go to shopping</Button>
+  <div class="p-4 sm:p-6">
+    <EmptyState title="List not found">
+      {#snippet actions()}
+        <Button variant="outline" onclick={() => push('/shopping')}>Go to shopping</Button>
+      {/snippet}
+    </EmptyState>
   </div>
 {:else}
   <ListPage

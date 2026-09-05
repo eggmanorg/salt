@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, CanonIcon, Icon, Spinner } from '@salt/ui-components';
+  import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
   import {
@@ -454,40 +454,41 @@
        someone whose default IS guided is offered this door on every recipe that
        has no plan, so the screen has to answer "then write me one" rather than
        pointing at a page and leaving them to find it. -->
-    <div
-      class="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
-      data-testid="guided-cook-no-plan"
-    >
-      <Icon name="ListChecks" size={28} class="text-muted-foreground" />
-      <div class="flex flex-col gap-1">
-        <p class="text-base font-semibold">There's no guided plan for this recipe</p>
-        <p class="text-sm text-muted-foreground">Write one now, or cook it the ordinary way.</p>
-      </div>
-      <div class="flex flex-wrap items-center justify-center gap-2">
-        <!-- Writing the plan leads first, because it is the thing the cook came
-             here for. The editor is an ordinary shell route, so this leaves the
-             full-viewport cook mode — which is right: writing a plan is desk work,
-             not something you do with your hands full. -->
-        <Button
-          onclick={() => push(`/recipes/${params.id}/guided`)}
-          data-testid="guided-cook-write-plan"
-        >
-          {#snippet leading()}<Icon name="ListChecks" size={16} />{/snippet}
-          Write the plan
-        </Button>
-        <Button
-          variant="outline"
-          onclick={() => push(`/recipes/${params.id}/cook`)}
-          data-testid="guided-cook-fallback"
-        >
-          {#snippet leading()}<Icon name="CookingPot" size={16} />{/snippet}
-          Cook it anyway
-        </Button>
-        <Button variant="ghost" onclick={handleClose} data-testid="guided-cook-no-plan-back">
-          {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
-          Back
-        </Button>
-      </div>
+    <div class="flex flex-1 flex-col items-center justify-center p-6">
+      <EmptyState
+        title="There's no guided plan for this recipe"
+        description="Write one now, or cook it the ordinary way."
+        data-testid="guided-cook-no-plan"
+      >
+        {#snippet icon()}<Icon name="ListChecks" size={28} />{/snippet}
+        {#snippet actions()}
+          <!-- Writing the plan leads first, because it is the thing the cook came
+               here for. The editor is an ordinary shell route, so this leaves the
+               full-viewport cook mode — which is right: writing a plan is desk work,
+               not something you do with your hands full. -->
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <Button
+              onclick={() => push(`/recipes/${params.id}/guided`)}
+              data-testid="guided-cook-write-plan"
+            >
+              {#snippet leading()}<Icon name="ListChecks" size={16} />{/snippet}
+              Write the plan
+            </Button>
+            <Button
+              variant="outline"
+              onclick={() => push(`/recipes/${params.id}/cook`)}
+              data-testid="guided-cook-fallback"
+            >
+              {#snippet leading()}<Icon name="CookingPot" size={16} />{/snippet}
+              Cook it anyway
+            </Button>
+            <Button variant="ghost" onclick={handleClose} data-testid="guided-cook-no-plan-back">
+              {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
+              Back
+            </Button>
+          </div>
+        {/snippet}
+      </EmptyState>
     </div>
   {:else}
     <!-- Top bar -->
@@ -904,11 +905,11 @@
         onkeydown={deck.handleKeyDown}
       >
         {#if recipe.steps.length === 0}
-          <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <p class="text-base font-semibold">This recipe has no steps</p>
-            <p class="text-sm text-muted-foreground">
-              There's nothing to guide through — tap Finish cooking when you're done.
-            </p>
+          <div class="flex h-full flex-col items-center justify-center p-6">
+            <EmptyState
+              title="This recipe has no steps"
+              description="There's nothing to guide through — tap Finish cooking when you're done."
+            />
           </div>
         {/if}
         <div

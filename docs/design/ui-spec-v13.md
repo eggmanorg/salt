@@ -392,6 +392,19 @@ lifecycle it cannot see the end of.
 | `actions`     | `Snippet`    | `undefined`              | Replaces the retry button entirely.                                           |
 | `class`       | `string`     | —                        | Merged onto the panel via `cn`.                                               |
 
+Everything else — `data-testid`, `data-*`, `id`, `aria-*` — rides `...rest` onto
+the panel element, exactly as on `EmptyState` (§8.31.4). Added in v0.13.2 by
+issue #993 Phase 1, for the same reason §8.31.4 records: a hand-rolled failure
+panel being migrated onto this component (`CookLoadingOrphan`) was selected by
+`data-testid` in both cook pages' tests, and without a passthrough the migration
+would have meant either deleting the attribute or keeping a wrapper element
+whose only remaining job was to hold it.
+
+**`role` is the one attribute that is not passable**, on the same reasoning as
+§8.31.4: §8.31.2 makes the `status` / `alert` split the reason the two
+components exist, so `role` is `Omit`ted from the passthrough type and applied
+after the spread.
+
 ## 8.32.6 Testing requirements
 
 - Renders `role="alert"`.
@@ -400,6 +413,8 @@ lifecycle it cannot see the end of.
 - `actions` and `onRetry` together render `actions` only — no retry button.
 - The warning icon is labelled, not `aria-hidden`.
 - No axe violations in each of the three cases in §8.32.3.
+- A passed `data-*` attribute reaches the panel, and a passed `role` does not
+  displace `alert`.
 
 ## 8.32.7 Forbidden
 
@@ -416,3 +431,4 @@ lifecycle it cannot see the end of.
 | Date       | Version | Summary                                                                                                                                                     |
 | ---------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-08-28 | v0.13   | Initial. Ratifies `FormPage` (§1), `DetailPage` base (§2), `EmptyState` (§8.31) and `ErrorState` (§8.32), which shipped without a spec section; issue #976. |
+| 2026-09-05 | v0.13.2 | `ErrorState` gains the `...rest` passthrough `EmptyState` got in v0.13.1, `role` still excluded (§8.32.5); issue #993 Phase 1.                              |
