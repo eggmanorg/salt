@@ -64,16 +64,25 @@ import { resolveModel } from './resolveModel.js';
 //   This swaps the MODEL, not the callable boundary — the contract CLAUDE.md
 //   requires ("replace the model, not the callable boundary").
 //
-// WHAT IS NOT ON THIS SEAM, AND WHY (issue #935, phase 4)
+// WHAT IS NOT ON THIS SEAM, AND WHY (issue #935, phase 4; updated #1193)
 //   Every text-generation flow in `src/flows` now takes its model from
 //   `flowModel`. That is the claim and it is a BOUNDED one — these sit outside
 //   it deliberately, so "nothing reaches Gemini under the flag" would be false:
 //
-//     • The four IMAGE flows — `generateCanonIcon`, `generateEquipmentIcon`,
-//       `generateKitchenToolIcon` (the three through `defineIconFlow`) and
-//       `generateRecipeImage`. The fake model emits TEXT and cannot stand in for
-//       image media, so these still call the real model under the flag. Closing
-//       that needs a fake IMAGE model, which does not exist yet.
+//     • The three pictogram flows through `defineIconFlow` —
+//       `generateCanonIcon`, `generateEquipmentIcon`, `generateKitchenToolIcon`
+//       — are NOT on this seam: this fake emits TEXT and cannot stand in for
+//       image media. They have their OWN fake, `ai/fakeImageModel.ts`
+//       (`imageFlowModel`), wired at `defineIconFlow.ts`'s model-resolution
+//       point (issue #1193) — though only `generateEquipmentIcon` is actually
+//       reached under the flag; the other two are already short-circuited one
+//       level up, in `iconWriteTrigger.ts`, untouched by #1193 (see
+//       `fakeImageModel.ts`'s header for why).
+//     • `generateRecipeImage` still calls the real model under the flag, but
+//       needs no fake: its only call site (`onRecipeWritten.ts`'s
+//       `maybeGenerateImage`) already returns on `aiFakeEnabled()` before the
+//       flow is ever invoked, so it is unreachable under the flag today
+//       (verified against the tree for issue #1193).
 //     • `embedText` — an embedder is not a model action, so `flowModel` cannot
 //       return one. Its seam is `ai/fakeEmbedding.ts`; since #935 the batch
 //       adapter inherits that one by delegating to the flow rather than keeping

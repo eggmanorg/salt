@@ -1,11 +1,10 @@
 import { z } from 'genkit';
-import { googleAI } from '@genkit-ai/google-genai';
 import type { AiFlowId } from '@salt/domain/schemas';
 import { setActiveSpanName } from '@salt/observability/server';
 import { ai } from '../genkit.js';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { loadCanonIconSeed } from './assets/canonIconSeed.js';
-import { resolveModel } from '../ai/resolveModel.js';
+import { imageFlowModel } from '../ai/fakeImageModel.js';
 import { parseDataUrl } from './dataUrl.js';
 
 // The Tier-1 pictogram GENERATION step, once (issue #989).
@@ -93,8 +92,7 @@ export function defineIconFlow<TSchema extends z.ZodTypeAny>(
       // THIS seed — swapping it means updating them too.
       const seed = loadCanonIconSeed();
 
-      const modelId = await resolveModel(name);
-      const imageModel = googleAI.model(modelId);
+      const imageModel = await imageFlowModel(name);
 
       const result = await withAiTimeout(
         name,
