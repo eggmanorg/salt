@@ -108,6 +108,14 @@ ${INGREDIENT_SUBSTITUTION_RULES}
 // a pan of water coming to the boil landed nowhere at all. It goes in the phase
 // that contains it, as hands-off minutes, and the attended work happening across
 // it is that same phase's hands-on minutes.
+//
+// Two more heuristics folded in from the backfill's own prompt (issue #1191,
+// closed as superseded once this fold-in and the definitions above already
+// covered its ask): scaling hands-on work with servings, and treating a step's
+// own timer as a floor. Both hold whether the phases are being read off an
+// existing recipe or generated in the same pass as the steps themselves, so
+// unlike the backfill's remaining reading-specific instructions (see
+// `estimateRecipeTimes.ts`), they belong here rather than staying flow-local.
 export const PHASE_RULES = `- phases: the recipe's timing as an ORDERED list of 3–6 named blocks, in the order the \
 cook does them, covering the whole process from walking into the kitchen to the dish being ready. \
 Name each one for what it IS in a couple of words — "Mix & knead", "First rise", "Roast cauliflower \
@@ -120,6 +128,9 @@ rest, a pan coming to the boil, an oven heating.
   The block's elapsed time is those two added, so do NOT return a total for a phase.
 - Phases are NOT steps. Several steps collapse into one phase, and a phase is named for what it is, \
 not for the steps inside it. Do not emit one phase per step.
+- Scale hands-on minutes with the servings stated for the recipe. Dicing two onions is not dicing six.
+- Where a step carries its own timer, that number is a floor for the hands-on or hands-off minutes \
+it belongs to — not a starting guess to round down from.
 - Work that OVERLAPS goes in ONE phase, never two. Roasting the cauliflower while you make the \
 sauce is a single 20-minute phase with 15 minutes hands-on inside it. Where several things share a \
 window and no single name fits, give the phase a general name ("Cook").

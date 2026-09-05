@@ -21,31 +21,22 @@ import { flowModel } from '../ai/fakeModel.js';
 // definition, so the model fell back on published-recipe convention — the
 // already-weighed counter, and no washing up. This flow is what re-asks.
 //
-// ─── The FIELD DEFINITIONS are imported; the ESTIMATION HEURISTICS are not ────
+// ─── The FIELD DEFINITIONS, and now the servings/timer heuristics, are shared ─
 //
 // The system prompt below interpolates `PHASE_RULES` from recipeFieldRules — the
 // very text the librarian and both extractors are given for what a recipe's timing
-// MEANS. That half is shared, and it is the load-bearing choice in this file: a
-// backfill that re-estimated against its own hand-written field definitions would
-// leave the library split between two of them again, which is the exact failure
-// this issue exists to end (and the #785 twin returning). If the definitions
-// change, both the new recipes and the backfilled ones move together.
+// MEANS, now including scaling hands-on work with servings and treating a step's
+// own timer as a floor (folded in by issue #1191, closed as superseded once this
+// fold-in and the shared definitions already covered its ask — the backfill and
+// the three authoring paths were never actually split on field definitions, and
+// most of what #1191 proposed sharing had already migrated here by the time it
+// was run). If `PHASE_RULES` changes, every path moves together.
 //
-// The `## How to estimate` block below it is a SEPARATE, flow-local half: the
-// heuristics that turn the definition into a strip — scale hands-on work with
-// servings, a step timer is a floor, heat vs. unattended wait, overlapping work
-// counts once, "a competent home cook doing only this", round to a human number.
-// Those are NOT shared with `recipeFieldRules.ts` or with the three authoring
-// paths, and the two texts can drift from each other independently. Precise
-// claim, because it is easy to overstate from the import above: a
-// chat-authored recipe and a backfilled one of the same dish are measured
-// against the SAME field definitions, not against one shared estimation policy.
-// Unifying the two is deliberately deferred, and the deferral now has a name:
-// issue #1191, filed out of #934 for the purpose. It is not folded into #934
-// because it is the one item of that sweep whose fix CHANGES WHAT THREE SHIPPED
-// AUTHORING PATHS PRODUCE, is unvalidatable without AI keys, and carries the
-// #785/#784 constraint in a new form — heuristics written for a backfill reading
-// a stored recipe, applied to a path reading a photograph.
+// The rest of the `## How to estimate` block below stays flow-local: reading
+// emphasis for a model looking at ingredient lines and steps someone else already
+// wrote, rather than inventing them in the same generation pass. That framing does
+// not transfer to a path that is generating the steps and their timers as it
+// goes, which is why it stays here rather than moving into `recipeFieldRules.ts`.
 //
 // ─── What it is NOT allowed to do ─────────────────────────────────────────────
 //
@@ -77,17 +68,11 @@ ${PHASE_RULES}
 dicing whether or not a step says so, and "500g onions, finely sliced" is a good ten minutes with a knife. \
 Count getting things out of the fridge and cupboards, weighing and measuring, and washing up the boards, \
 pans and bowls at the end.
-- Scale that work with the servings. Dicing two onions is not dicing six.
-- The step TIMERS are facts, not guesses. A step with a timer takes at least that long, and it is \
-hands-off minutes of the phase it happens in — whether it is time on heat or an unattended wait \
-(marinating, proving, chilling, resting).
 - Overlapping work counts ONCE on the wall clock: chopping the onions while the oven heats is one phase \
 with the chopping as its hands-on minutes, not two stretches of time.
 - Account for every minute the cook waits, including the untimed ones no step mentions — a pan coming to \
 the boil, an oven heating, butter softening. A strip that sums to less than the real wall clock is the \
 failure being fixed.
-- Be realistic, not generous and not heroic. Estimate for a competent home cook in a normal kitchen who is \
-doing only this.
 - Return whole minutes. Round to something a person would say: 5, 10, 15, 20, 25, 30, 45, 90 — not 37.
 
 Do not comment, do not explain, and do not return anything about the recipe other than its timing.`;
