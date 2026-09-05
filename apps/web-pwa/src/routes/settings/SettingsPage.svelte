@@ -227,7 +227,7 @@
         }}
       />
       {#if status === 'sent'}
-        <Text class="text-sm text-emerald-600">Thanks — your feedback's on its way. 💚</Text>
+        <Text class="text-sm text-secondary">Thanks — your feedback's on its way. 💚</Text>
       {/if}
     </CardContent>
     <CardFooter class="justify-end">

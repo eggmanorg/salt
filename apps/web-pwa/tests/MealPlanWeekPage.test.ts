@@ -1037,11 +1037,11 @@ describe('MealPlanWeekPage', () => {
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
     const btn = screen.getByTestId('day-2026-06-08-chef-alice@e.org');
-    expect(btn.className).toContain('bg-amber-500');
+    expect(btn.className).toContain('bg-tertiary-tint');
 
     // Deselecting (chefs back to empty) must drop the selected colour.
     mockWeek._set(chefDay([]));
-    await waitFor(() => expect(btn.className).not.toContain('bg-amber-500'));
+    await waitFor(() => expect(btn.className).not.toContain('bg-tertiary-tint'));
   });
 
   it('adjusts the guest count through the service', async () => {

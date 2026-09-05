@@ -104,7 +104,7 @@
   {/if}
 
   {#if corrupt}
-    <p class="mt-2 text-sm text-red-700" data-testid="app-settings-weather-corrupt">
+    <p class="mt-2 text-sm text-destructive" data-testid="app-settings-weather-corrupt">
       The cached forecast document is invalid and is being ignored — refresh to rewrite it.
     </p>
   {/if}

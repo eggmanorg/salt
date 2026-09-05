@@ -134,11 +134,11 @@
 </div>
 
 {#if test.status === 'ok'}
-  <p class="mt-1 text-xs text-green-700" data-testid="model-combo-test-ok-{testId}">
+  <p class="mt-1 text-xs text-secondary" data-testid="model-combo-test-ok-{testId}">
     Model responded successfully.
   </p>
 {:else if test.status === 'error'}
-  <p class="mt-1 text-xs text-red-700" data-testid="model-combo-test-error-{testId}">
+  <p class="mt-1 text-xs text-destructive" data-testid="model-combo-test-error-{testId}">
     Test failed: {test.message}
   </p>
 {/if}

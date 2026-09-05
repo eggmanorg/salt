@@ -7,10 +7,13 @@
   // two read as one block rather than as two stacked bars. Replaces both the
   // "n/m done" line and the "Step x of y" label that used to sit on every step: one
   // segment per step, so position and progress are read at a glance instead of
-  // counted. Colours are the app's existing meanings — emerald is its success green
-  // (feedback sent, "mild" weather), amber its active/selected marker in the meal
-  // planner — rather than the teal primary, which is on almost every other control
-  // here and so distinguishes nothing.
+  // counted. Colours are the theme's, not raw palette steps (#993 Phase 2): done is
+  // `secondary`, the sage green design.md §Components names for exactly this bar
+  // ("Step-Progress Bar … using Sage Green to show completion"), and current is
+  // `primary`. This band's chrome is otherwise only `muted-foreground/25`, so the
+  // teal reads as the marker here even though it is the app's common control
+  // colour elsewhere; what matters is that the three states differ from each other,
+  // and a filled teal against a sage and a grey does that.
   //
   // Each segment also jumps to its step. Small on purpose: the footer and the swipe
   // are the primary ways to move, this is the shortcut. The row is padded well beyond
@@ -66,9 +69,9 @@
     >
       <span
         class="block h-1.5 rounded-full transition-colors {stepCurrent
-          ? 'bg-amber-500'
+          ? 'bg-primary'
           : stepDone
-            ? 'bg-emerald-600'
+            ? 'bg-secondary'
             : 'bg-muted-foreground/25'}"
       ></span>
     </button>

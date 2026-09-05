@@ -347,7 +347,7 @@
 
     {#if $isAppSettingsCorrupt}
       <div
-        class="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900"
+        class="rounded-md border border-destructive-container bg-destructive-container p-3 text-sm text-destructive-container-foreground"
         data-testid="app-settings-corrupt-warning"
       >
         The saved settings document is invalid and is being ignored — all roles are running on their

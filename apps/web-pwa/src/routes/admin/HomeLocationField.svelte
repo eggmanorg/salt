@@ -204,7 +204,7 @@
   </div>
 
   {#if searchError}
-    <p class="mt-2 text-sm text-red-700" data-testid="app-settings-home-location-search-error">
+    <p class="mt-2 text-sm text-destructive" data-testid="app-settings-home-location-search-error">
       {searchError}
     </p>
   {/if}
