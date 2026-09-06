@@ -28,7 +28,7 @@ left in place because deleting a label strips it retroactively from every issue
 that ever carried it, and ~280 closed issues would have lost their classification
 for no gain.
 
-**`status: on-hold` is the one survivor of its family**, because `/campaign` puts
+**`status: on-hold` is the one survivor of its family**, because `/salt-campaign` puts
 it on parked **pull requests**, and a PR is never on the board.
 
 Every `area: *` label and every topical label (`flaky-test`, `performance`,
@@ -37,11 +37,11 @@ multi-valued and filter-only, which is exactly what a label is good at.
 
 ### `specced` — the one label added since
 
-**`specced` means the issue BODY is in a shape `/run` can execute**, not that a
-spec command was once run on it. `/spec`, `/defect` and `/refactor-spec` each
-post in a fixed structure that `/run` then consumes by exact heading, and until
+**`specced` means the issue BODY is in a shape `/salt-run` can execute**, not that a
+spec command was once run on it. `/salt-spec`, `/salt-defect` and `/salt-refactor` each
+post in a fixed structure that `/salt-run` then consumes by exact heading, and until
 this label existed you found out an issue was not in that structure by handing it
-to `/run` and watching it fail to find `## Phases`.
+to `/salt-run` and watching it fail to find `## Phases`.
 
 It is a label rather than a board field for the same reason the others are not:
 it is a filter (`label:specced` — what can I start right now?), never something
@@ -155,10 +155,10 @@ attaching a follow-up to the work it came out of claims nothing about how urgent
 it is, and the child keeps whatever band `add` gave it.
 
 It exists because nothing could set that link before, so an issue an agent filed
-mid-flight was only ever attached if a human went back and did it. `/campaign`
+mid-flight was only ever attached if a human went back and did it. `/salt-campaign`
 now attaches everything it files — see **Filing an issue** in
-[`campaign.md`](../.claude/commands/campaign.md) for which parent each of its
-four filings takes. `/spec`, `/defect` and `/refactor-spec` attach only when
+[`salt-campaign.md`](../.claude/commands/salt-campaign.md) for which parent each of its
+four filings takes. `/salt-spec`, `/salt-defect` and `/salt-refactor` attach only when
 another command spawned them and named the parent: invoked directly, what a
 piece of work belongs to is a call for Daniel to make on the board.
 
@@ -175,7 +175,7 @@ in this repo, sub-issues of #1202 included — a REST sweep will tell you nothin
 is attached, confidently, and be wrong. `issue.parent` over GraphQL is the field
 that is populated.
 
-**A `/campaign` ledger is neither.** An issue titled `campaign:` is a
+**A `/salt-campaign` ledger is neither.** An issue titled `campaign:` is a
 coordination artefact: no `Queue`, no `Class`, closed by hand rather than by a
 PR, and it is the parent the campaign hangs its own filings off. `check` skips
 it in both the untriaged rule and the closed-at-a-shipping-status rule, or every
@@ -245,16 +245,16 @@ _In review_ is a PR raised, _Merged_ is on `main` and not yet live, _Released_ i
 in production. **Blocked and Deferred are deliberately not statuses** — an issue
 can be in progress _and_ blocked, and the old board could not say so.
 
-| To          | Set by                                                                                                                       |                                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Triage      | GitHub's built-in "item added to project" project workflow                                                                   |                                                                                         |
-| Todo        | a person, or `/triage`                                                                                                       | the one real decision; no event can observe it                                          |
-| In progress | `/run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session | a branch push is too noisy to key on                                                    |
-| In review   | `board-status.yml`                                                                                                           | `pull_request` opened / ready_for_review                                                |
-| Merged      | `board-status.yml`                                                                                                           | `pull_request` closed && merged                                                         |
-| Released    | `board-status.yml`                                                                                                           | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha |
+| To          | Set by                                                                                                                            |                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Triage      | GitHub's built-in "item added to project" project workflow                                                                        |                                                                                         |
+| Todo        | a person, or `/triage`                                                                                                            | the one real decision; no event can observe it                                          |
+| In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session | a branch push is too noisy to key on                                                    |
+| In review   | `board-status.yml`                                                                                                                | `pull_request` opened / ready_for_review                                                |
+| Merged      | `board-status.yml`                                                                                                                | `pull_request` closed && merged                                                         |
+| Released    | `board-status.yml`                                                                                                                | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha |
 
-The issue↔PR link is the `Closes #N` that `/run` writes into every PR body —
+The issue↔PR link is the `Closes #N` that `/salt-run` writes into every PR body —
 the same text GitHub derives its own linked-issue relation from.
 
 **`Released` is not "everything Merged".** Production deploys a _tag_, and

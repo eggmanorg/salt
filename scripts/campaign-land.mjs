@@ -5,7 +5,7 @@
  *   node scripts/campaign-land.mjs <pr> [--note <file>] [--adjudicated <issue>]
  *   node scripts/campaign-land.mjs <pr> --check [--json]
  *
- * WHY THIS EXISTS. campaign.md's queue recipe is four steps - post the decision
+ * WHY THIS EXISTS. salt-campaign.md's queue recipe is four steps - post the decision
  * note, remove the worktree, delete the local branch, enqueue - and the
  * coordinator composed them as a fresh shell line every time. Every line was
  * slightly different, so the `gh pr merge` PreToolUse gate could not recognise
@@ -23,7 +23,7 @@
  * (`scripts/lib/prEligibility.mjs`, the single implementation of the rule), and
  * the landing path runs it first. A PR that is a draft, closed, failing checks,
  * unreviewed, or carrying unaddressed blocking findings does not merge, and the
- * exit code says so. `--adjudicated <issue>` is campaign.md's own escape hatch
+ * exit code says so. `--adjudicated <issue>` is salt-campaign.md's own escape hatch
  * for a blocking finding judged shippable - it requires a real, open issue, so
  * the escape leaves an artefact instead of a prompt.
  *
@@ -131,7 +131,7 @@ if (view.error) {
   die(asJson ? '' : `ask: PR #${pr} — ${reason}`, 2);
 }
 
-// An adjudicated blocking finding must point at a real, open issue. campaign.md
+// An adjudicated blocking finding must point at a real, open issue. salt-campaign.md
 // requires the follow-up to be filed *before* the merge; this is that check.
 if (adjudicated) {
   const issue = ghJson(['issue', 'view', adjudicated, '--json', 'number,state']);

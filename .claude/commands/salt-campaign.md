@@ -1,5 +1,5 @@
 ---
-description: Coordinate several issues end to end — run /run per issue in its own worktree from a rolling pool, adversarially review each PR, then land them through GitHub's merge queue. Owns branch topology and merging; writes no code.
+description: Coordinate several issues end to end — run /salt-run per issue in its own worktree from a rolling pool, adversarially review each PR, then land them through GitHub's merge queue. Owns branch topology and merging; writes no code.
 argument-hint: <issue numbers>
 disable-model-invocation: true
 model: opus
@@ -15,7 +15,7 @@ Arguments: $ARGUMENTS → issue numbers (space- or comma-separated), plus option
 | `--max-diff N`    | 1500    | Changed-line ceiling per PR, enforced by the worker.      |
 | `--stop-at-green` | off     | Review and leave PRs green; do not run the merge queue.   |
 
-`/campaign 641 652 703 --pool 3` is the shape. Unrecognised flags are an error, not a guess — say which and stop.
+`/salt-campaign 641 652 703 --pool 3` is the shape. Unrecognised flags are an error, not a guess — say which and stop.
 
 No issue numbers given? Ask which issues and stop. This is the only pre-flight stop worth making; everything after it runs unattended.
 
@@ -29,7 +29,7 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 - **Unattended by default.** Daniel is not watching. AskUserQuestion is unavailable to you in spirit even where it exists — a question blocks the fleet for hours. Decide inside the envelope below; outside it, park the branch and keep the queue moving.
 - **CLAUDE.md is binding**, for you and every agent you spawn.
 - **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear` — the stash stack is shared across every worktree and concurrent agent. Land things with `gh pr merge`. Set work aside with a WIP commit, never a stash.
-- **/run is the worker.** Do not reimplement the phase loop. Point each worker at `.claude/commands/run.md` and give it the overrides in **Dispatch**. Two copies of that loop will drift within a month.
+- **/salt-run is the worker.** Do not reimplement the phase loop. Point each worker at `.claude/commands/salt-run.md` and give it the overrides in **Dispatch**. Two copies of that loop will drift within a month.
 - **Settle how you reach GitHub before you write a single brief.** `command -v gh` decides it, and the answer is a property of where this session runs, not of the repo. Every `gh` recipe in this file is written in the first form below; under the second, every brief you write carries the substitution in place of them.
   - **`gh` present (the Mac).** Use it throughout, with two harness traps that every brief must also carry: plain `gh issue view` / `gh pr view` exit 0 with **empty stdout** in a non-TTY session, so use the `--json` forms or `gh api` and treat empty comment output as a failed fetch rather than "no comments"; and every `gh` call needs the sandbox disabled.
   - **`gh` absent (a cloud session), and it cannot be made present.** `api.github.com` is refused by the session proxy and `gh` itself by the permission classifier. GitHub is reachable only through the GitHub MCP server. `git push` is unaffected — only the API layer is substituted. What changes: CI is waited on by polling `pull_request_read` on a backgrounded timer rather than `gh pr checks --watch`, which makes it the one blocking wait this command has that no longer blocks inside a single call; heavy-suite conclusions come from the workflow-jobs listing rather than `gh run view --json jobs`, with **empty output → park** unchanged; and `issue_read` strips raw angle brackets from the body it returns, so never "correct" an issue on the strength of what it read back. Record the deviation once in the ledger's **Plan** block and never again. Campaign #1064 established all of this the hard way; do not rediscover it.
@@ -92,7 +92,7 @@ So this command names a model at **every** `Agent` call rather than letting one 
 | -------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
 | you, the coordinator | `opus`   | you adjudicate technical disputes without being allowed to read the code, and your merges are irreversible |
 | footprint extractor  | `haiku`  | fixed extraction against a known heading set                                                               |
-| worker (`/run`)      | `opus`   | owns validation and the git history                                                                        |
+| worker (`/salt-run`) | `opus`   | owns validation and the git history                                                                        |
 | reviewer             | `opus`   | the other genuine reasoning job in this command                                                            |
 | fix agent            | `sonnet` | findings arrive enumerated and the scope is closed                                                         |
 | conflict resolver    | `sonnet` | you have already classified the conflict; it applies a rule you handed it                                  |
@@ -116,11 +116,11 @@ git worktree list
 
 Any row whose recorded state disagrees with what `gh` says — "merged" with an open PR behind it, "in progress" with no branch — means something broke mid-queue. Park that issue, correct the row, say so. Never build on a row you could not confirm.
 
-Workers do not survive a session: a `dispatched` row from a dead session has no live agent behind it. Verify what its branch actually holds (the per-branch PR check above, plus `git log --oneline origin/main..origin/<branch>` if it was pushed), then either re-dispatch from where it stands — /run's own resume logic picks up landed phases — or park it.
+Workers do not survive a session: a `dispatched` row from a dead session has no live agent behind it. Verify what its branch actually holds (the per-branch PR check above, plus `git log --oneline origin/main..origin/<branch>` if it was pushed), then either re-dispatch from where it stands — /salt-run's own resume logic picks up landed phases — or park it.
 
 ### 2. Derive the footprints — delegated, never read
 
-**Do not open the issue bodies yourself.** A phased spec issue runs 10–25KB; you need about 200 tokens of it. Everything you read here stays in your transcript and is resent on every turn for the rest of the campaign — across a hundred-plus coordinator turns that is the single largest avoidable cost in this command, and it buys you nothing, because `/run` reads the issue from source anyway.
+**Do not open the issue bodies yourself.** A phased spec issue runs 10–25KB; you need about 200 tokens of it. Everything you read here stays in your transcript and is resent on every turn for the rest of the campaign — across a hundred-plus coordinator turns that is the single largest avoidable cost in this command, and it buys you nothing, because `/salt-run` reads the issue from source anyway.
 
 Spawn one extractor per issue, all in one message so they run concurrently, each `Agent(…, model: "haiku")`:
 
@@ -129,7 +129,7 @@ Spawn one extractor per issue, all in one message so they run concurrently, each
 > ```
 > ISSUE: N
 > TITLE: <title>
-> KIND: <spec | defect | refactor-spec — whichever baseline heading it carries>
+> KIND: <spec | defect | refactor — whichever baseline heading it carries>
 > PHASES: <count>
 > DELIVERABLES: [every path named across all phases' Technical deliverables]
 > MUST_NOT_TOUCH: [every phase's Must not touch entries, copied verbatim — one per line, worded exactly as the issue words them]
@@ -147,7 +147,7 @@ Spawn one extractor per issue, all in one message so they run concurrently, each
 - **Nothing else may.** A footprint is never grounds for a statement about a PR — not a scope breach, not a finding, not a park reason, not a line in a review or a ledger. You hold neither the issue's real wording nor the diff, so scope is not yours to adjudicate.
 - **When it looks breached, hand it over as a question.** Add one line to that PR's reviewer brief — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer as the verdict, including when the answer is no. The reviewer fetches both the issue and the diff, so it is the only actor in this command that can tell a real breach from an extraction artefact. A prohibition worth enforcing survives being asked as a question.
 
-`RUNNABLE: no` → **confirm it before you act on it.** A false negative here silently parks a good issue and nothing downstream ever contradicts it, so spend the one call: `gh api repos/{owner}/{repo}/issues/N --jq '.body' | grep -c '^### Phase'` returns a count rather than prose, which keeps it inside your standing rule. Where there is no `gh` (see **Standing rules**), have a `haiku` agent fetch the body and return the count alone — never the body, and never into your context. Zero → park it and say which. Non-zero → the extractor was wrong; dispatch the issue and let /run be the judge, since it reads the issue from source and returns BLOCKED on a phase block missing the fields its loop consumes.
+`RUNNABLE: no` → **confirm it before you act on it.** A false negative here silently parks a good issue and nothing downstream ever contradicts it, so spend the one call: `gh api repos/{owner}/{repo}/issues/N --jq '.body' | grep -c '^### Phase'` returns a count rather than prose, which keeps it inside your standing rule. Where there is no `gh` (see **Standing rules**), have a `haiku` agent fetch the body and return the count alone — never the body, and never into your context. Zero → park it and say which. Non-zero → the extractor was wrong; dispatch the issue and let /salt-run be the judge, since it reads the issue from source and returns BLOCKED on a phase block missing the fields its loop consumes.
 
 ### 3. Conflict graph, not waves
 
@@ -221,7 +221,7 @@ git worktree add -b <type>/<slug>-N .claude/worktrees/<slug>-N origin/main
 
 **The fetch is not optional, and it goes immediately before every `worktree add`.** `origin/main` here is the local remote-tracking ref — whatever the last fetch saw. The rolling pool creates worktrees over hours, and a dependent issue's whole premise is that it cuts from a main that already contains its merged dependency; skip the fetch and it builds against a base from before the merge.
 
-Explicitly, with `git worktree add` — **not** the Agent tool's `isolation: "worktree"`. That flag branches from main with no way to choose a base and no way for you to name the branch, and /run needs to own a branch it can push and PR.
+Explicitly, with `git worktree add` — **not** the Agent tool's `isolation: "worktree"`. That flag branches from main with no way to choose a base and no way for you to name the branch, and /salt-run needs to own a branch it can push and PR.
 
 `.husky/post-checkout` fires `ensure-checkout.mjs` on `worktree add`, which installs dependencies, writes the gitignored dev env files, and — the invisible one — restores `core.hooksPath` so the pre-commit gates actually run. A worktree created any other way has dead commit hooks.
 
@@ -241,16 +241,16 @@ Explicitly, with `git worktree add` — **not** the Agent tool's `isolation: "wo
 
 Brief each worker with:
 
-> Follow `.claude/commands/run.md` verbatim for issue #N, with these overrides:
+> Follow `.claude/commands/salt-run.md` verbatim for issue #N, with these overrides:
 >
-> - You are already in worktree `<path>` on branch `<branch>`, cut from `origin/main`. Skip run.md's **Working branch** step; do not create or switch branches.
-> - Your base is `origin/main`. run.md's per-phase `git fetch origin main && git rebase origin/main` stands exactly as written.
+> - You are already in worktree `<path>` on branch `<branch>`, cut from `origin/main`. Skip salt-run.md's **Working branch** step; do not create or switch branches.
+> - Your base is `origin/main`. salt-run.md's per-phase `git fetch origin main && git rebase origin/main` stands exactly as written.
 > - Run the safe gate set only. Never `e2e`, `test:emulator`, `dev`, or `dev:emulators`, and never `SALT_TAKE_HOST=1`.
 > - `gh` in this harness: plain `gh issue view` / `gh pr view` exit 0 with empty stdout — use the `--json` forms or `gh api` (issue comments: `gh api "repos/{owner}/{repo}/issues/N/comments"`), and every `gh` call needs the sandbox disabled. Empty output from a comments fetch is a failed fetch, not an empty thread.
-> - Do run `gh pr ready` at the final phase, as run.md says. It is what triggers `pr-doc-review.yml`, and that review is an input to the code review that follows.
+> - Do run `gh pr ready` at the final phase, as salt-run.md says. It is what triggers `pr-doc-review.yml`, and that review is an input to the code review that follows.
 > - Do not merge, and do not touch any branch but your own.
 > - Diff ceiling: <--max-diff> changed lines, excluding the lockfile. At the end of every phase, before the handoff comment, check the branch against its base: `git diff --shortstat origin/main...HEAD -- ':!pnpm-lock.yaml'`. Over the ceiling, stop there — commit, post the handoff for the phase you finished, and return `BLOCKED: oversized (<n> lines at phase <k> of <m>)` naming the phases still unbuilt. Leave the PR in draft; do not `gh pr ready`. A phase that cannot be built under the ceiling on its own is itself the finding: say so.
-> - run.md's pause conditions are yours, with one change: you cannot wait for a human. On a pause condition, stop, commit what you have, leave the branch as it is, and return BLOCKED with the reason.
+> - salt-run.md's pause conditions are yours, with one change: you cannot wait for a human. On a pause condition, stop, commit what you have, leave the branch as it is, and return BLOCKED with the reason.
 >
 > Return, and nothing else:
 >
@@ -275,7 +275,7 @@ The slot is the smaller half of this. A worker you left running still holds a wo
 
 **BLOCKED non-empty** → park the issue, log it, start the next startable issue. Do not diagnose it yourself; that is diff-reading.
 
-**`BLOCKED: oversized`** is the one blocked reason that gets an action rather than a bare park: file a follow-up issue proposing the split (the phases that landed, the phases that didn't, and the ceiling it hit), **triage and attach it per Filing an issue** — it is the remaining work of the issue it came out of, so it hangs off that issue, not off the ledger — reference it from the parked branch, and move on. The branch stays parked either way — you do not decide the split yourself, because how an issue divides is a spec question and /spec is where it belongs.
+**`BLOCKED: oversized`** is the one blocked reason that gets an action rather than a bare park: file a follow-up issue proposing the split (the phases that landed, the phases that didn't, and the ceiling it hit), **triage and attach it per Filing an issue** — it is the remaining work of the issue it came out of, so it hangs off that issue, not off the ledger — reference it from the parked branch, and move on. The branch stays parked either way — you do not decide the split yourself, because how an issue divides is a spec question and /salt-spec is where it belongs.
 
 **FLAGS naming another campaign issue** → record it in the ledger and re-check the conflict graph. A flag is the one signal that can reveal an overlap the footprints did not.
 
@@ -329,7 +329,7 @@ So: confirm, don't split. `gh pr view <pr> --json additions,deletions,changedFil
 
 ### Fixing findings
 
-Do not re-dispatch /run for this. run.md is a phase loop keyed to an issue whose phases have all landed; pointed at a finished branch it either no-ops or restarts work. Spawn a plain `Agent(…, model: "sonnet")` instead — the findings arrive enumerated and the scope is closed, so there is no design judgement left in this step:
+Do not re-dispatch /salt-run for this. salt-run.md is a phase loop keyed to an issue whose phases have all landed; pointed at a finished branch it either no-ops or restarts work. Spawn a plain `Agent(…, model: "sonnet")` instead — the findings arrive enumerated and the scope is closed, so there is no design judgement left in this step:
 
 > In worktree `<path>` on branch `<branch>`, address these review findings — every blocking one, plus any marked `[trivial]`: [list]. Do not rebase, do not merge, do not touch another branch, and do not take work beyond the findings — the issue's Out of scope list still binds. Run the safe gate set, commit, push.
 >
@@ -343,7 +343,7 @@ Do not re-dispatch /run for this. run.md is a phase loop keyed to an issue whose
 
 **Trivial should-fix findings ride along.** Filing has a floor cost that a two-line edit does not clear. Send a `[trivial]`-marked **should-fix** finding to the fix agent in round 1, rather than listing it, once you have confirmed both of the things you can confirm without a diff:
 
-- **the file is already in this PR's footprint** — `gh pr view <pr> --json files`, which is yours under **Standing rules**: file names are not diffs. No new footprint means the queue's conflict model is untouched, and that is the condition making the rest of this safe — /run's scope discipline protects _footprint_, not line count, and **Dispatch** scores conflicts on deliverables;
+- **the file is already in this PR's footprint** — `gh pr view <pr> --json files`, which is yours under **Standing rules**: file names are not diffs. No new footprint means the queue's conflict model is untouched, and that is the condition making the rest of this safe — /salt-run's scope discipline protects _footprint_, not line count, and **Dispatch** scores conflicts on deliverables;
 - **it needs no decision from Daniel** — no design fork, no rule change, no question about what the right shape would be. Judge this from the finding's one-line summary; if you cannot tell, that is a no.
 
 The third condition — ≤5 lines and mechanical — is the reviewer's `[trivial]` mark, because sizing a fix needs the diff and you do not read diffs. Unmarked should-fix findings are never sent, however small they sound.
@@ -412,7 +412,7 @@ It re-applies the eligibility rule above and refuses a PR that fails it; posts
 then removes the worktree and deletes the local branch. It derives the worktree
 path and the branch name from the PR itself, so there is nothing for you to get
 wrong. Squash, because `main` is linear and squash-merged: subjects end `(#PR)`,
-and the per-phase history lives in the issue's handoff comments where run.md put
+and the per-phase history lives in the issue's handoff comments where salt-run.md put
 it. The remote branch is deleted by GitHub when the queue merges it, not by the
 command.
 
@@ -444,7 +444,7 @@ per enqueued PR, or the queue itself at
 
 **Merged.** Confirm the heavy suites actually ran before you record it green. A
 skipped required check reports as passing, so read the job conclusions of the
-merge-group run, never the check summary. (This recipe is run.md step 8's, held
+merge-group run, never the check summary. (This recipe is salt-run.md step 8's, held
 in lockstep deliberately — if the job names in `ci.yml` move, both files change
 together, and `pnpm mergequeue:check` fails if the ruleset's contexts stop
 reporting at all.)
@@ -458,7 +458,7 @@ gh run view <id> --json jobs --jq '.jobs[] | select(.name | test("E2E|integratio
 **Do not reach for `--branch main` here.** A merge-queue build's `headBranch` is
 `gh-readonly-queue/main/pr-<n>-<sha>`, not `main`, so `--branch main --limit 1`
 returns the post-merge `push` run instead — which at that moment is still
-`in_progress` with empty job conclusions. Read as written, campaign.md's own
+`in_progress` with empty job conclusions. Read as written, salt-campaign.md's own
 "empty output → park" rule then parks a perfectly good merge. Select on
 `event == "merge_group"` and the right run is unambiguous.
 
@@ -487,7 +487,7 @@ deploys, so do not queue a merge you would not want deployed.
 
 ## Decision envelope
 
-Running unattended means most of run.md's pause conditions become deadlocks. Resolve these yourself, record them, continue:
+Running unattended means most of salt-run.md's pause conditions become deadlocks. Resolve these yourself, record them, continue:
 
 - a review finding's severity, and whether a rejection is reasonable;
 - a queue ejection classified as this campaign's own work;
@@ -499,7 +499,7 @@ Running unattended means most of run.md's pause conditions become deadlocks. Res
 
 - a worker returns BLOCKED, or blows its budget (the watchdog fired — terminate and confirm first; see **Dispatch**);
 - a PR over the `--max-diff` ceiling, whether the worker caught it or you did;
-- a UX deviation (run.md step 4) — always a human call, never yours;
+- a UX deviation (salt-run.md step 4) — always a human call, never yours;
 - a CLAUDE.md rule collision, or a phase that can only be built as a bodge;
 - a queue ejection whose failure lies outside this campaign's merged footprints;
 - gates red on the queue's rebuild (the semantic conflict);

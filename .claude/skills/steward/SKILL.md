@@ -12,8 +12,8 @@ rows, never skipping a test, never merging — stands unchanged.
 
 ## Act on events; do not poll for a merge
 
-A PR here is handed to Daniel to review and merge (`/run` step 9, and the same
-for `/campaign` and `/defect`). The merge itself is not a state worth waiting
+A PR here is handed to Daniel to review and merge (`/salt-run` step 9, and the same
+for `/salt-campaign` and `/salt-defect`). The merge itself is not a state worth waiting
 on: nothing you would do differs between "open, green, awaiting review" and
 "merged".
 

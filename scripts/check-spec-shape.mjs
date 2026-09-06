@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Report whether an issue body is in a shape `/run` can consume.
+// Report whether an issue body is in a shape `/salt-run` can consume.
 //
 //   node scripts/check-spec-shape.mjs < body.md
 //   gh issue view 1234 --json body -q .body | node scripts/check-spec-shape.mjs
@@ -21,7 +21,9 @@ const body = readFileSync(source, 'utf8');
 const { variant, ok, problems } = classifySpecIssue(body);
 
 if (!variant) {
-  console.log('not a spec issue — no /spec, /defect or /refactor-spec signature heading found.');
+  console.log(
+    'not a spec issue — no /salt-spec, /salt-defect or /salt-refactor signature heading found.',
+  );
   console.log(
     `  expected one of: ${SPEC_VARIANTS.map((entry) => `## ${entry.signature} (${entry.command})`).join(', ')}`,
   );

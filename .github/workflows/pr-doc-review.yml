@@ -6,9 +6,9 @@ name: PR Doc Review
 # next morning, detached from the change that caused it.
 #
 # Why `[opened, ready_for_review]` and NOT `synchronize`:
-#   `.claude/commands/run.md` opens the PR as a DRAFT at phase 1, pushes once
+#   `.claude/commands/salt-run.md` opens the PR as a DRAFT at phase 1, pushes once
 #   per phase while it stays draft, and calls `gh pr ready` exactly once at the
-#   final phase. So `ready_for_review` fires exactly once per /run PR, after the
+#   final phase. So `ready_for_review` fires exactly once per /salt-run PR, after the
 #   last phase and before the human review — the moment the findings are still
 #   actionable. `opened` (with the draft==false guard below) covers PRs opened
 #   directly as non-draft. Adding `synchronize` would fire on every phase push,
@@ -19,7 +19,7 @@ name: PR Doc Review
 #   Deliberate departure from autofix.yml. That workflow needs the base-branch
 #   context only because GitHub denies Dependabot access to Actions secrets on a
 #   plain `pull_request` event. This job explicitly skips Dependabot, and every
-#   /run PR is same-repo, so plain `pull_request` gets secrets fine and avoids
+#   /salt-run PR is same-repo, so plain `pull_request` gets secrets fine and avoids
 #   the known footgun of running head code in the base context. autofix.yml's
 #   same-repo guard is kept regardless.
 #
