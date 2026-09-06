@@ -408,6 +408,10 @@ export {
   doughAmountGrams,
   targetYield,
   basisYield,
+  DOUGH_GRAMS_PER_ML,
+  DEFAULT_DOUGH_DEPTH_CM,
+  doughGramsFromVolumeMl,
+  doughGramsFromArea,
   withComponentPercentScaled,
   LEAVENING_PERCENT_BOUNDS,
 } from './formula/index.js';

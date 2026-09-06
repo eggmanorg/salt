@@ -31,9 +31,11 @@
     LOAF_TIN_CHIP_GRAMS,
     doughAmountFrom,
     seedDoughAnswer,
+    suggestedTrayGrams,
     vesselFrom,
     type DoughAnswerFields,
     type DoughAnswerMode,
+    type TrayBy,
   } from './doughAnswer.js';
   import { addToast } from '../../lib/toastStore.js';
   import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
@@ -182,6 +184,9 @@
   });
 
   const amount = $derived(doughAmountFrom(answerMode, answer));
+  // What we would propose for an un-named vessel. A PROPOSAL: it reaches the grams
+  // box only when the button is pressed, and can be typed straight over.
+  const suggestedGrams = $derived(suggestedTrayGrams(answer));
   // Omitted, never invented: no amount means the formula's own reference yield,
   // which is precisely what `startBatch` does with an absent `atYield`.
   const atYield = $derived(amount === null ? null : targetYield(amount));
@@ -423,6 +428,7 @@
           }}
         >
           <RadioGroupItem value="tin" label="A loaf tin" />
+          <RadioGroupItem value="tray" label="A tray or dish" />
           <RadioGroupItem value="pieces" label="A number of pieces" />
           <RadioGroupItem value="weight" label="A weight of dough" />
         </RadioGroup>
@@ -461,6 +467,115 @@
                 data-testid="bake-batch-tin-count"
               />
             </div>
+          </div>
+        {:else if answerMode === 'tray'}
+          <!-- THE ONE GUESSED NUMBER IN THE FEATURE, and everything here is
+               arranged around that: the suggestion lands in an ordinary editable
+               box, the copy says plainly that it is a starting point, and the
+               coefficient itself is never shown as a fact. A named tin does not
+               come through here — see `doughAmount.ts`. -->
+          <div class="flex flex-col gap-2" data-testid="bake-batch-tray">
+            <RadioGroup
+              label="How are you describing it?"
+              value={answer.trayBy}
+              onValueChange={(v) => {
+                answer = { ...answer, trayBy: v as TrayBy };
+              }}
+            >
+              <RadioGroupItem value="size" label="Length × width" />
+              <RadioGroupItem value="volume" label="A volume" />
+            </RadioGroup>
+
+            {#if answer.trayBy === 'size'}
+              <div class="flex flex-wrap items-end gap-3">
+                <TextField
+                  label="Length (cm)"
+                  inputmode="decimal"
+                  class="w-28"
+                  value={answer.trayLengthText}
+                  onValueChange={(v) => {
+                    answer = { ...answer, trayLengthText: v };
+                  }}
+                  data-testid="bake-batch-tray-length"
+                />
+                <TextField
+                  label="Width (cm)"
+                  inputmode="decimal"
+                  class="w-28"
+                  value={answer.trayWidthText}
+                  onValueChange={(v) => {
+                    answer = { ...answer, trayWidthText: v };
+                  }}
+                  data-testid="bake-batch-tray-width"
+                />
+                <TextField
+                  label="Dough depth (cm)"
+                  inputmode="decimal"
+                  class="w-32"
+                  value={answer.trayDepthText}
+                  onValueChange={(v) => {
+                    answer = { ...answer, trayDepthText: v };
+                  }}
+                  data-testid="bake-batch-tray-depth"
+                />
+              </div>
+              <p class="text-xs text-muted-foreground">
+                How deep the dough sits, not how tall the tray is — a tray is never filled to its
+                walls.
+              </p>
+            {:else}
+              <div class="flex flex-wrap items-end gap-3">
+                <TextField
+                  label="Volume"
+                  inputmode="decimal"
+                  class="w-28"
+                  value={answer.trayVolumeText}
+                  onValueChange={(v) => {
+                    answer = { ...answer, trayVolumeText: v };
+                  }}
+                  data-testid="bake-batch-tray-volume"
+                />
+                <RadioGroup
+                  label="In"
+                  value={answer.trayVolumeUnit}
+                  onValueChange={(v) => {
+                    answer = { ...answer, trayVolumeUnit: v as 'ml' | 'l' };
+                  }}
+                >
+                  <RadioGroupItem value="ml" label="ml" />
+                  <RadioGroupItem value="l" label="litres" />
+                </RadioGroup>
+              </div>
+            {/if}
+
+            <div class="flex flex-wrap items-end gap-3">
+              <TextField
+                label="Dough (g)"
+                inputmode="numeric"
+                class="w-32"
+                value={answer.trayGramsText}
+                onValueChange={(v) => {
+                  answer = { ...answer, trayGramsText: v };
+                }}
+                data-testid="bake-batch-tray-grams"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={suggestedGrams === null}
+                onclick={() => {
+                  if (suggestedGrams === null) return;
+                  answer = { ...answer, trayGramsText: String(suggestedGrams) };
+                }}
+                data-testid="bake-batch-tray-suggest"
+              >
+                Suggest a weight
+              </Button>
+            </div>
+            <p class="text-xs text-muted-foreground" data-testid="bake-batch-tray-note">
+              A starting point, not a measurement — how much dough a tray takes depends on the style
+              and how much rise you want. Type over it.
+            </p>
           </div>
         {:else if answerMode === 'pieces'}
           <div class="flex flex-wrap items-end gap-3" data-testid="bake-batch-pieces">

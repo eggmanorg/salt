@@ -426,3 +426,115 @@ describe('RecipeBakeBatchSheet — what are you filling?', () => {
     }
   });
 });
+
+// ─── A tray or dish (issue #1274, phase 2) ─────────────────────────────────────
+//
+// The one answer that needs an estimate, and the two rules that keep the estimate
+// harmless: it lands in an ORDINARY EDITABLE BOX (never a locked figure), and the
+// DESCRIPTOR NAMES THE VESSEL rather than the number — so typing over the
+// suggestion changes what the bake weighs and not what it was baked in.
+describe('RecipeBakeBatchSheet — a tray or dish', () => {
+  async function pickTray(): Promise<void> {
+    const option = screen
+      .getAllByRole('radio')
+      .find((el) => el.textContent?.includes('A tray or dish'));
+    if (option === undefined) throw new Error('no tray answer');
+    await fireEvent.click(option);
+  }
+
+  it('suggests a weight for a measured tray, into a box that can be typed over', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickTray();
+
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-length'), {
+      target: { value: '30' },
+    });
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-width'), { target: { value: '40' } });
+    await fireEvent.click(screen.getByTestId('bake-batch-tray-suggest'));
+
+    // ~0.45 g per ml over 30 × 40 × 2 cm. A domestic starting point, not a fact —
+    // and the screen says so.
+    await waitFor(() => expect(screen.getByTestId('bake-batch-tray-grams')).toHaveValue('1080'));
+    expect(screen.getByTestId('bake-batch-tray-note')).toHaveTextContent('starting point');
+
+    // The box is ordinary: no readonly, no disabled, and typing wins.
+    const box = screen.getByTestId('bake-batch-tray-grams');
+    expect(box.hasAttribute('readonly')).toBe(false);
+    expect(box.hasAttribute('disabled')).toBe(false);
+    await fireEvent.input(box, { target: { value: '950' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('bake-batch-yield')).toHaveTextContent('950 g of dough'),
+    );
+  });
+
+  it('records the tray even when the suggested weight was typed over', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickTray();
+
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-length'), {
+      target: { value: '30' },
+    });
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-width'), { target: { value: '40' } });
+    await fireEvent.click(screen.getByTestId('bake-batch-tray-suggest'));
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-grams'), {
+      target: { value: '950' },
+    });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const input = mockStartBatch.mock.calls[0]![0];
+    // The DESCRIPTOR names the vessel; the WEIGHT is what was typed. They answer
+    // different questions and neither overrules the other.
+    expect(input.vessel).toBe('30 × 40 cm tray');
+    expect(input.atYield).toEqual({ kind: 'target', shape: { count: 1, unitDoughGrams: 950 } });
+  });
+
+  it('takes a dish by volume, and names it that way', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickTray();
+
+    const byVolume = screen
+      .getAllByRole('radio')
+      .find((el) => el.textContent?.includes('A volume'));
+    if (byVolume === undefined) throw new Error('no volume option');
+    await fireEvent.click(byVolume);
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-volume'), {
+      target: { value: '2000' },
+    });
+    await fireEvent.click(screen.getByTestId('bake-batch-tray-suggest'));
+
+    // A 2 litre dish takes about 900 g of dough.
+    await waitFor(() => expect(screen.getByTestId('bake-batch-tray-grams')).toHaveValue('900'));
+
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    expect(mockStartBatch.mock.calls[0]![0].vessel).toBe('2000 ml dish');
+  });
+
+  it('cannot be started on a measurement alone — the grams box is what scales it', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickTray();
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-length'), {
+      target: { value: '30' },
+    });
+    await fireEvent.input(screen.getByTestId('bake-batch-tray-width'), { target: { value: '40' } });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    // No amount resolves, so `atYield` is omitted and the formula's own reference
+    // yield stands — the coefficient never silently becomes the answer.
+    expect('atYield' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+
+  it('shows no coefficient anywhere on screen', async () => {
+    const { container } = renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickTray();
+    // The guessed number is never presented as a fact to reason from.
+    expect(container.textContent).not.toMatch(/0\.45|g per ml|g\/ml/i);
+  });
+});

@@ -63,8 +63,10 @@
     LOAF_TIN_CHIP_GRAMS,
     doughAmountFrom,
     seedDoughAnswer,
+    suggestedTrayGrams,
     type DoughAnswerFields,
     type DoughAnswerMode,
+    type TrayBy,
   } from './doughAnswer.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
   import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
@@ -518,6 +520,9 @@
   // declaration yet, and the same `shape === null` that has always disabled Save
   // covers it without a second rule.
   const shape = $derived(doughAmountFrom(answerMode, answer));
+  // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
+  // become load-bearing on the scaling (`doughAmount.ts`).
+  const suggestedGrams = $derived(suggestedTrayGrams(answer));
 
   // Recalculated on EVERY change — a basis toggle, a typed gram, an exclusion. That
   // is the point of holding grams rather than percentages: there is one function,
@@ -793,6 +798,7 @@
                 }}
               >
                 <RadioGroupItem value="tin" label="A loaf tin" />
+                <RadioGroupItem value="tray" label="A tray or dish" />
                 <RadioGroupItem value="pieces" label="A number of pieces" />
                 <RadioGroupItem value="weight" label="A weight of dough" />
               </RadioGroup>
@@ -839,6 +845,123 @@
                       data-testid="formula-count"
                     />
                   </div>
+                </div>
+              {:else if answerMode === 'tray'}
+                <!-- THE ONE GUESSED NUMBER IN THE FEATURE, and everything here is
+                     arranged around that: the suggestion lands in an ordinary editable
+                     box, the copy says plainly that it is a starting point, and the
+                     coefficient itself is never shown as a fact. A named tin does not
+                     come through here — see `doughAmount.ts`. -->
+                <div class="flex flex-col gap-2" data-testid="formula-tray">
+                  <RadioGroup
+                    label="How are you describing it?"
+                    value={answer.trayBy}
+                    onValueChange={(v) => {
+                      answer = { ...answer, trayBy: v as TrayBy };
+                      touch();
+                    }}
+                  >
+                    <RadioGroupItem value="size" label="Length × width" />
+                    <RadioGroupItem value="volume" label="A volume" />
+                  </RadioGroup>
+
+                  {#if answer.trayBy === 'size'}
+                    <div class="flex flex-wrap items-end gap-3">
+                      <TextField
+                        label="Length (cm)"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayLengthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayLengthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-length"
+                      />
+                      <TextField
+                        label="Width (cm)"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayWidthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayWidthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-width"
+                      />
+                      <TextField
+                        label="Dough depth (cm)"
+                        inputmode="decimal"
+                        class="w-32"
+                        value={answer.trayDepthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayDepthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-depth"
+                      />
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                      How deep the dough sits, not how tall the tray is — a tray is never filled to
+                      its walls.
+                    </p>
+                  {:else}
+                    <div class="flex flex-wrap items-end gap-3">
+                      <TextField
+                        label="Volume"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayVolumeText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayVolumeText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-volume"
+                      />
+                      <RadioGroup
+                        label="In"
+                        value={answer.trayVolumeUnit}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayVolumeUnit: v as 'ml' | 'l' };
+                          touch();
+                        }}
+                      >
+                        <RadioGroupItem value="ml" label="ml" />
+                        <RadioGroupItem value="l" label="litres" />
+                      </RadioGroup>
+                    </div>
+                  {/if}
+
+                  <div class="flex flex-wrap items-end gap-3">
+                    <TextField
+                      label="Dough (g)"
+                      inputmode="numeric"
+                      class="w-32"
+                      value={answer.trayGramsText}
+                      onValueChange={(v) => {
+                        answer = { ...answer, trayGramsText: v };
+                        touch();
+                      }}
+                      data-testid="formula-tray-grams"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={suggestedGrams === null}
+                      onclick={() => {
+                        if (suggestedGrams === null) return;
+                        answer = { ...answer, trayGramsText: String(suggestedGrams) };
+                        touch();
+                      }}
+                      data-testid="formula-tray-suggest"
+                    >
+                      Suggest a weight
+                    </Button>
+                  </div>
+                  <p class="text-xs text-muted-foreground" data-testid="formula-tray-note">
+                    A starting point, not a measurement — how much dough a tray takes depends on the
+                    style and how much rise you want. Type over it.
+                  </p>
                 </div>
               {:else if answerMode === 'pieces'}
                 <div class="flex flex-wrap items-end gap-3" data-testid="formula-pieces">

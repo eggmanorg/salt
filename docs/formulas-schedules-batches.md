@@ -98,9 +98,30 @@ beside them is a second number free to drift into a lie, where `freezeBatch`
 stamps a batch's vessel and grams together and neither moves again.
 
 A **named tin needs no coefficient at all**: UK tins are sold by the dough they
-take, so a 900 g tin resolves to ~900 g of dough directly. Only a vessel with no
-trade name — a tray, a dish — needs an estimate, and that estimate lands in an
-ordinary editable box rather than a locked figure.
+take, so a 900 g tin resolves to ~900 g of dough directly. Running one through an
+estimate would replace a convention that is already right with one that is not.
+
+**Only a vessel with no trade name uses a coefficient** — a tray, a roasting tin,
+a baking dish, described either as a volume or as a length × width with a dough
+depth (2 cm by default; a tray is not filled to its walls). There is **one**
+coefficient and it works over volume: two — one for deep vessels, one for flat
+ones — would disagree by up to 70% on the same tray depending which way the user
+described it, which is a trap rather than a refinement. It lives at
+`DOUGH_GRAMS_PER_ML` in `packages/domain/src/formula/doughAmount.ts` with its
+boundary stated beside it: a domestic starting point, right to ~15% on the two
+anchors anyone can check, and not a fact.
+
+**Its result is never load-bearing.** It has one caller — the UI — which writes
+the figure into an ordinary editable box the person can type straight over, so the
+coefficient never reaches a document and can never become an input to scaling.
+That is the deliberate difference from the bake loss deleted above, which _was_
+stored and _was_ read back. A locked derived figure would be strictly worse than
+bake loss ever was: the same invented number, now load-bearing.
+
+On the batch, the tray path records the vessel it was measured as ("30 × 40 cm
+tray") and never the weight — the weight already lives at
+`totals.units.unitDoughGrams`, and a second copy is the drift being avoided. So a
+run whose suggested weight was typed over still names the tray it was baked in.
 
 A **loss allowance is not forbidden, it is unbuilt.** Trim loss on a pork
 shoulder is 10–20%, an order of magnitude from anything in bread; phase 04

@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DEFAULT_TRAY_DEPTH_CM,
   EMPTY_DOUGH_ANSWER,
   LOAF_TIN_CHIP_GRAMS,
   doughAmountFrom,
   seedDoughAnswer,
+  suggestedTrayGrams,
   vesselFrom,
   type DoughAnswerFields,
 } from '../src/routes/recipes/doughAnswer.js';
@@ -129,5 +131,100 @@ describe('LOAF_TIN_CHIP_GRAMS', () => {
     // it: a size carries no thing-name and no loss figure, so a longer list would
     // be an affordance masquerading as data (issue #1274).
     expect([...LOAF_TIN_CHIP_GRAMS]).toEqual([450, 900]);
+  });
+});
+
+// ─── The fourth answer: a vessel with no trade name (issue #1274, phase 2) ──────
+describe('a tray or dish', () => {
+  it('scales by the GRAMS BOX, never by the measurement', () => {
+    // The measurement only ever proposes a figure. What the bake is scaled by is
+    // whatever is in the box — which is what stops the coefficient becoming
+    // load-bearing (rule-12 claim 4).
+    expect(
+      doughAmountFrom('tray', fields({ trayLengthText: '30', trayWidthText: '40' })),
+    ).toBeNull();
+    expect(
+      doughAmountFrom(
+        'tray',
+        fields({ trayLengthText: '30', trayWidthText: '40', trayGramsText: '850' }),
+      ),
+    ).toEqual({ count: 1, unitDoughGrams: 850 });
+  });
+
+  it('suggests the same weight whichever way the same vessel is described', () => {
+    const bySize = suggestedTrayGrams(
+      fields({ trayBy: 'size', trayLengthText: '20', trayWidthText: '25', trayDepthText: '4' }),
+    );
+    const byVolume = suggestedTrayGrams(
+      fields({ trayBy: 'volume', trayVolumeText: '2', trayVolumeUnit: 'l' }),
+    );
+    expect(bySize).toBe(byVolume);
+  });
+
+  it('reads litres as a thousand millilitres', () => {
+    expect(suggestedTrayGrams(fields({ trayBy: 'volume', trayVolumeText: '2000' }))).toBe(
+      suggestedTrayGrams(fields({ trayBy: 'volume', trayVolumeText: '2', trayVolumeUnit: 'l' })),
+    );
+  });
+
+  it('takes the default dough depth when the depth box is left empty', () => {
+    // The one OPTIONAL measurement. An empty depth is not a tray of no depth.
+    expect(
+      suggestedTrayGrams(fields({ trayLengthText: '30', trayWidthText: '40', trayDepthText: '' })),
+    ).toBe(
+      suggestedTrayGrams(
+        fields({
+          trayLengthText: '30',
+          trayWidthText: '40',
+          trayDepthText: String(DEFAULT_TRAY_DEPTH_CM),
+        }),
+      ),
+    );
+  });
+
+  it('suggests nothing while the measurement is incomplete', () => {
+    expect(suggestedTrayGrams(fields())).toBeNull();
+    expect(suggestedTrayGrams(fields({ trayLengthText: '30' }))).toBeNull();
+    expect(suggestedTrayGrams(fields({ trayBy: 'volume' }))).toBeNull();
+  });
+
+  it('lands in the domestic ballpark on both anchors', () => {
+    // The claim and its boundary are stated in `doughAmount.ts` and pinned in the
+    // domain; this is the same check through the screens' own path, so a unit slip
+    // here cannot pass while the domain test stays green.
+    const dish = suggestedTrayGrams(
+      fields({ trayBy: 'volume', trayVolumeText: '2', trayVolumeUnit: 'l' }),
+    )!;
+    const tray = suggestedTrayGrams(fields({ trayLengthText: '30', trayWidthText: '40' }))!;
+    expect(Math.abs(dish - 900) / 900).toBeLessThanOrEqual(0.15);
+    expect(Math.abs(tray - 1000) / 1000).toBeLessThanOrEqual(0.15);
+  });
+
+  it('names the tray it was baked in, from the measurement and not the weight', () => {
+    // So a run whose suggested weight was typed over still names its tray.
+    expect(
+      vesselFrom(
+        'tray',
+        fields({ trayLengthText: '30', trayWidthText: '40', trayGramsText: '1500' }),
+      ),
+    ).toBe('30 × 40 cm tray');
+    expect(
+      vesselFrom('tray', fields({ trayBy: 'volume', trayVolumeText: '2', trayVolumeUnit: 'l' })),
+    ).toBe('2 l dish');
+  });
+
+  it('names nothing while the measurement is incomplete', () => {
+    expect(vesselFrom('tray', fields({ trayGramsText: '900' }))).toBeUndefined();
+    expect(
+      vesselFrom('tray', fields({ trayLengthText: '30', trayGramsText: '900' })),
+    ).toBeUndefined();
+  });
+
+  it('carries no grams in the descriptor — the grams already live on the batch', () => {
+    const vessel = vesselFrom(
+      'tray',
+      fields({ trayLengthText: '30', trayWidthText: '40', trayGramsText: '1080' }),
+    )!;
+    expect(vessel).not.toMatch(/1080|\bg\b/);
   });
 });

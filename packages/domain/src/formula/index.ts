@@ -41,7 +41,15 @@ export type {
   SolvedUnits,
 } from './solveFormula.js';
 export type { BoundViolation, FormulaFailure } from './failure.js';
-export { doughAmountGrams, targetYield, basisYield } from './doughAmount.js';
+export {
+  doughAmountGrams,
+  targetYield,
+  basisYield,
+  DOUGH_GRAMS_PER_ML,
+  DEFAULT_DOUGH_DEPTH_CM,
+  doughGramsFromVolumeMl,
+  doughGramsFromArea,
+} from './doughAmount.js';
 // The proposal's leavening opinion, applied (issue #812 phase 2). Generic: bounds
 // in, no ingredient names in the logic. The rail it declares is the one
 // `solveFormula` has enforced since #782 — there is no second bounds check.

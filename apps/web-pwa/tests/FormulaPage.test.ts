@@ -741,3 +741,103 @@ describe('FormulaPage — what are you filling?', () => {
     }
   });
 });
+
+// ─── A tray on the FORMULA screen (issue #1274 phase 2, rule-12 claim 4) ────────
+//
+// Same fourth answer, and the difference that matters: the formula screen fills
+// NOTHING from it. A vessel is a fact about tonight; a recipe is written for a
+// quantity of dough. The grams the tray suggested are stored; the tray is not.
+describe('FormulaPage — a tray fills the grams box and nothing else', () => {
+  async function pickTray(container: Element): Promise<void> {
+    const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes('A tray or dish'),
+    );
+    if (option === undefined) throw new Error('no tray answer');
+    await fireEvent.click(option);
+  }
+
+  it('leaves the grams editable after the vessel fills it, and stores no vessel', async () => {
+    const { getByTestId, container } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    await pickTray(container);
+    await fireEvent.input(getByTestId('formula-tray-length'), { target: { value: '30' } });
+    await fireEvent.input(getByTestId('formula-tray-width'), { target: { value: '40' } });
+    await fireEvent.click(getByTestId('formula-tray-suggest'));
+
+    await waitFor(() => expect(getByTestId('formula-tray-grams')).toHaveValue('1080'));
+    // AN ORDINARY BOX, and typing wins over the suggestion. A locked figure would
+    // make an invented number load-bearing on the scaling — strictly worse than
+    // the bake loss this issue deleted, which was merely decorative.
+    const box = getByTestId('formula-tray-grams');
+    expect(box.hasAttribute('readonly')).toBe(false);
+    expect(box.hasAttribute('disabled')).toBe(false);
+    await fireEvent.input(box, { target: { value: '950' } });
+
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    );
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+
+    const written = vi.mocked(saveFormula).mock.calls[0]![0]!;
+    // Only `{ count, unitDoughGrams }` under `referenceYield.shape` — the typed
+    // figure, not the suggested one, and no trace of the tray it came from.
+    expect(written.referenceYield).toEqual({
+      kind: 'target',
+      shape: { count: 1, unitDoughGrams: 950 },
+    });
+    const keys = JSON.stringify(written).toLowerCase();
+    expect(keys).not.toContain('vessel');
+    expect(keys).not.toContain('tray');
+    expect(keys).not.toContain('cm');
+  });
+
+  it('takes a dish by volume, and a hand-set dough depth', async () => {
+    const { getByTestId, container } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    await pickTray(container);
+    // A deeper dough in a smaller footprint — the depth box is what a focaccia and
+    // a deep-dish differ by, and it is the one measurement that may be left blank.
+    await fireEvent.input(getByTestId('formula-tray-length'), { target: { value: '20' } });
+    await fireEvent.input(getByTestId('formula-tray-width'), { target: { value: '25' } });
+    await fireEvent.input(getByTestId('formula-tray-depth'), { target: { value: '4' } });
+    await fireEvent.click(getByTestId('formula-tray-suggest'));
+    await waitFor(() => expect(getByTestId('formula-tray-grams')).toHaveValue('900'));
+
+    // The same 2 litres, described the other way, suggests the same weight — there
+    // is one coefficient and it works over volume.
+    const byVolume = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes('A volume'),
+    )!;
+    await fireEvent.click(byVolume);
+    await fireEvent.input(getByTestId('formula-tray-volume'), { target: { value: '2' } });
+    const litres = [...container.querySelectorAll('[role="radio"]')].find(
+      (el) => el.textContent?.trim() === 'litres',
+    )!;
+    await fireEvent.click(litres);
+    await fireEvent.click(getByTestId('formula-tray-suggest'));
+    await waitFor(() => expect(getByTestId('formula-tray-grams')).toHaveValue('900'));
+  });
+
+  it('re-opens showing the dough weight and no vessel', async () => {
+    // The round trip: a formula saved from a tray comes back as a plain amount,
+    // because a plain amount is all it ever held.
+    const { getByTestId, queryByTestId } = renderPage();
+    mockFormula._set({
+      recipeId: RECIPE_ID,
+      schemaVersion: 1,
+      components: [{ ingredientId: 'ing-flour', percent: 100, inBasis: true }],
+      referenceYield: { kind: 'target', shape: { count: 1, unitDoughGrams: 950 } },
+    } as Formula);
+
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+    // count === 1 seeds the tin answer, carrying the weight — there is no tray to
+    // come back to, and nothing on screen claims there was one.
+    expect(getByTestId('formula-dough-total')).toHaveTextContent('950 g of dough');
+    expect(queryByTestId('formula-tray-grams')).toBeNull();
+  });
+});
