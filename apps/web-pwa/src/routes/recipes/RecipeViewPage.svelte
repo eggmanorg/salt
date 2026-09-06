@@ -1516,12 +1516,20 @@
                      narrow screen for a flag that is informational by design. The
                      saffron is the app's `review` role and the words are carried by
                      the accessible name and the tooltip; the full chip lives on
-                     the plan editor, which is where you act on it. -->
+                     the plan editor, which is where you act on it.
+
+                     This button is `variant="solid"` → `bg-primary` (teal), and no
+                     member of the four-role family clears 3:1 against that specific
+                     teal (#1268 review) — `review` alone measures 1.96:1 here. Per
+                     WCAG 1.4.11's non-text-contrast technique, a solid `ring-card`
+                     outline (the same corner-badge pattern this file already uses at
+                     the match markers below) separates the dot from the button by
+                     shape rather than by hue, so it reads regardless of colour. -->
                 <span class="relative inline-flex">
                   <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
                   {#if guidedPlanUnread && !guidedIsPrimary}
                     <span
-                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-1 ring-primary"
+                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-2 ring-card"
                       aria-hidden="true"
                       data-testid="recipe-cook-guided-unreviewed-dot"
                     ></span>

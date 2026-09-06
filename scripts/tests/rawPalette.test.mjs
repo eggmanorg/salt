@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ALLOWLIST, PALETTE, findRawPalette } from '../lib/rawPalette.mjs';
+import { ALLOWLIST, PALETTE, findOffLadderAlpha, findRawPalette } from '../lib/rawPalette.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -40,6 +40,15 @@ const CATCHES = [
   // The one no class-name regex sees. `MinePage`'s dial ring was written this
   // way and a class-only scan called the file clean.
   ['a CSS custom-property reference', `soon: 'var(--color-amber-600)',`, 'var(--color-amber-600)'],
+  // Variant forms that are not `[a-z-]+:` — the prefix group used to be that
+  // narrow, so all of these returned no finding at all (#1268 review).
+  ['a data-attribute variant', `class="data-[state=open]:bg-amber-500"`, 'bg-amber-500'],
+  ['an aria variant', `class="aria-[current=page]:text-amber-600"`, 'text-amber-600'],
+  ['a group/named-instance variant', `class="group-hover/card:bg-amber-200"`, 'bg-amber-200'],
+  ['a container-query variant', `class="@md:bg-amber-300"`, 'bg-amber-300'],
+  ['the universal-selector variant', `class="*:bg-amber-600"`, 'bg-amber-600'],
+  ['an important marker', `class="!bg-amber-400"`, 'bg-amber-400'],
+  ['a logical border-side utility', `class="border-s-amber-500"`, 'border-s-amber-500'],
 ];
 
 /** Sources the scan must stay silent on. Each holds a hyphenated utility. */
@@ -130,5 +139,31 @@ describe('the palette list', () => {
     expect(PALETTE).toContain('grey');
     expect(PALETTE).not.toContain('black');
     expect(PALETTE).not.toContain('white');
+  });
+});
+
+describe('findOffLadderAlpha', () => {
+  it('flags an amber-family alpha off the sanctioned ladder', () => {
+    expect(findOffLadderAlpha('<span class="bg-review/30">')).toEqual([
+      { line: 1, token: 'bg-review/30' },
+    ]);
+  });
+
+  it('stays silent on the sanctioned ladder — /10, /20, /40, /100', () => {
+    const source = `
+      <div class="bg-review/10">
+      <span class="bg-review/20 text-review-text">
+      <div class="border-warning/40">
+      <div class="bg-warning-text/100">
+    `;
+    expect(findOffLadderAlpha(source)).toEqual([]);
+  });
+
+  it('stays silent on a bare (opaque) role — no alpha to be off-ladder', () => {
+    expect(findOffLadderAlpha('<span class="bg-review text-white">')).toEqual([]);
+  });
+
+  it('stays silent on a non-amber role at any alpha', () => {
+    expect(findOffLadderAlpha('<div class="bg-primary/30 text-destructive/25">')).toEqual([]);
   });
 });

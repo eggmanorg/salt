@@ -682,10 +682,17 @@
                   Not-yet-read AI import (issue #616). Marker only — the whole card
                   is already a button, so clearing it happens on the recipe itself.
                   `review` chip, the same role the canon/product-form queues wear.
+
+                  Opaque, not an alpha ground: this badge sits over the hero photo
+                  (its sibling below), so a `/20` tint would composite onto whatever
+                  the photo puts behind it — arbitrary, and measurably below AA even
+                  over the no-photo `bg-muted` fallback (#1268 review). `bg-card` is
+                  a solid white pill regardless of backdrop, so `review-text` on it
+                  is a fixed ~6.25:1 rather than a function of the photo.
                 -->
                 {#if recipe.needs_approval}
                   <span
-                    class="absolute left-2 top-2 z-10 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
+                    class="absolute left-2 top-2 z-10 rounded-full border border-review/40 bg-card px-2 py-0.5 text-xs font-medium text-review-text"
                     data-testid="recipe-unreviewed-badge"
                   >
                     Unreviewed

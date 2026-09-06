@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Rejects a Tailwind default-palette colour in `apps/web-pwa/src` that is not on
-// the group-C allowlist (issue #993).
+// the group-C allowlist (issue #993), and an amber-family alpha off the
+// sanctioned ladder — /10 grounds, /20 badges, /40 borders, bare/100 (#1268).
 //
 // The matcher, the allowlist and the reasoning all live in
 // `scripts/lib/rawPalette.mjs` — including what this check deliberately does not
@@ -19,7 +20,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ALLOWLIST, findRawPalette } from './lib/rawPalette.mjs';
+import { ALLOWLIST, findOffLadderAlpha, findRawPalette } from './lib/rawPalette.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN_ROOT = path.join(REPO_ROOT, 'apps/web-pwa/src');
@@ -77,6 +78,19 @@ for (const [rel, { tokens }] of Object.entries(ALLOWLIST)) {
   }
 }
 
+/**
+ * The alpha ladder — grounds `/10`, badges `/20`, borders `/40` — is asserted
+ * as an absolute (salt.css, the PR body) and unenforced (#1268 review): this
+ * scan only ever looked at the numbered default palette, never at an
+ * off-ladder alpha on one of the amber-family roles themselves.
+ */
+const offLadder = [];
+for (const { rel, text } of sources) {
+  for (const { line, token } of findOffLadderAlpha(text)) {
+    offLadder.push(`${rel}:${line}  ${token}`);
+  }
+}
+
 if (offenders.length > 0) {
   console.error(
     `palette:check FAILED — ${offenders.length} raw default-palette value(s) in apps/web-pwa/src:\n`,
@@ -102,6 +116,18 @@ if (stale.length > 0) {
   );
   for (const s of stale) console.error(`  ${s}`);
   console.error('\nDelete them. An allowlist entry over nothing reads as coverage and is not.');
+  process.exit(1);
+}
+
+if (offLadder.length > 0) {
+  console.error(
+    `palette:check FAILED — ${offLadder.length} off-ladder amber-role alpha value(s) in apps/web-pwa/src:\n`,
+  );
+  for (const o of offLadder) console.error(`  ${o}`);
+  console.error(
+    '\nThe amber-family alpha ladder is grounds /10, badges /20, borders /40, or bare/100 —',
+  );
+  console.error('used verbatim at every call site. Pick one of those, not a new fraction.');
   process.exit(1);
 }
 

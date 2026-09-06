@@ -68,7 +68,7 @@ const COLOUR_UTILITIES = [
   'text',
   'bg',
   'border',
-  'border-[xytrbl]',
+  'border-[xytrblse]',
   'ring',
   'ring-offset',
   'outline',
@@ -94,13 +94,22 @@ const COLOUR_UTILITIES = [
 const STEP = '(?:[1-9]00|950|50)(?![0-9])';
 
 /**
- * A palette utility, with any variant prefix (`dark:`, `hover:`, `sm:`) and any
- * opacity suffix (`/20`). The capture is the utility WITHOUT its variants, so
- * `dark:hover:bg-amber-950/40` and `bg-amber-950/40` are the same finding — an
- * allowlist entry names a colour decision, not the states it is painted in.
+ * A palette utility, with any variant prefix and any opacity suffix (`/20`).
+ * The capture is the utility WITHOUT its variants or the `!important` marker,
+ * so `dark:hover:bg-amber-950/40` and `bg-amber-950/40` are the same finding —
+ * an allowlist entry names a colour decision, not the states it is painted in.
+ *
+ * The prefix group used to be `[a-z-]+:`, which only ever matched simple named
+ * variants (`dark:`, `hover:`, `sm:`). It missed every variant that isn't pure
+ * lowercase letters and hyphens — `data-[state=open]:`, `aria-[current=page]:`,
+ * `group-hover/card:`, `@md:`, `*:` — so those forms returned no finding at all
+ * (#1268 review). Widened to "any run of non-whitespace, non-quote characters
+ * ending in `:`", which covers arbitrary-value and slash-modifier variants too.
+ * `!?` separately absorbs a leading `!important` marker (`!bg-amber-400`),
+ * which sits before the utility rather than behind a trailing colon.
  */
 const RAW_PALETTE = new RegExp(
-  `(?:^|[\\s"'\`{(\\[])(?:[a-z-]+:)*((?:${COLOUR_UTILITIES.join('|')})-(?:${PALETTE.join('|')})-${STEP}(?:\\/\\d+)?)`,
+  `(?:^|[\\s"'\`{(\\[])(?:[^\\s"'\`]+:)*!?((?:${COLOUR_UTILITIES.join('|')})-(?:${PALETTE.join('|')})-${STEP}(?:\\/\\d+)?)`,
   'g',
 );
 
@@ -123,6 +132,50 @@ export function findRawPalette(text) {
     for (const re of [RAW_PALETTE, RAW_PALETTE_VAR]) {
       re.lastIndex = 0;
       for (const m of line.matchAll(re)) found.push({ line: i + 1, token: m[1] });
+    }
+  });
+  return found;
+}
+
+/**
+ * The four amber-family roles #993 introduced (`salt.css`'s `--color-review`
+ * block). Not on `PALETTE` — they are this repo's own semantic tokens, not
+ * Tailwind's default scale — so `findRawPalette` never looks at them.
+ */
+const AMBER_ROLES = ['review-text', 'review', 'warning-text', 'warning'];
+
+/**
+ * The alpha ladder the PR body and `salt.css` both assert as an absolute —
+ * grounds at `/10`, badges at `/20`, borders at `/40`, "used verbatim at every
+ * call site" — plus bare (opaque, i.e. effectively `/100`) and a spelled-out
+ * `/100`. Nothing enforced this: `palette:check` scans the numbered default
+ * palette and is blind to `bg-review/30` (#1268 review). This is deliberately
+ * a small allowlist, not general alpha-ladder infrastructure — the ladder
+ * itself, not the backdrop it composites onto (that half is not mechanisable;
+ * see the header on `RAW_PALETTE`'s badge-ground finding).
+ */
+const SANCTIONED_ALPHA = new Set(['10', '20', '40', '100']);
+
+const ROLE_ALPHA = new RegExp(
+  `(?:^|[\\s"'\`{(\\[])(?:[^\\s"'\`]+:)*!?((?:${COLOUR_UTILITIES.join('|')})-(?:${AMBER_ROLES.join('|')}))\\/(\\d+)`,
+  'g',
+);
+
+/**
+ * Every amber-role alpha suffix in one file's text that is not on the
+ * sanctioned ladder.
+ *
+ * @param {string} text
+ * @returns {{ line: number, token: string }[]} 1-based line numbers; `token`
+ *   is the full class (e.g. `bg-review/30`) for a readable offender report.
+ */
+export function findOffLadderAlpha(text) {
+  const found = [];
+  text.split('\n').forEach((line, i) => {
+    ROLE_ALPHA.lastIndex = 0;
+    for (const m of line.matchAll(ROLE_ALPHA)) {
+      const [, base, alpha] = m;
+      if (!SANCTIONED_ALPHA.has(alpha)) found.push({ line: i + 1, token: `${base}/${alpha}` });
     }
   });
   return found;
