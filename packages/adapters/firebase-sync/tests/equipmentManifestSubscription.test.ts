@@ -96,6 +96,10 @@ describe('subscribeEquipmentManifest', () => {
           name: 'Stand Mixer',
           accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
           rules: ['Use speed 2 for bread dough'],
+          // The snapshot above carries no `environment` key — every equipment
+          // document in production was written before places existed (#1281) —
+          // and the schema's `.default(null)` is what lands it here.
+          environment: null,
           updatedAt: '2026-05-13T10:00:00.000Z',
         },
       ],
@@ -194,6 +198,7 @@ describe('saveEquipmentManifest', () => {
       name: 'Stand Mixer',
       accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
       rules: ['Use speed 2'],
+      environment: null,
       updatedAt: '2026-05-13T10:00:00.000Z',
     };
     await saveEquipmentManifest({ schemaVersion: 1, updatedAt: '', items: [item] });

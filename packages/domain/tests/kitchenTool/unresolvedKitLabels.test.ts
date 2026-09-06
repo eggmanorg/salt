@@ -130,6 +130,7 @@ describe('unresolvedKitLabels — equipment the household owns (issue #954)', ()
     name: 'Magimix Cook Expert',
     accessories: [],
     rules: [],
+    environment: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };
 

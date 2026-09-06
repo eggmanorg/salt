@@ -31,6 +31,7 @@ import {
   addEquipmentRule,
   removeEquipmentRule,
   editEquipmentRule,
+  setEquipmentEnvironmentFor,
   memEquipmentManifestStore,
   __resetEquipmentServiceForTest,
 } from '../src/lib/equipmentService.js';
@@ -221,6 +222,7 @@ describe('equipmentService — mutations after hydration', () => {
       name: 'Stand Mixer',
       accessories: [],
       rules: [],
+      environment: null,
       updatedAt: '2026-05-12T00:00:00.000Z',
     };
     emit(makeManifest([existing]));
@@ -246,6 +248,58 @@ describe('equipmentService — mutations after hydration', () => {
 
     expect(fs.saveEquipmentManifest).toHaveBeenCalledTimes(3);
     cleanup();
+  });
+
+  // Places (issue #1281). The UI half of the shared/dedicated claim is tested
+  // against the component; this is the seam between the page and the domain
+  // command, and that a place is written like any other equipment mutation.
+  it('setEquipmentEnvironmentFor writes the place and drops a setpoint a dedicated one cannot have', async () => {
+    const cleanup = hydrateEmpty();
+    const captured = await captureEquipmentItem('Dough proofer', []);
+    if (captured.kind !== 'ok') throw new Error('expected ok');
+    const itemId = captured.value.itemId;
+    fs.saveEquipmentManifest.mockClear();
+
+    const result = await setEquipmentEnvironmentFor(itemId, {
+      control: 'dedicated',
+      minCelsius: 20,
+      maxCelsius: 50,
+      humidity: null,
+      standing: { celsius: 28, relativeHumidityPercent: null },
+    });
+
+    expect(result.kind).toBe('ok');
+    expect(fs.saveEquipmentManifest).toHaveBeenCalledTimes(1);
+    const written = get(equipment)!.items.find((i) => i.id === itemId)!;
+    expect(written.environment?.maxCelsius).toBe(50);
+    expect(written.environment?.standing).toBeNull();
+    cleanup();
+  });
+
+  it('setEquipmentEnvironmentFor(null) turns a place back into ordinary equipment', async () => {
+    const cleanup = hydrateEmpty();
+    const captured = await captureEquipmentItem('Dough proofer', []);
+    if (captured.kind !== 'ok') throw new Error('expected ok');
+    const itemId = captured.value.itemId;
+    await setEquipmentEnvironmentFor(itemId, {
+      control: 'dedicated',
+      minCelsius: 20,
+      maxCelsius: 50,
+      humidity: null,
+      standing: null,
+    });
+
+    await setEquipmentEnvironmentFor(itemId, null);
+
+    expect(get(equipment)!.items.find((i) => i.id === itemId)!.environment).toBeNull();
+    cleanup();
+  });
+
+  it('setEquipmentEnvironmentFor refuses before the subscription has hydrated', async () => {
+    __resetEquipmentServiceForTest();
+    const result = await setEquipmentEnvironmentFor('eq-1', null);
+    expect(result.kind).toBe('err');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
   });
 });
 

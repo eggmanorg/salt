@@ -28,6 +28,7 @@ function item(name: string, accessories: Accessory[] = []): EquipmentItem {
     name,
     accessories,
     rules: [],
+    environment: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };
 }

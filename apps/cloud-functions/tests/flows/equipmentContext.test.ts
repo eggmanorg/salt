@@ -13,6 +13,8 @@ const {
   equipmentSectionForKit,
 } = await import('../../src/flows/equipmentContext.js');
 
+type EquipmentEnvironmentDoc = import('@salt/domain/schemas').EquipmentEnvironmentDoc;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -25,7 +27,11 @@ function accessory(name: string, owned: boolean) {
 
 function item(
   name: string,
-  opts: { accessories?: ReturnType<typeof accessory>[]; rules?: string[] } = {},
+  opts: {
+    accessories?: ReturnType<typeof accessory>[];
+    rules?: string[];
+    environment?: EquipmentEnvironmentDoc | null;
+  } = {},
 ) {
   return {
     id: `eq-${name}`,
@@ -33,6 +39,7 @@ function item(
     name,
     accessories: opts.accessories ?? [],
     rules: opts.rules ?? [],
+    environment: opts.environment ?? null,
     updatedAt: '2026-07-01T00:00:00.000Z',
   };
 }
@@ -216,5 +223,124 @@ describe('equipment prompt framings', () => {
     expect(equipmentSectionForChef('')).toBe('');
     expect(equipmentSectionForLibrarian('')).toBe('');
     expect(equipmentSectionForKit('')).toBe('');
+  });
+});
+
+// ─── Places: equipment that holds a temperature (issue #1281) ─────────────────
+
+describe('renderEquipmentManifest — environment', () => {
+  it('says nothing at all for equipment that is not a place', () => {
+    // The claim the whole feature rests on: describing six chambers changes
+    // nothing about the other thirty items in the manifest.
+    const rendered = renderEquipmentManifest([item('Sharp knife')]);
+    expect(rendered).toBe('- Sharp knife');
+  });
+
+  it('renders a dedicated place as one a job may dial in', () => {
+    const rendered = renderEquipmentManifest([
+      item('Dough proofer', {
+        environment: {
+          control: 'dedicated',
+          minCelsius: 20,
+          maxCelsius: 50,
+          humidity: null,
+          standing: null,
+        },
+      }),
+    ]);
+    expect(rendered).toContain('holds a temperature: 20–50 °C');
+    expect(rendered).toContain('humidity: no control');
+    expect(rendered).toContain('dedicated — it holds one job at a time');
+    expect(rendered).not.toContain('shared');
+  });
+
+  it('renders a shared place with the setting it is standing at', () => {
+    const rendered = renderEquipmentManifest([
+      item('Curing chamber', {
+        environment: {
+          control: 'shared',
+          minCelsius: 8,
+          maxCelsius: 18,
+          humidity: { precision: 'approximate', minPercent: 60, maxPercent: 85 },
+          standing: { celsius: 12, relativeHumidityPercent: 75 },
+        },
+      }),
+    ]);
+    expect(rendered).toContain('holds a temperature: 8–18 °C');
+    expect(rendered).toContain('humidity: roughly held, 60–85% RH');
+    expect(rendered).toContain('set to 12 °C and 75% RH');
+    expect(rendered).toContain('a single job does not change it');
+  });
+
+  it('marks a precisely-held humidity as controlled', () => {
+    const rendered = renderEquipmentManifest([
+      item('Anova Precision Oven', {
+        environment: {
+          control: 'dedicated',
+          minCelsius: 25,
+          maxCelsius: 250,
+          humidity: { precision: 'controlled', minPercent: 0, maxPercent: 100 },
+          standing: null,
+        },
+      }),
+    ]);
+    expect(rendered).toContain('humidity: controlled, 0–100% RH');
+  });
+
+  it('ignores a standing setpoint on a DEDICATED place', () => {
+    // The boundary of the shared/dedicated claim, stated in the schema's field
+    // docs: the write path normalises this away, but a document written any
+    // other way still parses, so the renderer must not read it.
+    const rendered = renderEquipmentManifest([
+      item('Fermentation chamber', {
+        environment: {
+          control: 'dedicated',
+          minCelsius: 15,
+          maxCelsius: 35,
+          humidity: null,
+          standing: { celsius: 28, relativeHumidityPercent: null },
+        },
+      }),
+    ]);
+    expect(rendered).not.toContain('28');
+    expect(rendered).toContain('dedicated — it holds one job at a time');
+  });
+
+  it('renders a shared place held at a temperature but no humidity reading', () => {
+    const rendered = renderEquipmentManifest([
+      item('Wine fridge', {
+        environment: {
+          control: 'shared',
+          minCelsius: 5,
+          maxCelsius: 18,
+          humidity: null,
+          standing: { celsius: 14, relativeHumidityPercent: null },
+        },
+      }),
+    ]);
+    expect(rendered).toContain('set to 14 °C and a single job does not change it');
+    expect(rendered).not.toContain('% RH,');
+  });
+
+  it('says plainly when a shared place has no recorded setting', () => {
+    const rendered = renderEquipmentManifest([
+      item('Curing chamber', {
+        environment: {
+          control: 'shared',
+          minCelsius: 8,
+          maxCelsius: 18,
+          humidity: null,
+          standing: null,
+        },
+      }),
+    ]);
+    expect(rendered).toContain('a setting nobody has recorded');
+  });
+
+  it('tells the chef what to do with a place, and that the counter is an answer', () => {
+    const section = equipmentSectionForChef('- Curing chamber');
+    expect(section).toContain('HOLDS A TEMPERATURE');
+    expect(section).toContain('the listed figures are the truth about them');
+    expect(section).toContain('kitchen counter is a perfectly good answer');
   });
 });

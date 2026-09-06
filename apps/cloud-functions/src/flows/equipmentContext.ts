@@ -22,10 +22,27 @@
 // librarian was told never to generalise a named appliance while the kit flow, one
 // pass later, was told "no brand names".
 //
-// No schema change backs this: `AccessorySchema.owned` and `EquipmentItemSchema.rules`
-// already exist. Equipment capabilities are deliberately NOT stored — a pro model
-// already knows these named products, and stored capabilities would duplicate that
-// knowledge and go stale.
+// STORED CAPABILITIES: THE NUMBERS, NEVER THE CONTRAPTION (issue #1281).
+//
+// This file used to say that equipment capabilities are deliberately NOT stored,
+// because a pro model already knows these named products and stored capabilities
+// would duplicate that knowledge and go stale. That reasoning holds for
+// commercial kit and fails for a household's own: the fermentation chamber is a
+// polystyrene box with a seedling heat mat, and the curing chamber a wine fridge
+// with a heat mat and a reptile fogger. No model can look those up, and a
+// chamber's CURRENT SETPOINT is a fact about this household this month that no
+// product knowledge could ever supply.
+//
+// The line drawn instead is narrow, and the old rule still governs everything on
+// the far side of it: the temperature range, the humidity capability, the
+// control mode and the standing setpoint are STORED FIELDS
+// (`EquipmentItemSchema.environment`); WHAT THE THING IS BUILT FROM stays prose
+// in `rules`, which is where the chef already reads it. A full capability
+// catalogue is exactly the drift this decision is one step away from, and is
+// still refused.
+//
+// Beyond `environment`, no schema change backs this file: `AccessorySchema.owned`
+// and `EquipmentItemSchema.rules` already existed.
 
 import type { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
@@ -35,6 +52,43 @@ import {
   EQUIPMENT_MANIFEST_DOC_ID,
 } from '@salt/domain/schemas';
 import type { EquipmentItemDoc } from '@salt/domain/schemas';
+
+/**
+ * Renders one item's `environment` as prompt lines, or [] when it is not a
+ * place. Exported for its unit tests; the manifest renderer is the only caller.
+ *
+ * The control mode is spelled out rather than named, because "shared" and
+ * "dedicated" are Salt's words and a model reading them cold would guess.
+ */
+export function renderEquipmentEnvironment(item: EquipmentItemDoc): string[] {
+  const env = item.environment;
+  if (!env) return [];
+  const lines = [`  holds a temperature: ${env.minCelsius}–${env.maxCelsius} °C`];
+  if (env.humidity) {
+    const how = env.humidity.precision === 'controlled' ? 'controlled' : 'roughly held';
+    lines.push(`  humidity: ${how}, ${env.humidity.minPercent}–${env.humidity.maxPercent}% RH`);
+  } else {
+    lines.push('  humidity: no control');
+  }
+  if (env.control === 'shared') {
+    // `standing` is read ONLY on a shared place: the schema does not forbid one
+    // on a dedicated place (see its field docs), so the guard is here.
+    const standing = env.standing;
+    const at = standing
+      ? `${standing.celsius} °C${
+          standing.relativeHumidityPercent === null
+            ? ''
+            : ` and ${standing.relativeHumidityPercent}% RH`
+        }`
+      : 'a setting nobody has recorded';
+    lines.push(
+      `  shared — it holds several things at once, so it is set to ${at} and a single job does not change it`,
+    );
+  } else {
+    lines.push('  dedicated — it holds one job at a time, so it is set for that job');
+  }
+  return lines;
+}
 
 /**
  * Renders the equipment manifest as plain text for a system prompt.
@@ -49,7 +103,7 @@ export function renderEquipmentManifest(items: readonly EquipmentItemDoc[]): str
   if (items.length === 0) return '';
   return items
     .map((item) => {
-      const parts = [`- ${item.name}`];
+      const parts = [`- ${item.name}`, ...renderEquipmentEnvironment(item)];
       const owned = item.accessories.filter((a) => a.owned);
       const unowned = item.accessories.filter((a) => !a.owned);
       if (owned.length > 0) {
@@ -126,6 +180,14 @@ and give the best alternative using what they do own.
 Where an item lists household rules, those are the household's own plain-English instructions \
 for that equipment. They OVERRIDE your general product knowledge — follow them exactly, even \
 when they contradict what you know about the product.
+
+Some of this kit HOLDS A TEMPERATURE, and those items say so with the range they reach and \
+whether they do humidity. Several are home-made, so the listed figures are the truth about them \
+and beat anything you assume from the name. Use them when asked where to put something. A \
+"dedicated" one is free for the job at hand; a "shared" one is already holding other things at \
+the setting shown, so treat that setting as fixed and say whether the job suits it rather than \
+proposing a new one. Anything not listed as holding a temperature sits at kitchen temperature, \
+and the kitchen counter is a perfectly good answer.
 
 You remain completely free to suggest techniques that need no special kit at all — a pan, a \
 bowl, and a knife are often the right answer. This is not a mandate to shoehorn appliances into \

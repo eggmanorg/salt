@@ -104,10 +104,21 @@ export {
   AccessorySchema,
   EquipmentItemSchema,
   EquipmentManifestSchema,
+  EquipmentControlSchema,
+  EquipmentHumidityPrecisionSchema,
+  EquipmentHumiditySchema,
+  EquipmentStandingSettingSchema,
+  EquipmentEnvironmentSchema,
   EQUIPMENT_MANIFEST_COLLECTION,
   EQUIPMENT_MANIFEST_DOC_ID,
 } from './equipmentManifest.js';
 export type { EquipmentItemDoc, AccessoryDoc, EquipmentManifestDoc } from './equipmentManifest.js';
+export type {
+  EquipmentControl,
+  EquipmentHumidityDoc,
+  EquipmentStandingSettingDoc,
+  EquipmentEnvironmentDoc,
+} from './equipmentManifest.js';
 
 export {
   EquipmentIconSchema,

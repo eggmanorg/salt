@@ -56,6 +56,7 @@
     editEquipmentRule,
   } from '../../lib/equipmentService.js';
   import { addToast } from '../../lib/toastStore.js';
+  import EquipmentEnvironmentSection from './EquipmentEnvironmentSection.svelte';
   import type { DomainError, ReadResult } from '@salt/shared-types';
   import type { EquipmentReferencePhoto } from '@salt/domain/schemas';
 
@@ -659,6 +660,9 @@
           </Button>
         </div>
       </section>
+
+      <!-- Temperature and humidity (issue #1281) -->
+      <EquipmentEnvironmentSection {item} />
 
       <!-- Rules section -->
       <section class="flex flex-col gap-3">

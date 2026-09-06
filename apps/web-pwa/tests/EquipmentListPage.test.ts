@@ -48,6 +48,7 @@ function item(
       included: false,
     })),
     rules: Array.from({ length: ruleCount }, (_, i) => `rule ${i}`),
+    environment: null,
     updatedAt: '2026-05-13T00:00:00.000Z',
   };
 }
