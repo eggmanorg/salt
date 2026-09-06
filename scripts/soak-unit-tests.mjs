@@ -9,7 +9,7 @@
 // purpose and counts, so the question has a number instead of an opinion.
 //
 // WHAT IT DOES
-// Runs `pnpm test` — the exact command step 3 of `/run` and CI's unit job run, so
+// Runs `pnpm test` — the exact command step 3 of `/salt-run` and CI's unit job run, so
 // the thing being measured is the gate itself — N times back to back, with K spinner processes
 // saturating the CPU throughout. It reads Vitest's JSON reporter after each run
 // and aggregates every failure by test name, with the durations it failed at.

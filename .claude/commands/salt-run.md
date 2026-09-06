@@ -46,7 +46,7 @@ Do not try to build a lint rule for this. The campaign's five instances were fal
 
 `gh issue view ISSUE_NUMBER --comments`. Read it in full and hold:
 
-- the **baseline section** verbatim — the standard you validate every phase against. `/spec` issues call it **Intended Experience**; `/defect` issues, **Observed vs Expected** plus **Root Cause**; `/refactor-spec` issues, **Behavior Contract**.
+- the **baseline section** verbatim — the standard you validate every phase against. `/salt-spec` issues call it **Intended Experience**; `/salt-defect` issues, **Observed vs Expected** plus **Root Cause**; `/salt-refactor` issues, **Behavior Contract**.
 - the phase list: names, scopes, must-not-touch lists, outcomes, and which phase is last
 
 **The outcome field is named for the issue's kind.** A feature phase carries **User-testable outcome(s)**, a defect phase **Verifiable outcome(s)**, a refactor phase **Behavior-preserving check**. Wherever this command says "the phase's outcome(s)", read whichever one your issue actually uses — they are the same contract under three names, and looking for the feature spelling on a defect issue is how a run starts improvising.
@@ -116,7 +116,7 @@ Delegate an Explore only when one of these holds, and say which:
 - an earlier phase moved the ground under them;
 - the deliverables name files the issue never located.
 
-That gate matters because the sweep is not cheap and the issue was written to make it unnecessary — an Explore run out of habit re-buys what `/spec` already paid for.
+That gate matters because the sweep is not cheap and the issue was written to make it unnecessary — an Explore run out of habit re-buys what `/salt-spec` already paid for.
 
 When you do delegate it, use `Agent(…, model: "haiku")` — or `"sonnet"` if the sweep has to reason about what it finds — and restrict the report to exactly these three, nothing else:
 
@@ -232,7 +232,7 @@ git push -u origin <type>/<slug>-ISSUE_NUMBER
 
 **Pushing runs no gates.** No hook fires on push, so the push itself proves nothing — step 3 is where the suite ran, and CI is what re-checks it. A push that takes minutes is the network, not a test run; do not kill it waiting for output that is not coming.
 
-**Rebase every phase, before pushing.** CI skips both heavy suites when the branch is behind `origin/main` — the "Main" ruleset is strict, so a behind-branch must rebase before it can merge anyway, and that rebase re-triggers CI. `auto-update-prs.yml` does that automatically, but only for PRs with auto-merge enabled, which a `/run` draft is not: yours is yours to rebase. Push while behind and you get a green tick for suites that never ran (step 8). Add `--force-with-lease` only when the rebase actually rewrote commits.
+**Rebase every phase, before pushing.** CI skips both heavy suites when the branch is behind `origin/main` — the "Main" ruleset is strict, so a behind-branch must rebase before it can merge anyway, and that rebase re-triggers CI. `auto-update-prs.yml` does that automatically, but only for PRs with auto-merge enabled, which a `/salt-run` draft is not: yours is yours to rebase. Push while behind and you get a green tick for suites that never ran (step 8). Add `--force-with-lease` only when the rebase actually rewrote commits.
 
 **Phase 1 only — open the PR, as a draft.** CI triggers on `pull_request` and on pushes to `main`, and on nothing else: **a pushed branch with no PR runs no CI at all.** The PR exists from phase 1 so every later phase gets a real signal; it stays draft until the final phase.
 

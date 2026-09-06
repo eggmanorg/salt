@@ -27,7 +27,7 @@ This runs **once**. There is no second pass over your own fixes: a reviewer aske
 
 ## 1. The CI gate — pass, or stop
 
-A review of a PR whose CI has not finished is a review of a diff that is still moving. Establish green first, and **do not investigate a red one** — that is `/run`'s job or Daniel's, and a review session that starts debugging CI has abandoned the thing it was called for.
+A review of a PR whose CI has not finished is a review of a diff that is still moving. Establish green first, and **do not investigate a red one** — that is `/salt-run`'s job or Daniel's, and a review session that starts debugging CI has abandoned the thing it was called for.
 
 ```
 gh pr view <pr> --json number,title,headRefName,headRefOid,isDraft,mergeStateStatus,additions,deletions,changedFiles,files
@@ -45,7 +45,7 @@ Three required contexts, all from `ci.yml`: `Lint, typecheck, test, boundary`, `
   gh run view <run-id> --json jobs --jq '.jobs[] | select(.name | test("E2E|integration")) | "\(.name): \(.conclusion)"'
   ```
 
-  `skipped` with every changed file under `docs/`, `*.md`, `LICENSE`, `.github/`, `.claude/`, `.vscode/` or the meta dotfiles → correct, and this PR simply has no runtime signal. Carry on, and say so in the comment. `skipped` with app code in the diff → the branch is behind `origin/main` (`mergeStateStatus: BEHIND` confirms it in one read). Stop: **"the heavy suites did not run — update the branch and re-run `/review`."** That is a state report, not an investigation; do not go further.
+  `skipped` with every changed file under `docs/`, `*.md`, `LICENSE`, `.github/`, `.claude/`, `.vscode/` or the meta dotfiles → correct, and this PR simply has no runtime signal. Carry on, and say so in the comment. `skipped` with app code in the diff → the branch is behind `origin/main` (`mergeStateStatus: BEHIND` confirms it in one read). Stop: **"the heavy suites did not run — update the branch and re-run `/salt-review`."** That is a state report, not an investigation; do not go further.
 
 Then take the head SHA. Before you post at step 7, read it again — if it moved, a push landed mid-review and your findings are against a diff that no longer exists. Say so and stop rather than posting them.
 
@@ -77,7 +77,7 @@ Never paste a diff you were handed; fetch it yourself so you know what you are r
 - the PR body and, if it names an issue, the issue: `gh api repos/{owner}/{repo}/issues/<n> --jq '.body'`
 - **existing comments, from both endpoints** — conversation comments and review bodies live apart: `gh api "repos/{owner}/{repo}/issues/<pr>/comments"` and `gh api "repos/{owner}/{repo}/pulls/<pr>/reviews"`
 
-Two things bind you from what you find there. A `/run` PR's per-phase handoff comments carry **Out of scope (do not suggest)** — suggesting work the issue deliberately deferred is a defect in the review, not a finding. And a point already made on this PR is not made again, by you or anyone.
+Two things bind you from what you find there. A `/salt-run` PR's per-phase handoff comments carry **Out of scope (do not suggest)** — suggesting work the issue deliberately deferred is a defect in the review, not a finding. And a point already made on this PR is not made again, by you or anyone.
 
 ## 4. The four lenses
 
@@ -94,7 +94,7 @@ In this order. The first two are where real defects live and where nearly all yo
 
 Never a finding, whatever the reasoning around it: naming, file layout, comment wording, a suggested extraction or helper, "consider", "might be worth", "for consistency", "could be simplified", a defensive check for a state the types exclude, an alternative you would have written instead, or a risk you can only describe as theoretical.
 
-**Calibrate.** These PRs arrive green, scoped by an issue, and usually built by `/run` against a spec. **Zero findings is the common case and the correct output.** One or two is normal. Six means your bar slipped, not that the PR is bad — go back and delete every line that cannot carry a failure scenario. The pull toward writing _something_ because you were asked to review is the failure mode this command exists to resist, and it is strongest exactly when the PR is clean.
+**Calibrate.** These PRs arrive green, scoped by an issue, and usually built by `/salt-run` against a spec. **Zero findings is the common case and the correct output.** One or two is normal. Six means your bar slipped, not that the PR is bad — go back and delete every line that cannot carry a failure scenario. The pull toward writing _something_ because you were asked to review is the failure mode this command exists to resist, and it is strongest exactly when the PR is clean.
 
 If the honest answer is that you found nothing, the comment is three lines saying so. That is a good review, not a failed one.
 
@@ -142,7 +142,7 @@ The branch has to be checked out to fix it: `git worktree list` finds an existin
 
 then, on the report `test:coverage` just wrote: `pnpm coverage:files:check` · `pnpm coverage:ratchet:check`. Never `e2e`, `test:emulator`, `dev` or `dev:emulators`, and never `SALT_TAKE_HOST=1` — they seize host-global singletons and would kill whatever Daniel is sitting in. Commit, push. CI re-runs; you do not re-review.
 
-**A proposed follow-up is proposed, not filed.** It creates a durable artefact and it is the dispreferred branch, so it is Daniel's decision — put it in the reply and stop there. On his yes, file it the way this repo files everything: spawn a subagent pointed at `.claude/commands/defect.md` (or `refactor-spec.md`), since only those shapes are executable by `/run`, then triage it in the same breath — `node scripts/board.mjs add <new> --class <Class> --queue <band> --size S`. An untriaged issue has no `Queue`, appears in no view, and is invisible rather than waiting. **`Recommended` still means proven:** a finding that is real, agreed and never once triggered is `Low`, however alarming it sounded ([docs/issue-board.md](../../docs/issue-board.md)).
+**A proposed follow-up is proposed, not filed.** It creates a durable artefact and it is the dispreferred branch, so it is Daniel's decision — put it in the reply and stop there. On his yes, file it the way this repo files everything: spawn a subagent pointed at `.claude/commands/salt-defect.md` (or `salt-refactor.md`), since only those shapes are executable by `/salt-run`, then triage it in the same breath — `node scripts/board.mjs add <new> --class <Class> --queue <band> --size S`. An untriaged issue has no `Queue`, appears in no view, and is invisible rather than waiting. **`Recommended` still means proven:** a finding that is real, agreed and never once triggered is `Low`, however alarming it sounded ([docs/issue-board.md](../../docs/issue-board.md)).
 
 Then report, in CLAUDE.md's shape:
 

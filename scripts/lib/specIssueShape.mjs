@@ -1,14 +1,14 @@
-// Is this issue body one `/run` can actually execute?
+// Is this issue body one `/salt-run` can actually execute?
 //
-// `/spec`, `/defect` and `/refactor-spec` each end by posting an issue in a
-// fixed shape, and `/run` consumes that shape BY EXACT HEADING — it looks for
+// `/salt-spec`, `/salt-defect` and `/salt-refactor` each end by posting an issue in a
+// fixed shape, and `/salt-run` consumes that shape BY EXACT HEADING — it looks for
 // `## Phases`, splits on `### Phase N:`, and reads five or six bolded fields out
 // of each block. Nothing on either side checks the coupling: the commands ask
 // the agent that wrote the issue to proof-read its own work (their final step),
 // which is the weakest possible check and does not survive the issue being
 // edited afterwards.
 //
-// So the `specced` label asserts something real — "this body is in a shape /run
+// So the `specced` label asserts something real — "this body is in a shape /salt-run
 // can consume" — and per CLAUDE.md rule 12 an assertion nothing can falsify is
 // decoration. This file is what makes it true rather than merely applied:
 // `spec-shape.yml` runs it on every issue opened or edited and applies or
@@ -19,7 +19,7 @@
 // TRUTH. It can see that **Context pointers** is present and not still the
 // template's placeholder; it cannot see whether the `file:line` in it points at
 // anything, which is the failure the commands' own verification step is for and
-// the one that actually costs `/run` a re-sweep. A `specced` issue is one /run
+// the one that actually costs `/salt-run` a re-sweep. A `specced` issue is one /salt-run
 // will not trip over structurally — not one whose contents are any good.
 //
 // The variant tables below are copies of the templates in `.claude/commands/`,
@@ -35,8 +35,8 @@
 export const SPEC_VARIANTS = [
   {
     id: 'feature',
-    command: '/spec',
-    template: '.claude/commands/spec.md',
+    command: '/salt-spec',
+    template: '.claude/commands/salt-spec.md',
     signature: 'Intended Experience',
     headings: [
       'Intended Experience',
@@ -55,8 +55,8 @@ export const SPEC_VARIANTS = [
   },
   {
     id: 'defect',
-    command: '/defect',
-    template: '.claude/commands/defect.md',
+    command: '/salt-defect',
+    template: '.claude/commands/salt-defect.md',
     signature: 'Observed vs Expected',
     headings: [
       'Observed vs Expected',
@@ -78,8 +78,8 @@ export const SPEC_VARIANTS = [
   },
   {
     id: 'refactor',
-    command: '/refactor-spec',
-    template: '.claude/commands/refactor-spec.md',
+    command: '/salt-refactor',
+    template: '.claude/commands/salt-refactor.md',
     signature: 'Behavior Contract',
     headings: [
       'Current State & Motivation',
@@ -157,7 +157,7 @@ const phaseBlocks = (body) => {
  * @returns {{variant: string|null, ok: boolean, problems: string[]}} `variant`
  *   is null when no signature heading matched, which is the ordinary case for a
  *   hand-written issue and not a problem: `ok` false with no problems means "not
- *   a spec", `ok` false with problems means "a spec that /run would trip over".
+ *   a spec", `ok` false with problems means "a spec that /salt-run would trip over".
  */
 export function classifySpecIssue(body) {
   const text = stripFences(body ?? '');
@@ -178,7 +178,7 @@ export function classifySpecIssue(body) {
   }
 
   phases.forEach((phase, index) => {
-    // Numbering is not decoration: /run works the phases in order and reports
+    // Numbering is not decoration: /salt-run works the phases in order and reports
     // progress by number, so a duplicated or skipped one silently re-runs or
     // drops work.
     if (phase.number !== index + 1) {

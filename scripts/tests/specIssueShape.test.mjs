@@ -13,7 +13,7 @@ import { classifySpecIssue, SPEC_VARIANTS } from '../lib/specIssueShape.mjs';
 // and the failure is silent in the worse direction: rename a phase field in the
 // template and every issue posted afterwards is correct and unlabelled, or —
 // worse — drop a field from the checker and issues missing it keep the label
-// that says /run can consume them. So the first block below parses the
+// that says /salt-run can consume them. So the first block below parses the
 // templates out of the command files and asserts the tables still match them.
 // This is the pin CLAUDE.md rule 12 asks for, in the same shape as
 // dependabotReviewChecks.test.mjs: one file's copy, checked against its source.
@@ -177,7 +177,7 @@ describe('classifySpecIssue', () => {
   });
 
   it('flags phases numbered out of order', () => {
-    // /run works them in order and reports by number; a skipped number silently
+    // /salt-run works them in order and reports by number; a skipped number silently
     // drops work.
     const variant = SPEC_VARIANTS[0];
     const body = bodyFor(variant, { phases: 2 }).replace('### Phase 2: Name', '### Phase 3: Name');

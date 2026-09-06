@@ -3,10 +3,10 @@ name: Spec shape
 # Keep the `specced` label tracking the issue BODY, not the fact that a command
 # once ran.
 #
-# `/spec`, `/defect` and `/refactor-spec` all end by posting an issue in a fixed
-# shape that `/run` then consumes by exact heading. "This issue is runnable" was
+# `/salt-spec`, `/salt-defect` and `/salt-refactor` all end by posting an issue in a fixed
+# shape that `/salt-run` then consumes by exact heading. "This issue is runnable" was
 # until now an unwritten property of the body — you found out by handing it to
-# `/run` and watching it not find `## Phases`. The label makes it filterable, and
+# `/salt-run` and watching it not find `## Phases`. The label makes it filterable, and
 # this workflow makes it TRUE rather than merely applied (CLAUDE.md rule 12):
 # every open, edit and reopen re-checks the body and adds or REMOVES the label on
 # the result. A command applying it on create could not do that — an issue edited
@@ -61,7 +61,7 @@ jobs:
           # Idempotent: exists after the first run, and `create` on an existing
           # label is an error we do not care about.
           gh label create specced \
-            --description 'Body is in a /spec, /defect or /refactor-spec shape that /run can execute' \
+            --description 'Body is in a /salt-spec, /salt-defect or /salt-refactor shape that /salt-run can execute' \
             --color 0E8A16 2>/dev/null || true
 
           if [ -n "${ISSUE:-}" ]; then
@@ -90,7 +90,7 @@ jobs:
             fi
 
             # Only say something when the verdict is interesting: a spec that
-            # /run would trip over. "Not a spec" is the ordinary case for a
+            # /salt-run would trip over. "Not a spec" is the ordinary case for a
             # hand-written issue and is not a finding.
             if [ "$rc" -eq 1 ]; then
               {

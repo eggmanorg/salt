@@ -1,6 +1,6 @@
-// campaign.md's queue-eligibility rule, as a function.
+// salt-campaign.md's queue-eligibility rule, as a function.
 //
-// The rule is stated in prose in `.claude/commands/campaign.md` ("A branch is
+// The rule is stated in prose in `.claude/commands/salt-campaign.md` ("A branch is
 // queue-eligible when: PR out of draft, review closed with no blocking findings
 // outstanding...") and used to be enforced by nothing - the defect class
 // CLAUDE.md Rule 12 exists for. It now has exactly one implementation, here,
@@ -12,7 +12,7 @@
 // network, matching how every other guard under `scripts/` is split.
 
 /**
- * Split a review body into its `## <severity>` sections. campaign.md's reviewer
+ * Split a review body into its `## <severity>` sections. salt-campaign.md's reviewer
  * posts `## Blocking` / `## Should-fix` / `## Notes`; a body with no headings at
  * all cannot be counted and is reported as such rather than guessed at.
  */
@@ -52,7 +52,7 @@ export function hasBlockingFindings(sections) {
  *   - `ask`   — it cannot be determined from what GitHub returned. Never treat
  *     `ask` as a pass: the whole point is that ambiguity does not merge.
  *
- * `adjudicated` is campaign.md's own escape hatch, not a loosening of the rule:
+ * `adjudicated` is salt-campaign.md's own escape hatch, not a loosening of the rule:
  * a blocking finding the coordinator judges safe to ship may merge, but only
  * once it has a filed issue number, which the caller must have confirmed open.
  * Without one, an outstanding blocking finding denies.
@@ -61,7 +61,8 @@ export function judgePr(pr, { adjudicated = null } = {}) {
   if (pr.isDraft) {
     return {
       verdict: 'deny',
-      reason: 'still a draft; campaign.md requires a PR out of draft before it is queue-eligible',
+      reason:
+        'still a draft; salt-campaign.md requires a PR out of draft before it is queue-eligible',
     };
   }
   if (pr.state !== 'OPEN') {
@@ -80,7 +81,7 @@ export function judgePr(pr, { adjudicated = null } = {}) {
     return {
       verdict: 'deny',
       reason:
-        'has no review; campaign.md requires an adversarial review before a branch is queue-eligible',
+        'has no review; salt-campaign.md requires an adversarial review before a branch is queue-eligible',
     };
   }
 
@@ -117,7 +118,7 @@ export function judgePr(pr, { adjudicated = null } = {}) {
     if (!addressed && !adjudicated) {
       return {
         verdict: 'deny',
-        reason: `the review lists blocking findings and nothing has been pushed since (review ${latest.submittedAt}, last commit ${lastCommit}). Address them and push, or adjudicate them shippable and file the follow-up issue campaign.md requires`,
+        reason: `the review lists blocking findings and nothing has been pushed since (review ${latest.submittedAt}, last commit ${lastCommit}). Address them and push, or adjudicate them shippable and file the follow-up issue salt-campaign.md requires`,
       };
     }
     if (!addressed) {

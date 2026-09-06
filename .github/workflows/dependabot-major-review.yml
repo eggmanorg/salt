@@ -223,7 +223,7 @@ jobs:
             ⚠️ Merge, but watch <X> /
             🔧 Small code changes first (listed above) — fixable inline /
             🗺️ Large migration — do NOT merge as-is; open a dedicated issue + plan
-               (too big for a drive-by; consider /spec to scope it) /
+               (too big for a drive-by; consider /salt-spec to scope it) /
             🗑️ Remove instead of upgrade — appears unused or trivially replaceable /
             ⛔ Hold — <reason, e.g. abandoned upstream, security concern, architecture
                conflict>
