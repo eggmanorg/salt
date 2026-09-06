@@ -49,7 +49,9 @@ const fs = firebaseSync as Mocked<typeof firebaseSync>;
 const remember = vi.mocked(rememberNote);
 
 function makeSession(): ChatSessionDoc {
-  const ts = '2026-08-15T09:00:00.000Z';
+  // "now", not a fixed date, so this session is never accidentally read-only
+  // (issue #1270) under the real clock the guard reads.
+  const ts = new Date().toISOString();
   return {
     id: 'sess-1',
     schemaVersion: 1,
@@ -60,6 +62,7 @@ function makeSession(): ChatSessionDoc {
     messages: [],
     createdAt: ts,
     updatedAt: ts,
+    reopenedAt: null,
     expiresAt: ts,
   };
 }

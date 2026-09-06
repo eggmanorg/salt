@@ -41,6 +41,7 @@ vi.mock('../src/lib/chatService.js', () => ({
   isLoadingSessions: mockIsLoading,
   sendMessage: vi.fn(),
   claimRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  reopenChatSession: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
   recipes: mockRecipes,
@@ -56,13 +57,16 @@ vi.mock('../src/lib/guidedPlanService.js', () => ({
 }));
 
 import ChatSessionPage from '../src/routes/chat/ChatSessionPage.svelte';
-import { claimRecipe, sendMessage } from '../src/lib/chatService.js';
+import { claimRecipe, sendMessage, reopenChatSession } from '../src/lib/chatService.js';
 import { attachComponentToMeal, authorRecipeTraced } from '../src/lib/recipeService.js';
 import { addToast } from '../src/lib/toastStore.js';
 import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
 import { push } from 'svelte-spa-router';
 
 function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
+  // createdAt is "now", not a fixed date, so this session is never accidentally
+  // read-only (issue #1270) under the real clock the guard reads.
+  const ts = new Date().toISOString();
   return {
     id: 'session-1',
     schemaVersion: 1,
@@ -74,8 +78,9 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
       { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
       { id: 'm2', role: 'assistant', text: 'hi', createdAt: '2026-01-01T00:00:01.000Z' },
     ],
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdAt: ts,
+    updatedAt: ts,
+    reopenedAt: null,
     expiresAt: '2026-01-15T00:00:00.000Z',
     ...overrides,
   };
@@ -466,5 +471,74 @@ describe('ChatSessionPage — applying an amendment decides the guided plan', ()
 
     await waitFor(() => expect(addToast).toHaveBeenCalledWith('Recipe updated!', 'success'));
     expect(discardGuidedPlan).not.toHaveBeenCalled();
+  });
+});
+
+// Read-only after two days, with an explicit costed reopen (issue #1270).
+describe('ChatSessionPage — a chat that has gone quiet', () => {
+  const OLD = '2026-01-01T00:00:00.000Z'; // long past the real clock's two-day mark
+
+  it('hides the composer and shows the reopen action instead', () => {
+    mockSessions._set([makeSession({ createdAt: OLD, updatedAt: OLD })]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-input')).toBeNull();
+    expect(getByTestId('chat-readonly-notice')).toBeInTheDocument();
+    expect(getByTestId('chat-reopen-btn')).toBeInTheDocument();
+  });
+
+  it('warns about the cost before reopening, and restarts the clock on confirm', async () => {
+    mockSessions._set([makeSession({ createdAt: OLD, updatedAt: OLD })]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-reopen-btn'));
+    expect(getByTestId('chat-reopen-confirm')).toBeInTheDocument();
+
+    await fireEvent.click(getByTestId('chat-reopen-confirm'));
+
+    await waitFor(() =>
+      expect(reopenChatSession).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 'session-1' }),
+      ),
+    );
+    await waitFor(() => expect(queryByTestId('chat-reopen-confirm')).toBeNull());
+  });
+
+  it('leaves the dialog open and toasts when the reopen write fails', async () => {
+    vi.mocked(reopenChatSession).mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    mockSessions._set([makeSession({ createdAt: OLD, updatedAt: OLD })]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-reopen-btn'));
+    await fireEvent.click(getByTestId('chat-reopen-confirm'));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('Failed to reopen chat.', 'destructive'),
+    );
+    expect(getByTestId('chat-reopen-confirm')).toBeInTheDocument();
+  });
+
+  it('closes the dialog on Escape without reopening', async () => {
+    mockSessions._set([makeSession({ createdAt: OLD, updatedAt: OLD })]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-reopen-btn'));
+    expect(getByTestId('chat-reopen-confirm')).toBeInTheDocument();
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(queryByTestId('chat-reopen-confirm')).toBeNull());
+    expect(reopenChatSession).not.toHaveBeenCalled();
+  });
+
+  it('leaves a fresh chat writable', () => {
+    mockSessions._set([makeSession()]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    expect(getByTestId('chat-input')).toBeInTheDocument();
+    expect(queryByTestId('chat-readonly-notice')).toBeNull();
   });
 });

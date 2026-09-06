@@ -154,6 +154,9 @@ function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
 }
 
 function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
+  // createdAt is "now", not a fixed date, so this session is never accidentally
+  // read-only (issue #1270) under the real clock the guard reads.
+  const ts = new Date().toISOString();
   return {
     id: 'session-1',
     schemaVersion: 1,
@@ -162,8 +165,9 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     title: 'Cauliflower Steaks chat',
     messages: [],
     basedOnRecipeId: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdAt: ts,
+    updatedAt: ts,
+    reopenedAt: null,
     expiresAt: '9999-12-31T23:59:59.999Z',
     ...overrides,
   };

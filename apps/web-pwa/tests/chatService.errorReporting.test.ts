@@ -70,7 +70,9 @@ const NETWORK_ERR: DomainError = { kind: 'NetworkError', reason: 'offline' };
 const AUTH_ERR: DomainError = { kind: 'AuthError', reason: 'forbidden' };
 
 function makeSession(): ChatSessionDoc {
-  const ts = '2026-01-01T00:00:00.000Z';
+  // "now", not a fixed date, so this session is never accidentally read-only
+  // (issue #1270) under the real clock the guard reads.
+  const ts = new Date().toISOString();
   return {
     id: 'sess-1',
     schemaVersion: 1,
@@ -81,6 +83,7 @@ function makeSession(): ChatSessionDoc {
     basedOnRecipeId: null,
     createdAt: ts,
     updatedAt: ts,
+    reopenedAt: null,
     expiresAt: ts,
   };
 }

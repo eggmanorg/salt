@@ -63,3 +63,34 @@ describe('ChatSessionSchema.basedOnRecipeId', () => {
     );
   });
 });
+
+// `reopenedAt` (issue #1270): the read-only clock's manual-reopen anchor. Same
+// failure mode as `basedOnRecipeId` above — a required field would silently
+// empty the chat list of every document written before this shipped.
+describe('ChatSessionSchema.reopenedAt', () => {
+  const preExistingDoc = {
+    id: 'sess-1',
+    schemaVersion: 1,
+    ownerUid: 'uid-1',
+    recipeId: null,
+    title: 'New chat',
+    messages: [],
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    expiresAt: '2026-08-15T00:00:00.000Z',
+  };
+
+  it('parses a chat written before the field existed, defaulting it to null', () => {
+    const result = ChatSessionSchema.safeParse(preExistingDoc);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.reopenedAt).toBe(null);
+  });
+
+  it('carries a reopen timestamp when one is set', () => {
+    const result = ChatSessionSchema.safeParse({
+      ...preExistingDoc,
+      reopenedAt: '2026-08-20T00:00:00.000Z',
+    });
+    expect(result.success && result.data.reopenedAt).toBe('2026-08-20T00:00:00.000Z');
+  });
+});
