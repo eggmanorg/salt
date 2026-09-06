@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { roundGrams } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
 import {
+  defaultObservationStageId,
   formatGrams,
   formatStatedDuration,
   formatWhen,
   nextAction,
   orderBatches,
+  stageLabelById,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
 
@@ -286,5 +288,104 @@ describe('formatGrams', () => {
     // spellings can agree — the divergence is not everywhere, which is exactly
     // why it survived.
     expect(formatGrams(roundGrams(2.5))).toBe('2.5 g');
+  });
+});
+
+// ─── Which stage a reading is about (issue #1276) ───────────────────────────────
+//
+// One rule answering all four run conditions, so that no surface re-derives "which
+// stage is now". Each case below is one of those four.
+
+describe('defaultObservationStageId', () => {
+  it('picks the stage in progress — the one the cook is standing in front of', () => {
+    const run = batch({
+      stages: [
+        stage({ id: 'mix', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({ id: 'bulk', actualStartAt: '2026-08-14T07:15:00.000Z' }),
+        stage({ id: 'bake' }),
+      ],
+    });
+
+    expect(defaultObservationStageId(run)).toBe('bulk');
+  });
+
+  it('picks the EARLIEST of two in progress — the oven can go on mid-prove (#1275)', () => {
+    const run = batch({
+      stages: [
+        stage({ id: 'prove', actualStartAt: '2026-08-14T09:00:00.000Z' }),
+        stage({ id: 'oven', actualStartAt: '2026-08-14T09:30:00.000Z' }),
+      ],
+    });
+
+    expect(defaultObservationStageId(run)).toBe('prove');
+  });
+
+  it('falls back to the stage next up when nothing has been started', () => {
+    const run = batch({ stages: [stage({ id: 'mix' }), stage({ id: 'bulk' })] });
+
+    expect(defaultObservationStageId(run)).toBe('mix');
+    expect(nextAction(run)).toEqual({ kind: 'stage', stage: run.stages[0] });
+  });
+
+  it('steps over a skipped stage exactly as the run does', () => {
+    const run = batch({
+      stages: [
+        stage({ id: 'autolyse', skipped: { at: '2026-08-14T07:00:00.000Z', note: '' } }),
+        stage({ id: 'mix' }),
+      ],
+    });
+
+    expect(defaultObservationStageId(run)).toBe('mix');
+  });
+
+  it('answers "the whole batch" for a finished run — which is when the prompt asks', () => {
+    // Nothing in progress and nothing next. "How did it go?" is a verdict on the run,
+    // and filing it against the bake would make the field mean two things.
+    const run = batch({
+      stages: [
+        stage({ id: 'mix', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({ id: 'bake', actualEndAt: '2026-08-14T09:00:00.000Z' }),
+      ],
+    });
+
+    expect(nextAction(run)).toEqual({ kind: 'done' });
+    expect(defaultObservationStageId(run)).toBeNull();
+  });
+
+  it('answers "the whole batch" for a stopped run with nothing under way', () => {
+    const run = batch({ state: 'abandoned', stages: [stage({ id: 'mix' })] });
+
+    expect(defaultObservationStageId(run)).toBeNull();
+  });
+
+  it('still names the stage that was under way when a run was stopped', () => {
+    // `nextAction` has nothing to say about an abandoned run, but a note written
+    // afterwards is about the stage it went wrong in — so in-progress wins first.
+    const run = batch({
+      state: 'abandoned',
+      stages: [stage({ id: 'cure', actualStartAt: '2026-08-14T07:15:00.000Z' })],
+    });
+
+    expect(nextAction(run)).toEqual({ kind: 'abandoned' });
+    expect(defaultObservationStageId(run)).toBe('cure');
+  });
+});
+
+describe('stageLabelById', () => {
+  const run = batch({
+    stages: [stage({ id: 'bulk', label: 'Bulk ferment' }), stage({ id: 'bake', label: 'Bake' })],
+  });
+
+  it('joins against the run’s own frozen stages', () => {
+    expect(stageLabelById(run, 'bulk')).toBe('Bulk ferment');
+    expect(stageLabelById(run, 'bake')).toBe('Bake');
+  });
+
+  it('says nothing for an entry about the whole run', () => {
+    expect(stageLabelById(run, null)).toBeNull();
+  });
+
+  it('says nothing for an id this run does not have, rather than inventing a word', () => {
+    expect(stageLabelById(run, 'stage-from-another-run')).toBeNull();
   });
 });

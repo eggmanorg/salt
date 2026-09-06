@@ -59,7 +59,10 @@ vi.mock('../src/lib/batchService.js', () => ({
 vi.mock('../src/lib/batchObservationService.js', () => ({
   observations: mockObservations,
   initBatchObservationsSync: mockInitObservationsSync,
-  logObservation: vi.fn(),
+  logObservation: vi.fn(async () => ({
+    kind: 'ok',
+    value: { observationId: 'obs-new', photo: { kind: 'none' } },
+  })),
 }));
 // The bread gate this page now sits behind (issue #831). The real module reads
 // uninitialised observability and so always says "on" — which is why every
@@ -73,6 +76,7 @@ vi.mock('../src/lib/featureGate.js', () => ({
 import BatchDetailPage from '../src/routes/batches/BatchDetailPage.svelte';
 import { push } from 'svelte-spa-router';
 import { abandonBatch, advanceStage, skipStage, startStage } from '../src/lib/batchService.js';
+import { logObservation } from '../src/lib/batchObservationService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const pushMock = vi.mocked(push);
@@ -81,6 +85,7 @@ const abandonMock = vi.mocked(abandonBatch);
 const toastMock = vi.mocked(addToast);
 const startMock = vi.mocked(startStage);
 const skipMock = vi.mocked(skipStage);
+const logMock = vi.mocked(logObservation);
 
 const BATCH_ID = 'batch-1';
 
@@ -171,6 +176,10 @@ beforeEach(() => {
   abandonMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
   startMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
   skipMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  logMock.mockResolvedValue({
+    kind: 'ok',
+    value: { observationId: 'obs-new', photo: { kind: 'none' } },
+  });
 });
 
 function renderPage() {
@@ -743,6 +752,7 @@ function observation(over: Partial<BatchObservationDoc> = {}): BatchObservationD
     id: 'obs-1',
     schemaVersion: 1,
     at: OBSERVED_AT,
+    stageId: null,
     weightGrams: null,
     ph: null,
     temperatureC: null,
@@ -945,6 +955,199 @@ describe('BatchDetailPage — where the log affordance lives', () => {
     await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
     const entry = screen.getByTestId('batch-log-entry');
     expect(entry.querySelector('button')).toBeNull();
+  });
+});
+
+// ─── #1276 — a reading knows its stage and its time ─────────────────────────────
+//
+// The sheet is driven through the page rather than in isolation, because the run it
+// needs is the page's: the sheet must never open a second subscription for a
+// document already on screen behind it. `logObservation` is mocked, so what these
+// assert is the ARGUMENT that reaches the write path — the two facts the screen now
+// owns — and never what Firestore does with it.
+
+/** Open the log sheet from the always-available door on the log itself. */
+async function openLogSheet(): Promise<void> {
+  await fireEvent.click(screen.getByTestId('batch-log-add'));
+  await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+}
+
+async function typeWeight(grams: string): Promise<void> {
+  await fireEvent.input(screen.getByTestId('batch-log-weight'), { target: { value: grams } });
+}
+
+function loggedArgs() {
+  const call = logMock.mock.calls[0];
+  if (!call) throw new Error('logObservation was not called');
+  return call[0];
+}
+
+describe('BatchDetailPage — the log sheet’s two pre-filled rows', () => {
+  it('opens with the stage the run is in the middle of already chosen', async () => {
+    await showRun({
+      stages: [
+        stage({ id: 'stage-1', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({ id: 'stage-2', label: 'Bulk ferment', actualStartAt: '2026-08-14T07:15:00.000Z' }),
+      ],
+    });
+    await openLogSheet();
+
+    expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('Bulk ferment');
+  });
+
+  it('opens with the time set to now', async () => {
+    await showRun();
+    await openLogSheet();
+
+    const when = screen.getByTestId('batch-log-when') as HTMLInputElement;
+    // A `datetime-local` value is minute-precision local time, so "now" is within the
+    // minute it was truncated from.
+    const seeded = new Date(when.value).getTime();
+    expect(Number.isFinite(seeded)).toBe(true);
+    expect(Date.now() - seeded).toBeLessThan(120_000);
+    expect(Date.now() - seeded).toBeGreaterThanOrEqual(0);
+  });
+
+  it('costs the common case no extra taps — a weight and Save is the whole of it', async () => {
+    // The claim the issue rests on. Open mid-run, type a weight, Save: the entry
+    // lands against the stage in hand, stamped now, with nothing else touched.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    const args = loggedArgs();
+    expect(args.batchId).toBe(BATCH_ID);
+    expect(args.weightGrams).toBe(1240);
+    // `stage-1` is the run's next action and nothing has been started.
+    expect(args.stageId).toBe('stage-1');
+    expect(Date.now() - new Date(args.at).getTime()).toBeLessThan(120_000);
+  });
+
+  it('files a back-dated reading at the instant it was observed, not at the one it was typed', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.input(screen.getByTestId('batch-log-when'), {
+      target: { value: '2026-08-13T21:40' },
+    });
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    // Local time, because that is what the person typing it means — so the assertion
+    // is built the same way and does not depend on the machine's timezone.
+    expect(loggedArgs().at).toBe(new Date('2026-08-13T21:40').toISOString());
+  });
+
+  it('offers every stage, a skipped one included, plus the whole batch', async () => {
+    // Filtering the list would remove exactly the entries this exists to enable: the
+    // back-fill case is about a stage that has already ended, and a skipped stage is
+    // the one #1275 most wants a note against.
+    await showRun({
+      stages: [
+        stage({ id: 'stage-1', label: 'Mix', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({
+          id: 'stage-2',
+          label: 'Autolyse',
+          skipped: { at: '2026-08-14T07:15:00.000Z', note: '' },
+        }),
+        stage({ id: 'stage-3', label: 'Bake' }),
+      ],
+    });
+    await openLogSheet();
+    await fireEvent.click(screen.getByTestId('batch-log-stage'));
+
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument());
+    const offered = screen.getAllByRole('option').map((el) => el.textContent?.trim() ?? '');
+    expect(offered).toEqual(['The whole batch', 'Mix', 'Autolyse', 'Bake']);
+  });
+
+  it('records no stage at all when the whole batch is chosen', async () => {
+    await showRun();
+    await openLogSheet();
+    await fireEvent.click(screen.getByTestId('batch-log-stage'));
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument());
+    await fireEvent.click(screen.getByRole('option', { name: 'The whole batch' }));
+
+    await typeWeight('108');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs().stageId).toBeNull();
+  });
+
+  it('defaults a finished run to the whole batch — the verdict is on the run', async () => {
+    // Which is exactly the state the end-of-run prompt opens the sheet in.
+    await showRun({ stages: DONE_STAGES });
+    await fireEvent.click(screen.getByTestId('batch-log-prompt-open'));
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+
+    expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('The whole batch');
+  });
+
+  it('blocks Save on a time it cannot read, and says so on the field', async () => {
+    // The service is never handed an instant it cannot use.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.input(screen.getByTestId('batch-log-when'), { target: { value: '' } });
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-when-error')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-save')).toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to write an entry that is only its own defaults', async () => {
+    // A pre-filled stage and a pre-filled clock are not something a person typed, so
+    // neither is evidence that a reading exists.
+    await showRun();
+    await openLogSheet();
+
+    expect(screen.getByTestId('batch-log-save')).toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('BatchDetailPage — the stage beside a log entry', () => {
+  it('reads the label off the run’s own frozen stages', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: 'stage-2', weightGrams: 1240 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-stage')).toHaveTextContent('Bulk ferment');
+  });
+
+  it('shows nothing extra for an entry about the whole run', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: null, note: '108 g, good crumb' })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
+  });
+
+  it('shows nothing for an id this run has no stage for, rather than inventing one', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: 'stage-from-another-run' })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
+  });
+
+  it('opens a run logged before this change with every entry intact', async () => {
+    // A pre-#1276 document parses with `stageId` null (the schema's read default), so
+    // an old log reads exactly as it did — no migration, nothing missing.
+    await showRun();
+    mockObservations._set([
+      observation({ id: 'obs-old', weightGrams: 1440, note: 'weighed after shaping' }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-weight')).toHaveTextContent('1440 g');
+    expect(screen.getByTestId('batch-log-entry-note')).toHaveTextContent('weighed after shaping');
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
   });
 });
 

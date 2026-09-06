@@ -7,9 +7,11 @@ import type { BatchObservationDoc } from '@salt/domain/schemas';
 // Three things this service exists to get right, and all three are asserted here
 // rather than left to a screen:
 //
-//   • IT MINTS THE ID AND THE INSTANT (CLAUDE.md Rule 1 — the domain mints neither).
-//     The id is also the document id, which is what makes correcting an entry a
-//     re-write rather than a delete-and-re-add.
+//   • IT MINTS THE ID AND NOTHING ELSE (CLAUDE.md Rule 1 — the domain mints neither
+//     an id nor an instant). The id is also the document id, which is what makes
+//     correcting an entry a re-write rather than a delete-and-re-add. Since #1276
+//     the INSTANT is the screen's, not this service's: `at` and `stageId` are
+//     written through exactly as handed over, and no clock is read here.
 //   • THE TWO WRITES GO IN ONE ORDER. The entry first, the photo second, because the
 //     callable finishes with a partial update and a partial update of an absent
 //     document fails.
@@ -37,6 +39,23 @@ import {
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
 
 const BATCH_ID = 'batch-1';
+
+// When the reading was TAKEN, and it is deliberately a long way from now: every
+// assertion that `at` survives untouched is also the assertion that nothing here
+// reaches for a clock.
+const OBSERVED_AT = '2026-08-11T20:40:00.000Z';
+
+/** The two the screen now owns, defaulted so a case can name only what it is about. */
+function input(over: Partial<Parameters<typeof logObservation>[0]> = {}) {
+  return {
+    batchId: BATCH_ID,
+    at: OBSERVED_AT,
+    stageId: null,
+    weightGrams: null,
+    note: '',
+    ...over,
+  };
+}
 
 function writtenObservation(call = 0): BatchObservationDoc {
   const args = fs.addBatchObservation.mock.calls[call];
@@ -71,6 +90,7 @@ describe('batchObservationService — the subscription', () => {
         id: 'obs-tuesday',
         schemaVersion: 1,
         at: '2026-08-11T08:00:00.000Z',
+        stageId: null,
         weightGrams: 1440,
         ph: null,
         temperatureC: null,
@@ -81,6 +101,7 @@ describe('batchObservationService — the subscription', () => {
         id: 'obs-thursday',
         schemaVersion: 1,
         at: '2026-08-13T08:00:00.000Z',
+        stageId: null,
         weightGrams: 1402,
         ph: null,
         temperatureC: null,
@@ -103,14 +124,8 @@ describe('batchObservationService — the subscription', () => {
 });
 
 describe('batchObservationService — logging a reading', () => {
-  it('mints the id and the instant, and writes them onto the entry', async () => {
-    const before = Date.now();
-    const result = await logObservation({
-      batchId: BATCH_ID,
-      weightGrams: 1440,
-      note: 'open crumb',
-    });
-    const after = Date.now();
+  it('mints the id, and mints nothing else', async () => {
+    const result = await logObservation(input({ weightGrams: 1440, note: 'open crumb' }));
 
     expect(result.kind).toBe('ok');
     const doc = writtenObservation();
@@ -119,24 +134,49 @@ describe('batchObservationService — logging a reading', () => {
     // The document id IS the observation id — that is what makes a correction a
     // re-write of the same entry.
     expect(result.kind === 'ok' && result.value.observationId).toBe(doc.id);
-    // The clock is read HERE and nowhere else in this feature's log path.
-    const at = new Date(doc.at).getTime();
-    expect(at).toBeGreaterThanOrEqual(before);
-    expect(at).toBeLessThanOrEqual(after);
+  });
+
+  it('writes the instant it was handed, and never reaches for a clock', async () => {
+    // The pin for #1276. `OBSERVED_AT` is days away from now, so a service that read
+    // `new Date()` — here, or in a later "helpful" default — fails this exactly.
+    const before = Date.now();
+    await logObservation(input({ at: OBSERVED_AT, weightGrams: 1440 }));
+    const after = Date.now();
+
+    expect(writtenObservation().at).toBe(OBSERVED_AT);
+    const written = new Date(writtenObservation().at).getTime();
+    expect(written).toBeLessThan(before);
+    expect(written).toBeLessThan(after);
+  });
+
+  it('writes the stage it was handed, and does not check that it names one', async () => {
+    // A plain FK into the parent's frozen `stages`, resolved at render — this service
+    // has never seen the run and so cannot judge it.
+    await logObservation(input({ stageId: 'stage-bulk', weightGrams: 1240 }));
+
+    expect(writtenObservation().stageId).toBe('stage-bulk');
+  });
+
+  it('writes no stage at all for a reading about the whole run', async () => {
+    await logObservation(input({ stageId: null, note: '108 g, good crumb' }));
+
+    expect(writtenObservation().stageId).toBeNull();
   });
 
   it('mints a fresh id every time, so two readings can never collide', async () => {
-    await logObservation({ batchId: BATCH_ID, weightGrams: 1440, note: '' });
-    await logObservation({ batchId: BATCH_ID, weightGrams: 1438, note: '' });
+    await logObservation(input({ weightGrams: 1440 }));
+    await logObservation(input({ weightGrams: 1438 }));
 
     expect(writtenObservation(0).id).not.toBe(writtenObservation(1).id);
   });
 
   it('writes the fields it collects and nulls the two it does not', async () => {
-    await logObservation({ batchId: BATCH_ID, weightGrams: 1440, note: 'open crumb' });
+    await logObservation(input({ weightGrams: 1440, note: 'open crumb' }));
 
     expect(writtenObservation()).toMatchObject({
       schemaVersion: 1,
+      at: OBSERVED_AT,
+      stageId: null,
       weightGrams: 1440,
       note: 'open crumb',
       // No screen asks for these yet; null is what "not measured" is.
@@ -160,12 +200,7 @@ describe('batchObservationService — logging a reading', () => {
       return { kind: 'ok', value: undefined };
     });
 
-    const result = await logObservation({
-      batchId: BATCH_ID,
-      weightGrams: null,
-      note: '',
-      photoBase64: 'AAAA',
-    });
+    const result = await logObservation(input({ photoBase64: 'AAAA' }));
 
     expect(order).toEqual(['entry', 'photo']);
     expect(fs.callSetObservationImageUpload).toHaveBeenCalledWith(
@@ -178,7 +213,7 @@ describe('batchObservationService — logging a reading', () => {
   });
 
   it('calls no callable at all when there is no photo', async () => {
-    const result = await logObservation({ batchId: BATCH_ID, weightGrams: 1440, note: '' });
+    const result = await logObservation(input({ weightGrams: 1440 }));
 
     expect(fs.callSetObservationImageUpload).not.toHaveBeenCalled();
     expect(result.kind === 'ok' && result.value.photo.kind).toBe('none');
@@ -193,12 +228,9 @@ describe('batchObservationService — logging a reading', () => {
       error: { kind: 'NetworkError', reason: 'transient' },
     });
 
-    const result = await logObservation({
-      batchId: BATCH_ID,
-      weightGrams: 1440,
-      note: 'open crumb',
-      photoBase64: 'AAAA',
-    });
+    const result = await logObservation(
+      input({ weightGrams: 1440, note: 'open crumb', photoBase64: 'AAAA' }),
+    );
 
     expect(fs.addBatchObservation).toHaveBeenCalledTimes(1);
     expect(result.kind).toBe('ok');
@@ -215,12 +247,7 @@ describe('batchObservationService — logging a reading', () => {
       error: { kind: 'NetworkError', reason: 'offline' },
     });
 
-    const result = await logObservation({
-      batchId: BATCH_ID,
-      weightGrams: 1440,
-      note: '',
-      photoBase64: 'AAAA',
-    });
+    const result = await logObservation(input({ weightGrams: 1440, photoBase64: 'AAAA' }));
 
     expect(fs.callSetObservationImageUpload).not.toHaveBeenCalled();
     expect(result).toEqual({ kind: 'err', error: { kind: 'NetworkError', reason: 'offline' } });
@@ -229,8 +256,8 @@ describe('batchObservationService — logging a reading', () => {
   it('appends rather than replacing — two readings are two documents', async () => {
     // The subcollection is what makes two people logging on the same day safe. This
     // service must never gather them up: one call, one document, one id.
-    await logObservation({ batchId: BATCH_ID, weightGrams: 1440, note: 'hers' });
-    await logObservation({ batchId: BATCH_ID, weightGrams: 1438, note: 'his' });
+    await logObservation(input({ weightGrams: 1440, note: 'hers' }));
+    await logObservation(input({ weightGrams: 1438, note: 'his' }));
 
     expect(fs.addBatchObservation).toHaveBeenCalledTimes(2);
     expect(writtenObservation(0).note).toBe('hers');

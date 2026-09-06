@@ -223,12 +223,12 @@ becoming two is a removal and two additions, and renders honestly as that.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                            |
-| ------------- | ------------------------------------- | ------------- | ------------------------------------------------------------------ |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, unit shape, reference yield, reference process |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities, frozen schedule, current stage, state  |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo             |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log             |
+| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                        |
+| ------------- | ------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, unit shape, reference yield, reference process                                                                                             |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities, frozen schedule, current stage, state                                                                                              |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run) |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                         |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:
