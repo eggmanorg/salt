@@ -20,6 +20,7 @@
   import {
     recipeHeroUrl,
     formatClock,
+    isChatReadOnly,
     timerHeat,
     timerProgress,
     withKitchenTimerDismissed,
@@ -841,6 +842,9 @@
             >
               {chat.title}
             </span>
+            {#if isChatReadOnly(chat, new Date())}
+              <span class="shrink-0 text-xs text-muted-foreground">Read-only</span>
+            {/if}
             <Icon name="ChevronRight" size={16} class="shrink-0 text-muted-foreground" />
           </button>
         </Card>

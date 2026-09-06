@@ -28,6 +28,18 @@ export const ChatSessionSchema = z.object({
   messages: z.array(MessageSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  // The read-only clock's anchor once a chat has been manually reopened (issue
+  // #1270): read-only iff `now - (reopenedAt ?? createdAt)` exceeds the
+  // threshold. `createdAt` is immutable, so this is the only field that can
+  // record a reopen — hence a THIRD timestamp rather than repurposing
+  // `updatedAt`, which is bumped by every ordinary message and would restart
+  // the clock just by chatting.
+  //
+  // `.default(null)` for the same reason as `basedOnRecipeId` above: the
+  // realtime subscription SKIPS a document that fails `safeParse`, so a
+  // required field would empty the chat list of every session written before
+  // this shipped.
+  reopenedAt: z.string().nullable().default(null),
   // ISO-8601 here, but a Firestore `Timestamp` on the wire (issue #1008 — the
   // TTL machinery acts on nothing else). firebase-sync converts in both
   // directions at the boundary, so the domain stays Firebase-free (Hard rule 1).

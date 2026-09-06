@@ -152,8 +152,17 @@ kitchenMemories/{id} (Firestore, family-shared)      ← owned by web-pwa + fire
 
 - Schema in `@salt/domain/schemas/chatSession.ts`, exported via the schemas index.
 - One doc per session at `chatSessions/{id}`:
-  `{ id, ownerUid, recipeId: string | null, basedOnRecipeId: string | null, title, messages: Message[], createdAt, updatedAt, expiresAt }`.
+  `{ id, ownerUid, recipeId: string | null, basedOnRecipeId: string | null, title, messages: Message[], createdAt, updatedAt, reopenedAt: string | null, expiresAt }`.
   `Message = { id, role: 'user' | 'assistant', text, createdAt }`.
+- **Read-only after two days (issue #1270).** `isChatReadOnly` (`@salt/domain`) says a
+  session has gone quiet once more than two days have passed since `reopenedAt ??
+createdAt` — `createdAt` never changes, so the clock only restarts when the
+  composer's "Make read-write" action explicitly sets `reopenedAt`, never as a
+  side effect of chatting within the window. The composer is the one shared
+  gate every host inherits; `sendMessage` refuses again (`CHAT_READ_ONLY`) as
+  defence-in-depth. The reopen dialog warns that it costs more, because it
+  resends the whole history. Enforcement is client-only, by design — no
+  `firestore.rules` change.
 - `recipeId` set ⇒ the session is **attached to a recipe** (the "open chat alongside
   a recipe" mode). `null` ⇒ general kitchen-assistant chat.
 - `basedOnRecipeId` (issue #763) is a **different question**: the dish this chat

@@ -24,11 +24,23 @@
 -->
 <script lang="ts">
   import type { ChatSessionDoc } from '@salt/domain/schemas';
-  import { parseChatCommand } from '@salt/domain';
-  import { Button, Icon, Markdown, Spinner } from '@salt/ui-components';
+  import { parseChatCommand, isChatReadOnly } from '@salt/domain';
+  import {
+    Button,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    Icon,
+    Markdown,
+    Spinner,
+  } from '@salt/ui-components';
   import type { Snippet } from 'svelte';
 
   import { addToast } from '../../lib/toastStore.js';
+  import { reopenChatSession } from '../../lib/chatService.js';
   import type { ChatThreadState } from './chatThreadState.svelte.js';
 
   interface Props {
@@ -66,6 +78,24 @@
   let { session, thread, layout, emptyText, starters, aboveTranscript }: Props = $props();
 
   const panel = $derived(layout === 'panel');
+
+  // Read-only after two days (issue #1270), with an explicit costed reopen. The
+  // composer is the PRIMARY gate — the one shared implementation, so every host
+  // inherits it — with `sendMessage` refusing again as defence-in-depth.
+  const readOnly = $derived(isChatReadOnly(session, new Date()));
+  let reopenDialogOpen = $state(false);
+  let reopening = $state(false);
+
+  async function handleReopen(): Promise<void> {
+    reopening = true;
+    const result = await reopenChatSession(session);
+    reopening = false;
+    if (result.kind !== 'ok') {
+      addToast('Failed to reopen chat.', 'destructive');
+      return;
+    }
+    reopenDialogOpen = false;
+  }
 
   // Held here rather than written inline: a conditional beside a long class list is
   // exactly where a stray space becomes interior whitespace in the rendered text.
@@ -236,39 +266,60 @@
 {/snippet}
 
 {#snippet composer()}
-  <div class="flex items-end {panel ? 'gap-2' : 'mx-auto max-w-2xl gap-3'}">
+  {#if readOnly}
+    <!-- The composer's read-only counterpart (issue #1270): this chat's first
+         message was sent more than two days ago, so it is browsing history —
+         reopening it is an explicit, cost-warned action, not something typing
+         silently does. -->
     <div
-      class="flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-ring {thread.isSending
-        ? 'opacity-50'
-        : ''}"
+      class="flex items-center justify-between gap-3 {panel ? '' : 'mx-auto max-w-2xl'}"
+      data-testid="chat-readonly-notice"
     >
-      <textarea
-        bind:this={inputEl}
-        class="flex-1 resize-none bg-transparent py-2 outline-none"
-        rows={panel ? 1 : 3}
-        placeholder="Message the chef… or /remember something"
-        value={inputText}
-        onkeydown={handleKeydown}
-        oninput={handleInput}
-        disabled={thread.isSending}
-        data-testid="chat-input"></textarea>
+      <p class="text-xs text-muted-foreground">This chat has gone quiet.</p>
+      <Button
+        size="sm"
+        variant="outline"
+        onclick={() => (reopenDialogOpen = true)}
+        data-testid="chat-reopen-btn"
+      >
+        Make read-write
+      </Button>
     </div>
-    <!-- Icon-only in a panel: a fifth of a 300px column spent on the word "Send" is
-         width the message being typed wants more. `ariaLabel` rather than a raw
-         attribute so `size="icon"` gets the name it insists on — the accessible name
-         is "Send" on both layouts, which is what makes dropping the word free. -->
-    <Button
-      size={panel ? 'icon' : 'md'}
-      onclick={handleSend}
-      disabled={thread.isSending || !inputText.trim()}
-      loading={thread.isSending}
-      ariaLabel="Send"
-      data-testid="chat-send-btn"
-    >
-      {#snippet leading()}<Icon name="SendHorizontal" size={16} />{/snippet}
-      {#if !panel}Send{/if}
-    </Button>
-  </div>
+  {:else}
+    <div class="flex items-end {panel ? 'gap-2' : 'mx-auto max-w-2xl gap-3'}">
+      <div
+        class="flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-ring {thread.isSending
+          ? 'opacity-50'
+          : ''}"
+      >
+        <textarea
+          bind:this={inputEl}
+          class="flex-1 resize-none bg-transparent py-2 outline-none"
+          rows={panel ? 1 : 3}
+          placeholder="Message the chef… or /remember something"
+          value={inputText}
+          onkeydown={handleKeydown}
+          oninput={handleInput}
+          disabled={thread.isSending}
+          data-testid="chat-input"></textarea>
+      </div>
+      <!-- Icon-only in a panel: a fifth of a 300px column spent on the word "Send" is
+           width the message being typed wants more. `ariaLabel` rather than a raw
+           attribute so `size="icon"` gets the name it insists on — the accessible name
+           is "Send" on both layouts, which is what makes dropping the word free. -->
+      <Button
+        size={panel ? 'icon' : 'md'}
+        onclick={handleSend}
+        disabled={thread.isSending || !inputText.trim()}
+        loading={thread.isSending}
+        ariaLabel="Send"
+        data-testid="chat-send-btn"
+      >
+        {#snippet leading()}<Icon name="SendHorizontal" size={16} />{/snippet}
+        {#if !panel}Send{/if}
+      </Button>
+    </div>
+  {/if}
 {/snippet}
 
 {#if panel}
@@ -296,3 +347,31 @@
     {@render composer()}
   </div>
 {/if}
+
+<Dialog
+  open={reopenDialogOpen}
+  onOpenChange={(v) => {
+    if (!v) reopenDialogOpen = false;
+  }}
+>
+  <DialogContent>
+    <div class="flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>Reopen this chat?</DialogTitle>
+        <DialogDescription>
+          Reopening means its whole history is sent to the AI again with every message, which costs
+          more than a new chat. It goes quiet again two days from now unless you reopen it once
+          more.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline" onclick={() => (reopenDialogOpen = false)} disabled={reopening}
+          >Cancel</Button
+        >
+        <Button onclick={handleReopen} loading={reopening} data-testid="chat-reopen-confirm">
+          Reopen
+        </Button>
+      </DialogFooter>
+    </div>
+  </DialogContent>
+</Dialog>

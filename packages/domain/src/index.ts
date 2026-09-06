@@ -392,6 +392,8 @@ export { upcomingChefDays, dayForDate } from './personalView/index.js';
 // Kitchen-memory module (issue #816) — reading a composer line as the one chat
 // command the app has. Pure string work by design: capture involves no AI at all.
 export { parseChatCommand } from './memory/index.js';
+// Chat module (issue #1270) — the one place a chat's read-only state is decided.
+export { isChatReadOnly, CHAT_READ_ONLY_AFTER_MS } from './chat/index.js';
 // Formula module (issue #782, epic #778) — composition as ratios against a
 // declared basis, and the bidirectional yield solve. Headless: nothing renders it
 // and nothing stores it yet, but the surface is what phase 01 is built against.

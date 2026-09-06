@@ -348,6 +348,7 @@ const CHAT_SESSION = {
   messages: [],
   createdAt: NOW,
   updatedAt: NOW,
+  reopenedAt: null,
   expiresAt: NOW,
 };
 

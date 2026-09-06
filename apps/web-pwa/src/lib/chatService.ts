@@ -6,13 +6,13 @@ import {
   callGenerateChatTitle,
 } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter, trackUsageEvent } from '@salt/observability';
-import { parseChatCommand } from '@salt/domain';
+import { parseChatCommand, isChatReadOnly } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
 import { rememberNote } from './kitchenMemoryService.js';
 import { currentMember } from './membersService.js';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { DomainError, ReadResult } from '@salt/shared-types';
-import { success } from '@salt/shared-types';
+import { success, failure, ErrorCode } from '@salt/shared-types';
 import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 
@@ -166,6 +166,7 @@ function newSession(
     messages: [],
     createdAt: ts,
     updatedAt: ts,
+    reopenedAt: null,
     expiresAt: ts, // saveChatSession will overwrite with the real expiry
   };
 }
@@ -223,6 +224,17 @@ export async function claimRecipe(
   return persistSession({ ...session, recipeId });
 }
 
+// "Make read-write" (issue #1270): restart the two-day clock from now. An
+// ordinary `persistSession` — same LWW contract as any other chat write, and
+// the reason `sendMessage` never sets this field itself (see Q5 in the issue):
+// continuing to chat within the window must not itself push the clock further
+// out, only this explicit, cost-warned action does.
+export async function reopenChatSession(
+  session: ChatSessionDoc,
+): Promise<ReadResult<void, DomainError>> {
+  return persistSession({ ...session, reopenedAt: now() });
+}
+
 export async function removeSession(id: string): Promise<ReadResult<void, DomainError>> {
   latestLocalEdit.set(id, now());
   _sessions.set(get(_sessions).filter((s) => s.id !== id));
@@ -238,6 +250,13 @@ export async function sendMessage(
   text: string,
   onChunk: (chunk: string) => void,
 ): Promise<ReadResult<ChatSessionDoc, DomainError>> {
+  // Defence-in-depth (issue #1270): the composer is the primary gate and is
+  // gone once a chat has gone quiet, so this only fires if something else
+  // still called through — never the everyday path.
+  if (isChatReadOnly(session, new Date())) {
+    return failure({ kind: 'ValidationError', code: ErrorCode.CHAT_READ_ONLY });
+  }
+
   // The ONE chat command (issue #816), taken BEFORE anything else in this function:
   // recognising it costs a string comparison, and everything below — the usage
   // event, the stream, the title call — is either a cost or a claim that a note

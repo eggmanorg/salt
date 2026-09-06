@@ -11,6 +11,7 @@
 <script lang="ts">
   import { formatChatTimestamp } from '../../lib/dateFormat.js';
   import type { ChatSessionDoc } from '@salt/domain/schemas';
+  import { isChatReadOnly } from '@salt/domain';
   import { Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@salt/ui-components';
 
   interface Props {
@@ -68,7 +69,10 @@
                 <span class="flex items-baseline justify-between gap-3">
                   <span class="min-w-0 truncate text-sm font-medium">{session.title}</span>
                   <span class="shrink-0 text-xs text-muted-foreground"
-                    >{formatChatTimestamp(session.updatedAt)}</span
+                    >{formatChatTimestamp(
+                      session.updatedAt,
+                    )}{#if isChatReadOnly(session, new Date())}
+                      · Read-only{/if}</span
                   >
                 </span>
                 <span class="truncate text-xs text-muted-foreground">{lastSaid(session)}</span>

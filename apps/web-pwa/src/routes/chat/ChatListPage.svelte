@@ -12,6 +12,7 @@
     ListPage,
   } from '@salt/ui-components';
   import { push, router } from 'svelte-spa-router';
+  import { isChatReadOnly } from '@salt/domain';
   import { formatChatTimestamp } from '../../lib/dateFormat.js';
   import { auth } from '../../lib/auth.svelte.js';
   import { readMealParam, withMealParam } from '../../lib/mealReturn.js';
@@ -116,7 +117,8 @@
             <span class="block truncate font-medium">{session.title}</span>
             <span class="block text-xs text-muted-foreground">
               {formatChatTimestamp(session.updatedAt)}{#if session.recipeId}
-                · recipe{/if}
+                · recipe{/if}{#if isChatReadOnly(session, new Date())}
+                · Read-only{/if}
             </span>
           </button>
           <Button

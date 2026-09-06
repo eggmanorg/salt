@@ -159,6 +159,11 @@ export const ErrorCode = {
   // Bad input, not a defect — the dialog says so and the old picture stays put —
   // so it crosses as a ValidationError and is deliberately not reported.
   ICON_UPLOAD_REJECTED: 'ICON_UPLOAD_REJECTED',
+  // A message sent into a chat that has gone quiet (issue #1270): the composer
+  // is the primary gate and is gone by the time this could fire, so this is
+  // defence-in-depth, not the everyday path. Expected once "Make read-write"
+  // exists to answer it, so it crosses as a ValidationError and is not reported.
+  CHAT_READ_ONLY: 'CHAT_READ_ONLY',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
