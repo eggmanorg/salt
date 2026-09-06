@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SWEEPS, UNSWEPT } from '../../src/maintenance/storageSweepTargets.js';
+import { SWEEPS, NESTED_SWEEPS, UNSWEPT } from '../../src/maintenance/storageSweepTargets.js';
 
 // The weekly orphan sweep covers every Storage prefix, or says which it does not
 // (issue #919, finding C3-004).
@@ -16,8 +16,9 @@ import { SWEEPS, UNSWEPT } from '../../src/maintenance/storageSweepTargets.js';
 // defect. The rules file already enumerates every prefix this app will ever
 // serve — a prefix with no `match` block is unreadable by the client and so
 // cannot exist as a feature — which makes it the one place the full set can be
-// DERIVED from. Anything it declares must be swept, or be recorded in `UNSWEPT`
-// with a reason. A prefix in neither is a red test.
+// DERIVED from. Anything it declares must be swept — flat
+// (`SWEEPS`) or nested (`NESTED_SWEEPS`) — or be recorded in `UNSWEPT` with a
+// reason. A prefix in none of the three is a red test.
 const RULES = fileURLToPath(new URL('../../../../storage.rules', import.meta.url));
 
 /**
@@ -53,7 +54,11 @@ describe('storage sweep coverage', () => {
   });
 
   it('every prefix storage.rules declares is swept, or recorded as unswept', () => {
-    const accounted = new Set([...SWEEPS.map((s) => s.prefix), ...Object.keys(UNSWEPT)]);
+    const accounted = new Set([
+      ...SWEEPS.map((s) => s.prefix),
+      ...NESTED_SWEEPS.map((s) => s.prefix),
+      ...Object.keys(UNSWEPT),
+    ]);
     const uncovered = declaredPrefixes().filter((prefix) => !accounted.has(prefix));
 
     expect(
@@ -68,14 +73,20 @@ describe('storage sweep coverage', () => {
     // bucket listing that can only ever return nothing, and it would read as
     // coverage.
     const declared = new Set(declaredPrefixes());
-    const phantom = SWEEPS.map((s) => s.prefix).filter((prefix) => !declared.has(prefix));
+    // Both sweep tables, not just the flat one: a NESTED_SWEEPS row for a prefix
+    // with no `match` block would be the same empty listing wearing a new shape.
+    const phantom = [...SWEEPS, ...NESTED_SWEEPS]
+      .map((s) => s.prefix)
+      .filter((prefix) => !declared.has(prefix));
 
     expect(phantom, `swept but not declared in storage.rules: ${phantom.join(', ')}`).toEqual([]);
   });
 
   it('gives every unswept prefix a reason', () => {
-    // An empty string would satisfy the coverage check above while saying nothing,
-    // which is the state `batch-images/` was already in.
+    // VACUOUS TODAY, deliberately: `UNSWEPT` is empty as of #968, every prefix
+    // `storage.rules` serves being swept. This guard is for the next omission,
+    // not for a current one — an empty string would satisfy the coverage check
+    // above while saying nothing, which is the state `batch-images/` was in.
     for (const [prefix, reason] of Object.entries(UNSWEPT)) {
       expect(reason.length, `${prefix} is exempt without a reason`).toBeGreaterThan(20);
     }
