@@ -10,9 +10,10 @@ import type { Formula } from '@salt/domain/schemas';
 // the bar it has to clear is high:
 //
 //   • the preview is #778's worked example to the gram — twelve 120 g rolls off the
-//     overnight tin gives 841 g flour, 589 g water, 17 g salt, 12 g yeast, 25 g
-//     olive oil, 1 483 g in the bowl including the 3% handling allowance, and about
-//     108 g each once baked;
+//     overnight tin gives 816 g flour, 571 g water, 16 g salt, 11 g yeast, 24 g
+//     olive oil, 1 440 g in the bowl. #1274 deleted the handling allowance and the
+//     baked-weight figure that used to sit beside these — the dough total IS the
+//     bowl figure now, always;
 //   • it is the SAME arithmetic the freeze will do, so what is on screen is what
 //     lands on the document;
 //   • it writes nothing — not to the recipe, not to the formula. Closing it leaves
@@ -83,8 +84,9 @@ const RECIPE = {
   updatedAt: '2026-08-01T09:00:00.000Z',
 };
 
-// Reference yield: twelve 120 g rolls, which is a preset the picker recognises, so
-// the sheet opens already saying what the last person declared.
+// Reference yield: twelve 120 g rolls. count > 1 comes back as the "pieces"
+// answer (`seedDoughAnswer`), so the sheet opens already saying what the last
+// person declared.
 const FORMULA: Formula = {
   recipeId: RECIPE_ID,
   schemaVersion: 1,
@@ -97,9 +99,8 @@ const FORMULA: Formula = {
   ],
   referenceYield: {
     kind: 'target',
-    shape: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakeLossPercent: 10 },
+    shape: { count: 12, unitDoughGrams: 120 },
   },
-  handlingLossPercent: 3,
 } as Formula;
 
 // A fixed "now" so the seeded start time is assertable without depending on when
@@ -134,26 +135,28 @@ describe('RecipeBakeBatchSheet — what twelve rolls weigh out to', () => {
   it('opens on the formula reference yield, so the common answer is already typed', async () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
-    expect(screen.getByTestId('bake-batch-count')).toHaveValue('12');
-    expect(screen.getByTestId('bake-batch-shape')).toHaveTextContent('120 g roll');
+    // count > 1 comes back as the "pieces" answer — a run of twelve is rolls, not
+    // twelve tins.
+    expect(screen.getByTestId('bake-batch-pieces')).toBeTruthy();
+    expect(screen.getByTestId('bake-batch-piece-count')).toHaveValue('12');
+    expect(screen.getByTestId('bake-batch-piece-grams')).toHaveValue('120');
   });
 
   it('previews #778 worked example to the gram', async () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
-    expect(previewGrams()).toEqual(['841 g', '589 g', '17 g', '12 g', '25 g']);
+    expect(previewGrams()).toEqual(['816 g', '571 g', '16 g', '11 g', '24 g']);
     expect(screen.getByTestId('bake-batch-preview')).toHaveTextContent('500 g strong white flour');
   });
 
-  it('says the dough total includes the handling allowance, and what a roll bakes to', async () => {
+  it('says the total in the bowl and what the dough divides into', async () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-totals')).toBeInTheDocument());
-    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('1483 g');
-    expect(screen.getByTestId('bake-batch-totals')).toHaveTextContent(
-      'including 3% for what stays in it',
-    );
-    expect(screen.getByTestId('bake-batch-baked-each')).toHaveTextContent(
-      '12 × 120 g roll — about 108 g each once baked',
+    // No handling allowance since #1274: what's in the bowl IS what the dough
+    // divides into.
+    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('1440 g');
+    expect(screen.getByTestId('bake-batch-yield')).toHaveTextContent(
+      '12 × 120 g — 1.4 kg of dough',
     );
   });
 
@@ -162,36 +165,32 @@ describe('RecipeBakeBatchSheet — what twelve rolls weigh out to', () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
 
-    await fireEvent.input(screen.getByTestId('bake-batch-count'), { target: { value: '6' } });
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-count'), { target: { value: '6' } });
 
-    // Half the dough, half of every component. 720 g usable → 741.6 g total.
-    await waitFor(() => expect(previewGrams()[0]).toBe('420 g'));
-    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('742 g');
+    // Half the dough, half of every component. 720 g usable, and — with no
+    // handling allowance — 720 g total too.
+    await waitFor(() => expect(previewGrams()[0]).toBe('408 g'));
+    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('720 g');
   });
 
-  it('offers the formula’s own shape when the preset list does not hold it', async () => {
-    // A formula written for a hand-typed shape must still be bakeable at a
-    // DIFFERENT count. Before the picker could name that shape, asking for six
-    // silently fell back to the reference yield and made twelve.
-    const boule = {
-      label: '1 kg sourdough boule',
-      count: 2,
-      unitDoughGrams: 1000,
-      bakeLossPercent: 14,
-    };
+  it('seeds from a declared amount that is not one of the tin chips, and re-scales it', async () => {
+    // A formula's declared amount is a bare number, never a preset name — the
+    // sheet must seed and re-scale it whether or not it matches a quick-fill chip.
+    const boule = { count: 2, unitDoughGrams: 1000 };
     renderSheet({ ...FORMULA, referenceYield: { kind: 'target', shape: boule } } as Formula);
     await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
 
-    expect(screen.getByTestId('bake-batch-shape')).toHaveTextContent(boule.label);
-    expect(screen.getByTestId('bake-batch-count')).toHaveValue('2');
+    expect(screen.getByTestId('bake-batch-pieces')).toBeTruthy();
+    expect(screen.getByTestId('bake-batch-piece-count')).toHaveValue('2');
+    expect(screen.getByTestId('bake-batch-piece-grams')).toHaveValue('1000');
 
-    await fireEvent.input(screen.getByTestId('bake-batch-count'), { target: { value: '4' } });
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-count'), { target: { value: '4' } });
     await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
 
     await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
     expect(mockStartBatch.mock.calls[0]![0].atYield).toEqual({
       kind: 'target',
-      shape: { ...boule, count: 4 },
+      shape: { count: 4, unitDoughGrams: 1000 },
     });
   });
 
@@ -199,11 +198,11 @@ describe('RecipeBakeBatchSheet — what twelve rolls weigh out to', () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
 
-    await fireEvent.input(screen.getByTestId('bake-batch-count'), { target: { value: '' } });
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-count'), { target: { value: '' } });
 
     // No shape means the formula's own reference yield — the same twelve rolls, not
     // an invented one and not an error.
-    await waitFor(() => expect(previewGrams()[0]).toBe('841 g'));
+    await waitFor(() => expect(previewGrams()[0]).toBe('816 g'));
   });
 });
 
@@ -220,7 +219,7 @@ describe('RecipeBakeBatchSheet — starting the run', () => {
     expect(input.formula).toBe(FORMULA);
     expect(input.atYield).toEqual({
       kind: 'target',
-      shape: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakeLossPercent: 10 },
+      shape: { count: 12, unitDoughGrams: 120 },
     });
     // The sheet opens on `startAt`: you say when you are mixing and everything is
     // timed forward from it, by arithmetic, with no model anywhere near it. The
@@ -288,7 +287,7 @@ describe('RecipeBakeBatchSheet — starting the run', () => {
 // same inputs, same verdict — which is the machine-checked form of the claim
 // that one of the two copies can be deleted.
 //
-// The integer test is not decoration: `UnitShapeSchema.count` is
+// The integer test is not decoration: `DoughAmountSchema.count` is
 // `z.number().int().positive()`, so a fractional count would build a document the
 // schema refuses. That is why this parser is stricter than the page's own grams
 // parser, which takes `2.5` happily.
@@ -310,7 +309,9 @@ describe('RecipeBakeBatchSheet — what counts as a count', () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
 
-    await fireEvent.input(screen.getByTestId('bake-batch-count'), { target: { value: text } });
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-count'), {
+      target: { value: text },
+    });
     await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
 
     await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
@@ -322,8 +323,106 @@ describe('RecipeBakeBatchSheet — what counts as a count', () => {
     if (value !== null) {
       expect(input.atYield).toEqual({
         kind: 'target',
-        shape: { label: '120 g roll', count: value, unitDoughGrams: 120, bakeLossPercent: 10 },
+        shape: { count: value, unitDoughGrams: 120 },
       });
+    }
+  });
+});
+
+// ─── "What are you filling?" (issue #1274) ─────────────────────────────────────
+//
+// The three answers, and the one rule that separates them: THE TIN NAMES A VESSEL
+// ON THE RUN AND THE OTHER TWO DO NOT. A vessel is a note on a finished record —
+// "what did I bake it in last time?" — so inventing one for an answer that named
+// none would be recording a fact nobody stated.
+describe('RecipeBakeBatchSheet — what are you filling?', () => {
+  async function pickAnswer(label: string): Promise<void> {
+    const option = screen.getAllByRole('radio').find((el) => el.textContent?.includes(label));
+    if (option === undefined) throw new Error(`no answer labelled ${label}`);
+    await fireEvent.click(option);
+  }
+
+  it('fills the tin size from a quick-fill chip, and scales to it', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickAnswer('A loaf tin');
+
+    const chip = screen
+      .getAllByTestId('bake-batch-tin-chip')
+      .find((el) => el.getAttribute('data-tin-grams') === '900');
+    if (chip === undefined) throw new Error('no 900 g chip');
+    await fireEvent.click(chip);
+    await fireEvent.input(screen.getByTestId('bake-batch-tin-count'), { target: { value: '2' } });
+
+    // A UK tin is sold by the dough it takes, so 900 g of tin is 900 g of dough
+    // with no coefficient in between.
+    await waitFor(() =>
+      expect(screen.getByTestId('bake-batch-yield')).toHaveTextContent(
+        '2 × 900 g — 1.8 kg of dough',
+      ),
+    );
+    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('1800 g');
+  });
+
+  it('records the tin on the run, naming the vessel and not how many of them', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickAnswer('A loaf tin');
+    await fireEvent.input(screen.getByTestId('bake-batch-tin-grams'), { target: { value: '900' } });
+    await fireEvent.input(screen.getByTestId('bake-batch-tin-count'), { target: { value: '2' } });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const input = mockStartBatch.mock.calls[0]![0];
+    expect(input.atYield).toEqual({ kind: 'target', shape: { count: 2, unitDoughGrams: 900 } });
+    // Singular, and carrying no count: how many is already on the batch at
+    // `totals.units.count`, and a second copy is the drift a snapshot must avoid.
+    expect(input.vessel).toBe('900 g loaf tin');
+  });
+
+  it('takes a plain weight of dough as one of itself, and names no vessel', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await pickAnswer('A weight of dough');
+    await fireEvent.input(screen.getByTestId('bake-batch-total-dough'), {
+      target: { value: '1400' },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('bake-batch-yield')).toHaveTextContent('1.4 kg of dough'),
+    );
+    // "1 × 1400 g — 1.4 kg" would say the same thing twice.
+    expect(screen.getByTestId('bake-batch-yield')).not.toHaveTextContent('1 ×');
+
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const input = mockStartBatch.mock.calls[0]![0];
+    expect(input.atYield).toEqual({ kind: 'target', shape: { count: 1, unitDoughGrams: 1400 } });
+    // Absent, not empty: the key is left OFF, so the document simply has none.
+    expect('vessel' in input).toBe(false);
+  });
+
+  it('names no vessel for a count of pieces either', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-pieces')).toBeInTheDocument());
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-grams'), {
+      target: { value: '150' },
+    });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    expect('vessel' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+
+  it('offers no picker of named shapes and no bake loss, on any answer', async () => {
+    const { container } = renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    for (const label of ['A loaf tin', 'A number of pieces', 'A weight of dough']) {
+      await pickAnswer(label);
+      expect(container.textContent).not.toMatch(/bake loss/i);
+      expect(container.textContent).not.toMatch(/once baked/i);
+      expect(container.textContent).not.toMatch(/stays in it/i);
+      expect(screen.queryByTestId('bake-batch-shape')).toBeNull();
     }
   });
 });

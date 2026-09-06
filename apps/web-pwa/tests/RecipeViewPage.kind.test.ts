@@ -643,9 +643,8 @@ describe('RecipeViewPage — bread scaling is gated on the formula, never the ki
       components: [{ ingredientId: 'ing-1', percent: 100, inBasis: true }],
       referenceYield: {
         kind: 'target',
-        shape: { label: '900 g tin loaf', count: 1, unitDoughGrams: 900, bakeLossPercent: 12 },
+        shape: { count: 1, unitDoughGrams: 900 },
       },
-      handlingLossPercent: 3,
     };
   }
 

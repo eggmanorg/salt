@@ -53,6 +53,11 @@ export interface FreezeBatchInput {
   // the formula's own reference yield, so "a batch of the recipe as written" and "a
   // batch of twelve rolls" are the same call with a different argument.
   atYield?: ReferenceYield;
+  // What the run is being baked in, in the words the sheet built — "900 g loaf
+  // tin". Copied onto the document UNTOUCHED and read by nothing: see
+  // `BatchSchema.vessel`. Omitted for the two answers that name no vessel (a count
+  // of pieces, a plain weight of dough).
+  vessel?: string;
   // Where the run is nailed to the clock: mixing now, or out of the oven at 07:30.
   anchor: ScheduleAnchor;
   // Frozen onto the document. The title so the log survives a rename or a delete;
@@ -79,7 +84,7 @@ export interface FreezeBatchInput {
  * observed later, one stage at a time, through `withStageAdvanced`.
  */
 export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
-  const { id, formula, atYield, anchor, recipeTitle, labels, rationale, now } = input;
+  const { id, formula, atYield, vessel, anchor, recipeTitle, labels, rationale, now } = input;
 
   const process = formula.process ?? [];
   if (process.length === 0) return { ok: false, reason: { kind: 'noProcess' } };
@@ -110,10 +115,8 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       solved.solution.units === null
         ? null
         : {
-            label: solved.solution.units.label,
             count: solved.solution.units.count,
             unitDoughGrams: solved.solution.units.unitDoughGrams,
-            bakedUnitGrams: solved.solution.units.bakedUnitGrams,
           },
   };
 
@@ -130,6 +133,9 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       schemaVersion: 1,
       recipeId: formula.recipeId,
       recipeTitle,
+      // Omitted rather than nulled when no vessel was named, so the field is simply
+      // absent on the document — `BatchSchema.vessel` is optional, not nullable.
+      ...(vessel === undefined ? {} : { vessel }),
       state: 'running',
       quantities,
       totals,

@@ -24,7 +24,7 @@ describe('parseUnitCount', () => {
   });
 
   it('rejects a fraction rather than rounding it', () => {
-    // `UnitShapeSchema.count` is `z.number().int().positive()`, so a rounded
+    // `DoughAmountSchema.count` is `z.number().int().positive()`, so a rounded
     // 2.5 would be a silent correction to a document the user did not declare —
     // and 2.4 and 2.6 would round to different shapes from the same intent.
     // Nothing is the honest answer, and it is what keeps Save disabled.

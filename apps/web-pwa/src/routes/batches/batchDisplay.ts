@@ -2,7 +2,7 @@ import { currentStage } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
 import { formatInstant } from '../../lib/dateFormat.js';
 import { formatMinutes, formatStatedDuration } from '../../lib/durationDisplay.js';
-import { formatGrams } from '../../lib/quantityDisplay.js';
+import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 
 // How a batch READS (issue #812, phase 1 of epic #778) — the words and formats the
 // two batch screens share, in one place so the list and the run's own page can
@@ -27,8 +27,10 @@ import { formatGrams } from '../../lib/quantityDisplay.js';
 // `lib/quantityDisplay.ts` (issue #933). It is re-exported here rather than
 // re-pointed at both batch screens so that this stays the one display module a
 // batch screen imports; the pattern is deliberate, not an accident to unwind.
+// `formatDoughAmount` arrived the same way (issue #1274): four surfaces say
+// "2 × 900 g — 1.8 kg of dough" and two of them are these.
 
-export { formatMinutes, formatStatedDuration, formatGrams };
+export { formatMinutes, formatStatedDuration, formatGrams, formatDoughAmount };
 
 /** True when the stage carries no length — observational, not instantaneous. */
 export function isObservational(stage: BatchStageDoc): boolean {
@@ -74,10 +76,16 @@ export function formatDate(iso: string): string {
  *
  * `units` is null for a basis-driven solve (weigh the meat, see what you get), and
  * then the honest headline is the weight itself.
+ *
+ * Since #1274 the units carry no name — "2 × 900 g — 1.8 kg of dough" rather than
+ * "2 × 900 g tin loaf", because the recipe is what says it is a tin loaf and the
+ * old label never said whether 900 g was the pan, the dough or the bread. What the
+ * run was baked in is a separate snapshot on the batch (`vessel`), rendered beside
+ * this by the screens that show it.
  */
 export function yieldSummary(totals: BatchTotalsDoc): string {
   if (totals.units === null) return formatGrams(totals.totalGrams);
-  return `${totals.units.count} × ${totals.units.label}`;
+  return formatDoughAmount(totals.units);
 }
 
 // ─── The next action ────────────────────────────────────────────────────────────

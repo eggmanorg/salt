@@ -391,12 +391,12 @@ describe('FormulaPage — the declaration', () => {
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    const select = container.querySelector('[data-testid="formula-shape-select"]')!;
-    await fireEvent.click(select);
-    await waitFor(() => expect(document.querySelector('[role="option"]')).toBeTruthy());
-    const options = [...document.querySelectorAll('[role="option"]')];
-    const tin = options.find((o) => o.textContent?.includes('900 g tin loaf'))!;
-    await fireEvent.click(tin);
+    // The tin answer leads by default. Pick the 900 g quick-fill chip; "how many
+    // tins" is already 1 (`EMPTY_DOUGH_ANSWER`).
+    const chip = [...container.querySelectorAll('[data-testid="formula-tin-chip"]')].find(
+      (el) => el.getAttribute('data-tin-grams') === '900',
+    )!;
+    await fireEvent.click(chip);
 
     await waitFor(() =>
       expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
@@ -409,7 +409,7 @@ describe('FormulaPage — the declaration', () => {
     expect(written.schemaVersion).toBe(1);
     expect(written.referenceYield).toEqual({
       kind: 'target',
-      shape: { label: '900 g tin loaf', count: 1, unitDoughGrams: 900, bakeLossPercent: 12 },
+      shape: { count: 1, unitDoughGrams: 900 },
     });
     expect(written.components).toEqual([
       { ingredientId: 'ing-flour', percent: 100, inBasis: true },
@@ -437,9 +437,8 @@ describe('FormulaPage — the round trip', () => {
     ],
     referenceYield: {
       kind: 'target',
-      shape: { label: '120 g roll', count: 8, unitDoughGrams: 120, bakeLossPercent: 10 },
+      shape: { count: 8, unitDoughGrams: 120 },
     },
-    handlingLossPercent: 0,
     schemaVersion: 1,
   };
 
@@ -479,8 +478,11 @@ describe('FormulaPage — the round trip', () => {
     mockFormula._set(STORED);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    expect((getByTestId('formula-count') as HTMLInputElement).value).toBe('8');
-    expect(getByTestId('formula-shape-select').textContent).toContain('120 g roll');
+    // count > 1 comes back as the "pieces" answer (`seedDoughAnswer`) — a run of
+    // eight is rolls, not eight tins.
+    expect(getByTestId('formula-pieces')).toBeTruthy();
+    expect((getByTestId('formula-piece-count') as HTMLInputElement).value).toBe('8');
+    expect((getByTestId('formula-piece-grams') as HTMLInputElement).value).toBe('120');
   });
 
   it('re-saves the stored formula unchanged', async () => {
@@ -511,41 +513,25 @@ describe('FormulaPage — the round trip', () => {
   });
 });
 
-describe('FormulaPage — a shape the list does not hold', () => {
-  // The escape hatch. The preset table is shape FAMILIES, not a catalogue, so
-  // "1 kg sourdough boule" has to be sayable without waiting for someone to add
-  // it to `@salt/domain` — and it has to survive a reload, which is the part a
-  // custom shape could quietly lose.
+describe('FormulaPage — the weight answer', () => {
+  // #1274 retired the preset-catalogue escape hatch this describe block used to
+  // cover ("1 kg sourdough boule", a hand-typed label and bake loss): there is no
+  // more preset list to escape, because every answer is now typed directly. What
+  // survives of its intent is the third answer itself — a plain weight of dough,
+  // with no count and no name — which nothing else in this file exercises (the
+  // tin and pieces answers are covered by the declaration and round-trip groups
+  // above).
 
-  /** Open the picker and click the option whose text contains `text`. */
-  async function pickShape(container: HTMLElement, text: string): Promise<void> {
-    await fireEvent.click(container.querySelector('[data-testid="formula-shape-select"]')!);
-    await waitFor(() => expect(document.querySelector('[role="option"]')).toBeTruthy());
-    const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
-      o.textContent?.includes(text),
-    )!;
-    await fireEvent.click(option);
-  }
-
-  const CUSTOM = {
-    label: '1 kg sourdough boule',
-    count: 2,
-    unitDoughGrams: 1000,
-    bakeLossPercent: 14,
-  };
-
-  it('saves a hand-typed shape, bake loss and all', async () => {
+  it('saves a plain weight of dough as one of itself', async () => {
     const { getByTestId, container } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    await pickShape(container, 'Something else');
-    await fireEvent.input(getByTestId('formula-custom-label'), {
-      target: { value: CUSTOM.label },
-    });
-    await fireEvent.input(getByTestId('formula-custom-grams'), { target: { value: '1000' } });
-    await fireEvent.input(getByTestId('formula-custom-loss'), { target: { value: '14' } });
-    await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
+    const weightOption = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes('A weight of dough'),
+    )!;
+    await fireEvent.click(weightOption);
+    await fireEvent.input(getByTestId('formula-total-dough'), { target: { value: '1000' } });
 
     await waitFor(() =>
       expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
@@ -555,99 +541,7 @@ describe('FormulaPage — a shape the list does not hold', () => {
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveFormula).mock.calls[0]![0]!.referenceYield).toEqual({
       kind: 'target',
-      shape: CUSTOM,
-    });
-  });
-
-  it('will not save half a shape', async () => {
-    const { getByTestId, container } = renderPage();
-    mockFormula._set(null);
-    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
-
-    // A name and no weight is not a lenient shape with a default in the gap —
-    // it is no declaration yet, and Save stays shut.
-    await pickShape(container, 'Something else');
-    await fireEvent.input(getByTestId('formula-custom-label'), { target: { value: 'A boule' } });
-    await waitFor(() =>
-      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
-    );
-
-    // Nor does a bake loss the schema would refuse.
-    await fireEvent.input(getByTestId('formula-custom-grams'), { target: { value: '1000' } });
-    await fireEvent.input(getByTestId('formula-custom-loss'), { target: { value: '140' } });
-    await waitFor(() =>
-      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
-    );
-  });
-
-  it('shows what one comes out of the oven weighing', async () => {
-    const { getByTestId, container } = renderPage();
-    mockFormula._set(null);
-    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
-
-    await pickShape(container, 'Something else');
-    await fireEvent.input(getByTestId('formula-custom-label'), { target: { value: 'Boule' } });
-    await fireEvent.input(getByTestId('formula-custom-grams'), { target: { value: '1000' } });
-    await fireEvent.input(getByTestId('formula-custom-loss'), { target: { value: '14' } });
-
-    // The echo is the only reading anyone gets on a bake loss they typed.
-    await waitFor(() => expect(getByTestId('formula-dough-total').textContent).toContain('860 g'));
-  });
-
-  it('brings a stored custom shape back into its boxes, and re-saves it unchanged', async () => {
-    const stored: Formula = {
-      recipeId: RECIPE_ID,
-      components: [
-        { ingredientId: 'ing-flour', percent: 100, inBasis: true },
-        { ingredientId: 'ing-water', percent: 70, inBasis: false },
-        { ingredientId: 'ing-salt', percent: 2, inBasis: false },
-        { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false },
-      ],
-      referenceYield: { kind: 'target', shape: CUSTOM },
-      handlingLossPercent: 0,
-      schemaVersion: 1,
-    };
-    const { getByTestId } = renderPage();
-    mockFormula._set(stored);
-    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
-
-    expect((getByTestId('formula-custom-label') as HTMLInputElement).value).toBe(CUSTOM.label);
-    expect((getByTestId('formula-custom-grams') as HTMLInputElement).value).toBe('1000');
-    expect((getByTestId('formula-custom-loss') as HTMLInputElement).value).toBe('14');
-    expect((getByTestId('formula-count') as HTMLInputElement).value).toBe('2');
-
-    await fireEvent.click(getByTestId('formula-save-button'));
-    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(saveFormula).mock.calls[0]![0]).toEqual(stored);
-  });
-
-  it('treats a hand-corrected bake loss as its own shape, not the preset it is named after', async () => {
-    // "900 g tin loaf" at 15% is NOT the 12% preset. Folding it back onto one
-    // would discard the correction on the next save — silently, and only for the
-    // person who bothered to weigh a real bake.
-    const corrected = {
-      label: '900 g tin loaf',
-      count: 1,
-      unitDoughGrams: 900,
-      bakeLossPercent: 15,
-    };
-    const { getByTestId } = renderPage();
-    mockFormula._set({
-      recipeId: RECIPE_ID,
-      components: [{ ingredientId: 'ing-flour', percent: 100, inBasis: true }],
-      referenceYield: { kind: 'target', shape: corrected },
-      handlingLossPercent: 0,
-      schemaVersion: 1,
-    });
-    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
-
-    expect((getByTestId('formula-custom-loss') as HTMLInputElement).value).toBe('15');
-
-    await fireEvent.click(getByTestId('formula-save-button'));
-    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(saveFormula).mock.calls[0]![0]!.referenceYield).toEqual({
-      kind: 'target',
-      shape: corrected,
+      shape: { count: 1, unitDoughGrams: 1000 },
     });
   });
 });
@@ -674,7 +568,7 @@ describe('FormulaPage — what it refuses', () => {
 // same inputs, same verdict — which is the machine-checked form of the claim
 // that one of the two copies can be deleted.
 //
-// The integer test is not decoration: `UnitShapeSchema.count` is
+// The integer test is not decoration: `DoughAmountSchema.count` is
 // `z.number().int().positive()`, so a fractional count would build a document the
 // schema refuses. That is why this parser is stricter than the page's own grams
 // parser, which takes `2.5` happily.
@@ -697,13 +591,10 @@ describe('FormulaPage — what counts as a count', () => {
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    const select = container.querySelector('[data-testid="formula-shape-select"]')!;
-    await fireEvent.click(select);
-    await waitFor(() => expect(document.querySelector('[role="option"]')).toBeTruthy());
-    const tin = [...document.querySelectorAll('[role="option"]')].find((o) =>
-      o.textContent?.includes('900 g tin loaf'),
+    const chip = [...container.querySelectorAll('[data-testid="formula-tin-chip"]')].find(
+      (el) => el.getAttribute('data-tin-grams') === '900',
     )!;
-    await fireEvent.click(tin);
+    await fireEvent.click(chip);
     await fireEvent.input(getByTestId('formula-count'), { target: { value: text } });
 
     // No count means no shape, and no shape is what has always disabled Save —
@@ -717,7 +608,136 @@ describe('FormulaPage — what counts as a count', () => {
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveFormula).mock.calls[0]![0].referenceYield).toEqual({
       kind: 'target',
-      shape: { label: '900 g tin loaf', count: value, unitDoughGrams: 900, bakeLossPercent: 12 },
+      shape: { count: value, unitDoughGrams: 900 },
     });
+  });
+});
+
+// ─── A formula never stores a vessel (issue #1274, rule-12 claim 4) ─────────────
+//
+// The vessel is a fact about TONIGHT and is recorded on the batch, never on the
+// formula. The reason is not tidiness: a formula's grams stay editable, so a
+// vessel stored beside them is a second number free to drift into a lie the next
+// time somebody corrects the weight. A batch's are stamped once and never move
+// (`tests/batch/transitions.test.ts` in `@salt/domain` pins that half).
+//
+// This is the mechanical half. It walks the WHOLE saved document rather than
+// checking the two keys we happen to have thought of, so a vessel added anywhere
+// — on `referenceYield`, inside `shape`, at the top level — fails it.
+describe('FormulaPage — the tin never reaches the document', () => {
+  function keysDeep(value: unknown, into: string[] = []): string[] {
+    if (Array.isArray(value)) {
+      for (const entry of value) keysDeep(entry, into);
+    } else if (value !== null && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        into.push(key);
+        keysDeep(child, into);
+      }
+    }
+    return into;
+  }
+
+  it('saves the dough figures and nothing about the tin they came from', async () => {
+    const { getByTestId, container } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    // Answer it the way that DOES name a vessel on the bake sheet — a 900 g loaf
+    // tin. If a vessel were ever going to leak onto a formula, this is the path.
+    const chip = [...container.querySelectorAll('[data-testid="formula-tin-chip"]')].find(
+      (el) => el.getAttribute('data-tin-grams') === '900',
+    )!;
+    await fireEvent.click(chip);
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
+
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    );
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+
+    const written = vi.mocked(saveFormula).mock.calls[0]![0]!;
+    expect(written.referenceYield).toEqual({
+      kind: 'target',
+      shape: { count: 2, unitDoughGrams: 900 },
+    });
+    // No key ANYWHERE in the document names a vessel or a tin.
+    const keys = keysDeep(written).map((key) => key.toLowerCase());
+    expect(keys.filter((key) => key.includes('vessel') || key.includes('tin'))).toEqual([]);
+    // And the grams the tin filled in are still an ordinary editable box, not a
+    // locked answer derived from it.
+    expect(getByTestId('formula-grams-each').hasAttribute('readonly')).toBe(false);
+    expect(getByTestId('formula-grams-each').hasAttribute('disabled')).toBe(false);
+  });
+});
+
+// ─── The same three answers, on the recipe's own screen (issue #1274) ───────────
+//
+// The formula screen asks the same question as the bake sheet and stores a
+// DIFFERENT thing: dough figures alone, no vessel. What makes it a recipe edit
+// rather than a run is the re-anchoring disclosure, and that must keep working
+// whichever answer is used.
+describe('FormulaPage — what are you filling?', () => {
+  async function pickAnswer(container: Element, label: string): Promise<void> {
+    const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes(label),
+    );
+    if (option === undefined) throw new Error(`no answer labelled ${label}`);
+    await fireEvent.click(option);
+  }
+
+  it('saves a count of pieces as itself', async () => {
+    const { getByTestId, container } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    await pickAnswer(container, 'A number of pieces');
+    await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '8' } });
+    await fireEvent.input(getByTestId('formula-piece-grams'), { target: { value: '120' } });
+
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    );
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveFormula).mock.calls[0]![0]!.referenceYield).toEqual({
+      kind: 'target',
+      shape: { count: 8, unitDoughGrams: 120 },
+    });
+  });
+
+  it('reads the declaration back as dough, and still says what re-anchoring costs', async () => {
+    const { getByTestId, container } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    const chip = [...container.querySelectorAll('[data-testid="formula-tin-chip"]')].find(
+      (el) => el.getAttribute('data-tin-grams') === '900',
+    )!;
+    await fireEvent.click(chip);
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
+
+    await waitFor(() =>
+      expect(getByTestId('formula-dough-total')).toHaveTextContent('2 × 900 g — 1.8 kg of dough'),
+    );
+    // THE DISCLOSURE THAT MAKES THIS A RECIPE EDIT — it stays, unchanged.
+    expect(getByTestId('formula-declaration-drift')).toHaveTextContent('re-anchors the formula');
+    expect(getByTestId('formula-declaration-drift')).toHaveTextContent(
+      "The percentages don't change",
+    );
+  });
+
+  it('mentions no bake loss, no baked weight and no named shape, on any answer', async () => {
+    const { getByTestId, container, queryByTestId } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    for (const label of ['A loaf tin', 'A number of pieces', 'A weight of dough']) {
+      await pickAnswer(container, label);
+      expect(container.textContent).not.toMatch(/bake loss/i);
+      expect(container.textContent).not.toMatch(/each baked/i);
+      expect(queryByTestId('formula-shape-select')).toBeNull();
+      expect(queryByTestId('formula-custom-label')).toBeNull();
+    }
   });
 });

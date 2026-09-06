@@ -96,9 +96,8 @@ const FORMULA: Formula = {
   ],
   referenceYield: {
     kind: 'target',
-    shape: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakeLossPercent: 10 },
+    shape: { count: 12, unitDoughGrams: 120 },
   },
-  handlingLossPercent: 3,
   process: [
     {
       id: 'st-mix',
@@ -367,12 +366,12 @@ describe('RecipeBakeBatchSheet — the leavening is words plus a number domain c
     expect(screen.getByTestId('bake-batch-leavening')).toHaveTextContent(
       "Longer and colder, so I'd take the yeast down to half.",
     );
-    // 1.4% halved is 0.7% through `roundPercent`, and 0.7% of 841 g of flour is
-    // 5.9 g through the same `solveFormula` rounding every other weight on the sheet
+    // 1.4% halved is 0.7% through `roundPercent`, and 0.7% of 816 g of flour is
+    // 5.7 g through the same `solveFormula` rounding every other weight on the sheet
     // gets — a tenth of a gram, because at that size a whole gram is 17% of the
     // yeast. Nothing in this string came off the wire.
     expect(screen.getByTestId('bake-batch-leavening-figure')).toHaveTextContent(
-      '1.4% → 0.7%, 12 g → 5.9 g',
+      '1.4% → 0.7%, 11 g → 5.7 g',
     );
   });
 
@@ -383,7 +382,7 @@ describe('RecipeBakeBatchSheet — the leavening is words plus a number domain c
     const yeast = screen
       .getAllByTestId('bake-batch-preview-row')
       .find((row) => row.getAttribute('data-ingredient-id') === 'ing-yeast');
-    expect(yeast).toHaveTextContent('5.9 g');
+    expect(yeast).toHaveTextContent('5.7 g');
   });
 
   it('refuses an absurd factor instead of displaying it, and keeps the schedule', async () => {
@@ -404,7 +403,7 @@ describe('RecipeBakeBatchSheet — the leavening is words plus a number domain c
     const yeast = screen
       .getAllByTestId('bake-batch-preview-row')
       .find((row) => row.getAttribute('data-ingredient-id') === 'ing-yeast');
-    expect(yeast).toHaveTextContent('12 g');
+    expect(yeast).toHaveTextContent('11 g');
   });
 });
 
@@ -458,7 +457,7 @@ describe('RecipeBakeBatchSheet — accepting and declining', () => {
     const yeast = screen
       .getAllByTestId('bake-batch-preview-row')
       .find((row) => row.getAttribute('data-ingredient-id') === 'ing-yeast');
-    expect(yeast).toHaveTextContent('12 g');
+    expect(yeast).toHaveTextContent('11 g');
   });
 
   it('renders the bound refusal in the service words when the freeze declines', async () => {

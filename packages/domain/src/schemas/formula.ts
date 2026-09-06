@@ -43,23 +43,35 @@ export const FormulaComponentSchema = z.object({
   maxPercent: z.number().positive().optional(),
 });
 
-// A shape the dough is divided into. `unitDoughGrams` is DOUGH weight, never
-// baked weight — "120 g rolls" is what you scale onto the bench. The baked figure
-// is derived through `bakeLossPercent` and shown alongside so nobody is surprised.
-export const UnitShapeSchema = z.object({
-  label: z.string(), // "900 g tin loaf", "120 g roll"
+// HOW MANY, AND HOW MANY GRAMS EACH — the whole of what a formula declares it
+// makes (issue #1274). Always DOUGH weight: "8 × 120 g" is what you scale onto the
+// bench, never what comes out of the oven.
+//
+// It carries no NAME and no LOSS, and that is the point of the rework. A single
+// "900 g tin loaf" answered three questions at once — how much dough, what the
+// thing is, what it is baked in — so 900 g could be read as the pan, the dough or
+// the cooked loaf. The recipe already says it is a ciabatta; the yield does not
+// say it again. The baked figure is gone with it: the UK tin convention already
+// absorbs oven loss, which is exactly why a 900 g tin yields Warburtons' 800 g
+// loaf, so modelling it separately was the same arithmetic twice.
+//
+// THE WIRE KEYS ARE DELIBERATELY STALE. Documents still say `referenceYield.shape`
+// and `unitDoughGrams`, and they stay spelled that way. Zod object schemas strip
+// unknown keys, so DELETING `label` and `bakeLossPercent` here parses a stored
+// document that still carries them; RENAMING a surviving key would not. The
+// TypeScript name moved to `DoughAmount` because a type is not wire.
+export const DoughAmountSchema = z.object({
   count: z.number().int().positive(),
   unitDoughGrams: z.number().positive(),
-  bakeLossPercent: z.number().min(0).max(100),
 });
 
 // The yield the formula's percentages were derived at — and, passed to
 // `solveFormula`, any yield you want them resolved at instead. Both directions of
 // the same equation, deliberately one type so neither is privileged:
-//   - `target` (bread): "12 × 120 g rolls" — the output is known, solve for basis.
+//   - `target` (bread): "12 × 120 g" of dough — the output is known, solve for basis.
 //   - `basis` (ferments, cures): you unwrap the meat, it weighs 2.4 kg.
 export const ReferenceYieldSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('target'), shape: UnitShapeSchema }),
+  z.object({ kind: z.literal('target'), shape: DoughAmountSchema }),
   z.object({ kind: z.literal('basis'), grams: z.number().positive() }),
 ]);
 
@@ -69,11 +81,6 @@ export const FormulaSchema = z.object({
   recipeId: z.string(),
   components: z.array(FormulaComponentSchema),
   referenceYield: ReferenceYieldSchema,
-  // What stays in the bowl and on the bench, as an allowance ADDED to the dough
-  // you need (×1.03 at 3%), not as a divisor. See `solveFormula` for why this
-  // direction, and note the two solve directions are exact inverses of each other
-  // under it.
-  handlingLossPercent: z.number().min(0).max(100).default(0),
   // The REFERENCE process (issue #806, phase 2) — the ordered stages this dough
   // goes through, each with a temperature and a duration. OPTIONAL: a formula with
   // no process (a fresh sausage, a cocktail) carries no empty scaffolding, and the
@@ -93,6 +100,6 @@ export const FormulaSchema = z.object({
 
 export type DensityClass = z.infer<typeof DensityClassSchema>;
 export type FormulaComponent = z.infer<typeof FormulaComponentSchema>;
-export type UnitShape = z.infer<typeof UnitShapeSchema>;
+export type DoughAmount = z.infer<typeof DoughAmountSchema>;
 export type ReferenceYield = z.infer<typeof ReferenceYieldSchema>;
 export type Formula = z.infer<typeof FormulaSchema>;

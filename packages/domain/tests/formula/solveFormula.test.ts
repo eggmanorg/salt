@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  deriveFormula,
-  solveFormula,
-  targetYield,
-  unitShapeFromPreset,
-  unitShapePreset,
-} from '../../src/index.js';
+import { deriveFormula, solveFormula, targetYield } from '../../src/index.js';
 import type { Formula } from '../../src/schemas/index.js';
 import { basisYield } from '../../src/formula/index.js';
 
@@ -26,7 +20,6 @@ function coppa(): Formula {
       { ingredientId: SUGAR, percent: 0.5, inBasis: false },
     ],
     referenceYield: { kind: 'basis', grams: 1000 },
-    handlingLossPercent: 0,
     schemaVersion: 1,
   };
 }
@@ -51,7 +44,7 @@ describe('basis-driven solve', () => {
     expect(solved.solution.units).toBeNull();
   });
 
-  it('leaves the total intact when nothing is lost to handling', () => {
+  it('leaves the total intact — there is no handling allowance to separate them (#1274)', () => {
     const solved = solveFormula(coppa(), basisYield(2400));
     if (!solved.ok) throw new Error(solved.reason.kind);
     expect(solved.solution.usableGrams).toBe(solved.solution.totalGrams);
@@ -68,21 +61,17 @@ describe('the two directions are the same equation', () => {
         { ingredientId: 'ing-salt', grams: 12, inBasis: false },
         { ingredientId: 'ing-oil', grams: 90, inBasis: false },
       ],
-      handlingLossPercent: 3,
     });
     if (!derived.ok) throw new Error(derived.reason.kind);
 
-    const preset = unitShapePreset('tin-loaf-900');
-    if (preset === null) throw new Error('missing tin-loaf preset');
-    const forward = solveFormula(derived.formula, targetYield(unitShapeFromPreset(preset, 2)));
+    const forward = solveFormula(derived.formula, targetYield({ count: 2, unitDoughGrams: 900 }));
     if (!forward.ok) throw new Error(forward.reason.kind);
 
     const backward = solveFormula(derived.formula, basisYield(forward.solution.basisExactGrams));
     if (!backward.ok) throw new Error(backward.reason.kind);
 
     expect(backward.solution.totalExactGrams).toBeCloseTo(forward.solution.totalExactGrams, 9);
-    // The handling allowance inverts exactly: 1 800 g of dough is still what you
-    // put in the tins.
+    // No handling allowance since #1274: usable is exactly the total, 2 × 900 g.
     expect(backward.solution.usableExactGrams).toBeCloseTo(1800, 9);
     expect(backward.solution.components.map((c) => c.grams)).toEqual(
       forward.solution.components.map((c) => c.grams),
@@ -166,7 +155,6 @@ describe('the bound seam', () => {
         },
       ],
       referenceYield: { kind: 'basis', grams: 500 },
-      handlingLossPercent: 0,
       schemaVersion: 1,
     };
   }

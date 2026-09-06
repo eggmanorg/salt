@@ -416,12 +416,13 @@
                   {formatGrams(run.totals.usableGrams)}
                 </dd>
               </div>
-              {#if run.totals.units !== null}
+              <!-- What it was baked IN, as the person starting it described it —
+                   a note on a finished record, never a number anything computes
+                   from (`BatchSchema.vessel`). Absent when the run named none. -->
+              {#if run.vessel !== undefined}
                 <div class="flex justify-between gap-3">
-                  <dt class="text-muted-foreground">Baked, each</dt>
-                  <dd class="tabular-nums" data-testid="batch-baked-each">
-                    about {formatGrams(run.totals.units.bakedUnitGrams)}
-                  </dd>
+                  <dt class="text-muted-foreground">Baked in</dt>
+                  <dd data-testid="batch-vessel">{run.vessel}</dd>
                 </div>
               {/if}
             </dl>

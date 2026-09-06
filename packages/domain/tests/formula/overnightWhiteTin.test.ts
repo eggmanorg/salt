@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  deriveFormula,
-  solveFormula,
-  targetYield,
-  unitShapeFromPreset,
-  unitShapePreset,
-} from '../../src/index.js';
+import { deriveFormula, solveFormula, targetYield } from '../../src/index.js';
 import type { Formula } from '../../src/schemas/index.js';
 
 // #778's worked example, in real bread rather than fixtures: the overnight white
@@ -17,18 +11,21 @@ import type { Formula } from '../../src/schemas/index.js';
 //   instant yeast         7 g  1.4%
 //   olive oil            15 g    3%
 //
-// Every figure below is checkable by hand. If the suite says 841 g and you make
-// it 840 g on paper, one of us is wrong — and it is visible before anything is
+// Every figure below is checkable by hand. If the suite says 816 g and you make
+// it 815 g on paper, one of us is wrong — and it is visible before anything is
 // built on top.
+//
+// #1274 deleted the handling allowance this fixture used to declare
+// (`handlingLossPercent: 3`) — it was the only non-zero figure anywhere and fed
+// switched-off machinery even before the deletion (see `solveFormula.ts`:
+// `usableExactGrams === totalExactGrams`, always, in both branches). Every gram
+// figure below is recomputed with no ×1.03 anywhere.
 
 const FLOUR = 'ing-strong-white-flour';
 const WATER = 'ing-water';
 const SALT = 'ing-salt';
 const YEAST = 'ing-instant-yeast';
 const OIL = 'ing-olive-oil';
-
-// 3% for what stays in the bowl and on the bench.
-const HANDLING_LOSS_PERCENT = 3;
 
 function overnightWhiteTin(): Formula {
   const derived = deriveFormula({
@@ -40,7 +37,6 @@ function overnightWhiteTin(): Formula {
       { ingredientId: YEAST, grams: 7, inBasis: false },
       { ingredientId: OIL, grams: 15, inBasis: false },
     ],
-    handlingLossPercent: HANDLING_LOSS_PERCENT,
   });
   if (!derived.ok) throw new Error(`fixture failed to derive: ${derived.reason.kind}`);
   return derived.formula;
@@ -93,9 +89,7 @@ describe('overnight white tin loaf — derivation', () => {
 });
 
 describe('overnight white tin loaf — 12 rolls at 120 g each', () => {
-  const rollPreset = unitShapePreset('roll-120');
-  if (rollPreset === null) throw new Error('missing roll preset');
-  const twelveRolls = targetYield(unitShapeFromPreset(rollPreset, 12));
+  const twelveRolls = targetYield({ count: 12, unitDoughGrams: 120 });
 
   it('answers with the worked example, to the gram', () => {
     const solved = solveFormula(overnightWhiteTin(), twelveRolls);
@@ -103,50 +97,45 @@ describe('overnight white tin loaf — 12 rolls at 120 g each', () => {
     if (!solved.ok) return;
     const { solution } = solved;
 
-    // 1 440 g of dough on the bench, +3% for handling = 1 483 g mixed;
-    // 1 483.2 ÷ 1.764 = 840.8 g of flour.
-    expect(gramsById(solution, FLOUR)).toBe(841);
-    expect(gramsById(solution, WATER)).toBe(589);
-    expect(gramsById(solution, SALT)).toBe(17);
-    expect(gramsById(solution, YEAST)).toBe(12);
-    expect(gramsById(solution, OIL)).toBe(25);
+    // 1 440 g of dough on the bench — and, since #1274, that is also what gets
+    // mixed: no handling allowance separates them any more.
+    // 1 440 ÷ 1.764 = 816.3265… g of flour.
+    expect(gramsById(solution, FLOUR)).toBe(816);
+    expect(gramsById(solution, WATER)).toBe(571);
+    expect(gramsById(solution, SALT)).toBe(16);
+    expect(gramsById(solution, YEAST)).toBe(11);
+    expect(gramsById(solution, OIL)).toBe(24);
 
-    expect(solution.basisGrams).toBe(841);
-    expect(solution.totalGrams).toBe(1483);
+    expect(solution.basisGrams).toBe(816);
+    expect(solution.totalGrams).toBe(1440);
     expect(solution.usableGrams).toBe(1440);
   });
 
-  it('shows what comes out of the oven beside what goes on the bench', () => {
+  it('echoes the declared amount back, with no baked figure beside it (#1274)', () => {
     const solved = solveFormula(overnightWhiteTin(), twelveRolls);
     if (!solved.ok) throw new Error(solved.reason.kind);
 
-    expect(solved.solution.units).toEqual({
-      label: '120 g roll',
-      count: 12,
-      unitDoughGrams: 120,
-      // 120 g of dough at 10% bake loss. "120 g rolls" is dough weight; nobody
-      // should be surprised by a 108 g roll.
-      bakedUnitGrams: 108,
-      bakedUnitExactGrams: 108,
-    });
+    // "120 g rolls" is dough weight, full stop — there is no second, cooked
+    // figure to disagree with it any more. See `SolvedUnits`.
+    expect(solved.solution.units).toEqual({ count: 12, unitDoughGrams: 120 });
   });
 
-  it('keeps the deliberate 1 g gap between the summed parts and the solved total', () => {
+  it('keeps the deliberate 2 g gap between the summed parts and the solved total', () => {
     const solved = solveFormula(overnightWhiteTin(), twelveRolls);
     if (!solved.ok) throw new Error(solved.reason.kind);
     const { solution } = solved;
 
     const summedParts = solution.components.reduce((sum, c) => sum + c.grams, 0);
-    // 841 + 589 + 17 + 12 + 25 = 1 484, against a solved total of 1 483.
-    expect(summedParts).toBe(1484);
-    expect(solution.totalGrams).toBe(1483);
-    expect(summedParts - solution.totalGrams).toBe(1);
+    // 816 + 571 + 16 + 11 + 24 = 1 438, against a solved total of 1 440.
+    expect(summedParts).toBe(1438);
+    expect(solution.totalGrams).toBe(1440);
+    expect(solution.totalGrams - summedParts).toBe(2);
 
     // Intended, not tolerated: the total is SOLVED, not summed. Reconciling by
     // largest remainder would make one component's figure depend on the others,
     // which is surprising when you edit a single percentage — and the batch, the
     // shopping list and the screen would each need the same rule.
-    expect(solution.totalExactGrams).toBeCloseTo(1483.2, 6);
+    expect(solution.totalExactGrams).toBeCloseTo(1440, 6);
     const summedExact = solution.components.reduce((sum, c) => sum + c.exactGrams, 0);
     expect(summedExact).toBeCloseTo(solution.totalExactGrams, 6);
   });
@@ -156,10 +145,10 @@ describe('overnight white tin loaf — 12 rolls at 120 g each', () => {
     if (!solved.ok) throw new Error(solved.reason.kind);
     const { solution } = solved;
 
-    expect(solution.basisExactGrams).toBeCloseTo(840.8163265306122, 9);
+    expect(solution.basisExactGrams).toBeCloseTo(816.3265306122449, 9);
     const salt = solution.components.find((c) => c.ingredientId === SALT);
-    expect(salt?.exactGrams).toBeCloseTo(16.816326530612244, 9);
-    expect(salt?.grams).toBe(17);
+    expect(salt?.exactGrams).toBeCloseTo(16.3265306122449, 9);
+    expect(salt?.grams).toBe(16);
   });
 });
 
@@ -181,7 +170,6 @@ describe('overnight white tin loaf — a 70/30 second-tier basis', () => {
         { ingredientId: YEAST, grams: 7, inBasis: false },
         { ingredientId: OIL, grams: 15, inBasis: false },
       ],
-      handlingLossPercent: HANDLING_LOSS_PERCENT,
     });
     if (!derived.ok) throw new Error(`fixture failed to derive: ${derived.reason.kind}`);
     return derived.formula;
@@ -195,22 +183,20 @@ describe('overnight white tin loaf — a 70/30 second-tier basis', () => {
   });
 
   it('resolves against the same reference as the single-flour loaf', () => {
-    const rollPreset = unitShapePreset('roll-120');
-    if (rollPreset === null) throw new Error('missing roll preset');
-    const solved = solveFormula(splitBasisLoaf(), targetYield(unitShapeFromPreset(rollPreset, 12)));
+    const solved = solveFormula(splitBasisLoaf(), targetYield({ count: 12, unitDoughGrams: 120 }));
     if (!solved.ok) throw new Error(solved.reason.kind);
     const { solution } = solved;
 
-    // 840.8 g of flour, split: 588.6 → 589 g white, 252.2 → 252 g wholemeal.
-    expect(gramsById(solution, FLOUR)).toBe(589);
-    expect(gramsById(solution, WHOLEMEAL)).toBe(252);
-    expect(solution.basisGrams).toBe(841);
+    // 816.3 g of flour, split: 571.4 → 571 g white, 244.9 → 245 g wholemeal.
+    expect(gramsById(solution, FLOUR)).toBe(571);
+    expect(gramsById(solution, WHOLEMEAL)).toBe(245);
+    expect(solution.basisGrams).toBe(816);
 
     // The additions are untouched by how the flour is split.
-    expect(gramsById(solution, WATER)).toBe(589);
-    expect(gramsById(solution, SALT)).toBe(17);
-    expect(gramsById(solution, YEAST)).toBe(12);
-    expect(gramsById(solution, OIL)).toBe(25);
-    expect(solution.totalGrams).toBe(1483);
+    expect(gramsById(solution, WATER)).toBe(571);
+    expect(gramsById(solution, SALT)).toBe(16);
+    expect(gramsById(solution, YEAST)).toBe(11);
+    expect(gramsById(solution, OIL)).toBe(24);
+    expect(solution.totalGrams).toBe(1440);
   });
 });

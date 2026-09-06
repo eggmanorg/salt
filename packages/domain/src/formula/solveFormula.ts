@@ -1,14 +1,14 @@
 import type { Formula, FormulaComponent, ReferenceYield } from '../schemas/formula.js';
 import type { BoundViolation, FormulaFailure } from './failure.js';
 import { roundGrams } from './rounding.js';
-import { bakedUnitGrams } from './unitShapes.js';
+import { doughAmountGrams } from './doughAmount.js';
 
 // The bidirectional yield solve (issue #782). One equation, two unknowns you can
 // choose between:
 //
 //   total = basis × (Σ all percentages ÷ 100)
 //
-//   - target-driven (bread): "12 × 120 g rolls" is known → solve for basis.
+//   - target-driven (bread): "12 × 120 g" of dough is known → solve for basis.
 //   - basis-driven (ferments, cures): the meat weighs 2.4 kg → solve for total.
 //
 // Both ship together and neither is privileged in the types, because building the
@@ -31,26 +31,26 @@ export type SolvedComponent = {
 };
 
 export type SolvedUnits = {
-  label: string;
   count: number;
   // DOUGH weight per unit — what you scale onto the bench, echoed back from the
-  // shape so a caller holding only the solution can still label it.
+  // declared amount so a caller holding only the solution can still say what it
+  // makes. There is no baked figure beside it and there is not meant to be
+  // (issue #1274): see `DoughAmountSchema`.
   unitDoughGrams: number;
-  // What comes out of the oven, after `bakeLossPercent`. Shown alongside so a
-  // "120 g roll" does not surprise anyone at 108 g.
-  bakedUnitGrams: number;
-  bakedUnitExactGrams: number;
 };
 
 export type FormulaSolution = {
   // The 100%: the flours, the vegetables, the green weight.
   basisGrams: number;
   basisExactGrams: number;
-  // Everything weighed into the bowl, including the handling allowance.
+  // Everything weighed into the bowl.
   totalGrams: number;
   totalExactGrams: number;
-  // What survives handling and is actually portioned. Equals the total when the
-  // formula declares no handling loss.
+  // What is actually portioned. EQUAL to the total, always, since #1274 deleted
+  // the handling allowance that was the only thing that ever separated them — the
+  // two names survive because they are two different questions, and a loss
+  // allowance built against a real requirement (#778 phase 04's trim loss) is
+  // where they would part company again.
   usableGrams: number;
   usableExactGrams: number;
   components: SolvedComponent[];
@@ -95,7 +95,7 @@ export function solveFormula(
   formula: Formula,
   atYield: ReferenceYield = formula.referenceYield,
 ): SolveFormulaResult {
-  const { components, handlingLossPercent } = formula;
+  const { components } = formula;
 
   if (components.length === 0) return { ok: false, reason: { kind: 'emptyFormula' } };
 
@@ -117,13 +117,6 @@ export function solveFormula(
 
   const sumAllPercent = components.reduce((sum, c) => sum + c.percent, 0);
 
-  // Handling loss is an allowance ADDED to what you need (×1.03 at 3%), not a
-  // divisor (÷0.97). It is the way a baker actually scales up for what stays in
-  // the bowl, it is what #778's worked example asserts to the gram, and — the part
-  // that matters here — it makes the two directions exact inverses of each other:
-  // usable × allowance = total, total ÷ allowance = usable.
-  const handlingAllowance = 1 + handlingLossPercent / 100;
-
   let basisExactGrams: number;
   let totalExactGrams: number;
   let usableExactGrams: number;
@@ -132,20 +125,15 @@ export function solveFormula(
   if (atYield.kind === 'basis') {
     basisExactGrams = atYield.grams;
     totalExactGrams = basisExactGrams * (sumAllPercent / 100);
-    usableExactGrams = totalExactGrams / handlingAllowance;
+    usableExactGrams = totalExactGrams;
   } else {
+    // `shape` is the wire key; the thing is a `DoughAmount` (see
+    // `schemas/formula.ts` for why the JSON spelling is deliberately stale).
     const { shape } = atYield;
-    usableExactGrams = shape.count * shape.unitDoughGrams;
-    totalExactGrams = usableExactGrams * handlingAllowance;
+    usableExactGrams = doughAmountGrams(shape);
+    totalExactGrams = usableExactGrams;
     basisExactGrams = totalExactGrams / (sumAllPercent / 100);
-    const bakedUnitExactGrams = bakedUnitGrams(shape);
-    units = {
-      label: shape.label,
-      count: shape.count,
-      unitDoughGrams: shape.unitDoughGrams,
-      bakedUnitGrams: roundGrams(bakedUnitExactGrams),
-      bakedUnitExactGrams,
-    };
+    units = { count: shape.count, unitDoughGrams: shape.unitDoughGrams };
   }
 
   const derived = [basisExactGrams, totalExactGrams, usableExactGrams];

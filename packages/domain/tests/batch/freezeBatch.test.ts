@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  deriveFormula,
-  freezeBatch,
-  targetYield,
-  unitShapeFromPreset,
-  unitShapePreset,
-} from '../../src/index.js';
+import { deriveFormula, freezeBatch, targetYield } from '../../src/index.js';
 import { BatchSchema } from '../../src/schemas/index.js';
 import type { Formula, ProcessStage, StageDuration } from '../../src/schemas/index.js';
 
@@ -69,15 +63,12 @@ function overnightWhiteTin(process: ProcessStage[] | null = PROCESS): Formula {
       { ingredientId: YEAST, grams: 7, inBasis: false },
       { ingredientId: OIL, grams: 15, inBasis: false },
     ],
-    handlingLossPercent: 3,
   });
   if (!derived.ok) throw new Error(`fixture failed to derive: ${derived.reason.kind}`);
   return { ...derived.formula, ...(process === null ? {} : { process }) };
 }
 
-const rollPreset = unitShapePreset('roll-120');
-if (rollPreset === null) throw new Error('missing roll preset');
-const TWELVE_ROLLS = targetYield(unitShapeFromPreset(rollPreset, 12));
+const TWELVE_ROLLS = targetYield({ count: 12, unitDoughGrams: 120 });
 
 const NOW = '2026-08-14T21:00:00.000Z';
 
@@ -102,14 +93,15 @@ describe('freezeBatch — the quantities', () => {
     const gramsById = Object.fromEntries(
       freezeTwelveRolls().quantities.map((q) => [q.ingredientId, q.grams]),
     );
-    // 1 440 g of dough on the bench, +3% handling = 1 483 g mixed; ÷1.764 = 841 g
-    // of flour. The recipe still says 500 g and always will.
+    // 1 440 g of dough on the bench — and since #1274 that is also what's mixed,
+    // there being no handling allowance any more; ÷1.764 = 816 g of flour. The
+    // recipe still says 500 g and always will.
     expect(gramsById).toEqual({
-      [FLOUR]: 841,
-      [WATER]: 589,
-      [SALT]: 17,
-      [YEAST]: 12,
-      [OIL]: 25,
+      [FLOUR]: 816,
+      [WATER]: 571,
+      [SALT]: 16,
+      [YEAST]: 11,
+      [OIL]: 24,
     });
   });
 
@@ -121,7 +113,7 @@ describe('freezeBatch — the quantities', () => {
       ingredientId: FLOUR,
       label: '500g strong white bread flour',
       percent: 100,
-      grams: 841,
+      grams: 816,
     });
   });
 
@@ -140,21 +132,16 @@ describe('freezeBatch — the quantities', () => {
     if (!result.ok) throw new Error(JSON.stringify(result.reason));
     const oil = result.batch.quantities.find((q) => q.ingredientId === OIL);
     expect(oil?.label).toBe('');
-    expect(oil?.grams).toBe(25);
+    expect(oil?.grams).toBe(24);
   });
 
   it('freezes the totals and what the dough divides into', () => {
     expect(freezeTwelveRolls().totals).toEqual({
-      basisGrams: 841,
-      totalGrams: 1483,
+      basisGrams: 816,
+      totalGrams: 1440,
       usableGrams: 1440,
-      units: {
-        label: '120 g roll',
-        count: 12,
-        unitDoughGrams: 120,
-        // 120 g of dough at 10% bake loss. Nobody should be surprised by a 108 g roll.
-        bakedUnitGrams: 108,
-      },
+      // No label and no baked figure since #1274 — see `BatchUnitsSchema`.
+      units: { count: 12, unitDoughGrams: 120 },
     });
   });
 

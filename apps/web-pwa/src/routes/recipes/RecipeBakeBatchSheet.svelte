@@ -4,10 +4,6 @@
     Icon,
     RadioGroup,
     RadioGroupItem,
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
     Sheet,
     SheetContent,
     SheetFooter,
@@ -19,23 +15,28 @@
   import { push } from 'svelte-spa-router';
   import {
     LEAVENING_PERCENT_BOUNDS,
-    UNIT_SHAPE_PRESETS,
     diffProcess,
     flattenIngredients,
     solveFormula,
     targetYield,
-    unitShapeFromPreset,
     withComponentPercentScaled,
     type Recipe,
     type ScheduleAnchor,
-    type UnitShapePreset,
   } from '@salt/domain';
   import type { Formula, ProposeScheduleOutput } from '@salt/domain/schemas';
   import { proposeSchedule, startBatch } from '../../lib/batchService.js';
   import { reviewRows, type ProposalStageRow } from './scheduleProposal.js';
-  import { parseUnitCount } from './unitCount.js';
+  import {
+    EMPTY_DOUGH_ANSWER,
+    LOAF_TIN_CHIP_GRAMS,
+    doughAmountFrom,
+    seedDoughAnswer,
+    vesselFrom,
+    type DoughAnswerFields,
+    type DoughAnswerMode,
+  } from './doughAnswer.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { formatGrams } from '../../lib/quantityDisplay.js';
+  import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 
   // "Bake a batch" (issue #812, phases 1 and 2 of epic #778) — the scale sheet.
   //
@@ -125,8 +126,11 @@
 
   // ─── What ─────────────────────────────────────────────────────────────────────
 
-  let presetId = $state('');
-  let countText = $state('1');
+  // "What are you filling?" — the answer, and every box all three answers use. See
+  // `doughAnswer.ts` for the rule that turns them into a `DoughAmount`, and for why
+  // the tin leads.
+  let answerMode = $state<DoughAnswerMode>('tin');
+  let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
   let busy = $state(false);
   // Why the run could not be started, in the service's own words. Rendered rather
   // than toasted: every one of these is a sentence that tells you where to go next,
@@ -149,63 +153,24 @@
   const activeProposal = $derived(proposalFor === askKey ? proposal : null);
 
   /**
-   * The formula's own shape, offered as a picker option whenever the preset list
-   * does not already hold it — a hand-typed "1 kg sourdough boule" included.
-   *
-   * Without it such a formula could be baked as written, or as some preset, but
-   * never as TWELVE of the thing the recipe is actually for: the picker had no way
-   * to name it, and a count with no shape falls back to `referenceYield` and
-   * silently ignores the count. The id is synthetic and lives only in this
-   * component — nothing is stored, and the match back is the shape itself.
-   */
-  const OWN_SHAPE_ID = 'formula-shape';
-
-  const ownShapeOption = $derived.by((): UnitShapePreset | null => {
-    if (formula.referenceYield.kind !== 'target') return null;
-    const { label, unitDoughGrams, bakeLossPercent } = formula.referenceYield.shape;
-    const alreadyListed = UNIT_SHAPE_PRESETS.some((p) => samePreset(p, formula.referenceYield));
-    return alreadyListed ? null : { id: OWN_SHAPE_ID, label, unitDoughGrams, bakeLossPercent };
-  });
-
-  const shapeOptions = $derived(
-    ownShapeOption === null ? UNIT_SHAPE_PRESETS : [ownShapeOption, ...UNIT_SHAPE_PRESETS],
-  );
-
-  // All three fields, not just label and weight: a "900 g tin loaf" whose bake loss
-  // was corrected by hand is a different shape from the preset it is named after,
-  // and folding one onto the other would quietly bake at the wrong figure.
-  function samePreset(preset: UnitShapePreset, yieldValue: Formula['referenceYield']): boolean {
-    if (yieldValue.kind !== 'target') return false;
-    const shape = yieldValue.shape;
-    return (
-      preset.label === shape.label &&
-      preset.unitDoughGrams === shape.unitDoughGrams &&
-      preset.bakeLossPercent === shape.bakeLossPercent
-    );
-  }
-
-  /**
    * Seed from the formula's OWN reference yield — "the recipe as written" is the
-   * answer most runs want, and it should be sitting in the boxes rather than waiting
-   * to be typed.
+   * answer most runs want, and it should be sitting in the boxes rather than
+   * waiting to be typed.
    *
-   * The picker can always name that shape now (see `ownShapeOption`), so an empty
-   * picker means the formula is basis-driven — a weight, not a count of anything —
-   * and the solve falls back to `formula.referenceYield` for exactly that answer.
+   * A basis-driven formula declares a weight rather than a count of anything, so
+   * there is nothing to seed: the boxes come up empty, no amount resolves, and the
+   * solve falls back to `formula.referenceYield` for exactly that answer.
    */
   function seed(): void {
     mode = 'startAt';
     whenLocal = localNow();
     startError = null;
     discardProposal();
-    if (formula.referenceYield.kind === 'target') {
-      const option = shapeOptions.find((p) => samePreset(p, formula.referenceYield));
-      presetId = option?.id ?? '';
-      countText = String(formula.referenceYield.shape.count);
-    } else {
-      presetId = '';
-      countText = '1';
-    }
+    const seeded = seedDoughAnswer(
+      formula.referenceYield.kind === 'target' ? formula.referenceYield.shape : null,
+    );
+    answerMode = seeded.mode;
+    answer = seeded.fields;
   }
 
   // Re-seed on each open: a sheet reopened this evening must not still be offering
@@ -216,16 +181,13 @@
     wasOpen = open;
   });
 
-  const selectedPreset = $derived(
-    presetId ? (shapeOptions.find((p) => p.id === presetId) ?? null) : null,
-  );
-  const count = $derived(parseUnitCount(countText));
-  const shape = $derived(
-    selectedPreset && count !== null ? unitShapeFromPreset(selectedPreset, count) : null,
-  );
-  // Omitted, never invented: no shape means the formula's own reference yield, which
-  // is precisely what `startBatch` does with an absent `atYield`.
-  const atYield = $derived(shape === null ? null : targetYield(shape));
+  const amount = $derived(doughAmountFrom(answerMode, answer));
+  // Omitted, never invented: no amount means the formula's own reference yield,
+  // which is precisely what `startBatch` does with an absent `atYield`.
+  const atYield = $derived(amount === null ? null : targetYield(amount));
+  // The vessel this run is recorded against — the tin answer only. It is a note on
+  // the finished record and nothing reads it back: see `BatchSchema.vessel`.
+  const vessel = $derived(vesselFrom(answerMode, answer));
 
   // ─── The leavening opinion, priced by the domain ──────────────────────────────
   //
@@ -388,6 +350,7 @@
       recipe,
       formula: effectiveFormula,
       ...(atYield === null ? {} : { atYield }),
+      ...(vessel === undefined ? {} : { vessel }),
       anchor,
       ...(accepted === null
         ? {}
@@ -446,34 +409,92 @@
     </p>
 
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-testid="bake-batch-sheet">
-      <!-- ─── What are you making this time? ──────────────────────────────────── -->
-      <div class="flex flex-wrap items-end gap-3">
-        <TextField
-          label="How many"
-          inputmode="numeric"
-          class="w-28"
-          value={countText}
-          onValueChange={(v) => (countText = v)}
-          data-autofocus
-          data-testid="bake-batch-count"
-        />
-        <!-- No `portal` prop: SheetContent publishes itself as the portal container,
-             so the listbox opens inside the sheet rather than behind the modal's
-             pointer-events barrier (ui-spec-v03 §5; issues #674/#640). -->
-        <Select value={presetId} onValueChange={(v) => (presetId = v)}>
-          <SelectTrigger
-            class="w-56"
-            aria-label="What are you making"
-            data-testid="bake-batch-shape"
-          >
-            {selectedPreset?.label ?? 'As written'}
-          </SelectTrigger>
-          <SelectContent>
-            {#each shapeOptions as preset (preset.id)}
-              <SelectItem value={preset.id}>{preset.label}</SelectItem>
-            {/each}
-          </SelectContent>
-        </Select>
+      <!-- ─── What are you filling? ───────────────────────────────────────────── -->
+      <!-- The tin leads because that is how the question gets asked in a kitchen:
+           "I have a 900 g loaf tin, what do I put in to fill it." A UK tin is sold
+           by the dough it takes, so there is no sum in between and nothing to
+           overrule — see `doughAnswer.ts`. -->
+      <div class="flex flex-col gap-3">
+        <RadioGroup
+          label="What are you filling?"
+          value={answerMode}
+          onValueChange={(v) => {
+            answerMode = v as DoughAnswerMode;
+          }}
+        >
+          <RadioGroupItem value="tin" label="A loaf tin" />
+          <RadioGroupItem value="pieces" label="A number of pieces" />
+          <RadioGroupItem value="weight" label="A weight of dough" />
+        </RadioGroup>
+
+        {#if answerMode === 'tin'}
+          <div class="flex flex-col gap-2" data-testid="bake-batch-tin">
+            <div class="flex flex-wrap gap-2">
+              {#each LOAF_TIN_CHIP_GRAMS as grams (grams)}
+                <Button
+                  size="sm"
+                  variant={answer.tinGramsText === String(grams) ? 'solid' : 'outline'}
+                  onclick={() => (answer = { ...answer, tinGramsText: String(grams) })}
+                  data-testid="bake-batch-tin-chip"
+                  data-tin-grams={grams}
+                >
+                  {formatGrams(grams)}
+                </Button>
+              {/each}
+            </div>
+            <div class="flex flex-wrap items-end gap-3">
+              <TextField
+                label="Tin size (g)"
+                inputmode="numeric"
+                class="w-32"
+                value={answer.tinGramsText}
+                onValueChange={(v) => (answer = { ...answer, tinGramsText: v })}
+                data-autofocus
+                data-testid="bake-batch-tin-grams"
+              />
+              <TextField
+                label="How many tins"
+                inputmode="numeric"
+                class="w-28"
+                value={answer.tinCountText}
+                onValueChange={(v) => (answer = { ...answer, tinCountText: v })}
+                data-testid="bake-batch-tin-count"
+              />
+            </div>
+          </div>
+        {:else if answerMode === 'pieces'}
+          <div class="flex flex-wrap items-end gap-3" data-testid="bake-batch-pieces">
+            <TextField
+              label="How many"
+              inputmode="numeric"
+              class="w-28"
+              value={answer.pieceCountText}
+              onValueChange={(v) => (answer = { ...answer, pieceCountText: v })}
+              data-autofocus
+              data-testid="bake-batch-piece-count"
+            />
+            <TextField
+              label="Dough each (g)"
+              inputmode="numeric"
+              class="w-32"
+              value={answer.pieceGramsText}
+              onValueChange={(v) => (answer = { ...answer, pieceGramsText: v })}
+              data-testid="bake-batch-piece-grams"
+            />
+          </div>
+        {:else}
+          <div class="flex flex-wrap items-end gap-3" data-testid="bake-batch-weight">
+            <TextField
+              label="Dough (g)"
+              inputmode="numeric"
+              class="w-32"
+              value={answer.totalGramsText}
+              onValueChange={(v) => (answer = { ...answer, totalGramsText: v })}
+              data-autofocus
+              data-testid="bake-batch-total-dough"
+            />
+          </div>
+        {/if}
       </div>
 
       <!-- ─── What that weighs out to ─────────────────────────────────────────── -->
@@ -503,14 +524,11 @@
             <span class="font-medium tabular-nums" data-testid="bake-batch-total-grams">
               {formatGrams(solved.solution.totalGrams)}
             </span>
-            in the bowl{#if formula.handlingLossPercent > 0}, including {formula.handlingLossPercent}%
-              for what stays in it{/if}.
+            in the bowl.
           </p>
           {#if solved.solution.units !== null}
-            <p class="text-muted-foreground" data-testid="bake-batch-baked-each">
-              {solved.solution.units.count} × {solved.solution.units.label} — about {formatGrams(
-                solved.solution.units.bakedUnitGrams,
-              )} each once baked.
+            <p class="text-muted-foreground" data-testid="bake-batch-yield">
+              {formatDoughAmount(solved.solution.units)}{#if vessel !== undefined}, in a {vessel}{/if}.
             </p>
           {/if}
         </div>

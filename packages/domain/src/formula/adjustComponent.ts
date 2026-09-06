@@ -10,9 +10,8 @@ import { roundPercent } from './rounding.js';
 // GENERIC ON PURPOSE. Nothing here knows what yeast is. It takes an ingredient id,
 // a factor and — optionally — the bounds to declare on the way through, so the
 // same seam serves a cure's nitrite as well as a loaf's leavening. The concrete
-// bread figures live in `LEAVENING_PERCENT_BOUNDS` below, in the register
-// `UNIT_SHAPE_PRESETS` set: checked-in reference data in `domain`, not a service
-// and not a branch in the logic.
+// bread figures live in `LEAVENING_PERCENT_BOUNDS` below: checked-in reference
+// data in `domain`, not a service and not a branch in the logic.
 //
 // ─── THE BOUNDS RAIL IS THE ONE THAT ALREADY EXISTS ────────────────────────────
 //
@@ -45,8 +44,9 @@ export interface ComponentPercentBounds {
 // dough is a bready panic. A cold overnight retard at 0.4% and a two-hour counter
 // prove at 1.6% are both perfectly ordinary and this says nothing about either.
 //
-// Expected to be tuned by a baker's eye rather than by argument, exactly as the
-// bake-loss figures in `unitShapes.ts` are.
+// Expected to be tuned by a baker's eye rather than by argument. It is now the
+// only guessed figure in this module — #1274 deleted the bake-loss table that used
+// to stand beside it.
 export const LEAVENING_PERCENT_BOUNDS: Readonly<ComponentPercentBounds> = {
   minPercent: 0.2,
   maxPercent: 2.5,

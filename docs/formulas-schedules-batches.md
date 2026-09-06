@@ -68,7 +68,7 @@ model cover all three. A cure is the degenerate case: one basis member at 100%.
 
 Yield solving hangs off it, and **must be bidirectional from the start**:
 
-- **Target-driven** (bread): "12 × 120 g rolls" → 1 440 g dough →
+- **Target-driven** (bread): "12 × 120 g" → 1 440 g dough →
   `basis = total ÷ (1 + Σ addition percentages)`.
 - **Basis-driven** (ferments, cures): you unwrap the meat, it weighs 2.4 kg, and
   everything else follows from that.
@@ -76,10 +76,37 @@ Yield solving hangs off it, and **must be bidirectional from the start**:
 Same equation, different unknown. Building only the target-driven direction bakes
 "yield is the input" into the types and is awkward to unpick later.
 
-Target-driven solving also needs a small table of **unit shapes** (a 12″ thin
-base, a 900 g tin loaf, a 120 g roll) and a **loss factor** — bake loss, trim
-loss, what stays in the bowl. `120 g rolls` means **dough weight**, not baked
-weight; show the derived baked weight alongside so nobody is surprised.
+A target yield is **how many, and how many grams each** — `{ count,
+unitDoughGrams }`, and nothing else (issue #1274). It carries **no name and no
+loss factor**, and both omissions are decisions rather than gaps:
+
+- **No name.** A shipped table of eleven shapes ("900 g tin loaf", "1 kg focaccia
+  tray") answered three questions in one string — how much dough, what the thing
+  is, what it is baked in — so 900 g could be read as the pan, the dough or the
+  cooked bread. The recipe already says it is a ciabatta. The yield does not say
+  it again.
+- **No bake loss.** A cooked weight is a number nobody can know, it fed no
+  arithmetic, and the UK tin convention has already absorbed it: a 900 g tin
+  yields Warburtons' 800 g loaf precisely _because_ of the oven loss, so
+  modelling it separately was the same sum twice.
+
+**A vessel is a fact about tonight, not about the recipe.** A formula stores the
+dough figures alone; the batch records what the run was baked in, as a free-text
+snapshot (`BatchSchema.vessel`) that nothing parses and nothing computes from.
+The split is not stylistic — a formula's grams stay editable, so a vessel stored
+beside them is a second number free to drift into a lie, where `freezeBatch`
+stamps a batch's vessel and grams together and neither moves again.
+
+A **named tin needs no coefficient at all**: UK tins are sold by the dough they
+take, so a 900 g tin resolves to ~900 g of dough directly. Only a vessel with no
+trade name — a tray, a dish — needs an estimate, and that estimate lands in an
+ordinary editable box rather than a locked figure.
+
+A **loss allowance is not forbidden, it is unbuilt.** Trim loss on a pork
+shoulder is 10–20%, an order of magnitude from anything in bread; phase 04
+(cures) is where that requirement gets stated, and reintroducing a field there is
+free on a greenfield collection. What produced the rework was preserving
+switched-off machinery against a use case nobody had written down.
 
 All of it is arithmetic. Pure domain, no dependencies.
 
@@ -172,12 +199,12 @@ pull it in — only kefir does, and it may never be built.
 Scaling and adapting are different in kind, and should not look or behave alike —
 the user's trust in each is correctly different.
 
-|             | **Scale**                                                              | **Adapt**                                                                                                                                                                               |
-| ----------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Owner       | `packages/domain`                                                      | Genkit callable                                                                                                                                                                         |
-| Nature      | exact, instant, offline, unit-tested                                   | a proposal you review                                                                                                                                                                   |
-| Determinism | same answer every time                                                 | authored once, then stored as data                                                                                                                                                      |
-| Covers      | yield solving, basis re-splits, unit shapes, loss, percentages → grams | wait-stage extraction, a schedule that lands at a target time, the yeast consequence of a longer retard, what more wholemeal does to hydration and timing, ferment flavour combinations |
+|             | **Scale**                                                          | **Adapt**                                                                                                                                                                               |
+| ----------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner       | `packages/domain`                                                  | Genkit callable                                                                                                                                                                         |
+| Nature      | exact, instant, offline, unit-tested                               | a proposal you review                                                                                                                                                                   |
+| Determinism | same answer every time                                             | authored once, then stored as data                                                                                                                                                      |
+| Covers      | yield solving, basis re-splits, dough amounts, percentages → grams | wait-stage extraction, a schedule that lands at a target time, the yeast consequence of a longer retard, what more wholemeal does to hydration and timing, ferment flavour combinations |
 
 **The AI authors, the domain runs.** A schedule is proposed once, stored on the
 batch, then executed by pure code and the existing Cloud Tasks path. The model is
@@ -204,12 +231,12 @@ becoming two is a removal and two additions, and renders honestly as that.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                            |
-| ------------- | ------------------------------------- | ------------- | ------------------------------------------------------------------ |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, unit shape, reference yield, reference process |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities, frozen schedule, current stage, state  |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo             |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log             |
+| Doc           | Firestore path                        | Scope         | Purpose                                                               |
+| ------------- | ------------------------------------- | ------------- | --------------------------------------------------------------------- |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process        |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo                |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:
@@ -274,7 +301,7 @@ The layer map is unchanged — no new packages.
 
 ```
 packages/domain/src/
-  formula/      basis, scaling, unit shapes, loss, bidirectional yield solve   — pure
+  formula/      basis, scaling, dough amounts, bidirectional yield solve     — pure
   process/      stage model, forward + backward schedule, diffProcess          — pure; "now" injected
   batch/        transitions, derived progress, observations                    — pure
   culture/      maintenance rhythm, feed log, draw                             — pure; deferred
@@ -314,8 +341,10 @@ ever land) rhythms with a next feed. Same card shape: next action, when.
 | Genkit callables + `resolveModel`      | Both new flows are the existing pattern; the model tiering seam already exists.                                                                                                 |
 
 Nothing needs to be built externally. The only thing resembling external data is
-a reference table (unit shapes, hydration norms, cure-salt limits) — a checked-in
-constant in `domain`, not a service.
+a reference table (hydration norms, cure-salt limits) — a checked-in constant in
+`domain`, not a service. Note what is **not** on that list any more: the eleven
+named unit shapes were exactly such a table, and #1274 deleted them. A vessel size
+is UI affordance, not domain data.
 
 ## What not to build
 
@@ -337,14 +366,14 @@ the entire lifecycle — create, plan, schedule, notify, observe, finish — in
 eighteen hours. A kraut takes three weeks; a coppa four months. A batch model
 cannot be debugged on a four-month feedback loop.
 
-| Phase  | Scope                                                                                                                                                                                                                                             |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **00** | Formula in `domain`, headless. Basis, bidirectional solve, unit shapes, loss. Fully tested before anything renders it.                                                                                                                            |
-| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g rolls". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs. |
-| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                        |
-| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                             |
-| **04** | Cures. New kind, the observation log worked hard, weight-loss criteria, revised projections, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature.                                                                |
-| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                  |
+| Phase  | Scope                                                                                                                                                                                                                                                                                                                                                                              |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                 |
+| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                        |
+| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                         |
+| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                              |
+| **04** | Cures. New kind, the observation log worked hard, weight-loss criteria, revised projections, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **A trim-loss allowance is this phase's to build** — #1274 deleted bread's, which fed no arithmetic; a 10–20% trim on a shoulder is a real requirement and belongs where it is actually stated. |
+| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                   |
 
 ### What bread hands on
 

@@ -111,7 +111,8 @@
               {/if}
 
               <span class="text-xs text-muted-foreground">
-                {formatGrams(batch.totals.totalGrams)} in total
+                {formatGrams(batch.totals.totalGrams)} in total{#if batch.vessel !== undefined}
+                  · {batch.vessel}{/if}
               </span>
             </button>
           </li>

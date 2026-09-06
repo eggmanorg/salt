@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  deriveFormula,
-  solveFormula,
-  unitShapeFromPreset,
-  unitShapePreset,
-  UNIT_SHAPE_PRESETS,
-} from '../../src/index.js';
-import { basisYield } from '../../src/formula/index.js';
+import { deriveFormula } from '../../src/index.js';
 
 describe('deriveFormula', () => {
   it('refuses a formula with nothing in it', () => {
@@ -68,54 +61,15 @@ describe('deriveFormula', () => {
   });
 
   it('takes a caller-supplied reference yield over the derived basis weight', () => {
-    const preset = unitShapePreset('tin-loaf-900');
-    if (preset === null) throw new Error('missing preset');
     const derived = deriveFormula({
       recipeId: 'r1',
       components: [
         { ingredientId: 'ing-flour', grams: 500, inBasis: true },
         { ingredientId: 'ing-water', grams: 350, inBasis: false },
       ],
-      referenceYield: { kind: 'target', shape: unitShapeFromPreset(preset, 1) },
+      referenceYield: { kind: 'target', shape: { count: 1, unitDoughGrams: 900 } },
     });
     if (!derived.ok) throw new Error(derived.reason.kind);
     expect(derived.formula.referenceYield.kind).toBe('target');
-  });
-
-  it('defaults to no handling loss', () => {
-    const derived = deriveFormula({
-      recipeId: 'r1',
-      components: [{ ingredientId: 'ing-flour', grams: 500, inBasis: true }],
-    });
-    if (!derived.ok) throw new Error(derived.reason.kind);
-    expect(derived.formula.handlingLossPercent).toBe(0);
-    const solved = solveFormula(derived.formula, basisYield(500));
-    if (!solved.ok) throw new Error(solved.reason.kind);
-    expect(solved.solution.usableGrams).toBe(solved.solution.totalGrams);
-  });
-});
-
-describe('unit shapes', () => {
-  it('is data — a preset plus the count you are making today', () => {
-    const preset = unitShapePreset('roll-120');
-    if (preset === null) throw new Error('missing preset');
-    expect(unitShapeFromPreset(preset, 12)).toEqual({
-      label: '120 g roll',
-      count: 12,
-      unitDoughGrams: 120,
-      bakeLossPercent: 10,
-    });
-  });
-
-  it('has no preset for an id nobody ships', () => {
-    expect(unitShapePreset('brioche-a-tete-45')).toBeNull();
-  });
-
-  it('states dough weight and a bake loss for every preset', () => {
-    for (const preset of UNIT_SHAPE_PRESETS) {
-      expect(preset.unitDoughGrams).toBeGreaterThan(0);
-      expect(preset.bakeLossPercent).toBeGreaterThan(0);
-      expect(preset.bakeLossPercent).toBeLessThan(100);
-    }
   });
 });
