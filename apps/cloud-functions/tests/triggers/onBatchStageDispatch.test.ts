@@ -117,6 +117,7 @@ function stage(overrides: Partial<BatchStageDoc> = {}): BatchStageDoc {
     plannedEndAt: '2026-08-14T22:35:00.000Z',
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...overrides,
   };
 }
@@ -228,6 +229,11 @@ describe('onBatchStageDispatch — staleness', () => {
   it.each([
     ['already finished', { actualEndAt: '2026-08-14T22:30:00.000Z' }],
     ['already under way', { actualStartAt: '2026-08-14T22:18:00.000Z' }],
+    // Issue #1275. The enqueue filters what it could see at write time; this is
+    // what catches a skip made AFTER the task was already queued — the same
+    // re-read-and-no-op the cook timer does.
+    ['skipped', { skipped: { at: '2026-08-14T22:18:00.000Z', note: 'out of milk' } }],
+    ['skipped with no reason given', { skipped: { at: '2026-08-14T22:18:00.000Z', note: '' } }],
   ])('no-ops when the stage is %s', async (_case, overrides) => {
     mockBatchSnap = { exists: true, data: () => makeBatch({ stages: [stage(overrides)] }) };
 

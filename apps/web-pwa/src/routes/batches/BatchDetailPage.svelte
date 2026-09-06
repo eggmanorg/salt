@@ -19,12 +19,21 @@
     PopoverMenuItem,
     PopoverTrigger,
     Spinner,
+    TextField,
   } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
   import type { DomainError } from '@salt/shared-types';
   import { goBack } from '../../lib/nav.js';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
-  import { abandonBatch, advanceStage, batch, initBatchSync } from '../../lib/batchService.js';
+  import {
+    abandonBatch,
+    advanceStage,
+    batch,
+    initBatchSync,
+    skipStage,
+    startStage,
+  } from '../../lib/batchService.js';
+  import { stageStatus } from '@salt/domain';
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { addToast } from '../../lib/toastStore.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
@@ -76,11 +85,26 @@
   //     batch and no-ops on one that is not running.
   //   • HAND OFF TO COOK MODE, which is a link and nothing more.
   //
-  // ONLY THE CURRENT STAGE IS ADVANCEABLE, and `nextAction` decides which that is —
-  // the same function the in-flight list uses for its card, so the two surfaces can
-  // never disagree about what a run wants next. Earlier stages are done, later ones
-  // have not happened, and neither has a control. An abandoned or fully-done run has
-  // no current stage at all and so shows none.
+  // ─── FOUR CONDITIONS, AND MORE THAN ONE STAGE IN HAND (issue #1275) ───────────
+  //
+  // Phase 3 gated every control on `currentStageId` and nothing else: one stage was
+  // advanceable, the rest showed nothing. That is no longer the shape, because a
+  // stage now has four conditions rather than two (`stageStatus` in the domain owns
+  // the derivation; nothing here re-derives it):
+  //
+  //   • MARK DONE is offered on the stage in hand AND on any stage already in
+  //     progress. The oven you started twenty minutes ago is not the run's next
+  //     action, and it is still a thing you finish.
+  //   • START is offered on any stage not yet begun — including one further down the
+  //     list, which is the whole of overlap-by-marking. It records; it re-times
+  //     nothing, and `withStageStarted` is where that is guaranteed.
+  //   • SKIP is offered on EVERY stage that has not happened yet, `optional` or not.
+  //     No confirmation, no gate on the flag — Daniel's call, in his words: "I'm the
+  //     chef, I don't want the app trying to police me." The note field sits BESIDE
+  //     the button and never in front of it, so a skip is still one tap.
+  //
+  // A stage that is done or skipped offers nothing: both are over. `optional` shows
+  // as a chip and does nothing else — see `ProcessStageContentSchema.optional`.
   //
   // ─── THE LOG (issue #812, phase 4) ────────────────────────────────────────────
   //
@@ -227,6 +251,54 @@
     // off the document the write returned — `nextAction` again, never a second guess
     // at what "finished" means — and it is skipped when the log already has an entry
     // or the prompt has been dismissed, so it can only ever appear once.
+    if (nextAction(result.value).kind === 'done' && wantsPrompt) logOpen = true;
+  }
+
+  // ─── Start a stage, and skip a stage ──────────────────────────────────────────
+  //
+  // Both share `advancingStageId` as the in-flight lock rather than growing one of
+  // their own: all three write the SAME whole document (LWW, `setDoc`), so two of
+  // them in the air at once is one silently overwriting the other. One lock across
+  // the three is the honest model of the write path, not a convenience.
+
+  async function handleStart(stageId: string): Promise<void> {
+    const current = run;
+    if (!current || advancingStageId !== null) return;
+    advancingStageId = stageId;
+    const result = await startStage(current, stageId);
+    advancingStageId = null;
+    if (result.kind !== 'ok') {
+      addToast(
+        failureMessage(result.error, "Couldn't mark that stage started. Try again."),
+        'destructive',
+      );
+    }
+  }
+
+  // The note is held per stage while it is being typed, so opening the note on one
+  // stage cannot carry text into another. Cleared on a successful skip; the stage is
+  // over and the note now lives on the document.
+  let skipNotes = $state<Record<string, string>>({});
+  // Which stage's note field is showing. The field is disclosed rather than always
+  // present because a skip is one tap and a text box beside every stage would say
+  // otherwise.
+  let noteOpenStageId = $state<string | null>(null);
+
+  async function handleSkip(stageId: string): Promise<void> {
+    const current = run;
+    if (!current || advancingStageId !== null) return;
+    advancingStageId = stageId;
+    const result = await skipStage(current, stageId, skipNotes[stageId] ?? '');
+    advancingStageId = null;
+    if (result.kind !== 'ok') {
+      addToast(failureMessage(result.error, "Couldn't skip that stage. Try again."), 'destructive');
+      return;
+    }
+    delete skipNotes[stageId];
+    if (noteOpenStageId === stageId) noteOpenStageId = null;
+    // Skipping the LAST outstanding stage finishes the run exactly as marking it
+    // done would — the same `nextAction` reading, so a run that ends on a skip gets
+    // the same "how did it go?" invitation as one that ends on a Mark done.
     if (nextAction(result.value).kind === 'done' && wantsPrompt) logOpen = true;
   }
 
@@ -449,49 +521,95 @@
               {#each run.stages as stage (stage.id)}
                 {@const stated = formatStatedDuration(stage.duration)}
                 {@const isCurrent = stage.id === currentStageId}
+                {@const status = stageStatus(stage)}
                 <li
                   class="flex flex-col gap-1 rounded border border-border p-3"
-                  class:opacity-60={stage.actualEndAt !== null}
+                  class:opacity-60={status === 'done' || status === 'skipped'}
                   class:border-primary={isCurrent}
                   data-testid="batch-stage"
                   data-stage-id={stage.id}
                   data-current={isCurrent ? 'true' : null}
+                  data-status={status}
                   data-planned-start={stage.plannedStartAt}
                   data-planned-end={stage.plannedEndAt}
                 >
                   <div class="flex items-baseline justify-between gap-3">
-                    <span class="min-w-0 flex-1 font-medium" data-testid="batch-stage-label">
+                    <span
+                      class="min-w-0 flex-1 font-medium"
+                      class:line-through={status === 'skipped'}
+                      data-testid="batch-stage-label"
+                    >
                       {stage.label}
                     </span>
+                    <!-- The recipe's own opinion, and NOTHING follows from it: the
+                       Skip control below is offered on this stage whether the chip
+                       is here or not. It exists so a run read back a year later
+                       distinguishes "the recipe said I could" from "I decided to". -->
+                    {#if stage.optional}
+                      <span
+                        class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                        data-testid="batch-stage-optional"
+                      >
+                        optional
+                      </span>
+                    {/if}
                     <span class="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
                       {stage.kind === 'wait' ? 'wait' : 'active'}
                     </span>
                   </div>
 
-                  <div class="flex flex-col gap-0.5 text-sm">
-                    <span class="tabular-nums" data-testid="batch-stage-start">
-                      Starts {formatWhen(stage.plannedStartAt)}
-                    </span>
-                    {#if isObservational(stage)}
-                      <!-- A stage with no duration is scheduled at ZERO elapsed time —
+                  {#if stage.skipped !== null}
+                    {@const skip = stage.skipped}
+                    <!-- A SKIPPED STAGE SHOWS WHAT HAPPENED, NOT WHAT WAS PLANNED.
+                       Its `plannedStartAt`/`plannedEndAt` are still on the document
+                       — deliberately, since blanking them would destroy what the
+                       plan said — and they are now meaningless, so they are not
+                       rendered. The time it was skipped at and the reason, if one
+                       was given, are what is worth reading back. -->
+                    <div class="flex flex-col gap-0.5 text-sm">
+                      <span class="text-muted-foreground" data-testid="batch-stage-skipped">
+                        Skipped {formatWhen(skip.at)}
+                      </span>
+                      {#if skip.note !== ''}
+                        <span data-testid="batch-stage-skipped-note">{skip.note}</span>
+                      {/if}
+                    </div>
+                  {:else}
+                    <!-- Hoisted rather than tested inline, because `stageStatus`
+                       already guarantees an in-progress stage has an `actualStartAt`
+                       and a second inline null test would be a branch nothing can
+                       take. -->
+                    {@const startedAt = status === 'inProgress' ? stage.actualStartAt : null}
+                    <div class="flex flex-col gap-0.5 text-sm">
+                      {#if startedAt !== null}
+                        <span class="text-primary" data-testid="batch-stage-in-progress">
+                          In progress since {formatWhen(startedAt)}
+                        </span>
+                      {/if}
+                      <span class="tabular-nums" data-testid="batch-stage-start">
+                        Starts {formatWhen(stage.plannedStartAt)}
+                      </span>
+                      {#if isObservational(stage)}
+                        <!-- A stage with no duration is scheduled at ZERO elapsed time —
                          `plannedEndAt` equals `plannedStartAt`. Printing that as a
                          span would read as an instant event, which is the one thing
                          it is not: the length is not zero and it is not infinite, it
                          is UNKNOWN (see `resolveSchedule`'s header). So it says so,
                          and says what everything after it therefore is. -->
-                      <span class="text-muted-foreground" data-testid="batch-stage-observational">
-                        No fixed time — you decide when it's ready, and the times below are the plan
-                        as if this took none.
-                      </span>
-                    {:else}
-                      <span
-                        class="tabular-nums text-muted-foreground"
-                        data-testid="batch-stage-end"
-                      >
-                        Ends {formatWhen(stage.plannedEndAt)}
-                      </span>
-                    {/if}
-                  </div>
+                        <span class="text-muted-foreground" data-testid="batch-stage-observational">
+                          No fixed time — you decide when it's ready, and the times below are the
+                          plan as if this took none.
+                        </span>
+                      {:else}
+                        <span
+                          class="tabular-nums text-muted-foreground"
+                          data-testid="batch-stage-end"
+                        >
+                          Ends {formatWhen(stage.plannedEndAt)}
+                        </span>
+                      {/if}
+                    </div>
+                  {/if}
 
                   {#if stated !== null || stage.environment !== null || stage.until !== null}
                     <div
@@ -539,24 +657,80 @@
                      cook mode with its own timers, which is the whole hand-off (see
                      docs/formulas-schedules-batches.md) and needs no new machinery
                      at the sharp end. -->
-                  {#if isCurrent}
+                  <!-- ABANDONED RUNS OFFER NOTHING. `next.kind` rather than
+                     `run.state` so this page reads the run's condition through the
+                     same derivation as everything else on it; a stopped run has no
+                     next action by definition, and nothing on it is still to do. -->
+                  {#if next?.kind !== 'abandoned' && (status === 'notStarted' || status === 'inProgress')}
                     <div
                       class="flex flex-wrap items-center gap-2 pt-2"
                       data-testid="batch-stage-controls"
                     >
+                      <!-- Mark done leads on the stage in hand and on anything
+                         already under way; on a stage further down the list that
+                         has not begun, Start leads instead, because that is the
+                         thing you are actually doing when you reach past the queue.
+                         Both are the same size of gesture and both are a record. -->
+                      {#if isCurrent || status === 'inProgress'}
+                        <Button
+                          size="sm"
+                          onclick={() => void handleAdvance(stage.id)}
+                          loading={advancingStageId === stage.id}
+                          disabled={advancingStageId !== null}
+                          data-testid="batch-stage-advance"
+                        >
+                          {#snippet leading()}
+                            <Icon name="Check" size={16} />
+                          {/snippet}
+                          Mark done
+                        </Button>
+                      {/if}
+                      {#if status === 'notStarted'}
+                        <Button
+                          size="sm"
+                          variant={isCurrent ? 'outline' : 'solid'}
+                          onclick={() => void handleStart(stage.id)}
+                          disabled={advancingStageId !== null}
+                          data-testid="batch-stage-mark-started"
+                        >
+                          {#snippet leading()}
+                            <Icon name="Play" size={16} />
+                          {/snippet}
+                          Start
+                        </Button>
+                      {/if}
+                      <!-- SKIP, ON EVERY STAGE, OPTIONAL OR NOT, AND IN ONE TAP.
+                         No confirmation dialogue and no gate on `optional`: the cook
+                         decides what happens in the kitchen and Salt records it. The
+                         note is a separate, optional disclosure beside the button —
+                         never a step in front of it. -->
                       <Button
                         size="sm"
-                        onclick={() => void handleAdvance(stage.id)}
-                        loading={advancingStageId === stage.id}
+                        variant="ghost"
+                        onclick={() => void handleSkip(stage.id)}
                         disabled={advancingStageId !== null}
-                        data-testid="batch-stage-advance"
+                        data-testid="batch-stage-skip"
                       >
                         {#snippet leading()}
-                          <Icon name="Check" size={16} />
+                          <Icon name="SkipForward" size={16} />
                         {/snippet}
-                        Mark done
+                        Skip
                       </Button>
-                      {#if stage.kind === 'active'}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Why are you skipping ${stage.label || 'this stage'}?`}
+                        aria-expanded={noteOpenStageId === stage.id}
+                        onclick={() =>
+                          (noteOpenStageId = noteOpenStageId === stage.id ? null : stage.id)}
+                        data-testid="batch-stage-skip-note-toggle"
+                      >
+                        {#snippet leading()}
+                          <Icon name="StickyNote" size={16} />
+                        {/snippet}
+                        Why?
+                      </Button>
+                      {#if stage.kind === 'active' && (isCurrent || status === 'inProgress')}
                         <Button
                           size="sm"
                           variant="outline"
@@ -570,6 +744,15 @@
                         </Button>
                       {/if}
                     </div>
+                    {#if noteOpenStageId === stage.id}
+                      <TextField
+                        label="Why not?"
+                        placeholder="Out of milk"
+                        value={skipNotes[stage.id] ?? ''}
+                        onValueChange={(v) => (skipNotes[stage.id] = v)}
+                        data-testid="batch-stage-skip-note"
+                      />
+                    {/if}
                   {/if}
                 </li>
               {/each}

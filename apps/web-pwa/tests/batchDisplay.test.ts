@@ -36,6 +36,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     plannedEndAt: '2026-08-14T12:00:00.000Z',
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...over,
   };
 }
@@ -122,9 +123,86 @@ describe('nextAction', () => {
   it('is "abandoned" for a stopped run, whatever its stages say', () => {
     expect(nextAction(batch({ state: 'abandoned' })).kind).toBe('abandoned');
   });
+
+  // ─── Skipped and in-progress stages (issue #1275) ─────────────────────────────
+
+  it('STEPS OVER a skipped stage — it is never what the run is waiting for', () => {
+    const action = nextAction(
+      batch({
+        stages: [
+          stage({
+            id: 's1',
+            label: 'Brush with milk',
+            skipped: { at: '2026-08-14T09:10:00.000Z', note: '' },
+          }),
+          stage({ id: 's2', label: 'Bake' }),
+        ],
+      }),
+    );
+    expect(action).toEqual({ kind: 'stage', stage: expect.objectContaining({ id: 's2' }) });
+  });
+
+  it('is "done" when the LAST stage was skipped rather than done', () => {
+    // A run that ends on a skip finishes exactly as a fully-done one does. The
+    // surfaces read this and nothing else, so they cannot disagree about it.
+    expect(
+      nextAction(
+        batch({
+          stages: [
+            stage({ id: 's1', actualEndAt: '2026-08-14T12:00:00.000Z' }),
+            stage({ id: 's2', skipped: { at: '2026-08-14T12:05:00.000Z', note: 'no glaze' } }),
+          ],
+        }),
+      ).kind,
+    ).toBe('done');
+  });
+
+  it('still names a stage that is in progress — under way is not finished with', () => {
+    const action = nextAction(
+      batch({ stages: [stage({ id: 's1', actualStartAt: '2026-08-14T09:00:00.000Z' })] }),
+    );
+    expect(action).toEqual({ kind: 'stage', stage: expect.objectContaining({ id: 's1' }) });
+  });
 });
 
 describe('orderBatches', () => {
+  it('is unchanged by a skip — it orders by the clock the run waits against', () => {
+    // Pinned rather than assumed (issue #1275): `orderBatches` reads `nextAction`
+    // and nothing else, so a skipped stage reaches it only through that. A run
+    // whose first stage was skipped sorts on its NEXT stage's planned time, and a
+    // run finished by a skip falls to the bottom with the rest.
+    const skippedFirst = batch({
+      id: 'skipped-first',
+      stages: [
+        stage({
+          id: 's1',
+          plannedStartAt: '2026-08-14T09:00:00Z',
+          skipped: { at: '2026-08-14T08:00:00Z', note: '' },
+        }),
+        stage({ id: 's2', plannedStartAt: '2026-08-14T12:00:00Z' }),
+      ],
+    });
+    const earlier = batch({
+      id: 'earlier',
+      stages: [stage({ plannedStartAt: '2026-08-14T10:00:00Z' })],
+    });
+    const endedOnASkip = batch({
+      id: 'ended',
+      stages: [
+        stage({
+          plannedStartAt: '2026-08-14T07:00:00Z',
+          skipped: { at: '2026-08-14T07:00:00Z', note: '' },
+        }),
+      ],
+    });
+
+    expect(orderBatches([skippedFirst, endedOnASkip, earlier]).map((b) => b.id)).toEqual([
+      'earlier',
+      'skipped-first',
+      'ended',
+    ]);
+  });
+
   it('puts what needs doing soonest first, and everything finished at the bottom', () => {
     const soon = batch({ id: 'soon', stages: [stage({ plannedStartAt: '2026-08-14T09:00:00Z' })] });
     const later = batch({

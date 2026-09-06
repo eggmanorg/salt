@@ -128,4 +128,19 @@ describe('remindableStages — the rule', () => {
     remindableStages(LOAF);
     expect(LOAF).toEqual(before);
   });
+
+  it('KNOWS NOTHING ABOUT A SKIP, and the rule is unchanged by one (issue #1275)', () => {
+    // This module is pure and PLANNED-ONLY — its header says so, and the filtering
+    // of a skipped stage belongs at enqueue in `onBatchWritten`, never here. The
+    // pin is that the epic's loaf timeline is the same list whether or not a stage
+    // in it has been skipped: the rule ("first stage, and any stage after a
+    // `wait`") is about what PRECEDES a stage, and a skip does not change that.
+    const withASkip = LOAF.map((stage) =>
+      stage.id === 'shape'
+        ? { ...stage, skipped: { at: '2026-08-14T09:20:00.000Z', note: 'already shaped' } }
+        : stage,
+    );
+    expect(ids(withASkip)).toEqual(ids(LOAF));
+    expect(ids(LOAF)).toEqual(['mix', 'shape', 'preheat', 'bake']);
+  });
 });

@@ -124,6 +124,25 @@ in `ProcessStageKindSchema`'s field docs and verbatim in the extraction prompt,
 with a test pinning the two together, because the spike labelled the bake
 differently on each of three bread recipes purely for want of that sentence.
 
+**A stage may be OPTIONAL, and a run may SKIP one** (issue #1275). `optional` is a
+property of the process stage, authored by the extraction pass from the recipe's own
+words ("optionally, brush the top with milk") and correctable by hand on the formula
+screen. It is **information and gates nothing**: on a run, every stage is skippable
+whether it is marked or not. Reading "optional ⇒ skippable, therefore required ⇒ not
+skippable" is the obvious inference and it is wrong — the stages most worth knowing
+you skipped are exactly the ones the recipe called required.
+
+On the batch, a stage therefore has **four conditions, derived from three nullable
+timestamps and never stored as an enum**: `skipped != null` → skipped, else
+`actualEndAt != null` → done, else `actualStartAt != null` → in progress, else not
+started. `stageStatus` in `domain/src/batch/transitions.ts` is the one derivation.
+Skipping re-times the tail through `resolveSchedule` over the **unskipped** remainder
+and leaves the skipped stage's own planned times alone; a stage can also be marked
+**started** without being marked done, which records overlap without planning it —
+the plan stays a strict queue. A skipped stage is filtered out of the reminder
+enqueue in `onBatchWritten` and no-opped at dispatch; `remindableStages` stays pure
+and planned-only, and its rule is untouched by a skip.
+
 **A recipe with no waits extracts to nothing.** The flow returns the full ordered
 list — actives included, because a schedule needs the active time between the
 waits — but only for a method that has something to wait for. This is enforced in
@@ -356,6 +375,9 @@ Still to build at 03–04: the basis-driven solve direction; stages carrying
 additions; projections that observations revise; reminders beyond the Tasks
 scheduling horizon; `authorFerment` and two kinds; vessel headspace and the
 cure-salt bounds.
+
+Optional stages and the four-condition run (started / done / skipped, with a reason)
+shipped with bread, in #1275 — they are not on that list.
 
 ## Open questions
 

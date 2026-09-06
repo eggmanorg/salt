@@ -440,8 +440,16 @@ export type {
 
 // Batch module (issue #812, epic #778) — one run of a formula: the freeze that
 // starts it, and the producers that move it along. Pure; every instant injected.
-export { freezeBatch, currentStage, withStageAdvanced, withBatchAbandoned } from './batch/index.js';
-export type { FreezeBatchFailure } from './batch/index.js';
+export {
+  freezeBatch,
+  currentStage,
+  stageStatus,
+  withStageAdvanced,
+  withStageStarted,
+  withStageSkipped,
+  withBatchAbandoned,
+} from './batch/index.js';
+export type { FreezeBatchFailure, StageStatus } from './batch/index.js';
 
 // URL module — pure display-time cache-buster for regenerated image URLs (#460).
 export { appendCacheBuster, recipeHeroUrl, type HeroImageSource } from './url/index.js';
