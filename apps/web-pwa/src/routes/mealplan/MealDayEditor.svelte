@@ -18,6 +18,7 @@
     type TemperatureBand,
   } from '@salt/domain';
   import type { WeatherDaySummary } from '@salt/domain/schemas';
+  import { BAND_CLASS } from './temperatureBandClass.js';
   import WeatherIcon from '$lib/weather-icons/WeatherIcon.svelte';
   import MealDayDetail from './MealDayDetail.svelte';
   import { recipeIndex, resolveRecipeIds } from '../../lib/attachedRecipes.js';
@@ -241,17 +242,11 @@
         META_CHAR_BUDGET,
   );
 
-  // Evening-window temperature band (drives the header temp colour, cool→warm),
-  // mirroring WeatherSummary. Null whenever there's no forecast for this day.
+  // Evening-window temperature band (drives the header temp colour, cool→warm).
+  // The ramp itself is shared with WeatherSummary (`temperatureBandClass.ts`);
+  // it used to be written out here byte-identically. Null whenever there's no
+  // forecast for this day.
   const band = $derived<TemperatureBand | null>(weather ? temperatureBand(weather.tempHigh) : null);
-  const BAND_CLASS: Record<TemperatureBand, string> = {
-    freezing: 'text-sky-600',
-    cold: 'text-sky-500',
-    cool: 'text-cyan-600',
-    mild: 'text-emerald-600',
-    warm: 'text-orange-500',
-    hot: 'text-red-600',
-  };
 </script>
 
 <!-- One day = one object in the list (#639). What draws the object's edge depends

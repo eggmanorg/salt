@@ -20,6 +20,7 @@
     "theme:check": "pnpm --filter @salt/ui-components theme:check",
     "docsmap:check": "node scripts/check-docs-map.mjs",
     "typescale:check": "node scripts/check-type-scale.mjs",
+    "palette:check": "node scripts/check-raw-palette.mjs",
     "mergequeue:check": "node scripts/check-merge-queue.mjs",
     "coverage:files:check": "node scripts/check-coverage-files.mjs",
     "coverage:ratchet:check": "node scripts/check-coverage-ratchet.mjs",

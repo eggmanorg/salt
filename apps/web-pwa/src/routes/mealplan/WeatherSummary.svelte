@@ -3,6 +3,7 @@
   import { Tooltip, TooltipTrigger, TooltipContent } from '@salt/ui-components';
   import { temperatureBand, type TemperatureBand } from '@salt/domain';
   import type { WeatherDaySummary } from '@salt/domain/schemas';
+  import { BAND_CLASS } from './temperatureBandClass.js';
 
   // Compact, glanceable evening-forecast cue for one in-window planner day (issue
   // #382, Phase 3). The PARENT gates rendering — this component is only mounted for
@@ -24,14 +25,6 @@
   // The colour is driven by the window HIGH — the warmest, most salient part of the
   // evening window (documented in temperatureBand). cool blues → warm oranges/reds.
   const band = $derived<TemperatureBand>(temperatureBand(weather.tempHigh));
-  const BAND_CLASS: Record<TemperatureBand, string> = {
-    freezing: 'text-sky-600',
-    cold: 'text-sky-500',
-    cool: 'text-cyan-600',
-    mild: 'text-emerald-600',
-    warm: 'text-orange-500',
-    hot: 'text-red-600',
-  };
 
   // Eat-mood recommendation cue is disabled while the rules are under review. To
   // restore it, re-import `classifyEatingMood` / `EatingMood` from `@salt/domain`,
