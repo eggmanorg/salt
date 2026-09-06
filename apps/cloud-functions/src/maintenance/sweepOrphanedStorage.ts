@@ -5,7 +5,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { logger } from 'firebase-functions';
 import { flushServerObservability } from '@salt/observability/server';
 import { reportServerError } from '../observability/reportServerError.js';
-import { SWEEPS } from './storageSweepTargets.js';
+import { SWEEPS, NESTED_SWEEPS } from './storageSweepTargets.js';
 
 // Weekly sweep of artefacts whose owning Firestore doc is gone (issues #620, #789).
 //
@@ -85,12 +85,181 @@ export function selectOrphanedObjects({
 export function idFromObjectPath(path: string, prefix: string): string | null {
   if (!path.startsWith(prefix)) return null;
   const name = path.slice(prefix.length);
-  // Nested paths are not something this codebase writes; if one ever appears,
-  // it is not ours to reason about, so leave it alone.
+  // Nested paths are NOT unwritten — `batch-images/` is nested, and #968 gave it
+  // its own pass and its own key function (`nestedKeyFromObjectPath`). This one
+  // stays strictly single-segment: the two SHAPES must not be conflated, because
+  // a nested path fed to a flat join produces a key no document can match, and a
+  // key nothing matches is a deletion.
   if (name.includes('/')) return null;
   const dot = name.lastIndexOf('.');
   const id = dot === -1 ? name : name.slice(0, dot);
   return id.length > 0 ? id : null;
+}
+
+/**
+ * `batch-images/b1/obs1.webp` → `b1/obs1`. Null for any other shape (issue #968).
+ *
+ * The twin of `idFromObjectPath` for two-segment objects, and deliberately strict
+ * in the same direction: EXACTLY two segments, both non-empty. One segment, three
+ * segments or an empty half all return null and the object is left alone forever,
+ * because a key this function is not certain of is a key no live document will
+ * match — and an unmatched key is a deleted photograph.
+ */
+export function nestedKeyFromObjectPath(path: string, prefix: string): string | null {
+  if (!path.startsWith(prefix)) return null;
+  const name = path.slice(prefix.length);
+  const slash = name.indexOf('/');
+  // `<= 0` covers both "no slash at all" (a flat path) and an empty first
+  // segment, which is the whole of the parent half being absent.
+  if (slash <= 0) return null;
+  const parent = name.slice(0, slash);
+  const leaf = name.slice(slash + 1);
+  // A third segment. Deeper nesting is a shape this join has no key for.
+  if (leaf.includes('/')) return null;
+  const dot = leaf.lastIndexOf('.');
+  const id = dot === -1 ? leaf : leaf.slice(0, dot);
+  return id.length > 0 ? `${parent}/${id}` : null;
+}
+
+/** One leaf document of a nested sweep, reduced to just what the join needs. */
+export interface NestedLeaf {
+  /** The leaf doc id — an observation id. */
+  id: string;
+  /** Its parent doc id (`ref.parent.parent?.id`), or null if it is not nested. */
+  parentId: string | null;
+  /** The collection that parent lives in (`ref.parent.parent?.parent.id`). */
+  parentCollection: string | null;
+  /** The claim field's RAW value, unvalidated and unparsed. See below. */
+  claim: unknown;
+}
+
+/**
+ * Pure join: which `{parentId}/{leafId}` keys are claimed by a live document.
+ *
+ * Extracted from the pass so the half of this feature that can delete a
+ * photograph is testable without an emulator, exactly as `selectOrphanedObjects`
+ * is. Three conditions, and a key is live only if all three hold:
+ *
+ *  - the leaf is nested under `parentCollection`. A collection group matches the
+ *    NAME anywhere in the tree; nothing else in this codebase nests an
+ *    `observations` collection, and this says so rather than trusting it.
+ *  - its parent still exists. Deleting a Firestore document does not delete its
+ *    subcollection, so a parent deleted without a cascade leaves leaves behind
+ *    that would otherwise claim their objects forever.
+ *  - the leaf CLAIMS the object — its claim field is present.
+ *
+ * THE CLAIM CHECK IS PRESENCE, NOT VALIDITY, and the asymmetry is the point. A
+ * claim field that is there but malformed is a document we do not understand,
+ * and the safe reading of "do not understand" is claimed: `{}`, `0`, `''` and a
+ * bare string all keep the object. Only `null` and `undefined` — the two values
+ * that positively mean "no object attached" — release it. Parsing here would let
+ * a schema change delete photographs a person took.
+ */
+export function liveNestedKeys({
+  leaves,
+  liveParentIds,
+  parentCollection,
+}: {
+  leaves: readonly NestedLeaf[];
+  liveParentIds: ReadonlySet<string>;
+  parentCollection: string;
+}): Set<string> {
+  return new Set(
+    leaves.flatMap((leaf) => {
+      if (leaf.parentId === null || leaf.parentCollection !== parentCollection) return [];
+      if (!liveParentIds.has(leaf.parentId)) return [];
+      if (leaf.claim === null || leaf.claim === undefined) return [];
+      return [`${leaf.parentId}/${leaf.id}`];
+    }),
+  );
+}
+
+/**
+ * The two-segment twin of `sweepPrefix` (issue #968), for `batch-images/`.
+ *
+ * A batch observation photo lives at `batch-images/{batchId}/{observationId}.webp`
+ * — nested, because an observation is nested — so there is no single doc id to
+ * join on. The key is the pair, and a key is LIVE only when both halves hold:
+ *
+ *  - the leaf document exists AND carries its claim field. This is the half that
+ *    earns the pass its keep today: `setObservationImageUpload` saves the object
+ *    and THEN stamps the URL onto the observation, so a failed stamp leaves an
+ *    object no document references while the document itself is very much alive.
+ *    Joining on document existence alone would read that object as claimed.
+ *  - its parent document exists. Deleting a Firestore document does NOT delete
+ *    its subcollection, so a future `deleteBatch` that removes only
+ *    `batches/{batchId}` leaves its observations behind, still claiming their
+ *    photos forever. Intersecting with the live parents closes that in advance.
+ *
+ * PRESENCE, NOT A PARSE. The claim check reads the raw field and asks only
+ * whether it is there. A malformed `image` is a document we do not understand,
+ * and the safe reading of "do not understand" is CLAIMED — the same posture
+ * `embeddingCandidate` takes with an undated row. Validating here would turn a
+ * schema bug into photo loss, and this is the one pass whose objects are
+ * photographs a person took rather than pictures a model drew.
+ *
+ * Everything else is shared, not re-implemented: `selectOrphanedObjects` and with
+ * it the seven-day grace and the 500-object cap, the log shape, and the
+ * never-throw handler this runs inside.
+ */
+export async function sweepNestedPrefix(
+  { prefix, collectionGroup, parentCollection, claimField }: (typeof NESTED_SWEEPS)[number],
+  now: number,
+): Promise<void> {
+  const bucket = getStorage().bucket();
+  const db = getFirestore();
+
+  // Three id-only reads in parallel. `.select(claimField)` projects the one field
+  // the claim check needs; `.select()` on the parents fetches no field data at
+  // all. A bare collection-group scan with no `where`/`orderBy` needs no
+  // composite index — adding a filter here would.
+  const [files, leafSnap, parentSnap] = await Promise.all([
+    bucket.getFiles({ prefix }),
+    db.collectionGroup(collectionGroup).select(claimField).get(),
+    db.collection(parentCollection).select().get(),
+  ]);
+
+  const liveKeys = liveNestedKeys({
+    leaves: leafSnap.docs.map((doc) => {
+      const parentRef = doc.ref.parent.parent;
+      return {
+        id: doc.id,
+        parentId: parentRef?.id ?? null,
+        parentCollection: parentRef?.parent.id ?? null,
+        claim: doc.get(claimField) as unknown,
+      };
+    }),
+    liveParentIds: new Set(parentSnap.docs.map((d) => d.id)),
+    parentCollection,
+  });
+
+  const candidates = files[0].flatMap((file) => {
+    const id = nestedKeyFromObjectPath(file.name, prefix);
+    if (id === null) return [];
+    // timeCreated restarts on overwrite, exactly as in sweepPrefix — retaking a
+    // photo restarts its grace, which only ever delays a deletion.
+    const createdAt = Date.parse(String(file.metadata.timeCreated ?? ''));
+    if (Number.isNaN(createdAt)) return [];
+    return [{ path: file.name, id, createdAt }];
+  });
+
+  const doomed = selectOrphanedObjects({ candidates, liveIds: liveKeys, now });
+
+  for (const orphan of doomed) {
+    await bucket.file(orphan.path).delete();
+    logger.info('sweepOrphanedStorage: deleted orphan', {
+      path: orphan.path,
+      ageDays: Math.floor((now - orphan.createdAt) / 86_400_000),
+    });
+  }
+
+  logger.info('sweepOrphanedStorage: swept prefix', {
+    prefix,
+    objects: candidates.length,
+    liveDocs: liveKeys.size,
+    deleted: doomed.length,
+    capped: doomed.length === MAX_DELETIONS_PER_RUN,
+  });
 }
 
 async function sweepPrefix(prefix: string, collection: string, now: number): Promise<void> {
@@ -232,6 +401,12 @@ export const sweepOrphanedStorage = onSchedule(
       // Not a SWEEPS row: that table is prefix→collection, and this pass has no
       // prefix, no bucket and a different deleter. It shares what actually
       // matters — the schedule, the guards, and this never-throw handler.
+      // Not a SWEEPS row either: these prefixes key on a PAIR of ids and join
+      // against a collection group, so the table shape differs — everything that
+      // matters (grace, cap, log shape, this handler) is still shared.
+      for (const nested of NESTED_SWEEPS) {
+        await sweepNestedPrefix(nested, now);
+      }
       await sweepCanonEmbeddings(now);
     } catch (err) {
       // Never throw out of a scheduled handler: it is a StorageError/SyncError
