@@ -419,9 +419,9 @@ export const coverageThresholds = {
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one, and
   // re-pinned in #1221 — both histories are above.
   'apps/web-pwa/src/routes/**': {
-    lines: 80.28,
-    branches: 68.1,
-    uncoveredLines: 1846,
+    lines: 80.83,
+    branches: 69.17,
+    uncoveredLines: 1837,
     uncoveredBranches: 1760,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
