@@ -1183,6 +1183,45 @@ describe('BatchDetailPage — the stage beside a log entry', () => {
   });
 });
 
+describe('BatchDetailPage — "How it went" is a preview and a door (issue #1280)', () => {
+  const many = [1, 2, 3, 4, 5].map((n) =>
+    observation({ id: `obs-${n}`, at: `2026-08-1${n}T09:00:00.000Z`, weightGrams: 1000 + n }),
+  );
+
+  it('shows only the most recent few readings, newest first', async () => {
+    // A GLANCE, not the log. The whole run in order is `/batches/:id/log`; this card
+    // stays what it has always been — the last thing that happened.
+    await showRun();
+    mockObservations._set(many);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log')).toBeInTheDocument());
+    const shown = screen
+      .getAllByTestId('batch-log-entry')
+      .map((el) => el.getAttribute('data-observation-id'));
+    expect(shown).toEqual(['obs-5', 'obs-4', 'obs-3']);
+  });
+
+  it('offers the door to the full log, whatever the run has recorded', async () => {
+    // Present on an empty log too: the door is to the run's whole story — its start,
+    // its steps and its skips — none of which is a reading.
+    await showRun();
+    mockObservations._set([]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-empty')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-open')).toHaveAttribute(
+      'href',
+      `#/batches/${BATCH_ID}/log`,
+    );
+  });
+
+  it('keeps Log a reading on the card', async () => {
+    // The preview did not cost the card its control: the sheet still opens from here.
+    await showRun();
+
+    expect(screen.getByTestId('batch-log-add')).toBeInTheDocument();
+  });
+});
+
 describe('BatchDetailPage — gated (issue #831)', () => {
   // A typed `#/batches/:id` must not render for anyone outside the test group while
   // bread is being built. Nothing is shown and nothing explains the absence — a

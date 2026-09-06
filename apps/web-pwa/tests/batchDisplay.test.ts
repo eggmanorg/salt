@@ -8,6 +8,9 @@ import {
   formatWhen,
   nextAction,
   orderBatches,
+  formatDrift,
+  formatTimeOfDay,
+  groupLogByDay,
   stageLabelById,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
@@ -388,5 +391,77 @@ describe('stageLabelById', () => {
 
   it('says nothing for an id this run does not have, rather than inventing a word', () => {
     expect(stageLabelById(run, 'stage-from-another-run')).toBeNull();
+  });
+});
+
+// ─── The batch log's words (issue #1280) ────────────────────────────────────────
+//
+// Local-time `Date` construction throughout, for the reason the header gives: none
+// of these may depend on the machine's timezone.
+
+/** An ISO instant for a local wall-clock time, so the rendering is predictable. */
+function localIso(y: number, m: number, d: number, hh: number, mm: number): string {
+  return new Date(y, m - 1, d, hh, mm).toISOString();
+}
+
+describe('formatTimeOfDay', () => {
+  it('is the clock alone — the day is said once, by the heading above', () => {
+    expect(formatTimeOfDay(localIso(2026, 9, 6, 7, 31))).toBe('07:31');
+  });
+
+  it('refuses an instant it cannot read rather than printing a wrong one', () => {
+    expect(formatTimeOfDay('not a time')).toBe('—');
+  });
+});
+
+describe('formatDrift', () => {
+  it('says over and under, in the same words a duration is said in', () => {
+    expect(formatDrift(15)).toBe('15 min over');
+    expect(formatDrift(-1)).toBe('1 min under');
+    expect(formatDrift(75)).toBe('1 hr 15 min over');
+  });
+
+  it('says on time rather than "0 min over"', () => {
+    expect(formatDrift(0)).toBe('on time');
+  });
+
+  it('says NOTHING for a step that was given no time', () => {
+    // `buildBatchLog` hands `null` for a stage with no duration, and the row prints
+    // nothing at all — an observational step has no over or under to report, and
+    // "0 min over" would be a claim it cannot support.
+    expect(formatDrift(null)).toBeNull();
+  });
+});
+
+describe('groupLogByDay', () => {
+  it('cuts the list into calendar days without reordering it', () => {
+    const entries = [
+      { at: localIso(2026, 9, 5, 18, 12) },
+      { at: localIso(2026, 9, 5, 21, 14) },
+      { at: localIso(2026, 9, 6, 7, 12) },
+    ];
+
+    const days = groupLogByDay(entries);
+
+    expect(days.map((day) => day.entries.length)).toEqual([2, 1]);
+    expect(days.flatMap((day) => day.entries)).toEqual(entries);
+    expect(days[1]?.label).toBe('Sun 6 Sept');
+  });
+
+  it('groups by the LOCAL day, so a bake that finishes after midnight belongs to the morning it finished in', () => {
+    const days = groupLogByDay([
+      { at: localIso(2026, 9, 5, 23, 50) },
+      { at: localIso(2026, 9, 6, 0, 10) },
+    ]);
+
+    expect(days).toHaveLength(2);
+  });
+
+  it('leaves out an entry whose instant cannot be read', () => {
+    expect(groupLogByDay([{ at: 'not a time' }])).toEqual([]);
+  });
+
+  it('is nothing for nothing', () => {
+    expect(groupLogByDay([])).toEqual([]);
   });
 });
