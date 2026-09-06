@@ -123,9 +123,9 @@ A doc earns its place by holding what code cannot say. If a header comment besid
 
 ## Code search (Serena MCP)
 
-Serena is configured **TypeScript-only** (`languages: [typescript]` in `.serena/project.yml`), deliberately.
+Serena is configured **TypeScript-only** (`language_servers: [typescript]` in `.serena/project.yml`), deliberately.
 
 - **Use it for the pure-TS layers** — `domain`, `shared-types`, `firebase-sync`, `observability`, `cloud-functions`, `apps/web-pwa/src/lib/*Service.ts`. There `find_referencing_symbols` is exact.
-- **Never use it to answer "what in the UI uses this?"** Serena cannot see `.svelte` files. A reference query for a symbol consumed only by components returns **zero results** — a confident, wrong answer. Use `grep`/`search_for_pattern` over `**/*.svelte`; imports are literal text and always accurate.
+- **Never use it to answer "what in the UI uses this?"** #1086 tested adding Serena's Svelte language server and found something worse than a gap: a reference query can silently attach unrelated files to real results — e.g. mistaking "renders this component" for "imports that component's export" — a confident, wrong answer, not just an empty one. Use `grep`/`search_for_pattern` over `**/*.svelte`; imports are literal text and always accurate.
 - **Serena is not the impact gate.** `depcruise`, `lint` and `typecheck` are authoritative for whether a change is legal — they encode what is _allowed_, not merely what is _connected_.
-- `.serena/` is gitignored. If regenerated, re-apply `languages: [typescript]` and `ignored_paths: [".claude/**"]`.
+- `.serena/` is gitignored. If regenerated, re-apply `language_servers: [typescript]` and `ignored_paths: [".claude/**"]`.

@@ -57,8 +57,9 @@ docker/test-emulators/.image-build-hash
 # project.yml is regenerated on activation.
 #
 # NOTE: project.yml's defaults are WRONG for this repo and must be re-applied
-# after any regeneration — `languages: [typescript]` (Serena's Svelte LSP gives
-# unreliable references, so semantic tools are TS-only here) and
+# after any regeneration — `language_servers: [typescript]` (#1086 tested
+# adding Svelte support: it silently attached unrelated files to real
+# cross-file results, not just gaps, so semantic tools stay TS-only here) and
 # `ignored_paths: [".claude/**"]` (otherwise it indexes the 18 duplicate
 # checkouts under .claude/worktrees/ despite them being gitignored: 17,734 files
 # and ~59 min, versus ~790 files in ~3 min when scoped correctly).
