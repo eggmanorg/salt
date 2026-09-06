@@ -123,7 +123,7 @@
             <div
               class="h-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none {fired
                 ? 'bg-primary'
-                : 'bg-amber-500'}"
+                : 'bg-warning'}"
               style="width: {progress * 100}%"
               data-testid="cook-timer-chip-progress"
             ></div>

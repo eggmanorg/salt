@@ -483,7 +483,7 @@
                Saving is what clears it — there is no separate "mark reviewed",
                because reading the plan and correcting it IS the review. -->
           <div
-            class="flex items-center gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            class="flex items-center gap-2 rounded border border-review/40 bg-review/10 px-3 py-2 text-sm text-review-text"
             data-testid="guided-plan-unreviewed-chip"
           >
             <Icon name="TriangleAlert" size={16} />
@@ -498,10 +498,10 @@
                out, both the user's call — re-run for a fresh plan, or reconcile by
                hand and save (a save re-stamps, so the banner clears either way). -->
           <div
-            class="flex flex-wrap items-center gap-3 rounded border border-amber-300 bg-amber-50 px-3 py-2"
+            class="flex flex-wrap items-center gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2"
             data-testid="guided-plan-stale-banner"
           >
-            <p class="flex-1 text-sm text-amber-900">
+            <p class="flex-1 text-sm text-warning-text">
               The recipe has changed since this plan was written.
             </p>
             <Button
@@ -519,10 +519,10 @@
 
         {#if unassigned.length > 0}
           <div
-            class="flex flex-col gap-3 rounded border border-amber-300 bg-amber-50 px-3 py-3"
+            class="flex flex-col gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-3"
             data-testid="guided-plan-unassigned-warning"
           >
-            <p class="text-sm text-amber-900">
+            <p class="text-sm text-warning-text">
               {unassigned.length === 1
                 ? 'One ingredient is'
                 : `${unassigned.length} ingredients are`}
@@ -531,7 +531,7 @@
             </p>
             {#each unassigned as ing (ing.id)}
               <div class="flex flex-wrap items-center gap-2">
-                <span class="flex-1 text-sm text-amber-900">{ing.rawText}</span>
+                <span class="flex-1 text-sm text-warning-text">{ing.rawText}</span>
                 <Select value="" onValueChange={(v) => attachIngredient(v, ing.id)}>
                   <SelectTrigger
                     class="h-8 w-56"
@@ -557,15 +557,15 @@
                other bowl's are shown to nobody, and the step is confidently wrong.
                A warning, never a gate: the plan still cooks. -->
           <div
-            class="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-3"
+            class="flex flex-col gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-3"
             data-testid="guided-plan-duplicate-container-warning"
           >
-            <p class="text-sm text-amber-900">
+            <p class="text-sm text-warning-text">
               Two prep steps can't share a container name — a step that asks for it only ever gets
               the first one. Name each for what's in it: "onion bowl", "sugar bowl".
             </p>
             {#each containerProblems.duplicates as dup (dup.name)}
-              <p class="text-sm text-amber-900">
+              <p class="text-sm text-warning-text">
                 <span class="font-medium">{dup.name}</span>
                 — prep steps {dup.prepIds.map((id) => prepNumbers.get(id) ?? '?').join(', ')}
               </p>
@@ -579,15 +579,15 @@
                — so this warns and nothing more. Usually a word apart from a real
                container name ("the onion bowl" vs "onion bowl"). -->
           <div
-            class="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-3"
+            class="flex flex-col gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-3"
             data-testid="guided-plan-dangling-container-warning"
           >
-            <p class="text-sm text-amber-900">
+            <p class="text-sm text-warning-text">
               A step wants a container no prep step fills, so it can't show what's in it. Copy the
               name from the prep step exactly, word for word.
             </p>
             {#each containerProblems.dangling as miss (miss.stepId + miss.name)}
-              <p class="text-sm text-amber-900">
+              <p class="text-sm text-warning-text">
                 Step {stepNumbers.get(miss.stepId) ?? '?'} wants
                 <span class="font-medium">{miss.name}</span>
               </p>

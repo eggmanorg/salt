@@ -175,14 +175,14 @@
     >
       <span class="block truncate text-sm font-medium">{titleCase(item.name)}</span>
       {#if pending && latest}
-        <span class="block truncate text-xs text-amber-800 dark:text-amber-300">
+        <span class="block truncate text-xs text-review-text">
           {@render pendingSummary()}
         </span>
       {/if}
     </button>
     {#if pending}
       <span
-        class="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800 dark:text-amber-200"
+        class="shrink-0 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
       >
         Review
       </span>
@@ -216,7 +216,7 @@
   <li class="flex flex-col gap-2 pl-4" data-testid="catalog-row-body">
     {#if pending}
       <div
-        class="flex flex-col gap-1 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+        class="flex flex-col gap-1 rounded border border-review/40 bg-review/10 p-3 text-sm text-review-text"
         data-testid="catalog-row-review"
       >
         {#if item.reasoning}

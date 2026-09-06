@@ -577,13 +577,17 @@
             </button>
           {/if}
           <!-- Chef-hat = cooking toggle, independent of eating. Plain button so both
-             states are fully Tailwind: selected = filled amber, unselected = clear
-             neutral. Keeps `bg-amber-500` when on (styling test). -->
+             states are fully Tailwind: selected = the pale terracotta `tertiary-tint`
+             ground with its own legible ink, unselected = clear neutral. It reads as
+             a peer of the note toggle above rather than as an alarm — the two are the
+             same kind of "someone has said something about tonight" mark, in the two
+             accents the theme keeps for them. Selected is asserted by class in
+             MealPlanWeekPage.test.ts. -->
           <button
             type="button"
             class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors
             {isChef(m.id)
-              ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600'
+              ? 'border-tertiary-tint bg-tertiary-tint text-tertiary-tint-foreground hover:bg-tertiary-tint/70'
               : 'border-input bg-background text-muted-foreground hover:bg-muted'}"
             onclick={() => onChefToggle(m.id)}
             aria-pressed={isChef(m.id)}

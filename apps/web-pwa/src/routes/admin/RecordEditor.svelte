@@ -359,7 +359,7 @@
     approveBusy = true;
     // No overrides: every edit already wrote through, so approving is only the
     // review being recorded. It stays on this page (issue #872) — the fields do
-    // not move, the amber strip and this button simply go.
+    // not move, the `review` strip and this button simply go.
     await approveCanonItemWithOverrides(item);
     approveBusy = false;
   }
@@ -384,12 +384,12 @@
   <!-- Review context — ABOVE the fields, never a second copy of them. -->
   {#if needsApproval}
     <section
-      class="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30"
+      class="flex flex-col gap-2 rounded border border-review/40 bg-review/10 p-4"
       data-testid={record.kind === 'canon'
         ? 'canon-detail-approval-section'
         : 'product-form-review-banner'}
     >
-      <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-300">
+      <h2 class="text-sm font-semibold text-review-text">
         {record.kind === 'canon' ? 'Review before approving' : 'Review before confirming'}
       </h2>
 
@@ -400,7 +400,7 @@
              changes can land before anyone reviews. -->
         {#if pendingChanges.length > 0}
           <ul
-            class="flex flex-col gap-2 text-sm text-amber-900 dark:text-amber-200"
+            class="flex flex-col gap-2 text-sm text-review-text"
             data-testid="canon-detail-pending-changes"
           >
             {#each pendingChanges as change, i (i)}
@@ -429,20 +429,17 @@
         {/if}
 
         {#if record.item.reasoning}
-          <p
-            class="text-sm text-amber-900 dark:text-amber-200"
-            data-testid="canon-detail-reasoning"
-          >
+          <p class="text-sm text-review-text" data-testid="canon-detail-reasoning">
             {reasoningSentence(record.item.reasoning)}
           </p>
         {/if}
       {:else}
-        <p class="text-sm text-amber-900 dark:text-amber-200">
+        <p class="text-sm text-review-text">
           This mapping was proposed automatically while importing a recipe and is already being
           used. Check the parent item and yield below, then Confirm.
         </p>
         {#if parentPending}
-          <p class="text-sm text-amber-900 dark:text-amber-200">
+          <p class="text-sm text-review-text">
             The parent item was auto-created too and is still awaiting review.
             <button
               type="button"

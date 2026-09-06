@@ -226,7 +226,7 @@
   let sortMode = $state<'aisle' | 'recipe'>('aisle');
 
   // ─── Verify filter ───────────────────────────────────────────────────────────
-  // When the list holds amber "Need it?" items (recipe-add flagged, #185), offer a
+  // When the list holds `review`-flagged "Need it?" items (recipe-add, #185), offer a
   // toggle that narrows the view to just those, so the shopper can resolve them in
   // one pass. The button only appears while such items exist; clearing the last one
   // drops the filter so the full list returns (effect below).
@@ -770,10 +770,14 @@
 
 {#snippet verifyControls(ids: string[])}
   <div class="flex items-center gap-2" data-testid="shopping-verify">
-    <span class="text-xs font-medium text-amber-600 dark:text-amber-500">Need it?</span>
+    <!-- `review-text`, not `review`: this is 12px text and so is held to 4.5:1,
+         which the amber-600 it replaced never cleared (3.04:1 — a documented
+         defect, fixed here, #993). The icon buttons below are graphical
+         controls at 3:1 and take the lighter step. -->
+    <span class="text-xs font-medium text-review-text">Need it?</span>
     <button
       type="button"
-      class="salt-press-pulse flex h-10 w-10 items-center justify-center rounded-md text-amber-600 transition-[color,background-color,transform] [transition-duration:var(--duration-fast),var(--duration-fast),var(--duration-base)] ease-standard motion-reduce:transition-none hover:bg-amber-100 dark:text-amber-500 dark:hover:bg-amber-950"
+      class="salt-press-pulse flex h-10 w-10 items-center justify-center rounded-md text-review transition-[color,background-color,transform] [transition-duration:var(--duration-fast),var(--duration-fast),var(--duration-base)] ease-standard motion-reduce:transition-none hover:bg-review/20"
       onclick={() => {
         // Confirming is the other tap that means "yes, this" — same tick as a check.
         hapticTick();
@@ -828,9 +832,12 @@
 {/snippet}
 
 {#if !$isLoadingShoppingList && currentList === null}
-  <div class="p-4 sm:p-6 flex flex-col gap-3">
-    <p class="text-sm text-muted-foreground">List not found.</p>
-    <Button variant="outline" onclick={() => push('/shopping')}>Go to shopping</Button>
+  <div class="p-4 sm:p-6">
+    <EmptyState title="List not found">
+      {#snippet actions()}
+        <Button variant="outline" onclick={() => push('/shopping')}>Go to shopping</Button>
+      {/snippet}
+    </EmptyState>
   </div>
 {:else}
   <ListPage
@@ -848,8 +855,8 @@
         <button
           type="button"
           class="inline-flex items-center gap-1 rounded-md h-8 px-2 text-xs font-medium transition-colors {verifyFilterActive
-            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
-            : 'text-amber-600 hover:bg-amber-50 dark:text-amber-500 dark:hover:bg-amber-950/40'}"
+            ? 'bg-review/20 text-review-text'
+            : 'text-review-text hover:bg-review/10'}"
           onclick={() => (verifyFilterActive = !verifyFilterActive)}
           aria-pressed={verifyFilterActive}
           aria-label={verifyFilterActive ? 'Show all items' : 'Show only items to verify'}
@@ -1324,7 +1331,7 @@
         />
       </div>
       <!--
-        The amber "Need it?" flag (#185), raised and cleared from here (#694).
+        The `review` "Need it?" flag (#185), raised and cleared from here (#694).
         Disabled on an already-checked item: `needsVerify` is needsCheck && !checked,
         so flagging one would change nothing the shopper could see.
       -->

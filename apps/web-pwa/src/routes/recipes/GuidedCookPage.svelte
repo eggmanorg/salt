@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, CanonIcon, Icon, Spinner } from '@salt/ui-components';
+  import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { onDestroy, onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
   import {
@@ -454,40 +454,41 @@
        someone whose default IS guided is offered this door on every recipe that
        has no plan, so the screen has to answer "then write me one" rather than
        pointing at a page and leaving them to find it. -->
-    <div
-      class="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
-      data-testid="guided-cook-no-plan"
-    >
-      <Icon name="ListChecks" size={28} class="text-muted-foreground" />
-      <div class="flex flex-col gap-1">
-        <p class="text-base font-semibold">There's no guided plan for this recipe</p>
-        <p class="text-sm text-muted-foreground">Write one now, or cook it the ordinary way.</p>
-      </div>
-      <div class="flex flex-wrap items-center justify-center gap-2">
-        <!-- Writing the plan leads first, because it is the thing the cook came
-             here for. The editor is an ordinary shell route, so this leaves the
-             full-viewport cook mode — which is right: writing a plan is desk work,
-             not something you do with your hands full. -->
-        <Button
-          onclick={() => push(`/recipes/${params.id}/guided`)}
-          data-testid="guided-cook-write-plan"
-        >
-          {#snippet leading()}<Icon name="ListChecks" size={16} />{/snippet}
-          Write the plan
-        </Button>
-        <Button
-          variant="outline"
-          onclick={() => push(`/recipes/${params.id}/cook`)}
-          data-testid="guided-cook-fallback"
-        >
-          {#snippet leading()}<Icon name="CookingPot" size={16} />{/snippet}
-          Cook it anyway
-        </Button>
-        <Button variant="ghost" onclick={handleClose} data-testid="guided-cook-no-plan-back">
-          {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
-          Back
-        </Button>
-      </div>
+    <div class="flex flex-1 flex-col items-center justify-center p-6">
+      <EmptyState
+        title="There's no guided plan for this recipe"
+        description="Write one now, or cook it the ordinary way."
+        data-testid="guided-cook-no-plan"
+      >
+        {#snippet icon()}<Icon name="ListChecks" size={28} />{/snippet}
+        {#snippet actions()}
+          <!-- Writing the plan leads first, because it is the thing the cook came
+               here for. The editor is an ordinary shell route, so this leaves the
+               full-viewport cook mode — which is right: writing a plan is desk work,
+               not something you do with your hands full. -->
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <Button
+              onclick={() => push(`/recipes/${params.id}/guided`)}
+              data-testid="guided-cook-write-plan"
+            >
+              {#snippet leading()}<Icon name="ListChecks" size={16} />{/snippet}
+              Write the plan
+            </Button>
+            <Button
+              variant="outline"
+              onclick={() => push(`/recipes/${params.id}/cook`)}
+              data-testid="guided-cook-fallback"
+            >
+              {#snippet leading()}<Icon name="CookingPot" size={16} />{/snippet}
+              Cook it anyway
+            </Button>
+            <Button variant="ghost" onclick={handleClose} data-testid="guided-cook-no-plan-back">
+              {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
+              Back
+            </Button>
+          </div>
+        {/snippet}
+      </EmptyState>
     </div>
   {:else}
     <!-- Top bar -->
@@ -540,7 +541,7 @@
           {#snippet leading()}
             <span
               class="relative inline-flex transition-colors {keepAwake
-                ? 'text-amber-500'
+                ? 'text-warning'
                 : 'text-muted-foreground'}"
             >
               <Icon name="Smartphone" size={20} />
@@ -904,11 +905,11 @@
         onkeydown={deck.handleKeyDown}
       >
         {#if recipe.steps.length === 0}
-          <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <p class="text-base font-semibold">This recipe has no steps</p>
-            <p class="text-sm text-muted-foreground">
-              There's nothing to guide through — tap Finish cooking when you're done.
-            </p>
+          <div class="flex h-full flex-col items-center justify-center p-6">
+            <EmptyState
+              title="This recipe has no steps"
+              description="There's nothing to guide through — tap Finish cooking when you're done."
+            />
           </div>
         {/if}
         <div
@@ -987,14 +988,14 @@
                   </div>
 
                   <!-- The recipe's own step note, still the recipe speaking, so it
-                     keeps its amber-callout vocabulary and its place directly under
+                     keeps its `warning`-callout vocabulary and its place directly under
                      the instruction — above anything the plan added. -->
                   {#if step.note}
                     <div
-                      class="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                      class="flex items-start gap-3 rounded border border-warning/40 bg-warning/10 px-4 py-3 text-warning-text"
                       data-testid="cook-step-note"
                     >
-                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-amber-500" />
+                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-warning" />
                       <span class="whitespace-pre-wrap text-lg">{step.note}</span>
                     </div>
                   {/if}
@@ -1002,7 +1003,7 @@
                   <!-- What the plan added: which prepped container this step wants,
                      how the station is set, and the sensory test that says it is
                      going right. Quiet rows rather than callouts — none of them is a
-                     warning, and three amber boxes on one step would shout down the
+                     warning, and three `warning` boxes on one step would shout down the
                      instruction they belong to. Each line is independently optional
                      (null means the plan had nothing honest to say), so a step with
                      no note renders exactly as it does in plain cook mode.

@@ -810,10 +810,10 @@
                percentage, and a batch will later print a confident figure the recipe
                never gave. This is the only moment anyone can object. -->
             <div
-              class="flex flex-col gap-1 rounded border border-amber-300 bg-amber-50 px-3 py-3"
+              class="flex flex-col gap-1 rounded border border-warning/40 bg-warning/10 px-3 py-3"
               data-testid="formula-range-disclosure"
             >
-              <p class="text-sm text-amber-900">
+              <p class="text-sm text-warning-text">
                 {rangeRows.length === 1
                   ? 'One ingredient is'
                   : `${rangeRows.length} ingredients are`}
@@ -822,7 +822,7 @@
               </p>
               {#each rangeRows as row (row.ingredientId)}
                 {@const grams = gramsOf(row)}
-                <p class="text-sm text-amber-900">
+                <p class="text-sm text-warning-text">
                   <span class="font-medium">{row.rawText}</span>
                   — taken at {grams === null
                     ? 'the top of its range'

@@ -394,8 +394,8 @@ export const tonight: Readable<TonightPlan | null> = derived(
  * queue, not a notification.
  *
  * One concept, one signal (issue #755). The flag is set by the import flows on
- * raw AI output nobody has read, and it is the SAME flag the recipe page's amber
- * banner and the list's pill read, so all three surfaces agree by construction
+ * raw AI output nobody has read, and it is the SAME flag the recipe page's
+ * `review` banner and the list's pill read, so all three surfaces agree by construction
  * and clear together. It replaced a derived `updatedAt === createdAt` predicate,
  * which said "nobody has saved this" — true of hand-written entries too, and
  * unclearable without an editor round-trip.

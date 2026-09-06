@@ -531,7 +531,7 @@
         data-testid="kitchen-tool-matchers-input"
       />
       {#if nearDuplicateOf}
-        <p class="text-sm text-amber-700" data-testid="kitchen-tool-duplicate-warning">
+        <p class="text-sm text-warning-text" data-testid="kitchen-tool-duplicate-warning">
           “{nearDuplicateOf.label}” already answers to that name. Saving draws a second picture of
           the same thing — if it is the same thing, cancel and add these words to {nearDuplicateOf.label}
           instead.

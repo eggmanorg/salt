@@ -26,7 +26,11 @@
 const ARM = {
   exiting: 'border-secondary/40 bg-secondary-container/50',
   selected: 'border-ring ring-2 ring-ring bg-card',
-  needsVerify: 'border-amber-500 bg-amber-50 dark:bg-amber-950/20',
+  // `review`, and the same /10 ground the callouts use: a flagged row is
+  // "nobody has confirmed this", not "this is wrong". It reads as a peer of the
+  // sage `exiting` rung above rather than as an alarm, which is the ladder's
+  // whole point (#993). The dark arm is gone — the token flips for both themes.
+  needsVerify: 'border-review bg-review/10',
   resting: 'border-border bg-card',
 } as const;
 

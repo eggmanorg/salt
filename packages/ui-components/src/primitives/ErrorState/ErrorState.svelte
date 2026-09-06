@@ -1,4 +1,4 @@
-<!-- spec: ui-spec-v13.md §8.32 v0.13 -->
+<!-- spec: ui-spec-v13.md §8.32 v0.13.2 -->
 <script lang="ts">
   import { cn } from '../../lib/cn';
   import Button from '../Button/Button.svelte';
@@ -12,6 +12,7 @@
     retryLabel = 'Try again',
     actions,
     class: className,
+    ...rest
   }: ErrorStateProps = $props();
 </script>
 
@@ -20,6 +21,7 @@
     'flex flex-col items-center justify-center text-center gap-3 py-12 px-6 rounded border border-destructive/30 bg-destructive/5',
     className,
   )}
+  {...rest}
   role="alert"
 >
   <div class="text-destructive">

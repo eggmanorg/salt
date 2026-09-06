@@ -222,6 +222,17 @@ jobs:
       - name: Type scale check
         run: pnpm typescale:check
 
+      # Raw palette. Same shape as the type scale above, and a script rather than
+      # a lint rule for the same reason: nothing in the toolchain reads a class
+      # string, which is how 130 raw amber occurrences accumulated across 27
+      # files spelling out a colour vocabulary no token named (#993). Naming them
+      # was not enough on its own — CLAUDE.md rule 12 — so this is what stops the
+      # finding regrowing. Scans `.ts` as well as `.svelte`, and `var(--color-*)`
+      # as well as class names; the group-C exceptions are an explicit allowlist
+      # with reasons, not an omission.
+      - name: Raw palette check
+        run: pnpm palette:check
+
       # Context budget. CLAUDE.md is auto-loaded into every session and every
       # subagent, so its size is a tax on all of them — and it grew 2.3 KB →
       # 43.6 KB over four months with nothing ever pushing content back out.

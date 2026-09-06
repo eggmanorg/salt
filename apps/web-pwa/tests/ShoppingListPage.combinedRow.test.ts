@@ -213,16 +213,17 @@ describe('combined aisle row — the three-arm colour ladder', () => {
     expect(classesOf(row)).toContain('bg-card');
   });
 
-  it('takes the amber arm when any one contributor is flagged', async () => {
+  it('takes the `review` arm when any one contributor is flagged', async () => {
     // Row-level, not item-level: `AisleRow.needsCheck` is true if ANY
     // contributor is flagged, and only i2 is here.
     twoOnionRecipes({ needsCheck: true });
     const view = render(ShoppingListPage, props);
     const row = await combinedRow(view);
 
-    expect(classesOf(row)).toContain('border-amber-500');
-    expect(classesOf(row)).toContain('bg-amber-50');
-    expect(classesOf(row)).toContain('dark:bg-amber-950/20');
+    expect(classesOf(row)).toContain('border-review');
+    expect(classesOf(row)).toContain('bg-review/10');
+    // The per-site `dark:` arm is gone: the token flips in `.dark` (#993).
+    expect(classesOf(row).some((c) => c.startsWith('dark:'))).toBe(false);
     expect(classesOf(row)).not.toContain('border-border');
   });
 

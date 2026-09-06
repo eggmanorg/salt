@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, CanonIcon, Icon } from '@salt/ui-components';
+  import { Button, CanonIcon, EmptyState, Icon } from '@salt/ui-components';
   import { onDestroy, onMount } from 'svelte';
   import {
     cookSession,
@@ -515,8 +515,8 @@
       {#if wakeLockSupported}
         <!-- Keep-awake is an icon toggle, not a labelled switch: cook mode is a
            heads-down surface and the header has to stay legible next to a long recipe
-           title. State is carried by colour (muted → amber, the same amber the timeline
-           uses for "current") plus aria-pressed, and every tap fires a toast so the
+           title. State is carried by colour (muted → `warning`, the family the cook
+           surfaces already spend on "pay attention to this") plus aria-pressed, and every tap fires a toast so the
            change is never silent. -->
         <Button
           variant="ghost"
@@ -534,7 +534,7 @@
                the phone outline instead of muddling into it. -->
             <span
               class="relative inline-flex transition-colors {keepAwake
-                ? 'text-amber-500'
+                ? 'text-warning'
                 : 'text-muted-foreground'}"
             >
               <Icon name="Smartphone" size={20} />
@@ -762,11 +762,11 @@
         onkeydown={deck.handleKeyDown}
       >
         {#if recipe.steps.length === 0}
-          <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <p class="text-base font-semibold">This recipe has no steps</p>
-            <p class="text-sm text-muted-foreground">
-              There's nothing to guide through — tap Finish cooking when you're done.
-            </p>
+          <div class="flex h-full flex-col items-center justify-center p-6">
+            <EmptyState
+              title="This recipe has no steps"
+              description="There's nothing to guide through — tap Finish cooking when you're done."
+            />
           </div>
         {/if}
         <!-- The deck's trailing padding is what lets the LAST step still align to the
@@ -829,7 +829,7 @@
                     <p class="text-xl leading-relaxed sm:text-2xl">{step.text}</p>
                   </div>
 
-                  <!-- Same amber-callout vocabulary as the step note on the recipe
+                  <!-- Same `warning`-callout vocabulary as the step note on the recipe
                      detail page and the recipe-changed banner ten screens above: a
                      note should look like a note wherever it is met. Two deliberate
                      departures from the recipe page's copy of this box — the text
@@ -840,10 +840,10 @@
                      line breaks, as the recipe page already does. -->
                   {#if step.note}
                     <div
-                      class="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                      class="flex items-start gap-3 rounded border border-warning/40 bg-warning/10 px-4 py-3 text-warning-text"
                       data-testid="cook-step-note"
                     >
-                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-amber-500" />
+                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-warning" />
                       <span class="whitespace-pre-wrap text-lg">{step.note}</span>
                     </div>
                   {/if}

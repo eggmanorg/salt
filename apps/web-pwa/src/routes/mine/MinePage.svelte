@@ -146,21 +146,23 @@
   // owns no opinion about timers (ui-spec-v08 §8.22.5), so the vocabulary stays
   // here and the ring stays a ring.
   //
-  // The ring and the word take DIFFERENT amber steps on purpose, because they are
-  // held to different contrast floors against the page: a stroke is a graphical
-  // object needing 3:1, where amber-600 sits comfortably, while the word is small
-  // text needing 4.5:1, which only amber-700 clears. Same state, same meaning,
-  // two shades — swapping either one for "consistency" breaks one of the two.
+  // The ring and the word take DIFFERENT steps of the same role on purpose,
+  // because they are held to different contrast floors against the page: a
+  // stroke is a graphical object needing 3:1, where `review` sits at 3.36:1,
+  // while the word is small text needing 4.5:1, which only `review-text` clears
+  // (5.97:1). Same state, same meaning, two shades — swapping either one for
+  // "consistency" breaks one of the two. Since #993 that split is the token
+  // family's own structure rather than two hand-picked palette steps.
   const HEAT_VAR: Record<TimerHeat, string> = {
     resting: 'var(--color-primary)',
-    soon: 'var(--color-amber-600)',
+    soon: 'var(--color-review)',
     imminent: 'var(--color-destructive)',
     ringing: 'var(--color-destructive)',
   };
 
   const HEAT_TEXT: Record<TimerHeat, string> = {
     resting: 'text-primary',
-    soon: 'text-amber-700',
+    soon: 'text-review-text',
     imminent: 'text-destructive',
     ringing: 'text-destructive',
   };

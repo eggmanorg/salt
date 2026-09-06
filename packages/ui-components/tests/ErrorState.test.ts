@@ -1,4 +1,4 @@
-// spec: ui-spec-v13.md §8.32.6 v0.13
+// spec: ui-spec-v13.md §8.32.6 v0.13.2
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -63,6 +63,30 @@ describe('ErrorState (ui-spec-v13 §8.32)', () => {
     it('merges the class prop', () => {
       const { container } = render(ErrorState, { props: { class: 'extra-class' } });
       expect(container.firstElementChild).toHaveClass('extra-class');
+    });
+  });
+
+  // §8.32.5. The passthrough exists so a migrating call site can keep the
+  // `data-testid` its page's tests select on — `cook-mode-orphan` is the case
+  // that asked for it.
+  describe('attribute passthrough (§8.32.5)', () => {
+    it('forwards a data-testid onto the panel', () => {
+      const { container } = render(ErrorState, {
+        props: { title: 'This recipe was deleted', 'data-testid': 'cook-mode-orphan' },
+      });
+      const panel = container.querySelector('[role="alert"]')!;
+      expect(panel.getAttribute('data-testid')).toBe('cook-mode-orphan');
+    });
+
+    it('keeps role="alert" even when a caller passes one', () => {
+      // `role` is Omit'ted from the passthrough type, so this cast is the only
+      // way to attempt it — and it must still lose to the applied `alert`.
+      const { container } = render(ErrorState, {
+        props: { title: 'This recipe was deleted', role: 'status' } as never,
+      });
+      const panel = container.querySelector('[role]')!;
+      expect(panel.getAttribute('role')).toBe('alert');
+      expect(container.querySelector('[role="status"]')).toBeNull();
     });
   });
 

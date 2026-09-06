@@ -117,6 +117,14 @@ const COLOR_MAP: Record<string, string> = {
   'on-error-container': '--salt-on-destructive-container',
   'outline-variant': '--salt-border',
   placeholder: '--salt-placeholder',
+  // The amber family (issue #993). Four roles total, not two M3 families: the
+  // `-text` half of each pair is the same hue at the lightness small text needs
+  // to clear 4.5:1, and it is ink on the PAGE, not on the token — which is why
+  // it is not spelled `on-review`.
+  review: '--salt-review',
+  'review-text': '--salt-review-text',
+  warning: '--salt-warning',
+  'warning-text': '--salt-warning-text',
 };
 
 /** design.md rounded key → CSS var name.

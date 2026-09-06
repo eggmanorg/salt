@@ -17,10 +17,10 @@
 </script>
 
 <div
-  class="flex shrink-0 items-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+  class="flex shrink-0 items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-text"
   data-testid="cook-mode-recipe-changed"
 >
-  <Icon name="TriangleAlert" size={16} class="shrink-0 text-amber-500" />
+  <Icon name="TriangleAlert" size={16} class="shrink-0 text-warning" />
   <span class="flex-1">This recipe was updated since you started cooking.</span>
   <Button
     size="sm"

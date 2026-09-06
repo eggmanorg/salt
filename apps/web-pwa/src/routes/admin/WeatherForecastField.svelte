@@ -98,13 +98,13 @@
   </div>
 
   {#if !hasHomeLocation}
-    <p class="mt-2 text-sm text-amber-800" data-testid="app-settings-weather-no-location">
+    <p class="mt-2 text-sm text-warning-text" data-testid="app-settings-weather-no-location">
       Set a home location above to enable the forecast.
     </p>
   {/if}
 
   {#if corrupt}
-    <p class="mt-2 text-sm text-red-700" data-testid="app-settings-weather-corrupt">
+    <p class="mt-2 text-sm text-destructive" data-testid="app-settings-weather-corrupt">
       The cached forecast document is invalid and is being ignored — refresh to rewrite it.
     </p>
   {/if}
