@@ -35,9 +35,26 @@ import { synonymMatch } from './synonymMatch.js';
  * deliberately does NOT route through `findClosestMatch`, because stage 2 —
  * token overlap — runs between the two stages this needs, so delegating would let
  * a fuzzy guess pre-empt a curated synonym (the #865/#866 regression). Its tie
- * result and return type differ from the pipeline's for the same reason. The two
- * cannot drift apart on the name question regardless: the agreement block in
- * `findClosestMatch.test.ts` fails if they ever disagree (issue #971).
+ * result and return type differ from the pipeline's for the same reason.
+ *
+ * How far the anti-drift guarantee actually goes (issue #1269 — the earlier
+ * wording here claimed the two "cannot drift apart on the name question
+ * regardless", which is more than anything below delivers):
+ *
+ *  - What holds absolutely is that both sides call the SAME `exactNameMatch`,
+ *    which calls the same `normaliseName`. Every folding decision — case,
+ *    diacritics, hyphens, punctuation, number tokens, singularisation — is made
+ *    in one place, so it cannot be made differently in two.
+ *  - What holds only as far as its table reaches is the agreement block in
+ *    `findClosestMatch.test.ts`, which is the backstop for the helper being
+ *    inlined again by a later edit. It runs both functions over a fixed input
+ *    table, so it catches a divergence a row exercises and nothing else. The
+ *    table covers case/space folding, plurals, multi-word names, diacritics,
+ *    hyphens, name-beats-foreign-synonym, ties, near-misses, and the empty
+ *    cases; it is not a property test and does not fuzz.
+ *
+ * So: a re-inlined predicate that folds differently is caught. One that differs
+ * only on an input shape no row names is not — add the row.
  */
 export function findExactCanonMatch(
   items: readonly CanonItem[],

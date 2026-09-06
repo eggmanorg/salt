@@ -76,6 +76,17 @@ export function ingredientMatchIssue(
   // a different name (say "coriander" → canon "Cilantro") still flagging; that is
   // rarer than the class this suppresses, and far less harmful than going blind
   // to the real one.
+  //
+  // This is the exact-name predicate, and it is the THIRD site asking it — the
+  // other two are `findClosestMatch` stage 1 and `findExactCanonMatch`, which
+  // #971 collapsed onto `exactNameMatch`. #971's census missed this one because
+  // the variable is `canon`, not `item` (issue #1269). It stays written out
+  // here rather than joining them: `exactNameMatch` answers "which of these
+  // items does this text name" over a LIST, and the question here is a scalar
+  // identity check against one already-matched canon. What must not drift is
+  // the folding, and that is `normaliseName` — single-sourced, and shared with
+  // both other sites. Anything asking this question again gets a bullet in
+  // `docs/matching-pipeline.md`'s census, so the next grep does not miss it.
   if (normaliseName(ing.parsed.item) === normaliseName(canon.name)) return null;
   // A canon item with NO forms at all is beyond this marker's reach. A null from
   // `resolveProductForm` says "no form matched this text", which is a different
