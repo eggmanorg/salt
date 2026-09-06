@@ -26,6 +26,8 @@ import {
   freezeBatch,
   withBatchAbandoned,
   withStageAdvanced,
+  withStageSkipped,
+  withStageStarted,
 } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -236,6 +238,10 @@ function mintStage(stage: ProposedStage): ProcessStage {
     duration: stage.duration,
     until: stage.until,
     stepId: stage.stepId,
+    // Carried, not re-decided. `optional` is a fact about the RECIPE (issue #1275)
+    // and a restructure is not a rewrite of the recipe: a milk wash the method
+    // called optional is still optional after the bulk moves to the fridge.
+    optional: stage.optional,
   };
 }
 
@@ -373,6 +379,43 @@ export async function advanceStage(
   stageId: string,
 ): Promise<ReadResult<BatchDoc, DomainError>> {
   return persist(withStageAdvanced(current, stageId, new Date().toISOString()));
+}
+
+/**
+ * Mark a stage STARTED, now — without marking it done (issue #1275).
+ *
+ * The oven goes on before the prove finishes, so both read as in progress and each
+ * is marked done when it actually ends. RE-TIMES NOTHING: `withStageStarted` records
+ * what happened and leaves the plan alone.
+ *
+ * The clock is read HERE and passed in, as it is for `advanceStage`, so the producer
+ * stays pure with a fixed answer.
+ */
+export async function startStage(
+  current: BatchDoc,
+  stageId: string,
+): Promise<ReadResult<BatchDoc, DomainError>> {
+  return persist(withStageStarted(current, stageId, new Date().toISOString()));
+}
+
+/**
+ * SKIP a stage, now, with an optional reason.
+ *
+ * Available on every stage, `optional` or not, and this service holds no opinion
+ * about which: there is no gate here and no confirmation — Salt records what
+ * happened in the kitchen. A skip pulls the rest of the schedule forward exactly as
+ * marking the stage done would, through the same producer path and the same
+ * whole-document write.
+ *
+ * `note` is optional and defaults to nothing; the producer trims it and stores the
+ * empty string, never null.
+ */
+export async function skipStage(
+  current: BatchDoc,
+  stageId: string,
+  note: string = '',
+): Promise<ReadResult<BatchDoc, DomainError>> {
+  return persist(withStageSkipped(current, stageId, new Date().toISOString(), note));
 }
 
 /**

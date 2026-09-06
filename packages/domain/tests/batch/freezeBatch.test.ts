@@ -45,7 +45,16 @@ function stage(
   kind: 'active' | 'wait',
   duration: StageDuration | null,
 ): ProcessStage {
-  return { id, label, kind, environment: null, duration, until: null, stepId: null };
+  return {
+    id,
+    label,
+    kind,
+    environment: null,
+    duration,
+    until: null,
+    stepId: null,
+    optional: false,
+  };
 }
 
 // mix 20 · bulk 180 · shape 15 · prove 60 · preheat 20 · bake 45 = 340 minutes.
@@ -214,6 +223,34 @@ describe('freezeBatch — the document', () => {
     // back, so the two must agree. A field the producer forgets is a corruption
     // Failure on the very next snapshot.
     expect(BatchSchema.safeParse(freezeTwelveRolls()).success).toBe(true);
+  });
+
+  it('starts every stage not started, and nothing decided against', () => {
+    // The four conditions (issue #1275) all begin at their zero: nothing observed,
+    // nothing skipped.
+    const batch = freezeTwelveRolls();
+    expect(batch.stages.every((s) => s.actualStartAt === null)).toBe(true);
+    expect(batch.stages.every((s) => s.actualEndAt === null)).toBe(true);
+    expect(batch.stages.every((s) => s.skipped === null)).toBe(true);
+  });
+
+  it('parses a batch written before `skipped` and `optional` existed', () => {
+    // THE BACK-COMPAT PIN (issue #1275). `batches/{batchId}` holds live documents,
+    // every one of them written without either key. Both are read defaults, so a
+    // stored run opens unchanged with no migration — and the whole batch is read as
+    // ONE document, so a stage that failed to parse would take the run's page down.
+    const batch = freezeTwelveRolls();
+    const beforeTheFields = {
+      ...batch,
+      stages: batch.stages.map(({ skipped: _s, optional: _o, ...stage }) => stage),
+    };
+
+    const parsed = BatchSchema.safeParse(beforeTheFields);
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.stages.every((s) => s.skipped === null)).toBe(true);
+    expect(parsed.data.stages.every((s) => s.optional === false)).toBe(true);
   });
 
   it('scales to the formula’s own reference yield when no yield is asked for', () => {

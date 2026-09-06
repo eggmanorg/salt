@@ -357,11 +357,33 @@ export const coverageThresholds = {
   // duration) had no unit coverage at all before it, and the new
   // `MinutesField.svelte` arrives fully covered. Branches rose 1.02 points, past
   // the 1.00 tolerance, which is what tripped CI.
+  // CEILING RAISED BY ONE in #1275, and only the branch ceiling. The skipped-stage
+  // row on `BatchDetailPage.svelte` adds one text interpolation,
+  // `Skipped {formatWhen(skip.at)}`, and Svelte's compiler emits an
+  // instrumentation branch per interpolation of that shape that NO TEST CAN REACH.
+  // The claim is checkable rather than asserted: lines 586, 590 and 608 in the same
+  // file are the identical construction (`In progress since {formatWhen(startedAt)}`,
+  // `Starts {formatWhen(stage.plannedStartAt)}`, `Ends {formatWhen(stage.plannedEndAt)}`),
+  // all three report uncovered in the very run that raised this ceiling, and
+  // `BatchDetailPage.test.ts` renders and asserts on every one of them. The two
+  // reachable branches this issue added — the `{#if stage.skipped !== null}` row and
+  // the note's `{#if skip.note !== ''}` — are both covered, and one dead branch was
+  // REMOVED rather than pinned (`status === 'inProgress' && stage.actualStartAt !== null`
+  // became a hoisted `{@const}`, since `stageStatus` already guarantees the second
+  // operand). Both ratios ROSE in the same run — lines 80.28 → 80.49, branches
+  // 68.1 → 68.61 — and the uncovered LINE count did not move, which is what says
+  // this is a new uncoverable branch rather than lost coverage. The floors are
+  // deliberately left where they are: the rise is real but the merge base was not
+  // re-measured, and banking a floor on an unmeasured base is what the staleness
+  // tolerance exists to prevent.
+  //
+  // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one, and
+  // re-pinned in #1221 — both histories are above.
   'apps/web-pwa/src/routes/**': {
     lines: 80.28,
     branches: 68.1,
     uncoveredLines: 1846,
-    uncoveredBranches: 1759,
+    uncoveredBranches: 1760,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

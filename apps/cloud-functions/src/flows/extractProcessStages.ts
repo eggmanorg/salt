@@ -63,6 +63,9 @@ hour"). KEEP A RANGE AS A RANGE — do not average it. Null when the recipe give
 it sounds hollow when tapped". Null when the recipe gives none.
 - \`stepId\`: the id of the step this stage came from, copied verbatim from the method below. Null when the stage is \
 not in any one step.
+- \`optional\`: true ONLY when the method itself says the step may be left out — "optionally, brush the top with \
+milk", "if you like, give it a second fold", "you can skip the final rest". Anything else is false, including a step \
+that merely sounds inessential to you. A step the recipe states plainly is not optional, however small it is.
 
 ## What you must not do
 - Do NOT invent a temperature or a duration the recipe does not give. Null is the correct answer for both.

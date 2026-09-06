@@ -17,7 +17,16 @@ function stage(
   kind: 'active' | 'wait',
   duration: StageDuration | null,
 ): ProcessStage {
-  return { id, label, kind, environment: null, duration, until: null, stepId: null };
+  return {
+    id,
+    label,
+    kind,
+    environment: null,
+    duration,
+    until: null,
+    stepId: null,
+    optional: false,
+  };
 }
 
 const fixed = (minutes: number): StageDuration => ({ kind: 'fixed', minutes });
@@ -194,6 +203,7 @@ describe('resolveSchedule — totality', () => {
       duration: fixed(600),
       until: null,
       stepId: 'step-3',
+      optional: false,
     };
     const result = resolveSchedule([rich], { kind: 'startAt', at: '2026-08-14T21:00:00.000Z' });
     if (!result.ok) throw new Error(result.reason.kind);

@@ -109,10 +109,12 @@ function stage(
     duration: { kind: 'fixed', minutes: 20 },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt: at(startOffsetMinutes),
     plannedEndAt: at(startOffsetMinutes + 20),
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...overrides,
   };
 }
@@ -242,6 +244,38 @@ describe('onBatchWritten — which stages get a task', () => {
     await (onBatchWritten as unknown as Function)(event(deleted, snap({ id: 'junk' })));
 
     expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('onBatchWritten — a skipped stage (issue #1275)', () => {
+  // Skipping is filtered HERE, at enqueue, and not in `remindableStages`, which is
+  // pure and planned-only. The loaf timeline above is the pin either way.
+
+  const withSkipped = (id: string) =>
+    makeBatch({
+      stages: loafStages().map((s) =>
+        s.id === id ? { ...s, skipped: { at: at(0), note: 'already done' } } : s,
+      ),
+    });
+
+  it('sends no reminder for the skipped stage', async () => {
+    await (onBatchWritten as unknown as Function)(event(deleted, snap(withSkipped('shape'))));
+
+    expect(enqueuedStageIds()).not.toContain('shape');
+  });
+
+  it('still sends the one AFTER it', async () => {
+    // The rule survives a skip untouched. `preheat` earns its reminder because it
+    // follows the `wait` retard, and skipping the shape has nothing to do with that.
+    await (onBatchWritten as unknown as Function)(event(deleted, snap(withSkipped('shape'))));
+
+    expect(enqueuedStageIds()).toEqual(['mix', 'preheat', 'bake']);
+  });
+
+  it('skipping the FIRST stage costs only its own reminder', async () => {
+    await (onBatchWritten as unknown as Function)(event(deleted, snap(withSkipped('mix'))));
+
+    expect(enqueuedStageIds()).toEqual(['shape', 'preheat', 'bake']);
   });
 });
 

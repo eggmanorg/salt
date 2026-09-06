@@ -88,6 +88,12 @@ export function yieldSummary(totals: BatchTotalsDoc): string {
  * Three cases, and `currentStage` decides all of them: the stage in hand, a run
  * whose stages are all done (there is deliberately no `finished` STATE — see
  * `BatchStateSchema`), and one that was stopped.
+ *
+ * `currentStage` STEPS OVER A SKIPPED STAGE (issue #1275), so a skipped stage never
+ * appears here and a run whose last stage was skipped rather than done reads
+ * `'done'` exactly as a fully-done one does. This function does not know that — it
+ * is the domain's derivation, read once, so the list card and the run's own page
+ * cannot disagree about it.
  */
 export type NextAction =
   { kind: 'stage'; stage: BatchStageDoc } | { kind: 'done' } | { kind: 'abandoned' };

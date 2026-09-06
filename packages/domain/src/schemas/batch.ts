@@ -106,17 +106,54 @@ export const BatchTotalsSchema = z.object({
 // said when it was resolved and is re-timed forward every time a stage is marked
 // done early or late; `actual*` is what happened, and only ever what was observed —
 // nothing here back-fills an actual from a planned time.
+// A stage the cook decided not to do (issue #1275). A NULLABLE OBJECT rather than
+// two loose fields, following `BatchObservationSchema.image`: a note is meaningless
+// without a skip, and nesting makes that structural rather than a rule somebody has
+// to remember (CLAUDE.md rule 12).
+//
+// `note` is the EMPTY STRING when there is none, never null — the same choice
+// `BatchObservationSchema.note` already makes and for the same reason: a text
+// input's absent state is already `''`, and a second absent value would mean every
+// reader handling two spellings of "nothing typed".
+//
+// "Out of milk", "dough was already there", "second fold felt unnecessary". That
+// sentence is what makes batch nine useful a year on, and it sits on the stage it
+// explains rather than in the observation log, which is ordered by when a reading
+// was observed and carries no stage reference.
+export const StageSkipSchema = z.object({
+  at: z.string(),
+  note: z.string(),
+});
+
 export const BatchStageSchema = ProcessStageSchema.extend({
   plannedStartAt: z.string(),
   plannedEndAt: z.string(),
   // Null until observed. Stamped on the FOLLOWING stage when one is advanced (its
-  // predecessor ending is it starting); the first stage's stays null in this phase,
-  // because nothing yet observes a beginning — the field is where a later "I
-  // actually started at 06:40" lands.
+  // predecessor ending is it starting), and stamped DIRECTLY by `withStageStarted`
+  // when the cook puts the oven on before the prove is finished (issue #1275). The
+  // inferred stamp must never overwrite an observed one.
   actualStartAt: z.string().nullable(),
   // Null until the stage is marked done. This — not a `done` boolean — is what
   // says a stage is finished: one field, carrying both the fact and the time.
   actualEndAt: z.string().nullable(),
+  // Null until the stage is skipped. Carries both the fact and the time, exactly as
+  // `actualEndAt` does, plus the reason if one was given.
+  //
+  // ─── THE PRECEDENCE, STATED ONCE ────────────────────────────────────────────
+  //
+  //   skipped       != null  →  skipped
+  //   actualEndAt   != null  →  done
+  //   actualStartAt != null  →  in progress
+  //   otherwise              →  not started
+  //
+  // There is deliberately NO stored `status` enum beside these three fields. Four
+  // conditions fall out of them, and an enum would be a second source of truth that
+  // a re-timing or a correction can contradict. `stageStatus` in
+  // `batch/transitions.ts` is the one derivation, so no surface re-derives it.
+  //
+  // A read default, so every `batches/{batchId}` document written before this field
+  // existed parses unchanged (CLAUDE.md, production data back-compat).
+  skipped: StageSkipSchema.nullable().default(null),
 });
 
 export const BatchSchema = z.object({
@@ -220,6 +257,7 @@ export const BatchObservationSchema = z.object({
 
 export type BatchQuantityDoc = z.infer<typeof BatchQuantitySchema>;
 export type BatchTotalsDoc = z.infer<typeof BatchTotalsSchema>;
+export type StageSkip = z.infer<typeof StageSkipSchema>;
 export type BatchStageDoc = z.infer<typeof BatchStageSchema>;
 export type BatchDoc = z.infer<typeof BatchSchema>;
 export type BatchObservationDoc = z.infer<typeof BatchObservationSchema>;

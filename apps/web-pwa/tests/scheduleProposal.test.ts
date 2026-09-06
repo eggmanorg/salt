@@ -20,6 +20,7 @@ function stage(id: string, over: Partial<ProcessStage> = {}): ProcessStage {
     duration: null,
     until: null,
     stepId: null,
+    optional: false,
     ...over,
   };
 }
@@ -33,6 +34,7 @@ function proposed(sourceStageId: string | null, over: Partial<ProposedStage> = {
     duration: null,
     until: null,
     stepId: null,
+    optional: false,
     ...over,
   };
 }

@@ -89,6 +89,20 @@ export const ProcessStageContentSchema = z.object({
   // hand-added rest corresponds to none either; one-way because two-way and the
   // batch starts writing back into the recipe.
   stepId: z.string().nullable(),
+  // THE RECIPE'S OPINION, AND IT GATES NOTHING (issue #1275). True when the method
+  // itself says the step may be left out — "optionally, brush the top with milk".
+  // It is information: a run shows it as a chip so a year later you can tell the
+  // stages the recipe sanctioned leaving out from the ones you decided about
+  // yourself. EVERY stage is skippable regardless of this flag, and nothing
+  // anywhere may branch on it to decide whether something is allowed. The obvious
+  // inference — "optional ⇒ skippable, therefore required ⇒ not skippable" — is
+  // wrong, and it is written here because it is the one a reader will make.
+  //
+  // A READ DEFAULT, not `.optional()`: live `formulas/{recipeId}` documents were
+  // written without the key and must keep parsing (CLAUDE.md, production data
+  // back-compat). `BatchStageSchema` inherits it through `ProcessStageSchema`, so
+  // a batch frozen from a process carries the flag with no edit there.
+  optional: z.boolean().default(false),
 });
 
 // NOTE the absence of a `.refine` forcing `duration` OR `until` to be present. It

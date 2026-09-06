@@ -57,10 +57,12 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     duration: { kind: 'fixed', minutes: 180 },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt: '2026-08-14T09:00:00.000Z',
     plannedEndAt: '2026-08-14T12:00:00.000Z',
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...over,
   };
 }
@@ -185,7 +187,7 @@ describe('BatchListPage — the next action and when', () => {
     await waitFor(() => expect(cards()).toHaveLength(2));
     expect(cards().map((c) => c.getAttribute('data-batch-id'))).toEqual(['running', 'done']);
     // There is deliberately no `finished` STATE — "every stage done" is derived.
-    expect(cards()[1]).toHaveTextContent('Every stage done.');
+    expect(cards()[1]).toHaveTextContent('Every stage done or skipped.');
   });
 
   it('shows an abandoned run as abandoned rather than as waiting on you', async () => {

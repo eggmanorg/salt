@@ -109,9 +109,13 @@ export const onBatchStageDispatch = onTaskDispatched<BatchStageTaskPayload>(
       );
       if (!stage) return;
 
-      // (d) …and that it has not already happened. A stage marked done early, or
-      // already under way, needs no invitation to start.
+      // (d) …and that it has not already happened, or been decided against. A stage
+      // marked done early, already under way, or SKIPPED (issue #1275) needs no
+      // invitation to start. Re-read from the live batch, exactly as the cook timer
+      // does: the enqueue filters what it can see at write time, and this is what
+      // catches a skip made after the task was already queued.
       if (stage.actualStartAt !== null || stage.actualEndAt !== null) return;
+      if (stage.skipped !== null) return;
 
       // (e) Exactly-once claim in the SHARED server-owned `timerDeliveries` ledger —
       // the same collection the cook timer uses (#544), not a second one of its own.

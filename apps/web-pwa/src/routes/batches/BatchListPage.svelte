@@ -99,9 +99,15 @@
                   </span>
                 </span>
               {:else if next.kind === 'done'}
+                <!-- "Done or skipped" rather than "done": since #1275 a run can
+                   finish on a skip, and a card that said "Every stage done" over a
+                   run whose last stage was deliberately left out would be the log
+                   quietly lying — which is the whole defect that issue exists to
+                   fix. `nextAction` makes no distinction between the two endings,
+                   correctly; the copy is where the honesty has to live. -->
                 <span class="flex items-center gap-2 text-sm" data-testid="batch-card-next">
                   <Icon name="Check" size={14} class="text-muted-foreground" />
-                  <span>Every stage done.</span>
+                  <span>Every stage done or skipped.</span>
                 </span>
               {:else}
                 <span class="flex items-center gap-2 text-sm" data-testid="batch-card-next">

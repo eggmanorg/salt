@@ -53,6 +53,8 @@ vi.mock('../src/lib/batchService.js', () => ({
   initBatchSync: mockInitBatchSync,
   advanceStage: vi.fn(),
   abandonBatch: vi.fn(),
+  startStage: vi.fn(),
+  skipStage: vi.fn(),
 }));
 vi.mock('../src/lib/batchObservationService.js', () => ({
   observations: mockObservations,
@@ -70,13 +72,15 @@ vi.mock('../src/lib/featureGate.js', () => ({
 
 import BatchDetailPage from '../src/routes/batches/BatchDetailPage.svelte';
 import { push } from 'svelte-spa-router';
-import { abandonBatch, advanceStage } from '../src/lib/batchService.js';
+import { abandonBatch, advanceStage, skipStage, startStage } from '../src/lib/batchService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const pushMock = vi.mocked(push);
 const advanceMock = vi.mocked(advanceStage);
 const abandonMock = vi.mocked(abandonBatch);
 const toastMock = vi.mocked(addToast);
+const startMock = vi.mocked(startStage);
+const skipMock = vi.mocked(skipStage);
 
 const BATCH_ID = 'batch-1';
 
@@ -89,10 +93,12 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     duration: { kind: 'fixed', minutes: 15 },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt: '2026-08-14T07:00:00.000Z',
     plannedEndAt: '2026-08-14T07:15:00.000Z',
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...over,
   };
 }
@@ -163,6 +169,8 @@ beforeEach(() => {
   // is what the write path does (`persist` returns the stamped document).
   advanceMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
   abandonMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  startMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  skipMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
 });
 
 function renderPage() {
@@ -335,6 +343,14 @@ async function showRun(over: Partial<BatchDoc> = {}): Promise<BatchDoc> {
   return run;
 }
 
+/** The stage ids carrying a given control, in the order they render. */
+function stagesWith(testid: string): string[] {
+  return screen
+    .getAllByTestId('batch-stage')
+    .filter((el) => el.querySelector(`[data-testid="${testid}"]`) !== null)
+    .map((el) => el.getAttribute('data-stage-id') ?? '');
+}
+
 /** The stage ids carrying a control block, in the order they render. */
 function stagesWithControls(): string[] {
   return screen
@@ -351,12 +367,14 @@ async function openOverflowMenu(): Promise<void> {
 }
 
 describe('BatchDetailPage — marking a stage done', () => {
-  it('offers the control on the current stage and on no other', async () => {
-    // Earlier stages are done and later ones have not happened; neither is a thing
-    // you can finish. `currentStage` — through `nextAction` — is the only decision.
+  it('offers MARK DONE on the current stage and on no other', async () => {
+    // Since #1275 every unfinished stage carries a control block (Start and Skip
+    // reach past the queue), but "you can finish this" is still the one stage in
+    // hand — plus anything already under way, pinned separately below.
     await showRun();
 
-    expect(stagesWithControls()).toEqual(['stage-1']);
+    expect(stagesWithControls()).toEqual(['stage-1', 'stage-2', 'stage-3']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-1']);
   });
 
   it('moves the control on when the stage before it has been marked done', async () => {
@@ -368,7 +386,9 @@ describe('BatchDetailPage — marking a stage done', () => {
       ],
     });
 
-    expect(stagesWithControls()).toEqual(['stage-2']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-2']);
+    // A done stage offers nothing at all — it is over.
+    expect(stagesWithControls()).toEqual(['stage-2', 'stage-3']);
   });
 
   it('marks THAT stage done, and reads no clock of its own doing it', async () => {
@@ -418,6 +438,205 @@ describe('BatchDetailPage — marking a stage done', () => {
     await showRun({ state: 'abandoned' });
 
     expect(screen.queryByTestId('batch-stage-advance')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — four conditions on a run (issue #1275)', () => {
+  const SKIPPED = { at: '2026-08-14T07:05:00.000Z', note: 'out of milk' };
+
+  it('marks a stage STARTED without marking it done, and reads it as in progress', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-mark-started')[0]!);
+
+    await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
+    // Two arguments and no third — the instant is the service's to read, exactly as
+    // for `advanceStage`.
+    expect(startMock).toHaveBeenCalledWith(run, 'stage-1');
+    expect(advanceMock).not.toHaveBeenCalled();
+  });
+
+  it('offers START on any stage that has not begun, not only the current one', async () => {
+    // The whole of overlap-by-marking: the oven goes on before the prove finishes.
+    await showRun();
+
+    expect(stagesWith('batch-stage-mark-started')).toEqual(['stage-1', 'stage-2', 'stage-3']);
+  });
+
+  it('reads an in-progress stage as in progress, and still lets it be finished', async () => {
+    await showRun({
+      stages: [
+        stage({ actualStartAt: '2026-08-14T07:00:00.000Z' }),
+        stage({ id: 'stage-2', label: 'Bulk ferment', kind: 'wait' }),
+      ],
+    });
+
+    expect(screen.getByTestId('batch-stage-in-progress')).toBeInTheDocument();
+    expect(stagesWith('batch-stage-advance')).toContain('stage-1');
+    // …and it is no longer offering to be started a second time.
+    expect(stagesWith('batch-stage-mark-started')).not.toContain('stage-1');
+  });
+
+  it('lets TWO stages be in progress at once, each finishable', async () => {
+    await showRun({
+      stages: [
+        stage({ actualStartAt: '2026-08-14T07:00:00.000Z' }),
+        stage({
+          id: 'stage-2',
+          label: 'Preheat',
+          kind: 'wait',
+          actualStartAt: '2026-08-14T07:05:00.000Z',
+        }),
+        stage({ id: 'stage-3', label: 'Bake', kind: 'active' }),
+      ],
+    });
+
+    expect(screen.getAllByTestId('batch-stage-in-progress')).toHaveLength(2);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-1', 'stage-2']);
+  });
+
+  it('offers SKIP on EVERY unfinished stage, optional or not', async () => {
+    // No gate on `optional` and no gate on which stage is current. The fixture's
+    // stages are all `optional: false`, which is the point: the stages most worth
+    // knowing you skipped are the ones the recipe called required.
+    const run = await showRun();
+
+    expect(run.stages.every((s) => s.optional === false)).toBe(true);
+    expect(stagesWith('batch-stage-skip')).toEqual(['stage-1', 'stage-2', 'stage-3']);
+  });
+
+  it('skips in ONE TAP, with no confirmation and no note', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[0]!);
+
+    // No dialogue stood between the tap and the write.
+    await waitFor(() => expect(skipMock).toHaveBeenCalledTimes(1));
+    expect(skipMock).toHaveBeenCalledWith(run, 'stage-1', '');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('carries the note when one was typed, on the stage it was typed against', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[1]!);
+    const field = await screen.findByTestId('batch-stage-skip-note');
+    await fireEvent.input(field, { target: { value: 'dough was already there' } });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[1]!);
+
+    await waitFor(() => expect(skipMock).toHaveBeenCalledTimes(1));
+    expect(skipMock).toHaveBeenCalledWith(run, 'stage-2', 'dough was already there');
+  });
+
+  it('strikes a skipped stage through, shows its time and note, and drops the plan', async () => {
+    await showRun({ stages: [stage({ skipped: SKIPPED }), stage({ id: 'stage-2' })] });
+
+    const row = screen.getAllByTestId('batch-stage')[0]!;
+    expect(row.getAttribute('data-status')).toBe('skipped');
+    expect(row.querySelector('[data-testid="batch-stage-label"]')?.className).toContain(
+      'line-through',
+    );
+    expect(row.querySelector('[data-testid="batch-stage-skipped"]')).not.toBeNull();
+    expect(row.querySelector('[data-testid="batch-stage-skipped-note"]')?.textContent).toContain(
+      'out of milk',
+    );
+    // The planned times are still ON THE DOCUMENT — deliberately, since blanking
+    // them would destroy what the plan said — and are no longer RENDERED.
+    expect(row.getAttribute('data-planned-start')).toBe('2026-08-14T07:00:00.000Z');
+    expect(row.querySelector('[data-testid="batch-stage-start"]')).toBeNull();
+  });
+
+  it('shows a skip with no reason without an empty line where the note would be', async () => {
+    await showRun({ stages: [stage({ skipped: { at: SKIPPED.at, note: '' } })] });
+
+    expect(screen.getByTestId('batch-stage-skipped')).toBeInTheDocument();
+    expect(screen.queryByTestId('batch-stage-skipped-note')).toBeNull();
+  });
+
+  it('never asks for a skipped stage again', async () => {
+    await showRun({
+      stages: [stage({ skipped: SKIPPED }), stage({ id: 'stage-2', label: 'Bulk ferment' })],
+    });
+
+    expect(stagesWithControls()).toEqual(['stage-2']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-2']);
+  });
+
+  it('shows the OPTIONAL chip, and it changes nothing', async () => {
+    await showRun({
+      stages: [stage({ optional: true }), stage({ id: 'stage-2', optional: false })],
+    });
+
+    expect(stagesWith('batch-stage-optional')).toEqual(['stage-1']);
+    // Both are skippable. The chip is information and gates nothing.
+    expect(stagesWith('batch-stage-skip')).toEqual(['stage-1', 'stage-2']);
+  });
+
+  it('asks how it went when the LAST stage was SKIPPED rather than done', async () => {
+    // The end-of-run invitation is read off `nextAction`, which makes no
+    // distinction between the two endings — so neither may this.
+    const run = makeBatch({
+      stages: [stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }), stage({ id: 'stage-2' })],
+    });
+    const finished = {
+      ...run,
+      stages: [run.stages[0]!, { ...run.stages[1]!, skipped: SKIPPED }],
+    };
+    skipMock.mockResolvedValueOnce({ kind: 'ok', value: finished });
+    renderPage();
+    mockBatch._set(run);
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByTestId('batch-stage-skip'));
+
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+  });
+
+  it('says so when a skip or a start fails', async () => {
+    await showRun();
+
+    skipMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[0]!);
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(1));
+
+    startMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-mark-started')[0]!);
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(2));
+    expect(toastMock.mock.calls.every((call) => call[1] === 'destructive')).toBe(true);
+  });
+
+  it('offers nothing at all on an abandoned run', async () => {
+    await showRun({ state: 'abandoned' });
+
+    expect(screen.queryByTestId('batch-stage-skip')).toBeNull();
+    expect(screen.queryByTestId('batch-stage-mark-started')).toBeNull();
+  });
+
+  it('closes the note field again when the toggle is tapped twice', async () => {
+    // The note is a DISCLOSURE beside the button, never a step in front of it —
+    // which means it has to be dismissible without skipping anything.
+    await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[0]!);
+    expect(await screen.findByTestId('batch-stage-skip-note')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[0]!);
+    await waitFor(() => expect(screen.queryByTestId('batch-stage-skip-note')).toBeNull());
+    expect(skipMock).not.toHaveBeenCalled();
+  });
+
+  it('names an unlabelled stage generically rather than reading as an empty prompt', async () => {
+    await showRun({ stages: [stage({ label: '' })] });
+
+    expect(screen.getByTestId('batch-stage-skip-note-toggle').getAttribute('aria-label')).toBe(
+      'Why are you skipping this stage?',
+    );
   });
 });
 
