@@ -167,10 +167,15 @@ export function withStageStarted(batch: BatchDoc, stageId: string, at: string): 
 /**
  * SKIP a stage at `at`, with an optional reason, and re-time everything after it.
  *
- * A skip pulls the tail forward exactly as marking the stage done would — through
- * the same `resolveSchedule`, anchored at the same instant — because from the
- * schedule's point of view the two are the same event: this stage is over, and
- * everything after it starts now.
+ * Skipping the stage IN HAND pulls the tail forward exactly as marking it done
+ * would — through the same `resolveSchedule`, anchored at the same instant — because
+ * from the schedule's point of view the two are the same event: this stage is over,
+ * and everything after it starts now.
+ *
+ * Skipping a stage the run HAS NOT REACHED YET is the other half, and it anchors
+ * differently: the tail comes forward by the skipped stage's own length, from where
+ * the plan already had it, rather than to the clock. The anchor is the later of `at`
+ * and the skipped stage's `plannedStartAt` — see the comment at the call.
  *
  * ANY STAGE IS SKIPPABLE. `optional` is the recipe's opinion and gates nothing (see
  * `ProcessStageContentSchema.optional`); there is no gate here, no confirmation, and
@@ -206,12 +211,30 @@ export function withStageSkipped(
     skipped: { at, note: note.trim() },
   };
 
+  // WHERE THE TAIL IS RE-ANCHORED, and it is NOT unconditionally `at`. Skipping the
+  // stage in hand means everything after it starts now, exactly as marking it done
+  // would. But Skip is offered on every stage that has not happened yet, INCLUDING
+  // one further down the list — and anchoring the tail at `at` there would claim the
+  // run had jumped ahead of a predecessor that is still going: skip the shape while
+  // the bulk has three hours left and the bake gets re-planned for this afternoon,
+  // reminder and all. So the anchor is the LATER of the two, and a future skip pulls
+  // the tail forward by the skipped stage's own length and nothing more.
+  //
+  // An unreadable instant falls through to `at`, so `resolveSchedule` still refuses
+  // it below and this producer stays total.
+  const atMs = Date.parse(at);
+  const plannedMs = Date.parse(skipped.plannedStartAt);
+  const anchorAt =
+    Number.isFinite(atMs) && Number.isFinite(plannedMs) && plannedMs > atMs
+      ? skipped.plannedStartAt
+      : at;
+
   // Only the stages that are still going to happen are re-timed. A skipped stage
   // among them would otherwise be handed a fresh plan for something nobody is going
   // to do, and would push everything after it by its own duration.
   const rest = batch.stages.slice(index + 1);
   const live = rest.filter((stage) => stage.skipped === null);
-  const retimed = resolveSchedule(live, { kind: 'startAt', at });
+  const retimed = resolveSchedule(live, { kind: 'startAt', at: anchorAt });
   // An unreadable instant leaves the batch exactly as it was rather than half-
   // applying the skip — the same refusal `withStageAdvanced` makes, and for the same
   // reason: a stage recorded as skipped against a schedule that still says otherwise

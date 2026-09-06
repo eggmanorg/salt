@@ -331,6 +331,27 @@ describe('withStageSkipped', () => {
     expect(second.stages[3]!.plannedStartAt).toBe('2026-08-15T05:10:00.000Z');
   });
 
+  it('does NOT re-anchor the tail to the clock when the skipped stage is still ahead', () => {
+    // Skip is offered on every stage that has not happened yet, so a cook can decide
+    // at 02:20 — with the bulk still three hours from finishing — that this loaf is
+    // not being shaped. The tail must come forward by the shape's 15 minutes from
+    // where the plan already had it, NOT jump to 02:20: the prove cannot start while
+    // the bulk is running, and `onBatchWritten` would enqueue the bake reminder
+    // against whatever this writes.
+    const run = withStageSkipped(runningLoaf(), 'shape', '2026-08-15T02:20:00.000Z');
+    expect(run.stages[2]!.plannedStartAt).toBe('2026-08-15T05:10:00.000Z');
+    expect(run.stages[2]!.plannedEndAt).toBe('2026-08-15T06:10:00.000Z');
+    expect(run.stages[3]!.plannedStartAt).toBe('2026-08-15T06:10:00.000Z');
+    expect(run.stages[3]!.plannedEndAt).toBe('2026-08-15T06:55:00.000Z');
+  });
+
+  it('still anchors at the clock when the stage in hand is skipped LATE', () => {
+    // The other side of the same rule: the anchor is the later of the two, so a
+    // stage skipped after its planned start still drags the tail out to now.
+    const run = withStageSkipped(runningLoaf(), 'bulk', '2026-08-15T05:40:00.000Z');
+    expect(run.stages[1]!.plannedStartAt).toBe('2026-08-15T05:40:00.000Z');
+  });
+
   it('never asks for a skipped stage again — `currentStage` steps over it', () => {
     const run = withStageSkipped(runningLoaf(), 'bulk', '2026-08-15T02:10:00.000Z');
     expect(currentStage(run)?.id).toBe('shape');
