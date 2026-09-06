@@ -131,26 +131,33 @@ export function renderEquipmentManifest(items: readonly EquipmentItemDoc[]): str
  *
  * `flow` only labels the warn logs so the two callers stay distinguishable.
  */
-export async function readEquipmentContext(
+export async function readEquipmentItems(
   db: ReturnType<typeof getFirestore>,
   flow: string,
-): Promise<string> {
+): Promise<readonly EquipmentItemDoc[]> {
   try {
     const snap = await db
       .collection(EQUIPMENT_MANIFEST_COLLECTION)
       .doc(EQUIPMENT_MANIFEST_DOC_ID)
       .get();
-    if (!snap.exists) return '';
+    if (!snap.exists) return [];
     const result = EquipmentManifestSchema.safeParse(snap.data());
     if (!result.success) {
       logger.warn(`${flow}: equipmentManifest failed validation, proceeding without kit context`);
-      return '';
+      return [];
     }
-    return renderEquipmentManifest(result.data.items);
+    return result.data.items;
   } catch (err) {
     logger.warn(`${flow}: failed to read equipmentManifest`, { err });
-    return '';
+    return [];
   }
+}
+
+export async function readEquipmentContext(
+  db: ReturnType<typeof getFirestore>,
+  flow: string,
+): Promise<string> {
+  return renderEquipmentManifest(await readEquipmentItems(db, flow));
 }
 
 // ─── Chef framing (chefChat) ─────────────────────────────────────────────────
@@ -245,6 +252,47 @@ Attachment" is written "hand blender attachment", and "Steam Basket" is written 
 
 Naming which appliance is NOT a licence to introduce one. If the method does the job by hand, the \
 kit is the hand tool the method uses, and nothing from this list belongs in the answer.`;
+
+// ─── Stage framing (extractProcessStages) ────────────────────────────────────
+//
+// The narrowest licence of the four, and a different QUESTION from the other
+// three. The chef, the librarian and the kit flow are all asked WHICH APPLIANCE
+// A METHOD USES; this one is asked WHERE A WAIT SITS, which is not the same
+// thing and is often nowhere at all. A prove on the counter is the commonest
+// correct answer in the whole feature, and the counter is not in the list.
+//
+// It reads the same rendered manifest as the others — including the temperature
+// lines #1281 added, which are the entire basis on which it can answer.
+const EQUIPMENT_STAGE_FRAMING = `## Places this household can put something
+Some of the kit below HOLDS A TEMPERATURE, and those entries say what range they \
+reach and whether they do humidity. Several are home-made, so the listed figures \
+are the truth about them and beat anything you assume from the name.
+
+Use this list ONLY to fill in a stage's \`equipmentId\`, and only when the stage's \
+temperature genuinely needs one:
+- Copy the id EXACTLY as it appears in brackets. Never invent one, never guess at \
+one from a name, and never use an item that is not listed as holding a temperature.
+- A stage that sits at ordinary kitchen temperature names NO place. The kitchen \
+counter is not in this list and must not be matched to something that is — "leave \
+it on the side" is \`null\`, not the nearest chamber.
+- Naming a place is never a licence to change the temperature. The temperature \
+comes from the recipe; the place is only where that temperature is most easily had.
+- If nothing here fits, \`null\` is the right answer and always available.`;
+
+/**
+ * The stage flow's equipment section, or '' when there is no manifest to show.
+ *
+ * The ids are rendered here rather than in `renderEquipmentManifest`, because the
+ * other three framings answer with WORDS and an id in front of them is noise.
+ */
+export function equipmentSectionForStages(items: readonly EquipmentItemDoc[]): string {
+  const places = items.filter((item) => item.environment !== null);
+  if (places.length === 0) return '';
+  const lines = places
+    .map((item) => [`- [${item.id}] ${item.name}`, ...renderEquipmentEnvironment(item)].join('\n'))
+    .join('\n');
+  return `${EQUIPMENT_STAGE_FRAMING}\n\n${lines}`;
+}
 
 /**
  * The chef's equipment section, or '' when there is no manifest to show.

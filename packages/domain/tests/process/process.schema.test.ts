@@ -4,6 +4,7 @@ import {
   ProcessSchema,
   ProcessStageContentSchema,
   ProcessStageSchema,
+  StageEnvironmentSchema,
 } from '../../src/schemas/process.js';
 
 // The stage shape (issue #806, phase 2 of epic #778). What these pin, in order of
@@ -20,7 +21,7 @@ const BULK_FERMENT = {
   id: 'stage-1',
   label: 'Bulk ferment',
   kind: 'wait' as const,
-  environment: { celsius: 20 },
+  environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
   duration: { kind: 'range' as const, minMinutes: 240, maxMinutes: 300 },
   until: 'until risen by half',
   stepId: 'step-2',
@@ -66,19 +67,25 @@ describe('ProcessStageSchema', () => {
   });
 
   it('caps relative humidity at a percentage', () => {
-    const chamber = { ...BULK_FERMENT, environment: { celsius: 12, relativeHumidityPercent: 75 } };
+    const chamber = {
+      ...BULK_FERMENT,
+      environment: { temperature: { kind: 'fixed', celsius: 12 }, relativeHumidityPercent: 75 },
+    };
     expect(ProcessStageSchema.safeParse(chamber).success).toBe(true);
     expect(
       ProcessStageSchema.safeParse({
         ...BULK_FERMENT,
-        environment: { celsius: 12, relativeHumidityPercent: 175 },
+        environment: { temperature: { kind: 'fixed', celsius: 12 }, relativeHumidityPercent: 175 },
       }).success,
     ).toBe(false);
   });
 
   it('allows a temperature at or below zero — a freezer is an environment', () => {
     expect(
-      ProcessStageSchema.safeParse({ ...BULK_FERMENT, environment: { celsius: -18 } }).success,
+      ProcessStageSchema.safeParse({
+        ...BULK_FERMENT,
+        environment: { temperature: { kind: 'fixed', celsius: -18 } },
+      }).success,
     ).toBe(true);
   });
 });
@@ -151,5 +158,47 @@ describe('FormulaSchema.process', () => {
     const parsed = FormulaSchema.parse({ ...FORMULA, process: [BULK_FERMENT] });
     expect(parsed.process).toEqual([BULK_FERMENT]);
     expect(ProcessSchema.safeParse([BULK_FERMENT]).success).toBe(true);
+  });
+});
+
+// ─── The stage temperature is a range or a figure (issue #1281) ───────────────
+
+describe('StageEnvironmentSchema — temperature and place', () => {
+  it('keeps a range as a range', () => {
+    const parsed = StageEnvironmentSchema.safeParse({
+      temperature: { kind: 'range', minCelsius: 22, maxCelsius: 26 },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // The whole reason for the union: nothing anywhere may turn this into 24.
+    expect(parsed.data.temperature).toEqual({ kind: 'range', minCelsius: 22, maxCelsius: 26 });
+    expect(parsed.data.equipmentId).toBeNull();
+  });
+
+  it('keeps a figure the recipe means exactly', () => {
+    const parsed = StageEnvironmentSchema.safeParse({
+      temperature: { kind: 'fixed', celsius: 240 },
+      equipmentId: 'eq-oven',
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.temperature).toEqual({ kind: 'fixed', celsius: 240 });
+    expect(parsed.data.equipmentId).toBe('eq-oven');
+  });
+
+  it('refuses the pre-migration bare celsius rather than tolerating it', () => {
+    // Stated as a test because it is the whole justification for the one-off
+    // script: there is NO legacy read branch, so a document the migration has
+    // not reached fails here rather than being silently re-interpreted.
+    expect(StageEnvironmentSchema.safeParse({ celsius: 20 }).success).toBe(false);
+  });
+
+  it('still bounds a humidity reading to 0–100', () => {
+    expect(
+      StageEnvironmentSchema.safeParse({
+        temperature: { kind: 'fixed', celsius: 12 },
+        relativeHumidityPercent: 140,
+      }).success,
+    ).toBe(false);
   });
 });

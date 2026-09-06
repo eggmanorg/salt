@@ -4,9 +4,11 @@ import {
   ExtractProcessStagesOutputSchema,
   type RecipeDoc,
 } from '@salt/domain/schemas';
+import { getFirestore } from 'firebase-admin/firestore';
 import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
+import { equipmentSectionForStages, readEquipmentItems } from './equipmentContext.js';
 import { requireRecipe } from './loadRecipe.js';
 
 // extractProcessStages (issue #806, phase 2 of epic #778). Reads a recipe's method
@@ -53,9 +55,13 @@ not describe. An empty list is a correct and expected answer.
 ## What each stage carries
 - \`label\`: two or three words for what happens. "Bulk ferment", "Shape", "Preheat the oven", "Bake".
 - \`kind\`: \`active\` or \`wait\`, by the rule above.
-- \`environment\`: the temperature the stage happens at, in °C, when the recipe gives one or plainly implies one \
-(an oven temperature, "in the fridge" ≈ 4, "at room temperature" ≈ 20). Null when there is nothing to say — a mix has \
-no meaningful temperature. Only set \`relativeHumidityPercent\` if the recipe states a humidity.
+- \`environment\`: where the stage happens, when the recipe says or plainly implies it. Null when there is nothing \
+to say — a mix has no meaningful temperature. Only set \`relativeHumidityPercent\` if the recipe states a humidity.
+  - \`temperature\`: \`{ "kind": "fixed", "celsius": N }\` when the recipe means one figure — an oven at 240 means \
+240 — or \`{ "kind": "range", "minCelsius": N, "maxCelsius": M }\` when it means a band. PREFER A RANGE FOR ANYTHING \
+AMBIENT: "at room temperature" is 20–24, "somewhere warm" is 24–28, "in the fridge" is 3–5. A single figure for a \
+prove is a fiction — nobody's kitchen holds 20 °C all day. KEEP A RANGE AS A RANGE; do not average it.
+  - \`equipmentId\`: null unless a place below fits, and see the places section for when one does.
 - \`duration\`: \`{ "kind": "fixed", "minutes": N }\` for a single time, or \
 \`{ "kind": "range", "minMinutes": N, "maxMinutes": M }\` when the recipe gives a spread ("prove for 45 minutes to an \
 hour"). KEEP A RANGE AS A RANGE — do not average it. Null when the recipe gives no time at all.
@@ -108,6 +114,14 @@ export const extractProcessStagesFlow = ai.defineFlow(
   async ({ recipeId }) => {
     const recipe = await requireRecipe(recipeId);
 
+    // The household's places (issue #1281). Read alongside the recipe rather than
+    // baked into the system prompt because it is a document that changes, and ''
+    // when there is nothing to show — a household that has described no chamber
+    // gets byte-for-byte the prompt it got before, and every stage comes back
+    // with no place, which is today's behaviour exactly.
+    const equipmentItems = await readEquipmentItems(getFirestore(), 'extractProcessStages');
+    const placesSection = equipmentSectionForStages(equipmentItems);
+
     // `lite`: mechanical extraction from text already in front of it, the same
     // posture as parseRecipeIngredients. `flowModel` returns the deterministic e2e
     // fake under FUNCTIONS_AI_FAKE.
@@ -117,7 +131,9 @@ export const extractProcessStagesFlow = ai.defineFlow(
       () =>
         ai.generate({
           model,
-          system: EXTRACT_PROCESS_STAGES_SYSTEM,
+          system: placesSection
+            ? `${EXTRACT_PROCESS_STAGES_SYSTEM}\n\n${placesSection}`
+            : EXTRACT_PROCESS_STAGES_SYSTEM,
           prompt: promptFor(recipe),
           output: { schema: ExtractProcessStagesAIOutputSchema },
           // Zero, and unlike the guided plan that is right here: there is one
@@ -143,9 +159,22 @@ export const extractProcessStagesFlow = ai.defineFlow(
     // ferment without it. Throwing away a real wait stage because the model mistyped
     // an id is exactly the loss this feature exists to prevent.
     const stepIds = new Set(recipe.steps.map((s) => s.id));
-    const stages = parsed.data.stages.map((stage) =>
-      stage.stepId !== null && !stepIds.has(stage.stepId) ? { ...stage, stepId: null } : stage,
-    );
+    // A place the manifest does not have loses the PLACE, not the stage, and for
+    // exactly the reason a bad `stepId` loses only the citation: `equipmentId` is
+    // an optional one-way reference and a bulk ferment is still a bulk ferment
+    // without one. The alternative — trusting the prompt — is how you get a
+    // confidently invented chamber that no screen can resolve to a name.
+    const placeIds = new Set(equipmentItems.filter((i) => i.environment !== null).map((i) => i.id));
+    const stages = parsed.data.stages.map((stage) => {
+      const stepId = stage.stepId !== null && !stepIds.has(stage.stepId) ? null : stage.stepId;
+      const environment =
+        stage.environment !== null &&
+        stage.environment.equipmentId !== null &&
+        !placeIds.has(stage.environment.equipmentId)
+          ? { ...stage.environment, equipmentId: null }
+          : stage.environment;
+      return { ...stage, stepId, environment };
+    });
 
     // NO WAITS, NO PROCESS. Enforced here rather than trusted to the prompt because
     // it is the difference between "this recipe has no process" and a confidently

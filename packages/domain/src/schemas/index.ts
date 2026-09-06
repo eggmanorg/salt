@@ -353,10 +353,12 @@ export {
   ExtractProcessStagesInputSchema,
   ExtractProcessStagesAIOutputSchema,
   ExtractProcessStagesOutputSchema,
+  StageTemperatureSchema,
 } from './process.js';
 export type {
   ProcessStageKind,
   StageEnvironment,
+  StageTemperature,
   StageDuration,
   ProcessStage,
   Process,

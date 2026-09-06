@@ -235,3 +235,102 @@ describe('EquipmentEnvironmentSection', () => {
     expect(screen.getByTestId('equipment-environment-save')).toBeTruthy();
   });
 });
+
+describe('EquipmentEnvironmentSection — how a described place reads', () => {
+  it('summarises a dedicated place as just its range', () => {
+    const proofer: EquipmentEnvironmentDoc = {
+      control: 'dedicated',
+      minCelsius: 20,
+      maxCelsius: 50,
+      humidity: null,
+      standing: null,
+    };
+    render(EquipmentEnvironmentSection, { props: { item: item(proofer) } });
+    expect(screen.getByTestId('equipment-environment-summary').textContent).toContain('20–50 °C');
+    expect(screen.getByText(/Dedicated/)).toBeTruthy();
+  });
+
+  it('marks a precisely-held humidity as controlled, without the approximate note', () => {
+    const anova: EquipmentEnvironmentDoc = {
+      control: 'dedicated',
+      minCelsius: 25,
+      maxCelsius: 250,
+      humidity: { precision: 'controlled', minPercent: 0, maxPercent: 100 },
+      standing: null,
+    };
+    render(EquipmentEnvironmentSection, { props: { item: item(anova) } });
+    const summary = screen.getByTestId('equipment-environment-summary').textContent ?? '';
+    expect(summary).toContain('0–100% RH');
+    expect(summary).not.toContain('approximate');
+  });
+
+  it('omits a standing humidity nobody recorded', () => {
+    const fridge: EquipmentEnvironmentDoc = {
+      control: 'shared',
+      minCelsius: 5,
+      maxCelsius: 18,
+      humidity: null,
+      standing: { celsius: 14, relativeHumidityPercent: null },
+    };
+    render(EquipmentEnvironmentSection, { props: { item: item(fridge) } });
+    const summary = screen.getByTestId('equipment-environment-summary').textContent ?? '';
+    expect(summary).toContain('currently held at 14 °C');
+    expect(summary).not.toContain('%');
+  });
+
+  it('shows a shared place its standing setpoint when it has none recorded', () => {
+    const bare: EquipmentEnvironmentDoc = { ...SHARED, standing: null };
+    render(EquipmentEnvironmentSection, { props: { item: item(bare) } });
+    expect(screen.getByTestId('equipment-environment-summary').textContent).not.toContain(
+      'currently held at',
+    );
+  });
+
+  it('refuses words typed where a temperature belongs', async () => {
+    const user = userEvent.setup();
+    render(EquipmentEnvironmentSection, { props: { item: item(null) } });
+    await user.click(screen.getByTestId('equipment-environment-describe'));
+    await user.type(screen.getByTestId('equipment-environment-min-c'), 'warm');
+    await user.type(screen.getByTestId('equipment-environment-max-c'), '50');
+    await user.click(screen.getByTestId('equipment-environment-save'));
+
+    expect(screen.getByTestId('equipment-environment-error')).toBeTruthy();
+    expect(setEquipmentEnvironmentFor).not.toHaveBeenCalled();
+  });
+
+  it('records how closely a humidity is held', async () => {
+    const user = userEvent.setup();
+    render(EquipmentEnvironmentSection, { props: { item: item(null) } });
+    await user.click(screen.getByTestId('equipment-environment-describe'));
+    await user.click(screen.getByRole('switch'));
+
+    await user.click(screen.getByTestId('equipment-environment-precision'));
+    await user.click(await screen.findByRole('option', { name: 'Controlled' }));
+
+    await user.type(screen.getByTestId('equipment-environment-min-c'), '25');
+    await user.type(screen.getByTestId('equipment-environment-max-c'), '250');
+    await user.type(screen.getByTestId('equipment-environment-min-rh'), '0');
+    await user.type(screen.getByTestId('equipment-environment-max-rh'), '100');
+    await user.click(screen.getByTestId('equipment-environment-save'));
+
+    await waitFor(() => expect(setEquipmentEnvironmentFor).toHaveBeenCalled());
+    expect(vi.mocked(setEquipmentEnvironmentFor).mock.calls[0]![1]!.humidity).toEqual({
+      precision: 'controlled',
+      minPercent: 0,
+      maxPercent: 100,
+    });
+  });
+
+  it('switches a place from dedicated to shared through the picker', async () => {
+    const user = userEvent.setup();
+    render(EquipmentEnvironmentSection, { props: { item: item(null) } });
+    await user.click(screen.getByTestId('equipment-environment-describe'));
+
+    await user.click(screen.getByTestId('equipment-environment-control'));
+    await user.click(await screen.findByRole('option', { name: /Shared/ }));
+
+    // The standing fields are what the mode is FOR, so their appearance is the
+    // observable half of the switch.
+    expect(screen.getByTestId('equipment-environment-standing-c')).toBeTruthy();
+  });
+});

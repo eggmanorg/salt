@@ -57,6 +57,7 @@
     ProcessStage,
     ProcessStageKind,
   } from '@salt/domain/schemas';
+  import { equipment } from '../../lib/equipmentService.js';
   import { kindOf } from './recipeKind.js';
   import {
     EMPTY_DOUGH_ANSWER,
@@ -161,12 +162,30 @@
   // the draft reorders and deletes through the domain producers without the domain
   // knowing what a half-typed temperature is.
   interface StageRow extends ProcessStage {
+    // The low end, or the whole of a fixed temperature. Same two-box shape as the
+    // duration below, because a stage temperature is now a range-or-fixed too
+    // (issue #1281) and one control answering both questions is the defect.
     celsiusText: string;
+    maxCelsiusText: string;
+    // The chosen place, held as the raw picker value ('' = nowhere in particular)
+    // rather than read back out of `environment`. A place picked before a
+    // temperature is typed would otherwise vanish, because an environment with no
+    // temperature is not a shape this schema has.
+    placeId: string;
     // The low end, or the whole of a fixed duration.
     minutesText: string;
     // Empty means fixed. Filled and different means a range, kept AS A RANGE.
     maxMinutesText: string;
   }
+
+  // The places this household has described, for the per-stage picker. Ordinary
+  // equipment is not offered: a knife block is not somewhere a prove happens.
+  const places = $derived(($equipment?.items ?? []).filter((i) => i.environment !== null));
+  const placeNames = $derived(new Map(places.map((p) => [p.id, p.name])));
+  // The picker's "nowhere in particular" option. A Select cannot hold null, and
+  // the kitchen counter is deliberately not an equipment entry, so the two
+  // readings — nothing chosen, and deliberately the counter — are one value.
+  const NO_PLACE = '';
 
   let rows = $state<Row[]>([]);
   let stageRows = $state<StageRow[]>([]);
@@ -223,7 +242,19 @@
     const duration = stage.duration;
     return {
       ...stage,
-      celsiusText: stage.environment === null ? '' : String(stage.environment.celsius),
+      celsiusText:
+        stage.environment === null
+          ? ''
+          : String(
+              stage.environment.temperature.kind === 'fixed'
+                ? stage.environment.temperature.celsius
+                : stage.environment.temperature.minCelsius,
+            ),
+      maxCelsiusText:
+        stage.environment !== null && stage.environment.temperature.kind === 'range'
+          ? String(stage.environment.temperature.maxCelsius)
+          : '',
+      placeId: stage.environment?.equipmentId ?? '',
       minutesText:
         duration === null
           ? ''
@@ -245,6 +276,7 @@
    */
   function stageFrom(row: StageRow): ProcessStage {
     const celsius = parseCelsius(row.celsiusText);
+    const maxCelsius = parseCelsius(row.maxCelsiusText);
     const humidity = row.environment?.relativeHumidityPercent;
     const minutes = parsePositiveNumber(row.minutesText);
     const maxMinutes = parsePositiveNumber(row.maxMinutesText);
@@ -255,7 +287,17 @@
       environment:
         celsius === null
           ? null
-          : { celsius, ...(humidity === undefined ? {} : { relativeHumidityPercent: humidity }) },
+          : {
+              temperature:
+                maxCelsius === null || maxCelsius === celsius
+                  ? { kind: 'fixed', celsius }
+                  : { kind: 'range', minCelsius: celsius, maxCelsius },
+              ...(humidity === undefined ? {} : { relativeHumidityPercent: humidity }),
+              // A place named on a stage whose temperature has since been cleared
+              // goes with it: an environment is the whole answer to "where", and
+              // half of one is not worth storing.
+              equipmentId: row.placeId === '' ? null : row.placeId,
+            },
       duration:
         minutes === null
           ? null
@@ -453,10 +495,30 @@
       stepId: null,
       optional: false,
       celsiusText: '',
+      maxCelsiusText: '',
+      placeId: '',
       minutesText: '',
       maxMinutesText: '',
     });
     touch();
+  }
+
+  /**
+   * Choosing a place, and PREFILLING the temperature from it when there is none.
+   *
+   * Not arithmetic and not a model: it copies the range the equipment entry
+   * already states. It fires only into empty boxes, so a recipe's own figure is
+   * never overwritten — the recipe outranks the kit, always.
+   */
+  function choosePlace(id: string, value: string): void {
+    const place = places.find((p) => p.id === value);
+    const row = stageRows.find((r) => r.id === id);
+    const env = place?.environment;
+    const prefill =
+      env && row && row.celsiusText.trim() === '' && row.maxCelsiusText.trim() === ''
+        ? { celsiusText: String(env.minCelsius), maxCelsiusText: String(env.maxCelsius) }
+        : {};
+    patchStage(id, { placeId: value, ...prefill });
   }
 
   function removeStage(id: string): void {
@@ -1092,6 +1154,9 @@
                       </div>
 
                       <div class="flex flex-wrap items-end gap-3">
+                        <!-- Two boxes for the same reason the duration has two: a
+                         prove that is really "somewhere between 22 and 26" must not
+                         be stored as a single invented 24. -->
                         <TextField
                           label="Temperature (°C)"
                           inputmode="decimal"
@@ -1101,6 +1166,38 @@
                           onValueChange={(v) => patchStage(stage.id, { celsiusText: v })}
                           data-testid="formula-stage-celsius"
                         />
+                        <TextField
+                          label="…up to"
+                          inputmode="decimal"
+                          class="w-28"
+                          placeholder="optional"
+                          value={stage.maxCelsiusText}
+                          onValueChange={(v) => patchStage(stage.id, { maxCelsiusText: v })}
+                          data-testid="formula-stage-max-celsius"
+                        />
+                        {#if places.length > 0}
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-muted-foreground">Place</span>
+                            <Select
+                              value={stage.placeId}
+                              onValueChange={(v) => choosePlace(stage.id, v)}
+                            >
+                              <SelectTrigger
+                                class="w-44"
+                                aria-label={`Where does ${stage.label || 'this stage'} happen?`}
+                                data-testid="formula-stage-place"
+                              >
+                                {placeNames.get(stage.placeId) ?? 'Kitchen temperature'}
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={NO_PLACE}>Kitchen temperature</SelectItem>
+                                {#each places as place (place.id)}
+                                  <SelectItem value={place.id}>{place.name}</SelectItem>
+                                {/each}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        {/if}
                         <!-- Two boxes, not one: a range typed as a range stays a range.
                          Leaving the second empty is what makes a duration fixed. -->
                         <TextField

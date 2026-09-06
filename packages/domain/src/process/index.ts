@@ -36,3 +36,5 @@ export type { ProcessStageDiffEntry, ProcessStageChange, ProcessDiff } from './p
 // of a PROCESS — where the unattended periods end — and the batch is only its
 // first customer. No clock, no schema field, and nothing about elapsed time.
 export { remindableStages } from './remindableStages.js';
+// The one spelling of a stage temperature (issue #1281) — four surfaces render it.
+export { stageTemperatureText } from './stageTemperature.js';

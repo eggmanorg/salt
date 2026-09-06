@@ -1,4 +1,9 @@
-import type { ProcessStage, StageDuration, StageEnvironment } from '../schemas/index.js';
+import type {
+  ProcessStage,
+  StageDuration,
+  StageEnvironment,
+  StageTemperature,
+} from '../schemas/index.js';
 import type { ProposedStage } from '../schemas/proposeSchedule.js';
 import type { ProcessDiff, ProcessStageChange, ProcessStageDiffEntry } from './processDiff.js';
 
@@ -34,9 +39,20 @@ import type { ProcessDiff, ProcessStageChange, ProcessStageDiffEntry } from './p
 // remove, which is worse than the citation being absent. An uncited stage is an
 // addition, and the review says so plainly.
 
+function sameTemperature(a: StageTemperature, b: StageTemperature): boolean {
+  if (a.kind === 'fixed') return b.kind === 'fixed' && a.celsius === b.celsius;
+  return b.kind === 'range' && a.minCelsius === b.minCelsius && a.maxCelsius === b.maxCelsius;
+}
+
 function sameEnvironment(a: StageEnvironment | null, b: StageEnvironment | null): boolean {
   if (a === null || b === null) return a === b;
-  return a.celsius === b.celsius && a.relativeHumidityPercent === b.relativeHumidityPercent;
+  return (
+    sameTemperature(a.temperature, b.temperature) &&
+    a.relativeHumidityPercent === b.relativeHumidityPercent &&
+    // A restructure that moves a prove from the counter to the proofer has changed
+    // the stage even when the figures happen to match, and the review must say so.
+    a.equipmentId === b.equipmentId
+  );
 }
 
 function sameDuration(a: StageDuration | null, b: StageDuration | null): boolean {

@@ -33,7 +33,7 @@
     skipStage,
     startStage,
   } from '../../lib/batchService.js';
-  import { stageStatus } from '@salt/domain';
+  import { stageStatus, stageTemperatureText } from '@salt/domain';
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { addToast } from '../../lib/toastStore.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
@@ -649,7 +649,9 @@
                       {#if stage.environment !== null}
                         <span class="flex items-center gap-1" data-testid="batch-stage-environment">
                           <Icon name="Thermometer" size={12} />
-                          {stage.environment.celsius} °C{#if stage.environment.relativeHumidityPercent !== undefined}
+                          {stageTemperatureText(
+                            stage.environment.temperature,
+                          )}{#if stage.environment.relativeHumidityPercent !== undefined}
                             · {stage.environment.relativeHumidityPercent}% RH{/if}
                         </span>
                       {/if}

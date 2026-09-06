@@ -45,12 +45,45 @@ import { z } from 'zod';
 // all is not worth storing, and the extraction flow returns nothing for one.
 export const ProcessStageKindSchema = z.enum(['active', 'wait']);
 
+// A DISCRIMINATED UNION, copying `StageDurationSchema` below rather than inventing
+// a min/max pair (issue #1281). "Prove at 20 °C" was always a fiction — the real
+// instruction is "somewhere between 22 and 26" — but a 240 °C oven means 240, and
+// a range that collapses to a midpoint has thrown the recipe's own claim away for
+// good, exactly as a 45–60 minute prove stored as 52.5 has.
+export const StageTemperatureSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('fixed'), celsius: z.number() }),
+  z.object({
+    kind: z.literal('range'),
+    minCelsius: z.number(),
+    maxCelsius: z.number(),
+  }),
+]);
+
 // Where the stage happens: counter 20 °C, fridge 4 °C, chamber 12 °C at 75% RH.
 // `relativeHumidityPercent` is optional because only a curing chamber has an
 // opinion about it; bread never sets it.
+//
+// NO LEGACY BRANCH for the pre-#1281 bare `{ celsius: n }`. A `z.union` carrying it
+// forever is code every future reader must understand, to serve a handful of
+// documents that could be fixed once — so `scripts/migrate-stage-temperature.mjs`
+// runs BEFORE this ships, the #1122 ordering. It rewrites `formulas/*.process[]`
+// AND `batches/*.stages[]`, because `BatchStageSchema` extends this one.
 export const StageEnvironmentSchema = z.object({
-  celsius: z.number(),
+  temperature: StageTemperatureSchema,
   relativeHumidityPercent: z.number().min(0).max(100).optional(),
+  // The PLACE this stage is suggested to happen in — an `EquipmentItemDoc.id` from
+  // `equipmentManifest/current`, or null for "at whatever the kitchen is". The
+  // counter is not an equipment entry, so "nothing chosen" and "deliberately the
+  // counter" are the same answer and behave identically.
+  //
+  // ONE-WAY, exactly as `stepId` is: an id here is a reference to a document this
+  // one does not own, so a reader that cannot resolve it renders the temperature
+  // alone and nothing breaks. The extraction flow drops an id the manifest does
+  // not have rather than inventing an item.
+  //
+  // `.default(null)` because it is additive over the same documents the temperature
+  // migration touches, and a stage authored before places existed named none.
+  equipmentId: z.string().nullable().default(null),
 });
 
 // A DISCRIMINATED UNION rather than a min/max pair with fixed as the degenerate
@@ -136,6 +169,7 @@ export const ExtractProcessStagesAIOutputSchema = z.object({
 export const ExtractProcessStagesOutputSchema = ExtractProcessStagesAIOutputSchema;
 
 export type ProcessStageKind = z.infer<typeof ProcessStageKindSchema>;
+export type StageTemperature = z.infer<typeof StageTemperatureSchema>;
 export type StageEnvironment = z.infer<typeof StageEnvironmentSchema>;
 export type StageDuration = z.infer<typeof StageDurationSchema>;
 export type ProcessStage = z.infer<typeof ProcessStageSchema>;

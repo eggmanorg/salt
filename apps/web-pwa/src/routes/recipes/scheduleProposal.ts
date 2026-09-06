@@ -1,3 +1,4 @@
+import { stageTemperatureText } from '@salt/domain';
 import type { ProcessDiff } from '@salt/domain';
 import type {
   ProcessStage,
@@ -70,7 +71,10 @@ function environmentWords(environment: StageEnvironment | null): string {
     environment.relativeHumidityPercent === undefined
       ? ''
       : ` · ${environment.relativeHumidityPercent}% RH`;
-  return `${environment.celsius} °C${humidity}`;
+  // The PLACE is deliberately not spelled here: this file has no manifest to look
+  // an id up in, and a raw equipment id in a review row is worse than nothing.
+  // `diffProcess` still reports a place change, as a stage change.
+  return `${stageTemperatureText(environment.temperature)}${humidity}`;
 }
 
 function kindWords(kind: ProcessStageKind): string {

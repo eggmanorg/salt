@@ -14,7 +14,7 @@ import {
   type RecipeDoc,
   type StageDuration,
 } from '@salt/domain/schemas';
-import { flattenIngredients } from '@salt/domain';
+import { flattenIngredients, stageTemperatureText } from '@salt/domain';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
@@ -88,7 +88,7 @@ If the process already lands at the requested time with nobody up in the night, 
 ## What each stage carries
 - \`label\`: two or three words. "Bulk ferment", "Cold retard", "Shape", "Preheat the oven", "Bake".
 - \`kind\`: \`active\` or \`wait\`, by the rule above.
-- \`environment\`: the temperature the stage happens at, in °C (counter ≈ 20, fridge ≈ 4, the oven's own figure for a preheat or a bake). Null when there is nothing to say — a mix has no meaningful temperature.
+- \`environment\`: where the stage happens. \`temperature\` is \`{ "kind": "fixed", "celsius": N }\` for a figure the recipe means exactly (an oven at 240), or \`{ "kind": "range", "minCelsius": N, "maxCelsius": M }\` for one that is really a band ("somewhere warm, 22–26"). KEEP A RANGE AS A RANGE — do not average it. Copy \`equipmentId\` through from the existing stage unchanged, or null. Null the whole \`environment\` when there is nothing to say — a mix has no meaningful temperature.
 - \`duration\`: \`{ "kind": "fixed", "minutes": N }\`, or \`{ "kind": "range", "minMinutes": N, "maxMinutes": M }\` when you mean a spread. KEEP A RANGE AS A RANGE — do not average it. Null only for a stage that is genuinely watched rather than timed.
 - \`until\`: the observable sign the stage is done, in a baker's terms — "until doubled", "until it springs back slowly". Null when there is none.
 - \`stepId\`: the recipe step this stage corresponds to, copied verbatim from the method below. Null when it corresponds to none.
@@ -114,7 +114,7 @@ function describeStage(stage: ProcessStage): string {
     stage.kind,
     `"${stage.label}"`,
     describeDuration(stage.duration),
-    stage.environment === null ? null : `${stage.environment.celsius} °C`,
+    stage.environment === null ? null : stageTemperatureText(stage.environment.temperature),
     // The criterion in the recipe's own words, in brackets: it usually already
     // starts "until", and "until until doubled" reads as carelessness to a model
     // being asked to be careful.
