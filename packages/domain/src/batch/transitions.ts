@@ -263,8 +263,22 @@ export function withStageSkipped(
  * Idempotent, and one-way: nothing here brings a batch back to `running`, because
  * the schedule it was abandoned against is hours or weeks stale and un-abandoning
  * would present those planned times as if they still meant something.
+ *
+ * IT STAMPS WHEN (issue #1280). "Abandoned" on its own is half a record: the run
+ * that was given up on at ten past eight on Sunday morning is a different story from
+ * the one given up on the following Thursday, and `updatedAt` cannot answer it —
+ * that moves on every later write. `at` is injected like every other instant here
+ * (CLAUDE.md Rule 1); `batchService.abandonBatch` reads the clock.
+ *
+ * Being idempotent, the SECOND call keeps the first instant. Abandoning is one
+ * event, and the moment it happened does not move because somebody tapped again.
+ *
+ * A no-op when the instant cannot be read as a time — the same refusal
+ * `withStageStarted` makes. A run recorded as abandoned against a garbage timestamp
+ * would put an entry the log cannot place into the one record of what happened.
  */
-export function withBatchAbandoned(batch: BatchDoc): BatchDoc {
+export function withBatchAbandoned(batch: BatchDoc, at: string): BatchDoc {
   if (batch.state === 'abandoned') return batch;
-  return { ...batch, state: 'abandoned' };
+  if (!Number.isFinite(Date.parse(at))) return batch;
+  return { ...batch, state: 'abandoned', abandonedAt: at };
 }

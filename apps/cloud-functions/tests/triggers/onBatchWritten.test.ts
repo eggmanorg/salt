@@ -128,6 +128,7 @@ function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
     recipeId: 'recipe-1',
     recipeTitle: 'Overnight white tin',
     state: 'running',
+    abandonedAt: null,
     quantities: [],
     totals: { basisGrams: 1000, totalGrams: 1700, usableGrams: 1700, units: null },
     stages: loafStages(),

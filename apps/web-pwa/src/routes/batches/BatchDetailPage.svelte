@@ -398,7 +398,14 @@
       <div class="flex flex-col gap-4" data-testid="batch-detail">
         <p class="text-sm text-muted-foreground" data-testid="batch-detail-started">
           Started {formatDate(run.createdAt)}{#if run.state === 'abandoned'}
-            · abandoned{/if}
+            <!-- WHEN it was abandoned, where the run recorded it (issue #1280).
+               `abandonedAt` is a read default, so a run stopped before that field
+               existed says only that it was abandoned — the document never recorded
+               when, and inventing one from `updatedAt` would be a later write's
+               timestamp dressed up as the moment the cook gave up. -->
+            · abandoned{#if run.abandonedAt !== null}
+              <span data-testid="batch-detail-abandoned-at">{formatWhen(run.abandonedAt)}</span
+              >{/if}{/if}
         </p>
 
         <!-- ─── The invitation ────────────────────────────────────────────────────

@@ -167,6 +167,23 @@ export const BatchSchema = z.object({
   // The recipe's title, frozen. The log survives the dish being renamed or deleted.
   recipeTitle: z.string(),
   state: BatchStateSchema,
+  // WHEN the run was stopped, and null while it is still running (issue #1280).
+  //
+  // The run's OWN transition time, not `updatedAt`. `updatedAt` is the write path's
+  // ordering token and moves every time anything on the document is written, so a
+  // stage marked done an hour after the run was abandoned would carry the later
+  // instant and the log would say the run stopped then. This field is stamped once,
+  // by `withBatchAbandoned`, and nothing else touches it.
+  //
+  // Nothing back-fills it. A run abandoned before this field existed reads `null`,
+  // and the log says nothing about when — which is the honest answer, because the
+  // document never recorded one.
+  //
+  // A read default, so every `batches/{batchId}` document written before this field
+  // existed parses unchanged and there is no migration (CLAUDE.md, production data
+  // back-compat) — the same shape `BatchStageSchema.skipped` and
+  // `BatchObservationSchema.stageId` both have.
+  abandonedAt: z.string().nullable().default(null),
   quantities: z.array(BatchQuantitySchema),
   totals: BatchTotalsSchema,
   stages: z.array(BatchStageSchema),

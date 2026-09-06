@@ -448,8 +448,9 @@ export {
   withStageStarted,
   withStageSkipped,
   withBatchAbandoned,
+  buildBatchLog,
 } from './batch/index.js';
-export type { FreezeBatchFailure, StageStatus } from './batch/index.js';
+export type { FreezeBatchFailure, StageStatus, BatchLogEntry } from './batch/index.js';
 
 // URL module — pure display-time cache-buster for regenerated image URLs (#460).
 export { appendCacheBuster, recipeHeroUrl, type HeroImageSource } from './url/index.js';

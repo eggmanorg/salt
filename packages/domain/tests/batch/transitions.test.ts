@@ -44,6 +44,7 @@ function runningLoaf(): BatchDoc {
     recipeId: 'overnight-white-tin',
     recipeTitle: 'Overnight white tin',
     state: 'running',
+    abandonedAt: null,
     quantities: [
       { ingredientId: 'ing-flour', label: '500g strong white', percent: 100, grams: 841 },
     ],
@@ -81,7 +82,7 @@ describe('currentStage', () => {
   });
 
   it('is null for an abandoned batch, which has no next action', () => {
-    expect(currentStage(withBatchAbandoned(runningLoaf()))).toBeNull();
+    expect(currentStage(withBatchAbandoned(runningLoaf(), '2026-08-15T09:00:00.000Z'))).toBeNull();
   });
 });
 
@@ -142,7 +143,7 @@ describe('withStageAdvanced', () => {
   });
 
   it('is a no-op on a batch that is not running', () => {
-    const abandoned = withBatchAbandoned(runningLoaf());
+    const abandoned = withBatchAbandoned(runningLoaf(), '2026-08-15T09:00:00.000Z');
     expect(withStageAdvanced(abandoned, 'bulk', '2026-08-15T05:40:00.000Z')).toEqual(abandoned);
   });
 
@@ -164,15 +165,45 @@ describe('withStageAdvanced', () => {
 describe('withBatchAbandoned', () => {
   it('stops the run without touching what it recorded', () => {
     const before = runningLoaf();
-    const abandoned = withBatchAbandoned(before);
+    const abandoned = withBatchAbandoned(before, '2026-08-15T09:00:00.000Z');
     expect(abandoned.state).toBe('abandoned');
     expect(abandoned.quantities).toEqual(before.quantities);
     expect(abandoned.stages).toEqual(before.stages);
   });
 
   it('is idempotent, and returns the same document when there is nothing to change', () => {
-    const abandoned = withBatchAbandoned(runningLoaf());
-    expect(withBatchAbandoned(abandoned)).toBe(abandoned);
+    const abandoned = withBatchAbandoned(runningLoaf(), '2026-08-15T09:00:00.000Z');
+    expect(withBatchAbandoned(abandoned, '2026-08-15T10:00:00.000Z')).toBe(abandoned);
+  });
+
+  // ─── When it was stopped (issue #1280) ──────────────────────────────────────
+
+  it('stamps when the run was abandoned', () => {
+    expect(withBatchAbandoned(runningLoaf(), '2026-08-15T09:00:00.000Z').abandonedAt).toBe(
+      '2026-08-15T09:00:00.000Z',
+    );
+  });
+
+  it('keeps the first instant when it is called a second time', () => {
+    // Abandoning is ONE event. A second tap must not move the moment it happened —
+    // the same reasoning that makes `withStageStarted` idempotent on an observed
+    // start.
+    const abandoned = withBatchAbandoned(runningLoaf(), '2026-08-15T09:00:00.000Z');
+    expect(withBatchAbandoned(abandoned, '2026-08-15T10:00:00.000Z').abandonedAt).toBe(
+      '2026-08-15T09:00:00.000Z',
+    );
+  });
+
+  it('refuses an unreadable instant rather than recording a garbage time', () => {
+    // A no-op, exactly as `withStageStarted` and `withStageSkipped` are: a run
+    // recorded as abandoned against a timestamp nothing can place would put an
+    // entry the log cannot order into the one record of what happened.
+    const run = runningLoaf();
+    expect(withBatchAbandoned(run, 'not a time')).toBe(run);
+  });
+
+  it('leaves a run that is still going with no abandonment time at all', () => {
+    expect(runningLoaf().abandonedAt).toBeNull();
   });
 });
 
@@ -276,7 +307,7 @@ describe('withStageStarted — overlap is recorded, never planned', () => {
     const run = runningLoaf();
     expect(withStageStarted(run, 'nope', '2026-08-15T02:10:00.000Z')).toEqual(run);
     expect(withStageStarted(run, 'bulk', 'not a time')).toEqual(run);
-    const stopped = withBatchAbandoned(run);
+    const stopped = withBatchAbandoned(run, '2026-08-15T09:00:00.000Z');
     expect(withStageStarted(stopped, 'bulk', '2026-08-15T02:10:00.000Z')).toEqual(stopped);
   });
 });
@@ -381,7 +412,7 @@ describe('withStageSkipped', () => {
     const run = runningLoaf();
     expect(withStageSkipped(run, 'nope', '2026-08-15T05:10:00.000Z')).toEqual(run);
     expect(withStageSkipped(run, 'shape', 'not a time')).toEqual(run);
-    const stopped = withBatchAbandoned(run);
+    const stopped = withBatchAbandoned(run, '2026-08-15T09:00:00.000Z');
     expect(withStageSkipped(stopped, 'shape', '2026-08-15T05:10:00.000Z')).toEqual(stopped);
   });
 });

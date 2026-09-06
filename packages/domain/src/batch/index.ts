@@ -9,8 +9,8 @@
 // Flat lightweight variant of the domain module pattern (see
 // docs/domain-implementation.md), matching `formula`, `process`, `shoppingDay` and
 // `weather`: no entities/ports/commands/queries subfolders, because there is
-// nothing to abstract — this module holds a resolver and three producers. This file
-// is its only public surface.
+// nothing to abstract — this module holds a resolver, four producers and one
+// derivation. This file is its only public surface.
 //
 // Pure, and every instant is INJECTED (CLAUDE.md Rule 1): `freezeBatch` takes the
 // anchor and `now`, `withStageAdvanced` takes the instant the stage finished.
@@ -35,7 +35,9 @@
 //     `orderBy`, which costs nothing, needs no index, and cannot be bypassed by a
 //     caller that forgets to sort. Ordering arithmetic over the log (weight loss
 //     against the green weight, say) would be a real domain function; it is not this
-//     phase's, and nothing here precludes it.
+//     phase's, and nothing here precludes it. `buildBatchLog` (issue #1280) is the
+//     first of those to arrive: it ORDERS the log against the rest of the run rather
+//     than appending to it, which is a decision, and it still writes nothing.
 //   • The `finished` state a cure's weight-loss criterion would decide. Named in the
 //     contract doc, still with nothing to set it: `BatchStateSchema` stays
 //     `running | abandoned`, and widening it would mean revisiting every reader of
@@ -55,3 +57,5 @@ export {
   withBatchAbandoned,
 } from './transitions.js';
 export type { StageStatus } from './transitions.js';
+export { buildBatchLog } from './buildBatchLog.js';
+export type { BatchLogEntry } from './buildBatchLog.js';

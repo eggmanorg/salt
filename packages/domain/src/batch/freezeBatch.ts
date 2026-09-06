@@ -134,6 +134,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       recipeId: formula.recipeId,
       recipeTitle,
       state: 'running',
+      abandonedAt: null,
       quantities,
       totals,
       stages,

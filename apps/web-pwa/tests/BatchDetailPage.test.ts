@@ -116,6 +116,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     recipeId: 'recipe-1',
     recipeTitle: 'Overnight white tin',
     state: 'running',
+    abandonedAt: null,
     quantities: [
       { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 841 },
       { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 589 },
@@ -447,6 +448,37 @@ describe('BatchDetailPage — marking a stage done', () => {
     await showRun({ state: 'abandoned' });
 
     expect(screen.queryByTestId('batch-stage-advance')).toBeNull();
+  });
+
+  // ─── When it was stopped (issue #1280) ──────────────────────────────────────
+
+  it('says WHEN a run was abandoned, not merely that it was', async () => {
+    await showRun({ state: 'abandoned', abandonedAt: '2026-08-16T08:10:00.000Z' });
+
+    const started = screen.getByTestId('batch-detail-started');
+    expect(started.textContent).toContain('abandoned');
+    // The day and a clock time, through `formatWhen` — the local rendering of the
+    // instant, so the time itself moves with the runner's zone and only the date is
+    // asserted here.
+    expect(screen.getByTestId('batch-detail-abandoned-at').textContent).toContain('16 Aug');
+  });
+
+  it('claims no time for a run abandoned before the field existed', async () => {
+    // `abandonedAt` is a read default, so every run stopped before it shipped reads
+    // `null` — and those are exactly the ones that can never be back-filled. The
+    // page says it was abandoned and stops there rather than borrowing `updatedAt`,
+    // which is a later write's timestamp and not the moment the cook gave up.
+    await showRun({ state: 'abandoned' });
+
+    expect(screen.getByTestId('batch-detail-started').textContent).toContain('abandoned');
+    expect(screen.queryByTestId('batch-detail-abandoned-at')).toBeNull();
+  });
+
+  it('says nothing about an abandonment while the run is still going', async () => {
+    await showRun();
+
+    expect(screen.getByTestId('batch-detail-started').textContent).not.toContain('abandoned');
+    expect(screen.queryByTestId('batch-detail-abandoned-at')).toBeNull();
   });
 });
 

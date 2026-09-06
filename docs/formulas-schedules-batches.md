@@ -164,6 +164,13 @@ wrong lifetime, wrong sharing. It:
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
 - carries an **observation log** — weight, pH, temperature, a photo, a note;
+- records **when it was stopped**, not merely that it was (`abandonedAt`, issue
+  #1280). A run given up on at ten past eight on the Sunday is a different story
+  from one given up on the Thursday, and `updatedAt` cannot answer it;
+- has a second view, **the batch log** (issue #1280) — the start, every stage
+  start, completion and skip, every reading and the abandonment, in one ordered
+  list. DERIVED by `buildBatchLog` from the fields above and never stored, so
+  there is no event stream that can disagree with the plan beside it;
 - is the object opened day to day. The formula is opened once a month.
 
 Making the batch first-class is the load-bearing decision. Skip it and everything
@@ -223,12 +230,12 @@ becoming two is a removal and two additions, and renders honestly as that.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                        |
-| ------------- | ------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, unit shape, reference yield, reference process                                                                                             |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities, frozen schedule, current stage, state                                                                                              |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run) |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                         |
+| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                |
+| ------------- | ------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, unit shape, reference yield, reference process                                                                                                     |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities, frozen schedule, current stage, state, and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run)         |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                 |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:
