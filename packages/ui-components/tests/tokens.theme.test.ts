@@ -147,6 +147,35 @@ describe('salt.css design-system entry', () => {
       expect(dark).toMatch(/--salt-on-destructive-container:\s*356 100% 29%/);
     });
 
+    it('pins the amber family to four roles and no more (#993)', () => {
+      // The provenance comments are what check-theme.ts diffs against
+      // design.md, so the hexes are the assertion. The COUNT is the other half:
+      // the whole point of #993 is that sixteen raw amber steps collapse to
+      // four, with grounds and borders derived as alpha modifiers. A fifth
+      // --salt-review-*/--salt-warning-* primitive is the regression this
+      // catches, and it goes red the moment one is added.
+      expect(css).toMatch(/--salt-review:\s*45 100% 34%;\s*\/\*\s*#ad8200/);
+      expect(css).toMatch(/--salt-review-text:\s*45 100% 24%;\s*\/\*\s*#7a5c00/);
+      expect(css).toMatch(/--salt-warning:\s*22 100% 44%;\s*\/\*\s*#e05200/);
+      expect(css).toMatch(/--salt-warning-text:\s*22 100% 30%;\s*\/\*\s*#993800/);
+      const root = css.match(/:root\s*\{[\s\S]*?\n\}/)?.[0];
+      expect(root).toBeDefined();
+      expect(root!.match(/--salt-(?:review|warning)[a-z-]*:/g)).toHaveLength(4);
+    });
+
+    it('mirrors the amber family into the .dark block (#993)', () => {
+      // Same internal-consistency rule as the pairs above. These values are
+      // computed against the dark background, not observed: nothing in web-pwa
+      // applies .dark, so they render nowhere today.
+      const dark = css.match(/\.dark\s*\{[\s\S]*?\n\}/)?.[0];
+      expect(dark).toBeDefined();
+      expect(dark).toMatch(/--salt-review:\s*45 100% 60%/);
+      expect(dark).toMatch(/--salt-review-text:\s*45 100% 72%/);
+      expect(dark).toMatch(/--salt-warning:\s*24 100% 65%/);
+      expect(dark).toMatch(/--salt-warning-text:\s*24 100% 75%/);
+      expect(dark!.match(/--salt-(?:review|warning)[a-z-]*:/g)).toHaveLength(4);
+    });
+
     it('pins --salt-placeholder to the measured AA value in both themes (#821)', () => {
       // Both halves are load-bearing and neither is guessable from the other:
       // light #677174 is 4.79:1 on the background and 3.38:1 off value text;
@@ -271,9 +300,9 @@ describe('token constants', () => {
     it('primaryForeground is a CSS var reference string', () => {
       expect(colors.primaryForeground).toBe('hsl(var(--salt-primary-foreground))');
     });
-    it('exports all 33 semantic color constants', () => {
+    it('exports all 37 semantic color constants', () => {
       const keys = Object.keys(colors);
-      expect(keys.length).toBe(33);
+      expect(keys.length).toBe(37);
     });
     it('exposes the destructive container pair a removed row sits on (#825)', () => {
       // Symmetric with secondaryContainer, which is what an ADDED row gets. A
@@ -303,6 +332,18 @@ describe('token constants', () => {
       expect(colors.secondaryTintForeground).toBe('hsl(var(--salt-on-secondary-container))');
       expect(colors.tertiaryTint).toBe('hsl(var(--salt-tertiary-fixed))');
       expect(colors.tertiaryTintForeground).toBe('hsl(var(--salt-on-tertiary-fixed-variant))');
+    });
+
+    it('exposes the four amber roles, and no container/foreground pair (#993)', () => {
+      // Deliberately NOT a `*-container` / `*-foreground` family: grounds are
+      // alpha modifiers of these same four (bg-review/10, /20, border/40), so
+      // adding a container primitive would put a fifth amber back in the
+      // system, which is the thing #993 removed.
+      expect(colors.review).toBe('hsl(var(--salt-review))');
+      expect(colors.reviewText).toBe('hsl(var(--salt-review-text))');
+      expect(colors.warning).toBe('hsl(var(--salt-warning))');
+      expect(colors.warningText).toBe('hsl(var(--salt-warning-text))');
+      expect(Object.keys(colors).filter((k) => /^(review|warning)/.test(k))).toHaveLength(4);
     });
   });
 

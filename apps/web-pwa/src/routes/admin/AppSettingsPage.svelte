@@ -329,7 +329,7 @@
 
     {#if $isCatalogUnavailable && !$isCatalogLoading}
       <div
-        class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-text"
         data-testid="app-settings-catalog-unavailable"
       >
         The live model catalog is unavailable, so the dropdowns are empty — you can still type a
@@ -338,7 +338,7 @@
     {/if}
 
     <div
-      class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+      class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-text"
       data-testid="app-settings-propagation-note"
     >
       Changes take up to ~3 minutes to propagate to running flows (each function caches the selected
@@ -378,7 +378,7 @@
 
           {#if meta.role === 'embedding'}
             <div
-              class="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+              class="mt-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-text"
               data-testid="app-settings-embedding-warning"
             >
               <strong>Changing the embedding model requires a re-embed migration.</strong> Existing canon

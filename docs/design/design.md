@@ -33,6 +33,16 @@ colors:
   on-error: '#ffffff'
   error-container: '#ffdad6'
   on-error-container: '#93000a'
+  # The amber family (issue #993). Four roles, not four families — two meanings
+  # (`review` is written-but-unchecked, `warning` is a non-blocking problem)
+  # crossed with two contrast floors (a graphical object clears 3, small text
+  # clears 4.5). Grounds and borders are alpha modifiers of these same four, so
+  # the family has four values and not sixteen. See the `--color-review` block
+  # in salt.css for the measured ratios and the alpha ladder.
+  review: '#ad8200'
+  review-text: '#7a5c00'
+  warning: '#e05200'
+  warning-text: '#993800'
   primary-fixed: '#d0e6ef'
   primary-fixed-dim: '#b4cad3'
   on-primary-fixed: '#091e25'
@@ -133,7 +143,9 @@ The style leans heavily into **Minimalism** with an **Editorial** edge. It utili
 
 The palette is rooted in a deep **Slate Teal** (Primary), providing a grounded, professional foundation that replaces standard blacks for a more sophisticated feel. This is paired with **Crisp White** and **Alabaster** neutrals to ensure the interface feels airy and hygienic.
 
-To inject life into the system, we use **Sage Green** as the primary accent for success states and organic "fresh" elements, while **Warm Terracotta** serves as a secondary accent for warnings or high-energy interactions. All colors are calibrated for high legibility under varied lighting conditions common in a kitchen.
+To inject life into the system, we use **Sage Green** as the primary accent for success states and organic "fresh" elements, while **Warm Terracotta** serves as a secondary accent for high-energy interactions. All colors are calibrated for high legibility under varied lighting conditions common in a kitchen.
+
+Attention is a family of its own, spanning one axis from **Saffron** (`review`, hue 45°) to **Burnt Orange** (`warning`, hue 22°). Saffron means _a machine wrote this and nobody has checked it_ — informational, never a gate. Burnt orange means _read this before you continue_ — a problem, though never a blocking one; that is `error`'s job. The hue distance between the two ends is what carries the difference at a glance, and each end has a darker step for small text because a graphical object clears 3:1 where text must clear 4.5:1. Terracotta is deliberately **not** in this family: it is a surface tint that keys peers to each other, not a severity.
 
 ## Typography
 

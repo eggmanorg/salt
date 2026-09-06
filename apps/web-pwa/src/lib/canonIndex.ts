@@ -34,7 +34,7 @@ export function canonIndex(items: readonly CanonItem[]): ReadonlyMap<string, Can
  *
  * NOTHING is judged until both collections have actually landed. Canon leads and
  * arrives after first paint, and an empty canon makes every matched line look
- * dangling — so without this gate the whole library flashes amber on every cold
+ * dangling — so without this gate the whole library flashes `review` on every cold
  * load, which is exactly how a marker gets trained out of a person.
  *
  * The length check backs up the load flags rather than duplicating them:

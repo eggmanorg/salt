@@ -68,7 +68,7 @@
         {#if progress !== null}
           <div class="h-1.5 w-full bg-muted-foreground/15" aria-hidden="true">
             <div
-              class="h-full bg-amber-500 transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
+              class="h-full bg-warning transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
               style="width: {progress * 100}%"
               data-testid="cook-step-timer-progress"
             ></div>

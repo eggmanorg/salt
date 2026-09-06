@@ -828,8 +828,8 @@ describe('CookModePage — a step note', () => {
 
   // Issue #736. The note used to be a grey paragraph dimmer than the instruction
   // above it — at arm's length it read as a second sentence of the step. It now
-  // carries the same amber-callout marker the recipe detail page uses.
-  it('marks a note as a note, in the same amber the recipe page uses', async () => {
+  // carries the same `warning`-callout marker the recipe detail page uses.
+  it('marks a note as a note, in the same role the recipe page uses', async () => {
     mockRecipes._set([recipeWithNote('Do not let the garlic brown.')]);
     renderCookMode();
     await enterSteps();
@@ -837,7 +837,7 @@ describe('CookModePage — a step note', () => {
     const notes = screen.getAllByTestId('cook-step-note');
     expect(notes).toHaveLength(1);
     expect(notes[0]).toHaveTextContent('Do not let the garlic brown.');
-    expect(notes[0]).toHaveClass('border-amber-300', 'bg-amber-50', 'text-amber-900');
+    expect(notes[0]).toHaveClass('border-warning/40', 'bg-warning/10', 'text-warning-text');
   });
 
   // Cook mode is read at arm's length, so the box grows but the words do not shrink.

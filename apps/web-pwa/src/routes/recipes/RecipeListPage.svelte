@@ -681,11 +681,11 @@
                 <!--
                   Not-yet-read AI import (issue #616). Marker only — the whole card
                   is already a button, so clearing it happens on the recipe itself.
-                  Amber chip matches the canon/product-form review idiom.
+                  `review` chip, the same role the canon/product-form queues wear.
                 -->
                 {#if recipe.needs_approval}
                   <span
-                    class="absolute left-2 top-2 z-10 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-800"
+                    class="absolute left-2 top-2 z-10 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
                     data-testid="recipe-unreviewed-badge"
                   >
                     Unreviewed
@@ -696,10 +696,16 @@
                   both without them colliding). Marker only, like that chip: the
                   card is already a button, and the fixing happens on the line
                   itself via the ingredient match sheet.
+
+                  `warning`, not `review` like the chip beside it — a wrong match
+                  is a problem, where "unreviewed" is only unread. It grounds on
+                  `warning-text` rather than `warning` because the numeral is
+                  white: white clears 3.91:1 on `warning` and 7.19:1 on
+                  `warning-text`, and a numeral is text (#993).
                 -->
                 {#if issues > 0}
                   <span
-                    class="absolute right-2 top-2 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white shadow"
+                    class="absolute right-2 top-2 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-text px-1.5 text-xs font-semibold text-white shadow"
                     title={`${issues} ${issues === 1 ? 'ingredient is' : 'ingredients are'} matched to the wrong thing`}
                     data-testid="recipe-match-issue-pip"
                   >

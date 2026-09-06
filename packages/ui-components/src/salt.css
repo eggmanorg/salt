@@ -178,6 +178,52 @@
   --color-destructive-foreground: hsl(var(--salt-destructive-foreground));
   --color-destructive-container: hsl(var(--salt-destructive-container));
   --color-destructive-container-foreground: hsl(var(--salt-on-destructive-container));
+  /* ── The amber family (issue #993) ──────────────────────────────────────
+   * Four roles, and there is no fifth. Before this the app spoke a real amber
+   * vocabulary through sixteen raw Tailwind steps across 27 files, which no
+   * token named and nothing could check. The sixteen collapse onto two
+   * MEANINGS crossed with two CONTRAST FLOORS:
+   *
+   *   review        #ad8200  saffron       "written but nobody has checked it"
+   *   review-text   #7a5c00  dark saffron   — the same, as small text
+   *   warning       #e05200  burnt orange  "read this before you continue"
+   *   warning-text  #993800  deep orange    — the same, as small text
+   *
+   * The two meanings are told apart by HUE (45° vs 22°), not by weight, so
+   * neither reads as a fainter version of the other. `review` is never a gate
+   * and `warning` never blocks — blocking is `destructive`'s job, and its red
+   * sits clear of both.
+   *
+   * Why two steps per meaning: a graphical object must clear 3:1 against the
+   * page and small text must clear 4.5:1, and no single value does both while
+   * still reading as its hue. Measured against --salt-background (#f8fafa):
+   * review 3.36:1, warning 3.73:1, review-text 5.97:1, warning-text 6.86:1.
+   * The text steps carry deliberate headroom so they still clear 4.5:1 when
+   * they sit on this family's own tinted grounds (worst case, the /20 badge
+   * ground: review-text 5.02:1). White ink needs the `-text` step as its
+   * GROUND, not the graphical one — white clears only 3.52:1 on `review` and
+   * 3.91:1 on `warning`, so a solid pill with a numeral in it takes
+   * `bg-warning-text text-white` (7.19:1).
+   *
+   * Grounds and borders are ALPHA MODIFIERS of these same four, which is what
+   * keeps the family at four values rather than sixteen. The ladder, used
+   * verbatim at every call site:
+   *
+   *   bg-<role>/10    a pale callout or row ground
+   *   bg-<role>/20    a badge pill's ground
+   *   border-<role>/40  that ground's border
+   *   bg-<role> / text-<role>  a solid fill, stroke, icon or dot
+   *   text-<role>-text          prose and labels
+   *
+   * `@theme inline` above means the alpha resolves at use time via color-mix,
+   * so one set of arms is correct in both themes and the 38 per-site `dark:`
+   * arms this replaced are gone. Dark mode is dormant in web-pwa today
+   * (nothing applies `.dark`), so the .dark values below are unrendered
+   * intent, not a measured result. */
+  --color-review: hsl(var(--salt-review));
+  --color-review-text: hsl(var(--salt-review-text));
+  --color-warning: hsl(var(--salt-warning));
+  --color-warning-text: hsl(var(--salt-warning-text));
   --color-card: hsl(var(--salt-card));
   --color-card-foreground: hsl(var(--salt-card-foreground));
   --color-popover: hsl(var(--salt-popover));
@@ -357,6 +403,14 @@
    * newly decided. */
   --salt-destructive-container: 6 100% 92%; /* #ffdad6  error container */
   --salt-on-destructive-container: 356 100% 29%; /* #93000a */
+  /* The amber family — see the `--color-review` block above for the roles, the
+   * alpha ladder and the measured contrast ratios. Fully saturated at both
+   * ends on purpose: a desaturated near-yellow is the "too pale" failure this
+   * replaced, and the hue distance is the whole signal. */
+  --salt-review: 45 100% 34%; /* #ad8200  saffron */
+  --salt-review-text: 45 100% 24%; /* #7a5c00 */
+  --salt-warning: 22 100% 44%; /* #e05200  burnt orange */
+  --salt-warning-text: 22 100% 30%; /* #993800 */
   --salt-card: 0 0% 100%; /* surface-container-lowest */
   --salt-card-foreground: 195 7% 11%; /* on-surface */
   --salt-popover: 0 0% 100%;
@@ -451,6 +505,16 @@
   --salt-destructive-foreground: 0 0% 100%;
   --salt-destructive-container: 6 100% 92%;
   --salt-on-destructive-container: 356 100% 29%;
+  /* The amber family, flipped for a dark ground: same two hues, lightened past
+   * the point where they clear their floors against --salt-background (#2e3131)
+   * — review 8.7:1, warning 6.0:1, review-text 9.8:1, warning-text 7.5:1. This
+   * is where the 38 per-site `dark:amber-*` arms went. Nothing in web-pwa
+   * applies `.dark` today, so these are declared-but-unrendered: the ratios are
+   * computed, not observed. */
+  --salt-review: 45 100% 60%; /* #ffcc33 */
+  --salt-review-text: 45 100% 72%; /* #ffdb70 */
+  --salt-warning: 24 100% 65%; /* #ff944d */
+  --salt-warning-text: 24 100% 75%; /* #ffb380 */
   --salt-card: 180 3% 22%;
   --salt-card-foreground: 180 7% 94%;
   --salt-popover: 180 3% 22%;

@@ -541,7 +541,7 @@
           {#snippet leading()}
             <span
               class="relative inline-flex transition-colors {keepAwake
-                ? 'text-amber-500'
+                ? 'text-warning'
                 : 'text-muted-foreground'}"
             >
               <Icon name="Smartphone" size={20} />
@@ -988,14 +988,14 @@
                   </div>
 
                   <!-- The recipe's own step note, still the recipe speaking, so it
-                     keeps its amber-callout vocabulary and its place directly under
+                     keeps its `warning`-callout vocabulary and its place directly under
                      the instruction — above anything the plan added. -->
                   {#if step.note}
                     <div
-                      class="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                      class="flex items-start gap-3 rounded border border-warning/40 bg-warning/10 px-4 py-3 text-warning-text"
                       data-testid="cook-step-note"
                     >
-                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-amber-500" />
+                      <Icon name="TriangleAlert" size={20} class="mt-1 shrink-0 text-warning" />
                       <span class="whitespace-pre-wrap text-lg">{step.note}</span>
                     </div>
                   {/if}
@@ -1003,7 +1003,7 @@
                   <!-- What the plan added: which prepped container this step wants,
                      how the station is set, and the sensory test that says it is
                      going right. Quiet rows rather than callouts — none of them is a
-                     warning, and three amber boxes on one step would shout down the
+                     warning, and three `warning` boxes on one step would shout down the
                      instruction they belong to. Each line is independently optional
                      (null means the plan had nothing honest to say), so a step with
                      no note renders exactly as it does in plain cook mode.

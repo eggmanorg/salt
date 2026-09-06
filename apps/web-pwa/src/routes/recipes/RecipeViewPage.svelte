@@ -1509,19 +1509,19 @@
               data-unreviewed={guidedPlanUnread && !guidedIsPrimary}
             >
               {#snippet leading()}
-                <!-- "Not checked yet" as an amber dot on the corner of the icon,
+                <!-- "Not checked yet" as a `review` dot on the corner of the icon,
                      composed the way cook mode's keep-awake toggle composes its
                      Lock badge — there is no room for a word-bearing pill on a
                      32px segment, and overhanging one would push the row off a
                      narrow screen for a flag that is informational by design. The
-                     amber is the app's review amber and the words are carried by
+                     saffron is the app's `review` role and the words are carried by
                      the accessible name and the tooltip; the full chip lives on
                      the plan editor, which is where you act on it. -->
                 <span class="relative inline-flex">
                   <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
                   {#if guidedPlanUnread && !guidedIsPrimary}
                     <span
-                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-400 ring-1 ring-primary"
+                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-1 ring-primary"
                       aria-hidden="true"
                       data-testid="recipe-cook-guided-unreviewed-dot"
                     ></span>
@@ -1927,10 +1927,10 @@
              recipe below is fully usable. Amber matches the canon review idiom. -->
         {#if recipe.needs_approval}
           <div
-            class="flex flex-wrap items-center gap-3 rounded border border-amber-300 bg-amber-50 px-3 py-2"
+            class="flex flex-wrap items-center gap-3 rounded border border-review/40 bg-review/10 px-3 py-2"
             data-testid="recipe-unreviewed-banner"
           >
-            <p class="flex-1 text-sm text-amber-900">
+            <p class="flex-1 text-sm text-review-text">
               Imported automatically — nobody has checked this recipe yet.
             </p>
             <Button
@@ -2714,12 +2714,12 @@
                             </div>
                           {/if}
 
-                          <!-- Terracotta, NOT amber. Amber on this page means "a human
-                               has not looked at this yet" — the unreviewed-import
-                               banner and the guided-plan dot — and a step note is not
-                               that: it is a caution about the cooking, written
-                               deliberately, and wearing the review colour made it read
-                               as an unfinished recipe. -->
+                          <!-- Terracotta, NOT the amber family. `review` on this page
+                               means "a human has not looked at this yet" — the
+                               unreviewed-import banner and the guided-plan dot — and a
+                               step note is not that: it is a caution about the cooking,
+                               written deliberately, and wearing the review colour made
+                               it read as an unfinished recipe. -->
                           {#if step.note}
                             <div
                               class="flex items-start gap-2 rounded border border-tertiary-variant/30 bg-tertiary-variant/10 px-3 py-2 text-xs text-tertiary-variant"

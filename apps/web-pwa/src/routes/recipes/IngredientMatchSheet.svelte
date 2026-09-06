@@ -139,7 +139,7 @@
               <span class="truncate">{titleCase(canon.name)}</span>
               {#if canon.needs_approval}
                 <span
-                  class="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800 dark:text-amber-200"
+                  class="shrink-0 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
                   data-testid="ingredient-match-canon-review">Review</span
                 >
               {/if}
@@ -164,7 +164,7 @@
               </span>
               {#if form.needs_approval}
                 <span
-                  class="shrink-0 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800 dark:text-amber-200"
+                  class="shrink-0 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
                   data-testid="ingredient-match-form-review">Review</span
                 >
               {/if}
@@ -175,7 +175,7 @@
           </div>
         {:else if missingForm}
           <p
-            class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+            class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
             data-testid="ingredient-match-missing-form"
           >
             No product form covers this line, so it shops as
@@ -188,7 +188,7 @@
                the row still had no amount, scaled with nothing, and added nothing
                to the shopping list. -->
           <p
-            class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+            class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
             data-testid="ingredient-match-missing-amount"
           >
             No amount was read off this line, so it cannot scale with the servings and adds nothing
