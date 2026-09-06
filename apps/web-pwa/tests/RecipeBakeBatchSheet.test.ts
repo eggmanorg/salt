@@ -380,6 +380,48 @@ describe('RecipeBakeBatchSheet — what are you filling?', () => {
     expect(input.vessel).toBe('900 g loaf tin');
   });
 
+  it('names no vessel when the sheet was only shown an answer, never given one', async () => {
+    // THE SEEDED DEFAULT, which is the path most runs take and the one the three
+    // tests around it miss by picking an answer first. `seedDoughAnswer` leads with
+    // the tin for a one-unit formula, so a focaccia declaring 1 × 1400 g of dough
+    // opens on "A loaf tin, 1400 g" with nothing touched. Recording a vessel from
+    // that would be exactly the invented fact this describe block forbids, and it
+    // would falsify `BatchSchema.vessel`'s "as the person starting it described it".
+    renderSheet({
+      ...FORMULA,
+      referenceYield: { kind: 'target', shape: { count: 1, unitDoughGrams: 1400 } },
+    } as Formula);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-tin')).toBeInTheDocument());
+    // The tin boxes really are filled in — the point is that nobody filled them.
+    expect(screen.getByTestId('bake-batch-tin-grams')).toHaveValue('1400');
+
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    expect('vessel' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+
+  it('records the tin once the seeded answer is confirmed by touching it', async () => {
+    // The other side of the flag: the seed is not an answer, but re-typing the
+    // figure it offered is. Otherwise a genuine 900 g tin could never be recorded
+    // without changing a number the person agrees with.
+    renderSheet({
+      ...FORMULA,
+      referenceYield: { kind: 'target', shape: { count: 1, unitDoughGrams: 900 } },
+    } as Formula);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-tin')).toBeInTheDocument());
+
+    const chip = screen
+      .getAllByTestId('bake-batch-tin-chip')
+      .find((el) => el.getAttribute('data-tin-grams') === '900');
+    if (chip === undefined) throw new Error('no 900 g chip');
+    await fireEvent.click(chip);
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    expect(mockStartBatch.mock.calls[0]![0].vessel).toBe('900 g loaf tin');
+  });
+
   it('takes a plain weight of dough as one of itself, and names no vessel', async () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());

@@ -133,6 +133,15 @@
   // the tin leads.
   let answerMode = $state<DoughAnswerMode>('tin');
   let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
+  // Whether the person has ANSWERED the question, as against merely being shown
+  // the answer `seed()` opened on. Only the vessel reads it, and it is the whole
+  // of why: `seedDoughAnswer` lands a one-unit formula on the tin, so a focaccia
+  // declaring 1 × 1400 g of dough opens saying "a loaf tin, 1400 g" — and deriving
+  // a vessel from that would stamp "1400 g loaf tin" on a run nobody described.
+  // `BatchSchema.vessel` says "as the person starting it described it", and this
+  // is the flag that keeps that sentence true. The scale is unaffected: an
+  // untouched sheet already means the formula's own reference yield.
+  let answered = $state(false);
   let busy = $state(false);
   // Why the run could not be started, in the service's own words. Rendered rather
   // than toasted: every one of these is a sentence that tells you where to go next,
@@ -173,6 +182,7 @@
     );
     answerMode = seeded.mode;
     answer = seeded.fields;
+    answered = false;
   }
 
   // Re-seed on each open: a sheet reopened this evening must not still be offering
@@ -183,6 +193,19 @@
     wasOpen = open;
   });
 
+  // The ONE seam every box goes through — a field cannot be changed without the
+  // question counting as answered, which is what stops a control added later from
+  // silently reopening the invented-vessel hole above.
+  function setAnswer(patch: Partial<DoughAnswerFields>): void {
+    answer = { ...answer, ...patch };
+    answered = true;
+  }
+
+  function setAnswerMode(mode: DoughAnswerMode): void {
+    answerMode = mode;
+    answered = true;
+  }
+
   const amount = $derived(doughAmountFrom(answerMode, answer));
   // What we would propose for an un-named vessel. A PROPOSAL: it reaches the grams
   // box only when the button is pressed, and can be typed straight over.
@@ -190,9 +213,10 @@
   // Omitted, never invented: no amount means the formula's own reference yield,
   // which is precisely what `startBatch` does with an absent `atYield`.
   const atYield = $derived(amount === null ? null : targetYield(amount));
-  // The vessel this run is recorded against — the tin answer only. It is a note on
-  // the finished record and nothing reads it back: see `BatchSchema.vessel`.
-  const vessel = $derived(vesselFrom(answerMode, answer));
+  // The vessel this run is recorded against — the tin and tray answers only, and
+  // only once the question has actually been answered. It is a note on the
+  // finished record and nothing reads it back: see `BatchSchema.vessel`.
+  const vessel = $derived(answered ? vesselFrom(answerMode, answer) : undefined);
 
   // ─── The leavening opinion, priced by the domain ──────────────────────────────
   //
@@ -424,7 +448,7 @@
           label="What are you filling?"
           value={answerMode}
           onValueChange={(v) => {
-            answerMode = v as DoughAnswerMode;
+            setAnswerMode(v as DoughAnswerMode);
           }}
         >
           <RadioGroupItem value="tin" label="A loaf tin" />
@@ -440,7 +464,7 @@
                 <Button
                   size="sm"
                   variant={answer.tinGramsText === String(grams) ? 'solid' : 'outline'}
-                  onclick={() => (answer = { ...answer, tinGramsText: String(grams) })}
+                  onclick={() => setAnswer({ tinGramsText: String(grams) })}
                   data-testid="bake-batch-tin-chip"
                   data-tin-grams={grams}
                 >
@@ -454,7 +478,7 @@
                 inputmode="numeric"
                 class="w-32"
                 value={answer.tinGramsText}
-                onValueChange={(v) => (answer = { ...answer, tinGramsText: v })}
+                onValueChange={(v) => setAnswer({ tinGramsText: v })}
                 data-autofocus
                 data-testid="bake-batch-tin-grams"
               />
@@ -463,7 +487,7 @@
                 inputmode="numeric"
                 class="w-28"
                 value={answer.tinCountText}
-                onValueChange={(v) => (answer = { ...answer, tinCountText: v })}
+                onValueChange={(v) => setAnswer({ tinCountText: v })}
                 data-testid="bake-batch-tin-count"
               />
             </div>
@@ -479,7 +503,7 @@
               label="How are you describing it?"
               value={answer.trayBy}
               onValueChange={(v) => {
-                answer = { ...answer, trayBy: v as TrayBy };
+                setAnswer({ trayBy: v as TrayBy });
               }}
             >
               <RadioGroupItem value="size" label="Length × width" />
@@ -494,7 +518,7 @@
                   class="w-28"
                   value={answer.trayLengthText}
                   onValueChange={(v) => {
-                    answer = { ...answer, trayLengthText: v };
+                    setAnswer({ trayLengthText: v });
                   }}
                   data-testid="bake-batch-tray-length"
                 />
@@ -504,7 +528,7 @@
                   class="w-28"
                   value={answer.trayWidthText}
                   onValueChange={(v) => {
-                    answer = { ...answer, trayWidthText: v };
+                    setAnswer({ trayWidthText: v });
                   }}
                   data-testid="bake-batch-tray-width"
                 />
@@ -514,7 +538,7 @@
                   class="w-32"
                   value={answer.trayDepthText}
                   onValueChange={(v) => {
-                    answer = { ...answer, trayDepthText: v };
+                    setAnswer({ trayDepthText: v });
                   }}
                   data-testid="bake-batch-tray-depth"
                 />
@@ -531,7 +555,7 @@
                   class="w-28"
                   value={answer.trayVolumeText}
                   onValueChange={(v) => {
-                    answer = { ...answer, trayVolumeText: v };
+                    setAnswer({ trayVolumeText: v });
                   }}
                   data-testid="bake-batch-tray-volume"
                 />
@@ -539,7 +563,7 @@
                   label="In"
                   value={answer.trayVolumeUnit}
                   onValueChange={(v) => {
-                    answer = { ...answer, trayVolumeUnit: v as 'ml' | 'l' };
+                    setAnswer({ trayVolumeUnit: v as 'ml' | 'l' });
                   }}
                 >
                   <RadioGroupItem value="ml" label="ml" />
@@ -555,7 +579,7 @@
                 class="w-32"
                 value={answer.trayGramsText}
                 onValueChange={(v) => {
-                  answer = { ...answer, trayGramsText: v };
+                  setAnswer({ trayGramsText: v });
                 }}
                 data-testid="bake-batch-tray-grams"
               />
@@ -565,7 +589,7 @@
                 disabled={suggestedGrams === null}
                 onclick={() => {
                   if (suggestedGrams === null) return;
-                  answer = { ...answer, trayGramsText: String(suggestedGrams) };
+                  setAnswer({ trayGramsText: String(suggestedGrams) });
                 }}
                 data-testid="bake-batch-tray-suggest"
               >
@@ -584,7 +608,7 @@
               inputmode="numeric"
               class="w-28"
               value={answer.pieceCountText}
-              onValueChange={(v) => (answer = { ...answer, pieceCountText: v })}
+              onValueChange={(v) => setAnswer({ pieceCountText: v })}
               data-autofocus
               data-testid="bake-batch-piece-count"
             />
@@ -593,7 +617,7 @@
               inputmode="numeric"
               class="w-32"
               value={answer.pieceGramsText}
-              onValueChange={(v) => (answer = { ...answer, pieceGramsText: v })}
+              onValueChange={(v) => setAnswer({ pieceGramsText: v })}
               data-testid="bake-batch-piece-grams"
             />
           </div>
@@ -604,7 +628,7 @@
               inputmode="numeric"
               class="w-32"
               value={answer.totalGramsText}
-              onValueChange={(v) => (answer = { ...answer, totalGramsText: v })}
+              onValueChange={(v) => setAnswer({ totalGramsText: v })}
               data-autofocus
               data-testid="bake-batch-total-dough"
             />
