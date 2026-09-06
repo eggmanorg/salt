@@ -119,8 +119,16 @@ const COLOR_MAP: Record<string, string> = {
   placeholder: '--salt-placeholder',
   // The amber family (issue #993). Four roles total, not two M3 families: the
   // `-text` half of each pair is the same hue at the lightness small text needs
-  // to clear 4.5:1, and it is ink on the PAGE, not on the token — which is why
-  // it is not spelled `on-review`.
+  // to clear 4.5:1.
+  //
+  // It is not spelled `on-review` because it is not that token's foreground —
+  // it is ink on the PAGE and on this family's own tinted `/10` and `/20`
+  // grounds. That was stated here as the WHOLE definition, and salt.css states
+  // a second, narrower use it contradicted (issue #1269): in LIGHT MODE ONLY,
+  // the `-text` step is also the ground under white ink for a solid pill
+  // (`bg-warning-text text-white`). Both files now say the same thing, and
+  // salt.css's `.dark` block carries the measurement that makes the second use
+  // light-only — white on the dark `warning-text` is 1.76:1.
   review: '--salt-review',
   'review-text': '--salt-review-text',
   warning: '--salt-warning',
