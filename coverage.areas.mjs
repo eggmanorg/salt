@@ -218,10 +218,14 @@ export const coverageExclude = ['apps/storybook/src/**', '**/__boundary_tests__/
 // much of this component is tested". The DELTA is still exact and still a
 // valid ratchet — the same compiler runs on both sides of a change.
 export const coverageThresholds = {
+  // Uncovered LINES tightened 25 → 23 in #1269, which is not a ratchet release
+  // but the same measurement reaching fewer files: `**/__boundary_tests__/**`
+  // left the measured set, and every line it took with it was uncovered by
+  // construction. Ratios untouched — see the note beside `coverageExclude`.
   'packages/domain/src/**': {
     lines: 98.84,
     branches: 91.78,
-    uncoveredLines: 23, // 25 before #1269 excluded the boundary fixtures
+    uncoveredLines: 23,
     uncoveredBranches: 143,
   },
   // Branches CORRECTED DOWN 74.74 → 74.47 in #929, and like observability's
@@ -337,10 +341,14 @@ export const coverageThresholds = {
   // which this file already says is the WRONG fix when the uncovered count has
   // not risen. Branches, uncovered lines and uncovered branches are all
   // unmoved, and a pin that does not need to move does not move.
+  // Uncovered LINES tightened 54 → 53 in #1269, which is not a ratchet release
+  // but the same measurement reaching fewer files: `**/__boundary_tests__/**`
+  // left the measured set, and every line it took with it was uncovered by
+  // construction. Ratios untouched — see the note beside `coverageExclude`.
   'packages/adapters/firebase-sync/src/**': {
     lines: 91.98,
     branches: 85.65,
-    uncoveredLines: 53, // 54 before #1269 excluded the boundary fixtures
+    uncoveredLines: 53,
     uncoveredBranches: 34,
   },
   // Banked by #840: the chef's two tools arrived with the two suites that pin
@@ -365,10 +373,14 @@ export const coverageThresholds = {
   // The branch ceiling is banked at the lower figure rather than left slack.
   // All four measured by `pnpm test:coverage` on this branch and pasted from
   // the ratchet's own block.
+  // Uncovered LINES tightened 380 → 378 in #1269, which is not a ratchet release
+  // but the same measurement reaching fewer files: `**/__boundary_tests__/**`
+  // left the measured set, and every line it took with it was uncovered by
+  // construction. Ratios untouched — see the note beside `coverageExclude`.
   'apps/cloud-functions/src/**': {
     lines: 86.43,
     branches: 79.07,
-    uncoveredLines: 378, // 380 before #1269 excluded the boundary fixtures
+    uncoveredLines: 378,
     uncoveredBranches: 352,
   },
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one
