@@ -94,3 +94,39 @@ describe('BatchObservationSchema', () => {
     expect(BatchObservationSchema.safeParse(withoutAt).success).toBe(false);
   });
 });
+
+// ─── Which stage the reading is about (issue #1276) ─────────────────────────────
+//
+// The back-compat half is the one worth pinning: every observation in production was
+// written before this field existed, and a READ DEFAULT is the whole of why no
+// migration is needed. The fixture above deliberately carries no `stageId`, so every
+// case in the suite already parses a pre-#1276 document — these say so out loud.
+
+describe('BatchObservationSchema — the stage a reading is about', () => {
+  it('defaults a document written before the field existed to no stage', () => {
+    const before = observation();
+    expect('stageId' in before).toBe(false);
+
+    const result = BatchObservationSchema.safeParse(before);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.stageId).toBeNull();
+  });
+
+  it('keeps the stage id it was given, unexamined', () => {
+    // A plain FK into the parent's frozen `stages`, resolved at render. Nothing here
+    // knows which run this hangs under, so nothing here can check that it resolves.
+    const result = BatchObservationSchema.safeParse(observation({ stageId: 'stage-bulk' }));
+    expect(result.success && result.data.stageId).toBe('stage-bulk');
+  });
+
+  it('accepts an explicit null — a reading about the run as a whole', () => {
+    // The ordinary end-of-run entry belongs to no single stage, so "no stage" is a
+    // real answer and not a missing one.
+    const result = BatchObservationSchema.safeParse(observation({ stageId: null }));
+    expect(result.success && result.data.stageId).toBeNull();
+  });
+
+  it('rejects anything that is not an id', () => {
+    expect(BatchObservationSchema.safeParse(observation({ stageId: 3 })).success).toBe(false);
+  });
+});

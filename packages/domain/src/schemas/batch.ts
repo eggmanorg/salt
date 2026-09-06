@@ -209,6 +209,10 @@ export const BatchSchema = z.object({
 // on Thursday. An entry carrying none of the five is still valid — the photograph
 // or the note is usually the point — and nothing here judges that.
 //
+// It also carries WHICH PART OF THE RUN it is about (`stageId`, issue #1276). That
+// is context for the reading and not a sixth measurement: "1,240 g" means one thing
+// against the cure's second week and another against the day it comes out.
+//
 // WHAT IT IS NOT: an opinion. There is no "on track", no projected finish, no
 // weight-loss percentage. Percentage-off-green-weight is arithmetic over the log
 // and belongs to whatever renders it; a fermentation model is explicitly out
@@ -237,6 +241,25 @@ export const BatchObservationSchema = z.object({
   // where it was read. Arrival order would put a back-filled Tuesday reading after
   // Thursday's and quietly make the curve wrong.
   at: z.string(),
+  // WHICH STAGE THE READING IS ABOUT, and `null` for one about the run as a whole —
+  // the ordinary end-of-run entry ("108 g, good crumb") belongs to no single stage,
+  // so "no stage" is a real answer here and not a missing one.
+  //
+  // THE ID, NOT THE LABEL. `BatchQuantitySchema` freezes an ingredient's `label`
+  // because it points at a LIVE recipe that can be renamed or deleted under it. A
+  // stage cannot: `batch.stages` is frozen on the very document this subcollection
+  // hangs under, so resolving the label against it is a join that cannot go stale,
+  // and copying the string would be a second source of truth for something the
+  // freeze has already pinned.
+  //
+  // Nothing validates that the id names a stage of this run. It is a plain FK to a
+  // frozen array, resolved at render, and an id that no longer resolves renders as
+  // no stage rather than as an error — the same posture `recipeId` takes.
+  //
+  // A read default, so every observation written before this field existed parses
+  // unchanged and there is no migration (CLAUDE.md, production data back-compat) —
+  // the same shape `BatchStageSchema.skipped` has.
+  stageId: z.string().nullable().default(null),
   // Grams on the scale — the cure's whole story, and the number a weight-loss
   // criterion would one day read. Null when the entry is a note or a photo.
   weightGrams: z.number().nonnegative().nullable(),

@@ -44,6 +44,7 @@
     formatWhen,
     isObservational,
     nextAction,
+    stageLabelById,
     yieldSummary,
   } from './batchDisplay.js';
 
@@ -120,7 +121,13 @@
   // THE ORDER IS THE ADAPTER'S. `orderBy('at', 'asc')` sorts by when a reading was
   // TAKEN, so a back-filled Tuesday weight sits before Thursday's however late it
   // was typed. This page reverses that list to read newest-first and does not re-sort
-  // it — sorting by arrival would quietly make a cure's curve wrong.
+  // it — sorting by arrival would quietly make a cure's curve wrong. Since #1276 the
+  // sheet can actually say "yesterday evening", so that ordering is no longer only
+  // theoretical.
+  //
+  // An entry's STAGE is a join and not a stored word: `stageLabelById` resolves
+  // `stageId` against this run's own frozen stages, which is why nothing on the
+  // entry can go stale and why an id that no longer resolves simply prints nothing.
   //
   // ─── "FINISHING" A BATCH, WHICH IS NOT A STATE ────────────────────────────────
   //
@@ -149,9 +156,10 @@
   // mis-typed reading is corrected by re-writing the same id, and no screen offers
   // that yet).
   //
-  // The clock is NOT read here. `advanceStage` reads it in the service, and
-  // `logObservation` reads it for a reading's `at`, which is why every re-timing
-  // this screen triggers is a pure function with a fixed answer.
+  // The clock is NOT read here. `advanceStage` reads it in the service, and the log
+  // sheet reads it to seed its own "when" box (issue #1276 — `logObservation` no
+  // longer reads one), which is why every re-timing this screen triggers is a pure
+  // function with a fixed answer.
 
   let { params }: { params?: { id?: string } } = $props();
 
@@ -801,13 +809,22 @@
                  by `at`, never a re-sort of our own. -->
               <ul class="flex flex-col gap-3" data-testid="batch-log">
                 {#each logEntries as entry (entry.id)}
+                  {@const stageLabel = stageLabelById(run, entry.stageId)}
                   <li
                     class="flex flex-col gap-1 border-b border-border pb-3 last:border-0 last:pb-0"
                     data-testid="batch-log-entry"
                     data-observation-id={entry.id}
                     data-at={entry.at}
+                    data-stage-id={entry.stageId ?? ''}
                   >
                     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      {#if stageLabel !== null}
+                        <!-- An entry about the whole run says nothing here, which is
+                             the ordinary end-of-run verdict and not an omission. -->
+                        <span class="text-sm font-medium" data-testid="batch-log-entry-stage">
+                          {stageLabel}
+                        </span>
+                      {/if}
                       <span
                         class="text-sm text-muted-foreground"
                         data-testid="batch-log-entry-when"
@@ -868,7 +885,12 @@
 
   <!-- Outside the `{#if}` for the reason the abandon confirm is: a sheet must not be
      torn out from under itself if the run's snapshot changes while it is open. -->
-  <BatchObservationSheet bind:open={logOpen} {batchId} onLogged={() => (promptDismissed = true)} />
+  <BatchObservationSheet
+    bind:open={logOpen}
+    {batchId}
+    run={run ?? null}
+    onLogged={() => (promptDismissed = true)}
+  />
 
   <!-- ─── Abandon confirm ──────────────────────────────────────────────────────────
      Outside the `{#if}` so the dialog is not torn out from under itself if the

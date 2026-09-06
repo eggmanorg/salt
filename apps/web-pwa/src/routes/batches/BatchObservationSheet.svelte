@@ -4,6 +4,10 @@
     Button,
     Icon,
     ImageCropper,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
     Sheet,
     SheetContent,
     SheetFooter,
@@ -13,7 +17,9 @@
     TextField,
     type ImageCropperHandle,
   } from '@salt/ui-components';
+  import type { BatchDoc } from '@salt/domain/schemas';
   import { logObservation } from '../../lib/batchObservationService.js';
+  import { defaultObservationStageId } from './batchDisplay.js';
   import { addToast } from '../../lib/toastStore.js';
 
   // "How did it go?" (issue #812, phase 4 of epic #778) — the one screen that writes
@@ -32,10 +38,30 @@
   // and closing it writes nothing at all.
   //
   // `ph` and `temperatureC` exist on the document and are not asked for; the service
-  // writes them null and says why. A back-fill control for `at` is likewise absent:
-  // the log is ordered by WHEN THE READING WAS TAKEN, and until something can be
-  // logged for last Tuesday, taken and typed are the same moment (see
-  // `batchObservationService`, which is where the instant is read).
+  // writes them null and says why.
+  //
+  // ─── THE TWO PRE-FILLED ROWS (issue #1276) ────────────────────────────────────
+  //
+  // WHICH STAGE and WHEN, both always visible and both seeded on every open. They
+  // cost the common case nothing: open the sheet during the bulk ferment, type a
+  // weight, Save, and the entry lands against the bulk ferment stamped now — the
+  // same two taps as before they existed. They are here for the two cases that had
+  // no answer at all: a reading written up an hour later, and a note that belongs to
+  // a stage other than the one you are standing in (a skipped one, most of all —
+  // #1275 leaves "why did you skip it?" to a note, which only works if a note can
+  // name the stage it is about).
+  //
+  // THIS SHEET READS THE CLOCK, and it is the only thing that WRITES one into the log
+  // — `formatWhen` reads one too, but only to choose the word "yesterday".
+  // The `datetime-local` box needs a seeded value regardless, so a second read in
+  // the service would be two answers to one question — see
+  // `batchObservationService`'s header. `at` therefore leaves here already an
+  // instant, and a box that cannot be read blocks Save on the field rather than
+  // handing the service an instant it cannot use.
+  //
+  // NEITHER IS EVIDENCE OF A READING. `hasSomething` below still asks for a weight,
+  // a note or a photo: a pre-filled default is not something a person typed, so a
+  // stage on its own is not an entry.
   //
   // ─── THE PHOTO COSTS ONLY ITSELF ──────────────────────────────────────────────
   //
@@ -52,16 +78,61 @@
 
   interface Props {
     batchId: string;
+    /**
+     * The run itself — for its frozen stages and for the default stage. Handed down
+     * from the page, which already holds it: this sheet must not open a second
+     * subscription for a document that is already on screen behind it. `null` while
+     * the page is still loading, and then the stage row offers the whole batch alone.
+     */
+    run: BatchDoc | null;
     open: boolean;
     /** Fired once a reading has actually landed — the page uses it to stop asking. */
     onLogged?: () => void;
   }
 
-  let { batchId, open = $bindable(), onLogged }: Props = $props();
+  let { batchId, run, open = $bindable(), onLogged }: Props = $props();
+
+  // The Select's token for "no stage" — `stageId` on the document is `null`, and a
+  // listbox value is a string. Mapped back at the boundary by looking the value up
+  // in the run's own stages, so the mapping is "is this one of my stages?" rather
+  // than a string comparison that a stage id could ever be on the wrong side of.
+  const WHOLE_BATCH = '__whole-batch__';
 
   let weightText = $state('');
   let note = $state('');
   let busy = $state(false);
+
+  // ─── When ─────────────────────────────────────────────────────────────────────
+  //
+  // A native `datetime-local`, exactly as `RecipeBakeBatchSheet` uses one and for the
+  // reason stated there: an instant is a date and a time and nothing else, so no
+  // household convention (a week's first day) makes the native control wrong.
+
+  function pad(value: number): string {
+    return String(value).padStart(2, '0');
+  }
+
+  /** Now, in the `YYYY-MM-DDTHH:mm` local form a `datetime-local` input wants. */
+  function localNow(): string {
+    const at = new Date();
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  }
+
+  let whenLocal = $state(localNow());
+  let stageValue = $state(WHOLE_BATCH);
+
+  // A `datetime-local` value carries no offset, so it is read as LOCAL time — which
+  // is what the person typing it means. `null` while the box is empty or half-typed.
+  const atIso = $derived.by(() => {
+    const ms = new Date(whenLocal).getTime();
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  });
+  const whenError = $derived(atIso === null ? 'A date and a time — this one can’t be read.' : '');
+
+  const stages = $derived(run?.stages ?? []);
+  const selectedStage = $derived(stages.find((stage) => stage.id === stageValue) ?? null);
+  /** What actually reaches the document: a stage of THIS run, or no stage at all. */
+  const stageId = $derived(selectedStage?.id ?? null);
 
   // The shot being framed (an object URL) and the shot that was accepted (bare
   // base64, WebP — exactly what `getCroppedBase64()` returned; nothing re-encodes
@@ -87,7 +158,9 @@
   // Nothing typed, nothing photographed — there is no entry to write, so Save has
   // nothing to do and says so by being unavailable. Skip is the button for that.
   const hasSomething = $derived(weightGrams !== null || note.trim() !== '' || photoBase64 !== null);
-  const canSave = $derived(hasSomething && weightError === '' && !busy && pendingSrc === null);
+  const canSave = $derived(
+    hasSomething && weightError === '' && whenError === '' && !busy && pendingSrc === null,
+  );
 
   // Object-URL lifecycle: revoke before replacing or clearing, so a re-shoot, a
   // discard or a close cannot leak the blob.
@@ -103,6 +176,10 @@
     photoBase64 = null;
     cropBusy = false;
     busy = false;
+    // Both re-seeded here rather than at declaration: a sheet opened on Thursday must
+    // not still be offering Tuesday's clock or the stage the run was on then.
+    whenLocal = localNow();
+    stageValue = (run === null ? null : defaultObservationStageId(run)) ?? WHOLE_BATCH;
   }
 
   // Re-seed on each open: a sheet reopened next week must not still be holding last
@@ -140,10 +217,12 @@
   }
 
   async function handleSave(): Promise<void> {
-    if (!canSave) return;
+    if (!canSave || atIso === null) return;
     busy = true;
     const result = await logObservation({
       batchId,
+      at: atIso,
+      stageId,
       weightGrams,
       note: note.trim(),
       photoBase64,
@@ -192,6 +271,57 @@
       <p class="-mt-2 text-sm text-muted-foreground">
         Anything you note here stays on this batch. All of it is optional.
       </p>
+
+      <!-- ─── Which stage, and when ────────────────────────────────────────────
+           Both pre-filled, both always visible. A control behind a disclosure is
+           one that a person writing up yesterday's reading has to already know
+           exists — and pre-filled correctly, these cost nothing to walk past.
+
+           EVERY stage is offered, done and skipped ones included: the back-fill
+           case is by definition about a stage that has already ended, and a
+           skipped stage is the one a note is most wanted against (#1275).
+           Filtering the list would remove exactly the entries this exists for.
+
+           No `portal` prop on the Select: SheetContent publishes itself as the
+           portal container, so the listbox opens inside the sheet rather than
+           behind the modal's pointer-events barrier (ui-spec-v03 §5; #674/#640). -->
+      <div class="flex flex-col gap-1">
+        <span class="text-sm font-medium">Which stage</span>
+        <Select value={stageValue} onValueChange={(v) => (stageValue = v)}>
+          <SelectTrigger
+            class="w-full"
+            aria-label="Which stage this reading is about"
+            data-testid="batch-log-stage"
+          >
+            {selectedStage?.label ?? 'The whole batch'}
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={WHOLE_BATCH}>The whole batch</SelectItem>
+            {#each stages as runStage (runStage.id)}
+              <SelectItem value={runStage.id}>{runStage.label}</SelectItem>
+            {/each}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium">When</span>
+        <input
+          type="datetime-local"
+          class="salt-focus-ring w-full rounded border border-input bg-background px-3 py-2 text-sm"
+          aria-invalid={whenError === '' ? undefined : 'true'}
+          bind:value={whenLocal}
+          data-testid="batch-log-when"
+        />
+        {#if whenError !== ''}
+          <!-- On the field, not in a toast: it is about the box you are in, exactly
+               as the weight's message is. Save stays unavailable while it stands, so
+               the service is never handed an instant it cannot use. -->
+          <span role="alert" class="text-sm text-destructive" data-testid="batch-log-when-error">
+            {whenError}
+          </span>
+        {/if}
+      </label>
 
       <TextField
         label="Weight (g)"

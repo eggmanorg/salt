@@ -418,6 +418,7 @@ const OBSERVATION = {
   id: 'o-1',
   schemaVersion: 1 as const,
   at: NOW,
+  stageId: null,
   weightGrams: 900,
   ph: null,
   temperatureC: null,
