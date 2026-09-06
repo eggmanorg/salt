@@ -45,7 +45,16 @@ function stage(
   kind: 'active' | 'wait',
   duration: StageDuration | null,
 ): ProcessStage {
-  return { id, label, kind, environment: null, duration, until: null, stepId: null };
+  return {
+    id,
+    label,
+    kind,
+    environment: null,
+    duration,
+    until: null,
+    stepId: null,
+    optional: false,
+  };
 }
 
 // mix 20 · bulk 180 · shape 15 · prove 60 · preheat 20 · bake 45 = 340 minutes.

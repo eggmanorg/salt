@@ -108,6 +108,7 @@ const FORMULA: Formula = {
       duration: { kind: 'fixed', minutes: 10 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
     {
       id: 'st-bulk',
@@ -117,6 +118,7 @@ const FORMULA: Formula = {
       duration: { kind: 'fixed', minutes: 90 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
     {
       id: 'st-bake',
@@ -126,6 +128,7 @@ const FORMULA: Formula = {
       duration: { kind: 'fixed', minutes: 35 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
   ],
 } as Formula;
@@ -142,6 +145,7 @@ const RESTRUCTURE: ProposeScheduleOutput = {
       duration: { kind: 'fixed', minutes: 10 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
     {
       sourceStageId: 'st-bulk',
@@ -151,6 +155,7 @@ const RESTRUCTURE: ProposeScheduleOutput = {
       duration: { kind: 'fixed', minutes: 20 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
     {
       sourceStageId: 'st-bulk',
@@ -160,6 +165,7 @@ const RESTRUCTURE: ProposeScheduleOutput = {
       duration: { kind: 'fixed', minutes: 480 },
       until: null,
       stepId: null,
+      optional: false,
     },
     {
       sourceStageId: 'st-bake',
@@ -169,6 +175,7 @@ const RESTRUCTURE: ProposeScheduleOutput = {
       duration: { kind: 'fixed', minutes: 35 },
       until: null,
       stepId: 'step-1',
+      optional: false,
     },
   ],
   rationale: 'Twenty minutes on the counter, then overnight in the fridge, so you sleep.',
@@ -190,6 +197,7 @@ const NO_CHANGE: ProposeScheduleOutput = {
     duration: stage.duration,
     until: stage.until,
     stepId: stage.stepId,
+    optional: stage.optional,
   })),
   rationale: 'It already finishes when you asked — nothing needed moving.',
   adjustment: null,

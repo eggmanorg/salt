@@ -151,6 +151,7 @@ const BULK: ProcessStage = {
   duration: { kind: 'range', minMinutes: 240, maxMinutes: 300 },
   until: 'until risen by half',
   stepId: 'step-2',
+  optional: false,
 };
 
 const BAKE: ProcessStage = {
@@ -161,6 +162,7 @@ const BAKE: ProcessStage = {
   duration: { kind: 'fixed', minutes: 40 },
   until: null,
   stepId: null,
+  optional: false,
 };
 
 afterEach(() => {
@@ -396,6 +398,83 @@ describe('FormulaPage — correcting by hand', () => {
       'Bake',
       'Bulk ferment',
     ]);
+  });
+});
+
+describe('FormulaPage — optional, the recipe\u2019s own opinion (issue #1275)', () => {
+  // The checkbox renders inside the Checkbox primitive's wrapper div, so the
+  // testid is on the wrapper and the control is the button beneath it.
+  function optionalToggles(container: HTMLElement): HTMLElement[] {
+    return [
+      ...container.querySelectorAll('[data-testid="formula-stage-optional"] [role="checkbox"]'),
+    ] as HTMLElement[];
+  }
+
+  it('shows the mark the extraction found, unticked for the stages it did not', async () => {
+    vi.mocked(extractProcessStages).mockResolvedValue({
+      kind: 'ok',
+      value: [BULK, { ...BAKE, label: 'Brush with milk', optional: true }],
+    } as never);
+    const { getByTestId, container } = await openWith(STORED);
+
+    await fireEvent.click(getByTestId('formula-stages-extract'));
+    await waitFor(() => expect(stageRows(container)).toHaveLength(2));
+
+    expect(optionalToggles(container).map((el) => el.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'true',
+    ]);
+  });
+
+  it('ticks a stage the recipe did not call optional, and saves it that way', async () => {
+    const { getByTestId, container } = await openWith({ ...STORED, process: [BULK, BAKE] });
+
+    await fireEvent.click(optionalToggles(container)[0]!);
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveFormula).mock.calls[0]![0].process!.map((s) => s.optional)).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it('unticks one the extraction marked, and saves that too', async () => {
+    const { getByTestId, container } = await openWith({
+      ...STORED,
+      process: [{ ...BULK, optional: true }, BAKE],
+    });
+
+    await fireEvent.click(optionalToggles(container)[0]!);
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveFormula).mock.calls[0]![0].process![0]!.optional).toBe(false);
+  });
+
+  it('adds a hand-written stage as not optional', async () => {
+    const { getByTestId, container } = await openWith({ ...STORED, process: [BULK] });
+
+    await fireEvent.click(getByTestId('formula-stages-add'));
+    await waitFor(() => expect(stageRows(container)).toHaveLength(2));
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveFormula).mock.calls[0]![0].process![1]!.optional).toBe(false);
+  });
+
+  it('leaves every other stage alone when one is ticked', async () => {
+    // The flag is per-stage information and nothing else on the row derives from
+    // it — no duration, no kind, no ordering.
+    const { getByTestId, container } = await openWith({ ...STORED, process: [BULK, BAKE] });
+
+    await fireEvent.click(optionalToggles(container)[1]!);
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    const written = vi.mocked(saveFormula).mock.calls[0]![0].process!;
+    expect(written[0]).toEqual(BULK);
+    expect(written[1]).toEqual({ ...BAKE, optional: true });
   });
 });
 

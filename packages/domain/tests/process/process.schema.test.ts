@@ -24,6 +24,7 @@ const BULK_FERMENT = {
   duration: { kind: 'range' as const, minMinutes: 240, maxMinutes: 300 },
   until: 'until risen by half',
   stepId: 'step-2',
+  optional: false,
 };
 
 describe('ProcessStageSchema', () => {
@@ -79,6 +80,34 @@ describe('ProcessStageSchema', () => {
     expect(
       ProcessStageSchema.safeParse({ ...BULK_FERMENT, environment: { celsius: -18 } }).success,
     ).toBe(true);
+  });
+});
+
+describe('ProcessStageSchema.optional — the recipe\u2019s opinion (issue #1275)', () => {
+  it('defaults false over a document written before the field existed', () => {
+    // THE BACK-COMPAT PIN. `formulas/{recipeId}` holds live documents, every one of
+    // them written without this key, and the whole formula is read as ONE document:
+    // a stage that failed to parse would take the screen down. A read default is
+    // what makes the field free.
+    const { optional: _optional, ...beforeTheField } = BULK_FERMENT;
+    const parsed = ProcessStageSchema.safeParse(beforeTheField);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.optional).toBe(false);
+  });
+
+  it('carries a true through, on the content half as well as the stored one', () => {
+    const { id: _id, ...content } = BULK_FERMENT;
+    expect(ProcessStageSchema.parse({ ...BULK_FERMENT, optional: true }).optional).toBe(true);
+    expect(ProcessStageContentSchema.parse({ ...content, optional: true }).optional).toBe(true);
+  });
+
+  it('is a boolean, not a permission — nothing else is expressible', () => {
+    // The field gates nothing (see its comment in schemas/process.ts). Keeping it a
+    // plain boolean is what stops it growing into a policy: there is no third value
+    // for "optional but only if…" to land in.
+    expect(ProcessStageSchema.safeParse({ ...BULK_FERMENT, optional: 'sometimes' }).success).toBe(
+      false,
+    );
   });
 });
 

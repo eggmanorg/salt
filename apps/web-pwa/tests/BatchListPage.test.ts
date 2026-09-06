@@ -57,6 +57,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     duration: { kind: 'fixed', minutes: 180 },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt: '2026-08-14T09:00:00.000Z',
     plannedEndAt: '2026-08-14T12:00:00.000Z',
     actualStartAt: null,

@@ -236,6 +236,10 @@ function mintStage(stage: ProposedStage): ProcessStage {
     duration: stage.duration,
     until: stage.until,
     stepId: stage.stepId,
+    // Carried, not re-decided. `optional` is a fact about the RECIPE (issue #1275)
+    // and a restructure is not a rewrite of the recipe: a milk wash the method
+    // called optional is still optional after the bulk moves to the fridge.
+    optional: stage.optional,
   };
 }
 

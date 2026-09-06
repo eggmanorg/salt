@@ -25,6 +25,7 @@ function stage(id: string, overrides: Partial<ProcessStage> = {}): ProcessStage 
     duration: null,
     until: null,
     stepId: null,
+    optional: false,
     ...overrides,
   };
 }

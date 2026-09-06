@@ -15,7 +15,16 @@ function stage(
   kind: 'active' | 'wait',
   duration: StageDuration | null = null,
 ): ProcessStage {
-  return { id, label, kind, environment: null, duration, until: null, stepId: null };
+  return {
+    id,
+    label,
+    kind,
+    environment: null,
+    duration,
+    until: null,
+    stepId: null,
+    optional: false,
+  };
 }
 
 const fixed = (minutes: number): StageDuration => ({ kind: 'fixed', minutes });

@@ -21,6 +21,7 @@ function stage(
     duration: { kind: 'fixed', minutes },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt,
     plannedEndAt,
     actualStartAt: null,
