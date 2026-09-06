@@ -132,6 +132,10 @@ Split only where there is a reason to:
 - **a changed behavior contract** — docs or callers needing updating can be their own phase;
 - **too large to validate as one diff** — a multi-bug fix the reviewer can't reliably judge in one pass.
 
+**A phase boundary is also a PR boundary**, so even a wide multi-bug fix never has to fit in one PR: `/salt-run`
+cuts one where its diff ceiling is crossed with phases still unbuilt ([docs/issue-board.md](../../docs/issue-board.md)
+→ `Size`). That is a reason not to merge two justified phases, never a reason to add one.
+
 None of those apply? One phase.]
 
 ### Phase 1: [Name]
