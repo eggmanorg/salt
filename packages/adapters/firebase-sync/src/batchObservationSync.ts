@@ -39,6 +39,11 @@ import { subscribeCollection } from './subscribeCollection.js';
 // for a caller. A mis-typed entry is corrected by re-writing the same id, which the
 // `setDoc` below already does.
 //
+// Enforced, not merely asserted: `apps/cloud-functions/tests/maintenance/
+// batchDeleterGuard.test.ts` fails if a deleter appears in this file or beside it
+// (#968). It guards the Firestore orphans a delete would leave; the photo an entry
+// carries is already handled by the `batch-images/` sweep.
+//
 // Writes never throw for operational errors: they cross the boundary as
 // Failure<DomainError> (Rule 10). This adapter must not import @salt/observability
 // (Rule 4).

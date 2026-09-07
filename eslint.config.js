@@ -180,21 +180,31 @@ const FIREBASE_SYNC_SDK_ENTRY_POINTS = [
 // `apps/**` or to an app's `__boundary_tests__` fixture. That scope is
 // deliberate, and worth stating because it is easy to over-read (issue #971).
 //
-// What this rule guarantees: neither app can reach past `findClosestMatch` into
-// a single stage — not by name off `@salt/domain`, not by deep subpath. That is
-// a real boundary and the two fixtures assert it.
+// What this rule guarantees, stated at its real width (issue #1269): neither app
+// can IMPORT a single stage — not by name off `@salt/domain`, not by deep
+// subpath. That is a real boundary and the two fixtures assert it.
 //
-// What it does not, and structurally cannot, guarantee: anything inside
+// It does NOT guarantee that an app never evaluates a stage's logic, and the
+// stronger reading ("neither app can reach past `findClosestMatch` into a single
+// stage") is false today. `normaliseName` is unrestricted and on the canon
+// barrel, so `apps/cloud-functions/src/flows/canonicaliseRecipeIngredients.ts`
+// re-types stage 1 by hand as `normaliseName(c.name) === normaliseName(target)`
+// when it builds `canonIdByNormalisedName` — legally, and for a reason the
+// pipeline cannot serve (it needs a name→id map over the batch's candidate list,
+// not a match verdict). An import rule cannot see an expression, and no rule
+// keyed on a specifier ever could.
+//
+// It also does not, and structurally cannot, guarantee anything inside
 // `packages/domain/src/canon` itself. In there the stages are ordinary siblings
 // imported by relative path, which a `no-restricted-imports` rule keyed on
 // `@salt/domain` cannot see. So this rule was never what kept stages 1 and 3
 // honest with each other — the agreement test in
 // `packages/domain/tests/canon/findClosestMatch.test.ts` is: it holds stages 1
 // and 3 to the same verdict on every case in its table, so if the exact-name
-// predicate written out twice by hand, in two files, as an expression rather
-// than an import, ever drifts, that test goes red. It detects future
-// divergence between the two copies — it was green against the duplication
-// itself and cannot claim to have caught that.
+// predicate ever drifts between them, that test goes red. It detects future
+// divergence — it was green against the duplication itself and cannot claim to
+// have caught that. What both halves genuinely share is `normaliseName`, which
+// is single-sourced and is where every folding decision actually lives.
 //
 // Adding `packages/domain/**` here would be a different guard for a different
 // problem (another domain module reaching into canon's internals cross-package)

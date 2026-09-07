@@ -46,4 +46,12 @@
 //     is addition and subtraction of minutes.
 export { freezeBatch } from './freezeBatch.js';
 export type { FreezeBatchInput, FreezeBatchResult, FreezeBatchFailure } from './freezeBatch.js';
-export { currentStage, withStageAdvanced, withBatchAbandoned } from './transitions.js';
+export {
+  currentStage,
+  stageStatus,
+  withStageAdvanced,
+  withStageStarted,
+  withStageSkipped,
+  withBatchAbandoned,
+} from './transitions.js';
+export type { StageStatus } from './transitions.js';

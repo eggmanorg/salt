@@ -14,14 +14,14 @@
 //
 // 2. LABELS NO LONGER CARRY PRIORITY OR CLASS. The `priority: *` and
 //    `status: *` labels were retired when this board landed; `Queue`, `Class`,
-//    `Size` and `Status` are the only home for those facts now. `/defect`,
-//    `/spec` and `/refactor-spec` call `add` here instead of applying them, so
+//    `Size` and `Status` are the only home for those facts now. `/salt-defect`,
+//    `/salt-spec` and `/salt-refactor` call `add` here instead of applying them, so
 //    a new issue arrives on the board already triaged rather than needing a
 //    second pass. See docs/issue-board.md.
 //
 // 3. A NEW ISSUE HAS A PLACE AND A PARENT, AND ONLY ONE OF THEM WAS WIRED.
-//    `add` triaged an issue onto the board from the moment /spec, /defect and
-//    /refactor-spec started calling it — but nothing anywhere could say what a
+//    `add` triaged an issue onto the board from the moment /salt-spec, /salt-defect and
+//    /salt-refactor started calling it — but nothing anywhere could say what a
 //    new issue BELONGS TO, so a parent link was only ever something a human
 //    added afterwards. `parent` closes that half. A parent is NOT an epic: see
 //    the `epic:` check below.
@@ -231,7 +231,7 @@ function cmdSet(project, [num, ...rest]) {
 }
 
 /**
- * Move whatever a pull request closes. `/run` writes `Closes #N` into every PR
+ * Move whatever a pull request closes. `/salt-run` writes `Closes #N` into every PR
  * body, which is the only machine-readable link between a PR and its issue —
  * GitHub's own "linked issue" is derived from exactly this text.
  */

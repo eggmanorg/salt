@@ -120,10 +120,13 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
           },
   };
 
+  // Nothing has been observed yet, and nothing has been decided against: a fresh run
+  // starts with every stage not started (see `stageStatus`).
   const stages: BatchStageDoc[] = scheduled.stages.map((stage) => ({
     ...stage,
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
   }));
 
   return {

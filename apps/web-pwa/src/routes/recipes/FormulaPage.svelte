@@ -264,6 +264,10 @@
             : { kind: 'range', minMinutes: minutes, maxMinutes },
       until: (row.until ?? '').trim() === '' ? null : (row.until ?? '').trim(),
       stepId: row.stepId,
+      // Carried, never derived. The flag is the recipe's own opinion — from the
+      // method's words via extraction, or from this screen's checkbox — and it
+      // gates nothing here or anywhere downstream.
+      optional: row.optional,
     };
   }
 
@@ -447,6 +451,7 @@
       duration: null,
       until: null,
       stepId: null,
+      optional: false,
       celsiusText: '',
       minutesText: '',
       maxMinutesText: '',
@@ -1156,6 +1161,16 @@
                         >
                           {#snippet leading()}<Icon name="Trash2" size={16} />{/snippet}
                         </Button>
+                        <!-- The recipe's own opinion, correctable here before it is
+                         saved. It gates nothing: every stage on a run can be
+                         skipped whether this is ticked or not. -->
+                        <Checkbox
+                          class="ml-auto"
+                          label="Optional"
+                          checked={stage.optional}
+                          onCheckedChange={(v) => patchStage(stage.id, { optional: v === true })}
+                          data-testid="formula-stage-optional"
+                        />
                       </div>
                     </div>
                   {/each}

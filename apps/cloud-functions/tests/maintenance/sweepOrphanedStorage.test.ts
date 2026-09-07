@@ -3,8 +3,11 @@ import { describe, it, expect } from 'vitest';
 import {
   selectOrphanedObjects,
   idFromObjectPath,
+  nestedKeyFromObjectPath,
+  liveNestedKeys,
   embeddingCandidate,
   type SweepCandidate,
+  type NestedLeaf,
 } from '../../src/maintenance/sweepOrphanedStorage.js';
 
 const NOW = Date.UTC(2026, 6, 28);
@@ -165,6 +168,169 @@ describe('selectOrphanedObjects — canonEmbeddings pass', () => {
 
   it('caps a run, so a wrong join costs at most `limit` embeddings', () => {
     const many = Array.from({ length: 20 }, (_, i) => vector(`orphan-${i}`, 30));
+    expect(
+      selectOrphanedObjects({ candidates: many, liveIds: new Set(), now: NOW, limit: 5 }),
+    ).toHaveLength(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The nested `batch-images/` pass (issue #968).
+//
+// Two-segment objects — `batch-images/{batchId}/{observationId}.webp` — whose
+// orphan-ness is a three-way join rather than a doc-id lookup. Pure selection
+// throughout, no emulator, matching the passes above.
+// ---------------------------------------------------------------------------
+
+const PREFIX = 'batch-images/';
+
+describe('nestedKeyFromObjectPath', () => {
+  it('pairs the two segments, dropping the extension', () => {
+    expect(nestedKeyFromObjectPath('batch-images/b1/obs1.webp', PREFIX)).toBe('b1/obs1');
+  });
+
+  it('keeps an extensionless leaf whole', () => {
+    expect(nestedKeyFromObjectPath('batch-images/b1/obs1', PREFIX)).toBe('b1/obs1');
+  });
+
+  it('splits on the LAST dot, so a dotted id survives', () => {
+    expect(nestedKeyFromObjectPath('batch-images/b1/a.b.c.webp', PREFIX)).toBe('b1/a.b.c');
+  });
+
+  it('returns null for a single segment', () => {
+    // The flat shape fed to the nested join. A key of the wrong shape matches no
+    // document, and a key nothing matches is a deletion.
+    expect(nestedKeyFromObjectPath('batch-images/obs1.webp', PREFIX)).toBeNull();
+  });
+
+  it('returns null for three or more segments', () => {
+    expect(nestedKeyFromObjectPath('batch-images/b1/x/obs1.webp', PREFIX)).toBeNull();
+  });
+
+  it('returns null when either half is empty', () => {
+    expect(nestedKeyFromObjectPath('batch-images//obs1.webp', PREFIX)).toBeNull();
+    expect(nestedKeyFromObjectPath('batch-images/b1/', PREFIX)).toBeNull();
+    expect(nestedKeyFromObjectPath('batch-images/b1/.webp', PREFIX)).toBeNull();
+  });
+
+  it('returns null for another prefix', () => {
+    expect(nestedKeyFromObjectPath('canon-icons/b1/obs1.webp', PREFIX)).toBeNull();
+  });
+
+  it('is the twin of idFromObjectPath, not a widening of it', () => {
+    // Neither function may drift into accepting the other's shape: each produces
+    // a key for a different join, and a key handed to the wrong join is unmatched.
+    expect(idFromObjectPath('batch-images/b1/obs1.webp', PREFIX)).toBeNull();
+    expect(nestedKeyFromObjectPath('canon-icons/abc.webp', 'canon-icons/')).toBeNull();
+  });
+});
+
+describe('liveNestedKeys', () => {
+  const leaf = (over: Partial<NestedLeaf> = {}): NestedLeaf => ({
+    id: 'obs1',
+    parentId: 'b1',
+    parentCollection: 'batches',
+    claim: { url: 'https://example/o/x.webp', source: 'upload' },
+    ...over,
+  });
+  const join = (leaves: NestedLeaf[], parents = ['b1']) =>
+    liveNestedKeys({
+      leaves,
+      liveParentIds: new Set(parents),
+      parentCollection: 'batches',
+    });
+
+  it('claims the key when the leaf, its parent and its claim field are all there', () => {
+    expect([...join([leaf()])]).toEqual(['b1/obs1']);
+  });
+
+  it('releases the key when the claim field is null', () => {
+    // THE ORPHAN REACHABLE TODAY. setObservationImageUpload saves the object and
+    // THEN stamps the URL; a failed stamp leaves a live observation with
+    // `image: null` beside an object nothing references.
+    expect([...join([leaf({ claim: null })])]).toEqual([]);
+  });
+
+  it('releases the key when the claim field is absent entirely', () => {
+    expect([...join([leaf({ claim: undefined })])]).toEqual([]);
+  });
+
+  it('releases the key when the parent document is gone', () => {
+    // Deleting a Firestore doc does not delete its subcollection, so a future
+    // non-cascading deleteBatch strands live-looking observations. Their photos
+    // are still freed.
+    expect([...join([leaf()], [])]).toEqual([]);
+  });
+
+  it('releases the key when the leaf is not nested at all', () => {
+    expect([...join([leaf({ parentId: null, parentCollection: null })])]).toEqual([]);
+  });
+
+  it('ignores a same-named collection group under a different root', () => {
+    // A collection group matches the NAME anywhere in the tree. Another root's
+    // `observations` must not vouch for an object in this bucket.
+    expect([...join([leaf({ parentCollection: 'ferments' })])]).toEqual([]);
+  });
+
+  it.each([
+    ['an empty object', {}],
+    ['a bare string', 'https://example/o/x.webp'],
+    ['a number', 0],
+    ['an empty string', ''],
+    ['false', false],
+  ])('keeps the object when the claim field is malformed: %s', (_label, claim) => {
+    // PRESENCE, NOT VALIDITY. A field we cannot parse is a document we do not
+    // understand, and the safe reading of that is "claimed" — these are
+    // photographs a person took. Parsing here would turn a schema bug into
+    // photo loss.
+    expect([...join([leaf({ claim })])]).toEqual(['b1/obs1']);
+  });
+
+  it('keys by the PAIR, so two batches may hold the same observation id', () => {
+    const keys = join([leaf(), leaf({ parentId: 'b2' })], ['b1', 'b2']);
+    expect([...keys].sort()).toEqual(['b1/obs1', 'b2/obs1']);
+  });
+});
+
+describe('selectOrphanedObjects — batch-images pass', () => {
+  const object = (key: string, ageDays: number): SweepCandidate => ({
+    path: `${PREFIX}${key}.webp`,
+    id: key,
+    createdAt: NOW - ageDays * 86_400_000,
+  });
+
+  it('deletes the photo of an observation that no longer claims one', () => {
+    const live = liveNestedKeys({
+      leaves: [{ id: 'obs1', parentId: 'b1', parentCollection: 'batches', claim: null }],
+      liveParentIds: new Set(['b1']),
+      parentCollection: 'batches',
+    });
+    expect(
+      selectOrphanedObjects({ candidates: [object('b1/obs1', 30)], liveIds: live, now: NOW }),
+    ).toEqual([object('b1/obs1', 30)]);
+  });
+
+  it('keeps the photo of an observation that claims one', () => {
+    const live = liveNestedKeys({
+      leaves: [{ id: 'obs1', parentId: 'b1', parentCollection: 'batches', claim: { url: 'u' } }],
+      liveParentIds: new Set(['b1']),
+      parentCollection: 'batches',
+    });
+    expect(
+      selectOrphanedObjects({ candidates: [object('b1/obs1', 30)], liveIds: live, now: NOW }),
+    ).toEqual([]);
+  });
+
+  it('leaves a young orphan alone — the shared seven-day grace applies here too', () => {
+    // The upload writes the object and stamps the document a moment later; the
+    // grace is what stops the sweep racing that window.
+    expect(
+      selectOrphanedObjects({ candidates: [object('b1/obs1', 3)], liveIds: new Set(), now: NOW }),
+    ).toEqual([]);
+  });
+
+  it('applies the shared cap', () => {
+    const many = Array.from({ length: 20 }, (_, i) => object(`b1/obs${i}`, 30));
     expect(
       selectOrphanedObjects({ candidates: many, liveIds: new Set(), now: NOW, limit: 5 }),
     ).toHaveLength(5);

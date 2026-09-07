@@ -14,7 +14,7 @@ describe('isLedger', () => {
   });
 
   it('only matches at the start, so an issue merely mentioning one is work', () => {
-    expect(isLedger('fix: /campaign: leaves the worktree behind')).toBe(false);
+    expect(isLedger('fix: /salt-campaign: leaves the worktree behind')).toBe(false);
   });
 
   it('survives a title that is missing', () => {

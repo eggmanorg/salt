@@ -70,6 +70,7 @@ import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
 import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
 import Pencil from '@lucide/svelte/icons/pencil';
 import Percent from '@lucide/svelte/icons/percent';
+import Play from '@lucide/svelte/icons/play';
 import Plus from '@lucide/svelte/icons/plus';
 import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 import Search from '@lucide/svelte/icons/search';
@@ -80,6 +81,7 @@ import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 import Smartphone from '@lucide/svelte/icons/smartphone';
 import Soup from '@lucide/svelte/icons/soup';
 import Sparkles from '@lucide/svelte/icons/sparkles';
+import SkipForward from '@lucide/svelte/icons/skip-forward';
 import Split from '@lucide/svelte/icons/split';
 import SquarePlus from '@lucide/svelte/icons/square-plus';
 import StickyNote from '@lucide/svelte/icons/sticky-note';
@@ -148,6 +150,7 @@ export const iconRegistry = {
   PanelRightOpen,
   Pencil,
   Percent,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -158,6 +161,7 @@ export const iconRegistry = {
   Smartphone,
   Soup,
   Sparkles,
+  SkipForward,
   Split,
   SquarePlus,
   StickyNote,

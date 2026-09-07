@@ -709,6 +709,13 @@
                   `warning-text` rather than `warning` because the numeral is
                   white: white clears 3.91:1 on `warning` and 7.19:1 on
                   `warning-text`, and a numeral is text (#993).
+
+                  LIGHT MODE ONLY, and this is the only site in the app that
+                  relies on it: `-text` as a GROUND inverts under `.dark`, where
+                  white on `warning-text` is 1.76:1 (#1269). Nothing applies
+                  `.dark` today. Whoever first does must re-pick this pill's
+                  colours before shipping — see the `.dark` amber block in
+                  `packages/ui-components/src/salt.css`.
                 -->
                 {#if issues > 0}
                   <span

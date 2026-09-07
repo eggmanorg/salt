@@ -1,4 +1,4 @@
-import { currentStage } from '@salt/domain';
+import { currentStage, stageStatus } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
 import { formatInstant } from '../../lib/dateFormat.js';
 import { formatMinutes, formatStatedDuration } from '../../lib/durationDisplay.js';
@@ -96,6 +96,12 @@ export function yieldSummary(totals: BatchTotalsDoc): string {
  * Three cases, and `currentStage` decides all of them: the stage in hand, a run
  * whose stages are all done (there is deliberately no `finished` STATE — see
  * `BatchStateSchema`), and one that was stopped.
+ *
+ * `currentStage` STEPS OVER A SKIPPED STAGE (issue #1275), so a skipped stage never
+ * appears here and a run whose last stage was skipped rather than done reads
+ * `'done'` exactly as a fully-done one does. This function does not know that — it
+ * is the domain's derivation, read once, so the list card and the run's own page
+ * cannot disagree about it.
  */
 export type NextAction =
   { kind: 'stage'; stage: BatchStageDoc } | { kind: 'done' } | { kind: 'abandoned' };
@@ -104,6 +110,48 @@ export function nextAction(batch: BatchDoc): NextAction {
   if (batch.state === 'abandoned') return { kind: 'abandoned' };
   const stage = currentStage(batch);
   return stage === null ? { kind: 'done' } : { kind: 'stage', stage };
+}
+
+// ─── Which stage a reading is about ─────────────────────────────────────────────
+
+/**
+ * The stage a new log entry should be filed against, before anyone touches the
+ * control (issue #1276).
+ *
+ * ONE named function, for the reason `nextAction` above it is one: "which stage is
+ * now" must have exactly one answer, and a sheet re-deriving its own would be a
+ * second one waiting to disagree.
+ *
+ * Precedence, and it answers all four run conditions with one rule:
+ *
+ *   1. the EARLIEST stage that is in progress. Plural since #1275 — the oven can go
+ *      on while the prove is still running — and the earliest of them is the one the
+ *      cook is standing in front of;
+ *   2. else the stage `nextAction` names, which is the stage about to be started;
+ *   3. else `null`, "the whole batch". A run with nothing in progress and nothing
+ *      next is a finished one, and that is exactly when the end-of-run prompt opens
+ *      the sheet to ask "how did it go?" — a verdict on the run, not on its bake.
+ *
+ * A DEFAULT AND NOT A DECISION: every stage stays selectable, including a skipped
+ * one, and `null` is a real answer a person can choose (see `BatchObservationSheet`).
+ */
+export function defaultObservationStageId(batch: BatchDoc): string | null {
+  const inProgress = batch.stages.find((stage) => stageStatus(stage) === 'inProgress');
+  if (inProgress) return inProgress.id;
+  const next = nextAction(batch);
+  return next.kind === 'stage' ? next.stage.id : null;
+}
+
+/**
+ * The label to print beside a log entry, joined against the run's OWN frozen stages.
+ *
+ * `null` for an entry about the whole run, and `null` for an id that no longer names
+ * a stage — an entry whose stage cannot be resolved renders as one about the run
+ * rather than as an error, which is the same thing a dangling `recipeId` does.
+ */
+export function stageLabelById(batch: BatchDoc, stageId: string | null): string | null {
+  if (stageId === null) return null;
+  return batch.stages.find((stage) => stage.id === stageId)?.label ?? null;
 }
 
 /**

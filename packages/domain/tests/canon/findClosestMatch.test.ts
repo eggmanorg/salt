@@ -472,6 +472,14 @@ describe('findClosestMatch stage 1 and findExactCanonMatch never disagree', () =
     item({ id: '1', name: 'Tomato' }),
   ];
 
+  // Folding fixtures (issue #1269). The original table was all-ASCII, so a
+  // re-inlined predicate that skipped `normalize('NFD')` or the hyphen rule
+  // would have agreed with stage 1 on every row and gone green. These three name
+  // the foldings `normaliseName` performs that nothing else here exercised.
+  const accented: readonly CanonItem[] = [item({ id: 'cf', name: 'Crème Fraîche' })];
+  const plainNamed: readonly CanonItem[] = [item({ id: 'cf2', name: 'Creme Fraiche' })];
+  const hyphenated: readonly CanonItem[] = [item({ id: 'so', name: 'Spring-Onion' })];
+
   const table: ReadonlyArray<{
     readonly label: string;
     readonly items: readonly CanonItem[];
@@ -486,6 +494,26 @@ describe('findClosestMatch stage 1 and findExactCanonMatch never disagree', () =
       items: impostorAndReal,
       query: 'tomato',
     },
+    {
+      label: 'diacritics stripped — accented name, plain query',
+      items: accented,
+      query: 'creme fraiche',
+    },
+    {
+      label: 'diacritics stripped — plain name, accented query',
+      items: plainNamed,
+      query: 'Crème Fraîche',
+    },
+    { label: 'hyphen folded to a space', items: hyphenated, query: 'spring onions' },
+    {
+      label: 'accented query against its own accented name',
+      items: accented,
+      query: 'CRÈME FRAÎCHE',
+    },
+    // The looser-predicate direction: a prefix that shares a token with two
+    // catalog names must NOT be a stage-1 hit. Every other miss row here is a
+    // total stranger, which a too-loose predicate can still get right.
+    { label: 'near-miss — shares a token, names nothing', items: catalog, query: 'peanut' },
     { label: 'synonym only — stage 1 misses', items: catalog, query: 'evoo' },
     { label: 'two-way name tie', items: nameTwins, query: 'apple' },
     { label: 'six-way name tie', items: sixNameTwins, query: 'apple' },

@@ -3,15 +3,15 @@
 // were already load-bearing elsewhere, which is exactly why they are checkable.
 
 /**
- * A `/campaign` ledger — the tracking issue that command opens so a fresh session
+ * A `/salt-campaign` ledger — the tracking issue that command opens so a fresh session
  * can resume, and the parent it hangs its own filings off. It is not work: no
  * `Queue`, no `Class`, closed by hand rather than through a PR, and GitHub's own
  * "add item to project" workflow puts it on the board regardless. `check` skips
  * it in the untriaged rule and the closed-at-a-shipping-status rule, or every
  * campaign that ever ran would sit in its output forever.
  *
- * The prefix is the test because `/campaign` already resumes by searching for it
- * (`.claude/commands/campaign.md` → Setup).
+ * The prefix is the test because `/salt-campaign` already resumes by searching for it
+ * (`.claude/commands/salt-campaign.md` → Setup).
  *
  * `campaign follow-ups:` MUST NOT match. That issue is ordinary work and is
  * triaged like any — and it is one character class away from being exempted

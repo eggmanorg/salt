@@ -40,7 +40,7 @@ Two properties are deliberate and easy to misread:
 - **A skipped required check passes.** That is how a docs-only PR merges without
   paying for the emulator and Playwright suites. It also means a green tick is
   not proof a suite ran — read job conclusions, not the check summary
-  (`.claude/commands/run.md` step 8 has the recipe).
+  (`.claude/commands/salt-run.md` step 8 has the recipe).
 - **Both aggregators run `if: always()` and assert their dependencies
   themselves.** A plain `needs:` would _skip_ them when a dependency failed, and
   a skipped required check passes — the gate would silently stop gating.

@@ -179,6 +179,13 @@ export const onBatchWritten = onDocumentWritten(
       // the thing they are already standing over.
       if (stage.actualStartAt !== null || stage.actualEndAt !== null) return false;
 
+      // A SKIPPED STAGE IS NOT REMINDED (issue #1275). Filtered here rather than in
+      // `remindableStages`, which is pure, planned-only and must not learn about
+      // live state — its header says so. The RULE itself ("first stage, and any
+      // stage after a `wait`") is untouched by a skip: the stage AFTER a skipped one
+      // still earns its reminder on exactly the same reading of the process.
+      if (stage.skipped !== null) return false;
+
       const atMs = Date.parse(stage.plannedStartAt);
       if (!Number.isFinite(atMs)) {
         logger.error('onBatchWritten: unreadable plannedStartAt, skipping stage', {

@@ -54,11 +54,16 @@ vi.mock('../src/lib/batchService.js', () => ({
   initBatchSync: mockInitBatchSync,
   advanceStage: vi.fn(),
   abandonBatch: vi.fn(),
+  startStage: vi.fn(),
+  skipStage: vi.fn(),
 }));
 vi.mock('../src/lib/batchObservationService.js', () => ({
   observations: mockObservations,
   initBatchObservationsSync: mockInitObservationsSync,
-  logObservation: vi.fn(),
+  logObservation: vi.fn(async () => ({
+    kind: 'ok',
+    value: { observationId: 'obs-new', photo: { kind: 'none' } },
+  })),
 }));
 // The bread gate this page now sits behind (issue #831). The real module reads
 // uninitialised observability and so always says "on" — which is why every
@@ -71,13 +76,17 @@ vi.mock('../src/lib/featureGate.js', () => ({
 
 import BatchDetailPage from '../src/routes/batches/BatchDetailPage.svelte';
 import { push } from 'svelte-spa-router';
-import { abandonBatch, advanceStage } from '../src/lib/batchService.js';
+import { abandonBatch, advanceStage, skipStage, startStage } from '../src/lib/batchService.js';
+import { logObservation } from '../src/lib/batchObservationService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const pushMock = vi.mocked(push);
 const advanceMock = vi.mocked(advanceStage);
 const abandonMock = vi.mocked(abandonBatch);
 const toastMock = vi.mocked(addToast);
+const startMock = vi.mocked(startStage);
+const skipMock = vi.mocked(skipStage);
+const logMock = vi.mocked(logObservation);
 
 const BATCH_ID = 'batch-1';
 
@@ -90,10 +99,12 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     duration: { kind: 'fixed', minutes: 15 },
     until: null,
     stepId: null,
+    optional: false,
     plannedStartAt: '2026-08-14T07:00:00.000Z',
     plannedEndAt: '2026-08-14T07:15:00.000Z',
     actualStartAt: null,
     actualEndAt: null,
+    skipped: null,
     ...over,
   };
 }
@@ -165,6 +176,12 @@ beforeEach(() => {
   // is what the write path does (`persist` returns the stamped document).
   advanceMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
   abandonMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  startMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  skipMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
+  logMock.mockResolvedValue({
+    kind: 'ok',
+    value: { observationId: 'obs-new', photo: { kind: 'none' } },
+  });
 });
 
 function renderPage() {
@@ -365,6 +382,14 @@ async function showRun(over: Partial<BatchDoc> = {}): Promise<BatchDoc> {
   return run;
 }
 
+/** The stage ids carrying a given control, in the order they render. */
+function stagesWith(testid: string): string[] {
+  return screen
+    .getAllByTestId('batch-stage')
+    .filter((el) => el.querySelector(`[data-testid="${testid}"]`) !== null)
+    .map((el) => el.getAttribute('data-stage-id') ?? '');
+}
+
 /** The stage ids carrying a control block, in the order they render. */
 function stagesWithControls(): string[] {
   return screen
@@ -381,12 +406,14 @@ async function openOverflowMenu(): Promise<void> {
 }
 
 describe('BatchDetailPage — marking a stage done', () => {
-  it('offers the control on the current stage and on no other', async () => {
-    // Earlier stages are done and later ones have not happened; neither is a thing
-    // you can finish. `currentStage` — through `nextAction` — is the only decision.
+  it('offers MARK DONE on the current stage and on no other', async () => {
+    // Since #1275 every unfinished stage carries a control block (Start and Skip
+    // reach past the queue), but "you can finish this" is still the one stage in
+    // hand — plus anything already under way, pinned separately below.
     await showRun();
 
-    expect(stagesWithControls()).toEqual(['stage-1']);
+    expect(stagesWithControls()).toEqual(['stage-1', 'stage-2', 'stage-3']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-1']);
   });
 
   it('moves the control on when the stage before it has been marked done', async () => {
@@ -398,7 +425,9 @@ describe('BatchDetailPage — marking a stage done', () => {
       ],
     });
 
-    expect(stagesWithControls()).toEqual(['stage-2']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-2']);
+    // A done stage offers nothing at all — it is over.
+    expect(stagesWithControls()).toEqual(['stage-2', 'stage-3']);
   });
 
   it('marks THAT stage done, and reads no clock of its own doing it', async () => {
@@ -448,6 +477,205 @@ describe('BatchDetailPage — marking a stage done', () => {
     await showRun({ state: 'abandoned' });
 
     expect(screen.queryByTestId('batch-stage-advance')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — four conditions on a run (issue #1275)', () => {
+  const SKIPPED = { at: '2026-08-14T07:05:00.000Z', note: 'out of milk' };
+
+  it('marks a stage STARTED without marking it done, and reads it as in progress', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-mark-started')[0]!);
+
+    await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
+    // Two arguments and no third — the instant is the service's to read, exactly as
+    // for `advanceStage`.
+    expect(startMock).toHaveBeenCalledWith(run, 'stage-1');
+    expect(advanceMock).not.toHaveBeenCalled();
+  });
+
+  it('offers START on any stage that has not begun, not only the current one', async () => {
+    // The whole of overlap-by-marking: the oven goes on before the prove finishes.
+    await showRun();
+
+    expect(stagesWith('batch-stage-mark-started')).toEqual(['stage-1', 'stage-2', 'stage-3']);
+  });
+
+  it('reads an in-progress stage as in progress, and still lets it be finished', async () => {
+    await showRun({
+      stages: [
+        stage({ actualStartAt: '2026-08-14T07:00:00.000Z' }),
+        stage({ id: 'stage-2', label: 'Bulk ferment', kind: 'wait' }),
+      ],
+    });
+
+    expect(screen.getByTestId('batch-stage-in-progress')).toBeInTheDocument();
+    expect(stagesWith('batch-stage-advance')).toContain('stage-1');
+    // …and it is no longer offering to be started a second time.
+    expect(stagesWith('batch-stage-mark-started')).not.toContain('stage-1');
+  });
+
+  it('lets TWO stages be in progress at once, each finishable', async () => {
+    await showRun({
+      stages: [
+        stage({ actualStartAt: '2026-08-14T07:00:00.000Z' }),
+        stage({
+          id: 'stage-2',
+          label: 'Preheat',
+          kind: 'wait',
+          actualStartAt: '2026-08-14T07:05:00.000Z',
+        }),
+        stage({ id: 'stage-3', label: 'Bake', kind: 'active' }),
+      ],
+    });
+
+    expect(screen.getAllByTestId('batch-stage-in-progress')).toHaveLength(2);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-1', 'stage-2']);
+  });
+
+  it('offers SKIP on EVERY unfinished stage, optional or not', async () => {
+    // No gate on `optional` and no gate on which stage is current. The fixture's
+    // stages are all `optional: false`, which is the point: the stages most worth
+    // knowing you skipped are the ones the recipe called required.
+    const run = await showRun();
+
+    expect(run.stages.every((s) => s.optional === false)).toBe(true);
+    expect(stagesWith('batch-stage-skip')).toEqual(['stage-1', 'stage-2', 'stage-3']);
+  });
+
+  it('skips in ONE TAP, with no confirmation and no note', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[0]!);
+
+    // No dialogue stood between the tap and the write.
+    await waitFor(() => expect(skipMock).toHaveBeenCalledTimes(1));
+    expect(skipMock).toHaveBeenCalledWith(run, 'stage-1', '');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('carries the note when one was typed, on the stage it was typed against', async () => {
+    const run = await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[1]!);
+    const field = await screen.findByTestId('batch-stage-skip-note');
+    await fireEvent.input(field, { target: { value: 'dough was already there' } });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[1]!);
+
+    await waitFor(() => expect(skipMock).toHaveBeenCalledTimes(1));
+    expect(skipMock).toHaveBeenCalledWith(run, 'stage-2', 'dough was already there');
+  });
+
+  it('strikes a skipped stage through, shows its time and note, and drops the plan', async () => {
+    await showRun({ stages: [stage({ skipped: SKIPPED }), stage({ id: 'stage-2' })] });
+
+    const row = screen.getAllByTestId('batch-stage')[0]!;
+    expect(row.getAttribute('data-status')).toBe('skipped');
+    expect(row.querySelector('[data-testid="batch-stage-label"]')?.className).toContain(
+      'line-through',
+    );
+    expect(row.querySelector('[data-testid="batch-stage-skipped"]')).not.toBeNull();
+    expect(row.querySelector('[data-testid="batch-stage-skipped-note"]')?.textContent).toContain(
+      'out of milk',
+    );
+    // The planned times are still ON THE DOCUMENT — deliberately, since blanking
+    // them would destroy what the plan said — and are no longer RENDERED.
+    expect(row.getAttribute('data-planned-start')).toBe('2026-08-14T07:00:00.000Z');
+    expect(row.querySelector('[data-testid="batch-stage-start"]')).toBeNull();
+  });
+
+  it('shows a skip with no reason without an empty line where the note would be', async () => {
+    await showRun({ stages: [stage({ skipped: { at: SKIPPED.at, note: '' } })] });
+
+    expect(screen.getByTestId('batch-stage-skipped')).toBeInTheDocument();
+    expect(screen.queryByTestId('batch-stage-skipped-note')).toBeNull();
+  });
+
+  it('never asks for a skipped stage again', async () => {
+    await showRun({
+      stages: [stage({ skipped: SKIPPED }), stage({ id: 'stage-2', label: 'Bulk ferment' })],
+    });
+
+    expect(stagesWithControls()).toEqual(['stage-2']);
+    expect(stagesWith('batch-stage-advance')).toEqual(['stage-2']);
+  });
+
+  it('shows the OPTIONAL chip, and it changes nothing', async () => {
+    await showRun({
+      stages: [stage({ optional: true }), stage({ id: 'stage-2', optional: false })],
+    });
+
+    expect(stagesWith('batch-stage-optional')).toEqual(['stage-1']);
+    // Both are skippable. The chip is information and gates nothing.
+    expect(stagesWith('batch-stage-skip')).toEqual(['stage-1', 'stage-2']);
+  });
+
+  it('asks how it went when the LAST stage was SKIPPED rather than done', async () => {
+    // The end-of-run invitation is read off `nextAction`, which makes no
+    // distinction between the two endings — so neither may this.
+    const run = makeBatch({
+      stages: [stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }), stage({ id: 'stage-2' })],
+    });
+    const finished = {
+      ...run,
+      stages: [run.stages[0]!, { ...run.stages[1]!, skipped: SKIPPED }],
+    };
+    skipMock.mockResolvedValueOnce({ kind: 'ok', value: finished });
+    renderPage();
+    mockBatch._set(run);
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByTestId('batch-stage-skip'));
+
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+  });
+
+  it('says so when a skip or a start fails', async () => {
+    await showRun();
+
+    skipMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip')[0]!);
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(1));
+
+    startMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await fireEvent.click(screen.getAllByTestId('batch-stage-mark-started')[0]!);
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(2));
+    expect(toastMock.mock.calls.every((call) => call[1] === 'destructive')).toBe(true);
+  });
+
+  it('offers nothing at all on an abandoned run', async () => {
+    await showRun({ state: 'abandoned' });
+
+    expect(screen.queryByTestId('batch-stage-skip')).toBeNull();
+    expect(screen.queryByTestId('batch-stage-mark-started')).toBeNull();
+  });
+
+  it('closes the note field again when the toggle is tapped twice', async () => {
+    // The note is a DISCLOSURE beside the button, never a step in front of it —
+    // which means it has to be dismissible without skipping anything.
+    await showRun();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[0]!);
+    expect(await screen.findByTestId('batch-stage-skip-note')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getAllByTestId('batch-stage-skip-note-toggle')[0]!);
+    await waitFor(() => expect(screen.queryByTestId('batch-stage-skip-note')).toBeNull());
+    expect(skipMock).not.toHaveBeenCalled();
+  });
+
+  it('names an unlabelled stage generically rather than reading as an empty prompt', async () => {
+    await showRun({ stages: [stage({ label: '' })] });
+
+    expect(screen.getByTestId('batch-stage-skip-note-toggle').getAttribute('aria-label')).toBe(
+      'Why are you skipping this stage?',
+    );
   });
 });
 
@@ -554,6 +782,7 @@ function observation(over: Partial<BatchObservationDoc> = {}): BatchObservationD
     id: 'obs-1',
     schemaVersion: 1,
     at: OBSERVED_AT,
+    stageId: null,
     weightGrams: null,
     ph: null,
     temperatureC: null,
@@ -756,6 +985,199 @@ describe('BatchDetailPage — where the log affordance lives', () => {
     await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
     const entry = screen.getByTestId('batch-log-entry');
     expect(entry.querySelector('button')).toBeNull();
+  });
+});
+
+// ─── #1276 — a reading knows its stage and its time ─────────────────────────────
+//
+// The sheet is driven through the page rather than in isolation, because the run it
+// needs is the page's: the sheet must never open a second subscription for a
+// document already on screen behind it. `logObservation` is mocked, so what these
+// assert is the ARGUMENT that reaches the write path — the two facts the screen now
+// owns — and never what Firestore does with it.
+
+/** Open the log sheet from the always-available door on the log itself. */
+async function openLogSheet(): Promise<void> {
+  await fireEvent.click(screen.getByTestId('batch-log-add'));
+  await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+}
+
+async function typeWeight(grams: string): Promise<void> {
+  await fireEvent.input(screen.getByTestId('batch-log-weight'), { target: { value: grams } });
+}
+
+function loggedArgs() {
+  const call = logMock.mock.calls[0];
+  if (!call) throw new Error('logObservation was not called');
+  return call[0];
+}
+
+describe('BatchDetailPage — the log sheet’s two pre-filled rows', () => {
+  it('opens with the stage the run is in the middle of already chosen', async () => {
+    await showRun({
+      stages: [
+        stage({ id: 'stage-1', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({ id: 'stage-2', label: 'Bulk ferment', actualStartAt: '2026-08-14T07:15:00.000Z' }),
+      ],
+    });
+    await openLogSheet();
+
+    expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('Bulk ferment');
+  });
+
+  it('opens with the time set to now', async () => {
+    await showRun();
+    await openLogSheet();
+
+    const when = screen.getByTestId('batch-log-when') as HTMLInputElement;
+    // A `datetime-local` value is minute-precision local time, so "now" is within the
+    // minute it was truncated from.
+    const seeded = new Date(when.value).getTime();
+    expect(Number.isFinite(seeded)).toBe(true);
+    expect(Date.now() - seeded).toBeLessThan(120_000);
+    expect(Date.now() - seeded).toBeGreaterThanOrEqual(0);
+  });
+
+  it('costs the common case no extra taps — a weight and Save is the whole of it', async () => {
+    // The claim the issue rests on. Open mid-run, type a weight, Save: the entry
+    // lands against the stage in hand, stamped now, with nothing else touched.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    const args = loggedArgs();
+    expect(args.batchId).toBe(BATCH_ID);
+    expect(args.weightGrams).toBe(1240);
+    // `stage-1` is the run's next action and nothing has been started.
+    expect(args.stageId).toBe('stage-1');
+    expect(Date.now() - new Date(args.at).getTime()).toBeLessThan(120_000);
+  });
+
+  it('files a back-dated reading at the instant it was observed, not at the one it was typed', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.input(screen.getByTestId('batch-log-when'), {
+      target: { value: '2026-08-13T21:40' },
+    });
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    // Local time, because that is what the person typing it means — so the assertion
+    // is built the same way and does not depend on the machine's timezone.
+    expect(loggedArgs().at).toBe(new Date('2026-08-13T21:40').toISOString());
+  });
+
+  it('offers every stage, a skipped one included, plus the whole batch', async () => {
+    // Filtering the list would remove exactly the entries this exists to enable: the
+    // back-fill case is about a stage that has already ended, and a skipped stage is
+    // the one #1275 most wants a note against.
+    await showRun({
+      stages: [
+        stage({ id: 'stage-1', label: 'Mix', actualEndAt: '2026-08-14T07:15:00.000Z' }),
+        stage({
+          id: 'stage-2',
+          label: 'Autolyse',
+          skipped: { at: '2026-08-14T07:15:00.000Z', note: '' },
+        }),
+        stage({ id: 'stage-3', label: 'Bake' }),
+      ],
+    });
+    await openLogSheet();
+    await fireEvent.click(screen.getByTestId('batch-log-stage'));
+
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument());
+    const offered = screen.getAllByRole('option').map((el) => el.textContent?.trim() ?? '');
+    expect(offered).toEqual(['The whole batch', 'Mix', 'Autolyse', 'Bake']);
+  });
+
+  it('records no stage at all when the whole batch is chosen', async () => {
+    await showRun();
+    await openLogSheet();
+    await fireEvent.click(screen.getByTestId('batch-log-stage'));
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument());
+    await fireEvent.click(screen.getByRole('option', { name: 'The whole batch' }));
+
+    await typeWeight('108');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs().stageId).toBeNull();
+  });
+
+  it('defaults a finished run to the whole batch — the verdict is on the run', async () => {
+    // Which is exactly the state the end-of-run prompt opens the sheet in.
+    await showRun({ stages: DONE_STAGES });
+    await fireEvent.click(screen.getByTestId('batch-log-prompt-open'));
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+
+    expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('The whole batch');
+  });
+
+  it('blocks Save on a time it cannot read, and says so on the field', async () => {
+    // The service is never handed an instant it cannot use.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.input(screen.getByTestId('batch-log-when'), { target: { value: '' } });
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-when-error')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-save')).toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to write an entry that is only its own defaults', async () => {
+    // A pre-filled stage and a pre-filled clock are not something a person typed, so
+    // neither is evidence that a reading exists.
+    await showRun();
+    await openLogSheet();
+
+    expect(screen.getByTestId('batch-log-save')).toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('BatchDetailPage — the stage beside a log entry', () => {
+  it('reads the label off the run’s own frozen stages', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: 'stage-2', weightGrams: 1240 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-stage')).toHaveTextContent('Bulk ferment');
+  });
+
+  it('shows nothing extra for an entry about the whole run', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: null, note: '108 g, good crumb' })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
+  });
+
+  it('shows nothing for an id this run has no stage for, rather than inventing one', async () => {
+    await showRun();
+    mockObservations._set([observation({ stageId: 'stage-from-another-run' })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
+  });
+
+  it('opens a run logged before this change with every entry intact', async () => {
+    // A pre-#1276 document parses with `stageId` null (the schema's read default), so
+    // an old log reads exactly as it did — no migration, nothing missing.
+    await showRun();
+    mockObservations._set([
+      observation({ id: 'obs-old', weightGrams: 1440, note: 'weighed after shaping' }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-weight')).toHaveTextContent('1440 g');
+    expect(screen.getByTestId('batch-log-entry-note')).toHaveTextContent('weighed after shaping');
+    expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
   });
 });
 

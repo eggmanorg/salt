@@ -50,6 +50,7 @@ type Stage = {
   duration: { kind: 'fixed'; minutes: number } | null;
   until: string | null;
   stepId: string | null;
+  optional: boolean;
 };
 const run = extractProcessStagesFlow as unknown as (input: {
   recipeId: string;
@@ -100,6 +101,7 @@ function stage(overrides: Partial<Stage> = {}): Stage {
     duration: { kind: 'fixed', minutes: 240 },
     until: null,
     stepId: 'step-2',
+    optional: false,
     ...overrides,
   };
 }
@@ -282,6 +284,45 @@ describe('extractProcessStages — a recipe with nothing to wait for', () => {
     await run({ recipeId: 'recipe-1' });
     const system = String(mockGenerate.mock.calls[0]![0].system);
     expect(system).toContain('NEVER invent a proof');
+  });
+});
+
+describe('extractProcessStages — a step the recipe itself calls optional (issue #1275)', () => {
+  it('tells the model what optional means, and that nothing else qualifies', async () => {
+    mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
+    await run({ recipeId: 'recipe-1' });
+    const system = String(mockGenerate.mock.calls[0]![0].system);
+    // The rule is the method's OWN words, not the model's judgement about what
+    // sounds inessential — the same posture as the `active`/`wait` rule, which
+    // exists because the spike was inconsistent without one.
+    expect(system).toContain('the method itself says the step may be left out');
+    expect(system).toContain('Anything else is false');
+  });
+
+  it('carries the mark back on the stage the model marked', async () => {
+    mockGenerate.mockResolvedValue({
+      output: {
+        stages: [
+          stage(),
+          stage({ label: 'Brush with milk', kind: 'active', stepId: 'step-3', optional: true }),
+        ],
+      },
+    });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages.map((s) => s.optional)).toEqual([false, true]);
+  });
+
+  it('reads a stage the model left the field off as not optional', async () => {
+    // The schema's read default doing its job on the AI boundary as well as the
+    // Firestore one: a model that omits the key must not fail the whole extraction.
+    const { optional: _optional, ...withoutTheField } = stage();
+    mockGenerate.mockResolvedValue({ output: { stages: [withoutTheField] } });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages[0]!.optional).toBe(false);
   });
 });
 

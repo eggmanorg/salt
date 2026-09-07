@@ -1,5 +1,5 @@
 ---
-description: Design a feature and post it as a phased GitHub issue that /run can execute. An architecture read, the forks put in front of the user, then the issue — no code.
+description: Design a feature and post it as a phased GitHub issue that /salt-run can execute. An architecture read, the forks put in front of the user, then the issue — no code.
 argument-hint: <what you want to build>
 disable-model-invocation: true
 ---
@@ -74,7 +74,7 @@ If it fails, raise it in Step 2 alongside the shape that would pass, and let me 
 is nearly free to design in and expensive to retrofit — once the schema has shipped it is a migration,
 not a refactor.
 
-**Keep the `file:line` as you go.** This read gets spent twice: once writing the issue, and once by `/run`, which otherwise re-derives exactly these things once per phase — five architecture sweeps for a four-phase feature. Pointers recorded now are sweeps `/run` never pays for again; the **Context pointers** field in each phase block is where they land.
+**Keep the `file:line` as you go.** This read gets spent twice: once writing the issue, and once by `/salt-run`, which otherwise re-derives exactly these things once per phase — five architecture sweeps for a four-phase feature. Pointers recorded now are sweeps `/salt-run` never pays for again; the **Context pointers** field in each phase block is where they land.
 
 ## Step 2 — Clarify with user
 
@@ -94,7 +94,7 @@ Once we've agreed, post it with `gh issue create`.
   - **`gh` absent (a cloud session).** That line cannot run there, and no token fixes it: `board.mjs` reaches the board through `gh api graphql`, and GraphQL is refused wholesale by the session proxy before any credential is evaluated. Dispatch the **Board dispatch** workflow ([`board-dispatch.yml`](../../.github/workflows/board-dispatch.yml)) through the **GitHub MCP server** instead — `command: add` with `issue`, `class: New feature`, `queue`, `size`; an input you omit stays `(unchanged)`. Never a shell `curl` to the dispatches endpoint: the session credential gets 403 `Resource not accessible by integration` there, and only the MCP path is authorised for `actions:write`. It is fire-and-forget, so **a dispatch is a request, not a confirmation** — name the route you took in the transcript, and never report the board as written on the strength of one. (`check` is the one board command that is deliberately **not** relayed; [docs/issue-board.md](../../docs/issue-board.md) says why.)
 - Parent: `node scripts/board.mjs parent <issue> --of <parent>` — **only when another command spawned you for this**, and then the parent is the one it named. Nothing else in this repo sets a sub-issue link, so an issue filed mid-flight and left unattached is one nobody finds again from the work it came out of. Invoked directly by Daniel, leave it: what a piece of work belongs to is his call and he makes it on the board. A parent is **not** an epic — `parent` writes the link and touches no field, so grouping an issue with its neighbours claims nothing about priority. (`gh` absent: the same **Board dispatch** route as the line above, `command: parent` with `issue` and `of`.)
 
-**Issue body — use exactly this structure.** `/run` consumes these headings; the phase blocks are its scope contract.
+**Issue body — use exactly this structure.** `/salt-run` consumes these headings; the phase blocks are its scope contract.
 
 ---
 
@@ -137,6 +137,11 @@ Split only where there is a reason to:
 - **a point of no return** — after this, backing out gets expensive; or
 - **too large to validate as one diff** — the reviewer (human or AI) can't reliably judge it in one pass.
 
+**A phase boundary is also a PR boundary**, so a large feature never has to fit in one PR: `/salt-run` cuts one
+where its diff ceiling is crossed with phases still unbuilt, and the rest land as the next PR
+([docs/issue-board.md](../../docs/issue-board.md) → `Size`). Keep a boundary the list above justifies rather than
+collapsing phases to hold a total down — but that is never a reason to invent one.
+
 None of those apply? Keep it together. A settled design with no open questions is often 1–2 phases;
 an exploratory one with live forks earns more.]
 
@@ -145,7 +150,7 @@ an exploratory one with live forks earns more.]
 **Scope:** [What gets built — precise, not vague]
 **User-testable outcome(s):** [What the user can observe when this phase is done — one line each if several]
 **Technical deliverables:** [Files, routes, Firestore paths, exported functions/types]
-**Context pointers:** [What Step 1 already learned about _this_ phase, so `/run` reads rather than re-sweeps:
+**Context pointers:** [What Step 1 already learned about _this_ phase, so `/salt-run` reads rather than re-sweeps:
 `file:line` for the code to reuse or respect, and the named rules and `docs/…` sections that bound it.
 Written for an agent arriving with no context — thin here buys a fresh Explore sweep there.]
 **Must not touch:** [Explicitly out of scope]
@@ -167,14 +172,14 @@ Written for an agent arriving with no context — thin here buys a fresh Explore
 
 ## Step 4 — Verify the issue is runnable
 
-`/run` consumes this issue by exact heading, and nothing else checks that coupling. Read the posted body
+`/salt-run` consumes this issue by exact heading, and nothing else checks that coupling. Read the posted body
 back with `gh issue view <n>` and confirm:
 
-- the top-level headings are present and spelled exactly as above — `/run` looks for them literally;
+- the top-level headings are present and spelled exactly as above — `/salt-run` looks for them literally;
 - every phase block carries all five fields. A missing **Context pointers** is the expensive one: it
-  costs `/run` a fresh Explore sweep for that phase, which is the whole thing Step 1 paid to avoid;
+  costs `/salt-run` a fresh Explore sweep for that phase, which is the whole thing Step 1 paid to avoid;
 - the paths in **Context pointers** actually exist — check them. A `file:line` written from memory is
-  worse than no pointer at all, because `/run` will trust it and read the wrong thing.
+  worse than no pointer at all, because `/salt-run` will trust it and read the wrong thing.
 
 The first two are checked mechanically, and by the same code that decides the label:
 

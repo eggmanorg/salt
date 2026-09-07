@@ -22,16 +22,20 @@ import type { Readable } from 'svelte/store';
 // which exist to stop a stale snapshot un-marking a stage and have nothing to say
 // about an append-only list.
 //
-// It mints the same two things `batchService` mints, for the same reason (CLAUDE.md
-// Rule 1 — the domain mints neither):
+// IT MINTS ONE THING, and used to mint two. THE ID: `crypto.randomUUID()`, once,
+// here and not in the domain (CLAUDE.md Rule 1), exactly as `batchService` mints the
+// run's. It is also the document id, which is what makes correcting an entry a
+// re-write of the same id rather than a delete-and-re-add (there is no delete — see
+// `batchObservationSync.ts`).
 //
-//   • THE ID. `crypto.randomUUID()`, once, here. It is also the document id, which
-//     is what makes correcting an entry a re-write of the same id rather than a
-//     delete-and-re-add (there is no delete — see `batchObservationSync.ts`).
-//   • THE INSTANT. `at` is WHEN THE READING WAS TAKEN, and the log is ordered by it.
-//     Today the screen has no back-fill control, so "observed" and "typed" are the
-//     same moment and the clock is read here — the only place in this feature that
-//     reads one, exactly as `batchService` is for the run itself.
+// THE INSTANT IS NO LONGER READ HERE (issue #1276). `at` is WHEN THE READING WAS
+// TAKEN and the log is ordered by it, so a weight read at eight and typed at nine
+// belongs at eight — which means the screen, not this service, is the only thing
+// that knows it. The sheet has to read the clock anyway to seed its `datetime-local`
+// box; a second read here would be a second answer to one question, and the one that
+// reached Firestore would be the later of the two. So `at` arrives on the input,
+// already an instant, and this service writes exactly what it was handed. The same
+// goes for `stageId`: which stage a reading is about is a thing a person chose.
 //
 // ─── THE ORDER OF THE TWO WRITES IS NOT A DETAIL ───────────────────────────────
 //
@@ -88,6 +92,18 @@ export function initBatchObservationsSync(batchId: string): () => void {
 /** What the log screen collects. Everything is optional except which run it is. */
 export interface LogObservationInput {
   batchId: string;
+  /**
+   * WHEN THE READING WAS TAKEN, ISO. Not when it was typed, and not read from a
+   * clock here — the screen owns it, because it is the only thing that can be told
+   * "this was yesterday evening". The log is ordered by it.
+   */
+  at: string;
+  /**
+   * Which stage of the run the reading is about, or `null` for one about the run as
+   * a whole. Written through untouched: nothing here checks that it names a stage,
+   * for the reason `BatchObservationSchema.stageId` gives.
+   */
+  stageId: string | null;
   /** Grams on the scale, or null when the entry is a note or a photo. */
   weightGrams: number | null;
   /** Free text. `''` is "none" — the schema spells the absent state that way. */
@@ -126,7 +142,8 @@ export async function logObservation(
   const observation: BatchObservationDoc = {
     id: crypto.randomUUID(),
     schemaVersion: 1,
-    at: new Date().toISOString(),
+    at: input.at,
+    stageId: input.stageId,
     weightGrams: input.weightGrams,
     ph: null,
     temperatureC: null,

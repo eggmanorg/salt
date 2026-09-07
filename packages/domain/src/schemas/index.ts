@@ -382,11 +382,12 @@ export type {
 // labels, the resolved totals, and the resolved schedule. Read batch.ts's header
 // before adding a field — the reason the document repeats what the recipe and the
 // formula already say is the whole point of it.
-export { BatchStateSchema, BatchSchema, BatchObservationSchema } from './batch.js';
+export { BatchStateSchema, BatchSchema, BatchObservationSchema, StageSkipSchema } from './batch.js';
 export type {
   BatchQuantityDoc,
   BatchTotalsDoc,
   BatchStageDoc,
   BatchDoc,
   BatchObservationDoc,
+  StageSkip,
 } from './batch.js';

@@ -21,6 +21,7 @@ function stage(id: string, label: string, overrides: Partial<ProcessStage> = {})
     duration: fixed(60),
     until: null,
     stepId: null,
+    optional: false,
     ...overrides,
   };
 }
@@ -39,6 +40,7 @@ function proposed(
     duration: fixed(60),
     until: null,
     stepId: null,
+    optional: false,
     sourceStageId,
     ...overrides,
   };
@@ -61,6 +63,7 @@ const UNCHANGED: ProposedStage[] = REFERENCE.map((s) =>
     duration: s.duration,
     until: s.until,
     stepId: s.stepId,
+    optional: false,
   }),
 );
 

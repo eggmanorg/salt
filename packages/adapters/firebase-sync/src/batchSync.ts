@@ -36,6 +36,13 @@ import { subscribeDocument } from './subscribeDocument.js';
 // delete). An unused delete on a family-shared document is a foot-gun waiting for a
 // caller.
 //
+// AND ADDING ONE IS NOT FREE, so this sentence is no longer only a sentence.
+// Deleting `batches/{batchId}` does NOT delete its `observations` subcollection —
+// those documents survive as Firestore orphans nothing sweeps — so a deleter has
+// to cascade, or something has to reclaim them. `apps/cloud-functions/tests/
+// maintenance/batchDeleterGuard.test.ts` goes red the moment one appears here
+// (#968); read its header before deleting the guard along with this comment.
+//
 // Writes never throw for operational errors: they cross the boundary as
 // Failure<DomainError> (Rule 10). This adapter must not import @salt/observability
 // (Rule 4).

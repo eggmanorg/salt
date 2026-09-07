@@ -6,7 +6,7 @@ name: Board status
 #
 #   Triage      — GitHub's own "item added to project" project workflow.
 #   Todo        — a decision. /triage or Daniel. No event exists for "I have decided".
-#   In progress — /run and /campaign, when the worktree is cut. A branch push is
+#   In progress — /salt-run and /salt-campaign, when the worktree is cut. A branch push is
 #                 far too noisy to key on, and a draft PR is raised much later.
 #   In review   — HERE. A pull request opened, or taken out of draft.
 #   Merged      — HERE. That pull request merged. Staging follows on its own
@@ -15,7 +15,7 @@ name: Board status
 #   Released    — HERE. A production deploy succeeded AND the issue's merge
 #                 commit is an ancestor of the deployed sha. See below.
 #
-# The issue→PR link is the `Closes #N` that /run writes into every PR body. That
+# The issue→PR link is the `Closes #N` that /salt-run writes into every PR body. That
 # is not a convention this workflow invented: GitHub's own "linked issue" is
 # derived from the same text, so anything that closes an issue on merge is
 # already saying it here.
