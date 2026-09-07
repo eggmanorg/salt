@@ -66,7 +66,12 @@ const {
 type ProposedStage = {
   label: string;
   kind: 'active' | 'wait';
-  environment: { celsius: number } | null;
+  environment: {
+    temperature:
+      | { kind: 'fixed'; celsius: number }
+      | { kind: 'range'; minCelsius: number; maxCelsius: number };
+    equipmentId: string | null;
+  } | null;
   duration: { kind: 'fixed'; minutes: number } | null;
   until: string | null;
   stepId: string | null;
@@ -153,7 +158,7 @@ const LOAF_FORMULA = {
       id: 'stage-bulk',
       label: 'Bulk ferment',
       kind: 'wait',
-      environment: { celsius: 20 },
+      environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
       duration: { kind: 'fixed', minutes: 90 },
       until: 'until doubled',
       stepId: 'step-2',
@@ -162,7 +167,7 @@ const LOAF_FORMULA = {
       id: 'stage-bake',
       label: 'Bake',
       kind: 'active',
-      environment: { celsius: 230 },
+      environment: { temperature: { kind: 'fixed', celsius: 230 }, equipmentId: null },
       duration: { kind: 'fixed', minutes: 45 },
       until: null,
       stepId: 'step-3',
@@ -174,7 +179,7 @@ function proposedStage(overrides: Partial<ProposedStage> = {}): ProposedStage {
   return {
     label: 'Bulk ferment',
     kind: 'wait',
-    environment: { celsius: 20 },
+    environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
     duration: { kind: 'fixed', minutes: 90 },
     until: null,
     stepId: 'step-2',
@@ -189,7 +194,7 @@ const AI_OUTPUT: Output = {
     proposedStage({ label: 'Bulk ferment, counter', duration: { kind: 'fixed', minutes: 20 } }),
     proposedStage({
       label: 'Cold retard',
-      environment: { celsius: 4 },
+      environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
       duration: { kind: 'fixed', minutes: 480 },
       stepId: null,
       sourceStageId: null,

@@ -199,7 +199,7 @@ describe('resolveSchedule — totality', () => {
       id: 'retard',
       label: 'Fridge retard',
       kind: 'wait',
-      environment: { celsius: 4 },
+      environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
       duration: fixed(600),
       until: null,
       stepId: 'step-3',

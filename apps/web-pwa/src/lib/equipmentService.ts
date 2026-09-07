@@ -8,7 +8,11 @@ import {
   callDescribeEquipmentSubject,
 } from '@salt/firebase-sync';
 import type { IdentifyEquipmentResult, PopulateEquipmentEntryResult } from '@salt/firebase-sync';
-import type { EquipmentIconDoc, EquipmentReferencePhoto } from '@salt/domain/schemas';
+import type {
+  EquipmentEnvironmentDoc,
+  EquipmentIconDoc,
+  EquipmentReferencePhoto,
+} from '@salt/domain/schemas';
 import {
   addEquipment,
   removeEquipment,
@@ -19,6 +23,7 @@ import {
   addRule,
   removeRule,
   editRule,
+  setEquipmentEnvironment,
 } from '@salt/domain';
 import type { EquipmentManifest, EquipmentManifestPort } from '@salt/domain';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -321,6 +326,27 @@ export async function editEquipmentRule(
     equipmentId,
     ruleIndex,
     rule,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
+// ─── Place commands (issue #1281) ─────────────────────────────────────────────
+
+/**
+ * Describes an equipment item as a place that holds a temperature, or (with
+ * `null`) stops it being one. The shared/dedicated invariant is enforced inside
+ * `setEquipmentEnvironment`, not here.
+ */
+export async function setEquipmentEnvironmentFor(
+  equipmentId: string,
+  environment: EquipmentEnvironmentDoc | null,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = setEquipmentEnvironment(manifest, {
+    equipmentId,
+    environment,
     now: new Date().toISOString(),
   });
   return applyAndSave(result);

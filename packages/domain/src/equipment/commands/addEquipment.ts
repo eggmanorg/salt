@@ -23,6 +23,8 @@ export function addEquipment(
     name,
     accessories: [],
     rules: [],
+    // Nothing is a place until it is described as one (issue #1281).
+    environment: null,
     updatedAt: input.now,
   };
   return success({ ...manifest, items: [...manifest.items, newItem] });

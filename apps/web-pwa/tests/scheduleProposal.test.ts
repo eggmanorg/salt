@@ -49,14 +49,14 @@ describe('reviewRows — a change reads as before → after', () => {
       stage('bulk', {
         label: 'Bulk ferment',
         duration: { kind: 'fixed', minutes: 90 },
-        environment: { celsius: 20 },
+        environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
       }),
     ];
     const stages = [
       proposed('bulk', {
         label: 'Bulk ferment',
         duration: { kind: 'fixed', minutes: 20 },
-        environment: { celsius: 4 },
+        environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
       }),
     ];
 
@@ -120,7 +120,7 @@ describe('reviewRows — a restructure is a removal plus additions', () => {
     stage('bulk', {
       label: 'Bulk ferment',
       duration: { kind: 'fixed', minutes: 90 },
-      environment: { celsius: 20 },
+      environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
     }),
   ];
   const stages = [
@@ -128,12 +128,12 @@ describe('reviewRows — a restructure is a removal plus additions', () => {
     proposed('bulk', {
       label: 'Bulk ferment, counter',
       duration: { kind: 'fixed', minutes: 20 },
-      environment: { celsius: 20 },
+      environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
     }),
     proposed('bulk', {
       label: 'Cold retard',
       duration: { kind: 'fixed', minutes: 480 },
-      environment: { celsius: 4 },
+      environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
     }),
   ];
 

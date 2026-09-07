@@ -102,6 +102,7 @@ export {
   addRule,
   removeRule,
   editRule,
+  setEquipmentEnvironment,
   equipmentIconAwaitingApproval,
   // The display-time join from a free-text kit label to the item this household
   // actually owns (issue #954) — the specific half of the question
@@ -431,6 +432,7 @@ export {
   resolveSchedule,
   diffProcess,
   remindableStages,
+  stageTemperatureText,
 } from './process/index.js';
 export type {
   ScheduleAnchor,

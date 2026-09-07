@@ -22,7 +22,7 @@ const { callExtractProcessStages } = await import('../src/formulaCallables.js');
 const STAGE = {
   label: 'Bulk ferment',
   kind: 'wait' as const,
-  environment: { celsius: 20 },
+  environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
   duration: { kind: 'fixed' as const, minutes: 240 },
   until: null,
   stepId: 'step-2',

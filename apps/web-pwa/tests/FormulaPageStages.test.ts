@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import type { CanonItem, Recipe } from '@salt/domain';
-import type { Formula, ProcessStage } from '@salt/domain/schemas';
+import type { EquipmentManifestDoc, Formula, ProcessStage } from '@salt/domain/schemas';
 
 // The stage review surface on the formula screen (issue #806, phase 2 of epic
 // #778). A sibling of FormulaPage.test.ts rather than an extension of it: that file
@@ -20,17 +21,17 @@ import type { Formula, ProcessStage } from '@salt/domain/schemas';
 //   • a recipe with no waits comes back with nothing, and the screen says so rather
 //     than showing an invented proof.
 
-const { mockRecipes, mockIsLoadingRecipes, mockFormula, mockCanonItems } = await vi.hoisted(
-  async () => {
+const { mockRecipes, mockIsLoadingRecipes, mockFormula, mockCanonItems, mockEquipment } =
+  await vi.hoisted(async () => {
     const { makeStore } = await import('./support/testStore.js');
     return {
       mockRecipes: makeStore<readonly Recipe[]>([]),
       mockIsLoadingRecipes: makeStore<boolean>(false),
       mockFormula: makeStore<Formula | null | undefined>(undefined),
       mockCanonItems: makeStore<readonly CanonItem[]>([]),
+      mockEquipment: makeStore<EquipmentManifestDoc | null>(null),
     };
-  },
-);
+  });
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
@@ -40,6 +41,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
   isLoadingRecipes: mockIsLoadingRecipes,
 }));
 vi.mock('../src/lib/canonService.js', () => ({ canonItems: mockCanonItems }));
+vi.mock('../src/lib/equipmentService.js', () => ({ equipment: mockEquipment }));
 vi.mock('../src/lib/formulaService.js', () => ({
   formula: mockFormula,
   initFormulaSync: vi.fn(() => vi.fn()),
@@ -146,7 +148,7 @@ const BULK: ProcessStage = {
   id: 'stage-bulk',
   label: 'Bulk ferment',
   kind: 'wait',
-  environment: { celsius: 20 },
+  environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
   duration: { kind: 'range', minMinutes: 240, maxMinutes: 300 },
   until: 'until risen by half',
   stepId: 'step-2',
@@ -157,7 +159,7 @@ const BAKE: ProcessStage = {
   id: 'stage-bake',
   label: 'Bake',
   kind: 'active',
-  environment: { celsius: 230 },
+  environment: { temperature: { kind: 'fixed', celsius: 230 }, equipmentId: null },
   duration: { kind: 'fixed', minutes: 40 },
   until: null,
   stepId: null,
@@ -177,6 +179,7 @@ beforeEach(() => {
   mockRecipes._set([makeRecipe()]);
   mockCanonItems._set([canon('canon-flour', 'strong white flour'), canon('canon-water', 'water')]);
   mockFormula._set(undefined);
+  mockEquipment._set(null);
 });
 
 function renderPage() {
@@ -346,7 +349,8 @@ describe('FormulaPage — correcting by hand', () => {
 
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveFormula).mock.calls[0]![0].process![0]!.environment).toEqual({
-      celsius: 24,
+      temperature: { kind: 'fixed', celsius: 24 },
+      equipmentId: null,
     });
   });
 
@@ -631,4 +635,171 @@ describe('FormulaPage — the grams box and the minutes box parse identically', 
       );
     },
   );
+});
+
+// ─── Temperature ranges and places (issue #1281) ──────────────────────────────
+
+const PROOFER = {
+  id: 'eq-proofer',
+  schemaVersion: 1 as const,
+  name: 'Dough proofer',
+  accessories: [],
+  rules: [],
+  environment: {
+    control: 'dedicated' as const,
+    minCelsius: 22,
+    maxCelsius: 28,
+    humidity: null,
+    standing: null,
+  },
+  updatedAt: WRITTEN_AT,
+};
+
+const KNIFE = {
+  id: 'eq-knife',
+  schemaVersion: 1 as const,
+  name: 'Sharp knife',
+  accessories: [],
+  rules: [],
+  environment: null,
+  updatedAt: WRITTEN_AT,
+};
+
+function seedPlaces(items: EquipmentManifestDoc['items']): void {
+  mockEquipment._set({ schemaVersion: 1, updatedAt: WRITTEN_AT, items });
+}
+
+function savedStage(index = 0): ProcessStage {
+  return vi.mocked(saveFormula).mock.calls[0]![0].process![index]!;
+}
+
+describe('FormulaPage — a stage temperature that is really a band', () => {
+  it('saves a second temperature as a RANGE, not a midpoint', async () => {
+    const { getByTestId, container } = await openWith({ ...STORED, process: [BULK] });
+
+    await fireEvent.input(inputsIn(container, 'formula-stage-max-celsius')[0]!, {
+      target: { value: '26' },
+    });
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedStage().environment).toEqual({
+      temperature: { kind: 'range', minCelsius: 20, maxCelsius: 26 },
+      equipmentId: null,
+    });
+  });
+
+  it('reads a stored range back into both boxes', async () => {
+    const banded: ProcessStage = {
+      ...BULK,
+      environment: {
+        temperature: { kind: 'range', minCelsius: 22, maxCelsius: 26 },
+        equipmentId: null,
+      },
+    };
+    const { container } = await openWith({ ...STORED, process: [banded] });
+
+    expect(inputsIn(container, 'formula-stage-celsius')[0]!.value).toBe('22');
+    expect(inputsIn(container, 'formula-stage-max-celsius')[0]!.value).toBe('26');
+  });
+
+  it('treats a second figure equal to the first as one figure, not a zero-width band', async () => {
+    const { getByTestId, container } = await openWith({ ...STORED, process: [BULK] });
+
+    await fireEvent.input(inputsIn(container, 'formula-stage-max-celsius')[0]!, {
+      target: { value: '20' },
+    });
+    await fireEvent.click(getByTestId('formula-save-button'));
+
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedStage().environment!.temperature).toEqual({ kind: 'fixed', celsius: 20 });
+  });
+});
+
+describe('FormulaPage — the place a stage happens in', () => {
+  it('offers no picker at all until the household has described a place', async () => {
+    seedPlaces([KNIFE]);
+    const { queryAllByTestId } = await openWith({ ...STORED, process: [BULK] });
+    expect(queryAllByTestId('formula-stage-place')).toHaveLength(0);
+  });
+
+  it('offers only the places, never ordinary equipment', async () => {
+    seedPlaces([PROOFER, KNIFE]);
+    const { getAllByTestId } = await openWith({ ...STORED, process: [BULK] });
+
+    const trigger = getAllByTestId('formula-stage-place')[0]!;
+    // Nothing chosen reads as the counter, which is deliberately not an entry.
+    expect(trigger.textContent).toContain('Kitchen temperature');
+    expect(trigger.textContent).not.toContain('Sharp knife');
+  });
+
+  it('shows the stored place by name, and saves it back', async () => {
+    seedPlaces([PROOFER]);
+    const inProofer: ProcessStage = {
+      ...BULK,
+      environment: {
+        temperature: { kind: 'fixed', celsius: 24 },
+        equipmentId: 'eq-proofer',
+      },
+    };
+    const { getByTestId, getAllByTestId } = await openWith({ ...STORED, process: [inProofer] });
+
+    expect(getAllByTestId('formula-stage-place')[0]!.textContent).toContain('Dough proofer');
+
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedStage().environment!.equipmentId).toBe('eq-proofer');
+  });
+
+  it('picking a place fills an empty temperature from what that place reaches', async () => {
+    // Not arithmetic and not a model — it copies the range the equipment entry
+    // already states, and only into boxes that are empty.
+    seedPlaces([PROOFER]);
+    const bare: ProcessStage = { ...BULK, environment: null };
+    const { getByTestId, getAllByTestId, container } = await openWith({
+      ...STORED,
+      process: [bare],
+    });
+
+    const user = userEvent.setup();
+    await user.click(getAllByTestId('formula-stage-place')[0]!);
+    await user.click(await screen.findByRole('option', { name: 'Dough proofer' }));
+
+    expect(inputsIn(container, 'formula-stage-celsius')[0]!.value).toBe('22');
+    expect(inputsIn(container, 'formula-stage-max-celsius')[0]!.value).toBe('28');
+
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedStage().environment).toEqual({
+      temperature: { kind: 'range', minCelsius: 22, maxCelsius: 28 },
+      equipmentId: 'eq-proofer',
+    });
+  });
+
+  it('never overwrites a temperature the recipe already gave', async () => {
+    // The recipe outranks the kit, always. A 20 °C prove moved into a proofer
+    // that reaches 22–28 is still a 20 °C prove until a human says otherwise.
+    seedPlaces([PROOFER]);
+    const { getByTestId, getAllByTestId } = await openWith({ ...STORED, process: [BULK] });
+
+    const user = userEvent.setup();
+    await user.click(getAllByTestId('formula-stage-place')[0]!);
+    await user.click(await screen.findByRole('option', { name: 'Dough proofer' }));
+
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedStage().environment!.temperature).toEqual({ kind: 'fixed', celsius: 20 });
+  });
+
+  it('keeps a place whose equipment has since been deleted from being shown as one', async () => {
+    // A one-way reference: the id survives on the document, and the screen falls
+    // back to the counter's words rather than rendering a raw id.
+    seedPlaces([PROOFER]);
+    const orphaned: ProcessStage = {
+      ...BULK,
+      environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: 'eq-gone' },
+    };
+    const { getAllByTestId } = await openWith({ ...STORED, process: [orphaned] });
+    expect(getAllByTestId('formula-stage-place')[0]!.textContent).toContain('Kitchen temperature');
+  });
 });

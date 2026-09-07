@@ -300,6 +300,7 @@ describe('realtimeSubscriptions — Firestore emulator', () => {
         name: 'Stand Mixer',
         accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
         rules: ['Use speed 2 for bread'],
+        environment: null,
         updatedAt: new Date().toISOString(),
       };
       await saveEquipmentManifest({ schemaVersion: 1, updatedAt: '', items: [item] });

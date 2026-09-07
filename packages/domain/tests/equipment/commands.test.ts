@@ -35,13 +35,17 @@ function manifestWith(items: EquipmentManifest['items']): EquipmentManifest {
   return { schemaVersion: 1, updatedAt: NOW, items };
 }
 
-function makeItem(id: string, overrides: Partial<EquipmentManifest['items'][number]> = {}) {
+function makeItem(
+  id: string,
+  overrides: Partial<EquipmentManifest['items'][number]> = {},
+): EquipmentManifest['items'][number] {
   return {
     id,
     schemaVersion: 1 as const,
     name: 'Stand Mixer',
     accessories: [],
     rules: [],
+    environment: null,
     updatedAt: NOW,
     ...overrides,
   };

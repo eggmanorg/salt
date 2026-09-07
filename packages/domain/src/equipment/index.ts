@@ -23,6 +23,8 @@ export type { AddRuleInput } from './commands/addRule.js';
 export { removeRule } from './commands/removeRule.js';
 export type { RemoveRuleInput } from './commands/removeRule.js';
 export { editRule } from './commands/editRule.js';
+export { setEquipmentEnvironment } from './commands/setEquipmentEnvironment.js';
+export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnvironment.js';
 
 export { equipmentIconAwaitingApproval } from './queries/equipmentIcon.js';
 export { resolveEquipmentItem, namesItemItself } from './queries/resolveEquipmentItem.js';

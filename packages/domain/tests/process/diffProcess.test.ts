@@ -1,11 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { diffProcess } from '../../src/index.js';
-import type { ProcessStage, ProposedStage, StageDuration } from '../../src/schemas/index.js';
+import type {
+  ProcessStage,
+  ProposedStage,
+  StageDuration,
+  StageEnvironment,
+} from '../../src/schemas/index.js';
 
 // The overnight white tin again, and the question the review screen asks of it:
 // what did the proposal actually change?
 
 const fixed = (minutes: number): StageDuration => ({ kind: 'fixed', minutes });
+// A stage temperature the recipe means exactly, with no place named (#1281).
+const env = (celsius: number): StageEnvironment => ({
+  temperature: { kind: 'fixed', celsius },
+  equipmentId: null,
+});
 const range = (minMinutes: number, maxMinutes: number): StageDuration => ({
   kind: 'range',
   minMinutes,
@@ -17,7 +27,7 @@ function stage(id: string, label: string, overrides: Partial<ProcessStage> = {})
     id,
     label,
     kind: 'wait',
-    environment: { celsius: 20 },
+    environment: env(20),
     duration: fixed(60),
     until: null,
     stepId: null,
@@ -36,7 +46,7 @@ function proposed(
   return {
     label,
     kind: 'wait',
-    environment: { celsius: 20 },
+    environment: env(20),
     duration: fixed(60),
     until: null,
     stepId: null,
@@ -51,7 +61,7 @@ const REFERENCE: ProcessStage[] = [
   stage('bulk', 'Bulk ferment', { duration: fixed(90) }),
   stage('shape', 'Shape into the tin', { kind: 'active', environment: null, duration: fixed(15) }),
   stage('prove', 'Final prove', { duration: range(45, 60) }),
-  stage('bake', 'Bake', { kind: 'active', environment: { celsius: 230 }, duration: fixed(45) }),
+  stage('bake', 'Bake', { kind: 'active', environment: env(230), duration: fixed(45) }),
 ];
 
 // The reference as the model would return it if it changed nothing: same content,
@@ -103,11 +113,71 @@ describe('diffProcess — declining to restructure', () => {
   });
 });
 
+describe('diffProcess — temperature ranges and places (issue #1281)', () => {
+  it('reports a fixed temperature becoming a range', () => {
+    const banded = UNCHANGED.map((s) =>
+      s.sourceStageId === 'bulk'
+        ? {
+            ...s,
+            environment: {
+              temperature: { kind: 'range' as const, minCelsius: 22, maxCelsius: 26 },
+              equipmentId: null,
+            },
+          }
+        : s,
+    );
+    const diff = diffProcess(REFERENCE, banded);
+    expect(diff.changed).toEqual([
+      {
+        id: 'bulk',
+        position: 2,
+        environment: {
+          from: env(20),
+          to: {
+            temperature: { kind: 'range', minCelsius: 22, maxCelsius: 26 },
+            equipmentId: null,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('reads an identical range as no change, and a wider one as a change', () => {
+    const band = (minCelsius: number, maxCelsius: number): StageEnvironment => ({
+      temperature: { kind: 'range', minCelsius, maxCelsius },
+      equipmentId: null,
+    });
+    const bandedReference = REFERENCE.map((s) =>
+      s.id === 'bulk' ? { ...s, environment: band(22, 26) } : s,
+    );
+    const same = UNCHANGED.map((s) =>
+      s.sourceStageId === 'bulk' ? { ...s, environment: band(22, 26) } : s,
+    );
+    const wider = UNCHANGED.map((s) =>
+      s.sourceStageId === 'bulk' ? { ...s, environment: band(22, 30) } : s,
+    );
+    expect(diffProcess(bandedReference, same).hasChanges).toBe(false);
+    expect(diffProcess(bandedReference, wider).hasChanges).toBe(true);
+  });
+
+  it('reports a stage MOVED to a place, even at the same temperature', () => {
+    // The figures matching is not the same as the stage being unchanged: a prove
+    // moved from the counter to the proofer is a real difference and the review
+    // has to say so.
+    const moved = UNCHANGED.map((s) =>
+      s.sourceStageId === 'bulk'
+        ? { ...s, environment: { ...env(20), equipmentId: 'eq-proofer' } }
+        : s,
+    );
+    expect(diffProcess(REFERENCE, moved).hasChanges).toBe(true);
+  });
+});
+
 describe('diffProcess — a stage the proposal altered', () => {
   it('reports only the facets that changed, at its position in the proposal', () => {
     const colder = UNCHANGED.map((s) =>
       s.sourceStageId === 'bulk'
-        ? { ...s, label: 'Bulk ferment, cold', environment: { celsius: 4 }, duration: fixed(480) }
+        ? { ...s, label: 'Bulk ferment, cold', environment: env(4), duration: fixed(480) }
         : s,
     );
 
@@ -120,7 +190,7 @@ describe('diffProcess — a stage the proposal altered', () => {
         id: 'bulk',
         position: 2,
         label: { from: 'Bulk ferment', to: 'Bulk ferment, cold' },
-        environment: { from: { celsius: 20 }, to: { celsius: 4 } },
+        environment: { from: env(20), to: env(4) },
         duration: { from: fixed(90), to: fixed(480) },
       },
     ]);
@@ -139,14 +209,14 @@ describe('diffProcess — a stage the proposal altered', () => {
   it('reports an environment or a criterion appearing from nothing', () => {
     const enriched = UNCHANGED.map((s) =>
       s.sourceStageId === 'shape'
-        ? { ...s, environment: { celsius: 20 }, until: 'until it holds its shape' }
+        ? { ...s, environment: env(20), until: 'until it holds its shape' }
         : s,
     );
     expect(diffProcess(REFERENCE, enriched).changed).toEqual([
       {
         id: 'shape',
         position: 3,
-        environment: { from: null, to: { celsius: 20 } },
+        environment: { from: null, to: env(20) },
         until: { from: null, to: 'until it holds its shape' },
       },
     ]);
@@ -170,7 +240,7 @@ describe('diffProcess — a split is a removal plus additions', () => {
   const split: ProposedStage[] = [
     UNCHANGED[0]!,
     proposed('Bulk ferment, counter', 'bulk', { duration: fixed(20) }),
-    proposed('Cold retard', 'bulk', { duration: fixed(480), environment: { celsius: 4 } }),
+    proposed('Cold retard', 'bulk', { duration: fixed(480), environment: env(4) }),
     UNCHANGED[2]!,
     UNCHANGED[3]!,
     UNCHANGED[4]!,
@@ -205,7 +275,7 @@ describe('diffProcess — additions and removals', () => {
     // An AI-added fridge retard came from no stage at all, and says so.
     const withRetard = [
       ...UNCHANGED.slice(0, 2),
-      proposed('Cold retard', null, { duration: fixed(480), environment: { celsius: 4 } }),
+      proposed('Cold retard', null, { duration: fixed(480), environment: env(4) }),
       ...UNCHANGED.slice(2),
     ];
     const diff = diffProcess(REFERENCE, withRetard);

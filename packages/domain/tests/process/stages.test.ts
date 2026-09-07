@@ -67,8 +67,13 @@ describe('withStageRemoved', () => {
 
 describe('withStageUpdated', () => {
   it('patches one stage and touches no other', () => {
-    const next = withStageUpdated([MIX, BULK], 'bulk', { environment: { celsius: 4 } });
-    expect(next[1]!.environment).toEqual({ celsius: 4 });
+    const next = withStageUpdated([MIX, BULK], 'bulk', {
+      environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
+    });
+    expect(next[1]!.environment).toEqual({
+      temperature: { kind: 'fixed', celsius: 4 },
+      equipmentId: null,
+    });
     expect(next[0]).toEqual(MIX);
   });
 

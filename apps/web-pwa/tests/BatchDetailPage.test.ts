@@ -138,7 +138,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         id: 'stage-2',
         label: 'Bulk ferment',
         kind: 'wait',
-        environment: { celsius: 20 },
+        environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
         duration: { kind: 'range', minMinutes: 45, maxMinutes: 60 },
         plannedStartAt: '2026-08-14T07:15:00.000Z',
         plannedEndAt: '2026-08-14T08:15:00.000Z',

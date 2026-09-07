@@ -4,18 +4,26 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { mockGenerate, mockGet, mockDoc, mockCollection, mockFlowModel } = vi.hoisted(() => {
-  const mockGet = vi.fn();
-  const mockDoc = vi.fn(() => ({ get: mockGet }));
-  const mockCollection = vi.fn(() => ({ doc: mockDoc }));
-  return {
-    mockGenerate: vi.fn(),
-    mockGet,
-    mockDoc,
-    mockCollection,
-    mockFlowModel: vi.fn().mockResolvedValue('gemini-flash-lite-latest'),
-  };
-});
+const { mockGenerate, mockGet, mockDoc, mockCollection, mockManifestGet, mockFlowModel } =
+  vi.hoisted(() => {
+    const mockGet = vi.fn();
+    const mockDoc = vi.fn(() => ({ get: mockGet }));
+    // The equipment manifest is a SECOND read on the same Firestore stub (issue
+    // #1281), so the collection has to dispatch — otherwise the manifest read
+    // gets handed a recipe and the places section silently disappears.
+    const mockManifestGet = vi.fn().mockResolvedValue({ exists: false });
+    const mockCollection = vi.fn((name: string) =>
+      name === 'equipmentManifest' ? { doc: () => ({ get: mockManifestGet }) } : { doc: mockDoc },
+    );
+    return {
+      mockGenerate: vi.fn(),
+      mockGet,
+      mockDoc,
+      mockCollection,
+      mockManifestGet,
+      mockFlowModel: vi.fn().mockResolvedValue('gemini-flash-lite-latest'),
+    };
+  });
 
 vi.mock('../../src/genkit.js', () => ({
   ai: {
@@ -46,7 +54,12 @@ const { extractProcessStagesFlow, STAGE_KIND_RULES } =
 type Stage = {
   label: string;
   kind: 'active' | 'wait';
-  environment: { celsius: number } | null;
+  environment: {
+    temperature:
+      | { kind: 'fixed'; celsius: number }
+      | { kind: 'range'; minCelsius: number; maxCelsius: number };
+    equipmentId: string | null;
+  } | null;
   duration: { kind: 'fixed'; minutes: number } | null;
   until: string | null;
   stepId: string | null;
@@ -97,7 +110,7 @@ function stage(overrides: Partial<Stage> = {}): Stage {
   return {
     label: 'Bulk ferment',
     kind: 'wait',
-    environment: { celsius: 20 },
+    environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
     duration: { kind: 'fixed', minutes: 240 },
     until: null,
     stepId: 'step-2',
@@ -113,14 +126,14 @@ const AI_OUTPUT = {
     stage({
       label: 'Preheat the oven',
       kind: 'wait',
-      environment: { celsius: 230 },
+      environment: { temperature: { kind: 'fixed', celsius: 230 }, equipmentId: null },
       duration: { kind: 'fixed', minutes: 20 },
       stepId: 'step-3',
     }),
     stage({
       label: 'Bake',
       kind: 'active',
-      environment: { celsius: 230 },
+      environment: { temperature: { kind: 'fixed', celsius: 230 }, equipmentId: null },
       duration: { kind: 'fixed', minutes: 40 },
       stepId: 'step-4',
     }),
@@ -131,6 +144,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFlowModel.mockResolvedValue('gemini-flash-lite-latest');
   mockGet.mockResolvedValue({ exists: true, data: () => LOAF });
+  mockManifestGet.mockResolvedValue({ exists: false });
 });
 
 describe('extractProcessStages', () => {
@@ -367,5 +381,144 @@ describe('extractProcessStages — the trust boundaries', () => {
   it('throws when the model output is not the expected shape', async () => {
     mockGenerate.mockResolvedValue({ output: { stages: 'not a list' } });
     await expect(run({ recipeId: 'recipe-1' })).rejects.toThrow(/invalid output/);
+  });
+});
+
+// ─── Places (issue #1281) ─────────────────────────────────────────────────────
+
+const PROOFER = {
+  id: 'eq-proofer',
+  schemaVersion: 1 as const,
+  name: 'Dough proofer',
+  accessories: [],
+  rules: [],
+  environment: {
+    control: 'dedicated' as const,
+    minCelsius: 20,
+    maxCelsius: 50,
+    humidity: null,
+    standing: null,
+  },
+  updatedAt: '2026-09-01T00:00:00.000Z',
+};
+
+const KNIFE = {
+  id: 'eq-knife',
+  schemaVersion: 1 as const,
+  name: 'Sharp knife',
+  accessories: [],
+  rules: [],
+  environment: null,
+  updatedAt: '2026-09-01T00:00:00.000Z',
+};
+
+function seedManifest(items: unknown[]): void {
+  mockManifestGet.mockResolvedValue({
+    exists: true,
+    data: () => ({ schemaVersion: 1, updatedAt: '2026-09-01T00:00:00.000Z', items }),
+  });
+}
+
+function systemPrompt(): string {
+  return (mockGenerate.mock.calls[0]![0] as { system: string }).system;
+}
+
+describe('extractProcessStages — the household places', () => {
+  it('shows the places it owns, with their ids, and never the kit that is not one', async () => {
+    seedManifest([PROOFER, KNIFE]);
+    mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
+
+    await run({ recipeId: 'recipe-1' });
+
+    const system = systemPrompt();
+    expect(system).toContain('[eq-proofer] Dough proofer');
+    expect(system).toContain('holds a temperature: 20–50 °C');
+    expect(system).not.toContain('Sharp knife');
+    // The counter must stay reachable as an answer, or every prove gets a chamber.
+    expect(system).toContain('names NO place');
+  });
+
+  it('leaves the prompt byte-for-byte as it was when no place is described', async () => {
+    // A household that has described nothing gets exactly today's behaviour.
+    seedManifest([KNIFE]);
+    mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
+
+    await run({ recipeId: 'recipe-1' });
+
+    const system = systemPrompt();
+    expect(system).not.toContain('Places this household can put something');
+    // The stage instructions themselves are untouched — it is the whole section
+    // that is absent, not a sentence inside it.
+    expect(system).toContain(STAGE_KIND_RULES);
+  });
+
+  it('keeps a place the manifest actually has', async () => {
+    seedManifest([PROOFER]);
+    mockGenerate.mockResolvedValue({
+      output: {
+        stages: [
+          stage({
+            environment: {
+              temperature: { kind: 'range', minCelsius: 22, maxCelsius: 26 },
+              equipmentId: 'eq-proofer',
+            },
+          }),
+        ],
+      },
+    });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages[0]!.environment).toEqual({
+      temperature: { kind: 'range', minCelsius: 22, maxCelsius: 26 },
+      equipmentId: 'eq-proofer',
+    });
+  });
+
+  it('drops an invented place, and keeps the stage and its temperature', async () => {
+    // Same treatment as a hallucinated `stepId`: the reference goes, the stage
+    // stays. Throwing away a real wait because the model mistyped an id is the
+    // loss this feature exists to prevent.
+    seedManifest([PROOFER]);
+    mockGenerate.mockResolvedValue({
+      output: {
+        stages: [
+          stage({
+            environment: {
+              temperature: { kind: 'fixed', celsius: 24 },
+              equipmentId: 'eq-does-not-exist',
+            },
+          }),
+        ],
+      },
+    });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages).toHaveLength(1);
+    expect(result.stages[0]!.environment).toEqual({
+      temperature: { kind: 'fixed', celsius: 24 },
+      equipmentId: null,
+    });
+  });
+
+  it('drops an id naming equipment that is not a place', async () => {
+    seedManifest([PROOFER, KNIFE]);
+    mockGenerate.mockResolvedValue({
+      output: {
+        stages: [
+          stage({
+            environment: {
+              temperature: { kind: 'fixed', celsius: 24 },
+              equipmentId: 'eq-knife',
+            },
+          }),
+        ],
+      },
+    });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages[0]!.environment!.equipmentId).toBeNull();
   });
 });

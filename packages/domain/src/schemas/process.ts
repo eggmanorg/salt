@@ -45,12 +45,54 @@ import { z } from 'zod';
 // all is not worth storing, and the extraction flow returns nothing for one.
 export const ProcessStageKindSchema = z.enum(['active', 'wait']);
 
+// A DISCRIMINATED UNION, copying `StageDurationSchema` below rather than inventing
+// a min/max pair (issue #1281). "Prove at 20 °C" was always a fiction — the real
+// instruction is "somewhere between 22 and 26" — but a 240 °C oven means 240, and
+// a range that collapses to a midpoint has thrown the recipe's own claim away for
+// good, exactly as a 45–60 minute prove stored as 52.5 has.
+export const StageTemperatureSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('fixed'), celsius: z.number() }),
+  z.object({
+    kind: z.literal('range'),
+    minCelsius: z.number(),
+    maxCelsius: z.number(),
+  }),
+]);
+
 // Where the stage happens: counter 20 °C, fridge 4 °C, chamber 12 °C at 75% RH.
 // `relativeHumidityPercent` is optional because only a curing chamber has an
 // opinion about it; bread never sets it.
+//
+// NO LEGACY BRANCH for the pre-#1281 bare `{ celsius: n }`, and no migration
+// either. A `z.union` carrying the old shape forever is code every future reader
+// must understand; a migration script is code that runs once and then misleads.
+// Neither was worth it here, because there was nothing to carry: the bread feature
+// has never been released (it is behind the `bread` gate, see web-pwa's
+// `featureGate.ts`), and the five documents that existed — one formula, three
+// batches and one observation, all Daniel's own trials — were deleted from
+// production on 2026-09-07 rather than migrated. `formulas` and `batches` were
+// verified empty in prod, staging and dev at that point, so no stored document
+// anywhere carries the bare-number shape and nothing needs to read it.
+//
+// This is why the ordering rule that governed #1122 does NOT apply to this branch:
+// there is no "run the script first". If a bare `{ celsius: n }` ever turns up, it
+// was hand-written after this date and belongs in a fixture, not in a union.
 export const StageEnvironmentSchema = z.object({
-  celsius: z.number(),
+  temperature: StageTemperatureSchema,
   relativeHumidityPercent: z.number().min(0).max(100).optional(),
+  // The PLACE this stage is suggested to happen in — an `EquipmentItemDoc.id` from
+  // `equipmentManifest/current`, or null for "at whatever the kitchen is". The
+  // counter is not an equipment entry, so "nothing chosen" and "deliberately the
+  // counter" are the same answer and behave identically.
+  //
+  // ONE-WAY, exactly as `stepId` is: an id here is a reference to a document this
+  // one does not own, so a reader that cannot resolve it renders the temperature
+  // alone and nothing breaks. The extraction flow drops an id the manifest does
+  // not have rather than inventing an item.
+  //
+  // `.default(null)` because it is additive over the same documents the temperature
+  // migration touches, and a stage authored before places existed named none.
+  equipmentId: z.string().nullable().default(null),
 });
 
 // A DISCRIMINATED UNION rather than a min/max pair with fixed as the degenerate
@@ -136,6 +178,7 @@ export const ExtractProcessStagesAIOutputSchema = z.object({
 export const ExtractProcessStagesOutputSchema = ExtractProcessStagesAIOutputSchema;
 
 export type ProcessStageKind = z.infer<typeof ProcessStageKindSchema>;
+export type StageTemperature = z.infer<typeof StageTemperatureSchema>;
 export type StageEnvironment = z.infer<typeof StageEnvironmentSchema>;
 export type StageDuration = z.infer<typeof StageDurationSchema>;
 export type ProcessStage = z.infer<typeof ProcessStageSchema>;

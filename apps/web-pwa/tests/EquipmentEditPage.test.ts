@@ -48,6 +48,7 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   addEquipmentRule: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   removeEquipmentRule: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   editEquipmentRule: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  setEquipmentEnvironmentFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 
 import EquipmentEditPage from '../src/routes/equipment/EquipmentEditPage.svelte';
@@ -73,6 +74,7 @@ function seed(brief = STORED_BRIEF): void {
         name: NAME,
         accessories: [],
         rules: [],
+        environment: null,
         updatedAt: '2026-08-22T00:00:00.000Z',
       },
     ],

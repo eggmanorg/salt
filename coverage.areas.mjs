@@ -222,9 +222,22 @@ export const coverageThresholds = {
   // but the same measurement reaching fewer files: `**/__boundary_tests__/**`
   // left the measured set, and every line it took with it was uncovered by
   // construction. Ratios untouched — see the note beside `coverageExclude`.
+  //
+  // BANKED in #1285 (98.84 → 99.06 lines, 91.78 → 92.81 branches), because the
+  // merge-queue run of that PR was the re-measurement. The branch coverage had
+  // drifted 1.03 points above the floor — past the 1.00-point staleness
+  // tolerance — and the ratchet stopped the merge, which is exactly its job:
+  // coverage earned and never banked is coverage a later PR could delete and
+  // still land green. The rise is #1285's own `setEquipmentEnvironment`,
+  // `stageTemperature` and `diffProcess` tests compounding with what #1287 and
+  // #1289 earned in the same area and likewise did not bank.
+  //
+  // BOTH UNCOVERED COUNTS ARE UNCHANGED at 23 and 143, which is what says this
+  // is a denominator that grew under new tested code rather than anything
+  // becoming less tested. Nothing moved down.
   'packages/domain/src/**': {
-    lines: 98.84,
-    branches: 91.78,
+    lines: 99.06,
+    branches: 92.81,
     uncoveredLines: 23,
     uncoveredBranches: 143,
   },
