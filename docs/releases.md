@@ -21,6 +21,63 @@ Deploys always target an alias explicitly: `firebase deploy -P staging` /
 `-P production`. Bare `firebase` commands hit `default` (emulators), which is
 the safe local default.
 
+## Agent access to live Firestore (MCP)
+
+Claude agents reach each cloud project's **live** Firestore and Cloud Functions
+logs through a Firebase MCP server, one per environment. Each is pinned to its
+project by its own `.firebaserc` in an isolated directory under
+`~/.config/firebase-mcp/`, so none of them can move the repo's active project
+away from `demo-salt` (which offline `pnpm dev:emulators` depends on). These are
+machine-local registrations in `~/.claude.json`, not repo config — a cloud
+session has none of them.
+
+| Server             | Project          | Tool surface                              | Writes             |
+| ------------------ | ---------------- | ----------------------------------------- | ------------------ |
+| `firebase-dev`     | `s2-dev-eggman`  | `--only core,firestore,functions`         | ungated            |
+| `firebase-staging` | `s2-stage-ccb22` | `--only core,firestore,functions`         | ungated            |
+| `firebase-prod`    | `s2-prod-e46bd`  | `--tools <explicit allowlist>` (25 tools) | **Daniel prompts** |
+
+Production differs from the other two in two ways, both deliberate:
+
+1. **The tool surface is an allowlist, not a feature set.** `--tools` disables
+   auto-detection, so a tool that is not named does not exist on the server —
+   there is no permission prompt that can reach it. Permanently absent from prod:
+   `firestore_{create,update,delete}_database`, `firestore_{create,delete}_index`,
+   `firestore_delete_backup`, the three backup-schedule writers, `firebase_deploy`,
+   `firebase_init`, `firebase_update_environment`, `firebase_create_*`, and
+   `firebase_{login,logout}`. What remains is 22 read tools plus the three
+   document writers.
+2. **Those three writers are permission-gated.** `firestore_add_document`,
+   `firestore_update_document` and `firestore_delete_document` sit in
+   `permissions.ask` and `autoMode.soft_deny` in
+   [`.claude/settings.json`](../.claude/settings.json), so every prod write is a
+   prompt — approval of one write never carries to the next. Reads are allowed
+   outright, as on staging.
+
+**Limits of that gate, stated rather than implied.** It is a prompt, not a
+sandbox: an approved write goes straight to family production data, with no
+per-collection restriction and no undo. `firestore_update_document` writes the
+fields you give it, but the LWW contract still applies — a concurrent CF trigger
+write can be lost. Recovery is a restore, not a rollback:
+[data-refresh.md](data-refresh.md), `scripts/export-prod-firestore.mjs` and
+`scripts/restore-firestore.mjs`. Take an export before any write you would not
+want to re-derive by hand.
+
+**The allowlist only binds this route.** `firebase -P production`, a `gcloud
+firestore` call or an ad-hoc admin-SDK script bypasses it entirely; those are
+hard-denied for agents in `.claude/settings.json` for exactly that reason.
+
+Registering prod (one-time, from the repo root, not a worktree):
+
+```
+claude mcp add firebase-prod -- \
+  firebase mcp --dir ~/.config/firebase-mcp/salt-prod \
+  --tools firebase_get_project,firebase_get_environment,firebase_get_sdk_config,firebase_get_security_rules,firebase_validate_security_rules,firebase_read_resources,firebase_list_apps,firestore_get_document,firestore_list_documents,firestore_list_collections,firestore_query_collection,firestore_run_aggregation_query,firestore_get_database,firestore_list_databases,firestore_get_index,firestore_list_indexes,firestore_get_backup,firestore_list_backups,firestore_get_backup_schedule,firestore_list_backup_schedules,functions_get_logs,functions_list_functions,firestore_add_document,firestore_update_document,firestore_delete_document
+```
+
+Auth is the Firebase CLI's logged-in user, so an agent can only ever reach what
+Daniel can reach.
+
 ## Config & secrets — what lives where
 
 There are two distinct classes. Getting the split right is the whole game:
