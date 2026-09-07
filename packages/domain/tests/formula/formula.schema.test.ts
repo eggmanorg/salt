@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { FormulaSchema } from '../../src/schemas/index.js';
 import {
   DensityClassSchema,
+  DoughAmountSchema,
   FormulaComponentSchema,
   ReferenceYieldSchema,
-  UnitShapeSchema,
 } from '../../src/schemas/formula.js';
 
 const MINIMAL_FORMULA = {
@@ -14,9 +14,8 @@ const MINIMAL_FORMULA = {
 };
 
 describe('FormulaSchema', () => {
-  it('defaults the handling allowance to nothing and stamps the version', () => {
+  it('stamps the schema version', () => {
     const parsed = FormulaSchema.parse(MINIMAL_FORMULA);
-    expect(parsed.handlingLossPercent).toBe(0);
     expect(parsed.schemaVersion).toBe(1);
   });
 
@@ -72,19 +71,29 @@ describe('FormulaComponentSchema', () => {
   });
 });
 
-describe('UnitShapeSchema', () => {
+describe('DoughAmountSchema', () => {
   it('takes a whole, positive count of a positive dough weight', () => {
-    const shape = { label: '120 g roll', count: 12, unitDoughGrams: 120, bakeLossPercent: 10 };
-    expect(UnitShapeSchema.safeParse(shape).success).toBe(true);
-    expect(UnitShapeSchema.safeParse({ ...shape, count: 0 }).success).toBe(false);
-    expect(UnitShapeSchema.safeParse({ ...shape, count: 2.5 }).success).toBe(false);
-    expect(UnitShapeSchema.safeParse({ ...shape, unitDoughGrams: 0 }).success).toBe(false);
+    const amount = { count: 12, unitDoughGrams: 120 };
+    expect(DoughAmountSchema.safeParse(amount).success).toBe(true);
+    expect(DoughAmountSchema.safeParse({ ...amount, count: 0 }).success).toBe(false);
+    expect(DoughAmountSchema.safeParse({ ...amount, count: 2.5 }).success).toBe(false);
+    expect(DoughAmountSchema.safeParse({ ...amount, unitDoughGrams: 0 }).success).toBe(false);
   });
 
-  it('takes a bake loss as a percentage, not a multiplier', () => {
-    const shape = { label: 'x', count: 1, unitDoughGrams: 900, bakeLossPercent: 120 };
-    expect(UnitShapeSchema.safeParse(shape).success).toBe(false);
-    expect(UnitShapeSchema.safeParse({ ...shape, bakeLossPercent: 0 }).success).toBe(true);
+  it('strips a stale label and bakeLossPercent rather than refusing them', () => {
+    // The wire keys are deliberately stale (schemas/formula.ts): a stored document
+    // written before #1274 still carries `label`/`bakeLossPercent`, and Zod object
+    // schemas strip unknown keys, so it must still parse.
+    const withStaleKeys = {
+      count: 2,
+      unitDoughGrams: 900,
+      label: '900 g tin loaf',
+      bakeLossPercent: 14,
+    };
+    const parsed = DoughAmountSchema.safeParse(withStaleKeys);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).toEqual({ count: 2, unitDoughGrams: 900 });
   });
 });
 
@@ -94,7 +103,7 @@ describe('ReferenceYieldSchema', () => {
     expect(
       ReferenceYieldSchema.safeParse({
         kind: 'target',
-        shape: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakeLossPercent: 10 },
+        shape: { count: 12, unitDoughGrams: 120 },
       }).success,
     ).toBe(true);
   });

@@ -5,9 +5,10 @@ import type { BatchDoc, BatchObservationDoc, BatchStageDoc } from '@salt/domain/
 // One run's own screen (issue #812, phases 1 and 3 of epic #778).
 //
 // The batch under test is #778's worked example, frozen: twelve 120 g rolls off the
-// overnight tin's formula — 841 g flour, 589 g water, 17 g salt, 12 g yeast, 25 g
-// olive oil, 1 483 g in the bowl including the 3% handling allowance, about 108 g
-// each once baked.
+// overnight tin's formula — 816 g flour, 571 g water, 16 g salt, 11 g yeast, 24 g
+// olive oil, 1 440 g in the bowl. #1274 deleted the handling allowance that used to
+// separate "in the bowl" from "off the bench" (and the baked-weight figure beside
+// it); the two totals are now the same number, always.
 //
 // What this page has to get right:
 //
@@ -118,17 +119,18 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     state: 'running',
     abandonedAt: null,
     quantities: [
-      { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 841 },
-      { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 589 },
-      { ingredientId: 'ing-salt', label: '10 g salt', percent: 2, grams: 17 },
-      { ingredientId: 'ing-yeast', label: '7 g instant yeast', percent: 1.4, grams: 12 },
-      { ingredientId: 'ing-oil', label: '15 g olive oil', percent: 3, grams: 25 },
+      { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 816 },
+      { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571 },
+      { ingredientId: 'ing-salt', label: '10 g salt', percent: 2, grams: 16 },
+      { ingredientId: 'ing-yeast', label: '7 g instant yeast', percent: 1.4, grams: 11 },
+      { ingredientId: 'ing-oil', label: '15 g olive oil', percent: 3, grams: 24 },
     ],
     totals: {
-      basisGrams: 841,
-      totalGrams: 1483,
+      basisGrams: 816,
+      totalGrams: 1440,
       usableGrams: 1440,
-      units: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakedUnitGrams: 108 },
+      // No label and no baked figure since #1274 — see `BatchUnitsSchema`.
+      units: { count: 12, unitDoughGrams: 120 },
     },
     stages: [
       stage(),
@@ -219,7 +221,7 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     mockBatch._set(makeBatch());
 
     await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
-    expect(gramsColumn()).toEqual(['841 g', '589 g', '17 g', '12 g', '25 g']);
+    expect(gramsColumn()).toEqual(['816 g', '571 g', '16 g', '11 g', '24 g']);
   });
 
   it('carries the recipe line each figure came from, frozen at the start', async () => {
@@ -232,14 +234,42 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     expect(screen.getByTestId('batch-quantities')).toHaveTextContent('70%');
   });
 
-  it('shows the totals, including what the handling allowance added', async () => {
+  it('shows the totals — in the bowl and off the bench are the same figure since #1274', async () => {
     renderPage();
     mockBatch._set(makeBatch());
 
     await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
-    expect(screen.getByTestId('batch-total-grams')).toHaveTextContent('1483 g');
+    expect(screen.getByTestId('batch-total-grams')).toHaveTextContent('1440 g');
     expect(screen.getByTestId('batch-usable-grams')).toHaveTextContent('1440 g');
-    expect(screen.getByTestId('batch-baked-each')).toHaveTextContent('about 108 g');
+  });
+
+  it('names what the run was baked in, when it recorded one (issue #1274)', async () => {
+    // "What did I bake it in last time?" is what a log of runs is for. It is a
+    // note on a finished record — nothing parses it and nothing computes from it.
+    renderPage();
+    mockBatch._set(makeBatch({ vessel: '900 g loaf tin' }));
+
+    await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-vessel')).toHaveTextContent('900 g loaf tin');
+  });
+
+  it('says nothing about a vessel for a run that named none', async () => {
+    // "1.4 kg of dough" is a complete answer. An empty row would read as a vessel
+    // nobody described.
+    renderPage();
+    mockBatch._set(makeBatch());
+
+    await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-vessel')).toBeNull();
+  });
+
+  it('shows no baked weight anywhere — the readout went with bake loss (issue #1274)', async () => {
+    const { container } = renderPage();
+    mockBatch._set(makeBatch({ vessel: '900 g loaf tin' }));
+
+    await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-baked-each')).toBeNull();
+    expect(container.textContent).not.toMatch(/once baked|each baked|bake loss/i);
   });
 
   it('says an ingredient that has left the recipe is unknown rather than inventing it', async () => {
@@ -270,7 +300,7 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     mockBatch._set(makeBatch());
 
     await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
-    expect(gramsColumn()).toEqual(['841 g', '589 g', '17 g', '12 g', '25 g']);
+    expect(gramsColumn()).toEqual(['816 g', '571 g', '16 g', '11 g', '24 g']);
   });
 });
 

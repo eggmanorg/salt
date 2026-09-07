@@ -137,6 +137,11 @@ Split only where there is a reason to:
 - **a point of no return** — after this, backing out gets expensive; or
 - **too large to validate as one diff** — the reviewer (human or AI) can't reliably judge it in one pass.
 
+**A phase boundary is also a PR boundary**, so a large feature never has to fit in one PR: `/salt-run` cuts one
+where its diff ceiling is crossed with phases still unbuilt, and the rest land as the next PR
+([docs/issue-board.md](../../docs/issue-board.md) → `Size`). Keep a boundary the list above justifies rather than
+collapsing phases to hold a total down — but that is never a reason to invent one.
+
 None of those apply? Keep it together. A settled design with no open questions is often 1–2 phases;
 an exploratory one with live forks earns more.]
 

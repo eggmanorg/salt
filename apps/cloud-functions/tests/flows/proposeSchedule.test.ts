@@ -138,7 +138,6 @@ const LOAF_FORMULA = {
     { ingredientId: 'ing-yeast', percent: 1.2, inBasis: false },
   ],
   referenceYield: { kind: 'basis', grams: 500 },
-  handlingLossPercent: 0,
   schemaVersion: 1,
   process: [
     {

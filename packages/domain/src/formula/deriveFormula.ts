@@ -32,9 +32,8 @@ export type DeriveFormulaInput = {
   components: readonly FormulaComponentInput[];
   // Defaults to the basis weight the percentages were derived at, which is the
   // honest reference: these ratios came from this much flour. A caller that knows
-  // the recipe as written makes two 900 g tins can say so instead.
+  // the recipe as written makes 2 × 900 g of dough can say so instead.
   referenceYield?: ReferenceYield;
-  handlingLossPercent?: number;
 };
 
 export type DeriveFormulaResult =
@@ -48,7 +47,7 @@ export type DeriveFormulaResult =
  * human edits it.
  */
 export function deriveFormula(input: DeriveFormulaInput): DeriveFormulaResult {
-  const { recipeId, components, referenceYield, handlingLossPercent = 0 } = input;
+  const { recipeId, components, referenceYield } = input;
 
   if (components.length === 0) return { ok: false, reason: { kind: 'emptyFormula' } };
 
@@ -85,7 +84,6 @@ export function deriveFormula(input: DeriveFormulaInput): DeriveFormulaResult {
       recipeId,
       components: derived,
       referenceYield: referenceYield ?? { kind: 'basis', grams: basisGrams },
-      handlingLossPercent,
       schemaVersion: 1,
     },
   };

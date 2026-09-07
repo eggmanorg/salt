@@ -73,15 +73,19 @@ export const BatchQuantitySchema = z.object({
   grams: z.number().nonnegative(),
 });
 
-// What the shape divides into, echoed from the solve so a batch can still say "12
-// × 120 g rolls" with no formula in hand. Null for a basis-driven solve: weighing
-// the meat says nothing about how many of anything you end up with.
+// What the dough divides into, echoed from the solve so a batch can still say
+// "12 × 120 g" with no formula in hand. Null for a basis-driven solve: weighing the
+// meat says nothing about how many of anything you end up with.
+//
+// No `label` and no baked figure (issue #1274). The label was there so a batch
+// could name itself; `recipeTitle` already does that, from the recipe, without
+// conflating what the thing IS with how much dough it took. The wire key `units`
+// and the spelling `unitDoughGrams` are deliberately unchanged — see
+// `DoughAmountSchema` for why deleting a field is read-compatible where renaming
+// one is not.
 export const BatchUnitsSchema = z.object({
-  label: z.string(),
   count: z.number().int().positive(),
   unitDoughGrams: z.number().positive(),
-  // After bake loss — what actually comes out of the oven.
-  bakedUnitGrams: z.number().nonnegative(),
 });
 
 // The solve's headline figures, frozen. Rounded only: the exact floats exist so
@@ -166,6 +170,21 @@ export const BatchSchema = z.object({
   recipeId: z.string(),
   // The recipe's title, frozen. The log survives the dish being renamed or deleted.
   recipeTitle: z.string(),
+  // WHAT THIS RUN WAS BAKED IN, as the person starting it described it — "900 g
+  // loaf tin", "30 × 40 cm tray" (issue #1274). A SNAPSHOT NOTE and nothing else:
+  // nothing parses it, nothing computes from it, and it never round-trips back
+  // into an input. `recipeTitle` is the precedent.
+  //
+  // It lives here rather than inside `totals`, and it exists on a batch where it
+  // deliberately does NOT exist on a formula. A formula's grams stay editable, so
+  // a vessel stored beside them is a second number free to drift into a lie; a
+  // batch's are stamped once by `freezeBatch` and never re-derived, so the vessel
+  // and the grams it resolved to cannot disagree. `tests/batch/transitions.test.ts`
+  // is what keeps that true as producers are added.
+  //
+  // ABSENT, not empty, when the run named no vessel: "1.4 kg of dough" is a
+  // complete answer and an empty string would read as a vessel nobody described.
+  vessel: z.string().optional(),
   state: BatchStateSchema,
   // WHEN the run was stopped, and null while it is still running (issue #1280).
   //

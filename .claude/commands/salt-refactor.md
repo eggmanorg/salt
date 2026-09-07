@@ -117,6 +117,10 @@ Split at:
 - **a mechanical sweep** — a wide call-site migration separates cleanly from the structural change it follows;
 - **dead-code removal** — deleting the old shape after the new one is proven, never in the same phase.
 
+**A phase boundary is also a PR boundary**, so a long migration never has to fit in one PR: `/salt-run` cuts one
+where its diff ceiling is crossed with phases still unbuilt ([docs/issue-board.md](../../docs/issue-board.md) →
+`Size`). Every safe resting point you name is available as a PR boundary too.
+
 Do not split a single atomic move that has no safe midpoint — say so in **Safe to stop here?** instead.]
 
 ### Phase 1: [Name]

@@ -888,9 +888,8 @@ describe.skipIf(!reachable)('firestore.rules — formulas (issue #806)', () => {
     ],
     referenceYield: {
       kind: 'target',
-      shape: { label: '900 g tin loaf', count: 1, unitDoughGrams: 900, bakeLossPercent: 12 },
+      shape: { count: 1, unitDoughGrams: 900 },
     },
-    handlingLossPercent: 0,
   });
 
   function userCtx(uid: string) {

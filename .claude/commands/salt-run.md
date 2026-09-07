@@ -1,14 +1,16 @@
 ---
 description: Execute a phased GitHub issue end to end — branch, then per phase implement, validate, commit, push, CI — landing as a draft PR. Owns the git history; never merges.
-argument-hint: <issue number>
+argument-hint: <issue number> [--max-diff <lines>]
 disable-model-invocation: true
 ---
 
 # Run Issue
 
-Argument: $ARGUMENTS → ISSUE_NUMBER
+Arguments: $ARGUMENTS → ISSUE_NUMBER, plus an optional `--max-diff <lines>`.
 
 No argument given? If the current branch ends in `-<digits>`, that is the issue — say which and carry on. Otherwise ask which issue and stop until I answer; there is nothing safe to guess here.
+
+`--max-diff` is this branch's diff ceiling in changed lines — **default 2000**, excluding `pnpm-lock.yaml` — checked at each phase boundary in step 9. A campaign dispatching this loop may pass its own value; nothing else sets it. It is not a wall. Over the ceiling with phases still unbuilt, the run cuts the built phases as their own PR and the rest become a second one; over it with nothing left to build, the branch ships as it stands. The default used to live only in `/salt-campaign`'s dispatch brief, which left a standalone `/salt-run` with no ceiling at all and improvising one — it lives here now, and the campaign overrides rather than owns it.
 
 You own two things end to end: the **spec contract** (the issue's phases are the scope — nothing more, nothing less) and the **git history** (branch, commits, PR). Everything else is yours to delegate or do directly as the work warrants.
 
@@ -76,8 +78,9 @@ git checkout -b <type>/<slug>-ISSUE_NUMBER
 
 - `<type>`: `feat`, `fix`, `chore`, `docs`, or `perf` per the change's nature.
 - `<slug>`: ≤4 kebab-case words from the issue title. Issue #261 "Add meal-planner drag reorder" → `feat/meal-planner-drag-reorder-261`.
+- **Continuation run** — the phases left unbuilt when an earlier run hit the diff ceiling and split at a phase boundary (step 9). Same `<type>/<slug>`, with `-2` appended, then `-3`: `feat/meal-planner-drag-reorder-261-2`. Cut it from `main` once the preceding PR has merged, never from that PR's branch: a stacked base breaks the merge queue's assumptions and asks the coordinator to resolve conflicts it is barred from touching.
 
-If the current branch is already dedicated to this issue (it ends in `-ISSUE_NUMBER`), reuse it rather than nesting. If a branch for this issue exists on the remote, check that out instead of starting a second one, and look for its draft PR (`gh pr list --head <branch> --state open`) — reuse that too, so a resumed run doesn't try to open a second PR against the same branch at step 6. Never run phases on `main`.
+If the current branch is already dedicated to this issue (it ends in `-ISSUE_NUMBER`, or `-ISSUE_NUMBER-2` and up for a continuation), reuse it rather than nesting. If a branch for this issue exists on the remote, check that out instead of starting a second one, and look for its draft PR (`gh pr list --head <branch> --state open`) — reuse that too, so a resumed run doesn't try to open a second PR against the same branch at step 6. Never run phases on `main`.
 
 All phase commits land on this branch; hold its name for the PR.
 
@@ -96,11 +99,13 @@ Nothing downstream needs a second call — the `Closes #ISSUE_NUMBER` you write 
 Ask the PR, and confirm against content — every squash subject ends in `(#PR)`:
 
 ```
-gh pr list --head <type>/<slug>-ISSUE_NUMBER --state all --json number,state,mergedAt
+gh pr list --search "ISSUE_NUMBER in:body" --state all --json number,title,state,headRefName,mergedAt
 git log --oneline origin/main --grep='(#PR)'
 ```
 
-`merged` means finished: the PR cannot track new work and the branch must not be reused. Start the follow-up from `main` — `git checkout -B <branch> origin/main` — and let the first push open a new PR.
+Search the issue reference rather than a head branch. A split issue has more than one branch, so `--head <branch>` answers only for the branch you happened to guess and stays silent about the rest — and silence here reads exactly like "nothing landed". Confirm each hit against the squash subjects before believing it.
+
+`merged` means that PR is finished: it cannot track new work and its branch must not be reused. If phases remain, start the continuation from `main` — `git checkout -B <type>/<slug>-ISSUE_NUMBER-2 origin/main` — and let the first push open a new PR.
 
 ---
 
@@ -244,7 +249,9 @@ gh pr create --draft --base main --head <type>/<slug>-ISSUE_NUMBER \
 WIP — phases land as commits. Full summary on the final phase."
 ```
 
-If this PR is one of several for the issue, append ` (#ISSUE_NUMBER)` to the title and use `Refs` instead of `Closes`.
+**Open with `Closes`; swap to `Refs` only if this turns out to be an intermediate PR.** One PR per issue is the common case and `Closes #ISSUE_NUMBER` is right for it. If step 9's ceiling check later cuts this PR short with phases still unbuilt, that is the moment you swap the body to `Refs #ISSUE_NUMBER` and append ` (#ISSUE_NUMBER)` to the title. That ordering is safe for one mechanical reason: the swap happens before `gh pr ready`, and GitHub refuses to merge a draft PR — so an intermediate PR cannot reach `main` still carrying a closing keyword. Do the swap after `gh pr ready` and that guarantee is gone.
+
+The distinction is load-bearing. `board-status.yml` derives the issue→PR link from the closing keyword alone ([its header comment says so](../../.github/workflows/board-status.yml)), so a `Refs` PR closes nothing and moves no board field — which is exactly right: the issue stays `In progress` until the PR that actually finishes it merges.
 
 Then start the watch **in the background** and move on:
 
@@ -308,7 +315,23 @@ Note the blind spot: a phase editing the e2e or integration job setup **inside `
 
 ### 9. Continue or conclude
 
-More phases → straight into N+1. Its step 1 is already done if you overlapped it during the CI wait; pick up at step 2.
+**Measure the branch first.** `--max-diff` (default 2000) is checked here, at every phase boundary:
+
+```
+git fetch --no-tags origin main
+git diff --numstat origin/main...HEAD -- . ':(exclude)pnpm-lock.yaml' \
+  | awk '{a+=$1; d+=$2} END {print a+d}'
+```
+
+Three outcomes, and only the first is new:
+
+- **Over the ceiling, with unbuilt phases remaining → split here.** Do not start N+1. Finish this PR as an intermediate one, in this order: swap its body's `Closes #ISSUE_NUMBER` for `Refs #ISSUE_NUMBER` and write the summary for the phases that landed, append ` (#ISSUE_NUMBER)` to the title, then `gh pr ready`. Comment on the issue with the PR URL, the line count, and the numbers and names of the phases still to build. Then stop and report: those phases are a fresh run on a continuation branch, cut from `main` after this PR merges, and starting it is not this run's job.
+- **Over the ceiling with nothing left to build → ship it as one PR.** A final phase that carries the branch to 2400 lines is not split for the sake of a number — there is no phase left to move into a second PR, and cutting one would produce a PR containing nothing. Note the count in the PR body so the reviewer knows what they are being handed, and conclude normally below.
+- **Under the ceiling → carry on.**
+
+The check is backward-looking on purpose: it never asks how large a phase will be before it is built, only whether what is already built has passed the ceiling while work remains. Which is also why a **single phase that on its own exceeds the ceiling** is a pause condition rather than a split — there is no phase boundary inside it to cut at, and the fix is a spec change, not a PR boundary.
+
+More phases and under the ceiling → straight into N+1. Its step 1 is already done if you overlapped it during the CI wait; pick up at step 2.
 
 Final phase done, CI green and the heavy suites confirmed run:
 
@@ -329,6 +352,7 @@ Final phase done, CI green and the heavy suites confirmed run:
    ## For reviewers
    [key decisions and anything intentionally out of scope]
    ```
+   On a continuation PR, say which phases this one carries and link the PRs that carried the earlier ones — its base already contains them, and a reviewer who doesn't know that reads the missing phases as missing work.
 2. `gh pr ready` — take it out of draft. Do **not** merge it, and do not enable auto-merge: that enqueues it.
 3. One comment on the issue: the PR URL and a line per phase. The per-phase handoff comments already hold the detail — restating it just makes the thread longer to read.
 4. Report done with the PR URL. Leave the PR open for me to review and merge — never merge it yourself.
@@ -346,6 +370,7 @@ Final phase done, CI green and the heavy suites confirmed run:
 - Deliverables missing or must-not-touch violated (step 3)
 - A UX deviation (step 4) — always, before the commit and the next phase
 - The phase can only be built by breaking a CLAUDE.md rule, or only by a bodge
+- A **single phase** cannot be built under `--max-diff` on its own (step 9) — that phase was specced too big, and no PR boundary fixes it. Crossing the ceiling _across_ phases is not this: it splits (step 9) and never pauses
 - Phase scope is ambiguous in a way that changes what gets built
 - The issue's phase blocks are missing the fields this loop consumes (Setup)
 - A rebase conflict against `origin/main` in code this run didn't author (step 6) — resolving someone else's concurrent change is not in this run's scope

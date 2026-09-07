@@ -129,7 +129,7 @@ function canon(id: string, name: string): CanonItem {
 // A formula already declared, so Save is reachable without touching the top half.
 const SHAPE = {
   kind: 'target' as const,
-  shape: { label: '900 g tin loaf', count: 1, unitDoughGrams: 900, bakeLossPercent: 12 },
+  shape: { count: 1, unitDoughGrams: 900 },
 };
 
 const STORED: Formula = {
@@ -139,7 +139,6 @@ const STORED: Formula = {
     { ingredientId: 'ing-water', percent: 70, inBasis: false },
   ],
   referenceYield: SHAPE,
-  handlingLossPercent: 0,
   schemaVersion: 1,
 };
 

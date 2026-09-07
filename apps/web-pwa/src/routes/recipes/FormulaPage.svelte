@@ -16,6 +16,8 @@
     DialogTitle,
     EmptyState,
     Icon,
+    RadioGroup,
+    RadioGroupItem,
     Select,
     SelectContent,
     SelectItem,
@@ -34,10 +36,8 @@
     extractProcessStages,
   } from '../../lib/formulaService.js';
   import {
-    DEFAULT_BAKE_LOSS_PERCENT,
-    UNIT_SHAPE_PRESETS,
-    bakedUnitGrams,
     deriveFormula,
+    doughAmountGrams,
     flattenIngredients,
     gramsFromParsed,
     guessBasisIngredientIds,
@@ -45,8 +45,6 @@
     takesIngredients,
     targetYield,
     totalDurationMinutes,
-    unitShapeFromPreset,
-    unitShapePreset,
     withStageAdded,
     withStageMoved,
     withStageRemoved,
@@ -60,9 +58,18 @@
     ProcessStageKind,
   } from '@salt/domain/schemas';
   import { kindOf } from './recipeKind.js';
-  import { parseUnitCount } from './unitCount.js';
+  import {
+    EMPTY_DOUGH_ANSWER,
+    LOAF_TIN_CHIP_GRAMS,
+    doughAmountFrom,
+    seedDoughAnswer,
+    suggestedTrayGrams,
+    type DoughAnswerFields,
+    type DoughAnswerMode,
+    type TrayBy,
+  } from './doughAnswer.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
-  import { formatGrams } from '../../lib/quantityDisplay.js';
+  import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
   import { addToast } from '../../lib/toastStore.js';
 
   // The formula screen (issue #806, phase 1 of epic #778) — `/recipes/:id/formula`.
@@ -161,23 +168,16 @@
     maxMinutesText: string;
   }
 
-  // The picker's one non-preset value. A shape typed by hand is still a `UnitShape`
-  // — the document has never known what a preset is — so this id lives on the
-  // screen and nowhere else. Chosen to be something no preset id could collide
-  // with, since `unitShapePreset` returning null is what the code branches on.
-  const CUSTOM_SHAPE_ID = 'custom';
-
   let rows = $state<Row[]>([]);
   let stageRows = $state<StageRow[]>([]);
-  let presetId = $state('');
-  let countText = $state('1');
-  // The hand-entered shape, held as raw strings for the same reason `gramsText` is.
-  // Only read when `presetId` is `CUSTOM_SHAPE_ID`; kept rather than cleared when
-  // the picker moves back to a preset, so changing your mind twice does not cost
-  // you the number you typed.
-  let customLabel = $state('');
-  let customGramsText = $state('');
-  let customLossText = $state(String(DEFAULT_BAKE_LOSS_PERCENT));
+  // "What are you filling?" — the same three answers the bake sheet asks, held as
+  // raw strings for the same reason `gramsText` is. THE STAKES DIFFER, which is why
+  // this is not that form rendered twice: answering here EDITS THE RECIPE, and the
+  // re-anchoring disclosure below the card is what says so. Nothing about the
+  // vessel is stored — a formula is written for a quantity of dough, and the tin is
+  // a fact about tonight (`doughAnswer.ts`, `BatchSchema.vessel`).
+  let answerMode = $state<DoughAnswerMode>('tin');
+  let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
   // Whether the working model holds changes the stored document does not. Guards
   // the re-seed below: an incoming snapshot never overwrites work in progress.
   let dirty = $state(false);
@@ -206,19 +206,6 @@
 
   function gramsOf(row: Row): number | null {
     return parsePositiveNumber(row.gramsText);
-  }
-
-  // Bake loss may legitimately be zero and is a percentage, so it is neither
-  // `parsePositiveNumber` (which rejects zero) nor `parseCelsius` (which has no
-  // ceiling).
-  // `UnitShapeSchema` bounds it 0–100 and this is the boundary that honours them:
-  // a figure outside that range yields no shape at all, which is what keeps Save
-  // disabled rather than letting a document be built that the schema would refuse.
-  function parseBakeLoss(text: string): number | null {
-    const trimmed = text.trim();
-    if (trimmed === '') return null;
-    const value = Number(trimmed);
-    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
   }
 
   // Temperatures, unlike weights, may be zero or below — a freezer is a legitimate
@@ -347,35 +334,16 @@
       };
     });
 
-    // Recovering the declaration. The match is on ALL THREE of a preset's fields,
-    // not just label and weight: a stored "900 g tin loaf" whose bake loss was
-    // corrected to 15% after a real bake is NOT the preset, and folding it back
-    // onto one would silently discard that correction on the next save. Anything
-    // the list does not hold exactly comes back in the custom boxes, which is what
-    // makes a hand-typed shape survive a reload.
-    presetId = '';
-    countText = '1';
-    customLabel = '';
-    customGramsText = '';
-    customLossText = String(DEFAULT_BAKE_LOSS_PERCENT);
-    if (stored?.referenceYield.kind === 'target') {
-      const declared = stored.referenceYield.shape;
-      const preset = UNIT_SHAPE_PRESETS.find(
-        (p) =>
-          p.label === declared.label &&
-          p.unitDoughGrams === declared.unitDoughGrams &&
-          p.bakeLossPercent === declared.bakeLossPercent,
-      );
-      countText = String(declared.count);
-      if (preset) {
-        presetId = preset.id;
-      } else {
-        presetId = CUSTOM_SHAPE_ID;
-        customLabel = declared.label;
-        customGramsText = String(declared.unitDoughGrams);
-        customLossText = String(declared.bakeLossPercent);
-      }
-    }
+    // Recovering the declaration. There is nothing to match against any more — the
+    // document holds `{ count, unitDoughGrams }` and nothing else — so the numbers
+    // come straight back into the boxes. Which of the three answers they land in
+    // is `seedDoughAnswer`'s call, and it is a presentation choice only: all three
+    // save the identical document.
+    const seeded = seedDoughAnswer(
+      stored?.referenceYield.kind === 'target' ? stored.referenceYield.shape : null,
+    );
+    answerMode = seeded.mode;
+    answer = seeded.fields;
 
     // A formula with no process is a formula with no stages — an empty review
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
@@ -553,32 +521,13 @@
     }),
   );
 
-  const selectedPreset = $derived(presetId ? unitShapePreset(presetId) : null);
-  const isCustomShape = $derived(presetId === CUSTOM_SHAPE_ID);
-  const count = $derived(parseUnitCount(countText));
-
-  // All three fields or nothing. A half-typed custom shape is not a lenient shape
-  // with a default in the gap — it is no declaration yet, and the same `shape ===
-  // null` that has always disabled Save covers it without a second rule.
-  const customShape = $derived.by(() => {
-    const label = customLabel.trim();
-    const unitDoughGrams = parsePositiveNumber(customGramsText);
-    const bakeLossPercent = parseBakeLoss(customLossText);
-    return label !== '' && unitDoughGrams !== null && bakeLossPercent !== null
-      ? { label, unitDoughGrams, bakeLossPercent }
-      : null;
-  });
-
-  const shape = $derived.by(() => {
-    if (count === null) return null;
-    if (isCustomShape) return customShape === null ? null : { ...customShape, count };
-    return selectedPreset === null ? null : unitShapeFromPreset(selectedPreset, count);
-  });
-
-  const shapeTriggerText = $derived.by(() => {
-    if (isCustomShape) return customLabel.trim() === '' ? 'Something else' : customLabel.trim();
-    return selectedPreset?.label ?? 'Pick a shape…';
-  });
+  // Half-typed is not a lenient declaration with a gap filled in — it is no
+  // declaration yet, and the same `shape === null` that has always disabled Save
+  // covers it without a second rule.
+  const shape = $derived(doughAmountFrom(answerMode, answer));
+  // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
+  // become load-bearing on the scaling (`doughAmount.ts`).
+  const suggestedGrams = $derived(suggestedTrayGrams(answer));
 
   // Recalculated on EVERY change — a basis toggle, a typed gram, an exclusion. That
   // is the point of holding grams rather than percentages: there is one function,
@@ -616,7 +565,7 @@
   const asWrittenDoughGrams = $derived(
     componentInputs.reduce((sum, component) => sum + component.grams, 0),
   );
-  const declaredDoughGrams = $derived(shape ? shape.count * shape.unitDoughGrams : null);
+  const declaredDoughGrams = $derived(shape ? doughAmountGrams(shape) : null);
   // A declaration re-anchors the formula. 500 g of flour at a 176.4% grand total is
   // 882 g of dough, so calling it one 900 g tin loaf moves everything by ~2% — small
   // and entirely reasonable, but it should be visible rather than silent.
@@ -652,11 +601,7 @@
   const canSave = $derived(shape !== null && derivation.ok && !saving);
 
   const blockedReason = $derived.by(() => {
-    if (shape === null) {
-      return isCustomShape
-        ? 'Finish the shape — it needs a name, a dough weight and a bake loss.'
-        : 'Say what this makes before saving.';
-    }
+    if (shape === null) return 'Say what this makes before saving.';
     if (!derivation.ok) {
       switch (derivation.reason.kind) {
         case 'emptyFormula':
@@ -843,88 +788,225 @@
               <CardTitle>What this makes</CardTitle>
             </CardHeader>
             <CardContent class="flex flex-col gap-3">
-              <div class="flex flex-wrap items-end gap-3">
-                <TextField
-                  label="How many"
-                  inputmode="numeric"
-                  class="w-28"
-                  value={countText}
-                  onValueChange={(v) => {
-                    countText = v;
-                    touch();
-                  }}
-                  data-testid="formula-count"
-                />
-                <!-- The presets are shape FAMILIES, not a catalogue, and the last
-                     option is the escape hatch. The original objection to a typed
-                     shape was bake loss — nobody can be asked for a figure they have
-                     no way to know — and it is answered by defaulting the number and
-                     showing what it implies below, rather than by refusing every
-                     shape the list happens not to hold. -->
-                <Select
-                  value={presetId}
-                  onValueChange={(v) => {
-                    presetId = v;
-                    touch();
-                  }}
-                >
-                  <SelectTrigger
-                    class="w-56"
-                    aria-label="What this makes"
-                    data-testid="formula-shape-select"
-                  >
-                    {shapeTriggerText}
-                  </SelectTrigger>
-                  <SelectContent>
-                    {#each UNIT_SHAPE_PRESETS as preset (preset.id)}
-                      <SelectItem value={preset.id}>{preset.label}</SelectItem>
-                    {/each}
-                    <SelectItem value={CUSTOM_SHAPE_ID}>Something else…</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <!-- The same three answers the bake sheet asks, with different
+                   stakes: this one EDITS THE RECIPE, and the re-anchoring
+                   disclosure below is what marks it as such. No vessel is stored
+                   here — a recipe is written for a quantity of dough; the tin is a
+                   fact about tonight, and it is recorded on the batch instead
+                   (`doughAnswer.ts`, issue #1274). -->
+              <RadioGroup
+                label="What are you filling?"
+                value={answerMode}
+                onValueChange={(v) => {
+                  answerMode = v as DoughAnswerMode;
+                  touch();
+                }}
+              >
+                <RadioGroupItem value="tin" label="A loaf tin" />
+                <RadioGroupItem value="tray" label="A tray or dish" />
+                <RadioGroupItem value="pieces" label="A number of pieces" />
+                <RadioGroupItem value="weight" label="A weight of dough" />
+              </RadioGroup>
 
-              {#if isCustomShape}
-                <div class="flex flex-wrap items-end gap-3" data-testid="formula-custom-shape">
-                  <TextField
-                    label="Called"
-                    placeholder="1 kg sourdough boule"
-                    class="w-56"
-                    value={customLabel}
+              {#if answerMode === 'tin'}
+                <div class="flex flex-col gap-2" data-testid="formula-tin">
+                  <div class="flex flex-wrap gap-2">
+                    {#each LOAF_TIN_CHIP_GRAMS as grams (grams)}
+                      <Button
+                        size="sm"
+                        variant={answer.tinGramsText === String(grams) ? 'solid' : 'outline'}
+                        onclick={() => {
+                          answer = { ...answer, tinGramsText: String(grams) };
+                          touch();
+                        }}
+                        data-testid="formula-tin-chip"
+                        data-tin-grams={grams}
+                      >
+                        {formatGrams(grams)}
+                      </Button>
+                    {/each}
+                  </div>
+                  <div class="flex flex-wrap items-end gap-3">
+                    <TextField
+                      label="Tin size (g)"
+                      inputmode="numeric"
+                      class="w-32"
+                      value={answer.tinGramsText}
+                      onValueChange={(v) => {
+                        answer = { ...answer, tinGramsText: v };
+                        touch();
+                      }}
+                      data-testid="formula-grams-each"
+                    />
+                    <TextField
+                      label="How many tins"
+                      inputmode="numeric"
+                      class="w-28"
+                      value={answer.tinCountText}
+                      onValueChange={(v) => {
+                        answer = { ...answer, tinCountText: v };
+                        touch();
+                      }}
+                      data-testid="formula-count"
+                    />
+                  </div>
+                </div>
+              {:else if answerMode === 'tray'}
+                <!-- THE ONE GUESSED NUMBER IN THE FEATURE, and everything here is
+                     arranged around that: the suggestion lands in an ordinary editable
+                     box, the copy says plainly that it is a starting point, and the
+                     coefficient itself is never shown as a fact. A named tin does not
+                     come through here — see `doughAmount.ts`. -->
+                <div class="flex flex-col gap-2" data-testid="formula-tray">
+                  <RadioGroup
+                    label="How are you describing it?"
+                    value={answer.trayBy}
                     onValueChange={(v) => {
-                      customLabel = v;
+                      answer = { ...answer, trayBy: v as TrayBy };
                       touch();
                     }}
-                    data-testid="formula-custom-label"
+                  >
+                    <RadioGroupItem value="size" label="Length × width" />
+                    <RadioGroupItem value="volume" label="A volume" />
+                  </RadioGroup>
+
+                  {#if answer.trayBy === 'size'}
+                    <div class="flex flex-wrap items-end gap-3">
+                      <TextField
+                        label="Length (cm)"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayLengthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayLengthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-length"
+                      />
+                      <TextField
+                        label="Width (cm)"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayWidthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayWidthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-width"
+                      />
+                      <TextField
+                        label="Dough depth (cm)"
+                        inputmode="decimal"
+                        class="w-32"
+                        value={answer.trayDepthText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayDepthText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-depth"
+                      />
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                      How deep the dough sits, not how tall the tray is — a tray is never filled to
+                      its walls.
+                    </p>
+                  {:else}
+                    <div class="flex flex-wrap items-end gap-3">
+                      <TextField
+                        label="Volume"
+                        inputmode="decimal"
+                        class="w-28"
+                        value={answer.trayVolumeText}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayVolumeText: v };
+                          touch();
+                        }}
+                        data-testid="formula-tray-volume"
+                      />
+                      <RadioGroup
+                        label="In"
+                        value={answer.trayVolumeUnit}
+                        onValueChange={(v) => {
+                          answer = { ...answer, trayVolumeUnit: v as 'ml' | 'l' };
+                          touch();
+                        }}
+                      >
+                        <RadioGroupItem value="ml" label="ml" />
+                        <RadioGroupItem value="l" label="litres" />
+                      </RadioGroup>
+                    </div>
+                  {/if}
+
+                  <div class="flex flex-wrap items-end gap-3">
+                    <TextField
+                      label="Dough (g)"
+                      inputmode="numeric"
+                      class="w-32"
+                      value={answer.trayGramsText}
+                      onValueChange={(v) => {
+                        answer = { ...answer, trayGramsText: v };
+                        touch();
+                      }}
+                      data-testid="formula-tray-grams"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={suggestedGrams === null}
+                      onclick={() => {
+                        if (suggestedGrams === null) return;
+                        answer = { ...answer, trayGramsText: String(suggestedGrams) };
+                        touch();
+                      }}
+                      data-testid="formula-tray-suggest"
+                    >
+                      Suggest a weight
+                    </Button>
+                  </div>
+                  <p class="text-xs text-muted-foreground" data-testid="formula-tray-note">
+                    A starting point, not a measurement — how much dough a tray takes depends on the
+                    style and how much rise you want. Type over it.
+                  </p>
+                </div>
+              {:else if answerMode === 'pieces'}
+                <div class="flex flex-wrap items-end gap-3" data-testid="formula-pieces">
+                  <TextField
+                    label="How many"
+                    inputmode="numeric"
+                    class="w-28"
+                    value={answer.pieceCountText}
+                    onValueChange={(v) => {
+                      answer = { ...answer, pieceCountText: v };
+                      touch();
+                    }}
+                    data-testid="formula-piece-count"
                   />
                   <TextField
                     label="Dough each (g)"
                     inputmode="numeric"
                     class="w-32"
-                    value={customGramsText}
+                    value={answer.pieceGramsText}
                     onValueChange={(v) => {
-                      customGramsText = v;
+                      answer = { ...answer, pieceGramsText: v };
                       touch();
                     }}
-                    data-testid="formula-custom-grams"
-                  />
-                  <TextField
-                    label="Bake loss (%)"
-                    inputmode="numeric"
-                    class="w-32"
-                    value={customLossText}
-                    onValueChange={(v) => {
-                      customLossText = v;
-                      touch();
-                    }}
-                    data-testid="formula-custom-loss"
+                    data-testid="formula-piece-grams"
                   />
                 </div>
-                <p class="text-muted-foreground text-sm">
-                  Bake loss is what the oven takes off. {DEFAULT_BAKE_LOSS_PERCENT}% is a fair start
-                  for a tinned loaf; a crusty free-standing one is nearer 15%, a boiled bagel nearer
-                  8%. Correct it once you have weighed a real bake.
-                </p>
+              {:else}
+                <div class="flex flex-wrap items-end gap-3" data-testid="formula-weight">
+                  <TextField
+                    label="Dough (g)"
+                    inputmode="numeric"
+                    class="w-32"
+                    value={answer.totalGramsText}
+                    onValueChange={(v) => {
+                      answer = { ...answer, totalGramsText: v };
+                      touch();
+                    }}
+                    data-testid="formula-total-dough"
+                  />
+                </div>
               {/if}
 
               <!-- DISCLOSURE TWO. The recipe's own dough total sits next to the one
@@ -938,17 +1020,9 @@
                   <span class="font-medium">{formatGrams(roundGrams(asWrittenDoughGrams))}</span> of dough.
                 </p>
                 {#if declaredDoughGrams !== null && shape !== null}
-                  <!-- The baked figure sits next to the dough figure because
-                       "120 g roll" means DOUGH, and a 108 g roll out of the oven
-                       should not be a surprise (UnitShapeSchema says as much). It
-                       earns its keep twice over now that bake loss can be typed:
-                       it is the only reading anyone gets on the number entered. -->
                   <p>
-                    You've declared {shape.count} × {shape.label} —
-                    <span class="font-medium">{formatGrams(roundGrams(declaredDoughGrams))}</span>
-                    of dough, about
-                    <span class="font-medium">{formatGrams(roundGrams(bakedUnitGrams(shape)))}</span
-                    > each baked.
+                    You've declared
+                    <span class="font-medium">{formatDoughAmount(shape)}</span>.
                   </p>
                   {#if declarationDriftPercent !== null && Math.abs(declarationDriftPercent) >= 0.5}
                     <p class="text-muted-foreground" data-testid="formula-declaration-drift">
