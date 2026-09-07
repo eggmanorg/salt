@@ -26,9 +26,15 @@
 
   const session = $derived(($sessions as ChatSessionDoc[]).find((s) => s.id === params.id) ?? null);
 
-  // The transcript, the composer and the send path all live in ChatThread; this
-  // page owns only the route lookup, the header actions and the review gate.
+  // The transcript, the composer, the send path and now WHERE the recipe actions
+  // render all live in ChatThread; this page owns the route lookup, the handlers
+  // behind those actions, the one remaining header link and the review gate.
   const thread = createChatThread();
+
+  // "The chef has replied at all" — the gate every one of these actions shares
+  // today, named once rather than spelled out at each. An empty conversation has
+  // nothing to author, amend or link to.
+  const hasAssistantTurn = $derived(session?.messages.some((m) => m.role === 'assistant') ?? false);
 
   // Back goes where you came from. `goBack` uses real browser history first; this
   // route is only the fallback for a cold-launch straight into the chat (issue
@@ -267,21 +273,16 @@
     backLabel="Back"
     class="p-4 sm:p-6"
   >
+    <!-- What is left in the page header after issue #1299: one control, and it GOES
+         somewhere rather than doing something to the dish. Everything that writes to a
+         recipe now renders under the chef's newest reply, in `ChatThread`'s row, the
+         same row the recipe page's docked column and phone drawer render.
+
+         Its gate is unchanged and deliberately still includes "the chef has replied":
+         narrowing when a link appears is not this issue's business, and the tests that
+         pin today's behaviour would be the thing weakened by widening it. -->
     {#snippet actions()}
-      {#if !session.recipeId && session.messages.some((m) => m.role === 'assistant')}
-        <Button
-          size="sm"
-          variant="outline"
-          onclick={handleSaveAsRecipe}
-          loading={isSavingRecipe}
-          disabled={isSavingRecipe || thread.isSending}
-          data-testid="chat-save-recipe-btn"
-        >
-          {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
-          Save as recipe
-        </Button>
-      {/if}
-      {#if session.recipeId && session.messages.some((m) => m.role === 'assistant')}
+      {#if session.recipeId && hasAssistantTurn}
         <Button
           size="sm"
           variant="outline"
@@ -290,29 +291,6 @@
         >
           {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
           View recipe
-        </Button>
-        <!-- The other half of the pair (issue #798): "Review changes" folds the
-             conversation into THIS dish, this one makes it a different one. -->
-        <Button
-          size="sm"
-          variant="outline"
-          onclick={handleSaveAsNewRecipe}
-          loading={isSavingRecipe}
-          disabled={isSavingRecipe || thread.isSending}
-          data-testid="chat-save-new-recipe-btn"
-        >
-          {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
-          Save as new recipe
-        </Button>
-        <Button
-          size="sm"
-          onclick={handleReviewChanges}
-          loading={isProposing}
-          disabled={isProposing || thread.isSending}
-          data-testid="chat-apply-changes-btn"
-        >
-          {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
-          Review changes
         </Button>
       {/if}
     {/snippet}
@@ -342,7 +320,60 @@
         ? `What would you change about ${basedOnRecipe.title}?`
         : 'Ask me anything about cooking.'}
       {starters}
-    />
+    >
+      <!-- The three actions that act on a dish, in the one place all three chat
+           surfaces put them (issue #1299): a row directly under the chef's newest
+           reply, rendered by `ChatThread`, which owns the placement so the surfaces
+           cannot drift apart. This page keeps what it always owned — the handlers, the
+           busy state and the testids.
+
+           Both gates carry over verbatim from the header they came from. They are still
+           "the chef has replied at all"; gating on what the chef says it OFFERED is
+           #1299's third phase, and it changes these two conditions and nothing else. -->
+      {#snippet latestReplyActions()}
+        {#if session !== null && !session.recipeId && hasAssistantTurn}
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={handleSaveAsRecipe}
+            loading={isSavingRecipe}
+            disabled={isSavingRecipe || thread.isSending}
+            data-testid="chat-save-recipe-btn"
+          >
+            {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
+            Save as recipe
+          </Button>
+        {/if}
+        {#if session !== null && session.recipeId && hasAssistantTurn}
+          <!-- The other half of the pair (issue #798): "Review changes" folds the
+               conversation into THIS dish, this one makes it a different one. What
+               #798 called an indivisible pair is a claim about PLACEMENT, and that half
+               still holds — they share this row on every surface. It says nothing about
+               VISIBILITY, which #1299's third phase splits. -->
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={handleSaveAsNewRecipe}
+            loading={isSavingRecipe}
+            disabled={isSavingRecipe || thread.isSending}
+            data-testid="chat-save-new-recipe-btn"
+          >
+            {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
+            Save as new recipe
+          </Button>
+          <Button
+            size="sm"
+            onclick={handleReviewChanges}
+            loading={isProposing}
+            disabled={isProposing || thread.isSending}
+            data-testid="chat-apply-changes-btn"
+          >
+            {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
+            Review changes
+          </Button>
+        {/if}
+      {/snippet}
+    </ChatThread>
   </DetailPage>
 
   <!-- Review-and-approve gate for the pending AI edit (Phase 2) -->

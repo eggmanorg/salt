@@ -126,6 +126,81 @@ describe('ChatSessionPage — where back goes', () => {
   });
 });
 
+// Issue #1299 moved the three dish-writing actions out of this page's `DetailPage`
+// header and into the transcript row `ChatThread` renders. The comment on that
+// snippet, `docs/ai-kitchen-assistant.md` and the issue's DoD all state it as an
+// absolute — "no chat header contains a control that writes to a recipe" — so it is
+// pinned here. Every other test in this file finds these buttons by testid alone and
+// would pass just as happily with them left in the header.
+describe('ChatSessionPage — where the recipe actions render (#1299)', () => {
+  const SECOND_TURN = [
+    {
+      id: 'm3',
+      role: 'user' as const,
+      text: 'and a drink?',
+      createdAt: '2026-01-01T00:00:02.000Z',
+    },
+    {
+      id: 'm4',
+      role: 'assistant' as const,
+      text: 'A dry amontillado.',
+      createdAt: '2026-01-01T00:00:03.000Z',
+    },
+  ];
+
+  it('puts an attached chat’s pair under the NEWEST reply, and leaves View recipe in the header', () => {
+    mockSessions._set([
+      makeSession({ recipeId: 'lamb', messages: [...makeSession().messages, ...SECOND_TURN] }),
+    ]);
+    const { getByTestId, getAllByTestId } = renderPage();
+
+    // One row for the whole transcript, not one per reply.
+    const rows = getAllByTestId('chat-reply-actions');
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+
+    // The two halves of "under the newest chef reply": inside the message list, and
+    // the sibling immediately after the LAST assistant bubble.
+    const transcript = getByTestId('chat-messages');
+    expect(transcript.contains(row)).toBe(true);
+    const replies = getAllByTestId('chat-message-assistant');
+    expect(row.previousElementSibling).toBe(replies[replies.length - 1]);
+
+    expect(row.contains(getByTestId('chat-apply-changes-btn'))).toBe(true);
+    expect(row.contains(getByTestId('chat-save-new-recipe-btn'))).toBe(true);
+
+    // The one control that stays: it goes somewhere rather than writing to the dish.
+    expect(transcript.contains(getByTestId('chat-view-recipe-btn'))).toBe(false);
+  });
+
+  it('puts a general chat’s single action there too', () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const { getByTestId } = renderPage();
+
+    expect(getByTestId('chat-messages').contains(getByTestId('chat-save-recipe-btn'))).toBe(true);
+  });
+
+  it('renders none of the three anywhere outside the transcript', () => {
+    // Asked of the whole document rather than of the header element, so a copy left
+    // behind in `DetailPage`'s actions — or anywhere else — fails this.
+    for (const [recipeId, testids] of [
+      ['lamb', ['chat-apply-changes-btn', 'chat-save-new-recipe-btn']],
+      [null, ['chat-save-recipe-btn']],
+    ] as const) {
+      mockSessions._set([makeSession({ recipeId })]);
+      const { getByTestId } = renderPage();
+      const transcript = getByTestId('chat-messages');
+      for (const testid of testids) {
+        const found = document.querySelectorAll(`[data-testid="${testid}"]`);
+        expect(found).toHaveLength(1);
+        expect(transcript.contains(found[0]!)).toBe(true);
+      }
+      cleanup();
+      document.body.innerHTML = '';
+    }
+  });
+});
+
 describe('ChatSessionPage — save as recipe', () => {
   it('leaves the conversation attached to the recipe it produced', async () => {
     mockSessions._set([makeSession({ recipeId: null })]);

@@ -338,10 +338,16 @@ raw.kind`:
   objection does not reach it. A permanent bar under the transcript, and anything in the
   composer area, remain rejected.
 
-  The recipe page's docked column and phone drawer render the row today, with labelled
-  buttons rather than the bare glyphs the header held (there is no hover on a phone, so
-  an unlabelled glyph is a guess on first press). The full chat page joins them in the
-  second phase of #1299.
+  All three surfaces render the row: the recipe page's docked column, its phone drawer,
+  and the full chat page. Labelled buttons throughout, rather than the bare glyphs the
+  recipe page's header held (there is no hover on a phone, so an unlabelled glyph is a
+  guess on first press).
+
+  **No chat header writes to a recipe.** What is left in a header goes somewhere rather
+  than doing something to the dish: the docked column's title and **Open full chat**, the
+  drawer's expand and close, and the full page's **View recipe**
+  (`chat-view-recipe-btn`), whose own gate is unchanged and still includes "the chef has
+  replied".
 
 - Authoring a NEW recipe out of a conversation — one leg, `src/lib/chatRecipeAuthor.ts`,
   three buttons (#798). It is always the CREATE path (`recipeId` never sent), it stamps
@@ -351,11 +357,11 @@ raw.kind`:
   - **"Save as recipe"** on a general chat (`chat-save-recipe-btn`) — passes the
     session's `basedOnRecipeId` through, so a variation chat is grounded on the dish
     it started from, and CLAIMS the session for the recipe it invented.
-  - **"Save as new recipe"** on a chat attached to a recipe — in the full page's
-    header (`chat-save-new-recipe-btn`, until #1299's second phase) and in the recipe
-    page's docked chat column and drawer, under the newest reply
-    (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`), both rendered from
-    one `saveAsNewRecipeAction` snippet. Same gate as "Review changes":
+  - **"Save as new recipe"** on a chat attached to a recipe — under the newest reply on
+    every surface (#1299): the full page (`chat-save-new-recipe-btn`) and the recipe
+    page's docked chat column and drawer
+    (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`, the latter two
+    rendered from one `saveAsNewRecipeAction` snippet). Same gate as "Review changes":
     at least one assistant turn. It passes `basedOnRecipeId: null` **even on a session
     that has one**, and does NOT claim — an accompaniment is not derived from the dish
     it accompanies, and the conversation stays listed on the dish it is attached to,
