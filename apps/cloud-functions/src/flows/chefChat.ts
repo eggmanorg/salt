@@ -1,4 +1,4 @@
-import { z } from 'genkit';
+import { GenkitError, z } from 'genkit';
 import type { MessageData } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
@@ -18,6 +18,7 @@ import {
   RECIPE_SEARCH_PROJECTION_FIELDS,
 } from '@salt/domain/schemas';
 import { ReadRecipeInputSchema, ReadRecipeOutputSchema } from '@salt/domain/schemas';
+import { ChefOfferSchema } from '@salt/domain/schemas';
 import type { ChefOffer } from '@salt/domain/schemas';
 import type {
   FindRecipesInput,
@@ -359,16 +360,18 @@ const DECLARE_OFFER_DESCRIPTION = `Declare what your reply has put on the table,
 do with it. Call it ONCE, alongside the reply you are already writing. It writes nothing, changes \
 nothing and is never shown to the user.
 
-CALL IT with "dish-change" when you have suggested changing the dish this conversation is attached \
-to — less sweet, a swapped ingredient, a different method, more of something. Anything the user \
-could reasonably want folded into that recipe.
+The argument is always a LIST of those words, never a bare word.
 
-CALL IT with "new-dish" when you have described a dish worth keeping in its own right: a whole \
+CALL IT with ["dish-change"] when you have suggested changing the dish this conversation is \
+attached to — less sweet, a swapped ingredient, a different method, more of something. Anything \
+the user could reasonably want folded into that recipe.
+
+CALL IT with ["new-dish"] when you have described a dish worth keeping in its own right: a whole \
 recipe you have given them, something to serve alongside, a drink to go with it. It has to be a \
 real dish with real quantities or a real method — not a passing mention of what one might cook.
 
-CALL IT with both when your reply genuinely does both — a change to this dish AND something to \
-serve beside it.
+CALL IT with ["dish-change", "new-dish"] when your reply genuinely does both — a change to this \
+dish AND something to serve beside it.
 
 DO NOT CALL IT when you have simply answered a question. Explaining why a crumb is tight, what \
 baking soda does, whether a pan is hot enough, how long something keeps, what an ingredient is — \
@@ -413,10 +416,20 @@ after one offers to rewrite a recipe the user never asked you to touch.`;
  * and carries no tool request at all. The declaration is two messages back.
  *
  * `.safeParse` because a model-authored tool input is a trust boundary like any
- * other (CLAUDE.md → Zod conventions). A malformed or unknown kind is dropped
- * rather than failing the turn — the user still gets their reply, and the failure
- * mode is a missing button, which is the one this design accepts. Duplicates are
- * collapsed: a chef that declares "new-dish" twice offered one button.
+ * other (CLAUDE.md → Zod conventions). An unknown kind is dropped here rather
+ * than failing the turn — the user still gets their reply, and the failure mode
+ * is a missing button, which is the one this design accepts. That is only true
+ * because `DeclareOfferInputSchema.offers` is a list of plain STRINGS: Genkit
+ * validates a tool input before the handler runs and throws on a rejection, so
+ * an enum there would move the drop upstream of this function and turn it into a
+ * failed turn (see the comment on that schema). Duplicates are collapsed: a chef
+ * that declares "new-dish" twice offered one button.
+ *
+ * THE REAL BOUNDARY, stated rather than claimed away: this drops what it can
+ * SEE. An input malformed in a way the tool's own schema rejects — `offers` a
+ * bare string, or absent — never reaches here at all, because Genkit rejected it
+ * first. That case is caught in the flow below instead, where the reply the chef
+ * had already streamed is returned with no declaration.
  */
 export function declaredOffers(messages: readonly MessageData[]): ChefOffer[] {
   const seen = new Set<ChefOffer>();
@@ -428,13 +441,45 @@ export function declaredOffers(messages: readonly MessageData[]): ChefOffer[] {
         logger.warn('chefChat: declareOffer called with an input that did not parse');
         continue;
       }
-      // No second validation of each kind: `DeclareOfferInputSchema` is an array
-      // of the enum, so anything that got past the parse above is already one of
-      // the two. A belt-and-braces check here would be a branch nothing can take.
-      for (const offer of parsed.data.offers) seen.add(offer);
+      for (const offer of parsed.data.offers) {
+        // The narrowing the wire schema deliberately does not do. A word that is
+        // not one of the two kinds is a missing button, never a failed turn.
+        const kind = ChefOfferSchema.safeParse(offer);
+        if (!kind.success) {
+          logger.warn('chefChat: declareOffer named a kind that is not a chef offer');
+          continue;
+        }
+        seen.add(kind.data);
+      }
     }
   }
   return [...seen];
+}
+
+/**
+ * Genkit refusing a tool input the model wrote — the one failure a finished reply
+ * is allowed to survive (PR #1303 review).
+ *
+ * `declareOffer`'s schema is as permissive as a typed tool schema can be, but not
+ * unfailable: `{ offers: "new-dish" }` is refused before the handler runs and the
+ * refusal is thrown out of the tool loop, which fails the turn and has the client
+ * roll the user's own message out of the transcript — far worse than the missing
+ * button this design accepts.
+ *
+ * Narrow on BOTH sides so it can never swallow a real failure: a Genkit
+ * `INVALID_ARGUMENT` (its schema-rejection status; `AiTimeoutError` is our own
+ * class and matches nothing here), AND prose already streamed, which happens only
+ * once a model's message is complete.
+ */
+function isSchemaRejection(err: unknown): boolean {
+  if (err instanceof GenkitError) return err.status === 'INVALID_ARGUMENT';
+  // Defence in depth for a Genkit loaded twice under different resolutions,
+  // where `instanceof` is false for the very same class.
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { status?: unknown }).status === 'INVALID_ARGUMENT'
+  );
 }
 
 // ─── Household favourites (issue #726) ───────────────────────────────────────
@@ -611,6 +656,10 @@ export const chefChatFlow = ai.defineFlow(
     streamSchema: ChefChatStreamSchema,
   },
   async (input, streamingCallback) => {
+    // Everything the reader has actually been shown. Declared out here, above the
+    // try, because the catch needs it: a reply that arrived in full and then hit a
+    // refused tool input is kept, not lost. See the drain loop below.
+    let streamedText = '';
     try {
       const db = getFirestore();
       const [equipmentContext, recipeContext, favouritesContext, variationContext, memoryContext] =
@@ -686,9 +735,21 @@ export const chefChatFlow = ai.defineFlow(
       // withAiStreamTimeout races each chunk against an idle timer instead: a
       // silence longer than the budget throws AiTimeoutError into the catch
       // below, and a long answer that keeps arriving is never cut short.
+      //
+      // WHAT WAS STREAMED IS WHAT GETS STORED, and the accumulation below is the
+      // whole of that guarantee (PR #1303 review). Genkit's tool loop makes more
+      // than one model message the ordinary case now that `declareOffer` exists,
+      // and it streams EVERY iteration's chunks through this one callback while
+      // `response.text` is the LAST message alone. A chef that writes its reply
+      // and asks for the tool in the same message — which the tool description
+      // explicitly invites — would have the user watch the whole reply arrive and
+      // then find "Hope that helps!" stored in its place after a reload.
       for await (const chunk of withAiStreamTimeout('chefChat', stream)) {
         const text = chunk.text;
-        if (text) streamingCallback(text);
+        if (text) {
+          streamedText += text;
+          streamingCallback(text);
+        }
       }
 
       // The stream has fully drained above, so this resolves immediately in the
@@ -698,8 +759,25 @@ export const chefChatFlow = ai.defineFlow(
       // empty-tokens gap.
       const finalResponse = await withAiTimeout('chefChat', () => response, AI_TEXT_FLOW_TIMEOUT);
 
-      return { text: finalResponse.text, offered: declaredOffers(finalResponse.messages) };
+      // `finalResponse.text` only as the fallback for a turn that streamed
+      // nothing at all — an aggregate arriving without chunks is not a shape we
+      // have seen, and an empty reply is worse than a duplicated one.
+      return {
+        text: streamedText || finalResponse.text,
+        offered: declaredOffers(finalResponse.messages),
+      };
     } catch (err) {
+      // A tool input Genkit refused, AFTER the chef had already written its reply
+      // (see `isSchemaRejection`). The reply is complete — a model's message ends
+      // when it asks for a tool — so the turn is finished in every way that
+      // matters to the reader, and failing it here would roll their own message
+      // out of the transcript to save a button. Declared nothing, deliberately:
+      // the request that would have said what was offered is the one that did not
+      // parse. Not reported — this is the accepted failure, not a defect.
+      if (streamedText && isSchemaRejection(err)) {
+        logger.warn('chefChat: a tool input was rejected after the reply; keeping the reply');
+        return { text: streamedText, offered: [] };
+      }
       // onCallGenkit owns this callable's error path; report the AI/Genkit
       // failure (incl. AiTimeoutError, or a mid-stream model error) here, flush,
       // then re-throw unchanged. Best-effort; never throws.

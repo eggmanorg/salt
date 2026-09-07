@@ -15,15 +15,27 @@
  *     and would leak one household's declaration into another's turn. Pinned by
  *     reading two different turns back-to-back and by the handler being a
  *     constant.
- *  3. A DECLARATION THAT DOES NOT PARSE IS DROPPED, NOT RAISED. The model writes
- *     the tool input, so it is a trust boundary; the failure this design accepts
- *     is a missing button, never a failed turn.
+ *  3. A KIND WE DO NOT KNOW IS DROPPED, NOT RAISED — and it reaches this
+ *     function to be dropped only because `DeclareOfferInputSchema.offers` is a
+ *     list of plain STRINGS. Genkit validates a model-authored tool input before
+ *     the handler runs and throws on a rejection, so an enum on the wire would
+ *     move the drop upstream and turn "the chef wrote dish_change" into a failed
+ *     turn with the user's own message rolled out of the transcript.
+ *
+ *     THE BOUNDARY, stated rather than claimed away: this function drops what it
+ *     can SEE. An input malformed in a way the wire schema still rejects —
+ *     `offers` a bare string, or absent — never arrives here at all, so the two
+ *     tests below that pass one are exercising the residual case, not the
+ *     production path. What happens on the production path is pinned where it
+ *     actually lives, in `chefChat.turnText.test.ts`: the flow keeps the reply
+ *     the chef had already streamed, and declares nothing.
  *  4. THE TOOL WRITES NOTHING. Its handler is the whole implementation and it
  *     touches no Firestore, which is what keeps design principle #1's "the chef
  *     still writes nothing" true with a third tool in play.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { MessageData } from 'genkit';
+import { DeclareOfferInputSchema } from '@salt/domain/schemas';
 
 const defineToolCalls: { name: string; description: string }[] = [];
 const toolHandlers = new Map<string, (input: unknown) => unknown>();
@@ -116,11 +128,31 @@ describe('declaredOffers — fail closed', () => {
     expect(declaredOffers(messages)).toEqual([]);
   });
 
-  it('drops a kind the schema does not know, rather than failing the turn', () => {
+  it('drops a kind it does not know, rather than failing the turn', () => {
+    // THE case this narrowing exists for, and the one that actually reaches
+    // production: the wire schema takes any string, so a chef reaching for a
+    // word we never defined costs a button and nothing else.
     expect(declaredOffers(turnDeclaring(['delete-everything']))).toEqual([]);
   });
 
-  it('drops a malformed input, rather than failing the turn', () => {
+  it('keeps the kinds it knows out of a list that also names one it does not', () => {
+    expect(declaredOffers(turnDeclaring(['new-dish', 'delete-everything']))).toEqual(['new-dish']);
+  });
+
+  it('takes any string on the wire, so an unknown kind is never a rejected input', () => {
+    // The load-bearing half of the claim above: were `offers` a list of the enum,
+    // this parse would fail inside Genkit BEFORE the tool ran, the turn would
+    // die, and the user's own message would be rolled out of the transcript. A
+    // red here means the drop has moved upstream of us.
+    expect(DeclareOfferInputSchema.safeParse({ offers: ['dish_change'] }).success).toBe(true);
+  });
+
+  it('drops an input it can see but cannot read, rather than failing the turn', () => {
+    // The RESIDUAL case, not the production path: an input this malformed is
+    // refused by Genkit before `declaredOffers` is ever called with it. Kept
+    // because this function is exported and called with a message array — it
+    // must not throw on one — and the production path is pinned in
+    // `chefChat.turnText.test.ts`.
     expect(declaredOffers(turnDeclaring('dish-change'))).toEqual([]);
     expect(declaredOffers(turnDeclaring(undefined))).toEqual([]);
   });

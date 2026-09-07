@@ -2,7 +2,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { googleAI } from '@genkit-ai/google-genai';
 import type { GenerateRequest, ModelAction, Part } from 'genkit/model';
-import { DeclareOfferInputSchema } from '@salt/domain/schemas';
+import { ChefOfferSchema, DeclareOfferInputSchema } from '@salt/domain/schemas';
+import type { ChefOffer } from '@salt/domain/schemas';
 import { AI_FLOW_IDS, type AiFlowId } from '@salt/domain/schemas';
 import { ai } from '../genkit.js';
 import { resolveModel } from './resolveModel.js';
@@ -201,18 +202,30 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
 /**
  * A chefChat stub that also declares what the reply offered (#1299).
  *
- * `{ text: string, offers: string[] }`, where `offers` parses as `declareOffer`'s
- * own input — so a spec cannot stub a declaration the real tool would reject.
- * Anything else (a bare string, a structured-output object) is not one of these
- * and takes the unchanged path above.
+ * `{ text: string, offers: ChefOffer[] }`, where `offers` has to be a list of the
+ * kinds the app actually understands — so a spec cannot stub a declaration that
+ * would produce a button nothing renders. Anything else (a bare string, a
+ * structured-output object) is not one of these and takes the unchanged path
+ * above.
+ *
+ * STRICTER THAN THE WIRE SCHEMA ON PURPOSE. `DeclareOfferInputSchema.offers` is
+ * a list of plain strings, because a real model's slip must cost a button rather
+ * than the turn; a stub written by us in a spec has no such excuse, and a typo
+ * there should fail the spec rather than quietly declare nothing.
  */
-function declaringStub(response: unknown): { text: string; offers: string[] } | null {
+function declaringStub(response: unknown): { text: string; offers: ChefOffer[] } | null {
   if (typeof response !== 'object' || response === null) return null;
   const candidate = response as { text?: unknown; offers?: unknown };
   if (typeof candidate.text !== 'string') return null;
   const parsed = DeclareOfferInputSchema.safeParse({ offers: candidate.offers });
   if (!parsed.success) return null;
-  return { text: candidate.text, offers: parsed.data.offers };
+  const kinds: ChefOffer[] = [];
+  for (const offer of parsed.data.offers) {
+    const kind = ChefOfferSchema.safeParse(offer);
+    if (!kind.success) return null;
+    kinds.push(kind.data);
+  }
+  return { text: candidate.text, offers: kinds };
 }
 
 /**

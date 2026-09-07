@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChefOfferSchema, MessageSchema } from './chatSession.js';
+import { MessageSchema } from './chatSession.js';
 
 // Input schema for the chefChat streaming flow (issue #206, Phase 2).
 // The flow is stateless: it receives the recent message history + the new turn.
@@ -50,7 +50,12 @@ export const ChefChatOutputSchema = z.object({
   text: z.string(),
   // `.default([])` so an older client, or a turn where the chef declared
   // nothing, parses to the fail-closed answer rather than failing.
-  offered: z.array(ChefOfferSchema).default([]),
+  //
+  // A list of STRINGS for the same reason `MessageSchema.offered` is one: the
+  // Cloud Function deploys before the bundles do, so a third kind sent to a
+  // browser still on the older bundle must cost that reply a button and not the
+  // whole turn. The client stores the word and `latestChefOffers` ignores it.
+  offered: z.array(z.string()).default([]),
 });
 
 export type ChefChatOutput = z.infer<typeof ChefChatOutputSchema>;

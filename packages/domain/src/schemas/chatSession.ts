@@ -20,10 +20,35 @@ export const CHEF_OFFER_KINDS = ['dish-change', 'new-dish'] as const;
 export const ChefOfferSchema = z.enum(CHEF_OFFER_KINDS);
 export type ChefOffer = z.infer<typeof ChefOfferSchema>;
 
+/**
+ * The one non-string shape `text` is allowed to arrive in, unwrapped on read.
+ *
+ * DEPLOY SKEW, in the direction that does damage (issue #1299, PR #1303 review).
+ * `chefChat` used to resolve to a bare string and now resolves to
+ * `{ text, offered }`. A browser on the PRE-#1299 bundle did no parsing, so
+ * against the NEW Cloud Function it writes that whole object into `message.text`;
+ * nothing validates on the write side, and every later read then fails
+ * `text: z.string()`, which makes `subscribeCollection` SKIP the document. The
+ * conversation disappears from the chat list permanently, and a recipe-attached
+ * chat carries an eighteen-month TTL so it never ages out either. Not a window of
+ * minutes: `pwa.ts` defers a new service worker's reload by ~20 minutes and
+ * prefers a route change, so the exposed user is the one sitting on a chat route.
+ *
+ * Here rather than in the adapter beside `normalizeExpiresAt`, so EVERY read path
+ * gets it. The prose is recovered; the `offered` riding inside the wrapper
+ * deliberately is not — no declaration is the fail-closed answer this design
+ * already chose, and lifting one would trust a shape written by accident.
+ */
+function unwrapWrappedReply(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const inner = (value as { text?: unknown }).text;
+  return typeof inner === 'string' ? inner : value;
+}
+
 export const MessageSchema = z.object({
   id: z.string(),
   role: z.enum(['user', 'assistant']),
-  text: z.string(),
+  text: z.preprocess(unwrapWrappedReply, z.string()),
   createdAt: z.string(),
   /**
    * What the chef declared this reply offered (issue #1299). Always `[]` on a
@@ -37,8 +62,25 @@ export const MessageSchema = z.object({
    * a required field would make every conversation written before this change
    * vanish from the list. The visible consequence is intended and stated in the
    * issue — an old conversation shows no buttons until its next reply.
+   *
+   * A LIST OF STRINGS, not a list of the two kinds, and that is the same
+   * failure one deploy further on (PR #1303 review). A third `CHEF_OFFER_KIND`
+   * reaches `chatSessions` the moment the Cloud Function deploys, which is
+   * always before every browser has the bundle that knows the word; typed as
+   * the enum, an older client fails the message, fails the session, and drops
+   * the whole conversation from its list — for a field whose entire job is
+   * choosing which buttons to draw. What a word MEANS is decided in
+   * `latestChefOffers`, which ignores any it does not know.
+   *
+   * Deliberately NOT `.catch([])`, which would look like the same fix and is
+   * worse: this is a stored document, `saveChatSession` writes it back whole
+   * (LWW, no merge), so a client that laundered a word it did not understand
+   * into `[]` would ERASE it from the document on the household's next message.
+   * Keeping the string keeps the newer client right. `scripts/tests/
+   * schemaCatchGuard.test.mjs` is the standing rule (#1114); this field is why
+   * it does not need an exemption.
    */
-  offered: z.array(ChefOfferSchema).default([]),
+  offered: z.array(z.string()).default([]),
 });
 
 export const ChatSessionSchema = z.object({

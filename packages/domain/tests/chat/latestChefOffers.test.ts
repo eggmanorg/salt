@@ -91,4 +91,18 @@ describe('latestChefOffers — fail closed', () => {
     expect(offersDishChange(doc)).toBe(false);
     expect(offersNewDish(doc)).toBe(false);
   });
+
+  it('ignores a kind this build does not know, and keeps the ones it does', () => {
+    // The other half of the deploy-skew answer (PR #1303 review).
+    // `MessageSchema.offered` stores plain strings so that a third kind added
+    // after this bundle shipped cannot fail the message and drop the whole
+    // conversation out of the chat list. THIS is where the cost lands instead: a
+    // word this build has no button for gates nothing, while the kinds it does
+    // know are unaffected.
+    const doc = session([{ role: 'assistant', offered: ['sous-vide-it', 'new-dish'] }]);
+
+    expect(latestChefOffers(doc)).toEqual(['new-dish']);
+    expect(offersNewDish(doc)).toBe(true);
+    expect(offersDishChange(doc)).toBe(false);
+  });
 });

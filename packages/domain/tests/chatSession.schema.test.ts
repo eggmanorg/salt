@@ -100,22 +100,23 @@ describe('ChatSessionSchema.reopenedAt', () => {
 // `chatSessions` document, so making it required would fail the whole SESSION's
 // parse and the realtime subscription would drop the conversation — every chat
 // with any history at all, not merely the ones written before the change.
-describe('MessageSchema.offered', () => {
-  const legacySession = {
-    id: 'sess-2',
-    schemaVersion: 1,
-    ownerUid: 'uid-1',
-    recipeId: 'lamb',
-    title: 'Lamb chat',
-    messages: [
-      { id: 'm1', role: 'user', text: 'less sweet?', createdAt: '2026-08-01T00:00:00.000Z' },
-      { id: 'm2', role: 'assistant', text: 'Halve the honey.', createdAt: '2026-08-01T00:00:01Z' },
-    ],
-    createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: '2026-08-01T00:00:00.000Z',
-    expiresAt: '2026-08-15T00:00:00.000Z',
-  };
+// A conversation with history, shared by the two suites below.
+const legacySession = {
+  id: 'sess-2',
+  schemaVersion: 1,
+  ownerUid: 'uid-1',
+  recipeId: 'lamb',
+  title: 'Lamb chat',
+  messages: [
+    { id: 'm1', role: 'user', text: 'less sweet?', createdAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'm2', role: 'assistant', text: 'Halve the honey.', createdAt: '2026-08-01T00:00:01Z' },
+  ],
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  expiresAt: '2026-08-15T00:00:00.000Z',
+};
 
+describe('MessageSchema.offered', () => {
   it('parses a whole conversation written before the field existed', () => {
     const result = ChatSessionSchema.safeParse(legacySession);
 
@@ -134,12 +135,93 @@ describe('MessageSchema.offered', () => {
     expect(result.success && result.data.messages[0]?.offered).toEqual(['dish-change', 'new-dish']);
   });
 
-  it('rejects a kind that is not one of the two', () => {
+  it('keeps a conversation whose reply names a kind this build does not know', () => {
+    // A THIRD `CHEF_OFFER_KIND` reaches `chatSessions` the moment the Cloud
+    // Function deploys, which is always before every browser has the bundle that
+    // knows the word. Typed as the enum, an older client would fail the message,
+    // fail the session, and `subscribeCollection` would drop the whole
+    // conversation from its list — for a field whose entire job is choosing
+    // which buttons to draw.
     const result = ChatSessionSchema.safeParse({
       ...legacySession,
-      messages: [{ ...legacySession.messages[1], offered: ['delete-everything'] }],
+      messages: [{ ...legacySession.messages[1], offered: ['dish-change', 'sous-vide-it'] }],
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    // And the word is KEPT, not laundered away. `saveChatSession` writes the
+    // whole document back (LWW, no merge), so an older client that dropped it
+    // here would erase it from the household's data on the next message.
+    // `latestChefOffers` is where a word this build does not know stops
+    // mattering, and `latestChefOffers.test.ts` pins that half.
+    expect(result.success && result.data.messages[0]?.offered).toEqual([
+      'dish-change',
+      'sous-vide-it',
+    ]);
+  });
+
+  it('still refuses an `offered` that is not a list at all', () => {
+    // The tolerance is for words, not for shapes. Nothing writes this, and
+    // widening far enough to swallow it would need the `.catch()` that #1114
+    // forbids on a stored document.
+    expect(
+      ChatSessionSchema.safeParse({
+        ...legacySession,
+        messages: [{ ...legacySession.messages[1], offered: 'new-dish' }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+// The deploy skew that runs the OTHER way (issue #1299, PR #1303 review), and
+// the only one that destroys anything: a browser on the pre-#1299 bundle gets
+// `{ text, offered }` back from the widened Cloud Function, does not parse it,
+// and stores the whole object in `message.text`. Nothing validates on the write
+// side, so it lands; `text: z.string()` then fails on every later read, and the
+// realtime subscription SKIPS the document — the conversation disappears from the
+// chat list for good, on an eighteen-month TTL that never ages it out. `pwa.ts`
+// defers a new service worker's reload by ~20 minutes and prefers a route change,
+// so the exposed user is the one sitting on a chat route typing at the chef.
+describe('MessageSchema.text — a reply written by a client that disagreed with us', () => {
+  const skewedSession = {
+    ...legacySession,
+    messages: [
+      legacySession.messages[0],
+      {
+        ...legacySession.messages[1],
+        text: { text: 'Halve the honey.', offered: ['dish-change'] },
+      },
+    ],
+  };
+
+  it('keeps the conversation, and the words the chef actually said', () => {
+    const result = ChatSessionSchema.safeParse(skewedSession);
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.messages[1]?.text).toBe('Halve the honey.');
+  });
+
+  it('does not lift the declaration out of the wrapper', () => {
+    // Fail closed: a message written by accident is not evidence of an offer, and
+    // the cost of ignoring it is a missing button on one old reply.
+    const result = ChatSessionSchema.safeParse(skewedSession);
+
+    expect(result.success && result.data.messages[1]?.offered).toEqual([]);
+  });
+
+  it('still refuses a `text` that is no kind of reply at all', () => {
+    // The unwrap is for ONE known shape. It must not launder a number, or an
+    // object with no text in it, into a message.
+    expect(
+      ChatSessionSchema.safeParse({
+        ...skewedSession,
+        messages: [{ ...skewedSession.messages[1], text: { offered: [] } }],
+      }).success,
+    ).toBe(false);
+    expect(
+      ChatSessionSchema.safeParse({
+        ...skewedSession,
+        messages: [{ ...skewedSession.messages[1], text: 7 }],
+      }).success,
+    ).toBe(false);
   });
 });

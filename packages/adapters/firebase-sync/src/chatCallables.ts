@@ -58,6 +58,13 @@ export async function streamChefChat(
     // talking to a Cloud Function deployed before #1299, which returns a bare
     // string — a deploy-skew window of minutes, and one the user is told about
     // rather than shown a reply assembled out of `undefined`.
+    //
+    // THE OTHER SKEW DIRECTION IS THE DANGEROUS ONE, and nothing here can reach
+    // it: a browser on the PRE-#1299 bundle does not run this code at all, does
+    // not parse, and writes the whole `{ text, offered }` object into
+    // `message.text`. That document is caught on READ, by `MessageSchema` in
+    // `@salt/domain/schemas` — see the comment on `unwrapWrappedReply` there for
+    // why it has to be the read path and why it has to live in the domain.
     const parsed = ChefChatOutputSchema.safeParse(await data);
     if (!parsed.success) {
       return failure({ kind: 'StorageError', reason: 'corruption' });

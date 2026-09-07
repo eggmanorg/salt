@@ -41,6 +41,15 @@ foundation (#179).
    until its next reply (`MessageSchema.offered` defaults to `[]`), and a model that
    forgets to declare leaves the button off a reply that deserved one.
 
+   The stored field holds plain **strings**, not the two kinds, and so does the
+   callable's `offered`. A third kind deploys on the Cloud Function before any
+   browser has the bundle that knows the word, and typed as an enum that word would
+   fail the message, fail the session, and drop the whole conversation out of an
+   older client's chat list. `latestChefOffers` is the one place a word becomes a
+   kind, and it ignores any it does not know — so the cost stays a missing button.
+   Deliberately not `.catch([])`, which loses the word on the next whole-document
+   write and is what #1114's guard forbids on a stored document.
+
 2. **Small and fixed stays ambient; large and growing gets a tool.** Equipment,
    household favourites and kitchen memory go straight into the chef's system prompt
    ("here's the equipment available — draw on it when it genuinely helps, ignore it
@@ -247,11 +256,26 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   implementation that returns a constant. The flow reads the request back off the
   finished turn's message history (`declaredOffers`), never off module-scope state,
   which would be shared across concurrent invocations on a warm instance and would
-  leak one household's declaration into another's turn. A declaration that does not
-  parse is dropped, not raised: the reply still arrives, and the cost is a missing
-  button. The result rides the flow's `outputSchema`, which is now an object; the
-  `streamSchema` is still `z.string()`, so the fragments and the streaming render
-  are untouched.
+  leak one household's declaration into another's turn. A bad declaration costs a
+  button and never the turn, and holding that takes **two** mechanisms, because
+  Genkit validates a model-authored tool input _before_ the handler runs and throws
+  on a rejection — a throw nothing in the tool loop catches, which fails the callable
+  and makes the client roll the user's own message back out of the transcript. So
+  `DeclareOfferInputSchema.offers` is a list of plain **strings**, with the two kinds
+  named only in the description the model reads and the narrowing done in
+  `declaredOffers`; and the flow keeps a reply the chef had already streamed when a
+  tool input is refused anyway. The result rides the flow's `outputSchema`, which is
+  now an object; the `streamSchema` is still `z.string()`, so the fragments and the
+  streaming render are untouched.
+- **What the reader watched is what gets stored.** The flow returns the text it
+  accumulated while streaming, not `response.text` — which is the LAST model message
+  alone, and a declaring turn makes a second model message the ordinary case. Storing
+  `response.text` would keep the sign-off and discard the reply the user just read.
+- **A pre-#1299 browser can still corrupt a chat document**, and the read path
+  survives it: the widened return value lands whole in `message.text` for a client
+  that predates the change, so `MessageSchema` unwraps that one shape on read rather
+  than failing the message, failing the session, and dropping the conversation out of
+  the chat list for good.
 - Plain text out. **No `output` schema**, ever — and, since #840, tools. Guard the model call with
   `withAiStreamTimeout`, not `withAiTimeout` — this is the one streaming flow, and
   a promise wrapper cannot bound a stream. `withAiTimeout` around the aggregated
