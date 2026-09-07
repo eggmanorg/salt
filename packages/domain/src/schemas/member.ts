@@ -25,6 +25,30 @@ export const MemberSchema = z.object({
   // production predates the field), and 'standard' specifically because that is
   // what everyone gets today. Absent must mean "nothing changed for you".
   cookMode: z.enum(['standard', 'guided']).default('standard'),
+  // Whether this account is a system account rather than a person (issue #1300)
+  // — the kitchen screen's own sign-in, for instance, which is a full member so
+  // it can be left signed in.
+  //
+  // It records WHAT THE ACCOUNT IS and gates NOTHING. Not a permission, not a
+  // uid, not per-user scoping: a system account signs in, adds recipes, ticks the
+  // shopping list and talks to the chef exactly as before, and a recipe it adds
+  // still carries its name. What reads it is `isPerson` / `onlyPeople` in the
+  // members module, which the people-pickers call — the same shape `recipes.kind`
+  // consumers use, so "a system account is never offered as a person" is stated
+  // once rather than copied into every picker.
+  //
+  // "Only the predicates read it" is a CONVENTION held by review, not a
+  // mechanism — the same standing as the `recipes.kind` rule it copies
+  // (CLAUDE.md → Data model conventions), and for the same reason: there is no
+  // lint rule that can tell a capability decision from a word-picking one. It is
+  // true as written today; a `grep` for the field name is what checks it, and a
+  // second reader appearing would be a review finding rather than a red test.
+  //
+  // `.default(false)` for the same reason `cookMode` has one: every member doc in
+  // production predates the field, and absent must read back as "an ordinary
+  // person". No migration — the one real system account is ticked by hand in
+  // Admin → Members after the deploy.
+  system: z.boolean().default(false),
   updatedAt: z.string(),
 });
 

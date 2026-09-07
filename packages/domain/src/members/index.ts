@@ -17,3 +17,7 @@ export type { UpdateMemberPatch } from './commands/updateMember.js';
 export { memberInitials } from './queries/memberInitials.js';
 export { memberFirstName } from './queries/memberFirstName.js';
 export { sortMembers } from './queries/sortMembers.js';
+// Issue #1300 — the one reader of `Member.system`. Consumers ask these rather
+// than the field, so "a system account is never offered as a person" lives in
+// one place.
+export { isPerson, onlyPeople } from './queries/isPerson.js';

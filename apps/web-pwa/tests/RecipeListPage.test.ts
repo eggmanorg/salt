@@ -14,6 +14,7 @@ const {
   mockRecipes,
   mockIsLoading,
   mockCurrentMember,
+  mockSystemAccountNames,
   mockCanonItems,
   mockProductForms,
   mockIsLoadingAisles,
@@ -27,6 +28,9 @@ const {
     // authorship row is not offered and every pre-existing test below is
     // untouched by it.
     mockCurrentMember: makeStore<{ name: string } | null>(null),
+    // Names belonging to system accounts (issue #1300). Empty by default, so
+    // every test written before the flag existed behaves exactly as it did.
+    mockSystemAccountNames: makeStore<Set<string>>(new Set()),
     // The card's match pip (silent mis-matches) reads both collections. Empty by
     // default, which with the page's own load gate means no pip — so every test
     // written before the pip existed is untouched by it.
@@ -39,7 +43,11 @@ const {
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
-vi.mock('../src/lib/membersService.js', () => ({ currentMember: mockCurrentMember }));
+vi.mock('../src/lib/membersService.js', () => ({
+  currentMember: mockCurrentMember,
+  // Issue #1300 — the names the authorship row must not count. Seeded per test.
+  systemAccountNames: mockSystemAccountNames,
+}));
 vi.mock('../src/lib/canonService.js', () => ({
   canonItems: mockCanonItems,
   isLoadingAisles: mockIsLoadingAisles,
@@ -199,6 +207,7 @@ afterEach(() => {
   cleanup();
   seed([]);
   mockCurrentMember._set(null);
+  mockSystemAccountNames._set(new Set());
   mockCanonItems._set([]);
   mockProductForms._set([]);
 });
@@ -873,6 +882,31 @@ describe('RecipeListPage — authorship filters', () => {
 
     expect(screen.queryByTestId('recipe-author-filters')).toBeNull();
     expect(cardTitles()).toEqual(['My Pie', 'Their Bread']);
+  });
+
+  it('does not count a system account as a second author (issue #1300)', () => {
+    // A recipe added from the kitchen screen keeps its honest "Added by Fridge"
+    // stamp, and both entries stay in the grid — but a fridge is not a person to
+    // filter by, so the row is not offered on the strength of its name alone.
+    signedInAs(ME);
+    mockSystemAccountNames._set(new Set(['Fridge']));
+    seed([MY_PIE, { ...THEIR_BREAD, createdBy: 'Fridge', lastEditedBy: 'Fridge' }]);
+    render(RecipeListPage);
+
+    expect(screen.queryByTestId('recipe-author-filters')).toBeNull();
+    expect(cardTitles()).toEqual(['My Pie', 'Their Bread']);
+  });
+
+  it('still counts a name that is simply not on the roster', () => {
+    // The neighbour to the case above: only accounts an admin has actually
+    // flagged are subtracted. A member since removed, or an import from another
+    // environment, is a real second author and always was.
+    signedInAs(ME);
+    mockSystemAccountNames._set(new Set(['Fridge']));
+    seed([MY_PIE, THEIR_BREAD]);
+    render(RecipeListPage);
+
+    expect(screen.getByTestId('recipe-author-filters')).toBeInTheDocument();
   });
 
   it('narrows to what I added, and reports the view as filtered', async () => {

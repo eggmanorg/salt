@@ -13,6 +13,10 @@ export interface UpdateMemberPatch {
   // screen — but the command stays a plain field patch, because WHO may change
   // WHAT is a question for firestore.rules, not for a pure function.
   readonly cookMode?: CookMode;
+  // Issue #1300. An administrative fact about the account, so unlike `cookMode`
+  // it is the admin screen that patches it — but the command stays a plain field
+  // patch for the same reason: WHO may change WHAT is firestore.rules' question.
+  readonly system?: boolean;
 }
 
 // Apply an editable-field patch and re-stamp updatedAt. Pure — returns a new
@@ -25,6 +29,7 @@ export function updateMember(member: Member, patch: UpdateMemberPatch, now: stri
     sortOrder: patch.sortOrder !== undefined ? patch.sortOrder : member.sortOrder,
     icon: patch.icon !== undefined ? patch.icon : member.icon,
     cookMode: patch.cookMode !== undefined ? patch.cookMode : member.cookMode,
+    system: patch.system !== undefined ? patch.system : member.system,
     updatedAt: now,
   };
 }

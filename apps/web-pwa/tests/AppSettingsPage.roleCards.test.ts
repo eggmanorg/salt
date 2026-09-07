@@ -118,6 +118,7 @@ beforeEach(() => {
       sortOrder: 0,
       icon: null,
       cookMode: 'standard',
+      system: false,
       updatedAt: '2026-09-02T00:00:00.000Z',
     } as unknown as Member,
   ]);

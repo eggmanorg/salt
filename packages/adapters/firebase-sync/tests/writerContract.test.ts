@@ -312,6 +312,7 @@ const MEMBER = {
   sortOrder: 0,
   icon: null,
   cookMode: 'standard' as const,
+  system: false,
   updatedAt: NOW,
 };
 

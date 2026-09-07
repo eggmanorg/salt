@@ -3,6 +3,8 @@ import {
   createMember,
   updateMember,
   sortMembers,
+  isPerson,
+  onlyPeople,
   normaliseMemberEmail,
   memberFirstName,
   type Member,
@@ -23,6 +25,29 @@ export const members: Readable<Member[]> = {
   subscribe: (run, invalidate) =>
     _members.subscribe((value) => run(sortMembers(value)), invalidate),
 };
+
+// The roster minus its system accounts (issue #1300) — what a PEOPLE-PICKER
+// renders. `members` above deliberately stays whole: Admin → Members has to
+// manage the very account this hides, `currentMember` has to resolve it so the
+// kitchen screen can use the app at all, and filtering at the source would break
+// both. The split is the point — "who might come to dinner" and "who am I" are
+// different questions, and only the first one is asked here.
+//
+// The predicate lives in the domain, so this store adds no policy of its own;
+// see `onlyPeople` / `isPerson`.
+export const people: Readable<Member[]> = derived(members, ($members) => onlyPeople($members));
+
+// The NAMES by which system accounts appear in stored attribution (issue #1300).
+// A recipe added from the kitchen screen keeps its honest "Added by Fridge"
+// stamp — attribution is an audit snapshot of `Member.name` and is never
+// rewritten — so a surface that offers those stored names as choices has to
+// recognise the name, there being no id to join on. A name set, not a member
+// set, for exactly that reason. Its one consumer is the recipe list's authorship
+// row; see `RecipeListPage`.
+export const systemAccountNames: Readable<Set<string>> = derived(
+  members,
+  ($members) => new Set($members.filter((m) => !isPerson(m)).map((m) => m.name)),
+);
 
 const _isLoadingMembers = writable(true);
 export const isLoadingMembers: Readable<boolean> = _isLoadingMembers;
@@ -109,6 +134,7 @@ export interface CreateMemberEntryInput {
   readonly name: string;
   readonly email: string;
   readonly admin: boolean;
+  readonly system?: boolean;
   readonly sortOrder?: number;
 }
 
@@ -119,6 +145,7 @@ export async function createMemberEntry(
     name: input.name,
     email: input.email,
     admin: input.admin,
+    system: input.system ?? false,
     sortOrder: input.sortOrder ?? nextSortOrder(),
     now: new Date().toISOString(),
   });

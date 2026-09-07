@@ -20,6 +20,8 @@ vi.mock('../src/lib/auth.svelte.js', () => ({ auth: mockAuth }));
 import * as firebaseSync from '@salt/firebase-sync';
 import {
   members,
+  people,
+  systemAccountNames,
   currentMember,
   kitchenLabel,
   isLoadingMembers,
@@ -56,6 +58,7 @@ function member(overrides: Partial<Member> & { id: string }): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: '2026-06-07T00:00:00.000Z',
     ...overrides,
   };
@@ -244,5 +247,49 @@ describe('membersService — mutations', () => {
   it('deleteMemberEntry delegates to the adapter', async () => {
     await deleteMemberEntry('a@e.org');
     expect(fs.deleteMember).toHaveBeenCalledWith('a@e.org');
+  });
+});
+
+// ─── System accounts (issue #1300) ──────────────────────────────────────────
+
+describe('membersService — people vs the whole roster', () => {
+  const ANN = { id: 'ann@e.org', name: 'Ann', sortOrder: 1 };
+  const FRIDGE = { id: 'fridge@e.org', name: 'Fridge', sortOrder: 2, system: true };
+
+  it('drops system accounts from `people` and keeps them in `members`', () => {
+    seedMembers([member(ANN), member(FRIDGE)]);
+    expect(get(members).map((m) => m.name)).toEqual(['Ann', 'Fridge']);
+    expect(get(people).map((m) => m.name)).toEqual(['Ann']);
+  });
+
+  it('keeps `currentMember` resolving a system account', () => {
+    // The whole reason `members` stays whole: the kitchen screen has to be able
+    // to sign in and be recognised, or the account cannot use the app at all.
+    mockAuth.user = { email: 'fridge@e.org' };
+    seedMembers([member(ANN), member(FRIDGE)]);
+    expect(get(currentMember)?.name).toBe('Fridge');
+    expect(get(kitchenLabel)).toBe("Fridge's Kitchen");
+    expect(isEmailAdmin('fridge@e.org')).toBe(false);
+    expect(findMemberByEmail('fridge@e.org')?.id).toBe('fridge@e.org');
+    mockAuth.user = null;
+  });
+
+  it('names the system accounts, and only those', () => {
+    seedMembers([member(ANN), member(FRIDGE)]);
+    expect([...get(systemAccountNames)]).toEqual(['Fridge']);
+  });
+
+  it('creates a person by default and a system account when asked', async () => {
+    seedMembers([]);
+    await createMemberEntry({ name: 'New', email: 'new@e.org', admin: false });
+    expect(fs.upsertMember.mock.calls[0]![0]).toMatchObject({ system: false });
+    await createMemberEntry({ name: 'Fridge', email: 'f@e.org', admin: false, system: true });
+    expect(fs.upsertMember.mock.calls[1]![0]).toMatchObject({ system: true });
+  });
+
+  it('patches the flag through updateMemberEntry', async () => {
+    seedMembers([member(ANN)]);
+    await updateMemberEntry('ann@e.org', { system: true });
+    expect(fs.upsertMember.mock.calls[0]![0]).toMatchObject({ id: 'ann@e.org', system: true });
   });
 });

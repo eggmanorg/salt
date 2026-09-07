@@ -157,6 +157,8 @@ export {
   memberInitials,
   memberFirstName,
   sortMembers,
+  isPerson,
+  onlyPeople,
 } from './members/index.js';
 
 // Meal planning module — published surface (issue #169).
