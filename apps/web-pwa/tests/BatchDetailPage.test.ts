@@ -769,6 +769,29 @@ describe('BatchDetailPage — abandoning', () => {
     expect(abandonMock).toHaveBeenCalledWith(run);
   });
 
+  it('keeps the confirm open and says so when the write fails', async () => {
+    // The failure path of the one irreversible control on the page. Closing the
+    // dialog on a write that did not land would leave the run still going while the
+    // screen implied it had been stopped, so the dialog STAYS and the toast is what
+    // reports it. `abandoning` is released either way — a second attempt has to be
+    // possible without a reload.
+    abandonMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await showRun();
+
+    await openOverflowMenu();
+    await fireEvent.click(screen.getByTestId('batch-abandon-menu-item'));
+    await waitFor(() => expect(screen.getByTestId('batch-abandon-confirm')).toBeInTheDocument());
+    await fireEvent.click(screen.getByTestId('batch-abandon-confirm'));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(1));
+    expect(toastMock.mock.calls[0]?.[1]).toBe('destructive');
+    expect(screen.getByTestId('batch-abandon-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('batch-abandon-confirm')).not.toBeDisabled();
+  });
+
   it('is not offered on a run that is already stopped', async () => {
     await showRun({ state: 'abandoned' });
 

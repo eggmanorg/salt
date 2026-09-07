@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { push } from 'svelte-spa-router';
 import type { BatchDoc, BatchObservationDoc, BatchStageDoc } from '@salt/domain/schemas';
 
 // The batch log (issue #1280) — `/batches/:id/log`, what actually happened to a run.
@@ -54,6 +56,7 @@ vi.mock('../src/lib/featureGate.js', () => ({
   isFeatureEnabled: () => true,
 }));
 
+import { logObservation } from '../src/lib/batchObservationService.js';
 import BatchLogPage from '../src/routes/batches/BatchLogPage.svelte';
 
 const BATCH_ID = 'batch-1';
@@ -177,6 +180,28 @@ describe('BatchLogPage — the three screens before there is a log', () => {
     expect(mockInitBatchSync).toHaveBeenCalledWith(BATCH_ID);
     expect(mockInitObservationsSync).toHaveBeenCalledWith(BATCH_ID);
     unmount();
+  });
+
+  it('opens no listener at all when the route carries no id', () => {
+    // `/batches//log` and a direct render with no params both land here. Subscribing
+    // to `batches/` would be a read against a collection, not a document.
+    render(BatchLogPage, { props: {} });
+
+    expect(mockInitBatchSync).not.toHaveBeenCalled();
+    expect(mockInitObservationsSync).not.toHaveBeenCalled();
+  });
+
+  it('shows a spinner in the page once the run has arrived but the readings have not', async () => {
+    // Distinct from the first spinner above: the run is known, so the page's frame is
+    // drawn, and the list is what is still waiting.
+    renderPage();
+    mockBatch._set(makeBatch());
+
+    await waitFor(() => expect(screen.getByText('The log')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-log-page')).toBeNull();
+
+    mockObservations._set([]);
+    await waitFor(() => expect(screen.getByTestId('batch-log-page')).toBeInTheDocument());
   });
 
   it('reads a run with nothing but a start as exactly that, not as an empty screen', async () => {
@@ -320,6 +345,64 @@ describe('BatchLogPage — a run that was stopped', () => {
     await showRun({ state: 'abandoned' }, []);
 
     expect(screen.getByTestId('batch-log-add')).toBeInTheDocument();
+  });
+});
+
+describe('BatchLogPage — the two ways off the page', () => {
+  it('goes back to the run, not to the batch list', async () => {
+    // The log is a page ABOUT one run, so Back is the run — a list would lose the
+    // place of anyone who came here from the batch they are standing over.
+    await showRun();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the run' }));
+
+    expect(push).toHaveBeenCalledWith(`/batches/${BATCH_ID}`);
+  });
+
+  it('opens the same Log a reading sheet the run page opens', async () => {
+    // The log is a door as well as a record: a cure weighed on day 12 is logged from
+    // where you are standing.
+    await showRun();
+    await userEvent.click(screen.getByTestId('batch-log-add'));
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+  });
+
+  it('files the reading against this run, and closes the sheet once it lands', async () => {
+    // The sheet is `BatchDetailPage`'s, reused unmodified — so what is asserted here
+    // is the wiring, not the sheet: the id it writes against is the run whose log is
+    // open, and `bind:open` is a real two-way bind rather than a one-way flag the
+    // page would have to close itself.
+    await showRun();
+    await userEvent.click(screen.getByTestId('batch-log-add'));
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+
+    // `fireEvent`, not `userEvent`: the sheet's focus trap eats keystrokes typed into
+    // a field it has just moved focus to, which is why `BatchDetailPage.test.ts` types
+    // this same box the same way.
+    await fireEvent.input(screen.getByTestId('batch-log-weight'), { target: { value: '1240' } });
+    await userEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logObservation).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(logObservation).mock.calls[0]?.[0]).toMatchObject({
+      batchId: BATCH_ID,
+      weightGrams: 1240,
+    });
+    await waitFor(() => expect(screen.queryByTestId('batch-log-sheet')).toBeNull());
+  });
+
+  it('does not tear the open sheet out when the run disappears under it', async () => {
+    // Why the sheet sits OUTSIDE the `{#if}` (the same reason `BatchDetailPage` puts
+    // it there): the subscription is live, so a run deleted on another device while
+    // someone is mid-reading would otherwise unmount the sheet and lose what they had
+    // typed. The page behind it becomes "Batch not found"; the sheet stays.
+    await showRun();
+    await userEvent.click(screen.getByTestId('batch-log-add'));
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+
+    mockBatch._set(null);
+
+    await waitFor(() => expect(screen.getByText('Batch not found')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument();
   });
 });
 

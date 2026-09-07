@@ -8,6 +8,7 @@ import {
   formatWhen,
   nextAction,
   orderBatches,
+  formatDate,
   formatDrift,
   formatTimeOfDay,
   groupLogByDay,
@@ -79,6 +80,18 @@ describe('formatWhen', () => {
 
   it('never renders an unreadable instant as a date', () => {
     expect(formatWhen('not a time', now)).toBe('—');
+  });
+});
+
+describe('formatDate', () => {
+  it('names the calendar day, with no time of day — "started on" wants only the day', () => {
+    expect(formatDate(at(2026, 8, 14, 22, 30).toISOString())).toBe('Fri 14 Aug');
+  });
+
+  it('never renders an unreadable instant as a date', () => {
+    // The same em dash `formatWhen` returns, and for the same reason: a batch whose
+    // stored instant is unparseable says nothing rather than "Invalid Date".
+    expect(formatDate('not a time')).toBe('—');
   });
 });
 
