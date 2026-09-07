@@ -390,11 +390,15 @@ export const coverageThresholds = {
   // but the same measurement reaching fewer files: `**/__boundary_tests__/**`
   // left the measured set, and every line it took with it was uncovered by
   // construction. Ratios untouched — see the note beside `coverageExclude`.
+  // Banked by #1299: `chefChat`'s third tool and the flow's declaration reader
+  // arrived with their own suite, and `ai/fakeModel.ts` — the e2e seam, which no
+  // unit test reached at all before — gained one for the declaring turn it now
+  // emits. All four numbers moved the right way; the seam is the bulk of it.
   'apps/cloud-functions/src/**': {
-    lines: 86.43,
-    branches: 79.07,
-    uncoveredLines: 378,
-    uncoveredBranches: 352,
+    lines: 87.34,
+    branches: 80.45,
+    uncoveredLines: 368,
+    uncoveredBranches: 347,
   },
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one
   // (the role cards' job lists are generated from the registry, and that claim

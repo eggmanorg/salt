@@ -39,6 +39,12 @@ const USER_MESSAGE = 'how do I make a negroni';
 const STUB_REPLY =
   'Deterministic stubbed chef reply: equal parts gin, Campari and sweet vermouth, stirred over ice.';
 const STUB_TITLE = 'Stubbed Negroni Conversation';
+// What the chef declared this reply offered (#1299). The buttons under a reply are
+// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
+// spec with no button to press. Both kinds, because that is what this reply is
+// worth on today's UI — the same two actions it has always offered here. The
+// plain-answer-offers-nothing case is `chat.spec.ts`.
+const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 const COCKTAIL_TITLE = 'Stubbed Negroni';
 const COCKTAIL_INGREDIENT = '30 ml Campari';
@@ -102,7 +108,7 @@ test.describe('recipes — a cocktail authored from a chat', () => {
     await gotoAndSignIn(page, email, '/#/chat', { admin: true });
 
     // ── Register every canned model answer BEFORE driving the UI ───────────────
-    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
+    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
     await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_TITLE);
     await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
     await page.evaluate((p) => window.__e2e!.stubAi('parseRecipeIngredients', p), STUB_PARSE);

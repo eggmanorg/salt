@@ -131,7 +131,7 @@ beforeEach(() => {
   recipeDocs.set('r1', RECIPE);
   mockGenerateStream.mockReturnValue({
     stream: (async function* () {})(),
-    response: Promise.resolve({ text: 'ok' }),
+    response: Promise.resolve({ messages: [], text: 'ok' }),
   });
 });
 
