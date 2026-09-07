@@ -363,7 +363,24 @@ export const BatchObservationSchema = z.object({
   ph: z.number().min(0).max(14).nullable(),
   // Degrees Celsius, and DELIBERATELY unbounded below zero — a freezer, a garage in
   // January and a chamber at 12 °C are all real places a batch sits.
+  //
+  // Carried since the log was built and written null until #1286, when the sheet
+  // finally grew a box for it. Nothing about the field changed; it simply started
+  // being answered.
   temperatureC: z.number().nullable(),
+  // The humidity at the same instant (issue #1286), typed in by hand like the
+  // temperature beside it. Nothing in the kitchen reports to a phone: if a Home
+  // Assistant integration ever writes readings it writes observations exactly as a
+  // person does, and nothing here changes.
+  //
+  // A bake rarely wants either figure; a cure wants both every week, which is why
+  // they arrived together rather than humidity alone — a humidity box beside no
+  // temperature box would be the odd half of a pair.
+  //
+  // A read default, so every observation written before this field existed parses
+  // unchanged (CLAUDE.md, production data back-compat) — the same shape `stageId`
+  // above has.
+  relativeHumidityPercent: z.number().min(0).max(100).nullable().default(null),
   // Free text: "smells sweet, no mould", "cased today". Empty string, not null —
   // this is a text field whose absent state a text input already spells ''.
   note: z.string(),

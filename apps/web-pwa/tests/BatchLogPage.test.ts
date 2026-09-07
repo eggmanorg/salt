@@ -118,6 +118,7 @@ function observation(over: Partial<BatchObservationDoc> = {}): BatchObservationD
     weightGrams: null,
     ph: null,
     temperatureC: null,
+    relativeHumidityPercent: null,
     note: '',
     image: null,
     ...over,

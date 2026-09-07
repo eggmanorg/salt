@@ -423,6 +423,7 @@ const OBSERVATION = {
   weightGrams: 900,
   ph: null,
   temperatureC: null,
+  relativeHumidityPercent: null,
   note: 'weighed',
   image: null,
 };

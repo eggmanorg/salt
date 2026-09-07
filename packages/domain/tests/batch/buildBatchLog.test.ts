@@ -58,6 +58,7 @@ function observation(
     weightGrams: null,
     ph: null,
     temperatureC: null,
+    relativeHumidityPercent: null,
     note: '',
     image: null,
     ...over,
