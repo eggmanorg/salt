@@ -193,12 +193,17 @@ const USER_TURN = {
   role: 'user' as const,
   text: 'what would go with this?',
   createdAt: '2026-08-13T10:00:00.000Z',
+  offered: [],
 };
+// The chef declared BOTH kinds on this reply (#1299), so both actions are offered.
+// These suites are about what the buttons DO and where they render, not about the
+// gate — `RecipeViewPage.chatOffers.test.ts` is the one that drives the gate.
 const ASSISTANT_TURN = {
   id: 'm2',
   role: 'assistant' as const,
   text: 'A fennel, orange and olive salad.',
   createdAt: '2026-08-13T10:00:01.000Z',
+  offered: ['dish-change' as const, 'new-dish' as const],
 };
 
 afterEach(() => {
@@ -252,12 +257,14 @@ describe('RecipeViewPage — where the chat actions render (#1299)', () => {
     role: 'user' as const,
     text: 'and a drink?',
     createdAt: '2026-08-13T10:00:02.000Z',
+    offered: [],
   };
   const LATER_ASSISTANT_TURN = {
     id: 'm4',
     role: 'assistant' as const,
     text: 'A dry amontillado.',
     createdAt: '2026-08-13T10:00:03.000Z',
+    offered: ['dish-change' as const, 'new-dish' as const],
   };
 
   it('puts the row inside the transcript, immediately after the NEWEST reply', () => {
@@ -297,6 +304,60 @@ describe('RecipeViewPage — where the chat actions render (#1299)', () => {
       expect(found).toHaveLength(1);
       expect(transcript.contains(found[0]!)).toBe(true);
     }
+  });
+});
+
+// The gate #1299's third phase put on the docked column's two actions: what the
+// chef DECLARED its newest reply offered, not whether it replied. Fail closed.
+describe('RecipeViewPage — the chat actions follow what the chef offered (#1299)', () => {
+  function reply(offered: ('dish-change' | 'new-dish')[]): ChatSessionDoc {
+    return makeSession([
+      { ...USER_TURN, text: 'why is my crumb tight?', offered: [] },
+      { ...ASSISTANT_TURN, text: 'Under-proved.', offered },
+    ]);
+  }
+
+  it('offers nothing, and draws no row, after a plain answer', () => {
+    mockSessions._set([reply([])]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('sidebar-apply-changes-btn')).toBeNull();
+    expect(queryByTestId('sidebar-save-new-recipe-btn')).toBeNull();
+    // Not an empty row: an empty `role="group"` labelled "What to do with this
+    // reply" would be announced to a screen reader with nothing inside it.
+    expect(queryByTestId('chat-reply-actions')).toBeNull();
+  });
+
+  // The #798 pair shares a ROW, not a gate — these two fail if it is wired back
+  // to one condition.
+  it('offers Review changes alone for a proposed change to this dish', () => {
+    mockSessions._set([reply(['dish-change'])]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('sidebar-apply-changes-btn')).not.toBeNull();
+    expect(queryByTestId('sidebar-save-new-recipe-btn')).toBeNull();
+  });
+
+  it('offers Save as new recipe alone for something to serve alongside', () => {
+    mockSessions._set([reply(['new-dish'])]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('sidebar-save-new-recipe-btn')).not.toBeNull();
+    expect(queryByTestId('sidebar-apply-changes-btn')).toBeNull();
+  });
+
+  it('follows the NEWEST reply, so an older offer does not linger', () => {
+    mockSessions._set([
+      makeSession([
+        { ...USER_TURN, offered: [] },
+        { ...ASSISTANT_TURN, offered: ['dish-change'] },
+        { ...USER_TURN, id: 'm3', text: 'why?', offered: [] },
+        { ...ASSISTANT_TURN, id: 'm4', text: 'Sugar holds water.', offered: [] },
+      ]),
+    ]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('sidebar-apply-changes-btn')).toBeNull();
   });
 });
 

@@ -94,3 +94,52 @@ describe('ChatSessionSchema.reopenedAt', () => {
     expect(result.success && result.data.reopenedAt).toBe('2026-08-20T00:00:00.000Z');
   });
 });
+
+// `MessageSchema.offered` (issue #1299) carries a `.default([])` for exactly the
+// reason above, one level down: the field lives on every message inside a live
+// `chatSessions` document, so making it required would fail the whole SESSION's
+// parse and the realtime subscription would drop the conversation — every chat
+// with any history at all, not merely the ones written before the change.
+describe('MessageSchema.offered', () => {
+  const legacySession = {
+    id: 'sess-2',
+    schemaVersion: 1,
+    ownerUid: 'uid-1',
+    recipeId: 'lamb',
+    title: 'Lamb chat',
+    messages: [
+      { id: 'm1', role: 'user', text: 'less sweet?', createdAt: '2026-08-01T00:00:00.000Z' },
+      { id: 'm2', role: 'assistant', text: 'Halve the honey.', createdAt: '2026-08-01T00:00:01Z' },
+    ],
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    expiresAt: '2026-08-15T00:00:00.000Z',
+  };
+
+  it('parses a whole conversation written before the field existed', () => {
+    const result = ChatSessionSchema.safeParse(legacySession);
+
+    expect(result.success).toBe(true);
+    // Empty, not absent — which is what makes the fail-closed gate answer "no
+    // buttons" for an old conversation rather than throwing at the call site.
+    expect(result.success && result.data.messages.map((m) => m.offered)).toEqual([[], []]);
+  });
+
+  it('carries what the chef declared when a reply has one', () => {
+    const result = ChatSessionSchema.safeParse({
+      ...legacySession,
+      messages: [{ ...legacySession.messages[1], offered: ['dish-change', 'new-dish'] }],
+    });
+
+    expect(result.success && result.data.messages[0]?.offered).toEqual(['dish-change', 'new-dish']);
+  });
+
+  it('rejects a kind that is not one of the two', () => {
+    const result = ChatSessionSchema.safeParse({
+      ...legacySession,
+      messages: [{ ...legacySession.messages[1], offered: ['delete-everything'] }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+});

@@ -75,8 +75,17 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     basedOnRecipeId: null,
     title: 'New chat',
     messages: [
-      { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'm2', role: 'assistant', text: 'hi', createdAt: '2026-01-01T00:00:01.000Z' },
+      { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z', offered: [] },
+      {
+        id: 'm2',
+        role: 'assistant',
+        text: 'hi',
+        createdAt: '2026-01-01T00:00:01.000Z',
+        // Both kinds declared (#1299), so every suite below that is about what a
+        // button DOES gets a reply that offers it. The gate itself is driven by
+        // `ChatSessionPage.chefOffers.test.ts`.
+        offered: ['dish-change', 'new-dish'],
+      },
     ],
     createdAt: ts,
     updatedAt: ts,
@@ -139,12 +148,14 @@ describe('ChatSessionPage — where the recipe actions render (#1299)', () => {
       role: 'user' as const,
       text: 'and a drink?',
       createdAt: '2026-01-01T00:00:02.000Z',
+      offered: [],
     },
     {
       id: 'm4',
       role: 'assistant' as const,
       text: 'A dry amontillado.',
       createdAt: '2026-01-01T00:00:03.000Z',
+      offered: ['dish-change' as const, 'new-dish' as const],
     },
   ];
 
@@ -198,6 +209,139 @@ describe('ChatSessionPage — where the recipe actions render (#1299)', () => {
       cleanup();
       document.body.innerHTML = '';
     }
+  });
+});
+
+// The gate #1299 phase 3 put on those three buttons: what the chef DECLARED its
+// newest reply offered, not whether it replied at all. Fail closed — the point of
+// the issue is that today the buttons appear after any reply, so "why is my crumb
+// so tight?" offers to rewrite the recipe.
+describe('ChatSessionPage — the buttons follow what the chef offered (#1299)', () => {
+  function reply(offered: ('dish-change' | 'new-dish')[], recipeId: string | null) {
+    return makeSession({
+      recipeId,
+      messages: [
+        {
+          id: 'm1',
+          role: 'user',
+          text: 'why is my crumb tight?',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          offered: [],
+        },
+        {
+          id: 'm2',
+          role: 'assistant',
+          text: 'Under-proved.',
+          createdAt: '2026-01-01T00:00:01.000Z',
+          offered,
+        },
+      ],
+    });
+  }
+
+  it('offers nothing at all after a plain answer on an attached chat', () => {
+    mockSessions._set([reply([], 'lamb')]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
+    expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
+    // The row itself is not drawn — not an empty row with nothing in it.
+    expect(queryByTestId('chat-reply-actions')).toBeNull();
+    // The one control that is not gated on the offer, because it only goes somewhere.
+    expect(queryByTestId('chat-view-recipe-btn')).not.toBeNull();
+  });
+
+  it('offers nothing at all after a plain answer on a general chat', () => {
+    mockSessions._set([reply([], null)]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-save-recipe-btn')).toBeNull();
+  });
+
+  // The two halves of the #798 pair now have SEPARATE gates. Each of these fails
+  // if they are wired to one condition again.
+  it('offers Review changes alone when the chef proposed a change to this dish', () => {
+    mockSessions._set([reply(['dish-change'], 'lamb')]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-apply-changes-btn')).not.toBeNull();
+    expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
+  });
+
+  it('offers Save as new recipe alone when the chef suggested something alongside', () => {
+    mockSessions._set([reply(['new-dish'], 'lamb')]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
+    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
+  });
+
+  it('offers Save as recipe on a general chat that invented a dish', () => {
+    mockSessions._set([reply(['new-dish'], null)]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-save-recipe-btn')).not.toBeNull();
+  });
+
+  it('follows the NEWEST reply — an older offer does not keep a button alive', () => {
+    mockSessions._set([
+      makeSession({
+        recipeId: 'lamb',
+        messages: [
+          {
+            id: 'm1',
+            role: 'user',
+            text: 'less sweet?',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            offered: [],
+          },
+          {
+            id: 'm2',
+            role: 'assistant',
+            text: 'Halve the honey.',
+            createdAt: '2026-01-01T00:00:01.000Z',
+            offered: ['dish-change'],
+          },
+          {
+            id: 'm3',
+            role: 'user',
+            text: 'why does that work?',
+            createdAt: '2026-01-01T00:00:02.000Z',
+            offered: [],
+          },
+          {
+            id: 'm4',
+            role: 'assistant',
+            text: 'Sugar holds water.',
+            createdAt: '2026-01-01T00:00:03.000Z',
+            offered: [],
+          },
+        ],
+      }),
+    ]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
+  });
+
+  it('shows nothing on a conversation written before the field existed', () => {
+    // `MessageSchema.offered` defaults to `[]` on read, so an old chat still
+    // loads and still lists — it simply offers nothing until its next reply.
+    // The fixture omits the field the way a stored document does.
+    const legacy = makeSession({ recipeId: 'lamb' });
+    mockSessions._set([
+      {
+        ...legacy,
+        messages: legacy.messages.map(({ offered: _dropped, ...rest }) => ({
+          ...rest,
+          offered: [],
+        })),
+      },
+    ]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
+    expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
   });
 });
 
@@ -281,7 +425,13 @@ describe('ChatSessionPage — save as NEW recipe', () => {
       makeSession({
         recipeId: 'lamb',
         messages: [
-          { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
+          {
+            id: 'm1',
+            role: 'user',
+            text: 'hello',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            offered: [],
+          },
         ],
       }),
     ]);

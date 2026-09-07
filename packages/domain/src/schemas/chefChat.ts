@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MessageSchema } from './chatSession.js';
+import { ChefOfferSchema, MessageSchema } from './chatSession.js';
 
 // Input schema for the chefChat streaming flow (issue #206, Phase 2).
 // The flow is stateless: it receives the recent message history + the new turn.
@@ -31,6 +31,26 @@ export const ChefChatInputSchema = z.object({
 
 export type ChefChatInput = z.infer<typeof ChefChatInputSchema>;
 
-// The chef's reply. The flow streams it in fragments and resolves to the whole
-// text, so the stream and the output share this one schema.
-export const ChefChatOutputSchema = z.string();
+// The chef's reply AS IT ARRIVES. Text fragments, and nothing else — the reader
+// is watching prose appear, and there is nothing structured to show them mid-turn.
+//
+// Stream and output used to be this one schema. #1299 split them because the
+// RESOLVED value now carries something the fragments cannot: what the chef says
+// its reply offered. Splitting rather than widening both is what keeps the
+// streaming render untouched — a chunk is still a string.
+export const ChefChatStreamSchema = z.string();
+
+// The chef's reply once the turn is finished.
+//
+// Note what this is NOT: it is not an `output` option on the model. The chef is
+// never asked to emit structure (design principle #1) — `offered` is recovered
+// from the `declareOffer` tool requests the model made along the way, and this
+// schema describes the FLOW's return value, not the model's.
+export const ChefChatOutputSchema = z.object({
+  text: z.string(),
+  // `.default([])` so an older client, or a turn where the chef declared
+  // nothing, parses to the fail-closed answer rather than failing.
+  offered: z.array(ChefOfferSchema).default([]),
+});
+
+export type ChefChatOutput = z.infer<typeof ChefChatOutputSchema>;

@@ -1,7 +1,14 @@
 import { z } from 'genkit';
+import type { MessageData } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { ChefChatInputSchema, ChefChatOutputSchema } from '@salt/domain/schemas';
+import {
+  ChefChatInputSchema,
+  ChefChatOutputSchema,
+  ChefChatStreamSchema,
+  DeclareOfferInputSchema,
+  DeclareOfferOutputSchema,
+} from '@salt/domain/schemas';
 import { RecipeSchema } from '@salt/domain/schemas';
 import { CanonItemSchema, CanonPurchaseCountsSchema } from '@salt/domain/schemas';
 import {
@@ -11,6 +18,7 @@ import {
   RECIPE_SEARCH_PROJECTION_FIELDS,
 } from '@salt/domain/schemas';
 import { ReadRecipeInputSchema, ReadRecipeOutputSchema } from '@salt/domain/schemas';
+import type { ChefOffer } from '@salt/domain/schemas';
 import type {
   FindRecipesInput,
   FindRecipesOutput,
@@ -336,6 +344,99 @@ export const readRecipeTool = ai.defineTool(
   (input) => readRecipeForChef(getFirestore(), input),
 );
 
+// ─── The chef says what it offered (issue #1299) ─────────────────────────────
+//
+// The THIRD tool, and the only one that touches nothing: no Firestore read, no
+// write, no second model call. Calling it IS the effect — the flow reads the
+// request back off the drained response below and hands it to the client, where
+// it decides whether the buttons under that reply exist.
+//
+// Its description has to carry an explicit WHEN NOT TO CALL clause, as the other
+// two do. Without one it fires on every turn and gates nothing, which is exactly
+// the noise this issue exists to remove: today the buttons appear after any
+// reply, so "why is my crumb so tight?" offers to rewrite the recipe.
+const DECLARE_OFFER_DESCRIPTION = `Declare what your reply has put on the table, so the app can offer the user the right thing to \
+do with it. Call it ONCE, alongside the reply you are already writing. It writes nothing, changes \
+nothing and is never shown to the user.
+
+CALL IT with "dish-change" when you have suggested changing the dish this conversation is attached \
+to — less sweet, a swapped ingredient, a different method, more of something. Anything the user \
+could reasonably want folded into that recipe.
+
+CALL IT with "new-dish" when you have described a dish worth keeping in its own right: a whole \
+recipe you have given them, something to serve alongside, a drink to go with it. It has to be a \
+real dish with real quantities or a real method — not a passing mention of what one might cook.
+
+CALL IT with both when your reply genuinely does both — a change to this dish AND something to \
+serve beside it.
+
+DO NOT CALL IT when you have simply answered a question. Explaining why a crumb is tight, what \
+baking soda does, whether a pan is hot enough, how long something keeps, what an ingredient is — \
+none of those put a dish on the table, and declaring one would offer to rewrite a recipe nobody \
+asked you to touch. If you are unsure, do not call it: a missing button costs the user one more \
+message, a wrong one costs them their recipe.`;
+
+export const declareOfferTool = ai.defineTool(
+  {
+    name: 'declareOffer',
+    description: DECLARE_OFFER_DESCRIPTION,
+    inputSchema: DeclareOfferInputSchema,
+    outputSchema: DeclareOfferOutputSchema,
+  },
+  // A constant. Everything this tool does happens in `declaredOffers` below,
+  // reading the REQUEST rather than anything the implementation produced — which
+  // is what keeps it free of the module-scope trap: `findRecipesTool` and
+  // `readRecipeTool` are module-scope singletons and so is this one, so a
+  // module-level variable written here would be shared across concurrent
+  // invocations on a warm instance and would leak one household's declaration
+  // into another's turn.
+  () => Promise.resolve({ recorded: true }),
+);
+
+// How the chef is told to use it. A tool description governs when to reach for a
+// tool; this says the thing the description cannot — that declaring is part of
+// finishing a turn, not an optional extra — and it sits with the base prompt
+// because it is a capability statement, not context about tonight.
+const DECLARE_OFFER_FRAMING = `## Saying what you have offered
+When your reply suggests changing the dish this conversation is about, or describes a dish worth \
+keeping, call declareOffer to say so. That is what puts the right button under your reply.
+
+When you have only answered a question, do not call it. An answer is not an offer, and a button \
+after one offers to rewrite a recipe the user never asked you to touch.`;
+
+/**
+ * What the chef declared, read back off the finished turn.
+ *
+ * Reads the REQUESTS, not the responses, and reads them from the whole message
+ * history rather than from `response.toolRequests`: Genkit resolves a tool call
+ * and loops, so by the time the turn finishes the LAST model message is the prose
+ * and carries no tool request at all. The declaration is two messages back.
+ *
+ * `.safeParse` because a model-authored tool input is a trust boundary like any
+ * other (CLAUDE.md → Zod conventions). A malformed or unknown kind is dropped
+ * rather than failing the turn — the user still gets their reply, and the failure
+ * mode is a missing button, which is the one this design accepts. Duplicates are
+ * collapsed: a chef that declares "new-dish" twice offered one button.
+ */
+export function declaredOffers(messages: readonly MessageData[]): ChefOffer[] {
+  const seen = new Set<ChefOffer>();
+  for (const message of messages) {
+    for (const part of message.content) {
+      if (part.toolRequest?.name !== 'declareOffer') continue;
+      const parsed = DeclareOfferInputSchema.safeParse(part.toolRequest.input);
+      if (!parsed.success) {
+        logger.warn('chefChat: declareOffer called with an input that did not parse');
+        continue;
+      }
+      // No second validation of each kind: `DeclareOfferInputSchema` is an array
+      // of the enum, so anything that got past the parse above is already one of
+      // the two. A belt-and-braces check here would be a branch nothing can take.
+      for (const offer of parsed.data.offers) seen.add(offer);
+    }
+  }
+  return [...seen];
+}
+
 // ─── Household favourites (issue #726) ───────────────────────────────────────
 //
 // What the household actually buys, counted from shopping-list tick-offs. Read
@@ -461,7 +562,7 @@ function buildSystemPrompt(
   // is nothing to gate it on either: the library's size is only known once the
   // tool has been called, and a read to find out would cost every turn the very
   // thing the tool exists to avoid paying.
-  const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING];
+  const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING, DECLARE_OFFER_FRAMING];
 
   const equipmentSection = equipmentSectionForChef(equipmentContext);
   if (equipmentSection) sections.push(equipmentSection);
@@ -502,8 +603,12 @@ export const chefChatFlow = ai.defineFlow(
   {
     name: 'chefChat',
     inputSchema: ChefChatInputSchema,
+    // Split by #1299, and the split is the point: the STREAM is still a plain
+    // string, so text fragments arrive as text and the streaming render is
+    // untouched. Only the resolved value widened, to carry what the chef said
+    // its reply offered.
     outputSchema: ChefChatOutputSchema,
-    streamSchema: ChefChatOutputSchema,
+    streamSchema: ChefChatStreamSchema,
   },
   async (input, streamingCallback) => {
     try {
@@ -553,8 +658,12 @@ export const chefChatFlow = ai.defineFlow(
         system: systemPrompt,
         messages: history,
         prompt: input.newMessage,
-        // The chef's TWO tools, and the whole surface (issue #840) — a third is a
-        // new issue with its own justification. Genkit runs the tool loop inside
+        // The chef's THREE tools, and the whole surface. Two read the library
+        // (#840); the third (#1299) reads and writes nothing at all — it exists so
+        // the chef can say what its reply offered, which is the issue #840's
+        // "a third tool is a new issue with its own justification" asked for. The
+        // alternative was a second AI call per turn to recover one bit the model
+        // already knew. Genkit runs the tool loop inside
         // this call and keeps streaming across it, so the reply still arrives in
         // fragments; the gaps while tools run are silence, which is what the idle
         // timer below bounds. A turn may now search AND read, so that is two
@@ -562,10 +671,12 @@ export const chefChatFlow = ai.defineFlow(
         // milliseconds, nowhere near the 55 s idle budget. Passed BY VALUE rather
         // than by name so the flow and the tools cannot get out of step.
         //
-        // Note what is still absent: no `output` option, and none is coming. Half
-        // of design principle #1 survives intact — the chef returns prose, and
-        // structure stays the librarian's job at save time.
-        tools: [findRecipesTool, readRecipeTool],
+        // Note what is still absent: no `output` option, and none is coming. The
+        // non-negotiable half of design principle #1 survives intact — the chef
+        // returns prose, structure stays the librarian's job at save time, and
+        // `offered` below is recovered from a TOOL REQUEST, never from a schema
+        // imposed on what the model writes.
+        tools: [findRecipesTool, readRecipeTool, declareOfferTool],
       });
 
       // The DRAIN is what needs the deadline, not what follows it (issue #915).
@@ -587,7 +698,7 @@ export const chefChatFlow = ai.defineFlow(
       // empty-tokens gap.
       const finalResponse = await withAiTimeout('chefChat', () => response, AI_TEXT_FLOW_TIMEOUT);
 
-      return finalResponse.text;
+      return { text: finalResponse.text, offered: declaredOffers(finalResponse.messages) };
     } catch (err) {
       // onCallGenkit owns this callable's error path; report the AI/Genkit
       // failure (incl. AiTimeoutError, or a mid-stream model error) here, flush,

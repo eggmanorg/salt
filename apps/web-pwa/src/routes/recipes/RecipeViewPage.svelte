@@ -105,6 +105,8 @@
     takesIngredients,
     type IngredientGroup,
     memberFirstName,
+    offersDishChange,
+    offersNewDish,
     type Ingredient,
     type Recipe,
     type Step,
@@ -756,6 +758,18 @@
   const activeSession = $derived(
     recipeChats.find((s) => s.id === selectedSessionId) ?? recipeChats[0] ?? null,
   );
+
+  // What the chef declared its NEWEST reply offered (issue #1299) — the gate on the
+  // two actions below, one predicate from `@salt/domain` so this page, the drawer
+  // and the full chat page cannot answer it differently. Fail closed: a plain answer
+  // to a plain question declares nothing and offers nothing.
+  //
+  // `chatOffersSomething` decides whether the ROW EXISTS at all, and is derived from
+  // exactly the two flags the buttons use so the two cannot disagree. An empty
+  // `role="group"` labelled "What to do with this reply" is a lie to a screen reader.
+  const chatOffersDishChange = $derived(offersDishChange(activeSession));
+  const chatOffersNewDish = $derived(offersNewDish(activeSession));
+  const chatOffersSomething = $derived(chatOffersDishChange || chatOffersNewDish);
 
   let amendBusy = $state(false);
 
@@ -2873,7 +2887,7 @@
               emptyText="Ask me anything about this recipe."
               starters={recipeStarters}
               aboveTranscript={chatPaneShown ? dockedChatList : undefined}
-              latestReplyActions={sidebarChatActions}
+              latestReplyActions={chatOffersSomething ? sidebarChatActions : undefined}
             />
           {/if}
         </Card>
@@ -2957,7 +2971,7 @@
      Which is also why the icons gained words: down here there is the column's whole
      width, and a glyph with no hover on a phone is a guess on first press. -->
 {#snippet reviewChangesAction(testid: string)}
-  {#if activeSession?.messages.some((m) => m.role === 'assistant')}
+  {#if chatOffersDishChange}
     <Button
       size="sm"
       variant="outline"
@@ -2972,17 +2986,17 @@
   {/if}
 {/snippet}
 
-<!-- Its counterpart (issue #798). Same gate — an empty conversation has nothing to
-     author either — and deliberately the same shape, because the pair is the whole
-     point: one folds what was said into THIS dish, the other makes it a different one.
+<!-- Its counterpart (issue #798), deliberately the same shape, because the pair is the
+     whole point: one folds what was said into THIS dish, the other makes it a different
+     one.
 
      What #798 called an indivisible pair is now precisely a claim about PLACEMENT, and
-     that half holds: they render in one row, in one place, on every surface. It says
-     nothing about VISIBILITY — today the two share a single gate, and #1299's third
-     phase gives them separate ones, because one reply can propose a change to this dish
-     without also inventing a second one. -->
+     that half holds: they render in one row, in one place, on every surface. It is no
+     longer true of VISIBILITY (#1299): the two have SEPARATE gates, because one reply
+     can propose a change to this dish without inventing a second one, and another can
+     suggest something to serve alongside without touching this dish at all. -->
 {#snippet saveAsNewRecipeAction(testid: string)}
-  {#if activeSession?.messages.some((m) => m.role === 'assistant')}
+  {#if chatOffersNewDish}
     <Button
       size="sm"
       variant="outline"
@@ -3019,7 +3033,7 @@
     thread={chat}
     onClose={() => (drawerOpen = false)}
     onOpenFull={() => push(`/chat/${activeSession!.id}`)}
-    latestReplyActions={drawerChatActions}
+    latestReplyActions={chatOffersSomething ? drawerChatActions : undefined}
     starters={recipeStarters}
   />
 {/if}
