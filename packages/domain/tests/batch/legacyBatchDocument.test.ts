@@ -73,6 +73,15 @@ describe('a batch document written before #1274', () => {
     expect(Object.keys(parsed)).not.toContain('vessel');
   });
 
+  it('reads as a run that recorded no place and no kitchen temperature (#1286)', () => {
+    // Both fields are additive with a read default, so a document written before
+    // them parses as "nowhere in particular, and nobody said how warm it was" —
+    // which is exactly what it meant — rather than failing validation.
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.ambientCelsius).toBeNull();
+    expect(parsed.stages[0]?.place).toBeNull();
+  });
+
   it('still runs — the producers do not depend on anything that was deleted', () => {
     const parsed = BatchSchema.parse(LEGACY_BATCH);
     expect(currentStage(parsed)?.id).toBe('bulk');

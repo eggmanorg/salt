@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProcessStageSchema } from './process.js';
+import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
 // at `batches/{batchId}`. Family-shared (no `ownerUid`), a random UUID id minted by
@@ -129,6 +129,43 @@ export const StageSkipSchema = z.object({
   note: z.string(),
 });
 
+// ─── Where a stage actually happened ────────────────────────────────────────────
+//
+// A FROZEN SNAPSHOT of the place the run used (issue #1286), following the rule the
+// header states for quantities: the id AND the label, so renaming the dough proofer
+// or deleting it outright leaves "batch nine proved in the dough proofer at 24 °C"
+// readable a year later. `equipmentManifest/current` is a live document; a batch
+// that read through to it would have its log rewritten under it.
+//
+// WHICH FIGURES ARE FROZEN depends on who owns the setting (`EquipmentControl`):
+//
+//   • `shared`    — the curing chamber holds three other things, so the setting
+//     belongs to the CHAMBER. Its `standing` is copied here and the bake sheet
+//     offers no per-batch setpoint at all. `temperature` is null when the chamber
+//     has no standing setting recorded: nobody knows what it was at, and inventing
+//     the figure the stage asked for would be a lie about a chamber the run did
+//     not control.
+//   • `dedicated` — the proofer holds one job, so the run dialled it in and what it
+//     dialled in is the stage's own asked-for temperature.
+//
+// LIMIT, STATED (CLAUDE.md rule 12): this is a snapshot and nothing re-reads it.
+// Moving a shared chamber from 12 °C to 14 °C mid-cure does NOT rewrite a running
+// batch's frozen figure — a cure started at 12 still reads 12. The observation log
+// is what carries reality; see `docs/formulas-schedules-batches.md`.
+export const BatchStagePlaceSchema = z.object({
+  // The `EquipmentItemDoc.id` this was resolved from. ONE-WAY, exactly as
+  // `StageEnvironment.equipmentId` is: nothing follows it back, and an id whose
+  // item has since been deleted still reads correctly because `label` is here too.
+  equipmentId: z.string(),
+  // The place's name at the moment the run started.
+  label: z.string(),
+  // What the place was set to, in the one spelling every surface renders
+  // (`stageTemperatureText`) — fixed for a chamber standing at a figure, a range
+  // when the stage asked for one. Null when nothing was known; see above.
+  temperature: StageTemperatureSchema.nullable().default(null),
+  relativeHumidityPercent: z.number().min(0).max(100).nullable().default(null),
+});
+
 export const BatchStageSchema = ProcessStageSchema.extend({
   plannedStartAt: z.string(),
   plannedEndAt: z.string(),
@@ -158,6 +195,15 @@ export const BatchStageSchema = ProcessStageSchema.extend({
   // A read default, so every `batches/{batchId}` document written before this field
   // existed parses unchanged (CLAUDE.md, production data back-compat).
   skipped: StageSkipSchema.nullable().default(null),
+  // WHERE THIS STAGE HAPPENED, frozen at start (issue #1286), and null for "at
+  // whatever the kitchen is" — which is also what an unresolvable choice lands as,
+  // because the counter is not an equipment entry and "nowhere in particular" is a
+  // complete answer rather than a missing one.
+  //
+  // A read default, so every `batches/{batchId}` document written before this field
+  // existed parses unchanged (CLAUDE.md, production data back-compat) — the same
+  // shape `skipped` above has.
+  place: BatchStagePlaceSchema.nullable().default(null),
 });
 
 export const BatchSchema = z.object({
@@ -211,6 +257,19 @@ export const BatchSchema = z.object({
   // minutes"). NULLABLE and always null in phase 1: nothing authors prose yet, and
   // a schedule resolved by pure arithmetic has no opinion to record.
   rationale: z.string().nullable(),
+  // HOW WARM THE KITCHEN WAS when the run was started, as the person starting it
+  // typed it (issue #1286). The one figure nobody can derive: Salt has an outdoor
+  // forecast and no way at all to turn it into an indoor temperature without
+  // inventing an offset, which is the same class of made-up coefficient the
+  // fermentation-model ban exists to stop.
+  //
+  // It lives on the RUN rather than in a household setting because it is a fact
+  // about a February evening, and a stored household figure would quietly still be
+  // February's in July. Nothing computes with it: it is a fact on the record, and
+  // an input to the schedule proposal the user reviews as a diff.
+  //
+  // Null when the question was skipped, which is always allowed.
+  ambientCelsius: z.number().nullable().default(null),
   createdAt: z.string(),
   // The ordering token for the write path's stale-echo guard, and the only reason
   // this document carries timestamps at all where `formulas` does not.
@@ -317,6 +376,7 @@ export const BatchObservationSchema = z.object({
 export type BatchQuantityDoc = z.infer<typeof BatchQuantitySchema>;
 export type BatchTotalsDoc = z.infer<typeof BatchTotalsSchema>;
 export type StageSkip = z.infer<typeof StageSkipSchema>;
+export type BatchStagePlace = z.infer<typeof BatchStagePlaceSchema>;
 export type BatchStageDoc = z.infer<typeof BatchStageSchema>;
 export type BatchDoc = z.infer<typeof BatchSchema>;
 export type BatchObservationDoc = z.infer<typeof BatchObservationSchema>;

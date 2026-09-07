@@ -443,10 +443,10 @@ export const coverageThresholds = {
   // is what says this is coverage earned by new tests rather than a denominator that
   // shrank. Nothing moved down.
   'apps/web-pwa/src/routes/**': {
-    lines: 80.94,
-    branches: 69.22,
-    uncoveredLines: 1833,
-    uncoveredBranches: 1741,
+    lines: 81.56,
+    branches: 70.35,
+    uncoveredLines: 1832,
+    uncoveredBranches: 1751,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
@@ -459,10 +459,10 @@ export const coverageThresholds = {
   // uncovered lines 798 → 795. All four measured by `pnpm test:coverage` on this
   // branch and pasted from the ratchet's own block.
   'apps/web-pwa/src/lib/**': {
-    lines: 76.06,
-    branches: 67.71,
-    uncoveredLines: 795,
-    uncoveredBranches: 604,
+    lines: 76.93,
+    branches: 68.82,
+    uncoveredLines: 773,
+    uncoveredBranches: 596,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,

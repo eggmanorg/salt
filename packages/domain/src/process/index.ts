@@ -38,3 +38,6 @@ export type { ProcessStageDiffEntry, ProcessStageChange, ProcessDiff } from './p
 export { remindableStages } from './remindableStages.js';
 // The one spelling of a stage temperature (issue #1281) — four surfaces render it.
 export { stageTemperatureText } from './stageTemperature.js';
+// Whether a place covers what a stage asks for (issue #1286). A comparison, never a
+// conversion — it produces a note on the bake sheet and nothing else.
+export { placeReachesTemperature } from './placeReachability.js';

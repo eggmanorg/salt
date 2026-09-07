@@ -655,6 +655,26 @@
                             · {stage.environment.relativeHumidityPercent}% RH{/if}
                         </span>
                       {/if}
+                      {#if stage.place !== null}
+                        <!-- WHERE IT HAPPENED, from the snapshot frozen at start
+                           (issue #1286) — the label, never a lookup against
+                           `equipmentManifest/current`. That is what keeps this row
+                           readable after the chamber is renamed or deleted, and it
+                           is the same reason a quantity carries its label.
+
+                           No reachability note here: the decision is frozen and no
+                           longer changeable, so re-stating it would nag rather than
+                           inform. The bake sheet is where that note earns its
+                           place. -->
+                        <span class="flex items-center gap-1" data-testid="batch-stage-place">
+                          <Icon name="MapPin" size={12} />
+                          {stage.place.label}{#if stage.place.temperature !== null}
+                            · {stageTemperatureText(
+                              stage.place.temperature,
+                            )}{/if}{#if stage.place.relativeHumidityPercent !== null}
+                            · {stage.place.relativeHumidityPercent}% RH{/if}
+                        </span>
+                      {/if}
                       {#if stage.until !== null}
                         <span data-testid="batch-stage-until">{stage.until}</span>
                       {/if}

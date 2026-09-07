@@ -105,6 +105,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
     ...over,
   };
 }
@@ -154,6 +155,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
       }),
     ],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-08-14T06:45:00.000Z',
     updatedAt: '2026-08-14T06:45:00.000Z',
     ...over,
@@ -369,6 +371,65 @@ describe('BatchDetailPage — the schedule', () => {
     );
     // A mix has no meaningful temperature and is not given an invented one.
     expect(stages[0]!.querySelector('[data-testid="batch-stage-environment"]')).toBeNull();
+  });
+
+  it('shows WHERE a stage happened, from the frozen snapshot (#1286)', async () => {
+    // The label comes off the batch, never off `equipmentManifest/current`. This
+    // page joins nothing — which is the same property the header states for the
+    // recipe and the formula, and is what makes a run readable after the chamber
+    // has been renamed or deleted.
+    const run = makeBatch({
+      stages: [
+        stage(),
+        stage({
+          id: 'stage-2',
+          label: 'Cure',
+          place: {
+            equipmentId: 'eq-curing',
+            label: 'Curing chamber',
+            temperature: { kind: 'fixed', celsius: 12 },
+            relativeHumidityPercent: 75,
+          },
+        }),
+      ],
+    });
+    renderPage();
+    mockBatch._set(run);
+
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+    const stages = screen.getAllByTestId('batch-stage');
+    const place = stages[1]!.querySelector('[data-testid="batch-stage-place"]');
+    expect(place).toHaveTextContent('Curing chamber');
+    expect(place).toHaveTextContent('12 °C');
+    expect(place).toHaveTextContent('75% RH');
+    // A stage that happened nowhere in particular says nothing at all.
+    expect(stages[0]!.querySelector('[data-testid="batch-stage-place"]')).toBeNull();
+  });
+
+  it('says no more than the snapshot knows', async () => {
+    // A shared chamber with no standing setting recorded: the name, and honestly
+    // nothing else. Inventing the figure the stage asked for would claim a
+    // setpoint this run never controlled.
+    const run = makeBatch({
+      stages: [
+        stage({
+          place: {
+            equipmentId: 'eq-curing',
+            label: 'Curing chamber',
+            temperature: null,
+            relativeHumidityPercent: null,
+          },
+        }),
+      ],
+    });
+    renderPage();
+    mockBatch._set(run);
+
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+    const place = screen.getByTestId('batch-stage-place');
+    expect(place).toHaveTextContent('Curing chamber');
+    expect(place.textContent).not.toContain('°C');
+    expect(place.textContent).not.toContain('RH');
   });
 });
 

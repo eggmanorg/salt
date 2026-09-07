@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
 import type { Recipe } from '@salt/domain';
 import type { Formula, ProposeScheduleOutput } from '@salt/domain/schemas';
 
@@ -29,10 +30,17 @@ const { mockStartBatch, mockProposeSchedule, mockAddToast } = vi.hoisted(() => (
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: mockAddToast }));
+// The sheet also reads the batches store (for the kitchen-temperature prefill) and
+// the equipment store (for the place pickers) since #1286. Both are stubbed empty
+// here: this suite is about the scale and the schedule, and the two new questions
+// have their own file.
 vi.mock('../src/lib/batchService.js', () => ({
   startBatch: mockStartBatch,
   proposeSchedule: mockProposeSchedule,
+  batches: readable(undefined),
+  initBatchesSync: vi.fn(() => vi.fn()),
 }));
+vi.mock('../src/lib/equipmentService.js', () => ({ equipment: readable(null) }));
 
 import { push } from 'svelte-spa-router';
 import RecipeBakeBatchSheet from '../src/routes/recipes/RecipeBakeBatchSheet.svelte';

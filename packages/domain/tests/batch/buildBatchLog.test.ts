@@ -41,6 +41,7 @@ function stage(
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
   };
 }
 
@@ -75,6 +76,7 @@ function loaf(stages: BatchStageDoc[], over: Partial<BatchDoc> = {}): BatchDoc {
     totals: { basisGrams: 841, totalGrams: 1483, usableGrams: 1440, units: null },
     stages,
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-09-05T17:12:00.000Z',
     updatedAt: '2026-09-05T17:12:00.000Z',
     ...over,

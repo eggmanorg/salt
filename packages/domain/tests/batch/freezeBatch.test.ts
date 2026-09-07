@@ -324,3 +324,110 @@ describe('freezeBatch — what it refuses', () => {
     });
   });
 });
+
+// ─── The frozen place, and the kitchen figure (issue #1286) ────────────────────
+describe('freezeBatch — where each stage happened', () => {
+  const PROOFER = {
+    equipmentId: 'eq-proofer',
+    label: 'Dough proofer',
+    temperature: { kind: 'fixed' as const, celsius: 24 },
+    relativeHumidityPercent: null,
+  };
+  const CURING = {
+    equipmentId: 'eq-curing',
+    label: 'Curing chamber',
+    temperature: { kind: 'fixed' as const, celsius: 12 },
+    relativeHumidityPercent: 75,
+  };
+
+  it('writes the places POSITIONALLY, against the process it was given', () => {
+    // The alignment `FreezeBatchInput.places` claims. `resolveSchedule` returns one
+    // entry per stage in order, so entry i is stage i — and this is the test that
+    // goes red if that ever stops being true.
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      labels: LABELS,
+      places: [null, CURING, null, PROOFER],
+      now: NOW,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byId = new Map(result.batch.stages.map((s) => [s.id, s.place]));
+    expect(byId.get('mix')).toBeNull();
+    expect(byId.get('bulk')).toEqual(CURING);
+    expect(byId.get('shape')).toBeNull();
+    expect(byId.get('prove')).toEqual(PROOFER);
+    // Shorter than the process: the rest chose nowhere in particular.
+    expect(byId.get('preheat')).toBeNull();
+    expect(byId.get('bake')).toBeNull();
+  });
+
+  it('keeps the label after the equipment item is renamed or deleted', () => {
+    // The whole reason the snapshot carries a label as well as an id. Nothing here
+    // can reach `equipmentManifest/current`, so renaming the proofer to something
+    // else — or deleting it — cannot reach back into a run already frozen.
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      labels: LABELS,
+      places: [null, PROOFER],
+      now: NOW,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const frozen = BatchSchema.parse(result.batch);
+    expect(frozen.stages[1]?.place?.label).toBe('Dough proofer');
+    expect(frozen.stages[1]?.place?.equipmentId).toBe('eq-proofer');
+  });
+
+  it("lands every place null when none was chosen — today's behaviour, exactly", () => {
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      labels: LABELS,
+      now: NOW,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.batch.stages.every((s) => s.place === null)).toBe(true);
+    expect(result.batch.ambientCelsius).toBeNull();
+  });
+
+  it('freezes the kitchen temperature, and computes nothing from it', () => {
+    const warm = freezeBatch({
+      id: 'batch-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      labels: LABELS,
+      ambientCelsius: 26,
+      now: NOW,
+    });
+    const cold = freezeBatch({
+      id: 'batch-2',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      labels: LABELS,
+      ambientCelsius: 14,
+      now: NOW,
+    });
+    expect(warm.ok && cold.ok).toBe(true);
+    if (!warm.ok || !cold.ok) return;
+    expect(warm.batch.ambientCelsius).toBe(26);
+    expect(cold.batch.ambientCelsius).toBe(14);
+    // THE BAN, PINNED. Twelve degrees of difference must not move a single planned
+    // minute: a temperature is a fact on the record, never an operand
+    // (docs/formulas-schedules-batches.md, "what not to build").
+    expect(warm.batch.stages.map((s) => [s.plannedStartAt, s.plannedEndAt])).toEqual(
+      cold.batch.stages.map((s) => [s.plannedStartAt, s.plannedEndAt]),
+    );
+  });
+});
