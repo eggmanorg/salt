@@ -35,7 +35,34 @@
       "Bash(pnpm -F:*)",
       "Bash(pnpm --filter:*)",
       "Bash(node scripts/campaign-land.mjs:*)",
-      "Bash(node /Users/daniel/Projects/salt-vscode/scripts/campaign-land.mjs:*)"
+      "Bash(node /Users/daniel/Projects/salt-vscode/scripts/campaign-land.mjs:*)",
+      "mcp__firebase-prod__firebase_get_project",
+      "mcp__firebase-prod__firebase_get_environment",
+      "mcp__firebase-prod__firebase_get_sdk_config",
+      "mcp__firebase-prod__firebase_get_security_rules",
+      "mcp__firebase-prod__firebase_validate_security_rules",
+      "mcp__firebase-prod__firebase_read_resources",
+      "mcp__firebase-prod__firebase_list_apps",
+      "mcp__firebase-prod__firestore_get_document",
+      "mcp__firebase-prod__firestore_list_documents",
+      "mcp__firebase-prod__firestore_list_collections",
+      "mcp__firebase-prod__firestore_query_collection",
+      "mcp__firebase-prod__firestore_run_aggregation_query",
+      "mcp__firebase-prod__firestore_get_database",
+      "mcp__firebase-prod__firestore_list_databases",
+      "mcp__firebase-prod__firestore_get_index",
+      "mcp__firebase-prod__firestore_list_indexes",
+      "mcp__firebase-prod__firestore_get_backup",
+      "mcp__firebase-prod__firestore_list_backups",
+      "mcp__firebase-prod__firestore_get_backup_schedule",
+      "mcp__firebase-prod__firestore_list_backup_schedules",
+      "mcp__firebase-prod__functions_get_logs",
+      "mcp__firebase-prod__functions_list_functions"
+    ],
+    "ask": [
+      "mcp__firebase-prod__firestore_add_document",
+      "mcp__firebase-prod__firestore_update_document",
+      "mcp__firebase-prod__firestore_delete_document"
     ]
   },
   "hooks": {
@@ -66,5 +93,15 @@
   "enabledPlugins": {
     "ponytail@ponytail": true,
     "claude-security@claude-plugins-official": true
+  },
+  "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Any write to PRODUCTION Firestore (s2-prod-e46bd) — the mcp__firebase-prod__firestore_{add,update,delete}_document tools. Reads on that server are allowed outright, as on staging; every write is Daniel's call, every time, and prior approval of one write never carries to the next. There is no undo: recovery is scripts/export-prod-firestore.mjs + scripts/restore-firestore.mjs (docs/data-refresh.md)."
+    ],
+    "hard_deny": [
+      "$defaults",
+      "Reaching production Firestore by any route other than the firebase-prod MCP server — `firebase --project production`, `firebase --project s2-prod-e46bd`, a gcloud firestore call, or an ad-hoc admin-SDK script. That server's --tools allowlist is the only thing bounding what an agent can do to prod, and a side channel silently voids it."
+    ]
   }
 }
