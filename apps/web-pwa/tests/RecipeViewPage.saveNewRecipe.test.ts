@@ -241,6 +241,65 @@ describe('RecipeViewPage — when the button is offered', () => {
   });
 });
 
+// Issue #1299 moved these two out of the chat card's header and into the transcript.
+// The comments on `ChatThread.svelte` and on `reviewChangesAction` state that as an
+// absolute — "under the NEWEST chef reply", "no chat header writes to the dish" — so it
+// is pinned here rather than left as a sentence. Placement is the whole deliverable of
+// that phase and it is exactly what a testid-only assertion cannot see.
+describe('RecipeViewPage — where the chat actions render (#1299)', () => {
+  const LATER_USER_TURN = {
+    id: 'm3',
+    role: 'user' as const,
+    text: 'and a drink?',
+    createdAt: '2026-08-13T10:00:02.000Z',
+  };
+  const LATER_ASSISTANT_TURN = {
+    id: 'm4',
+    role: 'assistant' as const,
+    text: 'A dry amontillado.',
+    createdAt: '2026-08-13T10:00:03.000Z',
+  };
+
+  it('puts the row inside the transcript, immediately after the NEWEST reply', () => {
+    mockSessions._set([
+      makeSession([USER_TURN, ASSISTANT_TURN, LATER_USER_TURN, LATER_ASSISTANT_TURN]),
+    ]);
+    const { getByTestId, getAllByTestId } = renderPage();
+
+    // One row, not one per reply: there are two assistant turns on this session.
+    const rows = getAllByTestId('chat-reply-actions');
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+
+    // Inside the message list, and the sibling right after the last reply — the two
+    // halves of "under the newest chef reply" that a testid lookup alone would miss.
+    expect(getByTestId('chat-messages').contains(row)).toBe(true);
+    const replies = getAllByTestId('chat-message-assistant');
+    expect(row.previousElementSibling).toBe(replies[replies.length - 1]);
+
+    // Both buttons are in it, and they say what they do.
+    expect(row.contains(getByTestId('sidebar-apply-changes-btn'))).toBe(true);
+    expect(row.contains(getByTestId('sidebar-save-new-recipe-btn'))).toBe(true);
+    expect(getByTestId('sidebar-apply-changes-btn').textContent).toContain('Review changes');
+    expect(getByTestId('sidebar-save-new-recipe-btn').textContent).toContain('Save as new recipe');
+  });
+
+  it('renders neither action anywhere outside the transcript', () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const { getByTestId } = renderPage();
+
+    // "No chat header contains a control that writes to a recipe" — asked of the whole
+    // document rather than of one header element, so a copy left behind in the card
+    // header, the page header or anywhere else is caught by the same assertion.
+    const transcript = getByTestId('chat-messages');
+    for (const testid of ['sidebar-apply-changes-btn', 'sidebar-save-new-recipe-btn']) {
+      const found = document.querySelectorAll(`[data-testid="${testid}"]`);
+      expect(found).toHaveLength(1);
+      expect(transcript.contains(found[0]!)).toBe(true);
+    }
+  });
+});
+
 describe('RecipeViewPage — saving the conversation as a new dish', () => {
   it('authors in create mode with no base, saves a second recipe and goes to it', async () => {
     mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);

@@ -2810,8 +2810,10 @@
           <CardHeader class="shrink-0 border-b px-4 py-3">
             <div class="flex items-center justify-between gap-2">
               <CardTitle class="truncate text-sm">Chef Chat</CardTitle>
+              <!-- Title and the one way out of here, and nothing else. The two actions
+                   that write to the dish moved into the transcript (issue #1299); no
+                   chat header on any surface decides a recipe's fate any more. -->
               <div class="flex shrink-0 items-center gap-1">
-                {@render sidebarChatActions()}
                 {#if activeSession}
                   <Button
                     size="sm"
@@ -2871,6 +2873,7 @@
               emptyText="Ask me anything about this recipe."
               starters={recipeStarters}
               aboveTranscript={chatPaneShown ? dockedChatList : undefined}
+              latestReplyActions={sidebarChatActions}
             />
           {/if}
         </Card>
@@ -2942,53 +2945,62 @@
      the drawer. One handler for both, so an edit proposed from a phone and an edit
      proposed from a laptop are the same act.
 
-     Both actions live in the panel's HEADER now (issue #878), not in a bar above the
-     composer. A full-width button under the transcript is height the conversation never
-     gets back, and there were two of them; up here they cost the row the title already
-     occupies. That is also why they are icon-only: the narrowest column this card
-     renders in is about 300px, which a labelled pair does not fit — and the header was
-     already an icon-only row ("Open full chat"), so they read as part of it. `ariaLabel`
-     carries the whole name, so nothing is lost to a screen reader. -->
+     Both actions live INSIDE the transcript now (issue #1299), in the row `ChatThread`
+     renders under the chef's newest reply — the same row, in the same place, on every
+     surface a chat is read.
+
+     #878's rule is narrowed rather than overturned, and the boundary is what it was
+     always about: a PERMANENT bar above the composer is still rejected, because that is
+     height the conversation never gets back whether or not there is anything to offer.
+     A row attached to the message that earned it is not that — it scrolls away with
+     that message, and it is absent entirely when the chef has said nothing to act on.
+     Which is also why the icons gained words: down here there is the column's whole
+     width, and a glyph with no hover on a phone is a guess on first press. -->
 {#snippet reviewChangesAction(testid: string)}
   {#if activeSession?.messages.some((m) => m.role === 'assistant')}
     <Button
       size="sm"
-      variant="ghost"
+      variant="outline"
       onclick={handleSidebarReviewChanges}
       loading={sidebarIsProposing}
       disabled={sidebarIsProposing || chat.isSending}
-      ariaLabel="Review changes"
       data-testid={testid}
     >
       {#snippet leading()}<Icon name="RefreshCw" size={14} />{/snippet}
+      Review changes
     </Button>
   {/if}
 {/snippet}
 
 <!-- Its counterpart (issue #798). Same gate — an empty conversation has nothing to
      author either — and deliberately the same shape, because the pair is the whole
-     point: one folds what was said into THIS dish, the other makes it a different
-     one. It moves WITH its twin for that reason: relocating one and leaving the
-     other would keep the bar and split a pair the design treats as one thing. -->
+     point: one folds what was said into THIS dish, the other makes it a different one.
+
+     What #798 called an indivisible pair is now precisely a claim about PLACEMENT, and
+     that half holds: they render in one row, in one place, on every surface. It says
+     nothing about VISIBILITY — today the two share a single gate, and #1299's third
+     phase gives them separate ones, because one reply can propose a change to this dish
+     without also inventing a second one. -->
 {#snippet saveAsNewRecipeAction(testid: string)}
   {#if activeSession?.messages.some((m) => m.role === 'assistant')}
     <Button
       size="sm"
-      variant="ghost"
+      variant="outline"
       onclick={handleSaveAsNewRecipe}
       loading={sidebarIsSavingNew}
       disabled={sidebarIsSavingNew || chat.isSending}
-      ariaLabel="Save as new recipe"
       data-testid={testid}
     >
       {#snippet leading()}<Icon name="BookOpen" size={14} />{/snippet}
+      Save as new recipe
     </Button>
   {/if}
 {/snippet}
 
 <!-- The two surfaces are separate DOM nodes and both can be mounted at once (the column
      is merely `hidden` below `lg`), so they carry distinct testids — one ambiguous
-     selector is a worse trap than two names for one button. -->
+     selector is a worse trap than two names for one button. Each row goes to its own
+     surface's `ChatThread` as `latestReplyActions`. -->
 {#snippet sidebarChatActions()}
   {@render reviewChangesAction('sidebar-apply-changes-btn')}
   {@render saveAsNewRecipeAction('sidebar-save-new-recipe-btn')}
@@ -3007,7 +3019,7 @@
     thread={chat}
     onClose={() => (drawerOpen = false)}
     onOpenFull={() => push(`/chat/${activeSession!.id}`)}
-    headerActions={drawerChatActions}
+    latestReplyActions={drawerChatActions}
     starters={recipeStarters}
   />
 {/if}

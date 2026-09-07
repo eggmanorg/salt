@@ -322,6 +322,27 @@ raw.kind`:
   precedes the parameterised `/chat/:id` route; see Components §4 above.
 - Recipe-attached chat — opened alongside an existing recipe; same chat engine with
   `recipeId` set; "apply changes" re-runs the librarian against the recipe.
+- **Where the recipe actions live — under the newest reply, never in a header (#1299).**
+  `ChatThread.svelte` takes a `latestReplyActions` snippet and renders it as a row
+  immediately after the newest assistant message, in `page` and `panel` layouts alike.
+  The host still writes the buttons — labels, handlers, busy state, and testids, which
+  stay distinct per surface because the recipe page's docked column and its phone drawer
+  can be mounted at once — but not where they go. That is what makes the surfaces agree
+  by construction rather than by three hosts keeping a convention. The row is withheld
+  while a turn is in flight, and absent entirely when the chef has not replied.
+
+  This **narrows #878, it does not reverse it.** What #878 rejected was a _permanent_
+  full-width bar above the composer: height the conversation never gets back, whether or
+  not there is anything to act on. A row attached to the message that earned it scrolls
+  away with that message and is not drawn when there is nothing to offer, so that
+  objection does not reach it. A permanent bar under the transcript, and anything in the
+  composer area, remain rejected.
+
+  The recipe page's docked column and phone drawer render the row today, with labelled
+  buttons rather than the bare glyphs the header held (there is no hover on a phone, so
+  an unlabelled glyph is a guess on first press). The full chat page joins them in the
+  second phase of #1299.
+
 - Authoring a NEW recipe out of a conversation — one leg, `src/lib/chatRecipeAuthor.ts`,
   three buttons (#798). It is always the CREATE path (`recipeId` never sent), it stamps
   the clock, saves, and fires one `recipe.created` with `recipe_method: 'chat'`; the
@@ -331,9 +352,10 @@ raw.kind`:
     session's `basedOnRecipeId` through, so a variation chat is grounded on the dish
     it started from, and CLAIMS the session for the recipe it invented.
   - **"Save as new recipe"** on a chat attached to a recipe — in the full page's
-    header (`chat-save-new-recipe-btn`) and in the recipe page's docked chat column
-    and drawer (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`), both
-    rendered from one `saveAsNewRecipeAction` snippet. Same gate as "Review changes":
+    header (`chat-save-new-recipe-btn`, until #1299's second phase) and in the recipe
+    page's docked chat column and drawer, under the newest reply
+    (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`), both rendered from
+    one `saveAsNewRecipeAction` snippet. Same gate as "Review changes":
     at least one assistant turn. It passes `basedOnRecipeId: null` **even on a session
     that has one**, and does NOT claim — an accompaniment is not derived from the dish
     it accompanies, and the conversation stays listed on the dish it is attached to,
