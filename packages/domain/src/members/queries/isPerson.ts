@@ -1,10 +1,14 @@
 import type { Member } from '../entities/Member.js';
 
-// Who counts as a person (issue #1300). These two are the ONLY place
-// `member.system` is ever inspected: no call site outside packages/domain reads
-// the field, so the rule "a system account is never offered as a person" is
-// stated here once and every people-picker inherits it — including the one built
-// next year, which never has to be told.
+// Who counts as a person (issue #1300). These two are where `member.system` is
+// meant to be inspected, so the rule "a system account is never offered as a
+// person" is stated once and every people-picker inherits it — including the one
+// built next year, which never has to be told.
+//
+// "Meant to be", not "can only be": nothing mechanical stops a component reading
+// the field, exactly as nothing stops one comparing `recipe.kind` instead of
+// calling `takesIngredients`. It is a convention held by review, and it holds
+// today — the admin screen, which EDITS the flag, still asks through `isPerson`.
 //
 // The rule is about being OFFERED, never about being allowed. A system account
 // signs in, adds recipes and uses the app exactly as it did; what changes is that

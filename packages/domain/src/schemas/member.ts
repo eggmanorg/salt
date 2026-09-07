@@ -35,8 +35,14 @@ export const MemberSchema = z.object({
   // still carries its name. What reads it is `isPerson` / `onlyPeople` in the
   // members module, which the people-pickers call — the same shape `recipes.kind`
   // consumers use, so "a system account is never offered as a person" is stated
-  // once rather than copied into every picker. Nothing outside packages/domain
-  // reads this field directly.
+  // once rather than copied into every picker.
+  //
+  // "Only the predicates read it" is a CONVENTION held by review, not a
+  // mechanism — the same standing as the `recipes.kind` rule it copies
+  // (CLAUDE.md → Data model conventions), and for the same reason: there is no
+  // lint rule that can tell a capability decision from a word-picking one. It is
+  // true as written today; a `grep` for the field name is what checks it, and a
+  // second reader appearing would be a review finding rather than a red test.
   //
   // `.default(false)` for the same reason `cookMode` has one: every member doc in
   // production predates the field, and absent must read back as "an ordinary
