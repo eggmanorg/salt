@@ -273,6 +273,10 @@ describe('RecipeBakeBatchSheet — asking for a finish time', () => {
     // seven on Saturday" and the instant stays on this side for `resolveSchedule`.
     // Quiet hours default to 23:00–06:00 in the flow, and there is no settings
     // surface for them — sending nothing sends the truth.
+    //
+    // `ambientCelsius` is null here because this suite's stores are empty and
+    // nobody typed a figure. What it carries when somebody did is pinned in
+    // `RecipeBakeBatchSheet.places.test.ts` (issue #1286).
     renderSheet();
     await askFor();
 
@@ -282,6 +286,7 @@ describe('RecipeBakeBatchSheet — asking for a finish time', () => {
     expect(mockProposeSchedule).toHaveBeenCalledWith({
       recipeId: RECIPE_ID,
       targetEndAtLocal: TARGET_LOCAL,
+      ambientCelsius: null,
     });
   });
 

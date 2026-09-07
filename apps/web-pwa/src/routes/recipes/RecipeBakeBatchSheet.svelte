@@ -167,7 +167,20 @@
   let proposalFor = $state<string | null>(null);
   let proposeError = $state<string | null>(null);
 
-  const askKey = $derived(`${mode}|${whenLocal}`);
+  // How warm the kitchen is, declared up here because `askKey` below is part of what
+  // it answers.
+  let ambientText = $state('');
+  // Whether the person has typed in the box, as against being shown the prefill.
+  // The prefill arrives asynchronously — the batches subscription resolves after the
+  // sheet is on screen — so without this it could land on top of a figure already
+  // being typed.
+  let ambientTouched = $state(false);
+
+  // The kitchen figure is part of the QUESTION, not a decoration on it: a schedule
+  // written for a 26 °C room is a different answer from one written for 16 °C, so
+  // changing it retires the proposal exactly as moving the target time does rather
+  // than leaving a diff on screen that answers a question nobody asked.
+  const askKey = $derived(`${mode}|${whenLocal}|${ambientText.trim()}`);
   const activeProposal = $derived(proposalFor === askKey ? proposal : null);
 
   // ─── Where, and how warm the kitchen is (issue #1286) ─────────────────────────
@@ -182,6 +195,8 @@
 
   /** The places this household has described. A knife block is not one. */
   const places = $derived(($equipment?.items ?? []).filter((item) => item.environment !== null));
+  /** id → name, so the review can say "moved to the dough proofer" (issue #1286). */
+  const placeNames = $derived(new Map(places.map((place) => [place.id, place.name])));
 
   // The picker's "nowhere in particular" value. A Select cannot hold null, and the
   // counter is deliberately not an equipment entry, so "nothing chosen" and
@@ -218,19 +233,12 @@
     placeIds = stages.map((stage) => stage.environment?.equipmentId ?? null);
   });
 
-  // Subscribed only while the sheet is open, and only for the prefill below: the
-  // recipe page has no other reason to hold the collection.
+  // Subscribed only while the sheet is open, and only for the kitchen-temperature
+  // prefill: the recipe page has no other reason to hold the collection.
   $effect(() => {
     if (!open) return;
     return initBatchesSync();
   });
-
-  let ambientText = $state('');
-  // Whether the person has typed in the box, as against being shown the prefill.
-  // The prefill arrives asynchronously — the subscription above resolves after the
-  // sheet is on screen — so without this it could land on top of a figure already
-  // being typed.
-  let ambientTouched = $state(false);
 
   /** The last kitchen temperature anybody gave, from the most recent run that gave one. */
   const lastAmbientCelsius = $derived.by(() => {
@@ -417,7 +425,7 @@
   const review = $derived(
     activeProposal === null || diff === null
       ? null
-      : reviewRows(diff, referenceProcess, activeProposal.stages),
+      : reviewRows(diff, referenceProcess, activeProposal.stages, placeNames),
   );
 
   type Leavening =
@@ -467,6 +475,7 @@
     const result = await proposeSchedule({
       recipeId: recipe.id,
       targetEndAtLocal: whenLocal.slice(0, 16),
+      ambientCelsius,
     });
     proposing = false;
     if (result.kind !== 'ok') {

@@ -86,7 +86,41 @@ const run = proposeScheduleFlow as unknown as (input: {
   recipeId: string;
   targetEndAtLocal: string;
   quietHours?: { fromHour: number; toHour: number };
+  ambientCelsius?: number | null;
 }) => Promise<Output>;
+
+// The household's places (issue #1286). The proofer is `dedicated`, the curing
+// chamber `shared` with a standing setting — both shapes render, and the knife
+// block is not a place at all.
+const PROOFER = {
+  id: 'eq-proofer',
+  schemaVersion: 1,
+  name: 'Dough proofer',
+  accessories: [],
+  rules: [],
+  environment: {
+    control: 'dedicated',
+    minCelsius: 20,
+    maxCelsius: 40,
+    humidity: null,
+    standing: null,
+  },
+  updatedAt: '2026-08-01T09:00:00.000Z',
+};
+
+const KNIFE_BLOCK = {
+  id: 'eq-knives',
+  schemaVersion: 1,
+  name: 'Knife block',
+  accessories: [],
+  rules: [],
+  environment: null,
+  updatedAt: '2026-08-01T09:00:00.000Z',
+};
+
+function manifest(items: unknown[]) {
+  return { schemaVersion: 1, updatedAt: '2026-08-01T09:00:00.000Z', items };
+}
 
 const LOAF_RECIPE = {
   id: 'recipe-1',
@@ -210,10 +244,19 @@ const AI_OUTPUT: Output = {
 };
 
 // One `get` per collection, in the order the flow asks for them.
-function stubDocs(recipe: unknown, formula: unknown): void {
+//
+// `equipmentManifest` joined the list in #1286. It defaults to ABSENT, so every
+// test that does not seed places exercises the degrade-to-nothing path — which is
+// the behaviour a household with no chambers gets.
+function stubDocs(recipe: unknown, formula: unknown, equipmentManifest: unknown = null): void {
   mockGet.mockImplementation(() => {
     const collection = mockCollection.mock.calls[mockGet.mock.calls.length - 1]?.[0];
-    const doc = collection === 'formulas' ? formula : recipe;
+    const doc =
+      collection === 'formulas'
+        ? formula
+        : collection === 'equipmentManifest'
+          ? equipmentManifest
+          : recipe;
     return Promise.resolve({ exists: doc !== null, data: () => doc ?? undefined });
   });
 }
@@ -230,9 +273,14 @@ describe('proposeSchedule', () => {
   it('reads the recipe AND its formula server-side, from ids alone', async () => {
     await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
 
-    expect(mockCollection.mock.calls.map((c) => c[0])).toEqual(['recipes', 'formulas']);
+    expect(mockCollection.mock.calls.map((c) => c[0])).toEqual([
+      'recipes',
+      'formulas',
+      // The equipment manifest rides in the same round trip (issue #1286).
+      'equipmentManifest',
+    ]);
     // `formulas/{recipeId}` — one document per recipe, the deterministic id.
-    expect(mockDoc.mock.calls.map((c) => c[0])).toEqual(['recipe-1', 'recipe-1']);
+    expect(mockDoc.mock.calls.map((c) => c[0])).toEqual(['recipe-1', 'recipe-1', 'current']);
   });
 
   it('runs on the better tier — this is judgement, not transcription', async () => {
@@ -492,5 +540,126 @@ describe('proposeSchedule — the trust boundaries', () => {
     await expect(
       run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' }),
     ).rejects.toThrow(/no stages/);
+  });
+});
+
+describe('proposeSchedule — the kitchen, and the places (issue #1286)', () => {
+  it('tells the model how warm the kitchen actually is', async () => {
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30', ambientCelsius: 26 });
+    expect(String(mockGenerate.mock.calls[0]![0].prompt)).toContain(
+      'Kitchen temperature today: 26 °C',
+    );
+  });
+
+  it('says nothing about the kitchen when nobody answered, rather than guessing one', async () => {
+    // A made-up room temperature is worse than none: the model would reason from
+    // it as though somebody had measured it.
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    expect(String(mockGenerate.mock.calls[0]![0].prompt)).not.toContain('Kitchen temperature');
+
+    mockGenerate.mockClear();
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30', ambientCelsius: null });
+    expect(String(mockGenerate.mock.calls[0]![0].prompt)).not.toContain('Kitchen temperature');
+  });
+
+  it('no longer names an assumed counter and fridge', async () => {
+    // The whole point of the places section: the household's own kit, not two
+    // appliances the prompt guessed it owns.
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    expect(String(mockGenerate.mock.calls[0]![0].system)).not.toContain('(counter, fridge)');
+  });
+
+  it('shows the household its own places, with their ids and their figures', async () => {
+    stubDocs(LOAF_RECIPE, LOAF_FORMULA, manifest([PROOFER, KNIFE_BLOCK]));
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+
+    const system = String(mockGenerate.mock.calls[0]![0].system);
+    expect(system).toContain('Places this household can put something');
+    expect(system).toContain('[eq-proofer] Dough proofer');
+    expect(system).toContain('holds a temperature: 20–40 °C');
+    // A knife block is not somewhere a prove happens.
+    expect(system).not.toContain('Knife block');
+  });
+
+  it('names the place a stage is already in, rather than showing a bare id', async () => {
+    const inProofer = {
+      ...LOAF_FORMULA,
+      process: LOAF_FORMULA.process.map((stage) =>
+        stage.id === 'stage-bulk'
+          ? {
+              ...stage,
+              environment: {
+                temperature: { kind: 'fixed', celsius: 24 },
+                equipmentId: 'eq-proofer',
+              },
+            }
+          : stage,
+      ),
+    };
+    stubDocs(LOAF_RECIPE, inProofer, manifest([PROOFER]));
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+
+    const prompt = String(mockGenerate.mock.calls[0]![0].prompt);
+    expect(prompt).toContain('in the Dough proofer');
+  });
+
+  it('renders no places section at all for a household that has described none', async () => {
+    // Byte-for-byte the prompt it had before this issue — the degrade path, and
+    // the one every other test in this file is silently exercising.
+    await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    const system = String(mockGenerate.mock.calls[0]![0].system);
+    expect(system).not.toContain('Places this household can put something');
+  });
+
+  it('survives a corrupt manifest, and simply shows no places', async () => {
+    stubDocs(LOAF_RECIPE, LOAF_FORMULA, { schemaVersion: 'not a number' });
+    const result = await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    expect(result.stages).toHaveLength(4);
+    expect(String(mockGenerate.mock.calls[0]![0].system)).not.toContain(
+      'Places this household can put something',
+    );
+  });
+
+  it('drops an equipmentId the manifest does not hold, and KEEPS the stage', async () => {
+    stubDocs(LOAF_RECIPE, LOAF_FORMULA, manifest([PROOFER]));
+    mockGenerate.mockResolvedValue({
+      output: {
+        ...AI_OUTPUT,
+        stages: [
+          proposedStage({
+            label: 'Bulk ferment',
+            environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: 'eq-proofer' },
+          }),
+          proposedStage({
+            label: 'Cold retard',
+            environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: 'eq-invented' },
+          }),
+          proposedStage({ label: 'Bake', kind: 'active', environment: null }),
+        ],
+      },
+    });
+
+    const result = await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    expect(result.stages.map((s) => s.label)).toEqual(['Bulk ferment', 'Cold retard', 'Bake']);
+    expect(result.stages[0]!.environment!.equipmentId).toBe('eq-proofer');
+    // The place goes; the stage stays. Same one-way rule as `sourceStageId`.
+    expect(result.stages[1]!.environment!.equipmentId).toBeNull();
+    expect(result.stages[1]!.environment!.temperature).toEqual({ kind: 'fixed', celsius: 4 });
+    expect(result.stages[2]!.environment).toBeNull();
+  });
+
+  it('drops every place when there is no manifest to resolve them against', async () => {
+    mockGenerate.mockResolvedValue({
+      output: {
+        ...AI_OUTPUT,
+        stages: [
+          proposedStage({
+            environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: 'eq-proofer' },
+          }),
+        ],
+      },
+    });
+    const result = await run({ recipeId: 'recipe-1', targetEndAtLocal: '2026-08-15T07:30' });
+    expect(result.stages[0]!.environment!.equipmentId).toBeNull();
   });
 });

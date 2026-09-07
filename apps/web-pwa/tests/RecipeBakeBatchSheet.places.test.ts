@@ -422,6 +422,81 @@ describe('RecipeBakeBatchSheet — where each stage happens', () => {
   });
 });
 
+describe('RecipeBakeBatchSheet — the proposal sees the kitchen (issue #1286)', () => {
+  const PROPOSAL = {
+    kind: 'ok' as const,
+    value: {
+      rationale: 'Your kitchen is warm today, so the bulk is short.',
+      adjustment: null,
+      stages: [
+        {
+          label: 'Bulk ferment',
+          kind: 'wait' as const,
+          environment: {
+            temperature: { kind: 'fixed' as const, celsius: 24 },
+            equipmentId: 'eq-proofer',
+          },
+          duration: { kind: 'fixed' as const, minutes: 60 },
+          until: null,
+          stepId: null,
+          optional: false,
+          sourceStageId: 'stg-bulk',
+        },
+        {
+          label: 'Overnight retard',
+          kind: 'wait' as const,
+          environment: { temperature: { kind: 'fixed' as const, celsius: 4 }, equipmentId: null },
+          duration: { kind: 'fixed' as const, minutes: 600 },
+          until: null,
+          stepId: null,
+          optional: false,
+          sourceStageId: 'stg-retard',
+        },
+      ],
+    },
+  };
+
+  async function propose(): Promise<void> {
+    await fireEvent.click(screen.getByRole('radio', { name: /Out of the oven/ }));
+    await fireEvent.click(await screen.findByTestId('bake-batch-propose'));
+    await waitFor(() => expect(screen.getByTestId('bake-batch-proposal')).toBeInTheDocument());
+  }
+
+  it('hands the kitchen figure to the flow', async () => {
+    mockProposeSchedule.mockResolvedValue(PROPOSAL);
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-ambient')).toHaveValue('19'));
+    await propose();
+
+    expect(mockProposeSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({ recipeId: RECIPE_ID, ambientCelsius: 19 }),
+    );
+  });
+
+  it('names the place a stage moved to, not just the temperature', async () => {
+    mockProposeSchedule.mockResolvedValue(PROPOSAL);
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-places')).toBeInTheDocument());
+    await propose();
+
+    const rows = screen.getAllByTestId('bake-batch-diff-row').map((r) => r.textContent ?? '');
+    expect(rows.join(' | ')).toContain('Dough proofer');
+  });
+
+  it('retires the proposal when the kitchen figure changes — it answered the old question', async () => {
+    mockProposeSchedule.mockResolvedValue(PROPOSAL);
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-ambient')).toBeInTheDocument());
+    await propose();
+
+    await fireInput(screen.getByTestId('bake-batch-ambient'), '9');
+    await waitFor(() => expect(screen.queryByTestId('bake-batch-proposal')).toBeNull());
+    // And the ask is offered again rather than Start being left enabled on a
+    // schedule written for a different room.
+    expect(await screen.findByTestId('bake-batch-propose')).toBeInTheDocument();
+  });
+});
+
 // ─── helpers ────────────────────────────────────────────────────────────────────
 
 async function fireInput(element: HTMLElement, value: string): Promise<void> {
