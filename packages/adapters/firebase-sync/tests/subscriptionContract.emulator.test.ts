@@ -456,7 +456,7 @@ const fx = {
       basisGrams: 1,
       totalGrams: 1,
       usableGrams: 1,
-      units: { label: 'loaf', count: 1, unitDoughGrams: 1, bakedUnitGrams: 1 },
+      units: { count: 1, unitDoughGrams: 1 },
     },
     stages: [],
     rationale: 'x',

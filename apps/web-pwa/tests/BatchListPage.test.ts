@@ -76,10 +76,11 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     state: 'running',
     quantities: [],
     totals: {
-      basisGrams: 841,
-      totalGrams: 1483,
+      basisGrams: 816,
+      totalGrams: 1440,
       usableGrams: 1440,
-      units: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakedUnitGrams: 108 },
+      // No label and no baked figure since #1274 — see `BatchUnitsSchema`.
+      units: { count: 12, unitDoughGrams: 120 },
     },
     stages: [stage()],
     rationale: null,
@@ -204,8 +205,12 @@ describe('BatchListPage — the next action and when', () => {
     mockBatches._set([makeBatch()]);
 
     await waitFor(() => expect(screen.getByTestId('batch-card-yield')).toBeInTheDocument());
-    expect(screen.getByTestId('batch-card-yield')).toHaveTextContent('12 × 120 g roll');
-    expect(cards()[0]).toHaveTextContent('1483 g in total');
+    // Since #1274 `yieldSummary` reads no label off the units — "2 × 900 g — 1.8 kg
+    // of dough" is the whole vocabulary now.
+    expect(screen.getByTestId('batch-card-yield')).toHaveTextContent(
+      '12 × 120 g — 1.4 kg of dough',
+    );
+    expect(cards()[0]).toHaveTextContent('1440 g in total');
   });
 
   it('shows the frozen title even for a recipe that has since been renamed', async () => {
@@ -251,5 +256,35 @@ describe('BatchListPage — gated (issue #831)', () => {
 
     expect(screen.getByTestId('feature-guard-loading')).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe('BatchListPage — what each run was baked in (issue #1274)', () => {
+  it('names the vessel beside the total, when the run recorded one', async () => {
+    render(BatchListPage);
+    mockBatches._set([makeBatch({ vessel: '900 g loaf tin' })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-card')).toBeInTheDocument());
+    expect(cards()[0]).toHaveTextContent('1440 g in total');
+    expect(cards()[0]).toHaveTextContent('900 g loaf tin');
+  });
+
+  it('says only the total for a run that named no vessel', async () => {
+    render(BatchListPage);
+    mockBatches._set([makeBatch()]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-card')).toBeInTheDocument());
+    expect(cards()[0]).toHaveTextContent('1440 g in total');
+    expect(cards()[0]).not.toHaveTextContent('loaf tin');
+  });
+
+  it('reads the yield as dough, with no named shape in it', async () => {
+    render(BatchListPage);
+    mockBatches._set([makeBatch()]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-card-yield')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-card-yield')).toHaveTextContent(
+      '12 × 120 g — 1.4 kg of dough',
+    );
   });
 });

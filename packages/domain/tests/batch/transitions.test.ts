@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as transitions from '../../src/batch/transitions.js';
 import {
   currentStage,
   stageStatus,
@@ -45,9 +46,15 @@ function runningLoaf(): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     quantities: [
-      { ingredientId: 'ing-flour', label: '500g strong white', percent: 100, grams: 841 },
+      { ingredientId: 'ing-flour', label: '500g strong white', percent: 100, grams: 816 },
     ],
-    totals: { basisGrams: 841, totalGrams: 1483, usableGrams: 1440, units: null },
+    totals: {
+      basisGrams: 816,
+      totalGrams: 1440,
+      usableGrams: 1440,
+      units: { count: 2, unitDoughGrams: 720 },
+    },
+    vessel: '900 g loaf tin',
     stages: [
       stage('bulk', 180, '2026-08-15T02:10:00.000Z', '2026-08-15T05:10:00.000Z'),
       stage('shape', 15, '2026-08-15T05:10:00.000Z', '2026-08-15T05:25:00.000Z'),
@@ -173,6 +180,67 @@ describe('withBatchAbandoned', () => {
   it('is idempotent, and returns the same document when there is nothing to change', () => {
     const abandoned = withBatchAbandoned(runningLoaf());
     expect(withBatchAbandoned(abandoned)).toBe(abandoned);
+  });
+});
+
+// ─── The freeze holds (issue #1274, rule-12 claim 5) ────────────────────────────
+//
+// `BatchSchema.vessel` is justified by one property: a batch's figures and the
+// vessel they were resolved against are stamped TOGETHER by `freezeBatch` and
+// never move again, so — unlike on a live formula — they cannot drift into
+// disagreeing.
+//
+// THAT NEEDED CHECKING, because a batch document is NOT immutable. `advanceStage`
+// and `abandonBatch` both rewrite the whole document through `saveBatch`'s
+// full-document `setDoc`, exactly as CLAUDE.md's LWW note describes, so the only
+// guard available is at the producer.
+//
+// ITS REAL BOUNDARY: `totals` and `vessel` are written once, by `freezeBatch`, and
+// no other producer touches them. This walks EVERY EXPORTED PRODUCER rather than
+// the two named above, so a third one added later is covered the day it lands —
+// which is the only way this claim can quietly break.
+describe('every producer leaves the frozen figures alone', () => {
+  // A producer is an exported function taking a batch and returning one. The
+  // remaining exports (`currentStage`, `stageStatus`) are queries and return no
+  // document.
+  const producers: ReadonlyArray<[string, (batch: BatchDoc) => BatchDoc]> = [
+    ['withStageAdvanced', (batch) => withStageAdvanced(batch, 'bulk', '2026-08-15T05:30:00.000Z')],
+    ['withStageStarted', (batch) => withStageStarted(batch, 'bulk', '2026-08-15T02:10:00.000Z')],
+    ['withStageSkipped', (batch) => withStageSkipped(batch, 'prove', '2026-08-15T05:25:00.000Z')],
+    ['withBatchAbandoned', (batch) => withBatchAbandoned(batch)],
+  ];
+
+  it('covers every producer this module exports', () => {
+    // The guard against the claim rotting: a producer added and not listed here
+    // fails this before it can silently escape the assertion below.
+    const exported = Object.entries(transitions)
+      .filter(([, value]) => typeof value === 'function')
+      .map(([name]) => name);
+    const queries = ['currentStage', 'stageStatus'];
+    expect(new Set(exported)).toEqual(new Set([...queries, ...producers.map(([name]) => name)]));
+  });
+
+  for (const [name, apply] of producers) {
+    it(`${name} returns totals and vessel referentially identical to what went in`, () => {
+      const before = runningLoaf();
+      const after = apply(before);
+      // REFERENTIAL, not deep: a producer that rebuilt an equal `totals` would
+      // pass a deep comparison while having taken ownership of a field the freeze
+      // owns, and the next edit to it would be the one that changed a number.
+      expect(after.totals).toBe(before.totals);
+      expect(after.vessel).toBe(before.vessel);
+    });
+  }
+
+  it('holds through a whole run, not just one step', () => {
+    const before = runningLoaf();
+    let batch = before;
+    for (const stageId of ['bulk', 'shape', 'prove', 'bake']) {
+      batch = withStageAdvanced(batch, stageId, '2026-08-15T05:30:00.000Z');
+    }
+    batch = withBatchAbandoned(batch);
+    expect(batch.totals).toBe(before.totals);
+    expect(batch.vessel).toBe(before.vessel);
   });
 });
 

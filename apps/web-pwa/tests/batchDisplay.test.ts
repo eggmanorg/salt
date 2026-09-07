@@ -51,7 +51,7 @@ function batch(over: Partial<BatchDoc> = {}): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     quantities: [],
-    totals: { basisGrams: 841, totalGrams: 1483, usableGrams: 1440, units: null },
+    totals: { basisGrams: 816, totalGrams: 1440, usableGrams: 1440, units: null },
     stages: [stage()],
     rationale: null,
     createdAt: '2026-08-14T08:00:00.000Z',
@@ -234,14 +234,16 @@ describe('orderBatches', () => {
 
 describe('yieldSummary', () => {
   it('counts the shapes when the solve had one', () => {
+    // Since #1274, `yieldSummary` delegates to `formatDoughAmount` — no label,
+    // no baked figure, just what the dough divides into and what it totals.
     expect(
       yieldSummary({
-        basisGrams: 841,
-        totalGrams: 1483,
+        basisGrams: 816,
+        totalGrams: 1440,
         usableGrams: 1440,
-        units: { label: '120 g roll', count: 12, unitDoughGrams: 120, bakedUnitGrams: 108 },
+        units: { count: 12, unitDoughGrams: 120 },
       }),
-    ).toBe('12 × 120 g roll');
+    ).toBe('12 × 120 g — 1.4 kg of dough');
   });
 
   it('falls back to the weight for a basis-driven run — a cure yields no count', () => {

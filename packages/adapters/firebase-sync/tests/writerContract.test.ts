@@ -387,7 +387,6 @@ const FORMULA = {
   recipeId: 'r-1',
   components: [{ ingredientId: 'i-1', percent: 100, inBasis: true }],
   referenceYield: { kind: 'basis' as const, grams: 1000 },
-  handlingLossPercent: 0,
   schemaVersion: 1 as const,
 };
 

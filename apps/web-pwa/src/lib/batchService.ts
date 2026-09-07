@@ -204,6 +204,10 @@ export interface StartBatchInput {
   // What this run makes. Omitted → the formula's own reference yield, i.e. the
   // recipe as written.
   atYield?: ReferenceYield;
+  // What tonight's run is being baked in, as the sheet worded it — "900 g loaf
+  // tin". Omitted for the answers that name no vessel. Frozen onto the batch as a
+  // snapshot note and read back by nothing: see `BatchSchema.vessel`.
+  vessel?: string;
   // Mixing now, or out of the oven at 07:30.
   anchor: ScheduleAnchor;
   // A reviewed proposal's RESTRUCTURED PROCESS (issue #812, phase 2). Omitted →
@@ -342,6 +346,7 @@ export async function startBatch(
     id: crypto.randomUUID(),
     formula,
     ...(input.atYield === undefined ? {} : { atYield: input.atYield }),
+    ...(input.vessel === undefined ? {} : { vessel: input.vessel }),
     anchor: input.anchor,
     recipeTitle: input.recipe.title,
     labels,
