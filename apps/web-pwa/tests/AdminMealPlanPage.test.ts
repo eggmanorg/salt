@@ -67,7 +67,7 @@ vi.mock('../src/lib/mealPlanService.js', () => ({
 import AdminMealPlanPage from '../src/routes/admin/AdminMealPlanPage.svelte';
 import { saveFirstDayOfWeek, setTemplateDayNote } from '../src/lib/mealPlanService.js';
 
-function member(id: string, name: string, admin = false): Member {
+function member(id: string, name: string, admin = false, system = false): Member {
   return {
     id,
     schemaVersion: 1,
@@ -77,7 +77,7 @@ function member(id: string, name: string, admin = false): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
-    system: false,
+    system,
     updatedAt: '2026-06-07T00:00:00.000Z',
   };
 }
@@ -157,6 +157,20 @@ describe('AdminMealPlanPage', () => {
     await waitFor(() => screen.getByRole('option', { name: 'Saturday' }));
     await userEvent.click(screen.getByRole('option', { name: 'Saturday' }));
     await waitFor(() => expect(vi.mocked(saveFirstDayOfWeek)).toHaveBeenCalledWith('sat'));
+  });
+
+  it('never offers a system account in the standard-week template (issue #1300)', async () => {
+    // Same shape as MealPlanWeekPage's equivalent test: the eating toggle and the
+    // chef hat come off the same member row, so this one assertion covers both.
+    // This is what pins line 114 to `members={$people}` rather than `$members` —
+    // every other test here seeds an all-people roster, so filtering would go
+    // unexercised (and unreverted) without it.
+    mockMembers._set([ADMIN, member('fridge@e.org', 'Fridge', false, true)]);
+    render(AdminMealPlanPage);
+    await userEvent.click(screen.getByTestId('tmpl-mon-summary'));
+    expect(screen.getByTestId('tmpl-mon-attend-admin@e.org')).toBeInTheDocument();
+    expect(screen.queryByTestId('tmpl-mon-attend-fridge@e.org')).toBeNull();
+    expect(screen.queryByTestId('tmpl-mon-chef-fridge@e.org')).toBeNull();
   });
 
   it('denies a non-admin', async () => {
