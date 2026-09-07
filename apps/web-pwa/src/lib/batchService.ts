@@ -7,6 +7,8 @@ import {
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
 import type {
   BatchDoc,
+  BatchStagePlace,
+  EquipmentItemDoc,
   Formula,
   ProcessStage,
   ProposedStage,
@@ -222,6 +224,67 @@ export interface StartBatchInput {
   // Why the schedule is shaped the way it is, in the words the proposal used.
   // Phase 1 passes nothing and the field lands null: arithmetic has no opinion.
   rationale?: string | null;
+  // WHERE EACH STAGE HAPPENS, as ids the sheet's pickers hold — positional over the
+  // process this run will actually be frozen from (issue #1286). `null` at a
+  // position means nowhere in particular, which is the counter and is a complete
+  // answer: the counter is deliberately not an equipment entry.
+  //
+  // The sheet renders one picker per stage of that same effective process — the
+  // formula's own, or a reviewed proposal's — so the alignment is the one the user
+  // was looking at. Omitting the array entirely is what an untouched sheet means.
+  stagePlaceIds?: readonly (string | null)[];
+  // The equipment manifest to resolve those ids against, passed in rather than read
+  // from `equipmentService` here. The store is already open app-wide (App.svelte),
+  // the sheet is holding it to draw the pickers, and taking it as an argument keeps
+  // this service's dependencies as they were and its resolution directly testable.
+  equipment?: readonly EquipmentItemDoc[];
+  // How warm the kitchen is, as the person starting the run typed it. Null when the
+  // question was skipped, which is always allowed.
+  ambientCelsius?: number | null;
+}
+
+/**
+ * One picked id, resolved into the frozen snapshot the batch keeps.
+ *
+ * WHICH FIGURES ARE FROZEN follows `EquipmentControl`, and this is the one place
+ * that decision is made: a `shared` chamber's setting belongs to the chamber, so
+ * its `standing` is copied and the sheet offers no per-batch setpoint at all; a
+ * `dedicated` place holds one job, so what the run dialled in is what the stage
+ * itself asked for. See `BatchStagePlaceSchema` for why, and for the limit.
+ *
+ * AN UNRESOLVABLE ID IS DROPPED AND THE STAGE IS KEPT — an item deleted between the
+ * sheet opening and Start, or an entry that is not a place at all. That is the same
+ * one-way treatment `StageEnvironment.equipmentId` already states and the same shape
+ * `mintStage` uses for `sourceStageId`: a reference this document does not own is
+ * never allowed to fail a run.
+ */
+function resolvePlace(
+  equipmentId: string | null,
+  stage: ProcessStage,
+  equipment: readonly EquipmentItemDoc[],
+): BatchStagePlace | null {
+  if (equipmentId === null) return null;
+  const item = equipment.find((candidate) => candidate.id === equipmentId);
+  const environment = item?.environment ?? null;
+  if (item === undefined || environment === null) return null;
+  if (environment.control === 'shared') {
+    const standing = environment.standing;
+    return {
+      equipmentId: item.id,
+      label: item.name,
+      // Null when the chamber has no standing setting recorded: nobody knows what
+      // it was at, and writing the figure the stage asked for would claim a
+      // setpoint this run never controlled.
+      temperature: standing === null ? null : { kind: 'fixed', celsius: standing.celsius },
+      relativeHumidityPercent: standing?.relativeHumidityPercent ?? null,
+    };
+  }
+  return {
+    equipmentId: item.id,
+    label: item.name,
+    temperature: stage.environment?.temperature ?? null,
+    relativeHumidityPercent: stage.environment?.relativeHumidityPercent ?? null,
+  };
 }
 
 // A proposed stage becomes a real one HERE, and nowhere else: identity is minted by
@@ -342,6 +405,15 @@ export async function startBatch(
       ? input.formula
       : { ...input.formula, process: input.proposedStages.map(mintStage) };
 
+  // Resolved HERE, against the manifest, so what reaches the pure freeze is labels
+  // and figures rather than ids to follow — the same split the ingredient labels
+  // above already make.
+  const equipment = input.equipment ?? [];
+  const stagePlaceIds = input.stagePlaceIds ?? [];
+  const places: (BatchStagePlace | null)[] = (formula.process ?? []).map((stage, index) =>
+    resolvePlace(stagePlaceIds[index] ?? null, stage, equipment),
+  );
+
   const frozen = freezeBatch({
     id: crypto.randomUUID(),
     formula,
@@ -350,6 +422,8 @@ export async function startBatch(
     anchor: input.anchor,
     recipeTitle: input.recipe.title,
     labels,
+    places,
+    ambientCelsius: input.ambientCelsius ?? null,
     // Phase 1 schedules by arithmetic, and arithmetic has no reasoning to record.
     // A phase-2 proposal passes the words it used.
     rationale: input.rationale ?? null,

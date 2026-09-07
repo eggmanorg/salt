@@ -433,6 +433,7 @@ export {
   diffProcess,
   remindableStages,
   stageTemperatureText,
+  placeReachesTemperature,
 } from './process/index.js';
 export type {
   ScheduleAnchor,

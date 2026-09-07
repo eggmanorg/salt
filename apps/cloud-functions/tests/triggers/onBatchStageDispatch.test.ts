@@ -118,6 +118,7 @@ function stage(overrides: Partial<BatchStageDoc> = {}): BatchStageDoc {
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
     ...overrides,
   };
 }
@@ -134,6 +135,7 @@ function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
     totals: { basisGrams: 1000, totalGrams: 1700, usableGrams: 1700, units: null },
     stages: [stage()],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-08-14T17:00:00.000Z',
     updatedAt: '2026-08-14T17:00:00.000Z',
     ...overrides,

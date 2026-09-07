@@ -175,3 +175,95 @@ describe('reviewRows — declining to restructure', () => {
     expect(reviewRows(diff, reference, stages)).toEqual({ changed: [], added: [], removed: [] });
   });
 });
+
+describe('reviewRows — the place a stage moved to (issue #1286)', () => {
+  const PLACES = new Map([
+    ['eq-proofer', 'Dough proofer'],
+    ['eq-fridge', 'Fridge'],
+  ]);
+
+  it('names the place, not just the temperature', () => {
+    const reference = [
+      stage('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
+      }),
+    ];
+    const stages = [
+      proposed('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: 'eq-proofer' },
+      }),
+    ];
+
+    const review = reviewRows(diffProcess(reference, stages), reference, stages, PLACES);
+    expect(review.changed[0]!.details).toContain('20 °C → Dough proofer · 24 °C');
+  });
+
+  it('reports a move that changed nothing but the place', () => {
+    // `diffProcess` already compares `equipmentId`, so a prove moved from the
+    // counter to the proofer at the same temperature IS a change — and now the
+    // row says which, instead of showing the same figure twice.
+    const reference = [
+      stage('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: null },
+      }),
+    ];
+    const stages = [
+      proposed('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 24 }, equipmentId: 'eq-proofer' },
+      }),
+    ];
+
+    const review = reviewRows(diffProcess(reference, stages), reference, stages, PLACES);
+    expect(review.changed[0]!.details).toContain('24 °C → Dough proofer · 24 °C');
+  });
+
+  it('names the place on an added stage too', () => {
+    const reference = [stage('bulk', { label: 'Bulk ferment' })];
+    const stages = [
+      proposed('bulk', { label: 'Bulk ferment' }),
+      proposed(null, {
+        label: 'Cold retard',
+        environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: 'eq-fridge' },
+      }),
+    ];
+
+    const review = reviewRows(diffProcess(reference, stages), reference, stages, PLACES);
+    expect(review.added[0]!.details).toContain('Fridge · 4 °C');
+  });
+
+  it('says nothing about an id the manifest cannot resolve, rather than showing it', () => {
+    // A raw equipment id in a review row is worse than nothing — the one-way rule.
+    const reference = [stage('bulk', { label: 'Bulk ferment' })];
+    const stages = [
+      proposed(null, {
+        label: 'Cold retard',
+        environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: 'eq-deleted' },
+      }),
+    ];
+
+    const review = reviewRows(diffProcess(reference, stages), reference, stages, PLACES);
+    expect(review.added[0]!.details).toContain('4 °C');
+    expect(review.added[0]!.details.join(' ')).not.toContain('eq-deleted');
+  });
+
+  it('reads exactly as it did before for a household with no places', () => {
+    const reference = [
+      stage('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 20 }, equipmentId: null },
+      }),
+    ];
+    const stages = [
+      proposed('bulk', {
+        label: 'Bulk ferment',
+        environment: { temperature: { kind: 'fixed', celsius: 4 }, equipmentId: null },
+      }),
+    ];
+
+    expect(rows(reference, stages).changed[0]!.details).toContain('20 °C → 4 °C');
+  });
+});
