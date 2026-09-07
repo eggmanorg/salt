@@ -140,6 +140,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       // absent on the document — `BatchSchema.vessel` is optional, not nullable.
       ...(vessel === undefined ? {} : { vessel }),
       state: 'running',
+      abandonedAt: null,
       quantities,
       totals,
       stages,

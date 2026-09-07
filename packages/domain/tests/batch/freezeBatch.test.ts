@@ -240,6 +240,22 @@ describe('freezeBatch — the document', () => {
     expect(parsed.data.stages.every((s) => s.optional === false)).toBe(true);
   });
 
+  it('parses a batch written before `abandonedAt` existed, running or abandoned', () => {
+    // THE BACK-COMPAT PIN (issue #1280). Every live `batches/{batchId}` document was
+    // written without this key, including the runs already abandoned — and those are
+    // exactly the ones that can never be back-filled, because nothing recorded when.
+    // A read default is what makes both open with no migration.
+    const { abandonedAt: _a, ...beforeTheField } = freezeTwelveRolls();
+
+    const running = BatchSchema.safeParse(beforeTheField);
+    expect(running.success).toBe(true);
+    if (running.success) expect(running.data.abandonedAt).toBeNull();
+
+    const stopped = BatchSchema.safeParse({ ...beforeTheField, state: 'abandoned' });
+    expect(stopped.success).toBe(true);
+    if (stopped.success) expect(stopped.data.abandonedAt).toBeNull();
+  });
+
   it('scales to the formula’s own reference yield when no yield is asked for', () => {
     const result = freezeBatch({
       id: 'batch-1',

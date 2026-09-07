@@ -177,3 +177,56 @@ export function orderBatches(batches: readonly BatchDoc[]): BatchDoc[] {
   ended.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return [...pending.map((entry) => entry.batch), ...ended];
 }
+
+// ─── The batch log ──────────────────────────────────────────────────────────────
+//
+// How `buildBatchLog`'s entries READ (issue #1280). The ORDER is the domain's and
+// nothing here re-sorts: these only choose words and group what arrives.
+
+/** The clock time alone — a log row sits under a date heading that says the day. */
+export function formatTimeOfDay(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  return formatInstant(at, { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * How a finished step ran against THE TIME IT WAS GIVEN, in words.
+ *
+ * `null` in, `null` out — a stage given no length has no over or under, and the row
+ * prints nothing rather than "0 min over" (see `buildBatchLog`'s `driftMinutes`).
+ *
+ * NOT drift from the schedule the run started with: that number is unrecoverable
+ * from the document, and this phrasing must not be read as claiming it.
+ */
+export function formatDrift(minutes: number | null): string | null {
+  if (minutes === null) return null;
+  if (minutes === 0) return 'on time';
+  return `${formatMinutes(Math.abs(minutes))} ${minutes > 0 ? 'over' : 'under'}`;
+}
+
+/**
+ * The log split into calendar days, in the order it arrived.
+ *
+ * A four-month cure is unreadable as one flat list, and a date on every row is the
+ * same date forty times. LOCAL days, like `calendarDaysBetween` above: a bake that
+ * finishes at one in the morning belongs to the morning it finished in, wherever
+ * Greenwich thinks the day turned.
+ *
+ * A pure regrouping — entries stay in the order they were given, and a day appears
+ * once at the position of its first entry.
+ */
+export function groupLogByDay<T extends { at: string }>(
+  entries: readonly T[],
+): { key: string; label: string; entries: T[] }[] {
+  const days: { key: string; label: string; entries: T[] }[] = [];
+  for (const entry of entries) {
+    const at = new Date(entry.at);
+    if (Number.isNaN(at.getTime())) continue;
+    const key = `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
+    const last = days.at(-1);
+    if (last?.key === key) last.entries.push(entry);
+    else days.push({ key, label: formatDate(entry.at), entries: [entry] });
+  }
+  return days;
+}

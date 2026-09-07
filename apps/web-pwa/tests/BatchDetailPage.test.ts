@@ -117,6 +117,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     recipeId: 'recipe-1',
     recipeTitle: 'Overnight white tin',
     state: 'running',
+    abandonedAt: null,
     quantities: [
       { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 816 },
       { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571 },
@@ -478,6 +479,37 @@ describe('BatchDetailPage — marking a stage done', () => {
 
     expect(screen.queryByTestId('batch-stage-advance')).toBeNull();
   });
+
+  // ─── When it was stopped (issue #1280) ──────────────────────────────────────
+
+  it('says WHEN a run was abandoned, not merely that it was', async () => {
+    await showRun({ state: 'abandoned', abandonedAt: '2026-08-16T08:10:00.000Z' });
+
+    const started = screen.getByTestId('batch-detail-started');
+    expect(started.textContent).toContain('abandoned');
+    // The day and a clock time, through `formatWhen` — the local rendering of the
+    // instant, so the time itself moves with the runner's zone and only the date is
+    // asserted here.
+    expect(screen.getByTestId('batch-detail-abandoned-at').textContent).toContain('16 Aug');
+  });
+
+  it('claims no time for a run abandoned before the field existed', async () => {
+    // `abandonedAt` is a read default, so every run stopped before it shipped reads
+    // `null` — and those are exactly the ones that can never be back-filled. The
+    // page says it was abandoned and stops there rather than borrowing `updatedAt`,
+    // which is a later write's timestamp and not the moment the cook gave up.
+    await showRun({ state: 'abandoned' });
+
+    expect(screen.getByTestId('batch-detail-started').textContent).toContain('abandoned');
+    expect(screen.queryByTestId('batch-detail-abandoned-at')).toBeNull();
+  });
+
+  it('says nothing about an abandonment while the run is still going', async () => {
+    await showRun();
+
+    expect(screen.getByTestId('batch-detail-started').textContent).not.toContain('abandoned');
+    expect(screen.queryByTestId('batch-detail-abandoned-at')).toBeNull();
+  });
 });
 
 describe('BatchDetailPage — four conditions on a run (issue #1275)', () => {
@@ -735,6 +767,29 @@ describe('BatchDetailPage — abandoning', () => {
 
     await waitFor(() => expect(abandonMock).toHaveBeenCalledTimes(1));
     expect(abandonMock).toHaveBeenCalledWith(run);
+  });
+
+  it('keeps the confirm open and says so when the write fails', async () => {
+    // The failure path of the one irreversible control on the page. Closing the
+    // dialog on a write that did not land would leave the run still going while the
+    // screen implied it had been stopped, so the dialog STAYS and the toast is what
+    // reports it. `abandoning` is released either way — a second attempt has to be
+    // possible without a reload.
+    abandonMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+    await showRun();
+
+    await openOverflowMenu();
+    await fireEvent.click(screen.getByTestId('batch-abandon-menu-item'));
+    await waitFor(() => expect(screen.getByTestId('batch-abandon-confirm')).toBeInTheDocument());
+    await fireEvent.click(screen.getByTestId('batch-abandon-confirm'));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(1));
+    expect(toastMock.mock.calls[0]?.[1]).toBe('destructive');
+    expect(screen.getByTestId('batch-abandon-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('batch-abandon-confirm')).not.toBeDisabled();
   });
 
   it('is not offered on a run that is already stopped', async () => {
@@ -1178,6 +1233,45 @@ describe('BatchDetailPage — the stage beside a log entry', () => {
     expect(screen.getByTestId('batch-log-entry-weight')).toHaveTextContent('1440 g');
     expect(screen.getByTestId('batch-log-entry-note')).toHaveTextContent('weighed after shaping');
     expect(screen.queryByTestId('batch-log-entry-stage')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — "How it went" is a preview and a door (issue #1280)', () => {
+  const many = [1, 2, 3, 4, 5].map((n) =>
+    observation({ id: `obs-${n}`, at: `2026-08-1${n}T09:00:00.000Z`, weightGrams: 1000 + n }),
+  );
+
+  it('shows only the most recent few readings, newest first', async () => {
+    // A GLANCE, not the log. The whole run in order is `/batches/:id/log`; this card
+    // stays what it has always been — the last thing that happened.
+    await showRun();
+    mockObservations._set(many);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log')).toBeInTheDocument());
+    const shown = screen
+      .getAllByTestId('batch-log-entry')
+      .map((el) => el.getAttribute('data-observation-id'));
+    expect(shown).toEqual(['obs-5', 'obs-4', 'obs-3']);
+  });
+
+  it('offers the door to the full log, whatever the run has recorded', async () => {
+    // Present on an empty log too: the door is to the run's whole story — its start,
+    // its steps and its skips — none of which is a reading.
+    await showRun();
+    mockObservations._set([]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-empty')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-open')).toHaveAttribute(
+      'href',
+      `#/batches/${BATCH_ID}/log`,
+    );
+  });
+
+  it('keeps Log a reading on the card', async () => {
+    // The preview did not cost the card its control: the sheet still opens from here.
+    await showRun();
+
+    expect(screen.getByTestId('batch-log-add')).toBeInTheDocument();
   });
 });
 

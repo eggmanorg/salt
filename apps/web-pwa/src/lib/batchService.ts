@@ -425,7 +425,11 @@ export async function skipStage(
 
 /**
  * Stop a run. A state, not a delete — the log of how far it got is the point.
+ *
+ * The clock is read HERE and passed in, as it is for `advanceStage` (issue #1280):
+ * the run records WHEN it was abandoned, and `updatedAt` cannot answer that because
+ * it moves on every later write.
  */
 export async function abandonBatch(current: BatchDoc): Promise<ReadResult<BatchDoc, DomainError>> {
-  return persist(withBatchAbandoned(current));
+  return persist(withBatchAbandoned(current, new Date().toISOString()));
 }

@@ -37,6 +37,7 @@
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { addToast } from '../../lib/toastStore.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
+  import BatchReadingRow from './BatchReadingRow.svelte';
   import {
     formatDate,
     formatGrams,
@@ -44,7 +45,6 @@
     formatWhen,
     isObservational,
     nextAction,
-    stageLabelById,
     yieldSummary,
   } from './batchDisplay.js';
 
@@ -128,6 +128,8 @@
   // An entry's STAGE is a join and not a stored word: `stageLabelById` resolves
   // `stageId` against this run's own frozen stages, which is why nothing on the
   // entry can go stale and why an id that no longer resolves simply prints nothing.
+  // That row is `BatchReadingRow`, shared with `/batches/:id/log` (issue #1280) —
+  // one rendering of a reading, so the preview here and the full log cannot drift.
   //
   // ─── "FINISHING" A BATCH, WHICH IS NOT A STATE ────────────────────────────────
   //
@@ -223,6 +225,9 @@
   // loaded state of most runs and gets a sentence rather than a spinner.
   const log = $derived($observations);
   const logEntries = $derived(log === undefined ? [] : [...log].reverse());
+  // The card is a glance; three is enough to show what just happened without
+  // becoming a second copy of the log screen (issue #1280).
+  const previewEntries = $derived(logEntries.slice(0, 3));
 
   let logOpen = $state(false);
   // Dismissal of the end-of-run invitation, for this visit only. In memory by
@@ -398,7 +403,14 @@
       <div class="flex flex-col gap-4" data-testid="batch-detail">
         <p class="text-sm text-muted-foreground" data-testid="batch-detail-started">
           Started {formatDate(run.createdAt)}{#if run.state === 'abandoned'}
-            · abandoned{/if}
+            <!-- WHEN it was abandoned, where the run recorded it (issue #1280).
+               `abandonedAt` is a read default, so a run stopped before that field
+               existed says only that it was abandoned — the document never recorded
+               when, and inventing one from `updatedAt` would be a later write's
+               timestamp dressed up as the moment the cook gave up. -->
+            · abandoned{#if run.abandonedAt !== null}
+              <span data-testid="batch-detail-abandoned-at">{formatWhen(run.abandonedAt)}</span
+              >{/if}{/if}
         </p>
 
         <!-- ─── The invitation ────────────────────────────────────────────────────
@@ -806,11 +818,14 @@
                 Nothing recorded yet. A weight, a note or a photo — it stays on this batch.
               </p>
             {:else}
-              <!-- Newest first: the reverse of the ascending list the adapter sorted
-                 by `at`, never a re-sort of our own. -->
+              <!-- A PREVIEW, not the log (issue #1280). The most recent few readings,
+                 newest first — the reverse of the ascending list the adapter sorted by
+                 `at`, never a re-sort of our own — with the door to the full record
+                 below. The whole run in order, stages and skips included, is
+                 `/batches/:id/log`; this card stays a glance at the last thing that
+                 happened, which is what it has always been. -->
               <ul class="flex flex-col gap-3" data-testid="batch-log">
-                {#each logEntries as entry (entry.id)}
-                  {@const stageLabel = stageLabelById(run, entry.stageId)}
+                {#each previewEntries as entry (entry.id)}
                   <li
                     class="flex flex-col gap-1 border-b border-border pb-3 last:border-0 last:pb-0"
                     data-testid="batch-log-entry"
@@ -818,66 +833,18 @@
                     data-at={entry.at}
                     data-stage-id={entry.stageId ?? ''}
                   >
-                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      {#if stageLabel !== null}
-                        <!-- An entry about the whole run says nothing here, which is
-                             the ordinary end-of-run verdict and not an omission. -->
-                        <span class="text-sm font-medium" data-testid="batch-log-entry-stage">
-                          {stageLabel}
-                        </span>
-                      {/if}
-                      <span
-                        class="text-sm text-muted-foreground"
-                        data-testid="batch-log-entry-when"
-                      >
-                        {formatWhen(entry.at)}
-                      </span>
-                      {#if entry.weightGrams !== null}
-                        <span class="font-medium tabular-nums" data-testid="batch-log-entry-weight">
-                          {formatGrams(entry.weightGrams)}
-                        </span>
-                      {/if}
-                      <!-- Neither of these has a control on this screen (the service
-                         writes them null and says why). They are RENDERED anyway
-                         because the document may carry them — from a later screen,
-                         or from a hand-written correction — and showing a reading
-                         that exists costs nothing. -->
-                      {#if entry.ph !== null}
-                        <span class="text-sm tabular-nums" data-testid="batch-log-entry-ph">
-                          pH {entry.ph}
-                        </span>
-                      {/if}
-                      {#if entry.temperatureC !== null}
-                        <span
-                          class="flex items-center gap-1 text-sm tabular-nums"
-                          data-testid="batch-log-entry-temp"
-                        >
-                          <Icon name="Thermometer" size={12} />
-                          {entry.temperatureC} °C
-                        </span>
-                      {/if}
-                    </div>
-                    {#if entry.note !== ''}
-                      <p class="whitespace-pre-wrap text-sm" data-testid="batch-log-entry-note">
-                        {entry.note}
-                      </p>
-                    {/if}
-                    {#if entry.image !== null}
-                      <!-- The Storage URL the callable stamped on. The bytes never went
-                         through Firestore and there is no client-writable Storage
-                         path anywhere in this feature. -->
-                      <img
-                        src={entry.image.url}
-                        alt="How the batch looked on {formatWhen(entry.at)}"
-                        loading="lazy"
-                        class="mt-1 max-w-sm rounded border border-border object-cover"
-                        data-testid="batch-log-entry-photo"
-                      />
-                    {/if}
+                    <BatchReadingRow {run} {entry} when={formatWhen(entry.at)} />
                   </li>
                 {/each}
               </ul>
             {/if}
+            <a
+              href="#/batches/{batchId}/log"
+              class="text-sm font-medium underline underline-offset-4"
+              data-testid="batch-log-open"
+            >
+              The whole run, in order
+            </a>
           </CardContent>
         </Card>
       </div>

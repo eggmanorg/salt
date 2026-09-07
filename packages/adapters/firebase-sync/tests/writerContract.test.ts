@@ -396,6 +396,7 @@ const BATCH = {
   recipeId: 'r-1',
   recipeTitle: 'Sourdough',
   state: 'running' as const,
+  abandonedAt: null,
   quantities: [],
   totals: {
     basisGrams: 1000,

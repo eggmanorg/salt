@@ -106,6 +106,10 @@ export const routes: RouteDefinition = new Map<
   // Lazy-loaded (#411) on the same argument as the recipe module — a
   // module-specific screen most sessions never open.
   ['/batches', lazy(() => import('./batches/BatchListPage.svelte'))],
+  // The batch log (issue #1280) — what actually happened to a run, as against the
+  // plan. ABOVE `/batches/:id` because the more specific pattern has to match first,
+  // and an ordinary shell route like the two around it.
+  ['/batches/:id/log', lazy(() => import('./batches/BatchLogPage.svelte'))],
   ['/batches/:id', lazy(() => import('./batches/BatchDetailPage.svelte'))],
   ['/settings', SettingsPage],
   // Operator area (issues #155, #157). All routes are guarded client-side by

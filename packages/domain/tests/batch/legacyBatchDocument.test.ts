@@ -76,6 +76,6 @@ describe('a batch document written before #1274', () => {
   it('still runs — the producers do not depend on anything that was deleted', () => {
     const parsed = BatchSchema.parse(LEGACY_BATCH);
     expect(currentStage(parsed)?.id).toBe('bulk');
-    expect(withBatchAbandoned(parsed).state).toBe('abandoned');
+    expect(withBatchAbandoned(parsed, '2026-08-15T09:00:00.000Z').state).toBe('abandoned');
   });
 });
