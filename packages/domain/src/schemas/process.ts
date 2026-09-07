@@ -63,11 +63,20 @@ export const StageTemperatureSchema = z.discriminatedUnion('kind', [
 // `relativeHumidityPercent` is optional because only a curing chamber has an
 // opinion about it; bread never sets it.
 //
-// NO LEGACY BRANCH for the pre-#1281 bare `{ celsius: n }`. A `z.union` carrying it
-// forever is code every future reader must understand, to serve a handful of
-// documents that could be fixed once — so `scripts/migrate-stage-temperature.mjs`
-// runs BEFORE this ships, the #1122 ordering. It rewrites `formulas/*.process[]`
-// AND `batches/*.stages[]`, because `BatchStageSchema` extends this one.
+// NO LEGACY BRANCH for the pre-#1281 bare `{ celsius: n }`, and no migration
+// either. A `z.union` carrying the old shape forever is code every future reader
+// must understand; a migration script is code that runs once and then misleads.
+// Neither was worth it here, because there was nothing to carry: the bread feature
+// has never been released (it is behind the `bread` gate, see web-pwa's
+// `featureGate.ts`), and the five documents that existed — one formula, three
+// batches and one observation, all Daniel's own trials — were deleted from
+// production on 2026-09-07 rather than migrated. `formulas` and `batches` were
+// verified empty in prod, staging and dev at that point, so no stored document
+// anywhere carries the bare-number shape and nothing needs to read it.
+//
+// This is why the ordering rule that governed #1122 does NOT apply to this branch:
+// there is no "run the script first". If a bare `{ celsius: n }` ever turns up, it
+// was hand-written after this date and belongs in a fixture, not in a union.
 export const StageEnvironmentSchema = z.object({
   temperature: StageTemperatureSchema,
   relativeHumidityPercent: z.number().min(0).max(100).optional(),
