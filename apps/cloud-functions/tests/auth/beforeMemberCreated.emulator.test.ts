@@ -86,6 +86,7 @@ function makeMember(email: string, admin = false): Member {
     email,
     admin,
     cookMode: 'standard',
+    system: false,
     sortOrder: 0,
     icon: null,
     updatedAt: new Date().toISOString(),

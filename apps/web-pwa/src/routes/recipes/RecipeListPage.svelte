@@ -21,7 +21,7 @@
     takePendingImportUrl,
   } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { currentMember } from '../../lib/membersService.js';
+  import { currentMember, systemAccountNames } from '../../lib/membersService.js';
   import { canonItems, isLoadingAisles } from '../../lib/canonService.js';
   import { canonIndex, matchMarkersReady } from '../../lib/canonIndex.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
@@ -204,11 +204,22 @@
   // over the WHOLE library rather than `visible`, or the row would vanish the
   // moment a filter narrowed the grid to a single author — pulling the control
   // out from under the finger that just used it.
+  //
+  // System accounts do not count (issue #1300): a fridge that has added three
+  // recipes is not a second author to filter by, and the rule is that it is never
+  // offered as a person. The stored `createdBy` on those recipes is untouched —
+  // this drops the NAME from the offer, not the stamp from the document.
+  //
+  // A name absent from the roster entirely — a member since removed, an import
+  // from another environment — still counts, exactly as before. Only the accounts
+  // an admin has actually marked as system are subtracted.
   const distinctAuthorCount = $derived.by(() => {
     const names = new Set<string>();
     for (const r of $recipes) {
-      if (r.createdBy !== '') names.add(r.createdBy);
-      if (r.lastEditedBy !== '') names.add(r.lastEditedBy);
+      if (r.createdBy !== '' && !$systemAccountNames.has(r.createdBy)) names.add(r.createdBy);
+      if (r.lastEditedBy !== '' && !$systemAccountNames.has(r.lastEditedBy)) {
+        names.add(r.lastEditedBy);
+      }
     }
     return names.size;
   });

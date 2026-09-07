@@ -24,23 +24,32 @@ const { mockMembers, mockIsLoadingMembers, mockTemplate, mockFirstDay, mockAuth 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
 vi.mock('../src/lib/auth.svelte.js', () => ({ auth: mockAuth }));
-vi.mock('../src/lib/membersService.js', () => ({
-  members: mockMembers,
-  isLoadingMembers: mockIsLoadingMembers,
-  // AdminGuard reads this since #1055 (Phase 5) instead of re-deriving admin
-  // itself; derived here from the same members/auth stubs as the real
-  // `currentMember` in membersService.ts.
-  currentMember: {
-    subscribe(fn: (v: Member | null) => void) {
-      return mockMembers.subscribe((roster) => {
-        const email = mockAuth.user?.email ?? '';
-        if (!email) return fn(null);
-        const normalised = normaliseMemberEmail(email);
-        fn(roster.find((m) => m.email === normalised) ?? null);
-      });
+vi.mock('../src/lib/membersService.js', async () => {
+  // As in MealPlanWeekPage.test: the REAL predicate (issue #1300), so the
+  // template screen's filtering is exercised rather than asserted.
+  const { onlyPeople } = await import('@salt/domain');
+  return {
+    members: mockMembers,
+    people: {
+      subscribe: (run: (v: Member[]) => void) =>
+        mockMembers.subscribe((list: Member[]) => run(onlyPeople(list))),
     },
-  },
-}));
+    isLoadingMembers: mockIsLoadingMembers,
+    // AdminGuard reads this since #1055 (Phase 5) instead of re-deriving admin
+    // itself; derived here from the same members/auth stubs as the real
+    // `currentMember` in membersService.ts.
+    currentMember: {
+      subscribe(fn: (v: Member | null) => void) {
+        return mockMembers.subscribe((roster) => {
+          const email = mockAuth.user?.email ?? '';
+          if (!email) return fn(null);
+          const normalised = normaliseMemberEmail(email);
+          fn(roster.find((m) => m.email === normalised) ?? null);
+        });
+      },
+    },
+  };
+});
 vi.mock('../src/lib/mealPlanService.js', () => ({
   flushMealPlanWrites: vi.fn().mockResolvedValue(undefined),
   mealPlanTemplate: mockTemplate,
@@ -68,6 +77,7 @@ function member(id: string, name: string, admin = false): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: '2026-06-07T00:00:00.000Z',
   };
 }

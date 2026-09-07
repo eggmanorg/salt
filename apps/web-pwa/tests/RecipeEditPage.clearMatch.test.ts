@@ -30,6 +30,8 @@ vi.mock('../src/lib/membersService.js', () => {
   });
   return {
     members: readable([{ email: 'admin@test', admin: true }]),
+    // The editor's "Added by" picker reads `people`, not `members` (issue #1300).
+    people: readable([{ email: 'admin@test', admin: true, name: 'Admin' }]),
     isLoadingMembers: readable(false),
   };
 });

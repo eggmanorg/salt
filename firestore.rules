@@ -42,6 +42,19 @@ service cloud.firestore {
     // on every patch. `cookMode` is additionally constrained to the two values
     // the schema allows: a rule that let a member write any string here would let
     // them store arbitrary data on a family-readable document.
+    //
+    // `system` (issue #1300) appears in the allowed-keys set AND is pinned equal
+    // on both sides, which is two separate jobs on one field. The PIN is what
+    // makes the flag admin-only: a non-admin self-update that flips it is denied.
+    // Its PRESENCE in `hasOnly` is what keeps the cook-mode exception working at
+    // all — the client writes the whole document, the schema's `.default(false)`
+    // materialises `system: false` on a doc that has no such key, and
+    // `affectedKeys()` therefore contains `system` on the first Settings save by
+    // anyone whose doc predates the field. Most production member docs are in
+    // exactly that state, so a two-key allowlist would lock them out of their own
+    // preference the moment this shipped. `.get(field, default)` on BOTH sides,
+    // because a bare `resource.data.system` errors on a doc missing the key —
+    // the same trap `icon` set above, arriving by a different route.
     function isSelf(email) {
       return request.auth != null
         && request.auth.token.email != null
@@ -49,7 +62,8 @@ service cloud.firestore {
     }
     function onlyCookModeChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['cookMode', 'updatedAt'])
+               .hasOnly(['cookMode', 'updatedAt', 'system'])
+        && request.resource.data.get('system', false) == resource.data.get('system', false)
         && request.resource.data.cookMode in ['standard', 'guided'];
     }
     match /members/{email} {

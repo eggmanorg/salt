@@ -7,6 +7,8 @@ import {
   memberInitials,
   memberFirstName,
   sortMembers,
+  isPerson,
+  onlyPeople,
   type Member,
 } from '@salt/domain';
 
@@ -21,6 +23,7 @@ function makeMember(overrides: Partial<Member> & { id: string }): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: NOW,
     ...overrides,
   };
@@ -287,5 +290,97 @@ describe('cookMode', () => {
     const before = makeMember({ id: 'a@e.org', cookMode: 'guided' });
     const after = updateMember(before, { name: 'Renamed' }, '2026-08-09T12:00:00.000Z');
     expect(after.cookMode).toBe('guided');
+  });
+});
+
+// ─── System accounts (issue #1300) ──────────────────────────────────────────
+
+describe('system accounts', () => {
+  it('reads a document with no `system` key back as an ordinary person', () => {
+    // The back-compat claim the `.default(false)` exists for, and the reason
+    // there is no migration: every member doc in production predates the field.
+    const parsed = MemberSchema.safeParse({
+      id: 'a@e.org',
+      schemaVersion: 1,
+      name: 'A',
+      email: 'a@e.org',
+      admin: false,
+      sortOrder: 0,
+      icon: null,
+      cookMode: 'standard',
+      updatedAt: NOW,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.system).toBe(false);
+    expect(parsed.success && isPerson(parsed.data)).toBe(true);
+  });
+
+  it('rejects a non-boolean `system`', () => {
+    const parsed = MemberSchema.safeParse({
+      id: 'a@e.org',
+      schemaVersion: 1,
+      name: 'A',
+      email: 'a@e.org',
+      admin: false,
+      sortOrder: 0,
+      icon: null,
+      cookMode: 'standard',
+      system: 'yes',
+      updatedAt: NOW,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('isPerson is true for an ordinary member and false for a system account', () => {
+    expect(isPerson(makeMember({ id: 'a@e.org' }))).toBe(true);
+    expect(isPerson(makeMember({ id: 'fridge@e.org', system: true }))).toBe(false);
+  });
+
+  it('isPerson is independent of admin', () => {
+    // The two flags answer different questions and the form must not couple them:
+    // an admin can be a system account, and a system account can be an admin.
+    expect(isPerson(makeMember({ id: 'a@e.org', admin: true }))).toBe(true);
+    expect(isPerson(makeMember({ id: 'b@e.org', admin: true, system: true }))).toBe(false);
+  });
+
+  it('onlyPeople drops system accounts and keeps the incoming order', () => {
+    const roster = [
+      makeMember({ id: 'a@e.org', name: 'Ann' }),
+      makeMember({ id: 'fridge@e.org', name: 'Fridge', system: true }),
+      makeMember({ id: 'b@e.org', name: 'Bob' }),
+    ];
+    expect(onlyPeople(roster).map((m) => m.name)).toEqual(['Ann', 'Bob']);
+  });
+
+  it('onlyPeople does not mutate its input', () => {
+    const roster = [makeMember({ id: 'fridge@e.org', system: true })];
+    onlyPeople(roster);
+    expect(roster).toHaveLength(1);
+  });
+
+  it('createMember makes a person unless asked otherwise', () => {
+    const person = createMember({
+      name: 'New',
+      email: 'new@e.org',
+      admin: false,
+      sortOrder: 3,
+      now: NOW,
+    });
+    expect(person.system).toBe(false);
+    const fridge = createMember({
+      name: 'Fridge',
+      email: 'fridge@e.org',
+      admin: false,
+      system: true,
+      sortOrder: 4,
+      now: NOW,
+    });
+    expect(fridge.system).toBe(true);
+  });
+
+  it('updateMember patches the flag and leaves it alone when unmentioned', () => {
+    const before = makeMember({ id: 'fridge@e.org', name: 'Fridge', system: true });
+    expect(updateMember(before, { system: false }, NOW).system).toBe(false);
+    expect(updateMember(before, { name: 'Kitchen' }, NOW).system).toBe(true);
   });
 });

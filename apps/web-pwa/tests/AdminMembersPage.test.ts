@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { normaliseMemberEmail } from '@salt/domain';
 import type { Member } from '@salt/domain';
@@ -54,6 +54,7 @@ function member(overrides: Partial<Member> & { id: string }): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: '2026-06-07T00:00:00.000Z',
     ...overrides,
   };
@@ -119,6 +120,65 @@ describe('AdminMembersPage — admin access', () => {
       expect(vi.mocked(updateMemberEntry)).toHaveBeenCalledWith(
         'kid@e.org',
         expect.objectContaining({ name: 'Kid' }),
+      );
+    });
+  });
+
+  // ─── System accounts (issue #1300) ────────────────────────────────────────
+  // This is the one screen that must keep seeing a system account: it is where
+  // the flag is set, and where it can be unset again.
+
+  it('badges a system account and still lists it', () => {
+    mockMembers._set([ADMIN, member({ id: 'fridge@e.org', name: 'Fridge', system: true })]);
+    render(AdminMembersPage);
+    expect(screen.getAllByTestId('member-row')).toHaveLength(2);
+    expect(screen.getAllByTestId('member-system-badge')).toHaveLength(1);
+    expect(screen.getByText('fridge@e.org')).toBeInTheDocument();
+  });
+
+  it('flags an existing member as a system account', async () => {
+    mockMembers._set([ADMIN, member({ id: 'kid@e.org', name: 'Kid', sortOrder: 1 })]);
+    render(AdminMembersPage);
+
+    const kidRow = screen.getByText('kid@e.org').closest('[data-testid="member-row"]')!;
+    await userEvent.click(
+      [...kidRow.querySelectorAll('button')].find((b) => b.textContent?.includes('Edit'))!,
+    );
+    await waitFor(() => screen.getByTestId('member-editor'));
+
+    await userEvent.click(within(screen.getByTestId('member-system-input')).getByRole('checkbox'));
+    await userEvent.click(screen.getByTestId('member-save'));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateMemberEntry)).toHaveBeenCalledWith(
+        'kid@e.org',
+        expect.objectContaining({ system: true, admin: false }),
+      );
+    });
+  });
+
+  it('unflags one again, leaving admin alone', async () => {
+    // The two boxes are independent: a system account is not a permission level,
+    // and moving one must never move the other.
+    mockMembers._set([
+      ADMIN,
+      member({ id: 'fridge@e.org', name: 'Fridge', sortOrder: 1, system: true, admin: true }),
+    ]);
+    render(AdminMembersPage);
+
+    const row = screen.getByText('fridge@e.org').closest('[data-testid="member-row"]')!;
+    await userEvent.click(
+      [...row.querySelectorAll('button')].find((b) => b.textContent?.includes('Edit'))!,
+    );
+    await waitFor(() => screen.getByTestId('member-editor'));
+
+    await userEvent.click(within(screen.getByTestId('member-system-input')).getByRole('checkbox'));
+    await userEvent.click(screen.getByTestId('member-save'));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateMemberEntry)).toHaveBeenCalledWith(
+        'fridge@e.org',
+        expect.objectContaining({ system: false, admin: true }),
       );
     });
   });

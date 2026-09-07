@@ -61,7 +61,7 @@
   import { MAX_RECIPE_PHASES, RecipeKindSchema } from '@salt/domain/schemas';
   import { componentTimeLabel } from './recipeTiming.js';
   import { canonItems } from '../../lib/canonService.js';
-  import { members } from '../../lib/membersService.js';
+  import { people } from '../../lib/membersService.js';
   import { addToast } from '../../lib/toastStore.js';
   import { KIND_COPY, kindOf } from './recipeKind.js';
   import NotesFormattingToolbar from './NotesFormattingToolbar.svelte';
@@ -271,7 +271,11 @@
   // silently stop matching. `lastEditedBy` deliberately gets no control at all —
   // a field recording the last edit that you can type into contradicts itself.
   // And none of this gates anything: attribution is a record, not a permission.
-  const rosterNames = $derived($members.map((m) => m.name));
+  // `$people`, never `$members` (issue #1300): this is a people-picker, so a
+  // system account is not offered here. A recipe ALREADY stamped with one keeps
+  // its name — it arrives through `draft.createdBy` in `authorOptions` below,
+  // which is the same path an off-roster name takes.
+  const rosterNames = $derived($people.map((m) => m.name));
 
   // A `createdBy` that is not on the roster — a member since removed, a name from
   // another environment — is carried as an extra option rather than dropped. The

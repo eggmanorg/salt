@@ -9,6 +9,8 @@
  *   - an unauthenticated caller is denied reads
  *   - EXCEPT: a member may update their own `cookMode` and nothing else (#776),
  *     which is the one place a non-admin may write this collection at all
+ *   - the `system` flag (#1300) is admin-only, and its arrival must NOT break
+ *     that exception for the member docs written before it existed
  *
  * Admin-ness is resolved by the rules via get(/members/$(token.email)), so the
  * caller's token email must equal an admin member doc id.
@@ -62,9 +64,20 @@ function memberDoc(email: string, admin: boolean, over: Record<string, unknown> 
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: '2026-06-07T00:00:00.000Z',
     ...over,
   };
+}
+
+// A member document as PRODUCTION holds it: written before `system` existed, so
+// the key is absent rather than `false`. Its own helper rather than an inline
+// destructure because three tests below turn on that absence — the suite's
+// complete-document fixture is exactly why this class of break was invisible
+// until #1300 went looking for it.
+function preSystemMemberDoc(email: string, admin: boolean, over: Record<string, unknown> = {}) {
+  const { system: _system, ...rest } = memberDoc(email, admin, over);
+  return rest;
 }
 
 const reachable = await firestoreEmulatorReachable();
@@ -241,6 +254,76 @@ describe.skipIf(!reachable)('firestore.rules — members allowlist', () => {
     const db = testEnv.authenticatedContext('uid-old', { email: 'old@e.org' }).firestore();
     await assertSucceeds(
       updateDoc(doc(db, 'members', 'old@e.org'), { cookMode: 'guided', updatedAt: 'x' }),
+    );
+  });
+
+  // ─── The `system` flag, and the trap it sets for the above (issue #1300) ───
+  //
+  // `system` carries `.default(false)`, so `upsertMember` writes the key onto a
+  // document that never had it — which puts `system` in `affectedKeys()` on a
+  // plain cook-mode save. These three are the mechanical form of the claim that
+  // the rule change is safe; the first goes red against the pre-#1300 rule.
+
+  async function seedPreSystemMember(email: string, admin = false): Promise<void> {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'members', email), preSystemMemberDoc(email, admin));
+    });
+  }
+
+  it('lets a non-admin on a doc with no `system` key still change their own cook mode', async () => {
+    // The regression the rule change exists to prevent, written as production
+    // sends it: a full setDoc of the whole document, `system: false` materialised
+    // by the schema default on a doc that has no such key.
+    await seedPreSystemMember('legacy@e.org');
+    const db = testEnv.authenticatedContext('uid-legacy', { email: 'legacy@e.org' }).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'members', 'legacy@e.org'),
+        memberDoc('legacy@e.org', false, { cookMode: 'guided' }),
+      ),
+    );
+  });
+
+  it('DENIES a non-admin flagging themselves a system account while changing cook mode', async () => {
+    // Tolerating the absent → false materialisation must not tolerate a real
+    // flip. Run from a doc with no `system` key, which is the harder case: the
+    // rule has to read a missing key on one side without erroring.
+    await seedPreSystemMember('legacy@e.org');
+    const db = testEnv.authenticatedContext('uid-legacy', { email: 'legacy@e.org' }).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, 'members', 'legacy@e.org'),
+        memberDoc('legacy@e.org', false, { cookMode: 'guided', system: true }),
+      ),
+    );
+  });
+
+  it('DENIES a non-admin clearing `system` on their own record', async () => {
+    // The other direction: an account already flagged must not be able to unflag
+    // itself back into the household's people-pickers.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), 'members', 'fridge@e.org'),
+        memberDoc('fridge@e.org', false, { system: true }),
+      );
+    });
+    const db = testEnv.authenticatedContext('uid-fridge', { email: 'fridge@e.org' }).firestore();
+    await assertFails(
+      updateDoc(doc(db, 'members', 'fridge@e.org'), { system: false, updatedAt: 'x' }),
+    );
+  });
+
+  it('lets an admin set `system` on any member, including one with no such key', async () => {
+    await seedPreSystemMember('legacy@e.org');
+    const db = adminCtx().firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'members', 'legacy@e.org'),
+        memberDoc('legacy@e.org', false, { system: true }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, 'members', 'kid@e.org'), memberDoc('kid@e.org', false, { system: true })),
     );
   });
 });
