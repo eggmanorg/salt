@@ -171,8 +171,9 @@ emulator.
 
 None of these flows copy **Cloud Storage**, and that is a feature, not a gap.
 
-Canon icons, recipe hero images, and batch observation photos are served from URLs
-that embed the bucket name of the project that wrote them
+Server-generated images — canon icons, product-form icons, equipment and
+kitchen-tool pictograms, recipe hero images, and batch observation photos — are
+served from URLs that embed the bucket name of the project that wrote them
 ([storageDownloadUrl.ts](../apps/cloud-functions/src/imaging/storageDownloadUrl.ts)),
 so after a restore the target's _imported_ docs point at the **source** project's
 bucket. The upshot is that staging and dev-cloud get a fully-populated UI —
@@ -188,8 +189,11 @@ new assets are local.
 **This access is read-only, enforced twice over:**
 
 1. **`storage.rules`** grants `allow read: if true` but **`allow write: if false`**
-   on `canon-icons/`, `recipe-images/`, and `batch-images/` (everything else is
-   denied outright). The cross-project reads go through the Firebase Storage
+   on every image prefix Salt writes — today `canon-icons/`,
+   `product-form-icons/`, `recipe-images/`, `batch-images/`, `equipment-icons/`
+   and `kit-icons/`, and any later subject family joins them on the same terms;
+   [storage.rules](../storage.rules) is the list that cannot go stale, and
+   everything not named there is denied outright. The cross-project reads go through the Firebase Storage
    download endpoint, which _is_ governed by these rules. A non-prod client can read prod's images
    and structurally cannot write them. A dev-project auth token is not valid
    against prod's bucket either, so even a future `allow write: if request.auth != null`
