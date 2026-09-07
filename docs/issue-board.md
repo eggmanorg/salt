@@ -195,6 +195,45 @@ without twenty refactors in the way.
 
 ---
 
+## `Size` — changed lines, and a budget rather than a limit
+
+`S` · `M` · `L`
+
+Every spec command sets one (`board.mjs add … --size S|M|L`) and, until #1288, the
+values meant whatever the person typing them took them to mean. They are **changed
+lines in the finished PR**, counted the way `/salt-run` counts them —
+`origin/main...HEAD`, excluding `pnpm-lock.yaml`:
+
+| `Size` | Changed lines | Reads as                                                        |
+| ------ | ------------- | --------------------------------------------------------------- |
+| `S`    | up to ~400    | one phase, one sitting; a reviewer holds the whole diff at once |
+| `M`    | up to ~1000   | two or three phases                                             |
+| `L`    | up to 2000    | the `--max-diff` ceiling `/salt-run` enforces per PR            |
+
+The tildes are load-bearing. This is the spec author's estimate written before the
+code exists, and nothing checks it afterwards — `board.mjs check` does not test it.
+What it buys is a sense of the budget the work will be built against, and a way for
+triage to compare two issues.
+
+**There is no size above `L`, because nothing needs one.** A spec that expects to
+exceed 2000 lines is not too large to build and is not refused: it is a **multi-PR
+issue**. `/salt-run` cuts a PR at the phase boundary where the ceiling is crossed
+and the remaining phases become the next PR; `/salt-campaign` lands the first and
+re-dispatches a worker for the rest. The issue closes when the last PR merges, so
+one issue still moves through one lifecycle, and it sits at `In progress` the whole
+way because an intermediate PR carries `Refs #N` rather than a closing keyword.
+An `L` that turns out to need two PRs is a slightly wrong estimate, not a problem.
+
+The one thing the ceiling genuinely refuses is a **single phase** that cannot be
+built under 2000 lines on its own. There is no PR boundary inside a phase, so that
+is a spec to redo — and it is the only case `/salt-campaign` still parks as
+`BLOCKED: oversized`.
+
+**This field is not the retired `size: S|M|L` label.** Nothing applies that label
+and nothing should; see [Why fields and not labels](#why-fields-and-not-labels).
+
+---
+
 ## Sequence is position, not a number
 
 There is no rank field, and adding one would be a step backwards. Triage _is_

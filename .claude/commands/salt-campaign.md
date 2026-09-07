@@ -9,11 +9,11 @@ model: opus
 
 Arguments: $ARGUMENTS → issue numbers (space- or comma-separated), plus optional flags anywhere in the string:
 
-| Flag              | Default | Meaning                                                   |
-| ----------------- | ------- | --------------------------------------------------------- |
-| `--pool N`        | 2       | Concurrent workers. See **Pool** below before raising it. |
-| `--max-diff N`    | 1500    | Changed-line ceiling per PR, enforced by the worker.      |
-| `--stop-at-green` | off     | Review and leave PRs green; do not run the merge queue.   |
+| Flag              | Default | Meaning                                                                                                                                      |
+| ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--pool N`        | 2       | Concurrent workers. See **Pool** below before raising it.                                                                                    |
+| `--max-diff N`    | 2000    | Changed-line ceiling per PR, enforced by the worker. Over it, the worker splits the issue across PRs rather than parking — see **Dispatch**. |
+| `--stop-at-green` | off     | Review and leave PRs green; do not run the merge queue.                                                                                      |
 
 `/salt-campaign 641 652 703 --pool 3` is the shape. Unrecognised flags are an error, not a guess — say which and stop.
 
@@ -39,7 +39,7 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 
 ## Filing an issue
 
-This command files issues of its own — the ledger, a `BLOCKED: oversized` split, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created:**
+This command files issues of its own — the ledger, a `BLOCKED: oversized` re-spec, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created:**
 
 ```
 gh issue create --title "…" --body-file <file>       # take the number out of the URL it prints
@@ -49,16 +49,16 @@ node scripts/board.mjs parent <new> --of <parent>
 
 Neither of those lines is somebody else's job later. GitHub's own project workflow puts a new issue on the board with **every field empty**, and an item with no `Queue` appears in no queue view — so an issue filed and not triaged is not "waiting in Triage", it is invisible, and it stays invisible until someone happens to scroll the unfiltered board. `board.mjs check` fails on one now, which is how you find out you skipped this.
 
-| What you filed                    | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`       |
-| --------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------------------- |
-| the **ledger**                    | — none of it —                            |                                                              |                             | — none —            |
-| **`BLOCKED: oversized`** split    | the split issue's own Class               | the split issue's own band                                   | `M` or `L`                  | the issue it splits |
-| **adjudicated blocking finding**  | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger          |
-| **follow-ups checklist** (Finish) | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger          |
+| What you filed                                                               | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`          |
+| ---------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ---------------------- |
+| the **ledger**                                                               | — none of it —                            |                                                              |                             | — none —               |
+| **`BLOCKED: oversized`** re-spec (a single phase too big — see **Dispatch**) | the issue's own Class                     | the issue's own band                                         | `M` or `L`                  | the issue it came from |
+| **adjudicated blocking finding**                                             | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger             |
+| **follow-ups checklist** (Finish)                                            | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger             |
 
 **The ledger is the one exception, and it is deliberate.** It is not work: it carries no priority, it closes by hand rather than through a PR, and it exists to be resumed from and then finished with. `board.mjs check` skips any issue titled `campaign:` for exactly that reason — so putting fields on one is not merely unnecessary, it puts a coordination artefact into a work queue. `campaign follow-ups:` does **not** get that exemption and is ordinary work.
 
-**A parent is not an epic**, and this command never creates one. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. The split is the exception in the other direction: it is the remaining work of the issue it came out of, so it hangs off that issue and inherits whatever epic that issue already sits under.
+**A parent is not an epic**, and this command never creates one. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. The `BLOCKED: oversized` re-spec is the exception in the other direction: it is the remaining work of the issue it came out of, so it hangs off that issue and inherits whatever epic that issue already sits under.
 
 **`Recommended` still means proven.** A review finding that is real, agreed and never once triggered is `Low`, however alarming the reviewer made it sound — [docs/issue-board.md](../../docs/issue-board.md) has the discriminator and #1056 as the worked example. You are filing at the end of a long unattended run and there is nobody to correct an inflated band; err low, and say in the issue what would prove it higher.
 
@@ -190,7 +190,7 @@ No label, no board fields and no parent — see **Filing an issue**; the `campai
 ```
 ## Plan
 Order: #a → #b → #c
-Pool: 2   Max diff: 1500   Ending: merge to main
+Pool: 2   Max diff: 2000   Ending: merge to main
 Models: coordinator opus · workers opus · reviewers opus · fixes and conflict resolution sonnet · extractors haiku
 Conflicts: #b after #a (shared packages/domain/src/recipe/**)
 Envelope: <the decision envelope you are operating under>
@@ -204,7 +204,7 @@ Envelope: <the decision envelope you are operating under>
 | #d | — | — | queued | — | after #b |
 ```
 
-States: `queued → dispatched → PR open → in review → merge queue → merged | parked`.
+States: `queued → dispatched → PR open → in review → merge queue → merged | parked`. A split issue re-enters at `queued` after its intermediate PR merges — the same issue moving through the line a second time, carrying the PRs it has already landed.
 
 Comments on the ledger remain the audit trail — one per transition, with the reasoning that doesn't fit in a table cell. But state lives in the body, so resume is one read of one field rather than a parse of thirty comments in indeterminate order.
 
@@ -220,6 +220,8 @@ git worktree add -b <type>/<slug>-N .claude/worktrees/<slug>-N origin/main
 ```
 
 **The fetch is not optional, and it goes immediately before every `worktree add`.** `origin/main` here is the local remote-tracking ref — whatever the last fetch saw. The rolling pool creates worktrees over hours, and a dependent issue's whole premise is that it cuts from a main that already contains its merged dependency; skip the fetch and it builds against a base from before the merge.
+
+For a **continuation** dispatch — the remaining phases after a worker split an issue at the ceiling — the branch is the same `<type>/<slug>` with `-2` appended, then `-3`, and the fetch matters twice over: it must be cut from the `main` that already contains the preceding PR. Never from that PR's branch.
 
 Explicitly, with `git worktree add` — **not** the Agent tool's `isolation: "worktree"`. That flag branches from main with no way to choose a base and no way for you to name the branch, and /salt-run needs to own a branch it can push and PR.
 
@@ -249,15 +251,17 @@ Brief each worker with:
 > - `gh` in this harness: plain `gh issue view` / `gh pr view` exit 0 with empty stdout — use the `--json` forms or `gh api` (issue comments: `gh api "repos/{owner}/{repo}/issues/N/comments"`), and every `gh` call needs the sandbox disabled. Empty output from a comments fetch is a failed fetch, not an empty thread.
 > - Do run `gh pr ready` at the final phase, as salt-run.md says. It is what triggers `pr-doc-review.yml`, and that review is an input to the code review that follows.
 > - Do not merge, and do not touch any branch but your own.
-> - Diff ceiling: <--max-diff> changed lines, excluding the lockfile. At the end of every phase, before the handoff comment, check the branch against its base: `git diff --shortstat origin/main...HEAD -- ':!pnpm-lock.yaml'`. Over the ceiling, stop there — commit, post the handoff for the phase you finished, and return `BLOCKED: oversized (<n> lines at phase <k> of <m>)` naming the phases still unbuilt. Leave the PR in draft; do not `gh pr ready`. A phase that cannot be built under the ceiling on its own is itself the finding: say so.
+> - Diff ceiling: `--max-diff <n>` changed lines, excluding the lockfile. This is salt-run.md's own flag and its step 9 already implements the rule — pass the number, do not re-derive the behaviour. Its three outcomes reach me as three different returns: over the ceiling **with phases still unbuilt**, you finish the current phase, turn the PR into an intermediate one (`Refs #N`, title suffixed ` (#N)`), `gh pr ready` it, and return `SPLIT: YES` with the unbuilt phases named; over the ceiling with **nothing left to build**, there is no split — ship it as one PR and conclude normally; a **single phase** that alone exceeds the ceiling is a pause condition and returns `BLOCKED: oversized`.
 > - salt-run.md's pause conditions are yours, with one change: you cannot wait for a human. On a pause condition, stop, commit what you have, leave the branch as it is, and return BLOCKED with the reason.
 >
 > Return, and nothing else:
 >
 > ```
 > ISSUE: N
-> BRANCH: <name>          PR: <number or NONE>
+> BRANCH: <name>          PRS: <this run's PR, plus any earlier PR for this issue your resume check found — or NONE>
 > PHASES_LANDED: <n of m>
+> PHASES_UNBUILT: <numbers and names still to build — or NONE>
+> SPLIT: <YES if you cut an intermediate PR at the ceiling, else NO>
 > CI: <green | red | heavy-suites-skipped>
 > DECISIONS: [choices not specified in the issue, and why]
 > FLAGS: [anything another issue in this campaign must know]
@@ -275,7 +279,16 @@ The slot is the smaller half of this. A worker you left running still holds a wo
 
 **BLOCKED non-empty** → park the issue, log it, start the next startable issue. Do not diagnose it yourself; that is diff-reading.
 
-**`BLOCKED: oversized`** is the one blocked reason that gets an action rather than a bare park: file a follow-up issue proposing the split (the phases that landed, the phases that didn't, and the ceiling it hit), **triage and attach it per Filing an issue** — it is the remaining work of the issue it came out of, so it hangs off that issue, not off the ledger — reference it from the parked branch, and move on. The branch stays parked either way — you do not decide the split yourself, because how an issue divides is a spec question and /salt-spec is where it belongs.
+**`SPLIT: YES`** → the issue is neither finished nor parked, and this is the one return that puts an issue back into the schedule rather than out of it. The PR it left behind is out of draft, green and review-eligible exactly like any other, so it goes through review and the merge queue unchanged — nothing about the landing path is special. What is special is what happens after it merges: **re-dispatch**.
+
+1. Review and land the intermediate PR through the normal queue. Its body says `Refs #N`, so it closes nothing and moves no board field — the issue correctly stays `In progress`.
+2. Remove the worktree and delete the local branch as on any merge.
+3. Fetch, then create a fresh worktree on the continuation branch (`<type>/<slug>-N-2`) cut from the **new** `main`, and dispatch a fresh worker with the same brief, for `PHASES_UNBUILT` only.
+4. The ledger row for #N goes back to `queued` with the merged PR listed and the unbuilt phases in the note; the states line below covers this.
+
+The re-dispatched worker needs no special instruction to find its place: salt-run.md's resume check detects landed phases by content, not by lineage, and its own **Working branch** section covers the continuation form. File no split issue. Do not decide the phase boundary yourself — the spec already chose it, and the worker cut there.
+
+**`BLOCKED: oversized`** now means one thing only: **a single phase that cannot be built under the ceiling on its own**. That is a phase specced too big, and no PR boundary fixes it — which is why it is a spec question and not a split. It is still the one blocked reason that gets an action rather than a bare park: file a follow-up issue proposing that phase be re-specced (what the phase asked for, what it cost, and the ceiling it hit), **triage and attach it per Filing an issue** — it is the remaining work of the issue it came out of, so it hangs off that issue, not off the ledger — reference it from the parked branch, and move on. Crossing the ceiling _across_ phases is not this: it splits, and never reaches you as a park.
 
 **FLAGS naming another campaign issue** → record it in the ledger and re-check the conflict graph. A flag is the one signal that can reveal an overlap the footprints did not.
 
@@ -287,11 +300,13 @@ A PR is review-eligible only after you have verified what the review prompt asse
 
 One reviewer agent per PR, `Agent(…, model: "opus")`, spawned fresh, **read-only** — it must not have the branch checked out and must not fix anything. A reviewer that can fix things will, and you lose the signal.
 
-**Give it the commands, not their output.** The brief below hands the reviewer a fetch list it runs itself. You run none of it — fetching the diff to paste it over would put 1500 lines into the context this whole command exists to protect, and this is the one place in the file where that mistake is easy to make.
+**Give it the commands, not their output.** The brief below hands the reviewer a fetch list it runs itself. You run none of it — fetching the diff to paste it over would put 2000 lines into the context this whole command exists to protect, and this is the one place in the file where that mistake is easy to make.
 
-A PR reaching review is already under the ceiling — the worker enforced `--max-diff` at every phase boundary, so an oversized branch parked with its PR still in draft. That is deliberate: splitting a large diff across two reviewers splits the review too, and neither half can see a duplication or an architectural drift that spans the boundary. The fix for a diff too large to review is a PR that should have been two PRs, and the only place to fix that is upstream, in the phase loop.
+A PR reaching review is already under the ceiling, or is the last PR of an issue with nothing left to move out of it — the worker enforced `--max-diff` at every phase boundary and cut a PR there if it had to.
 
-So: confirm, don't split. `gh pr view <pr> --json additions,deletions,changedFiles` — counts, not content, and remember the worker's count excluded `pnpm-lock.yaml`: an overage the lockfile explains (check `--json files`) is not a breach. Genuinely over the ceiling means the worker's check did not run, which means you do not know what else it skipped: park the branch and file the split follow-up, exactly as for `BLOCKED: oversized`. Do not review it anyway.
+**Splitting at a phase boundary is sanctioned; carving up a branch already built is not.** The two look alike and are not. A phase boundary was chosen by the spec, each side of it ends user-testable, and the reviewer of PR _k+1_ reads it against a base that already contains PR _k_ — merged, and reviewed on its own terms. Carving a finished branch in half has none of that: the boundary is arbitrary, and neither reviewer can see a duplication or an architectural drift that spans it. So the old rule survives exactly where it was true — **you never split a diff that is in front of you** — and the place a large issue gets divided is upstream, in the phase loop, before the code exists.
+
+So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFiles` — counts, not content, and remember the worker's count excluded `pnpm-lock.yaml`: an overage the lockfile explains (check `--json files`) is not a breach. An overage the worker _declared_ is not a breach either — a final phase that carried the branch past the ceiling with no phases left ships as one PR by design, and the PR body says so. What is a breach is an undeclared overage with `SPLIT: NO` and phases unbuilt: that means the worker's check did not run, and a worker that skipped that check may have skipped anything. Park the branch and treat it as `BLOCKED: oversized`. Do not review it anyway.
 
 > Review PR #X against issue #N adversarially. Assume it is wrong and find where.
 >
@@ -374,7 +389,7 @@ That rule's stated grounds were also wrong, and the record is checkable: it clai
 
 Two findings still get their own `gh issue create` at the time rather than waiting for the list — each triaged and attached per **Filing an issue** — because they are structural rather than taste:
 
-- **`BLOCKED: oversized`** — the split proposal, as described in **Dispatch**.
+- **`BLOCKED: oversized`** — the re-spec proposal for the single phase that would not fit, as described in **Dispatch**. A ceiling crossed across phases files nothing; it splits.
 - **a blocking finding you adjudicated as real but chose not to hold the queue for** — that is a known defect shipping to main, and it needs a number before the merge, not after the campaign.
 
 Do not let the reviewer's taste hold the queue.
@@ -498,7 +513,7 @@ Running unattended means most of salt-run.md's pause conditions become deadlocks
 **Park the branch — not the campaign — for these:**
 
 - a worker returns BLOCKED, or blows its budget (the watchdog fired — terminate and confirm first; see **Dispatch**);
-- a PR over the `--max-diff` ceiling, whether the worker caught it or you did;
+- a PR over the `--max-diff` ceiling with phases unbuilt and `SPLIT: NO` — the worker's check did not run. A declared overage on a final phase is not this, and a ceiling crossed with phases remaining is a split, not a park;
 - a UX deviation (salt-run.md step 4) — always a human call, never yours;
 - a CLAUDE.md rule collision, or a phase that can only be built as a bodge;
 - a queue ejection whose failure lies outside this campaign's merged footprints;
@@ -532,9 +547,9 @@ When the queue is empty:
 3. Final ledger comment, and set the body's table to its terminal state:
    ```
    ## Campaign complete
-   **Landed:** #a (PR #1), #b (PR #2)
+   **Landed:** #a (PR #1), #b (PR #2 → PR #3)   ← an issue split at the ceiling lists every PR that carried it, in order
    **Parked:** #c — [reason, what a human needs to decide, branch name]
-   **Issues filed:** #f follow-ups; #d, #e — [oversized-splits and shipped-known-defects; see Review]
+   **Issues filed:** #f follow-ups; #d, #e — [oversized re-specs and shipped-known-defects; see Review]
    **Decisions taken:** [one line each]
    ```
    Close the ledger issue only if nothing is parked. A parked issue is unfinished business and the open ledger is where it lives. Nothing that must outlive the campaign may live only in this comment — the ledger closes, the follow-ups issue does not.
