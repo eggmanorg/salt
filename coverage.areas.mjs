@@ -418,11 +418,22 @@ export const coverageThresholds = {
   //
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one, and
   // re-pinned in #1221 — both histories are above.
+  //
+  // BANKED in #1279, which is the merge the paragraph above anticipated. #1287 and
+  // #1274 each earned coverage on `BatchDetailPage.svelte` and each declined to bank
+  // it against a merge base it had not re-measured; merged, the two rises compound to
+  // 1.12 points of branch coverage above the floor, past the 1.00-point staleness
+  // tolerance, and the ratchet is right to stop it — unbanked coverage a later PR
+  // could delete and still land green is exactly what it guards. This IS a
+  // re-measurement of the merge, so the figures below are banked. Both ratios rose
+  // and BOTH UNCOVERED COUNTS FELL (lines 1846 → 1833, branches 1760 → 1741), which
+  // is what says this is coverage earned by new tests rather than a denominator that
+  // shrank. Nothing moved down.
   'apps/web-pwa/src/routes/**': {
-    lines: 80.28,
-    branches: 68.1,
-    uncoveredLines: 1846,
-    uncoveredBranches: 1760,
+    lines: 80.94,
+    branches: 69.22,
+    uncoveredLines: 1833,
+    uncoveredBranches: 1741,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
