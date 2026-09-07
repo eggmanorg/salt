@@ -3,10 +3,15 @@
 Chromatic renders every [Storybook](../apps/storybook/README.md) story in a
 cloud browser and diffs each snapshot against an accepted baseline. It is the
 visual safety net for the `@salt/ui-components` design system: the stories in
-[`apps/storybook/`](../apps/storybook/) exercise all 32 primitives/patterns
-(164 stories), so a single Chromatic run tells us whether a change altered how
-any of them _look_ — the class of regression that `pnpm typecheck` /
-`svelte-check` / unit tests structurally cannot catch.
+[`apps/storybook/`](../apps/storybook/) exercise every primitive, layout and
+template the package ships, so a single Chromatic run tells us whether a change
+altered how any of them _look_ — the class of regression that `pnpm typecheck` /
+`svelte-check` / unit tests structurally cannot catch. (No counts here on
+purpose: the design system grows every few weeks and a number written down is a
+number that goes stale — count the directories under
+[`packages/ui-components/src/`](../packages/ui-components/src/) and the
+`*.stories.*` files under [`apps/storybook/src/`](../apps/storybook/src/) if you
+need today's figure.)
 
 **Headline use case: the Tailwind v3 → v4 migration.** v4 re-expresses the
 whole token layer (the preset, the `@theme` scales, the colour variables), so
