@@ -342,7 +342,7 @@
   {:else}
     <div class="flex items-end {panel ? 'gap-2' : 'mx-auto max-w-2xl gap-3'}">
       <div
-        class="flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-ring {thread.isSending
+        class="salt-focus-ring-within flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm {thread.isSending
           ? 'opacity-50'
           : ''}"
       >

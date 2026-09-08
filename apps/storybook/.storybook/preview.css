@@ -11,8 +11,16 @@
  * utilities, default-palette pins, border-color reset) ships from
  * @salt/ui-components. Replaces the former `@import 'tailwindcss'` + `@config`
  * + duplicated @theme palette pins + border reset (Tailwind v4 migration Phase 3,
- * issue #323). The storybook-canvas-specific rules below (focus ring, element
- * resets, popup positioning) stay — Phase 4 reconciles them. */
+ * issue #323). The storybook-canvas-specific rules below (element resets,
+ * popup positioning) stay.
+ *
+ * The focus ring that used to sit here is GONE (#1305). It had been the
+ * spec-correct one — `--salt-ring`, 2px, offset 2px — while the shipped base
+ * rule in salt.css was a border-grey ring with no gap, so the components
+ * focused correctly in this canvas and wrongly in the app for as long as both
+ * existed. salt.css is now the one definition and this canvas inherits it, the
+ * reconciliation #323 Phase 4 deferred. Do not reintroduce a focus rule here:
+ * a canvas that disagrees with the app is worse than no canvas. */
 @import '@salt/ui-components/styles.css';
 
 /* Declare Storybook's own @source roots so v4 scans this app's stories +
@@ -21,13 +29,6 @@
 @source "./**/*.{ts,svelte,html}";
 
 @layer base {
-  /* ── Focus ring ──────────────────────────────────────────────────────── */
-  :focus-visible {
-    outline: 2px solid hsl(var(--salt-ring));
-    outline-offset: 2px;
-    border-radius: var(--salt-radius-sm);
-  }
-
   /* ── Interactive element resets ──────────────────────────────────────── */
   input,
   textarea,

@@ -111,7 +111,7 @@
       ignoreNonKeyboardFocus
     >
       <TooltipTrigger
-        class={`flex items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${m.class}`}
+        class={`flex items-center gap-1 rounded-sm ${m.class}`}
         aria-label={`${m.label}: ${m.value}`}
         data-testid={testid ? `${testid}-${m.key}` : undefined}
         onclick={() => (openKey = openKey === m.key ? null : m.key)}

@@ -60,7 +60,7 @@
   <input
     bind:this={input}
     data-testid={testId}
-    class="text-2xl font-semibold tracking-tight text-foreground bg-transparent border-b border-foreground/30 outline-none w-full min-w-0"
+    class="text-2xl font-semibold tracking-tight text-foreground bg-transparent border-b border-foreground/30 w-full min-w-0"
     value={draft}
     oninput={(e) => (draft = e.currentTarget.value)}
     onkeydown={(e) => {

@@ -2212,7 +2212,7 @@
                     <li>
                       <button
                         type="button"
-                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
                         onclick={() => push(`/recipes/${component.id}`)}
                         data-testid="recipe-component-card"
                         data-recipe-id={component.id}
@@ -2484,7 +2484,7 @@
                               {#if marker === 'unmatched'}
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card disabled:opacity-50"
                                   title="Not matched — tap to match"
                                   aria-label="Not matched — tap to match"
                                   onclick={() => handleRematch(group, ingredient)}
@@ -2501,7 +2501,7 @@
                                  #949). Nothing to explain first, so nothing opens. -->
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card disabled:opacity-50"
                                   title="No amount — tap to read the line again"
                                   aria-label="No amount — tap to read the line again"
                                   onclick={() => handleRematch(group, ingredient)}
@@ -2517,7 +2517,7 @@
                                  causes and offers the re-match — no new copy. -->
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card"
                                   title="Matched, but buys the wrong thing — tap to see why"
                                   aria-label="Matched, but buys the wrong thing — tap to see why"
                                   onclick={() => inspectMatch(ingredient)}
@@ -2527,7 +2527,7 @@
                             </div>
                             <button
                               type="button"
-                              class="flex min-w-0 flex-1 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              class="salt-focus-ring-inset flex min-w-0 flex-1 items-center gap-3 rounded text-left"
                               title="See what this ingredient matched"
                               onclick={() => inspectMatch(ingredient)}
                               data-testid="recipe-view-ingredient-inspect"

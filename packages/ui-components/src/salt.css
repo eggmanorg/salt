@@ -610,10 +610,22 @@
     font-family: 'Epilogue', sans-serif;
   }
 
-  /* Global default: every focusable element gets the same ring automatically. */
+  /* Global default: every focusable element gets the same ring automatically.
+   * THE definition — ui-spec-v02 §4.2. A page never writes its own (issue
+   * #1305, which was fifteen hand-written copies and one wrong default).
+   *
+   * `--salt-ring`, not `--salt-border`: the two are separate tokens and
+   * `--salt-input` is byte-identical to `--salt-border`, so a border-coloured
+   * outline drawn flush outside a bordered control is not a focus indicator at
+   * all — it is the same grey, 2px thicker. That is the bug this rule was.
+   *
+   * `outline-offset: 2px`, not 0: the gap is what separates the ring from the
+   * control's own border, and from the row border on anything nested. A target
+   * that FILLS its container inverts the gap instead — `salt-focus-ring-inset`
+   * below, because an outward ring there crosses the container's edge. */
   :focus-visible {
-    outline: 2px solid hsl(var(--salt-border));
-    outline-offset: 0px;
+    outline: 2px solid var(--salt-focus-color, hsl(var(--salt-ring)));
+    outline-offset: 2px;
   }
 
   /* Example text is not a value (issue #821). THE one place in the codebase that
@@ -947,8 +959,15 @@
   .salt-input--lg {
     @apply h-10 px-6 text-base;
   }
+  /* An errored frame focuses destructive rather than teal — by retinting the
+   * frame's ring through `--salt-focus-color`, so the width and the offset
+   * stay the one definition's. This was `focus-within:ring-destructive` until
+   * #1305: a Tailwind ring COLOUR with no ring WIDTH, on an element whose ring
+   * is an outline. It set `--tw-ring-color` and painted nothing at all, so an
+   * errored field had no focus indicator. */
   .salt-input--error {
-    @apply border-destructive focus-within:ring-destructive;
+    @apply border-destructive;
+    --salt-focus-color: hsl(var(--salt-destructive));
   }
   .salt-input--disabled {
     @apply opacity-50 pointer-events-none;
@@ -1161,12 +1180,50 @@
 }
 
 /* ── Custom utilities (from saltFocusRingPlugin addUtilities) ────────────────
- * v4 custom utilities use `@utility`. */
+ * v4 custom utilities use `@utility`.
+ *
+ * These restate the base `:focus-visible` rule above rather than composing it,
+ * for the one reason a restatement is ever worth it: `salt-focus-ring-within`
+ * fires on `focus-within`, which no base rule can express, and the pair must
+ * not be able to drift from each other. Three properties, one place each —
+ * `tokens.theme.test.ts` pins the colour and the offset on all three.
+ *
+ * `salt-focus-ring` itself is applied where the base rule is suppressed (a
+ * `.salt-input--combobox`, a value chip) or where the focus target is not the
+ * element the ring should surround. Everything else inherits and writes
+ * nothing (ui-spec-v02 §4.2).
+ *
+ * Written as raw properties rather than `@apply outline-ring`, for the colour:
+ * `--salt-focus-color` lets a component class retint the ring (the errored
+ * input frame is the only wearer today) WITHOUT having to out-specify these.
+ * A `focus-within:outline-destructive` on `.salt-input--error` could not — a
+ * component-layer class never beats a utility-layer one, whatever order the
+ * class attribute lists them in, and that silent loss is the same shape as the
+ * dead ring #1305 found there. A custom property inherits and sidesteps the
+ * cascade entirely. */
 @utility salt-focus-ring {
-  @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-border focus-visible:outline-offset-0;
+  &:focus-visible {
+    outline: 2px solid var(--salt-focus-color, hsl(var(--salt-ring)));
+    outline-offset: 2px;
+  }
 }
 @utility salt-focus-ring-within {
-  @apply focus-within:outline focus-within:outline-2 focus-within:outline-border focus-within:outline-offset-0;
+  &:focus-within {
+    outline: 2px solid var(--salt-focus-color, hsl(var(--salt-ring)));
+    outline-offset: 2px;
+  }
+}
+/* The inset variant, for a focus target that FILLS its container: a row's
+ * `flex-1` name button, a pane that is its own scroll region. The outward gap
+ * would put the ring across the container's border — or outside an ancestor's
+ * `overflow-hidden`, where it is clipped away to nothing — so the gap is spent
+ * inwards instead. Same colour, same width: a negative offset is a placement,
+ * not a second treatment (§4.2). */
+@utility salt-focus-ring-inset {
+  &:focus-visible {
+    outline: 2px solid var(--salt-focus-color, hsl(var(--salt-ring)));
+    outline-offset: -2px;
+  }
 }
 
 /* ─ The value chip (§8.27) ──────────────────────────────────────────────────
@@ -1193,13 +1250,13 @@
  * order rather than anything visible in the markup. */
 @utility salt-value-chip {
   @apply h-auto rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors;
-  /* The focus ring is restated, not inherited from the base `:focus-visible`
+  /* The focus ring is applied, not inherited from the base `:focus-visible`
    * rule. `.salt-input--combobox` sets `outline-none` and leans on
    * `ComboboxField`'s `focus-within` ring — and a value chip drops the field
    * (§8.27.4), so without this a keyboard user tabbing onto the aisle chip
-   * would see nothing at all. Harmless on the other two wearers: it restates
+   * would see nothing at all. Harmless on the other two wearers: it gives them
    * exactly what the base rule already gives them. */
-  @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-border focus-visible:outline-offset-0;
+  @apply salt-focus-ring;
   &:hover {
     @apply bg-muted;
   }
