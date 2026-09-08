@@ -58,7 +58,7 @@ vi.mock('../../src/observability/reportServerError.js', () => ({
 const mockGetFirestore = vi.fn();
 vi.mock('firebase-admin/firestore', () => ({ getFirestore: () => mockGetFirestore() }));
 
-const { findRecipesInLibrary, findRecipesTool, readRecipeTool, chefChatFlow } =
+const { findRecipesInLibrary, findRecipesTool, readRecipeTool, declareOfferTool, chefChatFlow } =
   await import('../../src/flows/chefChat.js');
 
 beforeEach(() => {
@@ -304,11 +304,16 @@ describe('findRecipes — degrading', () => {
 describe('findRecipes — the tool the model is shown', () => {
   const tool = defineToolCalls.find((c) => c.config.name === 'findRecipes');
 
-  it('is registered, alongside the one other tool the chef has', () => {
-    // Exact, and it stays exact: two is the whole surface (issue #840), and a
-    // third arriving without its own issue should turn this red. The same list
-    // is asserted from the readRecipe side in `chefChat.readRecipe.test.ts`.
-    expect(defineToolCalls.map((c) => c.config.name)).toEqual(['findRecipes', 'readRecipe']);
+  it('is registered, alongside the two other tools the chef has', () => {
+    // Exact, and it stays exact: three is the whole surface (#840 gave the chef
+    // two, #1299 the third), and a FOURTH arriving without its own issue should
+    // turn this red. The same list is asserted from the readRecipe side in
+    // `chefChat.readRecipe.test.ts`.
+    expect(defineToolCalls.map((c) => c.config.name)).toEqual([
+      'findRecipes',
+      'readRecipe',
+      'declareOffer',
+    ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
   });
 
@@ -345,7 +350,7 @@ describe('chefChat — the tool in the flow', () => {
       stream: (async function* () {
         yield { text: 'hello' };
       })(),
-      response: Promise.resolve({ text: 'hello' }),
+      response: Promise.resolve({ messages: [], text: 'hello' }),
     });
 
     await (
@@ -355,9 +360,9 @@ describe('chefChat — the tool in the flow', () => {
     return mockGenerateStream.mock.calls[0]?.[0] as Record<string, unknown>;
   }
 
-  it('passes both of the chef’s tools to the model', async () => {
+  it('passes all three of the chef’s tools to the model', async () => {
     const options = await runTurn();
-    expect(options['tools']).toEqual([findRecipesTool, readRecipeTool]);
+    expect(options['tools']).toEqual([findRecipesTool, readRecipeTool, declareOfferTool]);
   });
 
   it('gives the chef NO structured output schema — half of principle #1 survives', async () => {

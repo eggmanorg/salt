@@ -31,10 +31,15 @@
       {formatGrams(entry.weightGrams)}
     </span>
   {/if}
-  <!-- Neither of these has a control on either screen (the service writes them null
-     and says why). They are RENDERED anyway because the document may carry them —
-     from a later screen, or from a hand-written correction — and showing a reading
-     that exists costs nothing. -->
+  <!-- `ph` has no control on either screen (the service writes it null and says
+     why). It is RENDERED anyway because the document may carry one — from a later
+     screen, or from a hand-written correction — and showing a reading that exists
+     costs nothing.
+
+     The temperature DOES have a control now (issue #1286), and this row needed no
+     change at all to show it — rendering whatever the document carries is exactly
+     what let a dormant field start being answered. The humidity beside it is new
+     to the document, so it is new here too. -->
   {#if entry.ph !== null}
     <span class="text-sm tabular-nums" data-testid="batch-log-entry-ph">pH {entry.ph}</span>
   {/if}
@@ -42,6 +47,11 @@
     <span class="flex items-center gap-1 text-sm tabular-nums" data-testid="batch-log-entry-temp">
       <Icon name="Thermometer" size={12} />
       {entry.temperatureC} °C
+    </span>
+  {/if}
+  {#if entry.relativeHumidityPercent !== null}
+    <span class="text-sm tabular-nums" data-testid="batch-log-entry-humidity">
+      {entry.relativeHumidityPercent}% RH
     </span>
   {/if}
 </div>

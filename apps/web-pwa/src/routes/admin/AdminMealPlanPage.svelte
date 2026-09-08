@@ -4,7 +4,9 @@
   import { WEEKDAYS, emptyTemplate, type Attendee, type Weekday } from '@salt/domain';
   import AdminGuard from './AdminGuard.svelte';
   import MealDayEditor from '../mealplan/MealDayEditor.svelte';
-  import { members } from '../../lib/membersService.js';
+  // `people`, never `members` (issue #1300) — the standard-week template renders
+  // the same attendee/chef row the live week does.
+  import { people } from '../../lib/membersService.js';
   import {
     mealPlanTemplate,
     firstDayOfWeek,
@@ -109,7 +111,7 @@
               }
             }
             {day}
-            members={$members}
+            members={$people}
             testid={`tmpl-${wd}`}
             onNoteChange={(note) => void setTemplateDayNote(wd, note)}
             onChefToggle={(id) => toggleChef(wd, id)}

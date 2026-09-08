@@ -2,6 +2,7 @@ import type {
   BatchDoc,
   BatchQuantityDoc,
   BatchStageDoc,
+  BatchStagePlace,
   BatchTotalsDoc,
 } from '../schemas/index.js';
 import type { Formula, ReferenceYield } from '../schemas/index.js';
@@ -68,6 +69,25 @@ export interface FreezeBatchInput {
   // The schedule's worded reasoning, when a proposal authored it. Phase 1 passes
   // nothing and the field lands null: arithmetic has no opinion to record.
   rationale?: string | null;
+  // WHERE EACH STAGE HAPPENS, already resolved against the equipment manifest by
+  // the write path — the label and the figures, never an id to follow (issue
+  // #1286). This function knows nothing about `equipmentManifest/current` and
+  // cannot read it; resolution is `batchService`'s, exactly as the ingredient
+  // labels are.
+  //
+  // POSITIONAL, aligned with `formula.process`, and that is safe by construction
+  // rather than by convention: `resolveSchedule` places an ordered process on a
+  // clock and returns one entry per stage IN ORDER (it fills
+  // `new Array(stages.length)` by index), so entry `i` here is the stage the caller
+  // meant. `tests/batch/freezeBatch.test.ts` pins the alignment.
+  //
+  // Shorter than the process, or omitted entirely, means the rest chose nowhere in
+  // particular — which is what an untouched bake sheet means and what every run
+  // before this field existed meant.
+  places?: readonly (BatchStagePlace | null)[];
+  // How warm the kitchen was, as the person starting the run typed it. Copied onto
+  // the document and computed with by nothing — see `BatchSchema.ambientCelsius`.
+  ambientCelsius?: number | null;
   // Injected ISO instant for `createdAt`/`updatedAt`.
   now: string;
 }
@@ -84,7 +104,19 @@ export interface FreezeBatchInput {
  * observed later, one stage at a time, through `withStageAdvanced`.
  */
 export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
-  const { id, formula, atYield, vessel, anchor, recipeTitle, labels, rationale, now } = input;
+  const {
+    id,
+    formula,
+    atYield,
+    vessel,
+    anchor,
+    recipeTitle,
+    labels,
+    rationale,
+    places,
+    ambientCelsius,
+    now,
+  } = input;
 
   const process = formula.process ?? [];
   if (process.length === 0) return { ok: false, reason: { kind: 'noProcess' } };
@@ -122,11 +154,15 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
 
   // Nothing has been observed yet, and nothing has been decided against: a fresh run
   // starts with every stage not started (see `stageStatus`).
-  const stages: BatchStageDoc[] = scheduled.stages.map((stage) => ({
+  const stages: BatchStageDoc[] = scheduled.stages.map((stage, index) => ({
     ...stage,
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    // Frozen, positionally, from what the caller resolved. Nothing here reads the
+    // stage's own `environment.equipmentId`: an id on the process is a SUGGESTION
+    // the recipe made, and the place a run actually used is the caller's answer.
+    place: places?.[index] ?? null,
   }));
 
   return {
@@ -145,6 +181,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       totals,
       stages,
       rationale: rationale ?? null,
+      ambientCelsius: ambientCelsius ?? null,
       createdAt: now,
       updatedAt: now,
     },

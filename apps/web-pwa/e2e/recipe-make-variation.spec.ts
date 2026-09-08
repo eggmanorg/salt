@@ -42,6 +42,12 @@ const USER_MESSAGE = 'prawns instead of chorizo';
 const STUB_REPLY =
   'Deterministic stubbed chef reply: add 2 tbsp oil and hold the prawns until the last three minutes.';
 const STUB_TITLE = 'Stubbed Prawn Conversation';
+// What the chef declared this reply offered (#1299). The buttons under a reply are
+// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
+// spec with no button to press. Both kinds, because that is what this reply is
+// worth on today's UI — the same two actions it has always offered here. The
+// plain-answer-offers-nothing case is `chat.spec.ts`.
+const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 // The librarian's canned output — a genuinely different dish with its own name,
 // which is what makes "its own name, not the original's" assertable.
@@ -109,7 +115,7 @@ test.describe('recipes — make a variation', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
 
     // ── Register every canned model answer BEFORE driving the UI ───────────────
-    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
+    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
     await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_TITLE);
     await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
     await page.evaluate((p) => window.__e2e!.stubAi('parseRecipeIngredients', p), STUB_PARSE);

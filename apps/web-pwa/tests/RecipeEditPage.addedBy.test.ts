@@ -55,7 +55,7 @@ import RecipeEditPage from '../src/routes/recipes/RecipeEditPage.svelte';
 import { persistRecipe } from '../src/lib/recipeService.js';
 import { seedMembers, __resetMembersServiceForTest } from '../src/lib/membersService.js';
 
-function makeMember(name: string, sortOrder: number): Member {
+function makeMember(name: string, sortOrder: number, system = false): Member {
   return {
     id: `member-${name.toLowerCase()}`,
     schemaVersion: 1,
@@ -65,6 +65,7 @@ function makeMember(name: string, sortOrder: number): Member {
     sortOrder,
     icon: null,
     cookMode: 'standard',
+    system,
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
 }
@@ -262,6 +263,41 @@ describe('RecipeEditPage — "Added by"', () => {
     render(RecipeEditPage, { props: { params: { id: 'entry-1' } } });
     await waitFor(() => expect(screen.getByTestId('recipe-editor')).toBeInTheDocument());
     expect(screen.queryByTestId('recipe-added-by')).toBeNull();
+  });
+
+  it('does not offer a system account (issue #1300)', async () => {
+    // A people-picker, so the rule applies: the fridge signs in and adds recipes,
+    // but is never offered as someone who added one.
+    seedMembers([makeMember('Daniel', 0), makeMember('Fridge', 1, true)]);
+    mockRecipes._set([makeRecipe({ createdBy: '', lastEditedBy: '' })]);
+
+    render(RecipeEditPage, { props: { params: { id: 'entry-1' } } });
+    await waitFor(() => expect(screen.getByTestId('recipe-added-by')).toBeInTheDocument());
+
+    await userEvent.click(trigger());
+    await screen.findByRole('listbox');
+    expect(screen.getAllByRole('option').map((o) => o.textContent?.trim())).toEqual(['Daniel']);
+  });
+
+  it('still offers a system account that a recipe is already stamped with', async () => {
+    // The stamp is honest and stays put — attribution is an audit snapshot, never
+    // rewritten — so the current value must remain selectable or opening the
+    // editor would silently drop it. Same path an off-roster name takes.
+    seedMembers([makeMember('Daniel', 0), makeMember('Fridge', 1, true)]);
+    mockRecipes._set([makeRecipe({ createdBy: 'Fridge', lastEditedBy: 'Fridge' })]);
+
+    render(RecipeEditPage, { props: { params: { id: 'entry-1' } } });
+    await waitFor(() => expect(screen.getByTestId('recipe-added-by')).toBeInTheDocument());
+
+    await userEvent.click(trigger());
+    await screen.findByRole('listbox');
+    expect(
+      screen
+        .getAllByRole('option')
+        .map((o) => o.textContent?.trim())
+        .sort(),
+    ).toEqual(['Daniel', 'Fridge']);
+    expect((await savedRecipe()).createdBy).toBe('Fridge');
   });
 
   it('never offers a way to edit who last touched it', async () => {

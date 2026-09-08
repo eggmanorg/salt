@@ -130,3 +130,45 @@ describe('BatchObservationSchema — the stage a reading is about', () => {
     expect(BatchObservationSchema.safeParse(observation({ stageId: 3 })).success).toBe(false);
   });
 });
+
+describe('BatchObservationSchema — the humidity beside the temperature (issue #1286)', () => {
+  it("accepts a cure's weekly reading — a weight, a temperature and a humidity", () => {
+    const result = BatchObservationSchema.safeParse(
+      observation({ weightGrams: 1240, temperatureC: 12, relativeHumidityPercent: 75 }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.relativeHumidityPercent).toBe(75);
+  });
+
+  it('bounds the humidity to the scale that exists, at both ends', () => {
+    // 0 and 100 are readings; 101 and -1 are typos, not measurements — the same
+    // argument `ph`'s 0–14 bound makes.
+    expect(
+      BatchObservationSchema.safeParse(observation({ relativeHumidityPercent: 0 })).success,
+    ).toBe(true);
+    expect(
+      BatchObservationSchema.safeParse(observation({ relativeHumidityPercent: 100 })).success,
+    ).toBe(true);
+    expect(
+      BatchObservationSchema.safeParse(observation({ relativeHumidityPercent: 101 })).success,
+    ).toBe(false);
+    expect(
+      BatchObservationSchema.safeParse(observation({ relativeHumidityPercent: -1 })).success,
+    ).toBe(false);
+  });
+
+  it('reads an observation written before this field as one that recorded no humidity', () => {
+    // The whole of the back-compat story: additive, with a read default, so every
+    // entry already in the log parses unchanged and there is no migration.
+    const before: Record<string, unknown> = observation({ relativeHumidityPercent: 75 });
+    delete before.relativeHumidityPercent;
+    const result = BatchObservationSchema.safeParse(before);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.relativeHumidityPercent).toBeNull();
+    // And nothing else about the entry moved.
+    expect(result.data.weightGrams).toBe(1240);
+    expect(result.data.temperatureC).toBe(12);
+  });
+});

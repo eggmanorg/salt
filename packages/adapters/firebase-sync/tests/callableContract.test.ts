@@ -292,10 +292,13 @@ const rows: readonly Row[] = [
     callable: 'chefChat',
     stream: true,
     timeout: 120_000,
-    data: 'Preheat.',
+    // An OBJECT since #1299 — the reply text plus what the chef declared it
+    // offered — and `.safeParse`d on the way in, so the row's `data` has to be
+    // something that actually parses.
+    data: { text: 'Preheat.', offered: ['dish-change'] },
     call: () => barrel.streamChefChat(cast(CHAT_INPUT), () => {}),
     payload: CHAT_INPUT,
-    ok: { kind: 'ok', value: 'Preheat.' },
+    ok: { kind: 'ok', value: { text: 'Preheat.', offered: ['dish-change'] } },
     traced: null,
     errors: SHARED_ERRORS,
   },
@@ -751,7 +754,10 @@ describe('callGetImagePrompt — the wire result is parsed, not trusted', () => 
 // ─── The stream, chunk by chunk ─────────────────────────────────────────────
 describe('streamChefChat — the chunks reach the caller as they arrive', () => {
   it('hands every chunk to onChunk and resolves to the assembled reply', async () => {
-    fn.stream.mockResolvedValue({ stream: twoChunks(), data: Promise.resolve('Preheat.') });
+    fn.stream.mockResolvedValue({
+      stream: twoChunks(),
+      data: Promise.resolve({ text: 'Preheat.', offered: [] }),
+    });
     const chunks: string[] = [];
 
     const result = await barrel.streamChefChat(cast(CHAT_INPUT), (c) => chunks.push(c));
@@ -759,8 +765,38 @@ describe('streamChefChat — the chunks reach the caller as they arrive', () => 
     // The chunks AND their order: a rewrite that awaited the aggregate and
     // replayed it would satisfy "resolves to the reply" while delivering the
     // whole answer at once, which is the entire point of the stream.
+    //
+    // The chunks are still STRINGS (#1299). Only the resolved value widened, so a
+    // change that pushed the declaration into the stream would fail here.
     expect(chunks).toEqual(['Pre', 'heat.']);
-    expect(result).toEqual({ kind: 'ok', value: 'Preheat.' });
+    expect(result).toEqual({ kind: 'ok', value: { text: 'Preheat.', offered: [] } });
+  });
+
+  it('defaults an absent declaration to nothing offered', async () => {
+    // The fail-closed default lives on the schema, so a Cloud Function that
+    // returned only the text would still parse — and offer no buttons.
+    fn.stream.mockResolvedValue({
+      stream: twoChunks(),
+      data: Promise.resolve({ text: 'Preheat.' }),
+    });
+
+    const result = await barrel.streamChefChat(cast(CHAT_INPUT), () => {});
+
+    expect(result).toEqual({ kind: 'ok', value: { text: 'Preheat.', offered: [] } });
+  });
+
+  it('reports a reply it cannot read as a corruption, rather than inventing one', async () => {
+    // A browser on a new bundle against a Cloud Function deployed before #1299
+    // gets a bare string here. StorageError so it is REPORTED — a shape mismatch
+    // is a corruption, not a network blip.
+    fn.stream.mockResolvedValue({ stream: twoChunks(), data: Promise.resolve('Preheat.') });
+
+    const result = await barrel.streamChefChat(cast(CHAT_INPUT), () => {});
+
+    expect(result).toEqual({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'corruption' },
+    });
   });
 });
 

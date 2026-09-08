@@ -43,6 +43,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
     ...over,
   };
 }
@@ -59,6 +60,7 @@ function batch(over: Partial<BatchDoc> = {}): BatchDoc {
     totals: { basisGrams: 816, totalGrams: 1440, usableGrams: 1440, units: null },
     stages: [stage()],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-08-14T08:00:00.000Z',
     updatedAt: '2026-08-14T08:00:00.000Z',
     ...over,

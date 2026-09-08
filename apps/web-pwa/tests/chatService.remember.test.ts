@@ -70,7 +70,7 @@ function makeSession(): ChatSessionDoc {
 beforeEach(() => {
   vi.clearAllMocks();
   fs.saveChatSession.mockResolvedValue({ kind: 'ok', value: undefined });
-  fs.streamChefChat.mockResolvedValue({ kind: 'ok', value: 'a reply' });
+  fs.streamChefChat.mockResolvedValue({ kind: 'ok', value: { text: 'a reply', offered: [] } });
   fs.callGenerateChatTitle.mockResolvedValue({ kind: 'ok', value: 'A title' });
   remember.mockResolvedValue({ kind: 'ok', value: undefined });
 });
@@ -129,7 +129,7 @@ describe('sendMessage — /remember never reaches the chef', () => {
 
 describe('sendMessage — what the chef is actually sent (phase 2)', () => {
   function turn(role: 'user' | 'assistant', text: string) {
-    return { id: `msg-${text}`, role, text, createdAt: '2026-08-15T09:00:00.000Z' };
+    return { id: `msg-${text}`, role, text, createdAt: '2026-08-15T09:00:00.000Z', offered: [] };
   }
 
   it('names the speaker, so the chef knows whose notes are whose', async () => {

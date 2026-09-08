@@ -52,6 +52,8 @@ function input(over: Partial<Parameters<typeof logObservation>[0]> = {}) {
     at: OBSERVED_AT,
     stageId: null,
     weightGrams: null,
+    temperatureC: null,
+    relativeHumidityPercent: null,
     note: '',
     ...over,
   };
@@ -94,6 +96,7 @@ describe('batchObservationService — the subscription', () => {
         weightGrams: 1440,
         ph: null,
         temperatureC: null,
+        relativeHumidityPercent: null,
         note: '',
         image: null,
       },
@@ -105,6 +108,7 @@ describe('batchObservationService — the subscription', () => {
         weightGrams: 1402,
         ph: null,
         temperatureC: null,
+        relativeHumidityPercent: null,
         note: '',
         image: null,
       },
@@ -182,6 +186,7 @@ describe('batchObservationService — logging a reading', () => {
       // No screen asks for these yet; null is what "not measured" is.
       ph: null,
       temperatureC: null,
+      relativeHumidityPercent: null,
       // The photo never travels through the document — the callable stamps it on.
       image: null,
     });

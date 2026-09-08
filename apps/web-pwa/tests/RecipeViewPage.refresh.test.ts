@@ -237,12 +237,16 @@ const CHAT_TURNS = [
     role: 'user' as const,
     text: 'add some chilli',
     createdAt: '2026-08-13T10:00:00.000Z',
+    offered: [],
   },
   {
     id: 'm2',
     role: 'assistant' as const,
     text: 'Half a teaspoon of chilli flakes, stirred in.',
     createdAt: '2026-08-13T10:00:01.000Z',
+    // The chef declared a change to this dish (#1299), which is what makes
+    // "Review changes" available to `amendAndReview` below.
+    offered: ['dish-change' as const],
   },
 ];
 
@@ -294,12 +298,19 @@ beforeEach(() => {
   vi.mocked(sendMessage).mockImplementation(async (session, text) => {
     const answered = makeSession([
       ...session.messages,
-      { id: 'm-user', role: 'user' as const, text, createdAt: '2026-08-13T10:00:00.000Z' },
+      {
+        id: 'm-user',
+        role: 'user' as const,
+        text,
+        createdAt: '2026-08-13T10:00:00.000Z',
+        offered: [],
+      },
       {
         id: 'm-chef',
         role: 'assistant' as const,
         text: CHEF_REPLY,
         createdAt: '2026-08-13T10:00:01.000Z',
+        offered: ['dish-change' as const],
       },
     ]);
     mockSessions._set([answered]);

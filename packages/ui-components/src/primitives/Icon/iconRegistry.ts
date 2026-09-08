@@ -63,6 +63,7 @@ import List from '@lucide/svelte/icons/list';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import ListFilter from '@lucide/svelte/icons/list-filter';
 import Lock from '@lucide/svelte/icons/lock';
+import MapPin from '@lucide/svelte/icons/map-pin';
 import Martini from '@lucide/svelte/icons/martini';
 import Merge from '@lucide/svelte/icons/merge';
 import Minus from '@lucide/svelte/icons/minus';
@@ -143,6 +144,7 @@ export const iconRegistry = {
   ListChecks,
   ListFilter,
   Lock,
+  MapPin,
   Martini,
   Merge,
   Minus,

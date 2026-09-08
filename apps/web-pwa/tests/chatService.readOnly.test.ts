@@ -73,7 +73,10 @@ describe('sendMessage — the read-only guard', () => {
   });
 
   it('lets a reopened chat through, even though createdAt is old', async () => {
-    fs.streamChefChat.mockResolvedValue({ kind: 'ok', value: 'still here!' });
+    fs.streamChefChat.mockResolvedValue({
+      kind: 'ok',
+      value: { text: 'still here!', offered: [] },
+    });
     const session = quietSession({ reopenedAt: new Date().toISOString() });
 
     const result = await sendMessage(session, 'still there?', () => {});

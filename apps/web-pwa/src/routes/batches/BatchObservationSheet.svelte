@@ -32,13 +32,24 @@
   //
   // ─── WHAT IT ASKS, AND WHAT IT DELIBERATELY DOES NOT ──────────────────────────
   //
-  // A weight, a note, a photo. Three things, all optional, and a Skip that costs one
-  // tap — because the screen is an INVITATION and a bake that nobody wrote anything
-  // about is a perfectly good bake. Nothing here is required, nothing here blocks,
-  // and closing it writes nothing at all.
+  // A weight, a temperature, a humidity, a note, a photo. All optional, and a Skip
+  // that costs one tap — because the screen is an INVITATION and a bake that nobody
+  // wrote anything about is a perfectly good bake. Nothing here is required, nothing
+  // here blocks, and closing it writes nothing at all.
   //
-  // `ph` and `temperatureC` exist on the document and are not asked for; the service
-  // writes them null and says why.
+  // THE TEMPERATURE AND THE HUMIDITY ARRIVED TOGETHER (issue #1286), and it matters
+  // that they did. `temperatureC` had been on the document since the log was built
+  // and nothing had ever asked for it; the curing chamber is running now and a
+  // cure's weekly reading is a weight, a temperature and a humidity. A humidity box
+  // beside no temperature box would have been the odd half of a pair.
+  //
+  // Both are TYPED IN BY HAND. Nothing in this kitchen reports to a phone, and if a
+  // Home Assistant integration ever writes readings it writes observations exactly
+  // as a person does — nothing here would change.
+  //
+  // `ph` is STILL not asked for, and the sentence above still holds of it: it is a
+  // ferment's measurement rather than a bake's or a cure's, and phase 03 of the epic
+  // is where it earns a control. The service writes it null and says why.
   //
   // ─── THE TWO PRE-FILLED ROWS (issue #1276) ────────────────────────────────────
   //
@@ -99,6 +110,8 @@
   const WHOLE_BATCH = '__whole-batch__';
 
   let weightText = $state('');
+  let temperatureText = $state('');
+  let humidityText = $state('');
   let note = $state('');
   let busy = $state(false);
 
@@ -155,11 +168,57 @@
     weightText.trim() !== '' && weightGrams === null ? 'A weight in grams, or leave it blank.' : '',
   );
 
+  // The same parse-and-say-it-on-the-field shape as the weight above, twice
+  // (issue #1286). Blank is "not measured", which is most readings.
+  //
+  // The temperature is UNBOUNDED BELOW ZERO, matching the field it writes to: a
+  // freezer and a garage in January are real places a batch sits.
+  const temperatureC = $derived.by(() => {
+    const raw = temperatureText.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  });
+  const temperatureError = $derived(
+    temperatureText.trim() !== '' && temperatureC === null
+      ? 'A temperature in °C, or leave it blank.'
+      : '',
+  );
+
+  // The humidity IS bounded, 0–100, because a percentage outside it is a typo
+  // rather than a measurement — and it is refused HERE, on the field, while the
+  // number is still being typed. `BatchObservationSchema` carries the same bound as
+  // the rail behind it; this is not a second opinion, it is the same one said early
+  // enough to be useful.
+  const relativeHumidityPercent = $derived.by(() => {
+    const raw = humidityText.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
+  });
+  const humidityError = $derived(
+    humidityText.trim() !== '' && relativeHumidityPercent === null
+      ? 'A humidity from 0 to 100%, or leave it blank.'
+      : '',
+  );
+
   // Nothing typed, nothing photographed — there is no entry to write, so Save has
   // nothing to do and says so by being unavailable. Skip is the button for that.
-  const hasSomething = $derived(weightGrams !== null || note.trim() !== '' || photoBase64 !== null);
+  const hasSomething = $derived(
+    weightGrams !== null ||
+      temperatureC !== null ||
+      relativeHumidityPercent !== null ||
+      note.trim() !== '' ||
+      photoBase64 !== null,
+  );
   const canSave = $derived(
-    hasSomething && weightError === '' && whenError === '' && !busy && pendingSrc === null,
+    hasSomething &&
+      weightError === '' &&
+      temperatureError === '' &&
+      humidityError === '' &&
+      whenError === '' &&
+      !busy &&
+      pendingSrc === null,
   );
 
   // Object-URL lifecycle: revoke before replacing or clearing, so a re-shoot, a
@@ -172,6 +231,8 @@
   function reset(): void {
     clearPending();
     weightText = '';
+    temperatureText = '';
+    humidityText = '';
     note = '';
     photoBase64 = null;
     cropBusy = false;
@@ -224,6 +285,8 @@
       at: atIso,
       stageId,
       weightGrams,
+      temperatureC,
+      relativeHumidityPercent,
       note: note.trim(),
       photoBase64,
     });
@@ -323,16 +386,42 @@
         {/if}
       </label>
 
-      <TextField
-        label="Weight (g)"
-        inputmode="decimal"
-        class="w-40"
-        value={weightText}
-        error={weightError === '' ? undefined : weightError}
-        onValueChange={(v) => (weightText = v)}
-        data-autofocus
-        data-testid="batch-log-weight"
-      />
+      <div class="flex flex-wrap items-start gap-3">
+        <TextField
+          label="Weight (g)"
+          inputmode="decimal"
+          class="w-40"
+          value={weightText}
+          error={weightError === '' ? undefined : weightError}
+          onValueChange={(v) => (weightText = v)}
+          data-autofocus
+          data-testid="batch-log-weight"
+        />
+
+        <!-- Beside the weight rather than behind a disclosure: a cure's weekly
+             reading is all three, and a bake simply walks past two empty boxes. -->
+        <TextField
+          label="Temperature (°C)"
+          inputmode="decimal"
+          class="w-40"
+          placeholder="optional"
+          value={temperatureText}
+          error={temperatureError === '' ? undefined : temperatureError}
+          onValueChange={(v) => (temperatureText = v)}
+          data-testid="batch-log-temperature"
+        />
+
+        <TextField
+          label="Humidity (%)"
+          inputmode="decimal"
+          class="w-40"
+          placeholder="optional"
+          value={humidityText}
+          error={humidityError === '' ? undefined : humidityError}
+          onValueChange={(v) => (humidityText = v)}
+          data-testid="batch-log-humidity"
+        />
+      </div>
 
       <Textarea
         label="Notes"

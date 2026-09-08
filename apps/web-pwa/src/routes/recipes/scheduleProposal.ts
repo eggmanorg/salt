@@ -65,16 +65,27 @@ function durationWords(duration: StageDuration | null): string {
   return formatStatedDuration(duration) ?? 'no set time';
 }
 
-function environmentWords(environment: StageEnvironment | null): string {
+// The PLACE, when the caller has a manifest to look the id up in (issue #1286).
+// It leads, because "moved to the dough proofer" is the change worth reading and
+// the temperature is often the same on both sides of it.
+//
+// An id the manifest does not hold renders as nothing at all rather than as a raw
+// id — the one-way rule `StageEnvironment.equipmentId` states, and the same choice
+// the flow makes on the way out. `diffProcess` still reports the place change as a
+// stage change either way, so nothing is silently lost.
+function environmentWords(
+  environment: StageEnvironment | null,
+  placeNames: ReadonlyMap<string, string>,
+): string {
   if (environment === null) return 'no stated temperature';
   const humidity =
     environment.relativeHumidityPercent === undefined
       ? ''
       : ` · ${environment.relativeHumidityPercent}% RH`;
-  // The PLACE is deliberately not spelled here: this file has no manifest to look
-  // an id up in, and a raw equipment id in a review row is worse than nothing.
-  // `diffProcess` still reports a place change, as a stage change.
-  return `${stageTemperatureText(environment.temperature)}${humidity}`;
+  const place =
+    environment.equipmentId === null ? undefined : placeNames.get(environment.equipmentId);
+  const where = place === undefined ? '' : `${place} · `;
+  return `${where}${stageTemperatureText(environment.temperature)}${humidity}`;
 }
 
 function kindWords(kind: ProcessStageKind): string {
@@ -92,11 +103,14 @@ function movedTo(from: string, to: string): string {
 // What a whole stage says about itself, for an addition or a removal. Only the
 // facets that carry something: a stage with no temperature and no length says
 // nothing here rather than saying so three times.
-function stageDetails(stage: Pick<ProcessStage, 'duration' | 'environment' | 'until'> | undefined) {
+function stageDetails(
+  stage: Pick<ProcessStage, 'duration' | 'environment' | 'until'> | undefined,
+  placeNames: ReadonlyMap<string, string>,
+) {
   if (stage === undefined) return [];
   const details: string[] = [];
   if (stage.duration !== null) details.push(durationWords(stage.duration));
-  if (stage.environment !== null) details.push(environmentWords(stage.environment));
+  if (stage.environment !== null) details.push(environmentWords(stage.environment, placeNames));
   if (stage.until !== null) details.push(stage.until);
   return details;
 }
@@ -112,6 +126,9 @@ export function reviewRows(
   diff: ProcessDiff,
   reference: readonly ProcessStage[],
   proposed: readonly ProposedStage[],
+  // The household's places, id → name. Empty is the ordinary case for a household
+  // that has described none, and renders exactly what this file rendered before.
+  placeNames: ReadonlyMap<string, string> = new Map(),
 ): ProposalReview {
   const changed: ProposalStageRow[] = diff.changed.map((change) => {
     const details: string[] = [];
@@ -122,7 +139,10 @@ export function reviewRows(
     }
     if (change.environment !== undefined) {
       details.push(
-        movedTo(environmentWords(change.environment.from), environmentWords(change.environment.to)),
+        movedTo(
+          environmentWords(change.environment.from, placeNames),
+          environmentWords(change.environment.to, placeNames),
+        ),
       );
     }
     if (change.kind !== undefined) {
@@ -148,14 +168,14 @@ export function reviewRows(
     key: `added-${entry.position}`,
     position: entry.position,
     label: entry.label,
-    details: stageDetails(proposed[entry.position - 1]),
+    details: stageDetails(proposed[entry.position - 1], placeNames),
   }));
 
   const removed: ProposalStageRow[] = diff.removed.map((entry) => ({
     key: entry.id ?? `removed-${entry.position}`,
     position: entry.position,
     label: entry.label,
-    details: stageDetails(reference[entry.position - 1]),
+    details: stageDetails(reference[entry.position - 1], placeNames),
   }));
 
   return { changed, added, removed };

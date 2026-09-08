@@ -211,7 +211,7 @@ wrong lifetime, wrong sharing. It:
 - **freezes the resolved quantities and the resolved schedule at start**, because
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
-- carries an **observation log** — weight, pH, temperature, a photo, a note;
+- carries an **observation log** — weight, pH, temperature, humidity, a photo, a note;
 - records **when it was stopped**, not merely that it was (`abandonedAt`, issue
   #1280). A run given up on at ten past eight on the Sunday is a different story
   from one given up on the Thursday, and `updatedAt` cannot answer it;
@@ -278,12 +278,12 @@ becoming two is a removal and two additions, and renders honestly as that.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                    |
-| ------------- | ------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process                                                                                                             |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run)             |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                     |
+| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                      |
+| ------------- | ------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process                                                                                                                                                                                                               |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, the kitchen temperature it was started at (`ambientCelsius`), the frozen place each stage ran in, and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, humidity, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run)                                                                                                     |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                                                                                                                       |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:

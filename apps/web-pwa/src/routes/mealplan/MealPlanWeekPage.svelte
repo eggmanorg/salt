@@ -36,7 +36,9 @@
   import { SPLIT_QUERY, createMediaQuery } from '../../lib/mediaQuery.svelte.js';
   import { createDeck } from '../../lib/deck.svelte.js';
   import type { DeckThresholds } from '../../lib/cookDeck.js';
-  import { members } from '../../lib/membersService.js';
+  // `people`, never `members` (issue #1300): the attendee/chef row is a
+  // people-picker, and a system account is never offered as a person.
+  import { people } from '../../lib/membersService.js';
   import { recipes, recipesById } from '../../lib/recipeService.js';
   import { defaultListId } from '../../lib/shoppingListService.svelte.js';
   import {
@@ -823,7 +825,7 @@
             }
           }
           {day}
-          members={$members}
+          members={$people}
           recipes={$recipes}
           recipesById={$recipesById}
           testid={`day-${date}`}
@@ -1178,7 +1180,7 @@
                  field in it a duplicate under strict-mode queries. -->
             <MealDayDetail
               day={paneDay}
-              members={$members}
+              members={$people}
               recipes={$recipes}
               recipesById={$recipesById}
               testid="day-pane"
