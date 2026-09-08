@@ -26,11 +26,14 @@ describe('Textarea', () => {
       expect(container.querySelector('.text-base')).toBeInTheDocument();
     });
 
-    it('applies error border when error is set', () => {
+    // `salt-input--error`, matching TextField: since #1305 that one class
+    // carries both the destructive border and the retinted focus ring, so the
+    // two frames cannot drift on what "errored" looks like.
+    it('applies the error frame treatment when error is set', () => {
       const { container } = render(Textarea, {
         props: { label: 'x', error: 'Required' },
       });
-      expect(container.querySelector('.border-destructive')).toBeInTheDocument();
+      expect(container.querySelector('.salt-input--error')).toBeInTheDocument();
     });
 
     it('applies disabled opacity when disabled', () => {

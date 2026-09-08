@@ -273,9 +273,61 @@ describe('salt.css design-system entry', () => {
     it('defines the focus-ring and z-index custom utilities', () => {
       expect(css).toMatch(/@utility\s+salt-focus-ring\s*\{/);
       expect(css).toMatch(/@utility\s+salt-focus-ring-within\s*\{/);
+      expect(css).toMatch(/@utility\s+salt-focus-ring-inset\s*\{/);
       expect(css).toMatch(/@utility\s+z-popover\s*\{\s*z-index:\s*40/);
       expect(css).toMatch(/@utility\s+z-dialog\s*\{\s*z-index:\s*50/);
       expect(css).toMatch(/@utility\s+z-tooltip\s*\{\s*z-index:\s*70/);
+    });
+
+    // ── The focus ring is ONE treatment (issue #1305, ui-spec-v02 §4.2) ──────
+    // CLAUDE.md rule 12: "one focus ring, defined once" is a claim, so it is
+    // pinned here rather than asserted in a header comment. Four declarations
+    // exist — the base rule plus three utilities — because `focus-within` and a
+    // negative offset cannot be expressed by the base rule alone. What must
+    // never differ between them is the colour and the width; the OFFSET is the
+    // one axis allowed to vary, and only in sign.
+    //
+    // The colour is read through `--salt-focus-color` so `.salt-input--error`
+    // can retint an errored frame without out-specifying a utility (which a
+    // component-layer class cannot do). A literal `hsl(var(--salt-ring))` here
+    // would be the drift this issue fixed, in the other direction.
+    describe('focus ring', () => {
+      // Comments stripped first: every rule below is explained in a comment
+      // that NAMES the wrong version it replaced, so a `not.toMatch` against
+      // the raw file fails on the explanation rather than on any real rule.
+      const rules = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+      const declarations = [
+        ...rules.matchAll(/outline:\s*([^;]+);\s*outline-offset:\s*(-?\d+)px/g),
+      ].map(([, paint, offset]) => ({ paint: paint!.trim(), offset: Number(offset) }));
+
+      it('declares the ring in exactly four places', () => {
+        expect(declarations).toHaveLength(4);
+      });
+
+      it('paints every one of them 2px in the focus colour', () => {
+        for (const { paint } of declarations) {
+          expect(paint).toBe('2px solid var(--salt-focus-color, hsl(var(--salt-ring)))');
+        }
+      });
+
+      it('gives the ring a gap — inward only for the inset variant', () => {
+        expect(declarations.map((d) => d.offset).sort((a, b) => a - b)).toEqual([-2, 2, 2, 2]);
+      });
+
+      it('never falls back to the border token, which `--salt-input` duplicates', () => {
+        expect(rules).not.toMatch(/outline:[^;]*--salt-border/);
+        expect(rules).not.toMatch(/outline-border/);
+      });
+
+      it('retints an errored input frame rather than restating the ring', () => {
+        expect(rules).toMatch(
+          /\.salt-input--error\s*\{[\s\S]*?--salt-focus-color:\s*hsl\(var\(--salt-destructive\)\)/,
+        );
+        // The dead rule this replaced: a ring COLOUR with no ring WIDTH, on an
+        // element whose ring is an outline. It painted nothing.
+        expect(rules).not.toMatch(/ring-destructive/);
+      });
     });
 
     it('defines the progress @keyframes', () => {

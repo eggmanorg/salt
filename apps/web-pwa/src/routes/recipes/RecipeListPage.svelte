@@ -683,7 +683,7 @@
           {@const issues = matchIssueCount(recipe)}
           <li>
             <button
-              class="group flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="group flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-shadow hover:shadow-md"
               onclick={() => push(`/recipes/${recipe.id}`)}
               data-testid="recipe-list-item"
               data-recipe-id={recipe.id}

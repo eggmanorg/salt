@@ -1369,7 +1369,7 @@
       <div class="flex flex-col gap-1.5">
         <p class="text-sm font-medium">Tags</p>
         <div
-          class="flex min-h-9 flex-wrap items-center gap-1.5 rounded border border-input bg-background px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring"
+          class="salt-focus-ring-within flex min-h-9 flex-wrap items-center gap-1.5 rounded border border-input bg-background px-3 py-1.5"
         >
           {#each draft.metadata.tags as tag (tag)}
             <span

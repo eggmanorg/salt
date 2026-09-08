@@ -169,7 +169,7 @@
     />
     <button
       type="button"
-      class="min-w-0 flex-1 text-left"
+      class="salt-focus-ring-inset min-w-0 flex-1 text-left"
       onclick={() => onOpen(itemKey)}
       data-testid="catalog-row-name-{which}"
     >
@@ -343,7 +343,7 @@
               />
               <button
                 type="button"
-                class="min-w-0 flex-1 text-left"
+                class="salt-focus-ring-inset min-w-0 flex-1 text-left"
                 onclick={() => onOpen(key)}
                 data-testid="catalog-form-row-{which}"
               >

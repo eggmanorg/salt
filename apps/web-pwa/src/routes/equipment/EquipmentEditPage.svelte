@@ -388,7 +388,7 @@
         <input
           bind:this={nameInput}
           data-testid="equipment-detail-name-input"
-          class="text-2xl font-semibold tracking-tight text-foreground bg-transparent border-b border-foreground/30 outline-none w-full min-w-0"
+          class="text-2xl font-semibold tracking-tight text-foreground bg-transparent border-b border-foreground/30 w-full min-w-0"
           value={editingName}
           oninput={(e) => (editingName = e.currentTarget.value)}
           disabled={nameBusy}
