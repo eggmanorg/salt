@@ -1942,7 +1942,7 @@
            the classes come off with it — the page scrolls as an ordinary detail page. -->
       <div
         class={chatPaneShown
-          ? 'flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto'
+          ? 'flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto split:salt-focus-gutter'
           : 'flex min-w-0 flex-col gap-4'}
       >
         <!-- Unreviewed AI import (issue #616). Informational, never a gate: the

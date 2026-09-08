@@ -1226,6 +1226,32 @@
   }
 }
 
+/* The gutter a scroll region owes the ring (issue #1305, second half).
+ *
+ * An outline is painted OUTSIDE the border box, so the ring reaches 4px out —
+ * 2px of offset, then 2px of stroke. A scrollport clips at its PADDING box.
+ * Put a full-bleed control inside a scroll container with no padding and the
+ * ring is therefore sliced off flush along the edge, on a control that looks
+ * perfectly fine the moment you take the scroller away.
+ *
+ * Both axes, whatever the container scrolls: CSS computes the other axis to
+ * `auto` when one is not `visible`, so an `overflow-y-auto` column clips
+ * horizontally too. That is why this bit the catalog's two panes — the page's
+ * own padding is OUTSIDE the scroller and buys the ring nothing.
+ *
+ * `scroll-padding` for the same 4px: keyboard focus scrolls the control into
+ * view, and the browser stops at the border box, which would park the ring
+ * half under the edge it just scrolled from.
+ *
+ * The limit, stated because it is not enforced: nothing can tell which scroll
+ * containers hold a full-bleed focusable child, so this is applied by reading
+ * the page, not by a lint rule. `tokens.theme.test.ts` pins only that the
+ * gutter still equals the ring's reach. */
+@utility salt-focus-gutter {
+  padding: 4px;
+  scroll-padding: 4px;
+}
+
 /* ─ The value chip (§8.27) ──────────────────────────────────────────────────
  * A pill worn BY a control — a SelectTrigger, a ComboboxInput, a TextField
  * frame — so a decision can be read at a glance and changed where it sits.

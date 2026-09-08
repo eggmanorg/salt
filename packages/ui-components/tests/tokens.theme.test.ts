@@ -274,6 +274,7 @@ describe('salt.css design-system entry', () => {
       expect(css).toMatch(/@utility\s+salt-focus-ring\s*\{/);
       expect(css).toMatch(/@utility\s+salt-focus-ring-within\s*\{/);
       expect(css).toMatch(/@utility\s+salt-focus-ring-inset\s*\{/);
+      expect(css).toMatch(/@utility\s+salt-focus-gutter\s*\{/);
       expect(css).toMatch(/@utility\s+z-popover\s*\{\s*z-index:\s*40/);
       expect(css).toMatch(/@utility\s+z-dialog\s*\{\s*z-index:\s*50/);
       expect(css).toMatch(/@utility\s+z-tooltip\s*\{\s*z-index:\s*70/);
@@ -313,6 +314,24 @@ describe('salt.css design-system entry', () => {
 
       it('gives the ring a gap — inward only for the inset variant', () => {
         expect(declarations.map((d) => d.offset).sort((a, b) => a - b)).toEqual([-2, 2, 2, 2]);
+      });
+
+      // The ring is painted OUTSIDE the border box and a scrollport clips at
+      // its padding box, so a scroll region holding a full-bleed control owes
+      // the ring exactly as much room as it reaches. Derived from the
+      // declarations above rather than written as `4px` twice: if the offset or
+      // the stroke ever changes, the gutter has to move with it or this fails.
+      it('gives a scroll region a gutter as deep as the ring reaches', () => {
+        const outward = declarations.find((d) => d.offset > 0)!;
+        const stroke = Number(outward.paint.match(/^(\d+)px/)![1]);
+        const reach = outward.offset + stroke;
+
+        const gutter = rules.match(
+          /@utility\s+salt-focus-gutter\s*\{\s*padding:\s*(\d+)px;\s*scroll-padding:\s*(\d+)px;/,
+        );
+        expect(gutter, 'salt-focus-gutter must set padding and scroll-padding').not.toBeNull();
+        expect(Number(gutter![1])).toBe(reach);
+        expect(Number(gutter![2])).toBe(reach);
       });
 
       it('never falls back to the border token, which `--salt-input` duplicates', () => {

@@ -519,7 +519,9 @@
              against AppShell's <main> — there is deliberately no `calc(100dvh - …)`
              and nothing measures chrome. -->
         <div class="grid gap-4 split:min-h-0 split:flex-1 split:grid-cols-2 split:gap-6">
-          <div class="flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto">
+          <div
+            class="flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto split:salt-focus-gutter"
+          >
             <div class="flex flex-col gap-2">
               <input
                 class="w-full rounded border border-input bg-background px-3 py-2 text-sm"
