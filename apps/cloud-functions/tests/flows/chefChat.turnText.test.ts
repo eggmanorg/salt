@@ -12,11 +12,14 @@
  *     LAST model message alone — so a chef that writes its reply and asks for
  *     `declareOffer` in one message, which the tool description invites, had the
  *     whole reply streamed and then "Hope that helps!" persisted in its place.
- *  2. A REFUSED TOOL INPUT COSTS A BUTTON, NOT THE TURN. Genkit validates a
- *     model-authored tool input before the handler runs and THROWS; nothing in
- *     the tool loop catches it, so the callable 500s and the client rolls the
- *     user's own message out of the transcript — after they watched the reply
- *     arrive in full. The last two tests pin the containment's narrowness.
+ *  2. A REFUSED TOOL INPUT NEVER COSTS THE TURN, AND IS NEVER SILENT. Genkit
+ *     validates a model-authored tool input before the handler runs and THROWS;
+ *     nothing in the tool loop catches it, so the callable 500s and the client
+ *     rolls the user's own message out of the transcript — after they watched the
+ *     reply arrive in full. The reply is kept instead, AND reported: the flow
+ *     cannot tell which of the three tools was refused, and for the two library
+ *     tools what it keeps is a lead-in with no lookup behind it (PR #1303
+ *     review). The last two tests pin the containment's narrowness.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GenkitError } from 'genkit';
@@ -157,7 +160,7 @@ describe('chefChat — the stored reply is the streamed reply', () => {
   });
 });
 
-describe('chefChat — a refused tool input costs a button, not the turn', () => {
+describe('chefChat — a refused tool input never costs the turn, and is never silent', () => {
   it('returns the reply the chef had already written', async () => {
     // The concrete case: the chef called `declareOffer` with a bare string
     // instead of a list. Genkit rejects it before the handler runs and throws
@@ -174,8 +177,29 @@ describe('chefChat — a refused tool input costs a button, not the turn', () =>
       // Fail closed: nothing legible was declared, so no buttons.
       offered: [],
     });
-    // Not a reported failure. This is the cost the design accepts, not a defect.
-    expect(mockReportFlowError).not.toHaveBeenCalled();
+    // Kept AND reported (PR #1303 review). The reader loses nothing, but a turn
+    // that succeeded on a refused tool input is not a healthy turn and used to
+    // leave no trace at all.
+    expect(mockReportFlowError).toHaveBeenCalledOnce();
+  });
+
+  it('reports a refused LIBRARY lookup, whose cost is the answer and not a button', async () => {
+    // The case the silence hid. This branch cannot see which tool was refused,
+    // so the reply it keeps may be a lead-in with no lookup behind it — the user
+    // is told the chef is about to search and then it never does. Storing that
+    // as a success with nothing reported is what this pins against; the reply is
+    // still kept, because the alternative is rolling the user's own message out
+    // of the transcript.
+    mockGenerateStream.mockReturnValue({
+      stream: chunksThenThrow(['Let me have a look at what you have…'], schemaRejection()),
+      response: rejecting(schemaRejection()),
+    });
+
+    await expect(runTurn()).resolves.toEqual({
+      text: 'Let me have a look at what you have…',
+      offered: [],
+    });
+    expect(mockReportFlowError).toHaveBeenCalledOnce();
   });
 
   it('still fails a turn that broke before the chef said anything', async () => {

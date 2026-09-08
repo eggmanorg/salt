@@ -773,9 +773,22 @@ export const chefChatFlow = ai.defineFlow(
       // matters to the reader, and failing it here would roll their own message
       // out of the transcript to save a button. Declared nothing, deliberately:
       // the request that would have said what was offered is the one that did not
-      // parse. Not reported — this is the accepted failure, not a defect.
+      // parse.
+      //
+      // REPORTED, THOUGH THE TURN SUCCEEDS (PR #1303 review). This branch cannot
+      // tell WHICH of the three tools was refused: Genkit's `ValidationError`
+      // carries the offending data and the schema it failed, not the tool's name.
+      // A refused `declareOffer` costs a button and is the cost this design
+      // accepts; a refused `findRecipes` or `readRecipe` costs the user the
+      // ANSWER — what is stored is the lead-in the chef streamed before reaching
+      // for the library ("Let me have a look…") with no lookup behind it, and
+      // that is a broken turn dressed as a good one. Swallowing both silently
+      // made the second invisible, so both are now reported and the reply is
+      // still kept. The report carries the rejected data and schema, which is
+      // what says which tool it was.
       if (streamedText && isSchemaRejection(err)) {
         logger.warn('chefChat: a tool input was rejected after the reply; keeping the reply');
+        await reportFlowError(err);
         return { text: streamedText, offered: [] };
       }
       // onCallGenkit owns this callable's error path; report the AI/Genkit

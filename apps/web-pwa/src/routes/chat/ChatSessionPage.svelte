@@ -44,11 +44,12 @@
   // question rather than three call sites spelling it out.
   // Which BUTTONS follow, and they are derived rather than re-spelled in the
   // markup so the row's own presence below cannot disagree with its contents.
-  // `new-dish` picks one of two buttons depending on whether this chat is
-  // attached to a dish; `dish-change` has nothing to offer a general chat, which
-  // has no dish to change.
+  // Both are the predicate ALONE: "has this chat got a dish to change?" is the
+  // other half of the same table and is answered in `offersDishChange`, not
+  // conjoined here — a clause spelled out at a call site is a second place the
+  // table can be got wrong, which is the whole reason it has one home.
   const showSaveButton = $derived(offersNewDish(session));
-  const showReviewButton = $derived(!!session?.recipeId && offersDishChange(session));
+  const showReviewButton = $derived(offersDishChange(session));
   // Nothing offered ⇒ no row at all, not an empty one. An empty `role="group"`
   // labelled "What to do with this reply" is a lie to a screen reader, and the
   // whole point of the phase is that a plain answer carries NOTHING.

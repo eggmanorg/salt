@@ -12,12 +12,13 @@ function session(
     role: 'user' | 'assistant';
     offered?: ChatSessionDoc['messages'][number]['offered'];
   }[],
+  recipeId: string | null = 'lamb',
 ): ChatSessionDoc {
   return {
     id: 'sess-1',
     schemaVersion: 1,
     ownerUid: 'uid-1',
-    recipeId: 'lamb',
+    recipeId,
     basedOnRecipeId: null,
     title: 'Lamb chat',
     messages: messages.map((m, i) => ({
@@ -104,5 +105,37 @@ describe('latestChefOffers — fail closed', () => {
     expect(latestChefOffers(doc)).toEqual(['new-dish']);
     expect(offersNewDish(doc)).toBe(true);
     expect(offersDishChange(doc)).toBe(false);
+  });
+});
+
+// The other half of the table, and it lives here rather than in a page's markup
+// (PR #1303 review). `ChatSessionPage` used to conjoin `!!session.recipeId` at
+// the call site while this file's header claimed to be the one place the gate is
+// answered — two places that could disagree, and only one of them tested.
+describe('latestChefOffers — a general chat has no dish to change', () => {
+  it('withholds dish-change on a chat attached to nothing', () => {
+    // The chef CAN declare it: the declaration is about the reply, and "less
+    // sweet" is a real suggestion wherever it was made. What it has nowhere to
+    // land on is a conversation with no recipe — the review sheet would open on
+    // a dish that does not exist.
+    const doc = session([{ role: 'assistant', offered: ['dish-change'] }], null);
+
+    expect(latestChefOffers(doc)).toEqual(['dish-change']);
+    expect(offersDishChange(doc)).toBe(false);
+  });
+
+  it('still offers a new dish on a chat attached to nothing', () => {
+    // The asymmetry, pinned: a dish worth keeping is worth keeping wherever it
+    // was described. Gating BOTH on attachment is the obvious wrong fix and it
+    // would silently remove the general chat's only way to save anything.
+    const doc = session([{ role: 'assistant', offered: ['new-dish'] }], null);
+
+    expect(offersNewDish(doc)).toBe(true);
+  });
+
+  it('offers dish-change once the chat is attached to a dish', () => {
+    const doc = session([{ role: 'assistant', offered: ['dish-change'] }], 'lamb');
+
+    expect(offersDishChange(doc)).toBe(true);
   });
 });

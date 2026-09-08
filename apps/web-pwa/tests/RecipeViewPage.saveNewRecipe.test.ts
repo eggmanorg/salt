@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
@@ -274,7 +274,13 @@ describe('RecipeViewPage — where the chat actions render (#1299)', () => {
     const { getByTestId, getAllByTestId } = renderPage();
 
     // One row, not one per reply: there are two assistant turns on this session.
-    const rows = getAllByTestId('chat-reply-actions');
+    // Asked of the DOCKED COLUMN, not the document (PR #1303 review). The row's
+    // testid comes from `ChatThread`, which both this column and the drawer
+    // render, and below the seam the column stays mounted-and-hidden while the
+    // drawer opens — so a document-wide count says "one" only for as long as
+    // nothing opens the drawer, which is not the claim being made here. The
+    // per-surface count is; see the drawer test below for the other half.
+    const rows = within(getByTestId('recipe-chat-sidebar')).getAllByTestId('chat-reply-actions');
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
 
@@ -303,6 +309,37 @@ describe('RecipeViewPage — where the chat actions render (#1299)', () => {
       const found = document.querySelectorAll(`[data-testid="${testid}"]`);
       expect(found).toHaveLength(1);
       expect(transcript.contains(found[0]!)).toBe(true);
+    }
+  });
+
+  it('gives the drawer its own row, under its own newest reply', async () => {
+    // What the count above cannot say on its own (PR #1303 review). Below the
+    // seam the docked column is `hidden` rather than unmounted, so opening the
+    // drawer puts TWO `ChatThread`s on the page and `chat-reply-actions` is one
+    // testid rendered by both. That is by design — the row is the shared
+    // component's, and the BUTTONS carry per-surface testids for exactly this
+    // reason — but it means "one row" is only ever a per-surface claim, and a
+    // document-wide assertion would have gone red the first time a test opened
+    // the drawer.
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const { getByTestId, getAllByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-chat-list-item'));
+    await waitFor(() => expect(getByTestId('recipe-chat-drawer')).toBeInTheDocument());
+
+    // Two surfaces, two rows — and each holds its own surface's buttons, which is
+    // what makes the shared testid safe rather than ambiguous.
+    expect(getAllByTestId('chat-reply-actions')).toHaveLength(2);
+
+    for (const [surface, review, save] of [
+      ['recipe-chat-sidebar', 'sidebar-apply-changes-btn', 'sidebar-save-new-recipe-btn'],
+      ['recipe-chat-drawer', 'drawer-apply-changes-btn', 'drawer-save-new-recipe-btn'],
+    ] as const) {
+      const scope = within(getByTestId(surface));
+      const rows = scope.getAllByTestId('chat-reply-actions');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.contains(scope.getByTestId(review))).toBe(true);
+      expect(rows[0]!.contains(scope.getByTestId(save))).toBe(true);
     }
   });
 });
