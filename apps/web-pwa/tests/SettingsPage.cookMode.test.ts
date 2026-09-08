@@ -60,6 +60,7 @@ function member(cookMode: 'standard' | 'guided'): Member {
     sortOrder: 0,
     icon: null,
     cookMode,
+    system: false,
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
 }

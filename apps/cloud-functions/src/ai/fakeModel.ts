@@ -1,7 +1,9 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { googleAI } from '@genkit-ai/google-genai';
-import type { ModelAction } from 'genkit/model';
+import type { GenerateRequest, ModelAction, Part } from 'genkit/model';
+import { ChefOfferSchema, DeclareOfferInputSchema } from '@salt/domain/schemas';
+import type { ChefOffer } from '@salt/domain/schemas';
 import { AI_FLOW_IDS, type AiFlowId } from '@salt/domain/schemas';
 import { ai } from '../genkit.js';
 import { resolveModel } from './resolveModel.js';
@@ -43,6 +45,13 @@ import { resolveModel } from './resolveModel.js';
 //       `JSON.stringify(response)` as the model's text content. Genkit's
 //       `output: { schema }` formatter then parses that text back into
 //       `result.output`, exactly as a real model response would be parsed.
+//
+//   CHEF DECLARATIONS (#1299). `chefChat`'s stub may also be
+//   `{ text: string, offers: ['dish-change' | 'new-dish', …] }`. The chef declares
+//   what its reply offered by CALLING A TOOL, and the buttons under a reply are
+//   gated on that declaration, fail-closed — so without a way to fake the tool
+//   call, every spec that drives one of those buttons would have to be weakened
+//   rather than kept. See `declaringStub` / `declaringTurn` below.
 //
 //   KEYING: by flow name only (one stub per flow). This is deliberately simple
 //   and sufficient for Phase 1's single-call specs. Flow name === Genkit flow
@@ -132,9 +141,13 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
   return ai.defineModel(
     {
       name: `e2e-fake/${flowId}`,
-      supports: { multiturn: true, tools: false, systemRole: true, output: ['text', 'json'] },
+      // `tools: true` since #1299: this fake can now emit a tool request, for the
+      // one stub shape described below. Genkit only ever WARNED on a false here —
+      // it passes the tools regardless — so the flag was never a gate, and leaving
+      // it false would print a warning that is no longer true.
+      supports: { multiturn: true, tools: true, systemRole: true, output: ['text', 'json'] },
     },
-    async () => {
+    async (request) => {
       const snap = await getFirestore().collection(E2E_AI_STUB_COLLECTION).doc(flowId).get();
 
       if (!snap.exists) {
@@ -165,6 +178,15 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
       //
       // Keying-by-flow contract is unchanged; only the text encoding adapts to the
       // stub's runtime type, matching what a real model would emit for each schema.
+      // A DECLARING stub (#1299): `{ text, offers }` rather than a bare string.
+      // The chef declares what its reply offered by calling a tool, and a spec
+      // that needs the buttons under a reply has no other way to say so — the
+      // declaration is fail-closed, so without this every action button would be
+      // invisible under the harness and the specs that drive them could only be
+      // weakened. See `declaringTurn` for why it takes two turns.
+      const declaring = declaringStub(response);
+      if (declaring) return declaringTurn(request, declaring);
+
       const text = typeof response === 'string' ? response : JSON.stringify(response);
       return {
         finishReason: 'stop',
@@ -175,6 +197,73 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
       };
     },
   );
+}
+
+/**
+ * A chefChat stub that also declares what the reply offered (#1299).
+ *
+ * `{ text: string, offers: ChefOffer[] }`, where `offers` has to be a list of the
+ * kinds the app actually understands — so a spec cannot stub a declaration that
+ * would produce a button nothing renders. Anything else (a bare string, a
+ * structured-output object) is not one of these and takes the unchanged path
+ * above.
+ *
+ * STRICTER THAN THE WIRE SCHEMA ON PURPOSE. `DeclareOfferInputSchema.offers` is
+ * a list of plain strings, because a real model's slip must cost a button rather
+ * than the turn; a stub written by us in a spec has no such excuse, and a typo
+ * there should fail the spec rather than quietly declare nothing.
+ */
+function declaringStub(response: unknown): { text: string; offers: ChefOffer[] } | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const candidate = response as { text?: unknown; offers?: unknown };
+  if (typeof candidate.text !== 'string') return null;
+  const parsed = DeclareOfferInputSchema.safeParse({ offers: candidate.offers });
+  if (!parsed.success) return null;
+  const kinds: ChefOffer[] = [];
+  for (const offer of parsed.data.offers) {
+    const kind = ChefOfferSchema.safeParse(offer);
+    if (!kind.success) return null;
+    kinds.push(kind.data);
+  }
+  return { text: candidate.text, offers: kinds };
+}
+
+/**
+ * TWO turns, and the split is what keeps it terminating and keeps the reply from
+ * appearing twice.
+ *
+ * Genkit's tool loop runs the tool a model asks for and calls the model again with
+ * the result. A fake that answered identically both times would loop until
+ * `maxTurns` and throw; one that emitted the text on BOTH turns would stream the
+ * reply, then stream it again. So:
+ *
+ *   turn 1 — the tool request alone, no text. Nothing streams (a chunk with no
+ *            text is dropped by the flow's drain loop).
+ *   turn 2 — reached only after Genkit has appended the tool's response, which is
+ *            what this function tests for. The prose, once.
+ *
+ * The declaration is still read by the flow exactly the way a real model's is:
+ * off the tool REQUEST in the finished message history.
+ */
+function declaringTurn(
+  request: GenerateRequest,
+  stub: { text: string; offers: string[] },
+): { finishReason: 'stop'; message: { role: 'model'; content: Part[] } } {
+  const alreadyDeclared = request.messages.some((message) =>
+    message.content.some((part) => part.toolResponse?.name === 'declareOffer'),
+  );
+  const content: Part[] = alreadyDeclared
+    ? [{ text: stub.text }]
+    : [
+        {
+          toolRequest: {
+            name: 'declareOffer',
+            ref: 'e2e-declare-offer',
+            input: { offers: stub.offers },
+          },
+        },
+      ];
+  return { finishReason: 'stop', message: { role: 'model', content } };
 }
 
 // Eagerly register a fake model for every flow id, but only under the flag — in

@@ -35,6 +35,7 @@ function stage(
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
   };
 }
 
@@ -63,6 +64,7 @@ function runningLoaf(): BatchDoc {
       stage('bake', 45, '2026-08-15T06:25:00.000Z', '2026-08-15T07:10:00.000Z'),
     ],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-08-14T21:00:00.000Z',
     updatedAt: '2026-08-14T21:00:00.000Z',
   };

@@ -105,6 +105,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
     ...over,
   };
 }
@@ -154,6 +155,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
       }),
     ],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-08-14T06:45:00.000Z',
     updatedAt: '2026-08-14T06:45:00.000Z',
     ...over,
@@ -369,6 +371,65 @@ describe('BatchDetailPage — the schedule', () => {
     );
     // A mix has no meaningful temperature and is not given an invented one.
     expect(stages[0]!.querySelector('[data-testid="batch-stage-environment"]')).toBeNull();
+  });
+
+  it('shows WHERE a stage happened, from the frozen snapshot (#1286)', async () => {
+    // The label comes off the batch, never off `equipmentManifest/current`. This
+    // page joins nothing — which is the same property the header states for the
+    // recipe and the formula, and is what makes a run readable after the chamber
+    // has been renamed or deleted.
+    const run = makeBatch({
+      stages: [
+        stage(),
+        stage({
+          id: 'stage-2',
+          label: 'Cure',
+          place: {
+            equipmentId: 'eq-curing',
+            label: 'Curing chamber',
+            temperature: { kind: 'fixed', celsius: 12 },
+            relativeHumidityPercent: 75,
+          },
+        }),
+      ],
+    });
+    renderPage();
+    mockBatch._set(run);
+
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+    const stages = screen.getAllByTestId('batch-stage');
+    const place = stages[1]!.querySelector('[data-testid="batch-stage-place"]');
+    expect(place).toHaveTextContent('Curing chamber');
+    expect(place).toHaveTextContent('12 °C');
+    expect(place).toHaveTextContent('75% RH');
+    // A stage that happened nowhere in particular says nothing at all.
+    expect(stages[0]!.querySelector('[data-testid="batch-stage-place"]')).toBeNull();
+  });
+
+  it('says no more than the snapshot knows', async () => {
+    // A shared chamber with no standing setting recorded: the name, and honestly
+    // nothing else. Inventing the figure the stage asked for would claim a
+    // setpoint this run never controlled.
+    const run = makeBatch({
+      stages: [
+        stage({
+          place: {
+            equipmentId: 'eq-curing',
+            label: 'Curing chamber',
+            temperature: null,
+            relativeHumidityPercent: null,
+          },
+        }),
+      ],
+    });
+    renderPage();
+    mockBatch._set(run);
+
+    await waitFor(() => expect(screen.getByTestId('batch-stages')).toBeInTheDocument());
+    const place = screen.getByTestId('batch-stage-place');
+    expect(place).toHaveTextContent('Curing chamber');
+    expect(place.textContent).not.toContain('°C');
+    expect(place.textContent).not.toContain('RH');
   });
 });
 
@@ -841,6 +902,7 @@ function observation(over: Partial<BatchObservationDoc> = {}): BatchObservationD
     weightGrams: null,
     ph: null,
     temperatureC: null,
+    relativeHumidityPercent: null,
     note: '',
     image: null,
     ...over,
@@ -1193,6 +1255,147 @@ describe('BatchDetailPage — the log sheet’s two pre-filled rows', () => {
     expect(screen.getByTestId('batch-log-save')).toBeDisabled();
     await fireEvent.click(screen.getByTestId('batch-log-save'));
     expect(logMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('BatchDetailPage — a temperature and a humidity in the log (issue #1286)', () => {
+  async function typeInto(testid: string, value: string): Promise<void> {
+    await fireEvent.input(screen.getByTestId(testid), { target: { value } });
+  }
+
+  it('offers both boxes, blank, beside the weight', async () => {
+    await showRun();
+    await openLogSheet();
+    expect(screen.getByTestId('batch-log-temperature')).toHaveValue('');
+    expect(screen.getByTestId('batch-log-humidity')).toHaveValue('');
+  });
+
+  it('hands both to the write path', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await typeInto('batch-log-temperature', '12');
+    await typeInto('batch-log-humidity', '75');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs()).toMatchObject({
+      weightGrams: 1240,
+      temperatureC: 12,
+      relativeHumidityPercent: 75,
+    });
+  });
+
+  it('writes null for a box left blank — most bakes want neither', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs()).toMatchObject({ temperatureC: null, relativeHumidityPercent: null });
+  });
+
+  it('keeps a sub-zero temperature — a garage in January is a real place', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeInto('batch-log-temperature', '-4');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs()).toMatchObject({ temperatureC: -4 });
+  });
+
+  it('refuses an out-of-range humidity ON THE FIELD, not on save', async () => {
+    // Said while the number is still being typed. `BatchObservationSchema` carries
+    // the same 0–100 bound as the rail behind it; this is the same opinion, early
+    // enough to be useful.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await typeInto('batch-log-humidity', '150');
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).toBeDisabled());
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('counts a temperature alone, or a humidity alone, as a reading worth saving', async () => {
+    // `hasSomething` is what says an entry exists. A cure weighed nowhere but read
+    // at 12 °C is a real log entry.
+    await showRun();
+    await openLogSheet();
+    expect(screen.getByTestId('batch-log-save')).toBeDisabled();
+
+    await typeInto('batch-log-humidity', '75');
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).not.toBeDisabled());
+  });
+
+  it('refuses a temperature it cannot read, on the field', async () => {
+    // Same shape as the weight box: text that is present and is not a number is
+    // wrong, and it is said where you are typing rather than in a toast.
+    await showRun();
+    await openLogSheet();
+    await typeWeight('1240');
+    await typeInto('batch-log-temperature', 'warm-ish');
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).toBeDisabled());
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    expect(logMock).not.toHaveBeenCalled();
+
+    // Clearing it puts Save back — the box is optional, not a trap.
+    await typeInto('batch-log-temperature', '');
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).not.toBeDisabled());
+  });
+
+  it('counts a temperature alone as a reading too', async () => {
+    await showRun();
+    await openLogSheet();
+    await typeInto('batch-log-temperature', '12');
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).not.toBeDisabled());
+
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs()).toMatchObject({
+      weightGrams: null,
+      temperatureC: 12,
+      relativeHumidityPercent: null,
+    });
+  });
+
+  it('shows only what the entry actually carries', async () => {
+    await showRun();
+    mockObservations._set([observation({ relativeHumidityPercent: 75 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-humidity')).toHaveTextContent('75% RH');
+    expect(screen.queryByTestId('batch-log-entry-temp')).toBeNull();
+    expect(screen.queryByTestId('batch-log-entry-weight')).toBeNull();
+  });
+
+  it('renders both back in the log, beside the weight', async () => {
+    await showRun();
+    mockObservations._set([
+      observation({ weightGrams: 1240, temperatureC: 12, relativeHumidityPercent: 75 }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-entry-weight')).toHaveTextContent('1240 g');
+    expect(screen.getByTestId('batch-log-entry-temp')).toHaveTextContent('12 °C');
+    expect(screen.getByTestId('batch-log-entry-humidity')).toHaveTextContent('75% RH');
+  });
+
+  it('still neither asks for pH nor writes one', async () => {
+    // A ferment's measurement, not a bake's or a cure's — phase 03 of the epic is
+    // where it earns a control.
+    await showRun();
+    await openLogSheet();
+    expect(screen.queryByTestId('batch-log-ph')).toBeNull();
+
+    await typeWeight('1240');
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect('ph' in loggedArgs()).toBe(false);
   });
 });
 

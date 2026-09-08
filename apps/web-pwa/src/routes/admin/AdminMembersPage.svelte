@@ -14,7 +14,7 @@
     TextField,
   } from '@salt/ui-components';
   import { goBack } from '../../lib/nav.js';
-  import { memberInitials, type Member } from '@salt/domain';
+  import { memberInitials, isPerson, type Member } from '@salt/domain';
   import AdminGuard from './AdminGuard.svelte';
   import {
     members,
@@ -32,6 +32,9 @@
   let formName = $state('');
   let formEmail = $state('');
   let formAdmin = $state(false);
+  // Issue #1300. Independent of `formAdmin` on purpose: a system account is not a
+  // permission level, and the two boxes must not move together.
+  let formSystem = $state(false);
   let saving = $state(false);
 
   const isEditing = $derived(editingId !== null);
@@ -41,6 +44,7 @@
     formName = '';
     formEmail = '';
     formAdmin = false;
+    formSystem = false;
     showEditor = true;
   }
 
@@ -49,6 +53,10 @@
     formName = member.name;
     formEmail = member.email;
     formAdmin = member.admin;
+    // Through the predicate rather than the field (issue #1300): this screen
+    // EDITS the flag, but it still asks the question the rest of the app asks, so
+    // `member.system` stays a name only packages/domain says out loud.
+    formSystem = !isPerson(member);
     showEditor = true;
   }
 
@@ -61,8 +69,8 @@
     }
     saving = true;
     const result = isEditing
-      ? await updateMemberEntry(editingId!, { name, admin: formAdmin })
-      : await createMemberEntry({ name, email, admin: formAdmin });
+      ? await updateMemberEntry(editingId!, { name, admin: formAdmin, system: formSystem })
+      : await createMemberEntry({ name, email, admin: formAdmin, system: formSystem });
     saving = false;
 
     if (result.kind !== 'ok') {
@@ -138,6 +146,19 @@
                       Admin
                     </span>
                   {/if}
+                  <!-- Issue #1300. A system account stays fully listed and fully
+                       editable here — this is the one screen that must keep
+                       seeing it, so it can be renamed, reordered, unflagged or
+                       removed. Muted rather than primary: it marks what the
+                       record is, it does not confer anything. -->
+                  {#if !isPerson(member)}
+                    <span
+                      class="rounded bg-muted px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                      data-testid="member-system-badge"
+                    >
+                      System
+                    </span>
+                  {/if}
                 </div>
                 <span class="truncate text-xs text-muted-foreground">{member.email}</span>
               </div>
@@ -181,6 +202,12 @@
         data-testid="member-email-input"
       />
       <Checkbox bind:checked={formAdmin} label="Admin" data-testid="member-admin-input" />
+      <Checkbox
+        bind:checked={formSystem}
+        label="System account"
+        description="Not a person. Signs in and uses Salt normally, but is never offered as someone who might eat or cook."
+        data-testid="member-system-input"
+      />
       <DialogFooter>
         <Button variant="outline" onclick={() => (showEditor = false)} disabled={saving}>
           Cancel

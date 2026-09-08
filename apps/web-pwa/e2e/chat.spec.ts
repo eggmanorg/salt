@@ -31,10 +31,13 @@ import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { Page } from '@playwright/test';
 
-// The canned assistant reply. The chefChat flow's output schema is z.string(),
-// so the fake model returns JSON.stringify(<this string>) and Genkit's string
-// formatter parses it back to the plain string. A phrase a real model would
-// never produce verbatim, so its appearance can only come from the stub.
+// The canned assistant reply. A phrase a real model would never produce verbatim,
+// so its appearance can only come from the stub.
+//
+// A BARE STRING deliberately, which is what the fake model emits when the chef
+// declares nothing (#1299) — this spec is the plain-question case, and the
+// no-buttons assertion below depends on it staying one. A spec that needs the
+// buttons stubs `{ text, offers }` instead; see `fakeModel.ts`.
 const STUB_REPLY = 'Deterministic stubbed chef reply: sear the halloumi.';
 
 // generateChatTitle also runs (fire-and-forget) after the first exchange and
@@ -97,6 +100,13 @@ test.describe('chat — stubbed chef reply, lifecycle, owner-scoping', () => {
       await expect(
         page1.getByTestId('chat-message-assistant').filter({ hasText: STUB_REPLY }),
       ).toBeVisible({ timeout: 30_000 });
+
+      // ── A plain answer offers nothing (#1299) ─────────────────────────────
+      // The chef declared no offer on this turn, so the row under the reply is not
+      // drawn at all and there is no "Save as recipe" to press. Fail-closed is the
+      // whole point: the button used to appear after ANY reply.
+      await expect(page1.getByTestId('chat-reply-actions')).toHaveCount(0);
+      await expect(page1.getByTestId('chat-save-recipe-btn')).toHaveCount(0);
 
       // ── Assert the conversation landed in the owner-scoped store ───────────
       await expect

@@ -64,7 +64,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGenerateStream.mockReturnValue({
     stream: (async function* () {})(),
-    response: Promise.resolve({ text: 'Salt it early.' }),
+    response: Promise.resolve({ messages: [], text: 'Salt it early.' }),
   });
 });
 

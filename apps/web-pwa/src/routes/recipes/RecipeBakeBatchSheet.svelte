@@ -4,6 +4,10 @@
     Icon,
     RadioGroup,
     RadioGroupItem,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
     Sheet,
     SheetContent,
     SheetFooter,
@@ -17,14 +21,17 @@
     LEAVENING_PERCENT_BOUNDS,
     diffProcess,
     flattenIngredients,
+    placeReachesTemperature,
     solveFormula,
+    stageTemperatureText,
     targetYield,
     withComponentPercentScaled,
     type Recipe,
     type ScheduleAnchor,
   } from '@salt/domain';
-  import type { Formula, ProposeScheduleOutput } from '@salt/domain/schemas';
-  import { proposeSchedule, startBatch } from '../../lib/batchService.js';
+  import type { Formula, ProposeScheduleOutput, StageEnvironment } from '@salt/domain/schemas';
+  import { batches, initBatchesSync, proposeSchedule, startBatch } from '../../lib/batchService.js';
+  import { equipment } from '../../lib/equipmentService.js';
   import { reviewRows, type ProposalStageRow } from './scheduleProposal.js';
   import {
     EMPTY_DOUGH_ANSWER,
@@ -160,8 +167,124 @@
   let proposalFor = $state<string | null>(null);
   let proposeError = $state<string | null>(null);
 
-  const askKey = $derived(`${mode}|${whenLocal}`);
+  // How warm the kitchen is, declared up here because `askKey` below is part of what
+  // it answers.
+  let ambientText = $state('');
+  // Whether the person has typed in the box, as against being shown the prefill.
+  // The prefill arrives asynchronously — the batches subscription resolves after the
+  // sheet is on screen — so without this it could land on top of a figure already
+  // being typed.
+  let ambientTouched = $state(false);
+
+  // The kitchen figure is part of the QUESTION, not a decoration on it: a schedule
+  // written for a 26 °C room is a different answer from one written for 16 °C, so
+  // changing it retires the proposal exactly as moving the target time does rather
+  // than leaving a diff on screen that answers a question nobody asked.
+  const askKey = $derived(`${mode}|${whenLocal}|${ambientText.trim()}`);
   const activeProposal = $derived(proposalFor === askKey ? proposal : null);
+
+  // ─── Where, and how warm the kitchen is (issue #1286) ─────────────────────────
+  //
+  // Two questions, and BOTH ARE SKIPPABLE. Answering neither starts exactly the run
+  // this sheet started before they existed: `ambientCelsius` lands null and every
+  // stage's `place` lands null, which is what "at whatever the kitchen is" means
+  // and what every run written before this field meant.
+  //
+  // The kitchen figure sits with "When" rather than down here, because it is an
+  // input to the schedule proposal and has to be answered before it is asked for.
+
+  /** The places this household has described. A knife block is not one. */
+  const places = $derived(($equipment?.items ?? []).filter((item) => item.environment !== null));
+  /** id → name, so the review can say "moved to the dough proofer" (issue #1286). */
+  const placeNames = $derived(new Map(places.map((place) => [place.id, place.name])));
+
+  // The picker's "nowhere in particular" value. A Select cannot hold null, and the
+  // counter is deliberately not an equipment entry, so "nothing chosen" and
+  // "deliberately the counter" are one answer — the same choice FormulaPage makes.
+  const NO_PLACE = '';
+
+  // The stages this run will ACTUALLY be frozen from: a reviewed proposal's, or the
+  // formula's own. One picker per stage of that list, so what is on screen is
+  // positionally the array `startBatch` resolves — the alignment `freezeBatch`
+  // documents.
+  type PickerStage = { label: string; environment: StageEnvironment | null };
+  const effectiveStages = $derived<readonly PickerStage[]>(
+    activeProposal !== null ? activeProposal.stages : (formula.process ?? []),
+  );
+
+  let placeIds = $state<(string | null)[]>([]);
+
+  // Re-seeded whenever the stage list itself changes identity — a proposal arriving,
+  // being declined, or being silently retired because the target time moved — and on
+  // every open. A choice made against one process must never be carried onto a
+  // different one by position; that is exactly how a place would end up frozen onto
+  // a stage nobody picked it for.
+  let seededStages: readonly PickerStage[] | null = null;
+  $effect(() => {
+    const stages = effectiveStages;
+    if (!open) {
+      seededStages = null;
+      return;
+    }
+    if (seededStages === stages) return;
+    seededStages = stages;
+    // The recipe's own suggestion is the starting point, not an invention: a stage
+    // authored with `equipmentId` opens on that place.
+    placeIds = stages.map((stage) => stage.environment?.equipmentId ?? null);
+  });
+
+  // Subscribed only while the sheet is open, and only for the kitchen-temperature
+  // prefill: the recipe page has no other reason to hold the collection.
+  $effect(() => {
+    if (!open) return;
+    return initBatchesSync();
+  });
+
+  /** The last kitchen temperature anybody gave, from the most recent run that gave one. */
+  const lastAmbientCelsius = $derived.by(() => {
+    const all = $batches;
+    if (all === undefined) return null;
+    let newest: { at: string; celsius: number } | null = null;
+    for (const run of all) {
+      if (run.ambientCelsius === null) continue;
+      if (newest === null || run.createdAt > newest.at)
+        newest = { at: run.createdAt, celsius: run.ambientCelsius };
+    }
+    return newest?.celsius ?? null;
+  });
+
+  // Null for an empty box and for half-typed rubbish alike. Both mean the same
+  // thing here — no answer — and neither is an error worth a sentence.
+  const ambientCelsius = $derived.by(() => {
+    const text = ambientText.trim();
+    if (text === '') return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? value : null;
+  });
+
+  // ─── "That chamber doesn't get that warm" ─────────────────────────────────────
+  //
+  // INFORMATION, NEVER A GATE. It appears beside the picker at the one moment it can
+  // change something — while the place is still being chosen — and `canStart` does
+  // not consult it. Salt records what happened; it does not police it.
+  const placeNotes = $derived(
+    effectiveStages.map((stage, index) => {
+      const chosen = placeIds[index] ?? null;
+      if (chosen === null) return null;
+      const item = places.find((candidate) => candidate.id === chosen);
+      const environment = item?.environment ?? null;
+      const asked = stage.environment?.temperature ?? null;
+      if (item === undefined || environment === null || asked === null) return null;
+      if (placeReachesTemperature(environment, asked)) return null;
+      return `${item.name} runs ${environment.minCelsius}–${environment.maxCelsius} °C. This stage asks for ${stageTemperatureText(asked)}.`;
+    }),
+  );
+
+  function choosePlace(index: number, value: string): void {
+    const next = [...placeIds];
+    next[index] = value === NO_PLACE ? null : value;
+    placeIds = next;
+  }
 
   /**
    * Seed from the formula's OWN reference yield — "the recipe as written" is the
@@ -183,6 +306,8 @@
     answerMode = seeded.mode;
     answer = seeded.fields;
     answered = false;
+    ambientText = '';
+    ambientTouched = false;
   }
 
   // Re-seed on each open: a sheet reopened this evening must not still be offering
@@ -191,6 +316,16 @@
   $effect(() => {
     if (open && !wasOpen) seed();
     wasOpen = open;
+  });
+
+  // The prefill, declared AFTER the re-seed above so it fills the box `seed()` has
+  // just cleared rather than being wiped by it. It runs again when the subscription
+  // resolves — the figure arrives after the sheet is already on screen — and stops
+  // the moment anybody types.
+  $effect(() => {
+    if (!open || ambientTouched) return;
+    const last = lastAmbientCelsius;
+    if (last !== null) ambientText = String(last);
   });
 
   // The ONE seam every box goes through — a field cannot be changed without the
@@ -290,7 +425,7 @@
   const review = $derived(
     activeProposal === null || diff === null
       ? null
-      : reviewRows(diff, referenceProcess, activeProposal.stages),
+      : reviewRows(diff, referenceProcess, activeProposal.stages, placeNames),
   );
 
   type Leavening =
@@ -340,6 +475,7 @@
     const result = await proposeSchedule({
       recipeId: recipe.id,
       targetEndAtLocal: whenLocal.slice(0, 16),
+      ambientCelsius,
     });
     proposing = false;
     if (result.kind !== 'ok') {
@@ -384,6 +520,9 @@
       ...(accepted === null
         ? {}
         : { proposedStages: accepted.stages, rationale: accepted.rationale }),
+      stagePlaceIds: placeIds,
+      equipment: $equipment?.items ?? [],
+      ambientCelsius,
     });
     busy = false;
     if (result.kind !== 'ok') {
@@ -725,6 +864,29 @@
         {/if}
       </div>
 
+      <!-- ─── How warm is the kitchen? ────────────────────────────────────────── -->
+      <!-- Above the proposal on purpose: this is the figure the schedule has been
+           missing, so it has to be answerable before "Work out a schedule" is
+           pressed. Skipping it is always allowed and costs nothing. -->
+      <div class="flex flex-col gap-1">
+        <TextField
+          label="Kitchen temperature (°C)"
+          inputmode="decimal"
+          class="w-40"
+          placeholder="optional"
+          value={ambientText}
+          onValueChange={(v) => {
+            ambientText = v;
+            ambientTouched = true;
+          }}
+          data-testid="bake-batch-ambient"
+        />
+        <p class="text-xs text-muted-foreground">
+          How warm the room is today. Nothing is worked out from it — it's recorded on the run, and
+          it's what a schedule is written for instead of an assumed 20 °C.
+        </p>
+      </div>
+
       <!-- ─── The proposal ────────────────────────────────────────────────────── -->
       {#if mode === 'endAt'}
         {#if proposing}
@@ -800,6 +962,48 @@
             {/if}
           </div>
         {/if}
+      {/if}
+
+      <!-- ─── Where does each stage happen? ──────────────────────────────────── -->
+      <!-- Below the review, because in "out of the oven at" mode the stages here are
+           the PROPOSAL's — one picker per stage of the process this run will actually
+           be frozen from. Hidden entirely when the household has described no places:
+           an empty picker asks a question with no answers. -->
+      {#if places.length > 0 && effectiveStages.length > 0}
+        <div class="flex flex-col gap-2" data-testid="bake-batch-places">
+          <p class="text-sm font-medium">Where does each stage happen?</p>
+          {#each effectiveStages as stage, index (index)}
+            <div class="flex flex-col gap-1">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="min-w-0 flex-1 truncate text-sm">{stage.label || 'Stage'}</span>
+                <Select
+                  value={placeIds[index] ?? NO_PLACE}
+                  onValueChange={(v) => choosePlace(index, v)}
+                >
+                  <SelectTrigger
+                    class="w-44"
+                    aria-label={`Where does ${stage.label || 'this stage'} happen?`}
+                    data-testid="bake-batch-stage-place"
+                  >
+                    {places.find((p) => p.id === placeIds[index])?.name ?? 'Kitchen temperature'}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_PLACE}>Kitchen temperature</SelectItem>
+                    {#each places as place (place.id)}
+                      <SelectItem value={place.id}>{place.name}</SelectItem>
+                    {/each}
+                  </SelectContent>
+                </Select>
+              </div>
+              {#if placeNotes[index] !== null}
+                <!-- A note, not a refusal: Start is unaffected. -->
+                <p class="text-xs text-muted-foreground" data-testid="bake-batch-place-note">
+                  {placeNotes[index]}
+                </p>
+              {/if}
+            </div>
+          {/each}
+        </div>
       {/if}
 
       {#if startError !== null}

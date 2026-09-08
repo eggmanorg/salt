@@ -76,6 +76,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
     actualStartAt: null,
     actualEndAt: null,
     skipped: null,
+    place: null,
     ...over,
   };
 }
@@ -101,6 +102,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
       }),
     ],
     rationale: null,
+    ambientCelsius: null,
     createdAt: '2026-09-05T17:12:00.000Z',
     updatedAt: '2026-09-05T17:12:00.000Z',
     ...over,
@@ -116,6 +118,7 @@ function observation(over: Partial<BatchObservationDoc> = {}): BatchObservationD
     weightGrams: null,
     ph: null,
     temperatureC: null,
+    relativeHumidityPercent: null,
     note: '',
     image: null,
     ...over,

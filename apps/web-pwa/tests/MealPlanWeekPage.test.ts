@@ -124,7 +124,19 @@ const {
 });
 
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
-vi.mock('../src/lib/membersService.js', () => ({ members: mockMembers }));
+// `people` (issue #1300) is derived through the REAL `onlyPeople`, not stubbed
+// with a second store: a test that seeds a system account then exercises the
+// actual predicate the page depends on, rather than a fixture's opinion of it.
+vi.mock('../src/lib/membersService.js', async () => {
+  const { onlyPeople } = await import('@salt/domain');
+  return {
+    members: mockMembers,
+    people: {
+      subscribe: (run: (v: Member[]) => void) =>
+        mockMembers.subscribe((list: Member[]) => run(onlyPeople(list))),
+    },
+  };
+});
 vi.mock('../src/lib/recipeService.js', () => ({
   recipes: mockRecipes,
   // The id index the planner resolves `recipeIds` through (#940). Derived from
@@ -246,7 +258,7 @@ async function closeShopPicker(): Promise<void> {
   await waitFor(() => expect(screen.queryByTestId('week-shop-picker')).not.toBeInTheDocument());
 }
 
-function member(id: string, name: string): Member {
+function member(id: string, name: string, over: Partial<Member> = {}): Member {
   return {
     id,
     schemaVersion: 1,
@@ -256,7 +268,9 @@ function member(id: string, name: string): Member {
     sortOrder: 0,
     icon: null,
     cookMode: 'standard',
+    system: false,
     updatedAt: '2026-06-07T00:00:00.000Z',
+    ...over,
   };
 }
 
@@ -682,6 +696,41 @@ describe('MealPlanWeekPage', () => {
       ),
     );
     expect(vi.mocked(goToWeek)).not.toHaveBeenCalled();
+  });
+
+  it('never offers a system account at the table (issue #1300)', async () => {
+    // The eating toggle and the chef hat come off the SAME member row, so this
+    // one assertion covers both: there is no state where the fridge can eat but
+    // not cook. Alice, an ordinary member, is still there.
+    mockMembers._set([ALICE, member('fridge@e.org', 'Fridge', { system: true })]);
+    render(MealPlanWeekPage);
+    await openDay('2026-06-08');
+    expect(screen.getByTestId('day-2026-06-08-attend-alice@e.org')).toBeInTheDocument();
+    expect(screen.queryByTestId('day-2026-06-08-attend-fridge@e.org')).toBeNull();
+    expect(screen.queryByTestId('day-2026-06-08-chef-fridge@e.org')).toBeNull();
+  });
+
+  it('surfaces a system account already saved as an attendee, removably', async () => {
+    // The consequence of filtering the prop rather than the document: an attendee
+    // no longer in the rendered roster falls through to the unknown-attendee row,
+    // where it can be cleared. Deliberate — nothing rewrites saved plan data.
+    mockMembers._set([ALICE, member('fridge@e.org', 'Fridge', { system: true })]);
+    mockWeek._set({
+      ...emptyWeek('2026-06-08'),
+      days: {
+        ...emptyWeek('2026-06-08').days,
+        '2026-06-08': {
+          note: '',
+          recipeIds: [],
+          chefs: [],
+          attendees: [{ memberId: 'fridge@e.org', homeTime: null, note: '' }],
+          guests: 0,
+        },
+      },
+    });
+    render(MealPlanWeekPage);
+    await openDay('2026-06-08');
+    expect(screen.getByTestId('day-2026-06-08-unknown-fridge@e.org')).toBeInTheDocument();
   });
 
   it('renders an unknown attendee as removable in the detail panel', async () => {

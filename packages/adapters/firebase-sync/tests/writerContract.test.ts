@@ -312,6 +312,7 @@ const MEMBER = {
   sortOrder: 0,
   icon: null,
   cookMode: 'standard' as const,
+  system: false,
   updatedAt: NOW,
 };
 
@@ -410,6 +411,7 @@ const BATCH = {
   },
   stages: [],
   rationale: null,
+  ambientCelsius: null,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -422,6 +424,7 @@ const OBSERVATION = {
   weightGrams: 900,
   ph: null,
   temperatureC: null,
+  relativeHumidityPercent: null,
   note: 'weighed',
   image: null,
 };

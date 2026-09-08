@@ -18,6 +18,7 @@ import { flattenIngredients, stageTemperatureText } from '@salt/domain';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
+import { equipmentSectionForStages, readEquipmentItems } from './equipmentContext.js';
 import { STAGE_KIND_RULES } from './extractProcessStages.js';
 import { requireRecipeFrom } from './loadRecipe.js';
 
@@ -80,7 +81,8 @@ ${STAGE_KIND_RULES}
 - NO STAGE MAY *START* DURING THE HOUSEHOLD'S QUIET HOURS, given below. Nobody is awake then. A stage may run THROUGH the night — that is what a fridge retard is for — but nobody may be required to get up and begin one.
 - The last stage must be the one that finishes the food, because the finish is what is being timed.
 - The preheat MAY sit inside the final proof, and often should: an oven coming up to temperature is a \`wait\` and the dough is proving at the same time. That overlap is correct and is not a mistake to avoid.
-- Keep the stages the dough actually needs. You may move time between them, change where a stage happens (counter, fridge), split one stage into two, or add a stage the schedule needs (a cold retard is the usual one). Do not throw away a stage the bake depends on.
+- Keep the stages the dough actually needs. You may move time between them, change where a stage happens, split one stage into two, or add a stage the schedule needs (a cold retard is the usual one). Do not throw away a stage the bake depends on. Where a stage can happen is the list of places below when there is one — this household's own, not an assumed counter and fridge.
+- THE KITCHEN'S TEMPERATURE TODAY is given below whenever the baker answered. Reason from the figure they gave rather than from a room you have assumed: a counter bulk at 26 °C is not the same stage as one at 16 °C. Say in the rationale what you did about it.
 
 ## DOING NOTHING IS A REAL ANSWER
 If the process already lands at the requested time with nobody up in the night, RETURN IT UNCHANGED and say so in the rationale. The app will show "nothing to change". Restructuring a schedule that did not need it is a worse answer than leaving it alone — restraint here matters as much as the restructure.
@@ -108,13 +110,21 @@ function describeDuration(duration: StageDuration | null): string {
   return `${duration.minMinutes}–${duration.maxMinutes} min`;
 }
 
-function describeStage(stage: ProcessStage): string {
+// `placeNames` is the manifest's own id → name map. A stage citing a place the
+// manifest does not hold says only its temperature: a raw id in a prompt is noise,
+// and the same one-way rule governs the output (see the drop below).
+function describeStage(stage: ProcessStage, placeNames: ReadonlyMap<string, string>): string {
+  const placeName =
+    stage.environment === null || stage.environment.equipmentId === null
+      ? undefined
+      : placeNames.get(stage.environment.equipmentId);
   const parts = [
     `[${stage.id}]`,
     stage.kind,
     `"${stage.label}"`,
     describeDuration(stage.duration),
     stage.environment === null ? null : stageTemperatureText(stage.environment.temperature),
+    placeName === undefined ? null : `in the ${placeName}`,
     // The criterion in the recipe's own words, in brackets: it usually already
     // starts "until", and "until until doubled" reads as carelessness to a model
     // being asked to be careful.
@@ -165,6 +175,8 @@ function promptFor(
   process: readonly ProcessStage[],
   targetEndAtLocal: string,
   quietHours: QuietHours,
+  ambientCelsius: number | null,
+  placeNames: ReadonlyMap<string, string>,
 ): string {
   const labels = new Map(
     flattenIngredients(recipe).map((ingredient) => [ingredient.id, ingredient.rawText]),
@@ -180,12 +192,29 @@ function promptFor(
     `Title: ${recipe.title}`,
     `Finished by: ${describeTarget(targetEndAtLocal)}`,
     `Quiet hours (nobody is awake): ${describeQuietHours(quietHours)}`,
-    `The process as it stands:\n${process.map((stage) => describeStage(stage)).join('\n')}`,
+    // Omitted entirely when the baker skipped the question, rather than sent as a
+    // guess: a made-up room temperature is worse than none, because the model
+    // would reason from it as though somebody had measured it.
+    ambientCelsius === null ? null : `Kitchen temperature today: ${ambientCelsius} °C`,
+    `The process as it stands:\n${process.map((stage) => describeStage(stage, placeNames)).join('\n')}`,
     componentLines.length > 0 ? `The formula:\n${componentLines.join('\n')}` : null,
     stepLines.length > 0 ? `Method:\n${stepLines.join('\n')}` : null,
   ]
     .filter((part): part is string => part !== null)
     .join('\n\n');
+}
+
+// One stage's environment with an unresolvable `equipmentId` nulled out. Returns
+// the environment UNTOUCHED when there is nothing to drop, so a household with no
+// manifest gets object-for-object what the model returned.
+function dropUnknownPlace<T extends { equipmentId: string | null }>(
+  environment: T | null,
+  placeNames: ReadonlyMap<string, string>,
+): T | null {
+  if (environment === null) return environment;
+  const { equipmentId } = environment;
+  if (equipmentId === null || placeNames.has(equipmentId)) return environment;
+  return { ...environment, equipmentId: null };
 }
 
 export const proposeScheduleFlow = ai.defineFlow(
@@ -194,11 +223,16 @@ export const proposeScheduleFlow = ai.defineFlow(
     inputSchema: ProposeScheduleInputSchema,
     outputSchema: ProposeScheduleOutputSchema,
   },
-  async ({ recipeId, targetEndAtLocal, quietHours }) => {
+  async ({ recipeId, targetEndAtLocal, quietHours, ambientCelsius }) => {
     const db = getFirestore();
-    const [recipeSnap, formulaSnap] = await Promise.all([
+    // The manifest rides in the same round trip. It is an ENHANCEMENT, never a
+    // hard dependency: `readEquipmentItems` degrades to [] on a missing or corrupt
+    // document, and a household that has described no place gets byte-for-byte the
+    // prompt it got before this issue.
+    const [recipeSnap, formulaSnap, equipmentItems] = await Promise.all([
       db.collection('recipes').doc(recipeId).get(),
       db.collection('formulas').doc(recipeId).get(),
+      readEquipmentItems(db, 'proposeSchedule'),
     ]);
 
     // Both are trust boundaries (Firestore reads), so both are validated — the
@@ -227,18 +261,32 @@ export const proposeScheduleFlow = ai.defineFlow(
     // `flowModel` returns the deterministic e2e fake under FUNCTIONS_AI_FAKE, which
     // is what keeps this flow off live Gemini in every e2e run.
     const model = await flowModel('proposeSchedule');
+    // REUSED, not rewritten: `equipmentSectionForStages` is the framing
+    // `extractProcessStages` already asks places with, and every framing lives in
+    // that one file so two prompts cannot drift (see its header). '' when there is
+    // nothing to show.
+    const placesSection = equipmentSectionForStages(equipmentItems);
+    const placeNames = new Map(
+      equipmentItems
+        .filter((item) => item.environment !== null)
+        .map((item) => [item.id, item.name] as const),
+    );
     const result = await withAiTimeout(
       'proposeSchedule',
       () =>
         ai.generate({
           model,
-          system: PROPOSE_SCHEDULE_SYSTEM,
+          system: placesSection
+            ? `${PROPOSE_SCHEDULE_SYSTEM}\n\n${placesSection}`
+            : PROPOSE_SCHEDULE_SYSTEM,
           prompt: promptFor(
             recipe,
             formula.data,
             process,
             targetEndAtLocal,
             quietHours ?? DEFAULT_QUIET_HOURS,
+            ambientCelsius ?? null,
+            placeNames,
           ),
           output: { schema: ProposeScheduleAIOutputSchema },
           config: {
@@ -284,10 +332,17 @@ export const proposeScheduleFlow = ai.defineFlow(
     // the middle of a schedule the bake depends on. The cost is small and visible:
     // an uncited stage renders as an addition in the review, which is honest — we
     // cannot say what it came from.
+    //
+    // An `equipmentId` the manifest does not hold is dropped the SAME WAY, and for
+    // the same reason: it is the same kind of one-way reference (see
+    // `StageEnvironmentSchema.equipmentId`), and a stage whose place cannot be
+    // resolved is still a stage that has to happen. What the reader loses is the
+    // place, which we could not have rendered anyway.
     const stageIds = new Set(process.map((stage) => stage.id));
     const stepIds = new Set(recipe.steps.map((step) => step.id));
     const stages = parsed.data.stages.map((stage) => ({
       ...stage,
+      environment: dropUnknownPlace(stage.environment, placeNames),
       sourceStageId:
         stage.sourceStageId !== null && stageIds.has(stage.sourceStageId)
           ? stage.sourceStageId

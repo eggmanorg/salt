@@ -95,6 +95,10 @@ function userTurn(text: string): ChatSessionDoc['messages'][number] {
     role: 'user',
     text,
     createdAt: now(),
+    // A user turn never offers anything (issue #1299). Written explicitly rather
+    // than left to the schema's `.default([])`, because the default only applies
+    // on a READ and this object is what gets written.
+    offered: [],
   };
 }
 
@@ -331,8 +335,13 @@ export async function sendMessage(
   const assistantMsg: ChatSessionDoc['messages'][number] = {
     id: crypto.randomUUID(),
     role: 'assistant',
-    text: streamResult.value,
+    text: streamResult.value.text,
     createdAt: now(),
+    // What the chef said this reply put on the table (issue #1299). Stored on the
+    // message rather than derived at render time, so the buttons under a reply
+    // survive a reload — and so an older conversation, whose messages carry the
+    // schema's `[]` default, keeps showing none until its next reply.
+    offered: streamResult.value.offered,
   };
 
   const finalSession: ChatSessionDoc = {
@@ -345,7 +354,7 @@ export async function sendMessage(
 
   if (isFirstExchange) {
     // Generate a short title in the background — doesn't block the response.
-    void callGenerateChatTitle(text, streamResult.value).then((titleResult) => {
+    void callGenerateChatTitle(text, streamResult.value.text).then((titleResult) => {
       if (titleResult.kind === 'ok' && titleResult.value.trim()) {
         void persistSession({ ...finalSession, title: titleResult.value.trim() });
       }

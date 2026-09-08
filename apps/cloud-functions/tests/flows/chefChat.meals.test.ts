@@ -155,7 +155,7 @@ beforeEach(() => {
 
   mockGenerateStream.mockReturnValue({
     stream: (async function* () {})(),
-    response: Promise.resolve({ text: 'There is nothing green on that table.' }),
+    response: Promise.resolve({ messages: [], text: 'There is nothing green on that table.' }),
   });
 });
 

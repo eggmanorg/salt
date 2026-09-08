@@ -87,6 +87,9 @@ vi.mock('../src/lib/featureGate.js', () => ({
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
   saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // The bake sheet subscribes to `batches` while it is open, for the kitchen
+  // temperature prefill (issue #1286). This page opens that sheet.
+  subscribeBatches: vi.fn(() => vi.fn()),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   sessions: mockSessions,

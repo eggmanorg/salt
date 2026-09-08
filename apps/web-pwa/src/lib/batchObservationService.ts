@@ -106,6 +106,18 @@ export interface LogObservationInput {
   stageId: string | null;
   /** Grams on the scale, or null when the entry is a note or a photo. */
   weightGrams: number | null;
+  /**
+   * Degrees Celsius at the instant of the reading, or null when it was not taken
+   * (issue #1286). Unbounded below zero — a garage in January is a real place a
+   * batch sits.
+   */
+  temperatureC: number | null;
+  /**
+   * Relative humidity, 0–100, or null when it was not taken. The sheet refuses an
+   * out-of-range figure on the field rather than handing one over, so nothing here
+   * re-checks it — `BatchObservationSchema` is the rail either way.
+   */
+  relativeHumidityPercent: number | null;
   /** Free text. `''` is "none" — the schema spells the absent state that way. */
   note: string;
   /**
@@ -130,11 +142,16 @@ export type PhotoOutcome =
  * they typed; `ok` means the entry is on the document, and `photo` says separately
  * whether the picture made it.
  *
- * `ph` and `temperatureC` are written null. The schema carries both and this screen
- * offers neither — bread is weighed, and the pH strip and the chamber probe belong
- * to the cure phase that made the log a subcollection in the first place
- * (docs/formulas-schedules-batches.md, phase 04). Null is what "not measured" is,
- * so nothing here has to be revisited when a screen does ask.
+ * `temperatureC` and `relativeHumidityPercent` are written THROUGH from the sheet
+ * (issue #1286). They used to be written null with a note saying the screen offered
+ * neither; the curing chamber made that false — a cure's weekly reading is a weight,
+ * a temperature and a humidity — so the sheet grew both boxes and this passes them
+ * on untouched. Null still means "not measured", which is most bakes.
+ *
+ * `ph` IS still written null, and deliberately: it is a ferment's measurement rather
+ * than a bake's or a cure's, and phase 03 of the epic is where it earns a control
+ * (docs/formulas-schedules-batches.md). Null is what "not measured" is, so nothing
+ * here has to be revisited when a screen does ask.
  */
 export async function logObservation(
   input: LogObservationInput,
@@ -146,7 +163,8 @@ export async function logObservation(
     stageId: input.stageId,
     weightGrams: input.weightGrams,
     ph: null,
-    temperatureC: null,
+    temperatureC: input.temperatureC,
+    relativeHumidityPercent: input.relativeHumidityPercent,
     note: input.note,
     // Null on the way in, always. The callable stamps the URL on afterwards with a
     // partial update; the bytes never travel through the document.

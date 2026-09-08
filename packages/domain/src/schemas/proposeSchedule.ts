@@ -111,6 +111,20 @@ export const ProposeScheduleInputSchema = z.object({
   // `.default()` so a caller can simply not pass it without the inferred input
   // type demanding one.
   quietHours: QuietHoursSchema.optional(),
+  // HOW WARM THE KITCHEN IS TODAY, as the bake sheet asked it (issue #1286). The
+  // one figure nobody can derive — Salt has an outdoor forecast and no honest way
+  // to turn it into an indoor temperature — and the thing this flow has been
+  // missing: without it a counter prove is reasoned about at whatever room the
+  // model assumes, which in February is wrong by ten degrees.
+  //
+  // NOTHING COMPUTES WITH IT. It reaches the prompt as a line of text and the
+  // rationale, and nothing else; the durations that come back are the model's
+  // judgement, exactly as they were before (see this file's header, and
+  // docs/formulas-schedules-batches.md "what not to build").
+  //
+  // `.nullable().optional()`: null is "the baker skipped the question", absent is
+  // "this caller does not ask it", and the flow treats them identically.
+  ambientCelsius: z.number().nullable().optional(),
 });
 
 // ─── What the model authors ─────────────────────────────────────────────────────

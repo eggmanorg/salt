@@ -7,6 +7,9 @@ export interface CreateMemberInput {
   readonly admin: boolean;
   readonly sortOrder: number;
   readonly icon?: string | null;
+  // Issue #1300. Optional and false by default, so every existing caller keeps
+  // creating people; the admin screen is the only thing that passes it.
+  readonly system?: boolean;
   readonly now: string; // ISO-8601
 }
 
@@ -28,6 +31,7 @@ export function createMember(input: CreateMemberInput): Member {
     // and changes it themselves in Settings. The admin screen that calls this has
     // no business choosing how someone likes to cook.
     cookMode: 'standard',
+    system: input.system ?? false,
     updatedAt: input.now,
   };
 }

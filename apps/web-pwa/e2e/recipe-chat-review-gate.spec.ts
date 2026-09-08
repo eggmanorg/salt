@@ -72,6 +72,12 @@ const USER_MESSAGE = 'add some chilli';
 const STUB_REPLY =
   'Deterministic stubbed chef reply: half a teaspoon of chilli flakes, stirred in.';
 const STUB_CHAT_TITLE = 'Stubbed Chilli Conversation';
+// What the chef declared this reply offered (#1299). The buttons under a reply are
+// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
+// spec with no button to press. Both kinds, because that is what this reply is
+// worth on today's UI — the same two actions it has always offered here. The
+// plain-answer-offers-nothing case is `chat.spec.ts`.
+const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 // The librarian's canned answer: the change the user asked for is in the title
 // and the method, and the metadata it was never asked about is DROPPED — null
@@ -164,7 +170,7 @@ async function getSessions(page: Page): Promise<ChatSessionDoc[]> {
 
 /** Register every canned model answer this journey reaches, before driving the UI. */
 async function stubModel(page: Page): Promise<void> {
-  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
+  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
   await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_CHAT_TITLE);
   await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
 }
