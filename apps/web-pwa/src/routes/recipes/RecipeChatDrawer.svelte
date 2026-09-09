@@ -43,22 +43,21 @@
     /** Hand this conversation to the full chat page. */
     onOpenFull: () => void;
     /**
-     * The recipe's own chat actions — "Review changes" and "Save as new recipe". They
-     * belong to the host because they act on the DISH, not on the conversation; they
-     * are forwarded straight to `ChatThread`, which renders them under the chef's
-     * newest reply (issue #1299).
+     * The recipe's own chat actions — "Update recipe" and "Save as new recipe" —
+     * rendered in the header beside expand and close. They belong to the host because
+     * they act on the DISH, not on the conversation; they sit up here, behind one
+     * glyph, because a bar under the transcript costs a phone-height drawer more than
+     * the actions are worth (#878) and a menu costs the header nothing (#1310).
      *
-     * They used to sit in this header, on the ground that a permanent bar under the
-     * transcript costs a phone-height drawer more than the actions are worth (#878).
-     * That is still true of a PERMANENT bar and is why none is coming back. It is not
-     * true of a row attached to the newest reply: it scrolls away with that reply, and
-     * on a drawer showing nothing but a plain answer it is not drawn at all.
+     * The host passes the whole control, trigger included, because the trigger's
+     * testid has to differ per surface: the recipe page's docked column and this
+     * drawer can both be mounted at once.
      */
-    latestReplyActions?: Snippet | undefined;
+    headerActions?: Snippet | undefined;
     /** Openers for an empty conversation — forwarded straight to `ChatThread`. */
     starters?: { label: string; text: string }[] | undefined;
   }
-  let { session, thread, onClose, onOpenFull, latestReplyActions, starters }: Props = $props();
+  let { session, thread, onClose, onOpenFull, headerActions, starters }: Props = $props();
 
   // `DRAG_START_PX` — the slop before a touch counts as a drag rather than a tap
   // on the handle — is imported from `lib/swipe.js` (issue #933). It is the one
@@ -238,8 +237,9 @@
     </button>
     <div class="flex items-center justify-between gap-2 px-3 pb-2">
       <p class="min-w-0 truncate text-sm font-medium">{session.title}</p>
-      <!-- Title, expand, close. Nothing here writes to the dish (issue #1299). -->
+      <!-- Title, the chat actions, expand, close (issue #1310). -->
       <div class="flex shrink-0 items-center gap-1">
+        {@render headerActions?.()}
         <Button
           size="sm"
           variant="ghost"
@@ -268,6 +268,5 @@
     layout="panel"
     emptyText="Ask me anything about this recipe."
     {starters}
-    {latestReplyActions}
   />
 </section>

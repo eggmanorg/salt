@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { Button, DetailPage, Icon, Spinner } from '@salt/ui-components';
+  import {
+    Button,
+    DetailPage,
+    Icon,
+    Popover,
+    PopoverContent,
+    PopoverMenuItem,
+    PopoverTrigger,
+    Spinner,
+  } from '@salt/ui-components';
   import { push, router } from 'svelte-spa-router';
   import { goBack } from '../../lib/nav.js';
   import { sessions, isLoadingSessions, claimRecipe } from '../../lib/chatService.js';
@@ -26,16 +35,20 @@
 
   const session = $derived(($sessions as ChatSessionDoc[]).find((s) => s.id === params.id) ?? null);
 
-  // The transcript, the composer, the send path and now WHERE the recipe actions
-  // render all live in ChatThread; this page owns the route lookup, the handlers
-  // behind those actions, the one remaining header link and the review gate.
+  // The transcript, the composer and the send path all live in ChatThread; this
+  // page owns the route lookup, the header actions and the review gate.
   const thread = createChatThread();
 
-  // "The chef has replied at all" — what "View recipe" is gated on, and nothing
-  // else. It is a LINK, so the only question it asks of the conversation is
-  // whether there is one. The action row below asks the same question, but
-  // `ChatThread` asks it: the row attaches to the newest assistant message, so
-  // there is nothing to gate here (issue #1310).
+  // Whether the chat-actions menu is showing. Bound, because each item closes it
+  // on the way to its handler (issue #1310).
+  let chatActionsOpen = $state(false);
+
+  // "The chef has replied at all" — the one gate on every control in this page's
+  // header, the save control and the "View recipe" link alike (issue #1310).
+  // Before the first reply there is nothing to keep and nothing to look at; after
+  // it, WHICH actions apply is decided by whether this chat is attached to a dish,
+  // never by what the chef last said. That is the whole point of the issue: an
+  // action that was there a minute ago is there now.
   const hasAssistantTurn = $derived(session?.messages.some((m) => m.role === 'assistant') ?? false);
 
   // Back goes where you came from. `goBack` uses real browser history first; this
@@ -202,7 +215,7 @@
     push(`/recipes/${saved.id}`);
   }
 
-  // Review changes — the review gate. Everything about what gets proposed and
+  // Update recipe — the review gate. Everything about what gets proposed and
   // what gets written lives in `recipeAmend` and is shared with the recipe
   // page's sidebar/drawer (issue #764); this page holds only its own busy/open
   // state, its toasts and where it goes afterwards. `isProposing` guards the AI
@@ -275,25 +288,84 @@
     backLabel="Back"
     class="p-4 sm:p-6"
   >
-    <!-- What is left in the page header after issue #1299: one control, and it GOES
-         somewhere rather than doing something to the dish. Everything that writes to a
-         recipe now renders under the chef's newest reply, in `ChatThread`'s row, the
-         same row the recipe page's docked column and phone drawer render.
+    <!-- The header's two controls, and the split between them is what each one does to
+         the conversation (issue #1310). "View recipe" GOES somewhere; the save control
+         turns this conversation into a dish, or folds it into one. A menu of "things to
+         do with this chat" that also contained "go and look at something else" would be
+         two ideas in one control, so they stay separate.
 
-         Its gate is unchanged and deliberately still includes "the chef has replied":
-         narrowing when a link appears is not this issue's business, and the tests that
-         pin today's behaviour would be the thing weakened by widening it. -->
+         The save control is one glyph either way — Lucide's floppy disc, "keep this" —
+         so the header does not change shape as a conversation gains a recipe. It is a
+         PLAIN BUTTON when one action applies and a MENU when two or more do: a menu of
+         one is a tap that buys nothing. Today that makes a general chat the button case
+         and an attached chat the menu case, but the rule is the rule, not the split. -->
     {#snippet actions()}
-      {#if session.recipeId && hasAssistantTurn}
-        <Button
-          size="sm"
-          variant="outline"
-          onclick={() => push(`/recipes/${session!.recipeId}`)}
-          data-testid="chat-view-recipe-btn"
-        >
-          {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
-          View recipe
-        </Button>
+      {#if hasAssistantTurn}
+        {#if session.recipeId}
+          <Popover bind:open={chatActionsOpen}>
+            <PopoverTrigger>
+              {#snippet children()}
+                <button
+                  type="button"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Chat actions"
+                  data-testid="chat-actions-menu"
+                >
+                  <Icon name="Save" size={20} />
+                </button>
+              {/snippet}
+            </PopoverTrigger>
+            <PopoverContent align="end" class="min-w-44 p-1">
+              <!-- "Update recipe" is what `docs/salt-architecture.md` §4 has always
+                   called this on the recipe page's own sidebar; the full chat page used
+                   to say "Review changes" for the same act. One name (#1310). -->
+              <PopoverMenuItem
+                icon="RefreshCw"
+                onclick={() => {
+                  chatActionsOpen = false;
+                  void handleReviewChanges();
+                }}
+                disabled={isProposing || thread.isSending}
+                data-testid="chat-apply-changes-btn"
+              >
+                Update recipe
+              </PopoverMenuItem>
+              <!-- The other half of the pair (issue #798): Update recipe folds the
+                   conversation into THIS dish, this one makes it a different one. -->
+              <PopoverMenuItem
+                icon="BookOpen"
+                onclick={() => {
+                  chatActionsOpen = false;
+                  void handleSaveAsNewRecipe();
+                }}
+                disabled={isSavingRecipe || thread.isSending}
+                data-testid="chat-save-new-recipe-btn"
+              >
+                Save as new recipe
+              </PopoverMenuItem>
+            </PopoverContent>
+          </Popover>
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={() => push(`/recipes/${session!.recipeId}`)}
+            data-testid="chat-view-recipe-btn"
+          >
+            {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
+            View recipe
+          </Button>
+        {:else}
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            aria-label="Save as recipe"
+            onclick={handleSaveAsRecipe}
+            disabled={isSavingRecipe || thread.isSending}
+            data-testid="chat-save-recipe-btn"
+          >
+            <Icon name="Save" size={20} />
+          </button>
+        {/if}
       {/if}
     {/snippet}
 
@@ -322,63 +394,8 @@
         ? `What would you change about ${basedOnRecipe.title}?`
         : 'Ask me anything about cooking.'}
       {starters}
-      latestReplyActions={recipeActions}
     />
   </DetailPage>
-
-  <!-- The three actions that act on a dish, in the one place all three chat surfaces
-       put them (issue #1299): a row directly under the chef's newest reply, rendered
-       by `ChatThread`, which owns the placement so the surfaces cannot drift apart.
-       This page keeps what it always owned — the handlers, the busy state and the
-       testids.
-
-       There is no per-button gate: exactly one of the two branches below applies to
-       any given conversation, so once the chef has replied the row always has content
-       and never renders empty. "The chef has replied" is `ChatThread`'s own gate — it
-       attaches this row to the newest assistant message and to nothing else, so passing
-       the snippet unconditionally cannot draw it before there is a reply. -->
-  {#snippet recipeActions()}
-    {#if session !== null && !session.recipeId}
-      <Button
-        size="sm"
-        variant="outline"
-        onclick={handleSaveAsRecipe}
-        loading={isSavingRecipe}
-        disabled={isSavingRecipe || thread.isSending}
-        data-testid="chat-save-recipe-btn"
-      >
-        {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
-        Save as recipe
-      </Button>
-    {/if}
-    {#if session !== null && session.recipeId}
-      <!-- The other half of the pair (issue #798): "Review changes" folds the
-               conversation into THIS dish, this one makes it a different one. An
-               indivisible pair again (#1310) — same gate, same row, so an attached
-               chat never offers one without the other. -->
-      <Button
-        size="sm"
-        variant="outline"
-        onclick={handleSaveAsNewRecipe}
-        loading={isSavingRecipe}
-        disabled={isSavingRecipe || thread.isSending}
-        data-testid="chat-save-new-recipe-btn"
-      >
-        {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
-        Save as new recipe
-      </Button>
-      <Button
-        size="sm"
-        onclick={handleReviewChanges}
-        loading={isProposing}
-        disabled={isProposing || thread.isSending}
-        data-testid="chat-apply-changes-btn"
-      >
-        {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
-        Review changes
-      </Button>
-    {/if}
-  {/snippet}
 
   <!-- Review-and-approve gate for the pending AI edit (Phase 2) -->
   <RecipeChangeSummary

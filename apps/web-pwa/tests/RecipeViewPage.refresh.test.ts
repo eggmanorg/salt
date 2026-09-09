@@ -327,8 +327,10 @@ async function refreshAndReview(): Promise<void> {
   await waitFor(() => expect(screen.getByTestId('recipe-change-summary')).toBeInTheDocument());
 }
 
-/** "Review changes" on the chat sidebar, settled on the same sheet. */
+/** "Update recipe" from the chat column's actions menu, settled on the same sheet. */
 async function amendAndReview(): Promise<void> {
+  await fireEvent.click(screen.getByTestId('sidebar-chat-actions-menu'));
+  await waitFor(() => expect(screen.getByTestId('sidebar-apply-changes-btn')).toBeInTheDocument());
   await fireEvent.click(screen.getByTestId('sidebar-apply-changes-btn'));
   await waitFor(() => expect(screen.getByTestId('recipe-change-summary')).toBeInTheDocument());
 }

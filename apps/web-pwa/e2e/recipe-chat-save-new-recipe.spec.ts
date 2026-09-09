@@ -163,7 +163,9 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
     expect((await getSessions(page)).find((s) => s.id === sessionId)!.recipeId).toBe(originalId);
 
     // Both halves of the pair are on offer: fold it into this dish, or make it
-    // another one. Only the second is pressed.
+    // another one. Only the second is pressed. They live behind one floppy-disc
+    // icon in the chat header (#1310), so the menu is opened first.
+    await page.getByTestId('sidebar-chat-actions-menu').click();
     await expect(page.getByTestId('sidebar-apply-changes-btn')).toBeVisible();
 
     // ── Save as new recipe → a brand new dish ─────────────────────────────────

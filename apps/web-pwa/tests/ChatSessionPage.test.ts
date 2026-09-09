@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
@@ -126,12 +126,19 @@ describe('ChatSessionPage — where back goes', () => {
   });
 });
 
-// Where the three dish-writing actions render: the transcript row `ChatThread` draws
-// under the newest reply, not this page's `DetailPage` header. The comment on that
-// snippet states it as an absolute, so it is pinned here — every other test in this
-// file finds these buttons by testid alone and would pass just as happily with them
-// anywhere. #1310's second phase moves them into the header behind one icon; until
-// then this is the claim.
+// bits-ui renders PopoverContent lazily and portals it, so an attached chat's menu has
+// to be opened before either item exists, and the items are reached through `screen`
+// rather than the container (issue #1310).
+async function openChatActions(): Promise<void> {
+  await fireEvent.click(screen.getByTestId('chat-actions-menu'));
+  await waitFor(() => expect(screen.getByTestId('chat-apply-changes-btn')).toBeInTheDocument());
+}
+
+// Where the dish-writing actions render: this page's `DetailPage` HEADER, behind one
+// glyph, and nowhere inside the transcript. The issue's DoD states "no action buttons
+// inside the transcript" as an absolute, so it is pinned here — every other test in this
+// file finds these controls by testid alone and would pass just as happily with them
+// anywhere on the page.
 describe('ChatSessionPage — where the recipe actions render', () => {
   const SECOND_TURN = [
     {
@@ -148,56 +155,79 @@ describe('ChatSessionPage — where the recipe actions render', () => {
     },
   ];
 
-  it('puts an attached chat’s pair under the NEWEST reply, and leaves View recipe in the header', () => {
+  it('gives an attached chat one trigger, however many replies it has', async () => {
     mockSessions._set([
       makeSession({ recipeId: 'lamb', messages: [...makeSession().messages, ...SECOND_TURN] }),
     ]);
-    const { getByTestId, getAllByTestId } = renderPage();
-
-    // One row for the whole transcript, not one per reply.
-    const rows = getAllByTestId('chat-reply-actions');
-    expect(rows).toHaveLength(1);
-    const row = rows[0]!;
-
-    // The two halves of "under the newest chef reply": inside the message list, and
-    // the sibling immediately after the LAST assistant bubble.
-    const transcript = getByTestId('chat-messages');
-    expect(transcript.contains(row)).toBe(true);
-    const replies = getAllByTestId('chat-message-assistant');
-    expect(row.previousElementSibling).toBe(replies[replies.length - 1]);
-
-    expect(row.contains(getByTestId('chat-apply-changes-btn'))).toBe(true);
-    expect(row.contains(getByTestId('chat-save-new-recipe-btn'))).toBe(true);
-
-    // The one control that stays: it goes somewhere rather than writing to the dish.
-    expect(transcript.contains(getByTestId('chat-view-recipe-btn'))).toBe(false);
-  });
-
-  it('puts a general chat’s single action there too', () => {
-    mockSessions._set([makeSession({ recipeId: null })]);
     const { getByTestId } = renderPage();
 
-    expect(getByTestId('chat-messages').contains(getByTestId('chat-save-recipe-btn'))).toBe(true);
+    // One control for the conversation, not one per reply: two assistant turns here.
+    const triggers = document.querySelectorAll('[data-testid="chat-actions-menu"]');
+    expect(triggers).toHaveLength(1);
+    expect(getByTestId('chat-messages').contains(triggers[0]!)).toBe(false);
+
+    await openChatActions();
+    expect(screen.getByTestId('chat-apply-changes-btn').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('chat-save-new-recipe-btn').textContent).toContain(
+      'Save as new recipe',
+    );
+    // "View recipe" stays its own control beside the menu — it GOES somewhere.
+    expect(getByTestId('chat-view-recipe-btn')).toBeInTheDocument();
   });
 
-  it('renders none of the three anywhere outside the transcript', () => {
-    // Asked of the whole document rather than of the header element, so a copy left
-    // behind in `DetailPage`'s actions — or anywhere else — fails this.
-    for (const [recipeId, testids] of [
-      ['lamb', ['chat-apply-changes-btn', 'chat-save-new-recipe-btn']],
-      [null, ['chat-save-recipe-btn']],
-    ] as const) {
-      mockSessions._set([makeSession({ recipeId })]);
-      const { getByTestId } = renderPage();
-      const transcript = getByTestId('chat-messages');
-      for (const testid of testids) {
-        const found = document.querySelectorAll(`[data-testid="${testid}"]`);
-        expect(found).toHaveLength(1);
-        expect(transcript.contains(found[0]!)).toBe(true);
-      }
-      cleanup();
-      document.body.innerHTML = '';
+  it('renders nothing that writes to a recipe inside the transcript', async () => {
+    // Asked of the whole document rather than of the transcript element, so an old
+    // in-transcript row left behind anywhere fails this.
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    const { getByTestId } = renderPage();
+    await openChatActions();
+
+    const transcript = getByTestId('chat-messages');
+    for (const testid of ['chat-apply-changes-btn', 'chat-save-new-recipe-btn']) {
+      const found = document.querySelectorAll(`[data-testid="${testid}"]`);
+      expect(found).toHaveLength(1);
+      expect(transcript.contains(found[0]!)).toBe(false);
     }
+    expect(screen.queryByTestId('chat-reply-actions')).toBeNull();
+
+    cleanup();
+    document.body.innerHTML = '';
+
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const general = renderPage();
+    const found = document.querySelectorAll('[data-testid="chat-save-recipe-btn"]');
+    expect(found).toHaveLength(1);
+    expect(general.getByTestId('chat-messages').contains(found[0]!)).toBe(false);
+  });
+
+  // #1310's rule, stated as a rule rather than a per-surface exception: the control is a
+  // menu exactly when there is a choice to make. A menu of one is a tap that buys
+  // nothing, so the general chat's single action is a plain button.
+  it('is a plain button where one action applies and a menu where two do', () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const general = renderPage();
+    expect(general.getByTestId('chat-save-recipe-btn')).toBeInTheDocument();
+    expect(general.queryByTestId('chat-actions-menu')).toBeNull();
+    cleanup();
+    document.body.innerHTML = '';
+
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    const attached = renderPage();
+    expect(attached.getByTestId('chat-actions-menu')).toBeInTheDocument();
+    expect(attached.queryByTestId('chat-save-recipe-btn')).toBeNull();
+  });
+
+  // One glyph on both, so the header does not change shape as a chat gains a recipe.
+  it('draws the same glyph whether the control is a button or a menu', () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const general = renderPage();
+    const buttonGlyph = general.getByTestId('chat-save-recipe-btn').innerHTML;
+    cleanup();
+    document.body.innerHTML = '';
+
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    const attached = renderPage();
+    expect(attached.getByTestId('chat-actions-menu').innerHTML).toBe(buttonGlyph);
   });
 });
 
@@ -221,14 +251,15 @@ describe('ChatSessionPage — the actions stay put once the chef has replied', (
     },
   ];
 
-  it('keeps an attached chat’s pair through a plain follow-up question', () => {
+  it('keeps an attached chat’s pair through a plain follow-up question', async () => {
     mockSessions._set([
       makeSession({ recipeId: 'lamb', messages: [...makeSession().messages, ...PLAIN_FOLLOW_UP] }),
     ]);
-    const { queryByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    expect(queryByTestId('chat-apply-changes-btn')).not.toBeNull();
-    expect(queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
+    expect(screen.queryByTestId('chat-apply-changes-btn')).not.toBeNull();
+    expect(screen.queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
   });
 
   it('keeps a general chat’s Save as recipe through the same', () => {
@@ -240,20 +271,20 @@ describe('ChatSessionPage — the actions stay put once the chef has replied', (
     expect(queryByTestId('chat-save-recipe-btn')).not.toBeNull();
   });
 
-  it('offers a general chat only Save as recipe, and an attached chat only the pair', () => {
+  it('offers a general chat only Save as recipe, and an attached chat only the pair', async () => {
     mockSessions._set([makeSession({ recipeId: null })]);
     const general = renderPage();
     expect(general.queryByTestId('chat-save-recipe-btn')).not.toBeNull();
-    expect(general.queryByTestId('chat-apply-changes-btn')).toBeNull();
-    expect(general.queryByTestId('chat-save-new-recipe-btn')).toBeNull();
+    expect(general.queryByTestId('chat-actions-menu')).toBeNull();
     cleanup();
     document.body.innerHTML = '';
 
     mockSessions._set([makeSession({ recipeId: 'lamb' })]);
-    const attached = renderPage();
-    expect(attached.queryByTestId('chat-save-recipe-btn')).toBeNull();
-    expect(attached.queryByTestId('chat-apply-changes-btn')).not.toBeNull();
-    expect(attached.queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
+    renderPage();
+    await openChatActions();
+    expect(screen.queryByTestId('chat-save-recipe-btn')).toBeNull();
+    expect(screen.queryByTestId('chat-apply-changes-btn')).not.toBeNull();
+    expect(screen.queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
   });
 
   it('draws nothing before the chef has replied', () => {
@@ -267,7 +298,9 @@ describe('ChatSessionPage — the actions stay put once the chef has replied', (
     ]);
     const { queryByTestId } = renderPage();
 
-    expect(queryByTestId('chat-reply-actions')).toBeNull();
+    // The trigger is absent, not present-and-empty.
+    expect(queryByTestId('chat-actions-menu')).toBeNull();
+    expect(queryByTestId('chat-save-recipe-btn')).toBeNull();
     expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
     expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
   });
@@ -329,16 +362,17 @@ describe('ChatSessionPage — save as recipe', () => {
 // tests pin is the two things that keep them apart: create mode with no base, and
 // no claim.
 describe('ChatSessionPage — save as NEW recipe', () => {
-  it('is offered on an attached chat, and the general-chat save is not', () => {
+  it('is offered on an attached chat, and the general-chat save is not', async () => {
     mockSessions._set([makeSession({ recipeId: 'lamb' })]);
-    const { getByTestId, queryByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    expect(getByTestId('chat-save-new-recipe-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-save-new-recipe-btn')).toBeInTheDocument();
     // The two are counterparts, never both: one is for a chat with no dish, the
     // other for a chat with one.
-    expect(queryByTestId('chat-save-recipe-btn')).toBeNull();
+    expect(screen.queryByTestId('chat-save-recipe-btn')).toBeNull();
     // …and it sits beside the review gate, which is untouched.
-    expect(getByTestId('chat-apply-changes-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-apply-changes-btn')).toBeInTheDocument();
   });
 
   it('is not offered on a general chat', () => {
@@ -371,9 +405,10 @@ describe('ChatSessionPage — save as NEW recipe', () => {
       kind: 'ok',
       value: emptyRecipe('salad', NOW),
     });
-    const { getByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    await fireEvent.click(getByTestId('chat-save-new-recipe-btn'));
+    await fireEvent.click(screen.getByTestId('chat-save-new-recipe-btn'));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
     const input = vi.mocked(authorRecipeTraced).mock.calls[0]![0];
@@ -481,9 +516,10 @@ describe('ChatSessionPage — saving a dish back onto a meal', () => {
     mockRouter.querystring = 'meal=roast';
     mockSessions._set([makeSession({ recipeId: 'lamb' })]);
     vi.mocked(authorRecipeTraced).mockResolvedValue(SAVED);
-    const { getByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    await fireEvent.click(getByTestId('chat-save-new-recipe-btn'));
+    await fireEvent.click(screen.getByTestId('chat-save-new-recipe-btn'));
 
     await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/roast'));
@@ -579,7 +615,8 @@ describe('ChatSessionPage — applying an amendment decides the guided plan', ()
   }
 
   async function applyFromChat(getByTestId: (id: string) => HTMLElement) {
-    await fireEvent.click(getByTestId('chat-apply-changes-btn'));
+    await openChatActions();
+    await fireEvent.click(screen.getByTestId('chat-apply-changes-btn'));
     await waitFor(() => expect(getByTestId('recipe-change-apply')).toBeInTheDocument());
     await fireEvent.click(getByTestId('recipe-change-apply'));
   }

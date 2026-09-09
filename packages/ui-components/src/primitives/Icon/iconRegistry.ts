@@ -74,6 +74,7 @@ import Percent from '@lucide/svelte/icons/percent';
 import Play from '@lucide/svelte/icons/play';
 import Plus from '@lucide/svelte/icons/plus';
 import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+import Save from '@lucide/svelte/icons/save';
 import Search from '@lucide/svelte/icons/search';
 import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
 import Share from '@lucide/svelte/icons/share';
@@ -155,6 +156,7 @@ export const iconRegistry = {
   Play,
   Plus,
   RefreshCw,
+  Save,
   Search,
   SendHorizontal,
   Share,

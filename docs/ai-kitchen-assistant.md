@@ -334,37 +334,52 @@ raw.kind`:
   precedes the parameterised `/chat/:id` route; see Components §4 above.
 - Recipe-attached chat — opened alongside an existing recipe; same chat engine with
   `recipeId` set; "apply changes" re-runs the librarian against the recipe.
-- **Where the recipe actions live — under the newest reply, never in a header (#1299).**
-  `ChatThread.svelte` takes a `latestReplyActions` snippet and renders it as a row
-  immediately after the newest assistant message, in `page` and `panel` layouts alike.
-  The host still writes the buttons — labels, handlers, busy state, and testids, which
-  stay distinct per surface because the recipe page's docked column and its phone drawer
-  can be mounted at once — but not where they go. That is what makes the surfaces agree
-  by construction rather than by three hosts keeping a convention. The row is withheld
-  while a turn is in flight, and absent entirely when the chef has not replied.
+- **Where the recipe actions live — one icon in each chat surface's own header (#1310).**
+  Every surface draws the SAME glyph, Lucide's `save` (the classic floppy disc), meaning
+  "keep this": every action behind it is a form of keeping — save, save as new, fold into
+  the saved thing. One glyph whether the control is a button or a menu, so the header
+  does not change shape as a conversation gains a recipe.
 
-  This **narrows #878, it does not reverse it.** What #878 rejected was a _permanent_
-  full-width bar above the composer: height the conversation never gets back, whether or
-  not there is anything to act on. A row attached to the message that earned it scrolls
-  away with that message and is not drawn when there is nothing to offer, so that
-  objection does not reach it. A permanent bar under the transcript, and anything in the
-  composer area, remain rejected.
+  | surface                                           | actions that apply                | control                  |
+  | ------------------------------------------------- | --------------------------------- | ------------------------ |
+  | Full chat page, general chat (no attached recipe) | Save as recipe                    | plain button — tap saves |
+  | Full chat page, attached to a recipe              | Update recipe, Save as new recipe | menu                     |
+  | Recipe page, docked chat column                   | Update recipe, Save as new recipe | menu                     |
+  | Recipe page, phone chat drawer                    | Update recipe, Save as new recipe | menu                     |
 
-  All three surfaces render the row: the recipe page's docked column, its phone drawer,
-  and the full chat page. Labelled buttons throughout, rather than the bare glyphs the
-  recipe page's header held (there is no hover on a phone, so an unlabelled glyph is a
-  guess on first press).
+  **The rule is "one applicable action is a plain button; two or more open a menu"** — a
+  rule, not a per-surface exception, so the control is a menu exactly when there is a
+  choice to make. A menu of one hides a single action behind a gesture and then shows you
+  it was the only one. If a second general-chat action ever lands, that surface flips to a
+  menu on its own.
 
-  **The row is gated on "the chef has replied", and on nothing else** (#1310). An
-  action that was there a minute ago is there now: asking a follow-up question never
-  removes one. Which actions apply is decided by what the conversation IS — a general
-  chat can be saved as a recipe, a recipe-attached one can be folded into its dish or
-  turned into a different one — never by what the chef last said.
+  **Which actions apply is decided by what the conversation IS**, never by what the chef
+  last said: a general chat can be saved as a recipe, an attached one can be folded into
+  its dish or turned into a different one. The one gate is "the chef has replied" — before
+  that the icon is absent entirely, not present-and-empty. So an action that was there a
+  minute ago is there in ten minutes, and asking a follow-up question never removes one.
 
-  **No chat header writes to a recipe.** What is left in a header goes somewhere rather
-  than doing something to the dish: the docked column's title and **Open full chat**, the
-  drawer's expand and close, and the full page's **View recipe**
-  (`chat-view-recipe-btn`), which carries the same "the chef has replied" gate.
+  This **narrows #878, it does not reverse it.** #878 rejected a permanent action bar
+  above the composer — height the conversation never gets back. A header menu is the
+  opposite: zero height beyond the header row that already exists, which is where #878 put
+  these actions in the first place. It does overturn #878's _icon-only_ consequence, and
+  for #878's own stated reason: the glyphs were unlabelled because a labelled pair does not
+  fit a 300px column. One glyph fits, and behind it there is room for words.
+
+  **No buttons render inside the transcript**, on any surface. `ChatThread.svelte` owns the
+  transcript, the composer and nothing else that acts on a dish.
+
+  Built from `@salt/ui-components`' existing `Popover` / `PopoverTrigger` /
+  `PopoverContent` / `PopoverMenuItem` — the shape four other pages already use, no new
+  primitive. The trigger testids are distinct per surface (`chat-actions-menu`,
+  `sidebar-chat-actions-menu`, `drawer-chat-actions-menu`) because the recipe page's docked
+  column and its phone drawer can both be mounted at once, so an "exactly one" assertion
+  about a shared testid would be true only by accident.
+
+  **What is left beside the icon goes somewhere rather than doing something to the dish:**
+  the docked column's **Open full chat**, the drawer's expand and close, and the full
+  page's **View recipe** (`chat-view-recipe-btn`), which carries the same "the chef has
+  replied" gate.
 
 - Authoring a NEW recipe out of a conversation — one leg, `src/lib/chatRecipeAuthor.ts`,
   three buttons (#798). It is always the CREATE path (`recipeId` never sent), it stamps
@@ -374,17 +389,17 @@ raw.kind`:
   - **"Save as recipe"** on a general chat (`chat-save-recipe-btn`) — passes the
     session's `basedOnRecipeId` through, so a variation chat is grounded on the dish
     it started from, and CLAIMS the session for the recipe it invented.
-  - **"Save as new recipe"** on a chat attached to a recipe — under the newest reply on
-    every surface (#1299): the full page (`chat-save-new-recipe-btn`) and the recipe
+  - **"Save as new recipe"** on a chat attached to a recipe — in the actions menu on
+    every surface (#1310): the full page (`chat-save-new-recipe-btn`) and the recipe
     page's docked chat column and drawer
     (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`, the latter two
-    rendered from one `saveAsNewRecipeAction` snippet). It shares one gate with
-    "Review changes" — the chef has replied — so an attached chat never offers one
+    rendered from one `chatActionsMenu` snippet). It shares one gate and one menu with
+    "Update recipe" — the chef has replied — so an attached chat never offers one
     without the other. It passes `basedOnRecipeId: null` **even on a session
     that has one**, and does NOT claim — an accompaniment is not derived from the dish
     it accompanies, and the conversation stays listed on the dish it is attached to,
     so the new recipe has no origin chat. The dish on screen is never written to.
-  - The pair on an attached chat is the whole distinction: **Review changes** folds
+  - The pair on an attached chat is the whole distinction: **Update recipe** folds
     the conversation into THIS dish behind a diff; **Save as new recipe** makes it a
     different dish and leaves this one alone. What kind it is saved as is the
     librarian's answer, bounded to `AUTHORABLE_RECIPE_KINDS` — see `isAuthorable`

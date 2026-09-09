@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
@@ -221,30 +221,46 @@ function renderPage() {
   return render(RecipeViewPage, { props: { params: { id: RECIPE_ID } } });
 }
 
-describe('RecipeViewPage — when the button is offered', () => {
-  it('shows nothing until the chef has replied', () => {
+// bits-ui renders PopoverContent lazily and portals it, so the chat actions menu has
+// to be opened before either item exists, and the items are reached through `screen`
+// rather than the container (issue #1310).
+async function openChatActions(): Promise<void> {
+  await fireEvent.click(screen.getByTestId('sidebar-chat-actions-menu'));
+  await waitFor(() => expect(screen.getByTestId('sidebar-apply-changes-btn')).toBeInTheDocument());
+}
+
+describe('RecipeViewPage — when the actions are offered', () => {
+  it('shows no control at all until the chef has replied', () => {
     mockSessions._set([makeSession([USER_TURN])]);
     const { queryByTestId } = renderPage();
 
+    // The TRIGGER is absent, not present-and-empty: before the first reply there is
+    // nothing to keep, so there is no menu of nothing to open (issue #1310).
+    expect(queryByTestId('sidebar-chat-actions-menu')).toBeNull();
     expect(queryByTestId('sidebar-save-new-recipe-btn')).toBeNull();
-    // The gate is shared with "Review changes" — neither can author an empty
-    // conversation, and they appear together.
     expect(queryByTestId('sidebar-apply-changes-btn')).toBeNull();
   });
 
-  it('appears once there is an assistant turn, beside the review gate', () => {
+  it('offers both, behind one glyph, once there is an assistant turn', async () => {
     mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
-    const { getByTestId } = renderPage();
+    renderPage();
 
-    expect(getByTestId('sidebar-save-new-recipe-btn')).toBeInTheDocument();
-    expect(getByTestId('sidebar-apply-changes-btn')).toBeInTheDocument();
+    // Nothing is on screen until the menu is opened — that is the whole point of it.
+    expect(screen.queryByTestId('sidebar-save-new-recipe-btn')).toBeNull();
+
+    await openChatActions();
+
+    expect(screen.getByTestId('sidebar-apply-changes-btn').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('sidebar-save-new-recipe-btn').textContent).toContain(
+      'Save as new recipe',
+    );
   });
 });
 
-// Where the two actions render. `ChatThread.svelte` states it as an absolute — "under
-// the NEWEST chef reply" — so it is pinned here rather than left as a sentence, which is
-// exactly what a testid-only assertion cannot see. #1310 removes the declaration gate
-// above these but leaves the placement alone; its second phase moves them again.
+// Where the two actions render: the chat card's own HEADER, behind one trigger, and
+// nowhere else (issue #1310). `RecipeViewPage`'s comment and the issue's DoD both state
+// "no buttons appear inside the transcript" as an absolute, so it is pinned here — that
+// is exactly what a testid-only assertion cannot see.
 describe('RecipeViewPage — where the chat actions render', () => {
   const LATER_USER_TURN = {
     id: 'm3',
@@ -259,43 +275,34 @@ describe('RecipeViewPage — where the chat actions render', () => {
     createdAt: '2026-08-13T10:00:03.000Z',
   };
 
-  it('puts the row inside the transcript, immediately after the NEWEST reply', () => {
+  it('puts one trigger in the card header, however many replies the chat has', () => {
     mockSessions._set([
       makeSession([USER_TURN, ASSISTANT_TURN, LATER_USER_TURN, LATER_ASSISTANT_TURN]),
     ]);
-    const { getByTestId, getAllByTestId } = renderPage();
-
-    // One row, not one per reply: there are two assistant turns on this session.
-    const rows = getAllByTestId('chat-reply-actions');
-    expect(rows).toHaveLength(1);
-    const row = rows[0]!;
-
-    // Inside the message list, and the sibling right after the last reply — the two
-    // halves of "under the newest chef reply" that a testid lookup alone would miss.
-    expect(getByTestId('chat-messages').contains(row)).toBe(true);
-    const replies = getAllByTestId('chat-message-assistant');
-    expect(row.previousElementSibling).toBe(replies[replies.length - 1]);
-
-    // Both buttons are in it, and they say what they do.
-    expect(row.contains(getByTestId('sidebar-apply-changes-btn'))).toBe(true);
-    expect(row.contains(getByTestId('sidebar-save-new-recipe-btn'))).toBe(true);
-    expect(getByTestId('sidebar-apply-changes-btn').textContent).toContain('Review changes');
-    expect(getByTestId('sidebar-save-new-recipe-btn').textContent).toContain('Save as new recipe');
-  });
-
-  it('renders neither action anywhere outside the transcript', () => {
-    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
     const { getByTestId } = renderPage();
 
-    // "No chat header contains a control that writes to a recipe" — asked of the whole
-    // document rather than of one header element, so a copy left behind in the card
-    // header, the page header or anywhere else is caught by the same assertion.
+    // One control for the conversation, not one per reply: there are two assistant
+    // turns on this session.
+    const triggers = document.querySelectorAll('[data-testid="sidebar-chat-actions-menu"]');
+    expect(triggers).toHaveLength(1);
+    expect(getByTestId('chat-messages').contains(triggers[0]!)).toBe(false);
+  });
+
+  it('renders nothing that writes to the dish inside the transcript', async () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const { getByTestId } = renderPage();
+    await openChatActions();
+
+    // Asked of the whole document rather than of the transcript element, so a copy left
+    // behind anywhere — an old in-transcript row included — fails this.
     const transcript = getByTestId('chat-messages');
     for (const testid of ['sidebar-apply-changes-btn', 'sidebar-save-new-recipe-btn']) {
       const found = document.querySelectorAll(`[data-testid="${testid}"]`);
       expect(found).toHaveLength(1);
-      expect(transcript.contains(found[0]!)).toBe(true);
+      expect(transcript.contains(found[0]!)).toBe(false);
     }
+    // And the row the actions used to live in is gone entirely.
+    expect(screen.queryByTestId('chat-reply-actions')).toBeNull();
   });
 });
 
@@ -306,9 +313,10 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
       kind: 'ok',
       value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
     });
-    const { getByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    await fireEvent.click(getByTestId('sidebar-save-new-recipe-btn'));
+    await fireEvent.click(screen.getByTestId('sidebar-save-new-recipe-btn'));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
     const input = vi.mocked(authorRecipeTraced).mock.calls[0]![0];
@@ -331,9 +339,10 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
     } as Awaited<ReturnType<typeof authorRecipeTraced>>);
-    const { getByTestId } = renderPage();
+    renderPage();
+    await openChatActions();
 
-    await fireEvent.click(getByTestId('sidebar-save-new-recipe-btn'));
+    await fireEvent.click(screen.getByTestId('sidebar-save-new-recipe-btn'));
 
     await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
     expect(saveRecipe).not.toHaveBeenCalled();
