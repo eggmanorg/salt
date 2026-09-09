@@ -72,12 +72,6 @@ const USER_MESSAGE = 'add some chilli';
 const STUB_REPLY =
   'Deterministic stubbed chef reply: half a teaspoon of chilli flakes, stirred in.';
 const STUB_CHAT_TITLE = 'Stubbed Chilli Conversation';
-// What the chef declared this reply offered (#1299). The buttons under a reply are
-// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
-// spec with no button to press. Both kinds, because that is what this reply is
-// worth on today's UI — the same two actions it has always offered here. The
-// plain-answer-offers-nothing case is `chat.spec.ts`.
-const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 // The librarian's canned answer: the change the user asked for is in the title
 // and the method, and the metadata it was never asked about is DROPPED — null
@@ -170,7 +164,7 @@ async function getSessions(page: Page): Promise<ChatSessionDoc[]> {
 
 /** Register every canned model answer this journey reaches, before driving the UI. */
 async function stubModel(page: Page): Promise<void> {
-  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
+  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
   await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_CHAT_TITLE);
   await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
 }
@@ -274,6 +268,9 @@ test.describe('recipes — the chat review gate', () => {
     const recipeId = await seedDish(page);
     await talkAboutTheDish(page);
 
+    // The two dish-writing actions live behind one floppy-disc icon in the chat
+    // header (#1310), so the menu is opened before either can be pressed.
+    await page.getByTestId('sidebar-chat-actions-menu').click();
     await page.getByTestId('sidebar-apply-changes-btn').click();
     await expectNoMetadataRemovalProposed(page);
 
@@ -296,7 +293,8 @@ test.describe('recipes — the chat review gate', () => {
 
     // The same conversation, through the other door.
     await page.goto(`/#/chat/${sessionId}`);
-    await expect(page.getByTestId('chat-apply-changes-btn')).toBeVisible({ timeout: SYNC_TIMEOUT });
+    await expect(page.getByTestId('chat-actions-menu')).toBeVisible({ timeout: SYNC_TIMEOUT });
+    await page.getByTestId('chat-actions-menu').click();
     await page.getByTestId('chat-apply-changes-btn').click();
     await expectNoMetadataRemovalProposed(page);
 
@@ -341,6 +339,7 @@ test.describe('recipes — the chat review gate', () => {
     });
 
     await talkAboutTheDish(page);
+    await page.getByTestId('sidebar-chat-actions-menu').click();
     await page.getByTestId('sidebar-apply-changes-btn').click();
     await expect(page.getByTestId('recipe-change-summary')).toBeVisible({ timeout: 60_000 });
     await page.getByTestId('recipe-change-apply').click();

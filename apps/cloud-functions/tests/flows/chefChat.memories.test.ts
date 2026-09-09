@@ -72,7 +72,7 @@ beforeEach(() => {
   memoryDocs.length = 0;
   mockGenerateStream.mockReturnValue({
     stream: (async function* () {})(),
-    response: Promise.resolve({ messages: [], text: 'Try a fennel and orange salad alongside.' }),
+    response: Promise.resolve({ text: 'Try a fennel and orange salad alongside.' }),
   });
 });
 

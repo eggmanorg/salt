@@ -53,17 +53,13 @@ const { AiTimeoutError, AI_STREAM_IDLE_TIMEOUT_MS } =
 
 type Chunk = { text: string };
 
-// Resolves to the reply TEXT. The flow's own return value became an object in
-// #1299 — text plus what the chef declared — and this suite is about the deadline
-// on the stream, not about the declaration, so it unwraps here rather than
-// restating the shape at every assertion.
 function runTurn(onChunk: (t: string) => void): Promise<string> {
   return (
     chefChatFlow as unknown as (
       input: unknown,
       streamingCallback: (t: string) => void,
-    ) => Promise<{ text: string }>
-  )({ messages: [], newMessage: 'what shall we have?' }, onChunk).then((turn) => turn.text);
+    ) => Promise<string>
+  )({ messages: [], newMessage: 'what shall we have?' }, onChunk);
 }
 
 beforeEach(() => {
@@ -116,7 +112,7 @@ describe('chefChat — the stream itself is under the deadline', () => {
     }
     mockGenerateStream.mockReturnValue({
       stream: slow(),
-      response: Promise.resolve({ messages: [], text: texts.join('') }),
+      response: Promise.resolve({ text: texts.join('') }),
     });
 
     const relayed: string[] = [];
@@ -134,7 +130,7 @@ describe('chefChat — the stream itself is under the deadline', () => {
         yield { text: '' }; // empty chunks are dropped, as before
         yield { text: 'there.' };
       })(),
-      response: Promise.resolve({ messages: [], text: 'Hello there.' }),
+      response: Promise.resolve({ text: 'Hello there.' }),
     });
 
     const relayed: string[] = [];

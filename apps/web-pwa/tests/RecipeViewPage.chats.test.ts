@@ -214,20 +214,8 @@ describe('RecipeViewPage — the chat list', () => {
     mockSessions._set([
       makeSession({
         messages: [
-          {
-            id: 'm1',
-            role: 'user',
-            text: 'halve it?',
-            createdAt: '2026-01-01T00:00:00.000Z',
-            offered: [],
-          },
-          {
-            id: 'm2',
-            role: 'assistant',
-            text: 'Use one head.',
-            createdAt: '2026-01-01T00:00:01Z',
-            offered: ['dish-change'],
-          },
+          { id: 'm1', role: 'user', text: 'halve it?', createdAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'm2', role: 'assistant', text: 'Use one head.', createdAt: '2026-01-01T00:00:01Z' },
         ],
       }),
     ]);
@@ -252,6 +240,54 @@ describe('RecipeViewPage — the chat list', () => {
 
     expect(getByTestId('recipe-chat-list')).toBeInTheDocument();
     expect(queryByTestId('recipe-chat-list-item')).toBeNull();
+  });
+});
+
+// The phone drawer's own header control (issue #1310). The docked column's is pinned in
+// `RecipeViewPage.saveNewRecipe.test.ts`; this is the third surface, and it is a
+// SEPARATE DOM node with its own trigger testid because both can be mounted at once —
+// the column is merely `hidden` below `lg`. A shared testid asserted "exactly one" by a
+// test that never mounted the second surface is the flaw #1304 named.
+describe('RecipeViewPage — the chat drawer’s actions menu', () => {
+  const REPLIED = [
+    { id: 'm1', role: 'user' as const, text: 'halve it?', createdAt: '2026-01-01T00:00:00.000Z' },
+    {
+      id: 'm2',
+      role: 'assistant' as const,
+      text: 'Use one head.',
+      createdAt: '2026-01-01T00:00:01Z',
+    },
+  ];
+
+  async function openDrawer(messages: ChatSessionDoc['messages']): Promise<HTMLElement> {
+    mockSessions._set([makeSession({ id: 'session-7', messages })]);
+    const { getByTestId } = renderPage();
+    await fireEvent.click(getByTestId('recipe-chat-list-item'));
+    await waitFor(() => expect(getByTestId('recipe-chat-drawer')).toBeInTheDocument());
+    return getByTestId('recipe-chat-drawer');
+  }
+
+  it('offers both actions from the drawer’s own header, on its own trigger', async () => {
+    const drawer = await openDrawer(REPLIED);
+
+    // In the header, not in the transcript — and on the drawer's trigger, never the
+    // column's, so the two surfaces stay individually addressable.
+    const trigger = screen.getByTestId('drawer-chat-actions-menu');
+    expect(drawer.contains(trigger)).toBe(true);
+    expect(screen.queryByTestId('chat-reply-actions')).toBeNull();
+
+    await fireEvent.click(trigger);
+    await waitFor(() => expect(screen.getByTestId('drawer-apply-changes-btn')).toBeInTheDocument());
+    expect(screen.getByTestId('drawer-apply-changes-btn').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('drawer-save-new-recipe-btn').textContent).toContain(
+      'Save as new recipe',
+    );
+  });
+
+  it('draws no trigger at all before the chef has replied', async () => {
+    await openDrawer([REPLIED[0]!]);
+
+    expect(screen.queryByTestId('drawer-chat-actions-menu')).toBeNull();
   });
 });
 

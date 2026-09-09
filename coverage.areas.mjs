@@ -394,9 +394,14 @@ export const coverageThresholds = {
   // arrived with their own suite, and `ai/fakeModel.ts` — the e2e seam, which no
   // unit test reached at all before — gained one for the declaring turn it now
   // emits. All four numbers moved the right way; the seam is the bulk of it.
+  // Re-derived by #1310, which reverted that tool: the RATIOS give back 0.10 and
+  // 0.16 because the covered code went with it, while both uncovered COUNTS hold
+  // exactly — nothing untested was added, and `ai/fakeModel.ts` keeps the three
+  // stub-encoding tests that outlive the declaring turn. Measured by
+  // `pnpm test:coverage` on this branch and pasted from the ratchet's own block.
   'apps/cloud-functions/src/**': {
-    lines: 87.34,
-    branches: 80.45,
+    lines: 87.24,
+    branches: 80.29,
     uncoveredLines: 368,
     uncoveredBranches: 347,
   },
