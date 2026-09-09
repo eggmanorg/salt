@@ -16,10 +16,10 @@
  *     the chef quietly announcing that a dish it can see does not exist.
  *  3. NOT FOUND DEGRADES, IT DOES NOT THROW. Missing, corrupt and Firestore-down
  *     all reach the model as `{ found: false }`, never as a failed turn.
- *  4. EVERY TOOL DESCRIPTION STILL CARRIES ITS "WHEN NOT TO CALL" CLAUSE, and
- *     there are still exactly three tools (#1299 added `declareOffer`). That is
- *     the constraint the doc's rewritten principle #1 states, and prompt text is
- *     falsifiable only by content assertion.
+ *  4. BOTH TOOL DESCRIPTIONS STILL CARRY THEIR "WHEN NOT TO CALL" CLAUSE, and
+ *     there are still exactly two tools. That is the constraint the doc's
+ *     rewritten principle #1 states, and prompt text is falsifiable only by
+ *     content assertion.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from 'firebase-functions';
@@ -242,23 +242,19 @@ describe('readRecipe — degrading', () => {
   });
 });
 
-// ─── 4. Three tools, each saying when not to call ────────────────────────────
+// ─── 4. Two tools, both saying when not to call ──────────────────────────────
 
 describe('the chef’s tool surface', () => {
-  it('is exactly three tools, and no more', () => {
-    // The constraint the rewritten design principle #1 states. A FOURTH tool is a
-    // new issue with its own justification — `declareOffer` (#1299) was the third
-    // and carries its own — and this is what notices one arriving without it.
-    expect(defineToolCalls.map((c) => c.name)).toEqual([
-      'findRecipes',
-      'readRecipe',
-      'declareOffer',
-    ]);
+  it('is exactly two tools, and no more', () => {
+    // The constraint the rewritten design principle #1 states. A third tool is a
+    // new issue with its own justification, and this is what notices one arriving
+    // without it.
+    expect(defineToolCalls.map((c) => c.name)).toEqual(['findRecipes', 'readRecipe']);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
     expect(readRecipeTool).toMatchObject({ __tool: 'readRecipe' });
   });
 
-  it('every description tells the model when NOT to call', () => {
+  it('both descriptions tell the model when NOT to call', () => {
     for (const tool of defineToolCalls) {
       expect(tool.description, `${tool.name} lost its "when not to call" clause`).toContain(
         'DO NOT CALL IT',

@@ -75,17 +75,8 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     basedOnRecipeId: null,
     title: 'New chat',
     messages: [
-      { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z', offered: [] },
-      {
-        id: 'm2',
-        role: 'assistant',
-        text: 'hi',
-        createdAt: '2026-01-01T00:00:01.000Z',
-        // Both kinds declared (#1299), so every suite below that is about what a
-        // button DOES gets a reply that offers it. The gate itself is driven by
-        // `ChatSessionPage.chefOffers.test.ts`.
-        offered: ['dish-change', 'new-dish'],
-      },
+      { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', role: 'assistant', text: 'hi', createdAt: '2026-01-01T00:00:01.000Z' },
     ],
     createdAt: ts,
     updatedAt: ts,
@@ -135,27 +126,25 @@ describe('ChatSessionPage — where back goes', () => {
   });
 });
 
-// Issue #1299 moved the three dish-writing actions out of this page's `DetailPage`
-// header and into the transcript row `ChatThread` renders. The comment on that
-// snippet, `docs/ai-kitchen-assistant.md` and the issue's DoD all state it as an
-// absolute — "no chat header contains a control that writes to a recipe" — so it is
-// pinned here. Every other test in this file finds these buttons by testid alone and
-// would pass just as happily with them left in the header.
-describe('ChatSessionPage — where the recipe actions render (#1299)', () => {
+// Where the three dish-writing actions render: the transcript row `ChatThread` draws
+// under the newest reply, not this page's `DetailPage` header. The comment on that
+// snippet states it as an absolute, so it is pinned here — every other test in this
+// file finds these buttons by testid alone and would pass just as happily with them
+// anywhere. #1310's second phase moves them into the header behind one icon; until
+// then this is the claim.
+describe('ChatSessionPage — where the recipe actions render', () => {
   const SECOND_TURN = [
     {
       id: 'm3',
       role: 'user' as const,
       text: 'and a drink?',
       createdAt: '2026-01-01T00:00:02.000Z',
-      offered: [],
     },
     {
       id: 'm4',
       role: 'assistant' as const,
       text: 'A dry amontillado.',
       createdAt: '2026-01-01T00:00:03.000Z',
-      offered: ['dish-change' as const, 'new-dish' as const],
     },
   ];
 
@@ -212,134 +201,73 @@ describe('ChatSessionPage — where the recipe actions render (#1299)', () => {
   });
 });
 
-// The gate #1299 phase 3 put on those three buttons: what the chef DECLARED its
-// newest reply offered, not whether it replied at all. Fail closed — the point of
-// the issue is that today the buttons appear after any reply, so "why is my crumb
-// so tight?" offers to rewrite the recipe.
-describe('ChatSessionPage — the buttons follow what the chef offered (#1299)', () => {
-  function reply(offered: ('dish-change' | 'new-dish')[], recipeId: string | null) {
-    return makeSession({
-      recipeId,
-      messages: [
-        {
-          id: 'm1',
-          role: 'user',
-          text: 'why is my crumb tight?',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          offered: [],
-        },
-        {
-          id: 'm2',
-          role: 'assistant',
-          text: 'Under-proved.',
-          createdAt: '2026-01-01T00:00:01.000Z',
-          offered,
-        },
-      ],
-    });
-  }
+// What #1310 put back, and the reason it exists: the actions are gated on "the chef
+// has replied", so they do not come and go with what the chef last said. Under #1303
+// a follow-up question deleted the button you were reaching for — this is that bug,
+// pinned. Verified red against the #1303 gate before it was removed.
+describe('ChatSessionPage — the actions stay put once the chef has replied', () => {
+  const PLAIN_FOLLOW_UP = [
+    {
+      id: 'm3',
+      role: 'user' as const,
+      text: 'why does that work?',
+      createdAt: '2026-01-01T00:00:02.000Z',
+    },
+    {
+      id: 'm4',
+      role: 'assistant' as const,
+      text: 'Sugar holds water.',
+      createdAt: '2026-01-01T00:00:03.000Z',
+    },
+  ];
 
-  it('offers nothing at all after a plain answer on an attached chat', () => {
-    mockSessions._set([reply([], 'lamb')]);
-    const { queryByTestId } = renderPage();
-
-    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
-    expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
-    // The row itself is not drawn — not an empty row with nothing in it.
-    expect(queryByTestId('chat-reply-actions')).toBeNull();
-    // The one control that is not gated on the offer, because it only goes somewhere.
-    expect(queryByTestId('chat-view-recipe-btn')).not.toBeNull();
-  });
-
-  it('offers nothing at all after a plain answer on a general chat', () => {
-    mockSessions._set([reply([], null)]);
-    const { queryByTestId } = renderPage();
-
-    expect(queryByTestId('chat-save-recipe-btn')).toBeNull();
-  });
-
-  // The two halves of the #798 pair now have SEPARATE gates. Each of these fails
-  // if they are wired to one condition again.
-  it('offers Review changes alone when the chef proposed a change to this dish', () => {
-    mockSessions._set([reply(['dish-change'], 'lamb')]);
+  it('keeps an attached chat’s pair through a plain follow-up question', () => {
+    mockSessions._set([
+      makeSession({ recipeId: 'lamb', messages: [...makeSession().messages, ...PLAIN_FOLLOW_UP] }),
+    ]);
     const { queryByTestId } = renderPage();
 
     expect(queryByTestId('chat-apply-changes-btn')).not.toBeNull();
-    expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
-  });
-
-  it('offers Save as new recipe alone when the chef suggested something alongside', () => {
-    mockSessions._set([reply(['new-dish'], 'lamb')]);
-    const { queryByTestId } = renderPage();
-
     expect(queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
-    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
   });
 
-  it('offers Save as recipe on a general chat that invented a dish', () => {
-    mockSessions._set([reply(['new-dish'], null)]);
+  it('keeps a general chat’s Save as recipe through the same', () => {
+    mockSessions._set([
+      makeSession({ recipeId: null, messages: [...makeSession().messages, ...PLAIN_FOLLOW_UP] }),
+    ]);
     const { queryByTestId } = renderPage();
 
     expect(queryByTestId('chat-save-recipe-btn')).not.toBeNull();
   });
 
-  it('follows the NEWEST reply — an older offer does not keep a button alive', () => {
+  it('offers a general chat only Save as recipe, and an attached chat only the pair', () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const general = renderPage();
+    expect(general.queryByTestId('chat-save-recipe-btn')).not.toBeNull();
+    expect(general.queryByTestId('chat-apply-changes-btn')).toBeNull();
+    expect(general.queryByTestId('chat-save-new-recipe-btn')).toBeNull();
+    cleanup();
+    document.body.innerHTML = '';
+
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    const attached = renderPage();
+    expect(attached.queryByTestId('chat-save-recipe-btn')).toBeNull();
+    expect(attached.queryByTestId('chat-apply-changes-btn')).not.toBeNull();
+    expect(attached.queryByTestId('chat-save-new-recipe-btn')).not.toBeNull();
+  });
+
+  it('draws nothing before the chef has replied', () => {
     mockSessions._set([
       makeSession({
         recipeId: 'lamb',
         messages: [
-          {
-            id: 'm1',
-            role: 'user',
-            text: 'less sweet?',
-            createdAt: '2026-01-01T00:00:00.000Z',
-            offered: [],
-          },
-          {
-            id: 'm2',
-            role: 'assistant',
-            text: 'Halve the honey.',
-            createdAt: '2026-01-01T00:00:01.000Z',
-            offered: ['dish-change'],
-          },
-          {
-            id: 'm3',
-            role: 'user',
-            text: 'why does that work?',
-            createdAt: '2026-01-01T00:00:02.000Z',
-            offered: [],
-          },
-          {
-            id: 'm4',
-            role: 'assistant',
-            text: 'Sugar holds water.',
-            createdAt: '2026-01-01T00:00:03.000Z',
-            offered: [],
-          },
+          { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
         ],
       }),
     ]);
     const { queryByTestId } = renderPage();
 
-    expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
-  });
-
-  it('shows nothing on a conversation written before the field existed', () => {
-    // `MessageSchema.offered` defaults to `[]` on read, so an old chat still
-    // loads and still lists — it simply offers nothing until its next reply.
-    // The fixture omits the field the way a stored document does.
-    const legacy = makeSession({ recipeId: 'lamb' });
-    mockSessions._set([
-      {
-        ...legacy,
-        messages: legacy.messages.map(({ offered: _dropped, ...rest }) => ({
-          ...rest,
-          offered: [],
-        })),
-      },
-    ]);
-    const { queryByTestId } = renderPage();
-
+    expect(queryByTestId('chat-reply-actions')).toBeNull();
     expect(queryByTestId('chat-apply-changes-btn')).toBeNull();
     expect(queryByTestId('chat-save-new-recipe-btn')).toBeNull();
   });
@@ -425,13 +353,7 @@ describe('ChatSessionPage — save as NEW recipe', () => {
       makeSession({
         recipeId: 'lamb',
         messages: [
-          {
-            id: 'm1',
-            role: 'user',
-            text: 'hello',
-            createdAt: '2026-01-01T00:00:00.000Z',
-            offered: [],
-          },
+          { id: 'm1', role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' },
         ],
       }),
     ]);

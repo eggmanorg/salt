@@ -12,7 +12,6 @@
     applyRecipeAmendment,
     type RecipeAmendment,
   } from '../../lib/recipeAmend.js';
-  import { offersDishChange, offersNewDish } from '@salt/domain';
   import type { Recipe } from '@salt/domain';
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import { KIND_COPY, kindOf } from '../recipes/recipeKind.js';
@@ -32,27 +31,12 @@
   // behind those actions, the one remaining header link and the review gate.
   const thread = createChatThread();
 
-  // "The chef has replied at all" — what "View recipe" is still gated on, and
-  // nothing else. It is a LINK, so the only question it asks of the conversation
-  // is whether there is one.
+  // "The chef has replied at all" — what "View recipe" is gated on, and nothing
+  // else. It is a LINK, so the only question it asks of the conversation is
+  // whether there is one. The action row below asks the same question, but
+  // `ChatThread` asks it: the row attaches to the newest assistant message, so
+  // there is nothing to gate here (issue #1310).
   const hasAssistantTurn = $derived(session?.messages.some((m) => m.role === 'assistant') ?? false);
-
-  // What the chef said its newest reply put on the table (issue #1299). The two
-  // action gates, and both are FAIL-CLOSED: a reply that declared nothing — and
-  // every conversation written before this shipped — offers no buttons at all.
-  // The predicate is `@salt/domain`'s so all three chat surfaces ask the same
-  // question rather than three call sites spelling it out.
-  // Which BUTTONS follow, and they are derived rather than re-spelled in the
-  // markup so the row's own presence below cannot disagree with its contents.
-  // `new-dish` picks one of two buttons depending on whether this chat is
-  // attached to a dish; `dish-change` has nothing to offer a general chat, which
-  // has no dish to change.
-  const showSaveButton = $derived(offersNewDish(session));
-  const showReviewButton = $derived(!!session?.recipeId && offersDishChange(session));
-  // Nothing offered ⇒ no row at all, not an empty one. An empty `role="group"`
-  // labelled "What to do with this reply" is a lie to a screen reader, and the
-  // whole point of the phase is that a plain answer carries NOTHING.
-  const hasReplyActions = $derived(showSaveButton || showReviewButton);
 
   // Back goes where you came from. `goBack` uses real browser history first; this
   // route is only the fallback for a cold-launch straight into the chat (issue
@@ -338,7 +322,7 @@
         ? `What would you change about ${basedOnRecipe.title}?`
         : 'Ask me anything about cooking.'}
       {starters}
-      latestReplyActions={hasReplyActions ? recipeActions : undefined}
+      latestReplyActions={recipeActions}
     />
   </DetailPage>
 
@@ -348,11 +332,13 @@
        This page keeps what it always owned — the handlers, the busy state and the
        testids.
 
-       Each is gated on what the chef DECLARED its newest reply offered, not on whether
-       it replied at all — so a plain answer to a plain question carries no buttons.
-       Fail closed: no declaration, nothing offered, and no row either. -->
+       There is no per-button gate: exactly one of the two branches below applies to
+       any given conversation, so once the chef has replied the row always has content
+       and never renders empty. "The chef has replied" is `ChatThread`'s own gate — it
+       attaches this row to the newest assistant message and to nothing else, so passing
+       the snippet unconditionally cannot draw it before there is a reply. -->
   {#snippet recipeActions()}
-    {#if session !== null && !session.recipeId && showSaveButton}
+    {#if session !== null && !session.recipeId}
       <Button
         size="sm"
         variant="outline"
@@ -365,14 +351,11 @@
         Save as recipe
       </Button>
     {/if}
-    {#if session !== null && session.recipeId && showSaveButton}
+    {#if session !== null && session.recipeId}
       <!-- The other half of the pair (issue #798): "Review changes" folds the
-               conversation into THIS dish, this one makes it a different one. What
-               #798 called an indivisible pair is a claim about PLACEMENT, and that half
-               still holds — they share this row on every surface. It is no longer true
-               of VISIBILITY: the two now have SEPARATE gates, because a reply can
-               propose a change to this dish without also inventing a second one, or
-               suggest something to serve alongside without touching this one. -->
+               conversation into THIS dish, this one makes it a different one. An
+               indivisible pair again (#1310) — same gate, same row, so an attached
+               chat never offers one without the other. -->
       <Button
         size="sm"
         variant="outline"
@@ -384,8 +367,6 @@
         {#snippet leading()}<Icon name="BookOpen" size={16} />{/snippet}
         Save as new recipe
       </Button>
-    {/if}
-    {#if showReviewButton}
       <Button
         size="sm"
         onclick={handleReviewChanges}

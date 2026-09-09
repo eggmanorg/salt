@@ -63,16 +63,12 @@ const MESSAGES = [
     role: 'user' as const,
     text: 'what goes with this?',
     createdAt: '2026-08-13T10:00:00.000Z',
-    offered: [],
   },
   {
     id: 'm2',
     role: 'assistant' as const,
     text: 'a fennel salad',
     createdAt: '2026-08-13T10:00:01.000Z',
-    // What the chef declared (#1299) reaches the librarian along with the rest of
-    // the transcript and is ignored there: this leg authors from the WORDS.
-    offered: ['new-dish' as const],
   },
 ];
 

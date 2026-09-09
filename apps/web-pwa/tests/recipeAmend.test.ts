@@ -267,9 +267,7 @@ function librarianReturns(draft: RecipeDoc = draftWithoutMetadata()): void {
 describe('proposeRecipeAmendment — what the librarian is asked to read', () => {
   it('sends the conversation and the recipe id, and nothing else', async () => {
     librarianReturns();
-    const messages = [
-      { id: 'm1', role: 'user' as const, text: 'add some chilli', createdAt: NOW, offered: [] },
-    ];
+    const messages = [{ id: 'm1', role: 'user' as const, text: 'add some chilli', createdAt: NOW }];
 
     await proposeRecipeAmendment(existingRecipe(), messages, ['midweek', 'sunday']);
 

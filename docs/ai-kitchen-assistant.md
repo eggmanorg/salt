@@ -18,37 +18,10 @@ foundation (#179).
    one of the household's own fifty-nine recipes is not a kitchen assistant. What the
    original principle was protecting is real and survives as a constraint rather than
    a prohibition: a model with tools reaches for them, and every turn spent searching
-   is a turn not spent being a chef. So — **three tools, no more** (`findRecipes`,
-   `readRecipe`, `declareOffer`), every tool description carries an explicit _when not
-   to call_ clause, and the chef still **writes nothing**. Saving, planning and
-   shopping-list adds stay manual.
-
-   **The third is `declareOffer` (#1299), and this is the justification the clause
-   above asked for.** The buttons under a reply — Review changes, Save as recipe,
-   Save as new recipe — used to appear after _any_ reply, so asking "why is my crumb
-   so tight?" offered to rewrite the recipe. Deciding whether a reply actually put a
-   dish on the table needs the model, and the alternative was a second AI call on
-   every turn to recover one bit the model already knew. It is the cheapest tool
-   there is: it reads nothing, writes nothing, calls no model, and its implementation
-   returns a constant — the CALL is the whole signal, read back off the finished
-   turn's tool requests. Note what it is not: no `output` option was added to
-   `generateStream`, so the non-negotiable half of this principle is untouched.
-
-   The gate is **fail closed**: no declaration, no buttons. Chosen deliberately over
-   fail-open — a button offered after a plain answer is the defect; a button missing
-   after a real suggestion costs one more message. Two consequences follow and both
-   are accepted: every conversation written before #1299 shipped shows no buttons
-   until its next reply (`MessageSchema.offered` defaults to `[]`), and a model that
-   forgets to declare leaves the button off a reply that deserved one.
-
-   The stored field holds plain **strings**, not the two kinds, and so does the
-   callable's `offered`. A third kind deploys on the Cloud Function before any
-   browser has the bundle that knows the word, and typed as an enum that word would
-   fail the message, fail the session, and drop the whole conversation out of an
-   older client's chat list. `latestChefOffers` is the one place a word becomes a
-   kind, and it ignores any it does not know — so the cost stays a missing button.
-   Deliberately not `.catch([])`, which loses the word on the next whole-document
-   write and is what #1114's guard forbids on a stored document.
+   is a turn not spent being a chef. So — **two tools, no more** (`findRecipes`,
+   `readRecipe`), every tool description carries an explicit _when not to call_
+   clause, and the chef still **writes nothing**. Saving, planning and shopping-list
+   adds stay manual. A third tool is a new issue with its own justification.
 
 2. **Small and fixed stays ambient; large and growing gets a tool.** Equipment,
    household favourites and kitchen memory go straight into the chef's system prompt
@@ -251,31 +224,18 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   because a recipe that parses always renders at least a `Title:` line, which
   `chefChat.readRecipe.test.ts` pins. **Do not add a third recipe renderer** —
   `authorRecipe.ts` already admits one duplicate exists.
-- It says what its reply offered through `declareOffer` (#1299) — the third tool, and
-  the only one that touches nothing: no Firestore read, no write, no model call, an
-  implementation that returns a constant. The flow reads the request back off the
-  finished turn's message history (`declaredOffers`), never off module-scope state,
-  which would be shared across concurrent invocations on a warm instance and would
-  leak one household's declaration into another's turn. A bad declaration costs a
-  button and never the turn, and holding that takes **two** mechanisms, because
-  Genkit validates a model-authored tool input _before_ the handler runs and throws
-  on a rejection — a throw nothing in the tool loop catches, which fails the callable
-  and makes the client roll the user's own message back out of the transcript. So
-  `DeclareOfferInputSchema.offers` is a list of plain **strings**, with the two kinds
-  named only in the description the model reads and the narrowing done in
-  `declaredOffers`; and the flow keeps a reply the chef had already streamed when a
-  tool input is refused anyway. The result rides the flow's `outputSchema`, which is
-  now an object; the `streamSchema` is still `z.string()`, so the fragments and the
-  streaming render are untouched.
 - **What the reader watched is what gets stored.** The flow returns the text it
   accumulated while streaming, not `response.text` — which is the LAST model message
-  alone, and a declaring turn makes a second model message the ordinary case. Storing
-  `response.text` would keep the sign-off and discard the reply the user just read.
-- **A pre-#1299 browser can still corrupt a chat document**, and the read path
-  survives it: the widened return value lands whole in `message.text` for a client
-  that predates the change, so `MessageSchema` unwraps that one shape on read rather
-  than failing the message, failing the session, and dropping the conversation out of
-  the chat list for good.
+  alone, and a turn that reaches for `findRecipes` or `readRecipe` makes a second
+  model message ordinary. Storing `response.text` would keep the sign-off and discard
+  the reply the user just read. `chefChat.turnText.test.ts` pins it.
+- **A chat document written during PR #1303 can still be corrupt**, and the read path
+  survives it: for the life of that PR the callable returned `{ text, offered }`, which
+  a client on the older bundle wrote whole into `message.text`. `MessageSchema` unwraps
+  that one shape on read (`unwrapWrappedReply`) rather than failing the message,
+  failing the session, and dropping the conversation out of the chat list for good.
+  #1310 returned the callable to a bare string, so nothing can create another one; the
+  guard stays because the documents do.
 - Plain text out. **No `output` schema**, ever — and, since #840, tools. Guard the model call with
   `withAiStreamTimeout`, not `withAiTimeout` — this is the one streaming flow, and
   a promise wrapper cannot bound a stream. `withAiTimeout` around the aggregated
@@ -395,18 +355,16 @@ raw.kind`:
   recipe page's header held (there is no hover on a phone, so an unlabelled glyph is a
   guess on first press).
 
-  **The row is gated on what the chef declared**, not on whether it replied — see
-  design principle #1 and `declareOffer` under Components. Fail closed: a plain answer
-  to a plain question carries no buttons, and a conversation written before #1299
-  shipped carries none until its next reply. `latestChefOffers` /
-  `offersDishChange` / `offersNewDish` in `@salt/domain` are the one place that
-  question is answered, so the three surfaces cannot answer it differently.
+  **The row is gated on "the chef has replied", and on nothing else** (#1310). An
+  action that was there a minute ago is there now: asking a follow-up question never
+  removes one. Which actions apply is decided by what the conversation IS — a general
+  chat can be saved as a recipe, a recipe-attached one can be folded into its dish or
+  turned into a different one — never by what the chef last said.
 
   **No chat header writes to a recipe.** What is left in a header goes somewhere rather
   than doing something to the dish: the docked column's title and **Open full chat**, the
   drawer's expand and close, and the full page's **View recipe**
-  (`chat-view-recipe-btn`), whose own gate is unchanged and still includes "the chef has
-  replied".
+  (`chat-view-recipe-btn`), which carries the same "the chef has replied" gate.
 
 - Authoring a NEW recipe out of a conversation — one leg, `src/lib/chatRecipeAuthor.ts`,
   three buttons (#798). It is always the CREATE path (`recipeId` never sent), it stamps
@@ -420,11 +378,9 @@ raw.kind`:
     every surface (#1299): the full page (`chat-save-new-recipe-btn`) and the recipe
     page's docked chat column and drawer
     (`sidebar-save-new-recipe-btn` / `drawer-save-new-recipe-btn`, the latter two
-    rendered from one `saveAsNewRecipeAction` snippet). Gated on the chef declaring
-    `new-dish` on its newest reply (#1299) — a SEPARATE gate from "Review changes",
-    which is `dish-change`: one reply can propose a change to this dish without
-    inventing a second one, and another can suggest something to serve alongside
-    without touching this dish at all. It passes `basedOnRecipeId: null` **even on a session
+    rendered from one `saveAsNewRecipeAction` snippet). It shares one gate with
+    "Review changes" — the chef has replied — so an attached chat never offers one
+    without the other. It passes `basedOnRecipeId: null` **even on a session
     that has one**, and does NOT claim — an accompaniment is not derived from the dish
     it accompanies, and the conversation stays listed on the dish it is attached to,
     so the new recipe has no origin chat. The dish on screen is never written to.

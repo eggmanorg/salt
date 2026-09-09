@@ -109,7 +109,7 @@ beforeEach(() => {
     // An empty stream: the reply arrives on `response` below. The flow drains the
     // stream first, so it has to be async-iterable even when nothing streams.
     stream: (async function* () {})(),
-    response: Promise.resolve({ messages: [], text: 'Prawns need oil the chorizo was providing.' }),
+    response: Promise.resolve({ text: 'Prawns need oil the chorizo was providing.' }),
   });
 });
 

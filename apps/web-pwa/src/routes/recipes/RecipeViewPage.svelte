@@ -105,8 +105,6 @@
     takesIngredients,
     type IngredientGroup,
     memberFirstName,
-    offersDishChange,
-    offersNewDish,
     type Ingredient,
     type Recipe,
     type Step,
@@ -758,18 +756,6 @@
   const activeSession = $derived(
     recipeChats.find((s) => s.id === selectedSessionId) ?? recipeChats[0] ?? null,
   );
-
-  // What the chef declared its NEWEST reply offered (issue #1299) — the gate on the
-  // two actions below, one predicate from `@salt/domain` so this page, the drawer
-  // and the full chat page cannot answer it differently. Fail closed: a plain answer
-  // to a plain question declares nothing and offers nothing.
-  //
-  // `chatOffersSomething` decides whether the ROW EXISTS at all, and is derived from
-  // exactly the two flags the buttons use so the two cannot disagree. An empty
-  // `role="group"` labelled "What to do with this reply" is a lie to a screen reader.
-  const chatOffersDishChange = $derived(offersDishChange(activeSession));
-  const chatOffersNewDish = $derived(offersNewDish(activeSession));
-  const chatOffersSomething = $derived(chatOffersDishChange || chatOffersNewDish);
 
   let amendBusy = $state(false);
 
@@ -2887,7 +2873,7 @@
               emptyText="Ask me anything about this recipe."
               starters={recipeStarters}
               aboveTranscript={chatPaneShown ? dockedChatList : undefined}
-              latestReplyActions={chatOffersSomething ? sidebarChatActions : undefined}
+              latestReplyActions={sidebarChatActions}
             />
           {/if}
         </Card>
@@ -2969,9 +2955,14 @@
      A row attached to the message that earned it is not that — it scrolls away with
      that message, and it is absent entirely when the chef has said nothing to act on.
      Which is also why the icons gained words: down here there is the column's whole
-     width, and a glyph with no hover on a phone is a guess on first press. -->
+     width, and a glyph with no hover on a phone is a guess on first press.
+
+     One gate for the pair, and it is "has the chef replied" (issue #1310): a reply is
+     something to act on, and asking a follow-up question about it does not stop it
+     being one. `ChatThread` asks the same question when it decides where this row
+     attaches, so the row is never drawn empty. -->
 {#snippet reviewChangesAction(testid: string)}
-  {#if chatOffersDishChange}
+  {#if activeSession?.messages.some((m) => m.role === 'assistant')}
     <Button
       size="sm"
       variant="outline"
@@ -2996,7 +2987,7 @@
      can propose a change to this dish without inventing a second one, and another can
      suggest something to serve alongside without touching this dish at all. -->
 {#snippet saveAsNewRecipeAction(testid: string)}
-  {#if chatOffersNewDish}
+  {#if activeSession?.messages.some((m) => m.role === 'assistant')}
     <Button
       size="sm"
       variant="outline"
@@ -3033,7 +3024,7 @@
     thread={chat}
     onClose={() => (drawerOpen = false)}
     onOpenFull={() => push(`/chat/${activeSession!.id}`)}
-    latestReplyActions={chatOffersSomething ? drawerChatActions : undefined}
+    latestReplyActions={drawerChatActions}
     starters={recipeStarters}
   />
 {/if}

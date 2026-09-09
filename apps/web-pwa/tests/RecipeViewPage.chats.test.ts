@@ -214,20 +214,8 @@ describe('RecipeViewPage — the chat list', () => {
     mockSessions._set([
       makeSession({
         messages: [
-          {
-            id: 'm1',
-            role: 'user',
-            text: 'halve it?',
-            createdAt: '2026-01-01T00:00:00.000Z',
-            offered: [],
-          },
-          {
-            id: 'm2',
-            role: 'assistant',
-            text: 'Use one head.',
-            createdAt: '2026-01-01T00:00:01Z',
-            offered: ['dish-change'],
-          },
+          { id: 'm1', role: 'user', text: 'halve it?', createdAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'm2', role: 'assistant', text: 'Use one head.', createdAt: '2026-01-01T00:00:01Z' },
         ],
       }),
     ]);
