@@ -53,7 +53,18 @@ const ASSETS = join(DIST, 'assets');
 // already in the eager boot graph before this PR. 501 KB clears the observed
 // 500.09-500.11 kB CI jitter with a deliberately small (~0.9 KB) margin —
 // not rounded up for comfort, so the gate stays tight.
-const BOOT_GZIP_CEILING_KB = 501;
+//
+// Raised 501 -> 505 in #1297, authorised by Daniel. Nothing of ours grew: the
+// dependabot production-minor-patch group took posthog-js 1.422.5 -> 1.427.2
+// (+3949 B gz in /assets/posthog.js) and @lucide/svelte 1.35.0 -> 1.41.0
+// (+758 B gz across the shopping-cart icon, Icon.js and chevron-down), for a
+// measured 496.77 -> 501.43 kB. Per-chunk attribution confirmed no new eager
+// import of ours and no chunk moving into the boot graph. The #1076 margin was
+// too thin to survive a routine SDK bump — 505 KB restores ~3.6 KB so the next
+// one does not fail this gate on third-party bytes alone. If this recurs, the
+// fix is not another raise: posthog.js is ~90 kB gz, the second-largest thing
+// in the boot graph, and analytics has no business loading before first paint.
+const BOOT_GZIP_CEILING_KB = 505;
 
 // Raw (un-gzipped) ceiling for the settings page's own chunk. Leaflet is 145 kB
 // and Phase 2 moved it out; the chunk measured 34.4 kB after, against 183.7 kB

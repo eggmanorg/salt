@@ -19,7 +19,7 @@
     "e2e:ui": "node ../../scripts/host-guard.mjs e2e:ui && playwright test --ui"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.35.0",
+    "@lucide/svelte": "^1.41.0",
     "@salt/domain": "workspace:*",
     "@salt/firebase-sync": "workspace:*",
     "@salt/observability": "workspace:*",
