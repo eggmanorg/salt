@@ -71,12 +71,6 @@ Fry the chorizo. Then add the rice, stir it through, and cover.
 
 I split your one step in two — the frying and the rice are different moments.`;
 const STUB_CHAT_TITLE = 'Refreshing the pilaf';
-// What the chef declared this reply offered (#1299). The buttons under a reply are
-// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
-// spec with no button to press. Both kinds, because that is what this reply is
-// worth on today's UI — the same two actions it has always offered here. The
-// plain-answer-offers-nothing case is `chat.spec.ts`.
-const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 // The librarian's canned transcription of that reply: the run-on step comes back
 // as two (the one-operation rule), the title is tidied, and the metadata it was
@@ -106,7 +100,7 @@ const STUB_AUTHOR = {
 
 /** Register every canned model answer this journey reaches, before driving the UI. */
 async function stubModel(page: Page): Promise<void> {
-  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
+  await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
   await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_CHAT_TITLE);
   await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
 }

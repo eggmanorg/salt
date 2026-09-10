@@ -179,13 +179,8 @@ export {
   ParseRecipeIngredientsAIOutputSchema,
   ParseRecipeIngredientsOutputSchema,
 } from './parseRecipeIngredients.js';
-export {
-  MessageSchema,
-  ChatSessionSchema,
-  ChefOfferSchema,
-  CHEF_OFFER_KINDS,
-} from './chatSession.js';
-export type { ChatSessionDoc, ChefOffer } from './chatSession.js';
+export { MessageSchema, ChatSessionSchema } from './chatSession.js';
+export type { ChatSessionDoc } from './chatSession.js';
 
 export { CookSessionSchema } from './cookSession.js';
 export type { CookActiveTimerDoc, CookSessionDoc } from './cookSession.js';
@@ -215,8 +210,8 @@ export type { PendingEmailOtp } from './emailOtp.js';
 export { PushSubscriptionSchema } from './pushSubscription.js';
 export type { PushSubscriptionDoc } from './pushSubscription.js';
 
-export { ChefChatInputSchema, ChefChatOutputSchema, ChefChatStreamSchema } from './chefChat.js';
-export type { ChefChatInput, ChefChatOutput } from './chefChat.js';
+export { ChefChatInputSchema, ChefChatOutputSchema } from './chefChat.js';
+export type { ChefChatInput } from './chefChat.js';
 
 // findRecipes (issue #840) — the chef's library-search tool. The `.describe()`
 // strings on the input schema are PROMPT TEXT the model reads every turn, not
@@ -235,12 +230,6 @@ export type { FindRecipesInput, FindRecipesOutput, RecipeSearchProjection } from
 // read is the case that legitimately pays for the whole document.
 export { ReadRecipeInputSchema, ReadRecipeOutputSchema } from './readRecipe.js';
 export type { ReadRecipeInput, ReadRecipeOutput } from './readRecipe.js';
-
-// declareOffer (issue #1299) — the chef's third and last tool, and the only one
-// that touches nothing. It is how a reply says what it put on the table, which is
-// what decides whether the buttons under it exist.
-export { DeclareOfferInputSchema, DeclareOfferOutputSchema } from './declareOffer.js';
-export type { DeclareOfferInput, DeclareOfferOutput } from './declareOffer.js';
 
 // identifyRecipeKit (issue #882) — "what do I need to get out?", inferred from the
 // whole stored recipe. Labels are FREE TEXT on purpose; read the header before

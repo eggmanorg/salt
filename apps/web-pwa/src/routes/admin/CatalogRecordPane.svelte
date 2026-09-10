@@ -179,7 +179,7 @@
       <div class="min-w-0 flex-1">{@render titleControl()}</div>
       <div class="flex shrink-0 items-center gap-2">{@render recordActions()}</div>
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+    <div class="min-h-0 flex-1 overflow-y-auto salt-focus-gutter">
       <RecordEditor {record} {saved} />
     </div>
   </div>

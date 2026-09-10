@@ -465,7 +465,7 @@
         {#each statTiles as tile (tile.key)}
           <button
             type="button"
-            class="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
             onclick={() => jumpTo(tile.target)}
             data-testid="mine-stat-chip"
           >
@@ -528,7 +528,7 @@
                    free where a cook timer names its recipe. -->
               <button
                 type="button"
-                class="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                class="salt-focus-ring-inset min-w-0 flex-1 rounded-md text-left"
                 onclick={() => openRunningTimerSheet(t)}
                 aria-label={`Adjust ${t.label}`}
                 data-testid="mine-timer-edit"

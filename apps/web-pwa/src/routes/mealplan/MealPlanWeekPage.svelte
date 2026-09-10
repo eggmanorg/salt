@@ -1033,7 +1033,7 @@
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
             bind:this={deck.viewportEl}
-            class="relative min-h-0 flex-1 touch-pinch-zoom overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            class="relative min-h-0 flex-1 touch-pinch-zoom overflow-hidden salt-focus-ring-inset"
             role="region"
             tabindex="0"
             aria-label="Week of {rangeLabel}"

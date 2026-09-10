@@ -16,11 +16,11 @@
     "test:emulator": "vitest run --config vitest.emulator.config.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.4.1",
     "@types/web-push": "^3.6.4",
     "esbuild": "^0.28.2",
     "genkit-cli": "^1.42.0",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.13"
   },
   "dependencies": {
     "@genkit-ai/firebase": "^1.42.0",

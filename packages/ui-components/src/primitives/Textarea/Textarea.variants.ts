@@ -11,7 +11,12 @@ export const textareaFrameVariants = cva(
         lg: 'px-6 text-base min-h-10',
       },
       error: {
-        true: 'border-destructive focus-within:ring-destructive',
+        // `salt-input--error` rather than the border + a ring utility spelled
+        // out here: it is the one place that decides what an errored frame
+        // looks like, and it retints the focus ring through
+        // `--salt-focus-color` — which the `focus-within:ring-destructive`
+        // this replaced never managed to paint at all (#1305).
+        true: 'salt-input--error',
         false: '',
       },
       disabled: {

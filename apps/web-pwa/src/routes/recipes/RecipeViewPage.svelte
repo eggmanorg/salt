@@ -105,8 +105,6 @@
     takesIngredients,
     type IngredientGroup,
     memberFirstName,
-    offersDishChange,
-    offersNewDish,
     type Ingredient,
     type Recipe,
     type Step,
@@ -737,6 +735,13 @@
   // stay visible at every width. Desktop keeps all five as inline buttons.
   let overflowMenuOpen = $state(false);
 
+  // The chat-actions menus (issue #1310). TWO pieces of state, not one: the docked
+  // column and the phone drawer are separate DOM nodes and the column is merely
+  // `hidden` below `lg`, so both can be mounted at once and a shared flag would open
+  // the invisible one alongside the visible one.
+  let sidebarActionsOpen = $state(false);
+  let drawerActionsOpen = $state(false);
+
   function openAddToList(): void {
     if (!$defaultListId) {
       addToast('No shopping list found. Create one first.', 'destructive');
@@ -758,18 +763,6 @@
   const activeSession = $derived(
     recipeChats.find((s) => s.id === selectedSessionId) ?? recipeChats[0] ?? null,
   );
-
-  // What the chef declared its NEWEST reply offered (issue #1299) — the gate on the
-  // two actions below, one predicate from `@salt/domain` so this page, the drawer
-  // and the full chat page cannot answer it differently. Fail closed: a plain answer
-  // to a plain question declares nothing and offers nothing.
-  //
-  // `chatOffersSomething` decides whether the ROW EXISTS at all, and is derived from
-  // exactly the two flags the buttons use so the two cannot disagree. An empty
-  // `role="group"` labelled "What to do with this reply" is a lie to a screen reader.
-  const chatOffersDishChange = $derived(offersDishChange(activeSession));
-  const chatOffersNewDish = $derived(offersNewDish(activeSession));
-  const chatOffersSomething = $derived(chatOffersDishChange || chatOffersNewDish);
 
   let amendBusy = $state(false);
 
@@ -923,7 +916,7 @@
   // ─── Optimise for my kitchen ────────────────────────────────────────────────
   // Sends OPTIMISE_FOR_KITCHEN_PROMPT as an ordinary user turn, creating the
   // session first when the recipe has no chat yet. Nothing downstream is special:
-  // the reply is a normal assistant turn, and "Review changes" runs authorRecipe
+  // the reply is a normal assistant turn, and "Update recipe" runs authorRecipe
   // over the transcript exactly as it does for a hand-typed request.
   //
   // Hidden when the household owns no equipment — with an empty manifest the
@@ -1942,7 +1935,7 @@
            the classes come off with it — the page scrolls as an ordinary detail page. -->
       <div
         class={chatPaneShown
-          ? 'flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto'
+          ? 'flex min-w-0 flex-col gap-4 split:min-h-0 split:overflow-y-auto split:salt-focus-gutter'
           : 'flex min-w-0 flex-col gap-4'}
       >
         <!-- Unreviewed AI import (issue #616). Informational, never a gate: the
@@ -2212,7 +2205,7 @@
                     <li>
                       <button
                         type="button"
-                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
                         onclick={() => push(`/recipes/${component.id}`)}
                         data-testid="recipe-component-card"
                         data-recipe-id={component.id}
@@ -2484,7 +2477,7 @@
                               {#if marker === 'unmatched'}
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card disabled:opacity-50"
                                   title="Not matched — tap to match"
                                   aria-label="Not matched — tap to match"
                                   onclick={() => handleRematch(group, ingredient)}
@@ -2501,7 +2494,7 @@
                                  #949). Nothing to explain first, so nothing opens. -->
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card disabled:opacity-50"
                                   title="No amount — tap to read the line again"
                                   aria-label="No amount — tap to read the line again"
                                   onclick={() => handleRematch(group, ingredient)}
@@ -2517,7 +2510,7 @@
                                  causes and offers the re-match — no new copy. -->
                                 <button
                                   type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card"
                                   title="Matched, but buys the wrong thing — tap to see why"
                                   aria-label="Matched, but buys the wrong thing — tap to see why"
                                   onclick={() => inspectMatch(ingredient)}
@@ -2527,7 +2520,7 @@
                             </div>
                             <button
                               type="button"
-                              class="flex min-w-0 flex-1 items-center gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              class="salt-focus-ring-inset flex min-w-0 flex-1 items-center gap-3 rounded text-left"
                               title="See what this ingredient matched"
                               onclick={() => inspectMatch(ingredient)}
                               data-testid="recipe-view-ingredient-inspect"
@@ -2824,10 +2817,9 @@
           <CardHeader class="shrink-0 border-b px-4 py-3">
             <div class="flex items-center justify-between gap-2">
               <CardTitle class="truncate text-sm">Chef Chat</CardTitle>
-              <!-- Title and the one way out of here, and nothing else. The two actions
-                   that write to the dish moved into the transcript (issue #1299); no
-                   chat header on any surface decides a recipe's fate any more. -->
+              <!-- Title, the chat actions and the one way out of here (issue #1310). -->
               <div class="flex shrink-0 items-center gap-1">
+                {@render sidebarChatActions()}
                 {#if activeSession}
                   <Button
                     size="sm"
@@ -2887,7 +2879,6 @@
               emptyText="Ask me anything about this recipe."
               starters={recipeStarters}
               aboveTranscript={chatPaneShown ? dockedChatList : undefined}
-              latestReplyActions={chatOffersSomething ? sidebarChatActions : undefined}
             />
           {/if}
         </Card>
@@ -2955,74 +2946,100 @@
   />
 {/snippet}
 
-<!-- "Review changes", wherever the conversation is being read — the docked column or
-     the drawer. One handler for both, so an edit proposed from a phone and an edit
-     proposed from a laptop are the same act.
+<!-- The recipe page's two chat actions, in the header of whichever chat surface is
+     showing (issue #1310): the docked column's card header above the seam, the drawer's
+     header row below it. One handler for each, so an edit proposed from a phone and an
+     edit proposed from a laptop are the same act.
 
-     Both actions live INSIDE the transcript now (issue #1299), in the row `ChatThread`
-     renders under the chef's newest reply — the same row, in the same place, on every
-     surface a chat is read.
+     They are behind ONE glyph — Lucide's floppy disc, "keep this" — for #878's own
+     reason. #878 put them in the header because a permanent bar above the composer is
+     height the conversation never gets back, and made them icon-only because the
+     narrowest column this card renders in is about 300px, which a labelled pair does not
+     fit. One glyph fits, and behind it there is room for words: a menu costs the header
+     no more than the single icon it replaces, and the labels a phone cannot hover for
+     are finally readable.
 
-     #878's rule is narrowed rather than overturned, and the boundary is what it was
-     always about: a PERMANENT bar above the composer is still rejected, because that is
-     height the conversation never gets back whether or not there is anything to offer.
-     A row attached to the message that earned it is not that — it scrolls away with
-     that message, and it is absent entirely when the chef has said nothing to act on.
-     Which is also why the icons gained words: down here there is the column's whole
-     width, and a glyph with no hover on a phone is a guess on first press. -->
-{#snippet reviewChangesAction(testid: string)}
-  {#if chatOffersDishChange}
-    <Button
-      size="sm"
-      variant="outline"
-      onclick={handleSidebarReviewChanges}
-      loading={sidebarIsProposing}
-      disabled={sidebarIsProposing || chat.isSending}
-      data-testid={testid}
-    >
-      {#snippet leading()}<Icon name="RefreshCw" size={14} />{/snippet}
-      Review changes
-    </Button>
-  {/if}
-{/snippet}
-
-<!-- Its counterpart (issue #798), deliberately the same shape, because the pair is the
-     whole point: one folds what was said into THIS dish, the other makes it a different
-     one.
-
-     What #798 called an indivisible pair is now precisely a claim about PLACEMENT, and
-     that half holds: they render in one row, in one place, on every surface. It is no
-     longer true of VISIBILITY (#1299): the two have SEPARATE gates, because one reply
-     can propose a change to this dish without inventing a second one, and another can
-     suggest something to serve alongside without touching this dish at all. -->
-{#snippet saveAsNewRecipeAction(testid: string)}
-  {#if chatOffersNewDish}
-    <Button
-      size="sm"
-      variant="outline"
-      onclick={handleSaveAsNewRecipe}
-      loading={sidebarIsSavingNew}
-      disabled={sidebarIsSavingNew || chat.isSending}
-      data-testid={testid}
-    >
-      {#snippet leading()}<Icon name="BookOpen" size={14} />{/snippet}
-      Save as new recipe
-    </Button>
+     Both are gated on "has the chef replied" and nothing else, so an action that was
+     there a minute ago is there now. Two actions apply here whenever any do, so this
+     surface is always the menu case of #1310's rule; the full chat page's general chat
+     is the plain-button case. -->
+{#snippet chatActionsMenu(
+  triggerTestid: string,
+  applyTestid: string,
+  saveNewTestid: string,
+  open: boolean,
+  setOpen: (v: boolean) => void,
+)}
+  {#if activeSession?.messages.some((m) => m.role === 'assistant')}
+    <Popover {open} onOpenChange={setOpen}>
+      <PopoverTrigger>
+        {#snippet children()}
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Chat actions"
+            data-testid={triggerTestid}
+          >
+            <Icon name="Save" size={18} />
+          </button>
+        {/snippet}
+      </PopoverTrigger>
+      <PopoverContent align="end" class="min-w-44 p-1">
+        <!-- "Update recipe" is the name `docs/salt-architecture.md` §4 has always used
+             for this; "Review changes" was the full chat page's word for the same act.
+             One name on all three surfaces now (#1310). -->
+        <PopoverMenuItem
+          icon="RefreshCw"
+          onclick={() => {
+            setOpen(false);
+            void handleSidebarReviewChanges();
+          }}
+          disabled={sidebarIsProposing || chat.isSending}
+          data-testid={applyTestid}
+        >
+          Update recipe
+        </PopoverMenuItem>
+        <!-- Its counterpart (issue #798): one folds what was said into THIS dish, the
+             other makes it a different one. An indivisible pair, sharing one gate and
+             one menu. -->
+        <PopoverMenuItem
+          icon="BookOpen"
+          onclick={() => {
+            setOpen(false);
+            void handleSaveAsNewRecipe();
+          }}
+          disabled={sidebarIsSavingNew || chat.isSending}
+          data-testid={saveNewTestid}
+        >
+          Save as new recipe
+        </PopoverMenuItem>
+      </PopoverContent>
+    </Popover>
   {/if}
 {/snippet}
 
 <!-- The two surfaces are separate DOM nodes and both can be mounted at once (the column
      is merely `hidden` below `lg`), so they carry distinct testids — one ambiguous
-     selector is a worse trap than two names for one button. Each row goes to its own
-     surface's `ChatThread` as `latestReplyActions`. -->
+     selector is a worse trap than two names for one button. That now includes the
+     TRIGGER, which is the control a test has to press before it can reach either item. -->
 {#snippet sidebarChatActions()}
-  {@render reviewChangesAction('sidebar-apply-changes-btn')}
-  {@render saveAsNewRecipeAction('sidebar-save-new-recipe-btn')}
+  {@render chatActionsMenu(
+    'sidebar-chat-actions-menu',
+    'sidebar-apply-changes-btn',
+    'sidebar-save-new-recipe-btn',
+    sidebarActionsOpen,
+    (v) => (sidebarActionsOpen = v),
+  )}
 {/snippet}
 
 {#snippet drawerChatActions()}
-  {@render reviewChangesAction('drawer-apply-changes-btn')}
-  {@render saveAsNewRecipeAction('drawer-save-new-recipe-btn')}
+  {@render chatActionsMenu(
+    'drawer-chat-actions-menu',
+    'drawer-apply-changes-btn',
+    'drawer-save-new-recipe-btn',
+    drawerActionsOpen,
+    (v) => (drawerActionsOpen = v),
+  )}
 {/snippet}
 
 <!-- The chef over the live recipe (issue #696). Only below the seam: above it the same
@@ -3033,7 +3050,7 @@
     thread={chat}
     onClose={() => (drawerOpen = false)}
     onOpenFull={() => push(`/chat/${activeSession!.id}`)}
-    latestReplyActions={chatOffersSomething ? drawerChatActions : undefined}
+    headerActions={drawerChatActions}
     starters={recipeStarters}
   />
 {/if}

@@ -4,18 +4,15 @@
   those — the full chat page and the recipe page's chat column both render this,
   so a fix to either lands on both.
 
-  What differs by host is the WORDING and the WIRING, never the PLACEMENT. The host
-  writes `emptyText`, the `starters` it offers an empty conversation, whatever
-  `aboveTranscript` drops inside the panel's scroll box, and the buttons in
-  `latestReplyActions` — what each says, what it does, what testid it carries. WHERE
-  each of those renders is decided here, once, which is what makes the surfaces
-  consistent by construction rather than by three hosts agreeing to be (issue #1299).
-
-  "Open full chat", "View recipe" and the panel's card chrome remain the host's to
-  place: they go somewhere rather than doing something to this conversation.
-
-  There is no branching on which surface is rendering beyond `layout`, which is a
-  layout choice and nothing more:
+  What it deliberately does NOT own is anything that differs by host. The recipe
+  actions, "Open full chat", "View recipe" and the panel's card chrome are the host's
+  to place — each surface puts them in its own header (issue #1310). The hooks offered
+  here are `starters`, the doors offered into an empty conversation, worded by the host
+  exactly as `emptyText` is, and `aboveTranscript`, a snippet dropped INSIDE the
+  panel's scroll box above the messages — so what the host puts there scrolls away with
+  the conversation instead of costing it permanent height. There is no branching on
+  which surface is rendering beyond `layout`, which is a layout choice and nothing
+  more:
 
   - `page`  — the transcript scrolls with the document and the composer is a bar
               fixed above the bottom navigation (the /chat/:id route).
@@ -78,45 +75,10 @@
      * as soon as the conversation has content, and again when the host swaps sessions.
      */
     aboveTranscript?: Snippet | undefined;
-    /**
-     * What this conversation can now be turned into — "Review changes", "Save as
-     * recipe", "Save as new recipe". The host writes the buttons, because it owns the
-     * handlers, the busy state and the testids (which must stay DISTINCT per surface:
-     * the recipe page's docked column and its phone drawer can both be mounted at
-     * once). This component owns only where they land (issue #1299).
-     *
-     * They land in a row directly under the NEWEST chef reply, and travel down with it
-     * as the conversation grows. Not beside older replies: acting on a chat reads the
-     * whole conversation, so a row beside one reply would promise it acted on that
-     * reply alone. Auto-scroll below already puts the newest reply where you are
-     * looking.
-     *
-     * Note what this is NOT. A permanent bar under the whole transcript, or in the
-     * composer area, stays rejected (#878) — that is height the conversation never
-     * gets back. This row is attached to the message that earned it and scrolls away
-     * with it, and it is absent entirely when the host offers nothing.
-     *
-     * `| undefined` is `exactOptionalPropertyTypes`, for the same reason `starters`
-     * carries it.
-     */
-    latestReplyActions?: Snippet | undefined;
   }
-  let { session, thread, layout, emptyText, starters, aboveTranscript, latestReplyActions }: Props =
-    $props();
+  let { session, thread, layout, emptyText, starters, aboveTranscript }: Props = $props();
 
   const panel = $derived(layout === 'panel');
-
-  // Where `latestReplyActions` attaches. Derived once per change rather than asked
-  // again on every iteration of the message loop, which is the only reason it is not
-  // simply a predicate inside it. `-1` when the chef has not spoken yet — no index
-  // matches, so the row renders nowhere, which is also the "not until the chef has
-  // replied" rule without a second gate stating it.
-  const latestAssistantIndex = $derived.by(() => {
-    for (let i = session.messages.length - 1; i >= 0; i -= 1) {
-      if (session.messages[i]?.role === 'assistant') return i;
-    }
-    return -1;
-  });
 
   // Read-only after two days (issue #1270), with an explicit costed reopen. The
   // composer is the PRIMARY gate — the one shared implementation, so every host
@@ -246,7 +208,7 @@
     </div>
   {/if}
 
-  {#each session.messages as msg, i (msg.id)}
+  {#each session.messages as msg (msg.id)}
     <!--
       A stored `/remember …` is an ORDINARY user message (no third role on
       MessageSchema); what makes it a chip is re-parsing its text here. So the
@@ -285,21 +247,6 @@
           {/if}
         </div>
       </div>
-      {#if i === latestAssistantIndex && latestReplyActions && !thread.isSending}
-        <!-- Ordinary buttons in ordinary source order, as the starter chips above are,
-             so the keyboard and a screen reader meet them where the pointer does.
-             Withheld while a turn is in flight: the reply they belong to is no longer
-             the newest one, and a row sitting above the "Thinking…" line would say
-             otherwise. It comes back under whatever the chef says next. -->
-        <div
-          class="flex flex-wrap gap-2"
-          role="group"
-          aria-label="What to do with this reply"
-          data-testid="chat-reply-actions"
-        >
-          {@render latestReplyActions()}
-        </div>
-      {/if}
     {/if}
   {/each}
 
@@ -342,7 +289,7 @@
   {:else}
     <div class="flex items-end {panel ? 'gap-2' : 'mx-auto max-w-2xl gap-3'}">
       <div
-        class="flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-ring {thread.isSending
+        class="salt-focus-ring-within flex flex-1 items-start rounded-md border border-input bg-background px-3 text-sm {thread.isSending
           ? 'opacity-50'
           : ''}"
       >

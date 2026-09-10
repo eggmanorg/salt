@@ -44,12 +44,6 @@ const USER_MESSAGE = 'what would go well with this?';
 const STUB_REPLY =
   'Deterministic stubbed chef reply: a fennel, orange and olive salad, dressed sharply.';
 const STUB_CHAT_TITLE = 'Stubbed Accompaniment Conversation';
-// What the chef declared this reply offered (#1299). The buttons under a reply are
-// gated on it and the gate is FAIL-CLOSED, so a bare-string stub would leave this
-// spec with no button to press. Both kinds, because that is what this reply is
-// worth on today's UI — the same two actions it has always offered here. The
-// plain-answer-offers-nothing case is `chat.spec.ts`.
-const STUB_TURN = { text: STUB_REPLY, offers: ['dish-change', 'new-dish'] };
 
 // The librarian's canned answer: a DIFFERENT dish. Nothing of the lamb in it,
 // which is what makes "its own recipe, not a hybrid" assertable.
@@ -115,7 +109,7 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
     await gotoAndSignIn(page, uniqueEmail(testInfo.testId), '/', { admin: true });
 
     // ── Register every canned model answer BEFORE driving the UI ───────────────
-    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_TURN);
+    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), STUB_REPLY);
     await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_CHAT_TITLE);
     await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
     await page.evaluate((p) => window.__e2e!.stubAi('parseRecipeIngredients', p), STUB_PARSE);
@@ -169,7 +163,9 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
     expect((await getSessions(page)).find((s) => s.id === sessionId)!.recipeId).toBe(originalId);
 
     // Both halves of the pair are on offer: fold it into this dish, or make it
-    // another one. Only the second is pressed.
+    // another one. Only the second is pressed. They live behind one floppy-disc
+    // icon in the chat header (#1310), so the menu is opened first.
+    await page.getByTestId('sidebar-chat-actions-menu').click();
     await expect(page.getByTestId('sidebar-apply-changes-btn')).toBeVisible();
 
     // ── Save as new recipe → a brand new dish ─────────────────────────────────
