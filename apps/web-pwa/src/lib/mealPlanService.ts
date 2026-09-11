@@ -37,6 +37,7 @@ import { trackUsageEvent } from '@salt/observability';
 import { writable, derived, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import { subscriptionErrorHandler } from './errorReporting.js';
+import { createWriteCoalescer } from './writeCoalescer.js';
 import { todayIso } from './today.js';
 
 // Meal planning service (issue #169). Subscribes to the two singletons (config +
@@ -458,125 +459,28 @@ function editWeekDay(
 // different fields of the same day both build on the same stale week and the
 // second silently discard the first.
 //
-// What this does and does not guarantee:
-//  - Edits made inside one window are NOT lost: each apply rebuilds from the
-//    store, so the last pending document contains all of them.
-//  - Pending writes live in memory only; persisting them would need browser
-//    storage, which CLAUDE.md Rule 3 forbids. The flush points are therefore what
-//    bound the loss: blur, sheet teardown, and `pagehide`/tab-hide. A reload or a
-//    closed tab is ordinary and is covered; a tab the OS kills between the
-//    `pagehide` flush and the SDK persisting the mutation is not, and nothing
-//    in-memory can cover it.
-//  - A dropped connection loses nothing extra: the flush still calls `setDoc`,
-//    and Firestore's `persistentLocalCache` queues it like any other write.
-//  - Two devices editing the SAME document inside the same window still resolve
-//    by document-level LWW — whichever flush reaches the server last replaces
-//    the whole document, including fields the other device changed. That is the
-//    pre-existing contract (see docs/data-model.md), but coalescing WIDENS the
-//    window in which it can bite, from "the round trip" to "the round trip plus
-//    up to WRITE_DEBOUNCE_MS".
-const WRITE_DEBOUNCE_MS = 400;
-
-type WriteResult = ReadResult<void, DomainError>;
-
-interface PendingWrite<T> {
-  // The newest whole document to write. REPLACED on each edit, never merged:
-  // the write shape stays a full-document LWW `setDoc`, only its timing moves.
-  //
-  // Held here rather than re-read from the store at flush time, because the
-  // store is not the whole story — `addRecipeToDay` persists a week it read
-  // one-shot and deliberately did NOT put in `_weeks` (see `weekIsKnown`), so a
-  // store-reading flush would have nothing to write for it.
-  doc: T;
-  timer: ReturnType<typeof setTimeout>;
-  promise: Promise<WriteResult>;
-  settle: (result: WriteResult) => void;
-}
-
-/**
- * A debounced, document-keyed writer. One key, one in-flight document: every
- * field edited inside the window coalesces into a single write, which is exactly
- * the granularity LWW already works at.
- *
- * `queue` returns the promise of the write that will carry the edit, so callers
- * keep the `ReadResult` they need for the "Failed to save the day." toast
- * (CLAUDE.md Rule 10). Every edit that lands in one window shares one promise
- * and therefore raises at most one toast.
- */
-function createWriteCoalescer<T>(
-  write: (doc: T) => Promise<WriteResult>,
-  scope: 'week' | 'template',
-) {
-  const pending = new Map<string, PendingWrite<T>>();
-
-  async function flushKey(key: string): Promise<void> {
-    const entry = pending.get(key);
-    if (!entry) return;
-    clearTimeout(entry.timer);
-    // Delete BEFORE awaiting: an edit arriving while this write is in flight
-    // must open a fresh pending entry rather than join one already committed to
-    // the wire, which would drop it.
-    pending.delete(key);
-    const result = await write(entry.doc);
-    // Every week-level mutator funnels through here, so this one capture is the
-    // whole "is the planner used, and by whom" signal (issue #684). Since #940
-    // it fires once per coalesced burst rather than once per keystroke — the
-    // volume this event was always meant to have.
-    if (result.kind === 'ok') trackUsageEvent('plan.edited', { plan_scope: scope });
-    entry.settle(result);
-  }
-
-  return {
-    queue(key: string, doc: T): Promise<WriteResult> {
-      const existing = pending.get(key);
-      if (existing) {
-        clearTimeout(existing.timer);
-        existing.doc = doc;
-        existing.timer = setTimeout(() => void flushKey(key), WRITE_DEBOUNCE_MS);
-        return existing.promise;
-      }
-      let settle!: (result: WriteResult) => void;
-      const promise = new Promise<WriteResult>((resolve) => {
-        settle = resolve;
-      });
-      pending.set(key, {
-        doc,
-        timer: setTimeout(() => void flushKey(key), WRITE_DEBOUNCE_MS),
-        promise,
-        settle,
-      });
-      return promise;
-    },
-    /** Write this key's pending document now. No-op when nothing is pending. */
-    flush(key: string): Promise<void> {
-      return flushKey(key);
-    },
-    flushAll(): Promise<void> {
-      return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined);
-    },
-    /**
-     * Drop pending writes without issuing them — test teardown only.
-     * A discarded entry's promise never settles; nothing awaits one, and it is
-     * collected with the test that made it.
-     */
-    discardAll(): void {
-      for (const entry of pending.values()) clearTimeout(entry.timer);
-      pending.clear();
-    },
-  };
-}
+// The mechanism itself lives in `./writeCoalescer.ts` — promoted out of this file
+// by issue #1319, which needed the same writer in front of `persistRecipe`. Its
+// header carries the guarantees, the limits, and the `pagehide`/`visibilitychange`
+// flush that used to be registered at the foot of this section.
 
 // The adapter functions are wrapped rather than passed by reference: reading the
 // binding here would resolve it at MODULE LOAD, and several suites mock
 // `@salt/firebase-sync` partially — a page that merely reaches this module
 // transitively would then fail to import over an export it never calls.
-const weekWrites = createWriteCoalescer((week: MealPlanWeek) => saveMealPlanWeek(week), 'week');
+const weekWrites = createWriteCoalescer((week: MealPlanWeek) => saveMealPlanWeek(week), {
+  // Every week-level mutator funnels through here, so this one capture is the
+  // whole "is the planner used, and by whom" signal (issue #684). Since #940 it
+  // fires once per coalesced burst rather than once per keystroke — the volume
+  // this event was always meant to have.
+  onWritten: () => trackUsageEvent('plan.edited', { plan_scope: 'week' }),
+});
 // The template is a single document, so it needs a key only to reuse the same
 // machinery — there is never more than one entry.
 const TEMPLATE_KEY = 'template';
 const templateWrites = createWriteCoalescer(
   (template: MealPlanTemplate) => saveMealPlanTemplate(template),
-  'template',
+  { onWritten: () => trackUsageEvent('plan.edited', { plan_scope: 'template' }) },
 );
 
 /**
@@ -590,28 +494,10 @@ export function flushMealPlanWrites(): Promise<void> {
   return Promise.all([weekWrites.flushAll(), templateWrites.flushAll()]).then(() => undefined);
 }
 
-// A reload or a closed tab is ORDINARY, not a crash, and it must not cost the
-// user the sentence they just typed. `pagehide` is the event that fires for all
-// of them (reload, navigation, tab close, and iOS Safari's bfcache freeze, where
-// `beforeunload` does not); `visibilitychange` covers a backgrounded phone,
-// which on mobile is where a tab most often dies without ever firing `pagehide`.
-//
-// Registered once, at module load, and never removed: the module lives as long
-// as the document does, and a flush with nothing pending is a no-op.
-//
-// The honest limit: this hands the write to the Firestore SDK, which enqueues it
-// in `persistentLocalCache` and replays it on the next load. It does NOT wait for
-// the server, and nothing here can — an unload handler cannot hold the page open.
-// A tab killed by the OS between the enqueue and the SDK's own persistence still
-// loses the edit. That window is far smaller than the debounce it replaces, but
-// it is not zero, and no in-memory design can make it zero (Rule 3 forbids the
-// storage that could).
-if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', () => void flushMealPlanWrites());
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') void flushMealPlanWrites();
-  });
-}
+// Nothing registers `pagehide`/`visibilitychange` here any more: `writeCoalescer`
+// flushes EVERY coalescer it made on both events, so a planner edit is still
+// written when the tab goes away, and there is no second registration to drift
+// from the first.
 
 // Stamp updatedAt and update the store optimistically — SYNCHRONOUSLY — then
 // queue the document write. The target document is the week's own `startDate`;

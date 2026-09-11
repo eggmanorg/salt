@@ -1,0 +1,173 @@
+import type { DomainError, ReadResult } from '@salt/shared-types';
+
+// ─── Write coalescing (issue #940, promoted by #1319) ─────────────────────────
+//
+// A debounced, document-keyed writer. It was written for the meal planner, where
+// a note typed a character at a time used to issue a full-document `setDoc` of
+// the whole seven-day week per keystroke — nineteen writes for "Spaghetti
+// bolognese", each fanned out to every family device's realtime listener. The
+// recipe page's in-place editing (issue #1319) has exactly that shape, so this
+// module is the ONE implementation both services call rather than a second copy.
+//
+// What a caller must keep on its own side of the boundary:
+//
+// The OPTIMISTIC STORE APPLY stays synchronous and only the `setDoc` is deferred.
+// Both services rebuild the whole document from their store on every mutation, so
+// a deferred apply would let two edits to different fields both build on the same
+// stale document and the second silently discard the first.
+//
+// What this does and does not guarantee:
+//  - Edits made inside one window are NOT lost: each apply rebuilds from the
+//    store, so the last pending document contains all of them.
+//  - Pending writes live in memory only; persisting them would need browser
+//    storage, which CLAUDE.md Rule 3 forbids. The flush points are therefore what
+//    bound the loss: blur, teardown, and `pagehide`/tab-hide. A reload or a
+//    closed tab is ordinary and is covered; a tab the OS kills between the
+//    `pagehide` flush and the SDK persisting the mutation is not, and nothing
+//    in-memory can cover it.
+//  - A dropped connection loses nothing extra: the flush still calls `setDoc`,
+//    and Firestore's `persistentLocalCache` queues it like any other write.
+//  - Two devices editing the SAME document inside the same window still resolve
+//    by document-level LWW — whichever flush reaches the server last replaces
+//    the whole document, including fields the other device changed. That is the
+//    pre-existing contract (see docs/data-model.md), but coalescing WIDENS the
+//    window in which it can bite, from "the round trip" to "the round trip plus
+//    up to WRITE_DEBOUNCE_MS".
+export const WRITE_DEBOUNCE_MS = 400;
+
+type WriteResult = ReadResult<void, DomainError>;
+
+interface PendingWrite<T> {
+  // The newest whole document to write. REPLACED on each edit, never merged:
+  // the write shape stays a full-document LWW `setDoc`, only its timing moves.
+  //
+  // Held here rather than re-read from the caller's store at flush time, because
+  // the store is not the whole story — `addRecipeToDay` persists a week it read
+  // one-shot and deliberately did NOT put in `_weeks` (see `weekIsKnown`), so a
+  // store-reading flush would have nothing to write for it.
+  doc: T;
+  timer: ReturnType<typeof setTimeout>;
+  promise: Promise<WriteResult>;
+  settle: (result: WriteResult) => void;
+}
+
+export interface WriteCoalescer<T> {
+  /** Queue `doc` for `key`, replacing anything already pending for that key. */
+  queue(key: string, doc: T): Promise<WriteResult>;
+  /** Write this key's pending document now. No-op when nothing is pending. */
+  flush(key: string): Promise<void>;
+  /** Write every pending document now. */
+  flushAll(): Promise<void>;
+  /** Drop pending writes without issuing them — test teardown only. */
+  discardAll(): void;
+}
+
+// Every coalescer ever created, so the unload handlers below flush all of them.
+// A `Set` of live objects and nothing else: coalescers are module-level
+// singletons that live as long as the document, so there is nothing to evict.
+const coalescers = new Set<WriteCoalescer<never>>();
+
+/**
+ * A debounced, document-keyed writer. One key, one in-flight document: every
+ * field edited inside the window coalesces into a single write, which is exactly
+ * the granularity LWW already works at.
+ *
+ * `queue` returns the promise of the write that will carry the edit, so callers
+ * keep the `ReadResult` they need for their failure toast (CLAUDE.md Rule 10).
+ * Every edit that lands in one window shares one promise and therefore raises at
+ * most one toast.
+ *
+ * `onWritten` fires once per successful coalesced burst — the hook the planner's
+ * `plan.edited` usage event rides on (issues #684, #940). It is deliberately not
+ * folded into `write`: the event is about the burst, not about the write.
+ */
+export function createWriteCoalescer<T>(
+  write: (doc: T) => Promise<WriteResult>,
+  options: { onWritten?: (doc: T) => void } = {},
+): WriteCoalescer<T> {
+  const pending = new Map<string, PendingWrite<T>>();
+
+  async function flushKey(key: string): Promise<void> {
+    const entry = pending.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    // Delete BEFORE awaiting: an edit arriving while this write is in flight
+    // must open a fresh pending entry rather than join one already committed to
+    // the wire, which would drop it.
+    pending.delete(key);
+    const result = await write(entry.doc);
+    if (result.kind === 'ok') options.onWritten?.(entry.doc);
+    entry.settle(result);
+  }
+
+  const api: WriteCoalescer<T> = {
+    queue(key: string, doc: T): Promise<WriteResult> {
+      const existing = pending.get(key);
+      if (existing) {
+        clearTimeout(existing.timer);
+        existing.doc = doc;
+        existing.timer = setTimeout(() => void flushKey(key), WRITE_DEBOUNCE_MS);
+        return existing.promise;
+      }
+      let settle!: (result: WriteResult) => void;
+      const promise = new Promise<WriteResult>((resolve) => {
+        settle = resolve;
+      });
+      pending.set(key, {
+        doc,
+        timer: setTimeout(() => void flushKey(key), WRITE_DEBOUNCE_MS),
+        promise,
+        settle,
+      });
+      return promise;
+    },
+    flush(key: string): Promise<void> {
+      return flushKey(key);
+    },
+    flushAll(): Promise<void> {
+      return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined);
+    },
+    /**
+     * Drop pending writes without issuing them — test teardown only.
+     * A discarded entry's promise never settles; nothing awaits one, and it is
+     * collected with the test that made it.
+     */
+    discardAll(): void {
+      for (const entry of pending.values()) clearTimeout(entry.timer);
+      pending.clear();
+    },
+  };
+
+  coalescers.add(api as unknown as WriteCoalescer<never>);
+  return api;
+}
+
+/** Write out every pending document of every coalescer. */
+export function flushAllCoalescedWrites(): Promise<void> {
+  return Promise.all([...coalescers].map((c) => c.flushAll())).then(() => undefined);
+}
+
+// A reload or a closed tab is ORDINARY, not a crash, and it must not cost the
+// user the sentence they just typed. `pagehide` is the event that fires for all
+// of them (reload, navigation, tab close, and iOS Safari's bfcache freeze, where
+// `beforeunload` does not); `visibilitychange` covers a backgrounded phone,
+// which on mobile is where a tab most often dies without ever firing `pagehide`.
+//
+// Registered once, HERE, rather than once per service: the two handlers would be
+// identical, and one registration cannot drift from another that does not exist.
+// A flush with nothing pending is a no-op, so this costs nothing on a page that
+// never edited anything.
+//
+// The honest limit: this hands the write to the Firestore SDK, which enqueues it
+// in `persistentLocalCache` and replays it on the next load. It does NOT wait for
+// the server, and nothing here can — an unload handler cannot hold the page open.
+// A tab killed by the OS between the enqueue and the SDK's own persistence still
+// loses the edit. That window is far smaller than the debounce it replaces, but
+// it is not zero, and no in-memory design can make it zero (Rule 3 forbids the
+// storage that could).
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => void flushAllCoalescedWrites());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flushAllCoalescedWrites();
+  });
+}
