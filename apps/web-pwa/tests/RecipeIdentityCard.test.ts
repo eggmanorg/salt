@@ -210,11 +210,18 @@ describe('RecipeIdentityCard — read mode', () => {
   });
 
   it('states no servings at all for an entry that is not cooked', () => {
-    show(entry({ kind: 'outing', metadata: { servings: 4, tags: [] } }), false, {
-      base: 4,
-      active: 4,
-    });
+    // `createdBy` is set so the facts ROW renders regardless of the servings
+    // gate under test, through `attribution` — otherwise `hasFacts` is false,
+    // the whole `{#if hasFacts || editing}` row is skipped, and this passes on
+    // that gate instead of the `showCooking` one it claims to pin (issue #1324
+    // review, should-fix 2).
+    show(
+      entry({ kind: 'outing', createdBy: 'Ada Lovelace', metadata: { servings: 4, tags: [] } }),
+      false,
+      { base: 4, active: 4 },
+    );
 
+    expect(screen.getByTestId('recipe-attribution-chip')).toBeTruthy();
     expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
     expect(screen.queryByText(/Serves/)).toBeNull();
   });

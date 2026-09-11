@@ -383,19 +383,35 @@ describe('RecipeViewPage — scaling the amounts', () => {
 //
 // "When editing you should never be working with the scaled recipe — it should
 // revert to the normal saved recipe." There are TWO halves and both are needed,
-// so both are pinned separately here:
+// but only ONE test below is sensitive to the render half specifically — stated
+// exactly, not rounded up, per CLAUDE.md rule 12 (issue #1324 review, should-fix
+// 3, correcting an earlier claim of two in the PR body and the Phase 4 handoff
+// comment):
 //
 //   the URL   — pressing Edit pushes `/recipes/:id` with no `serves` param,
-//               through the same call the Reset button already makes;
+//               through the same call the Reset button already makes. Pinned by
+//               `cleans the ?serves= out of the URL when Edit is pressed` and
+//               `pushes nothing when there was no scale to clear`, below — both
+//               assert on `push` and never read `scaling` at all.
 //   the pin   — `scaling.active` is held at `scaling.base` while `editing`, so a
 //               `?serves=` arriving any other way (the back button landing on the
 //               entry the push just created, a hand-typed URL) cannot re-create
 //               the state this decision forbids. The mocked router keeps its
-//               `?serves=6` throughout these, which is exactly that case.
+//               `?serves=6` throughout these, which is exactly that case. Only
+//               `puts the amounts and the scaled line back to as written, router
+//               or no router` is sensitive to THIS clause: removing it is what
+//               turns that one test red. `shows the stored count as a box you
+//               can type in` reaches the edit branch through `{#if editing}`,
+//               which short-circuits before `scaling` is read at all, so it
+//               proves nothing about the pin either way.
 //
 // The "amounts scaled" line and the ingredient amounts are NOT edited to achieve
 // any of this — they follow `isScaled` on their own, which is why they are what
 // these assert on.
+//
+// A third, separate route closes the SAME URL back out again once `editing`
+// goes false and the pin above no longer applies — `leaves the scale cleared
+// after Done`, at the foot of this block, pins that one on its own.
 describe('RecipeViewPage — editing is never a scaled view', () => {
   it('cleans the ?serves= out of the URL when Edit is pressed', async () => {
     mockRouter.querystring = 'serves=6';
@@ -448,22 +464,28 @@ describe('RecipeViewPage — editing is never a scaled view', () => {
   // been reading at. If he rules the other way, this test is the one line that
   // changes.
   it('leaves the scale cleared after Done, rather than resurrecting it', async () => {
+    // `push` is mocked and never actually rewrites `router.querystring`, so
+    // leaving it untouched from here on IS the back button: it is exactly the
+    // shape of landing on the history entry `startEditing`'s own push created —
+    // `editing` stays true across that (#1326's id-keyed reset effect), the URL
+    // still reads `serves=6`, and nothing in this test hand-clears it to
+    // manufacture the state under test (issue #1324 review, should-fix 1 — the
+    // previous version of this test zeroed `mockRouter.querystring` by hand
+    // right before Done, which reached the assertions through a fixture rather
+    // than through the route a back button actually takes).
     mockRouter.querystring = 'serves=6';
     mockRecipes._set([servesFour()]);
     renderPage();
 
     await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
-    // `push` is mocked, so the router does not follow it. Moved by hand to where
-    // that push put it — the previous test is what pins that the push happened.
-    // Everything after this line is the real sequence.
-    mockRouter.querystring = '';
+    vi.mocked(push).mockClear();
+
     await userEvent.click(screen.getByTestId('recipe-done-button'));
 
-    expect(screen.getByTestId('recipe-servings-chip').textContent).toContain('Serves 4');
-    expect(amountsText()).toContain('300g');
-    expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
-    // The half that would actually go red: restoring the prior scale on exit
-    // could only be done by pushing the param back.
-    expect(vi.mocked(push).mock.calls.flat().join(' ')).not.toContain('serves=');
+    // Done has to make the exact same clearing call Edit does, closing the same
+    // route on the way out that `startEditing` closes on the way in. Without it
+    // `finishEditing` pushes nothing at all here — the router is left at
+    // `serves=6` and the number the reviewer flagged rides back in on it.
+    expect(vi.mocked(push)).toHaveBeenCalledWith('/recipes/recipe-1');
   });
 });

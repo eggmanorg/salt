@@ -306,8 +306,15 @@
   // `$people`, never `$members` (issue #1300): this is a people-picker, so a
   // system account is not offered. A recipe ALREADY stamped with one keeps its
   // name — it arrives through `recipe.createdBy` below, the same path an
-  // off-roster name takes. Nothing to pick from is not a control, so an empty
-  // roster (still loading, or a permission-denied stream) offers no slot at all.
+  // off-roster name takes. Nothing to pick from is not a control, so the slot
+  // is offered only when there is at least ONE name to show in it — the roster,
+  // OR a `createdBy` already on the record. An empty roster on its own is NOT
+  // "nothing to pick from": a recipe stamped with a name keeps offering that one
+  // slot through it, even before `$people` loads or on a permission-denied
+  // stream, which is ordinary first paint and reachable on live data (issue
+  // #1324 review, should-fix 4 — corrects the earlier, unqualified claim that an
+  // empty roster offers no slot at all). Only a recipe with NEITHER a roster NOR
+  // its own `createdBy` gets nothing.
   const rosterNames = $derived($people.map((m) => m.name));
   const authorOptions = $derived([
     ...new Set(recipe.createdBy ? [...rosterNames, recipe.createdBy] : rosterNames),
@@ -435,7 +442,10 @@
 
                READ mode is #1317's scale picker, untouched: it restates the
                amounts for reading and writes nothing, and the number it shows
-               is `scaling.active`, which lives in the URL.
+               is `scaling.active`, which lives in the URL. It carries the same
+               `showCooking` gate the EDIT branch below always kept (issue #1324
+               review, should-fix 2) — a non-cookable entry has no amounts to
+               scale, so it gets no picker either, in either mode.
 
                EDIT mode does not render that `Select` at all. In its place is
                the STORED count, which is what the recipe is — and the page
@@ -479,7 +489,7 @@
                 {/snippet}
               </EditableZone>
             {/if}
-          {:else if scaling}
+          {:else if scaling && showCooking}
             <div class="w-32">
               <Select
                 value={String(scaling.active)}

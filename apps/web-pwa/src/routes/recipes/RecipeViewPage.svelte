@@ -710,7 +710,15 @@
   // untouched for `null` is why it leaves `/recipes/:id` rather than `?serves=4`.
   // The cook links drop their `?serves=` with it, through `cookServings`. The
   // render half is the `editing` clause in the `scaling` derivation above; that
-  // one is what the tests pin, since this push only cleans up the address bar.
+  // one is what the tests pin, since this push only cleans up the address bar
+  // WHILE EDITING IS TRUE. That qualifier is load-bearing: the push here cannot
+  // itself close the back-button route (the `?serves=` reappearing on the
+  // history entry this very push just created) — only the pin does, and only
+  // for as long as `editing` stays true. The moment `editing` goes false again
+  // the pin no longer applies, the querystring is once more the only thing
+  // `scaling` reads, and `finishEditing` below has to make this exact same
+  // clearing call again rather than treating its own push as cosmetic (issue
+  // #1324 review, should-fix 1).
   function startEditing(): void {
     if (scaling && isScaled) setServings(scaling.base, scaling.base);
     editing = true;
@@ -739,8 +747,19 @@
   // deliberate act that says "I have read this", and it routes through the
   // banner's own `handleMarkReviewed` rather than becoming a fourth clearing
   // site (issue #1319; the three that exist are listed at that function).
+  //
+  // Symmetric with `startEditing`'s clear on the way in, and for the same
+  // reason (issue #1324 review, should-fix 1): the querystring can carry a
+  // scale that `editing` only ever masked from RENDERING, never erased — the
+  // back button landing on the history entry `startEditing`'s own push
+  // created (`editing` stays true across that, per #1326's id-keyed reset
+  // effect), or a hand-typed `?serves=`. `editing` is cleared FIRST, so
+  // `scaling` re-derives from the actual querystring rather than the pin, and
+  // the same one call `startEditing` uses closes the route back out that the
+  // pin can only close while it is still in effect.
   async function finishEditing(): Promise<void> {
     editing = false;
+    if (scaling && isScaled) setServings(scaling.base, scaling.base);
     await flushRecipeWrites();
     if (recipe?.needs_approval) await handleMarkReviewed();
   }
