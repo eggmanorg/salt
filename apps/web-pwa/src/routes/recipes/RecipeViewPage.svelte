@@ -806,6 +806,25 @@
   // a card, so its draft is held here beside the rest of the page's state.
   let titleDraft = $state('');
 
+  // `/recipes/:id` is one route (routes/index.ts), so a "Made from" tap
+  // (`push('/recipes/' + component.id)`) reuses THIS component instance and only
+  // moves `params.id` — exactly the model `recipe` itself is written against
+  // ($derived above). Nothing else resets on that move by default, and `editing`
+  // is a mode with an open draft in it: left on, it carries the OLD recipe's
+  // title/notes text onto the NEW document the moment a keystroke lands, because
+  // `setTitle`/`handleInlineEdit` compose against whatever `recipe` is current
+  // when they run (issue #1324 review, finding 1). Clearing `editing` here is
+  // what has to cascade the rest: `EditableZone`'s own `$effect` drops `active`
+  // when `editing` goes false, and `RecipeNotesCard`'s `draft` is reseeded from
+  // the (now correct) recipe the next time a field is opened via `onOpen` — so
+  // one flag closing is enough, nothing downstream needs its own copy of this
+  // effect. `titleDraft` is cleared too, since nothing else ever does.
+  $effect(() => {
+    params.id;
+    editing = false;
+    titleDraft = '';
+  });
+
   // There is no Save, so a failed write is the only thing left to say out loud —
   // and it is said ONCE per coalesced burst, not once per keystroke. Every edit
   // inside one debounce window is handed the SAME promise by the coalescer, so
@@ -813,7 +832,7 @@
   // toasted is what makes "at most one toast" true rather than merely intended.
   // The claim's boundary: it is per burst, not per edit mode — two bursts that
   // both fail are two toasts, which is the right answer, since the second one is
-  // news. `RecipeViewPage.inlineEdit.test.ts` pins both halves.
+  // news. `RecipeViewPage.reviewFlag.test.ts` pins both halves.
   let lastFailureToasted: Promise<unknown> | null = null;
 
   function handleInlineEdit(next: Recipe): void {
@@ -1578,7 +1597,7 @@
         onOpen={() => (titleDraft = recipe.title)}
       >
         {#snippet view()}
-          <h1 class="truncate text-2xl font-semibold tracking-tight text-foreground">
+          <h1 class="min-w-0 truncate text-2xl font-semibold tracking-tight text-foreground">
             {recipe.title}
           </h1>
         {/snippet}

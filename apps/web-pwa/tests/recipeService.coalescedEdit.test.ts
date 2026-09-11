@@ -20,6 +20,14 @@ import type { Recipe } from '@salt/domain';
 // immediate. Every existing caller is one deliberate tap, and deferring one
 // would mean a reload inside the window discards a finished act.
 //
+// The sixth is what DID change (issue #1324 review, finding 2): `persistRecipe`
+// now cancels any pending coalesced write for the same id once its own write
+// lands, so a "Mark reviewed" or a per-row rematch fired inside an open edit
+// session's debounce window is not silently reverted when that window ends —
+// the pending write held a snapshot captured back when it was queued, and
+// firing it after the immediate write landed would overwrite the immediate
+// write with that older document.
+//
 // The recipes store is module-internal singleton state with no reset seam, so
 // every fixture id is namespaced per test (see recipeService.attachComponent).
 
@@ -152,5 +160,52 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
     await persistRecipe(seeded({ title: 'Tapped' }));
 
     expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 2 (issue #1324 review): a pending coalesced write must not survive
+  // an immediate `persistRecipe` write to the SAME recipe and revert it once
+  // the debounce window ends. Concrete shape of the defect: an editor types
+  // into the title (queued, not yet flushed) and, inside the same 400 ms
+  // window, presses "Mark reviewed" — an immediate write that reads the
+  // freshest store copy (so it already carries the queued title) and drops
+  // `needs_approval`. Left unfixed, the OLDER queued snapshot — captured back
+  // when it was queued, title included, `needs_approval` still present — fires
+  // when its own timer elapses and overwrites the immediate write.
+  it('an immediate persistRecipe write cancels a pending coalesced write for the same id, rather than being reverted by it once the window ends', async () => {
+    const base = seeded({ needs_approval: true });
+    queueRecipeEdit({ ...base, title: 'Carbonara!' });
+    // The synchronous optimistic apply means the store already has the queued
+    // title by the time the "Mark reviewed" tap reads it.
+    expect(fromStore(base.id)?.title).toBe('Carbonara!');
+
+    const current = fromStore(base.id)!;
+    const { needs_approval: _dropped, ...reviewed } = current;
+    await persistRecipe(reviewed);
+
+    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipe.mock.calls[0]![0].title).toBe('Carbonara!');
+    expect('needs_approval' in fs.saveRecipe.mock.calls[0]![0]).toBe(false);
+
+    // The pending coalesced write's timer would fire here. It must not — that
+    // would be the revert: a second `saveRecipe` call carrying the stale
+    // pre-review document.
+    await vi.runAllTimersAsync();
+
+    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cancel a pending coalesced write for a DIFFERENT recipe', async () => {
+    const edited = seeded({ title: 'Untouched by the immediate write' });
+    queueRecipeEdit({ ...edited, title: 'Still queued' });
+    const other = seeded({ title: 'Reviewed separately' });
+
+    await persistRecipe(other);
+    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+
+    await vi.runAllTimersAsync();
+
+    // The other recipe's queued edit still lands — cancellation is per-id.
+    expect(fs.saveRecipe).toHaveBeenCalledTimes(2);
+    expect(fs.saveRecipe.mock.calls[1]![0].title).toBe('Still queued');
   });
 });

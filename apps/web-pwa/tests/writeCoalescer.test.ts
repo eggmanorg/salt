@@ -11,11 +11,21 @@ import type { DomainError, ReadResult } from '@salt/shared-types';
 //   4. `onWritten` fires once per SUCCESSFUL burst, and not at all on a failure —
 //      that hook carries the planner's `plan.edited` usage event (#684, #940), so
 //      a per-keystroke or a fires-anyway implementation is a live defect;
-//   5. every queue in one window is handed the SAME promise, which is what makes
-//      "at most one failure toast per burst" (CLAUDE.md Rule 10) checkable;
+//   5. every queue in one window is handed the SAME promise — necessary for "at
+//      most one failure toast per burst" (CLAUDE.md Rule 10), but NOT
+//      sufficient: sharing the promise only lets a caller collapse a burst to
+//      one message by comparing each result against the last promise it
+//      already toasted. A caller with no such comparison still gets one toast
+//      per queued edit (issue #1324 review, finding 3 — this is the meal
+//      planner's shape today, pre-existing and out of scope, but the claim
+//      about the MODULE had to stop implying otherwise);
 //   6. `pagehide` and tab-hide flush EVERY coalescer, from the one registration
 //      this module owns — the planner used to register its own and no longer
-//      does, so nothing else is left to fire these.
+//      does, so nothing else is left to fire these;
+//   7. `cancel` drops a pending write without ever issuing it, settling its
+//      promise with a result the caller supplies — the seam `persistRecipe`
+//      uses so an immediate write to a key can't be reverted later by a
+//      pending coalesced write holding an older snapshot of it (finding 2).
 //
 // Each is false under an obvious wrong implementation, which is the bar.
 
@@ -189,6 +199,31 @@ describe('createWriteCoalescer', () => {
     expect(await first).toEqual(FAILED);
   });
 
+  // The boundary of the property above (issue #1324 review, finding 3): sharing
+  // one promise is necessary for "at most one toast per burst" but not
+  // sufficient. A caller that reacts to EVERY `queue()` call's own promise
+  // (rather than comparing against the last one it already toasted, the way
+  // `RecipeViewPage`'s `lastFailureToasted` does) still runs its callback once
+  // per queued edit, because all three `.then` subscriptions fire off the same
+  // settled promise. This is the meal planner's shape today (`save` and
+  // `onNoteChange` have no such comparison) — proof the module cannot claim
+  // "at most one toast" on the promise-sharing alone; that half of the job is
+  // the caller's.
+  it('sharing one promise is not by itself what bounds a burst to one toast — a caller with no identity comparison still reacts once per edit', async () => {
+    const writes = coalescer(vi.fn().mockResolvedValue(FAILED));
+    const reactions = vi.fn();
+
+    for (const doc of ['a', 'ab', 'abc']) {
+      writes.queue('week-1', doc).then((result) => {
+        if (result.kind !== 'ok') reactions();
+      });
+    }
+
+    await vi.runAllTimersAsync();
+
+    expect(reactions).toHaveBeenCalledTimes(3);
+  });
+
   it('surfaces a failed write as a Failure rather than throwing (Rule 10)', async () => {
     const writes = coalescer(vi.fn().mockResolvedValue(FAILED));
 
@@ -207,6 +242,45 @@ describe('createWriteCoalescer', () => {
     await vi.runAllTimersAsync();
 
     expect(write).not.toHaveBeenCalled();
+  });
+
+  // `cancel` (issue #1324 review, finding 2): the seam a caller with its own
+  // immediate write to the same key uses so a pending coalesced write holding
+  // an older snapshot can't fire later and revert it.
+  it('cancel drops a pending write without issuing it, settling its promise with the given result', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = coalescer(write);
+
+    const pending = writes.queue('week-1', 'stale');
+    writes.cancel('week-1', FAILED);
+
+    await vi.runAllTimersAsync();
+
+    expect(write).not.toHaveBeenCalled();
+    expect(await pending).toEqual(FAILED);
+  });
+
+  it('cancel on a key with nothing pending is a no-op', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = coalescer(write);
+
+    expect(() => writes.cancel('never-queued', OK)).not.toThrow();
+    await vi.runAllTimersAsync();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('cancel does not affect a different key still pending', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = coalescer(write);
+
+    void writes.queue('week-1', 'stale');
+    void writes.queue('week-2', 'unrelated');
+    writes.cancel('week-1', FAILED);
+
+    await vi.runAllTimersAsync();
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith('unrelated');
   });
 });
 

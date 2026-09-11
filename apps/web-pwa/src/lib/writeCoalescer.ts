@@ -58,6 +58,24 @@ export interface WriteCoalescer<T> {
   flush(key: string): Promise<void>;
   /** Write every pending document now. */
   flushAll(): Promise<void>;
+  /**
+   * Drop a pending write for `key` WITHOUT ever issuing it, settling its
+   * promise with `result` instead of a real write outcome.
+   *
+   * For a caller whose own IMMEDIATE write to the same key already carries
+   * every edit the pending one would have (issue #1324 review, finding 2): the
+   * pending entry holds a whole-document snapshot captured at queue time and
+   * does not re-read anything at flush time, so left alone it fires LATER and
+   * overwrites the immediate write with that stale snapshot — silently, since
+   * the flushed write's `updatedAt` then loses to the immediate write's newer
+   * one at the echo guard in `recipeService.ts`'s `applySnapshot`, and the
+   * device that made the immediate write never sees the revert. Cancelling the
+   * pending entry once the immediate write it would otherwise clobber has
+   * landed removes the write that could do that, rather than requiring every
+   * such caller to get an ordering (flush-then-write) right on its own. A
+   * no-op when nothing is pending for `key`.
+   */
+  cancel(key: string, result: WriteResult): void;
   /** Drop pending writes without issuing them — test teardown only. */
   discardAll(): void;
 }
@@ -74,8 +92,16 @@ const coalescers = new Set<WriteCoalescer<never>>();
  *
  * `queue` returns the promise of the write that will carry the edit, so callers
  * keep the `ReadResult` they need for their failure toast (CLAUDE.md Rule 10).
- * Every edit that lands in one window shares one promise and therefore raises at
- * most one toast.
+ * Sharing that promise makes "at most one toast per burst" POSSIBLE — every edit
+ * inside one window resolves the exact same promise, so a caller CAN reduce a
+ * burst to one message by comparing each result against the last promise it
+ * already toasted (the recipe page's `lastFailureToasted` does this; see
+ * `RecipeViewPage.reviewFlag.test.ts`). The module does not guarantee this on
+ * its own: the shared promise is the burst's identity, not its message count, so
+ * a caller with no such comparison still raises one toast per failed edit — the
+ * meal planner has none today and does exactly that (pre-existing, out of
+ * scope here; CLAUDE.md Rule 12 is why this sentence names the boundary rather
+ * than the caller-specific case).
  *
  * `onWritten` fires once per successful coalesced burst — the hook the planner's
  * `plan.edited` usage event rides on (issues #684, #940). It is deliberately not
@@ -126,6 +152,13 @@ export function createWriteCoalescer<T>(
     },
     flushAll(): Promise<void> {
       return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined);
+    },
+    cancel(key: string, result: WriteResult): void {
+      const entry = pending.get(key);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      pending.delete(key);
+      entry.settle(result);
     },
     /**
      * Drop pending writes without issuing them — test teardown only.

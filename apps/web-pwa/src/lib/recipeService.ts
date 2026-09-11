@@ -205,9 +205,23 @@ function applyRecipeOptimistically(recipe: Recipe): Recipe {
 }
 
 // Stamp, apply optimistically, then persist the whole doc — immediately.
+//
+// Cancels any pending COALESCED write for the same id once this one lands
+// (issue #1324 review, finding 2): `applyRecipeOptimistically` runs
+// synchronously on every `queueRecipeEdit` call too, so by the time a caller
+// here reads `recipe` from the store it already contains whatever a pending
+// coalesced burst was about to write. Left pending, that burst's OLDER
+// snapshot (captured back when it was queued) would still fire later and
+// silently overwrite what this write just committed — reachable today from
+// "Mark reviewed" and the per-row rematch, both immediate writes that can land
+// inside an open edit session's 400 ms debounce window. Cancelling only on
+// success: if this write fails, nothing landed for the coalescer's pending
+// edit to clobber, so it is left to flush on its own as a fallback.
 export async function persistRecipe(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
   const stamped = applyRecipeOptimistically(recipe);
-  return reportIfFailed(getErrorReporter(), await saveRecipeDoc(stamped));
+  const result = reportIfFailed(getErrorReporter(), await saveRecipeDoc(stamped));
+  if (result.kind === 'ok') recipeWrites.cancel(stamped.id, result);
+  return result;
 }
 
 // ─── Coalesced edits (issue #1319) ──────────────────────────────────────────

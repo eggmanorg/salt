@@ -274,6 +274,39 @@ describe('RecipeViewPage — edit mode', () => {
     expect(queryByTestId('recipe-edit-notes')).toBeNull();
   });
 
+  // Issue #1324 review, finding 1: `/recipes/:id` is one route, so a "Made
+  // from" tap on a dish card reuses THIS component instance and only moves
+  // `params.id` — simulated here by re-rendering with a different id, exactly
+  // what svelte-spa-router does. Left open, edit mode (and the draft still
+  // holding the old recipe's text) would carry onto the new document, and one
+  // keystroke there writes recipe A's title onto recipe B.
+  it('leaves edit mode and drops the draft when the route moves to a different recipe', async () => {
+    const recipeA = makeRecipe({ id: RECIPE_ID, title: 'Carbonara' });
+    const recipeB = makeRecipe({ id: 'recipe-2', title: 'Ragu' });
+    mockRecipes._set([recipeA, recipeB]);
+    const { getByTestId, queryByTestId, rerender } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-title'));
+    await fireEvent.input(getByTestId('recipe-title-input'), {
+      target: { value: "Carbonara, A's unsaved edit" },
+    });
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    // Neither edit mode nor the open title editor (still showing A's unsaved
+    // text) may have followed the navigation onto B.
+    expect(queryByTestId('recipe-title-input')).toBeNull();
+    expect(queryByTestId('recipe-done-button')).toBeNull();
+    expect(getByTestId('recipe-edit-mode-button')).toBeTruthy();
+
+    // Opening the title editor on B for real must show B's own title, not a
+    // leftover draft from A.
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-title'));
+    expect((getByTestId('recipe-title-input') as HTMLInputElement).value).toBe('Ragu');
+  });
+
   // The action row is at its budget at every width (#735), so Done REPLACES the
   // cluster rather than joining it: while you are editing, Cook, Shop and Plan
   // are not what you are doing.
