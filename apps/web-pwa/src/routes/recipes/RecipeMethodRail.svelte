@@ -86,8 +86,8 @@
    * — issue #1319's settled rule, implemented in `blankRows.ts` and composed
    * into the page's `finishEditing`, its id-keyed `$effect` and its `onDestroy`
    * (#1336 review, blocking 2), not here: pruning on a keystroke would delete
-   * the row you just added before you could type in it. Phase 5 adds ingredient
-   * rows to that same function.
+   * the row you just added before you could type in it. It carries the ingredient
+   * panel's blank rows too, since Phase 5 — one function, both rules.
    *
    * REORDER IS `ReorderControl` AND NOTHING ELSE (#1332's ruling) — no pair of
    * buttons is inlined here.
