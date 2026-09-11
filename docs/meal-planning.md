@@ -141,11 +141,16 @@ concurrency profile.
 **Typed fields coalesce their writes; applies never defer** (issue #940). Typing
 a dinner used to issue a whole-week `setDoc` per keystroke, fanned out to every
 family device. `mealPlanService` splits the two halves of `persistWeek`: the
-optimistic store apply stays **synchronous**, and only the `setDoc` is debounced
-(400 ms, keyed by the week document), flushed on blur, on the day sheet's
-teardown, and on `pagehide`/tab-hide. The apply cannot be deferred — every
-mutator rebuilds the week from the store, so a deferred apply would let two edits
-to the same day build on the same stale document and discard one another.
+optimistic store apply stays **synchronous**, and only the `setDoc` goes through
+`createWriteCoalescer` — the debounced, document-keyed writer in
+`apps/web-pwa/src/lib/writeCoalescer.ts`, promoted out of this module by #1319 so
+recipe in-place editing shares the one mechanism rather than a second copy. Its
+header carries the guarantees and the honest limits (what a killed tab still
+loses, why a dropped connection loses nothing extra, how the clobber window below
+widens by the debounce) — read it there rather than here. The apply itself cannot
+be deferred — every mutator rebuilds the week from the store, so a deferred apply
+would let two edits to the same day build on the same stale document and discard
+one another.
 
 **Only the four note mutators coalesce.** `setWeekDayNote`,
 `setWeekAttendeeNote` and their two template twins are the fields typed a
@@ -154,18 +159,6 @@ load-template — is one deliberate tap and writes at once. That is not a
 performance nicety: a debounced click is an edit the user has finished making,
 and a reload landing inside the window would silently discard it
 (`e2e/mealplan.spec.ts` asserts exactly that it survives a reload).
-
-What it still costs, stated plainly. Pending writes are held in memory only —
-persisting them would need browser storage, which CLAUDE.md Rule 3 forbids — so
-the flush points are what bound the loss. `pagehide` covers reload, navigation
-and tab close; it hands the write to the SDK, which queues it in
-`persistentLocalCache` and replays it next load, but it cannot wait for the
-server, so a tab killed by the OS mid-handover still loses that edit. A dropped
-connection loses nothing extra. And the clobber window at the top of this section
-**widens** by up to 400 ms for a note: two devices typing into the same week now
-have that much longer in which the later flush replaces the whole document,
-including the other's fields. Same LWW contract, longer fuse — not a new failure
-mode.
 
 ## Member references
 
