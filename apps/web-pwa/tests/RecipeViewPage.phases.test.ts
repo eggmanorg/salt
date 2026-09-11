@@ -33,7 +33,13 @@ const {
   };
 });
 
-vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
+// `router` joins the mock for issue #1314: the page reads `router.querystring`
+// live to find the `?serves=` it is being read at. An empty querystring is "as
+// written", which is what every assertion in this suite assumes.
+vi.mock('svelte-spa-router', () => ({
+  push: vi.fn(),
+  router: { querystring: '' },
+}));
 vi.mock('../src/lib/featureGate.js', () => ({
   // Bread stays on, which is what the real (unkeyed) gate answers — this suite is
   // not about bread and nothing here should change what it shows.

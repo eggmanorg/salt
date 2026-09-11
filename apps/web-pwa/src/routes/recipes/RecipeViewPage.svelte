@@ -23,6 +23,10 @@
     PopoverContent,
     PopoverMenuItem,
     PopoverTrigger,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
     Spinner,
     Tabs,
     TabsContent,
@@ -30,12 +34,13 @@
     TabsTrigger,
     Textarea,
     TextField,
+    valueChipVariants,
     type ChipTone,
     type IconName,
     type ImageCropperHandle,
   } from '@salt/ui-components';
   import { tick } from 'svelte';
-  import { push } from 'svelte-spa-router';
+  import { push, router } from 'svelte-spa-router';
   import { trackUsageEvent } from '@salt/observability';
   // The ⋮ menu's two canned chef turns, declared here until #934. They moved into
   // `@salt/domain/prompts` because Refresh states the step policy `stepRules.ts`
@@ -45,6 +50,7 @@
   import { goBack } from '../../lib/nav.js';
   import { breadGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
+  import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
     recipes,
     isLoadingRecipes,
@@ -103,6 +109,7 @@
     looksScalable,
     resolveComponents,
     takesIngredients,
+    usableServings,
     type IngredientGroup,
     memberFirstName,
     type Ingredient,
@@ -389,6 +396,48 @@
     guidedIsPrimary ? `/recipes/${params.id}/cook` : `/recipes/${params.id}/cook/guided`,
   );
 
+  // ─── Reading this recipe for a different number (issue #1314) ───────────────
+  //
+  // "Serves 4" becomes a number you can change, and every ingredient amount on the
+  // page restates to match. It is a VIEW, not an edit: nothing is written, nobody
+  // else in the household sees it, and opening the recipe fresh tomorrow is 4
+  // again. The chosen number lives in the URL and nowhere else — `servingsParam.ts`
+  // argues why, and CLAUDE.md Rule 3 forbids the alternative.
+  //
+  // `usableServings` is the one rule for whether a stated count can be a scaling
+  // base (issue #1123): `null` and `0` cannot, so those recipes keep today's inert
+  // pill and a `?serves=` on them does nothing.
+  // ONE nullable, not three. `null` is the whole of "this recipe cannot be read at
+  // another number" — no usable stated count, per `usableServings` (issue #1123),
+  // where `null` and `0` both fail. Everything downstream narrows through this
+  // object, so there is no second place that can disagree about whether the pill
+  // is a control or a label.
+  const scaling = $derived.by((): { base: number; active: number } | null => {
+    const base = usableServings(recipe?.metadata.servings ?? null);
+    if (base === null) return null;
+    // A `?serves=` aimed at an unscalable recipe is ignored, not honoured above.
+    return { base, active: readServingsParam(router.querystring) ?? base };
+  });
+  // The DISPLAY factor handed to `IngredientText`. Exactly 1 whenever the page is
+  // as written, which is the value that renders identically to before.
+  const ingredientScale = $derived(scaling === null ? 1 : scaling.active / scaling.base);
+  const isScaled = $derived(ingredientScale !== 1);
+
+  // What the picker offers: 1–12, plus the recipe's own count and the number
+  // currently being read if either falls outside that. The range is a household
+  // dinner's range; the two additions exist so a recipe stating 16 can always be
+  // put back, and so a hand-typed URL is representable in the control that shows
+  // it rather than silently unselectable.
+  function servingsOptions(base: number, active: number): number[] {
+    const set = new Set<number>([base, active]);
+    for (let n = 1; n <= 12; n += 1) set.add(n);
+    return [...set].sort((a, b) => a - b);
+  }
+
+  function setServings(next: number, base: number): void {
+    void push(withServingsParam(`/recipes/${params.id}`, next === base ? null : next));
+  }
+
   // ─── Facts, and why they are not tags (issue #878) ──────────────────────────
   // Six different things used to render as the same grey pill: what the dish
   // makes, how many it serves, three durations, who added it, and every tag on
@@ -418,6 +467,16 @@
   // nothing. And nothing is carried by colour ALONE — every chip says its own kind
   // in words, so the tint only lets the row be scanned instead of read
   // (ui-spec-v02 §7).
+  //
+  // ── One fact LEAVES this scheme, and does so on purpose (issue #1314) ───────
+  // Serves is now a decision you can change where it sits, so it is drawn as the
+  // value-chip SURFACE worn by a `SelectTrigger` (ui-spec-v09 §8.27) rather than
+  // as a sage `Chip variant="fact"`. It therefore carries the value chip's own
+  // treatment — bordered, on `bg-background` — and no tint at all. That difference
+  // is the honest part: every other pill in this row is a measurement you can only
+  // read, and a control that looked identical to them would be undiscoverable.
+  // `Chip variant="fact"` renders a `<span>` and §8.23.8 closed the door on making
+  // it pressable; nothing shared changes here.
   interface RecipeFact {
     readonly key: string;
     /** Absent only for the one fact with no honest glyph — see `attribution` below. */
@@ -465,7 +524,9 @@
         out.push({
           key: 'servings',
           icon: 'Users',
-          label: `Serves ${m.servings}`,
+          // The number being READ, which is the stored one until somebody changes
+          // it. `metadata.servings` itself is never touched by scaling.
+          label: `Serves ${scaling?.active ?? m.servings}`,
           tone: 'secondary',
         });
       }
@@ -2070,14 +2131,55 @@
               {#if facts.length > 0}
                 <div class="flex flex-wrap items-center gap-2">
                   {#each facts as fact (fact.key)}
-                    <Chip
-                      variant="fact"
-                      tone={fact.tone ?? 'neutral'}
-                      icon={fact.icon}
-                      data-testid={fact.testId}
-                    >
-                      {fact.label}
-                    </Chip>
+                    {#if fact.key === 'servings' && scaling}
+                      <!-- The one fact that is also a control (issue #1314). The
+                           value-chip SURFACE worn by the `SelectTrigger` that owns
+                           the interaction — ui-spec-v09 §8.27.4's exact shape, the
+                           same one the catalog's review row wears, down to the
+                           width-setting wrapper the surface deliberately does not
+                           provide. It is NOT a `Chip`: §8.23.8 renders `fact` as a
+                           `<span>` and closed off making one pressable, and a
+                           button inside a chip inside a button is the shape that
+                           rule exists to prevent.
+                           The pill shows no label of its own, so the accessible
+                           name comes from `aria-label` (§8.27.6). -->
+                      <div class="w-32">
+                        <Select
+                          value={String(scaling.active)}
+                          onValueChange={(v) => setServings(Number(v), scaling.base)}
+                        >
+                          <SelectTrigger
+                            class={valueChipVariants()}
+                            aria-label="How many this recipe is shown for"
+                            data-testid="recipe-servings-chip"
+                          >
+                            <span class="flex items-center gap-1.5">
+                              <Icon name="Users" size={12} />
+                              {fact.label}
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {#each servingsOptions(scaling.base, scaling.active) as option (option)}
+                              <SelectItem
+                                value={String(option)}
+                                label={option === scaling.base
+                                  ? `${option} (as written)`
+                                  : String(option)}
+                              />
+                            {/each}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    {:else}
+                      <Chip
+                        variant="fact"
+                        tone={fact.tone ?? 'neutral'}
+                        icon={fact.icon}
+                        data-testid={fact.testId}
+                      >
+                        {fact.label}
+                      </Chip>
+                    {/if}
                   {/each}
                 </div>
               {/if}
@@ -2412,6 +2514,33 @@
                   </CardHeader>
                 {/if}
                 <CardContent class={hasParsedPending ? 'px-4 pb-4 pt-3' : 'p-4'}>
+                  <!-- What scaling did, and what it did NOT do (issue #1314).
+                       Stated rather than left obvious: a recipe that genuinely does
+                       not scale linearly — a cake, a loaf, anything where the tin is
+                       the real constraint — scales linearly here too, and the only
+                       honest answer to that is to say so where the amounts are read.
+                       The line names both numbers so the reader can see what was
+                       changed from, and carries the way back in one tap. -->
+                  {#if scaling && isScaled}
+                    <div
+                      class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-tertiary-variant bg-tertiary-variant/15 px-3 py-2 text-xs text-muted-foreground"
+                      data-testid="recipe-scaled-notice"
+                    >
+                      <span>
+                        Amounts scaled for {scaling.active} — the recipe is written for {scaling.base}.
+                        Nothing else changed: the method, the timings and any tin or pan size are as
+                        written.
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onclick={() => setServings(scaling.base, scaling.base)}
+                        data-testid="recipe-scaled-reset"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  {/if}
                   {#if recipe.ingredients.length === 0}
                     <p class="text-sm text-muted-foreground">No ingredients.</p>
                   {/if}
@@ -2537,7 +2666,7 @@
                                    `min-w-0` so a long name wraps inside its cell rather
                                    than shoving the amount off the row. -->
                               <span class="min-w-0 flex-1">
-                                <IngredientText {ingredient} part="name" />
+                                <IngredientText {ingredient} part="name" scale={ingredientScale} />
                               </span>
                               <!-- The metric amount, and the measure the source
                                    actually printed sitting UNDER it: "1 ½ cups" is a
@@ -2549,9 +2678,14 @@
                                    empty and the whole raw text sits in the name cell —
                                    which is what keeps a part-parsed list from ragging. -->
                               <span class="shrink-0 text-right tabular-nums leading-tight">
-                                <IngredientText {ingredient} part="quantity" /><IngredientText
+                                <IngredientText
+                                  {ingredient}
+                                  part="quantity"
+                                  scale={ingredientScale}
+                                /><IngredientText
                                   {ingredient}
                                   part="display"
+                                  scale={ingredientScale}
                                 />
                               </span>
                             </button>
@@ -2889,7 +3023,19 @@
 
 <!-- Add to shopping list review sheet -->
 {#if recipe && $defaultListId}
-  <RecipeAddToListSheet {recipe} listId={$defaultListId} bind:open={addToListOpen} />
+  <!-- The review sheet opens already set to the number being read (issue #1314),
+       through the `servings` seam the planner's shop-the-week queue already uses
+       (#724) — so a scaled recipe does not ask for the same number twice. Only
+       when scaled: unscaled, the sheet's own default IS the recipe's count, and
+       passing it would be the same value by a longer route.
+       What it ADDS is computed by `buildRecipeAddPlan` from the exact factor, not
+       from the rounded figures on screen. -->
+  <RecipeAddToListSheet
+    {recipe}
+    listId={$defaultListId}
+    bind:open={addToListOpen}
+    servings={scaling && isScaled ? scaling.active : undefined}
+  />
 {/if}
 
 <!-- What one ingredient matched. Mounted unconditionally: it needs no recipe of

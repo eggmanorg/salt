@@ -1,5 +1,6 @@
 <script lang="ts">
   import pluralize from 'pluralize';
+  import { scaleQuantity } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import type { QuantityDoc } from '@salt/domain/schemas';
 
@@ -49,11 +50,26 @@
   // and out, and it stays the right answer for a line the parse genuinely could not
   // read (issue #949 rows). It is NOT the answer for a count.
 
+  // ─── Scaling goes IN HERE, once (issue #1314) ───────────────────────────────
+  //
+  // A recipe can be read at a different number of servings than it states, and
+  // every amount on screen restates to match. This is the only component that
+  // writes an ingredient amount anywhere in the app — the recipe page's three
+  // columns, cook mode's mise rows and per-step chips, guided cook's three — so
+  // the multiplication happens here and at none of the eight call sites. They pass
+  // a factor; they never do arithmetic.
+  //
+  // `scale` is the DISPLAY factor and rounds for a human ("450g", "4½"). It is not
+  // what the shopping list buys: `buildRecipeAddPlan` multiplies at full float
+  // precision from the same servings figure, so the shopper is never handed a
+  // twice-rounded number. See `scaleQuantity`'s header for the boundary.
   interface Props {
     ingredient: Ingredient;
     part?: 'all' | 'quantity' | 'name' | 'display';
+    /** 1 means "as written", and is the only value that renders exactly as before. */
+    scale?: number;
   }
-  let { ingredient, part = 'all' }: Props = $props();
+  let { ingredient, part = 'all', scale = 1 }: Props = $props();
 
   // The common cooking fractions, as the single glyph a recipe would print. Halves
   // through eighths covers what a mixed quantity actually holds; anything outside
@@ -97,6 +113,15 @@
 
   const parsed = $derived(ingredient.parsed);
 
+  // The amount this line actually states, at the scale being read. Everything
+  // below — the figure, and the plural agreement of the item beside it — reads
+  // this and never `parsed.quantity`, so a scaled "4½ garlic cloves" agrees with
+  // itself. At scale 1 `scaleQuantity` returns the stored quantity itself, so an
+  // unscaled line is byte-for-byte what it was.
+  const quantity = $derived(
+    parsed && parsed.quantity ? scaleQuantity(parsed.quantity, scale, parsed.unit) : null,
+  );
+
   // The amount, or null when the line has none. `quantity` alone decides whether
   // there is something to render; the unit only decides how it is spelled — appended
   // for a measure ("300g"), absent for a count ("1"), which is precisely how
@@ -106,9 +131,7 @@
   // text, exactly as the single-run template did. Reading `unit` here as well made a
   // count indistinguishable from an unparsed line and sent it down that same raw-text
   // branch (#951).
-  const amount = $derived(
-    parsed && parsed.quantity ? `${formatQty(parsed.quantity)}${parsed.unit ?? ''}` : null,
-  );
+  const amount = $derived(parsed && quantity ? `${formatQty(quantity)}${parsed.unit ?? ''}` : null);
 
   // `parsed.item` is not reliably plural-agreed with `quantity` — staging stores
   // `item: "garlic clove"` against `quantity: 4`. That never showed while count lines
@@ -130,7 +153,7 @@
   const itemText = $derived(
     parsed === null
       ? ''
-      : parsed.unit === null && parsed.quantity !== null && exceedsOne(parsed.quantity)
+      : parsed.unit === null && quantity !== null && exceedsOne(quantity)
         ? pluralize(parsed.item)
         : parsed.item,
   );
@@ -160,7 +183,13 @@
 
   const showQuantity = $derived(part === 'all' || part === 'quantity');
   const showName = $derived(part === 'all' || part === 'name');
-  const showDisplay = $derived(part === 'all' || part === 'display');
+  // The OTHER way of saying the amount — "1 ½ cups", "about 50g" — is a verbatim
+  // restating of the amount the recipe STATES. The moment anything is scaled it is
+  // a second figure on the row that is simply false, so a scaled line renders none
+  // of it. Recomputing it is not on the table: it is the source's own wording, not
+  // a conversion this app owns. `buildRecipeAddPlan` drops it on a scaled add for
+  // exactly this reason (issue #724), and the two now agree.
+  const showDisplay = $derived((part === 'all' || part === 'display') && scale === 1);
 </script>
 
 {#if showQuantity && amount}{amount}{/if}{#if part === 'all' && amount}{' '}{/if}{#if showName}{#if parsed && amount}{itemText}{#if preparation}<span

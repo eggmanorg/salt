@@ -225,6 +225,7 @@ export {
   reconcileRecipePhases,
   flattenIngredients,
   quantityToNumber,
+  scaleQuantity,
   usableServings,
   ingredientMatchIssue,
   recipeMatchIssueCount,
