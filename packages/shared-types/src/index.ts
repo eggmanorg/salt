@@ -166,6 +166,13 @@ export const ErrorCode = {
   // defence-in-depth, not the everyday path. Expected once "Make read-write"
   // exists to answer it, so it crosses as a ValidationError and is not reported.
   CHAT_READ_ONLY: 'CHAT_READ_ONLY',
+  // A log entry whose `at` cannot be read as an instant (issue #1292). The log is
+  // ORDERED by `at`, so an unreadable one is not a cosmetic blemish — it is an entry
+  // the log cannot place. The sheet blocks Save on the field long before this fires,
+  // so this is the rail behind the screen rather than the everyday path; it exists
+  // because the write path now has more than one caller. Bad input, not a defect, so
+  // it crosses as a ValidationError and is deliberately not reported.
+  INVALID_OBSERVATION_TIME: 'INVALID_OBSERVATION_TIME',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

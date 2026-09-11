@@ -6,7 +6,7 @@ import {
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
 import type { BatchObservationDoc } from '@salt/domain/schemas';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
-import { success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { writable } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 
@@ -34,8 +34,18 @@ import type { Readable } from 'svelte/store';
 // that knows it. The sheet has to read the clock anyway to seed its `datetime-local`
 // box; a second read here would be a second answer to one question, and the one that
 // reached Firestore would be the later of the two. So `at` arrives on the input,
-// already an instant, and this service writes exactly what it was handed. The same
-// goes for `stageId`: which stage a reading is about is a thing a person chose.
+// already an instant, and this service writes the moment it was handed — canonicalised
+// to UTC, for the ordering reason given at the field, and otherwise untouched. The
+// same goes for `stageId`: which stage a reading is about is a thing a person chose.
+//
+// THAT SENTENCE USED TO BE A PROMISE AND NOTHING MORE (issue #1292, CLAUDE.md Rule
+// 12). "`at` arrives already an instant" was asserted right here and enforced only by
+// one component's `canSave` — so the invariant held for exactly as long as this path
+// had one caller, and #1280 gave it more. `logObservation` now REFUSES an `at` it
+// cannot read, the same refusal `withStageStarted` and `withStageAdvanced` make in
+// the domain, and `batchObservationService.test.ts` goes red if that stops being
+// true. The sheet still blocks Save on the field: this is the rail behind the
+// screen, not a second opinion offered to the person typing.
 //
 // ─── THE ORDER OF THE TWO WRITES IS NOT A DETAIL ───────────────────────────────
 //
@@ -96,6 +106,10 @@ export interface LogObservationInput {
    * WHEN THE READING WAS TAKEN, ISO. Not when it was typed, and not read from a
    * clock here — the screen owns it, because it is the only thing that can be told
    * "this was yesterday evening". The log is ordered by it.
+   *
+   * Must be readable as an instant; anything else is refused (see the header). No
+   * format beyond that is required — `Date.parse` is the bar, exactly as it is in
+   * the domain's own stage transitions.
    */
   at: string;
   /**
@@ -156,10 +170,26 @@ export type PhotoOutcome =
 export async function logObservation(
   input: LogObservationInput,
 ): Promise<ReadResult<{ observationId: string; photo: PhotoOutcome }, DomainError>> {
+  // A refusal, not a substituted clock. Stamping "now" over an instant the caller
+  // got wrong would file the reading at the wrong point in the very ordering this
+  // field exists to carry, and do it silently — the caller has the box the person
+  // typed into and is the only thing that can ask again.
+  const at = Date.parse(input.at);
+  if (!Number.isFinite(at)) {
+    return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_OBSERVATION_TIME });
+  }
+
   const observation: BatchObservationDoc = {
     id: crypto.randomUUID(),
     schemaVersion: 1,
-    at: input.at,
+    // CANONICAL UTC, and that is not tidying. The log is ordered by a Firestore
+    // `orderBy('at', 'asc')` over a STRING, so the sort is the instant's sort only
+    // while every stored value is in one form. `2026-08-11T21:40:00+01:00` and
+    // `2026-08-11T20:40:00.000Z` are the same moment and sort as if they were an hour
+    // apart. Normalising costs nothing — the instant is identical either way — and it
+    // is what makes "the log is ordered by `at`" true of every caller rather than of
+    // the one that happened to call `toISOString()` first.
+    at: new Date(at).toISOString(),
     stageId: input.stageId,
     weightGrams: input.weightGrams,
     ph: null,

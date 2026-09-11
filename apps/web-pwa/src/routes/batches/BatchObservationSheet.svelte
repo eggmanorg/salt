@@ -68,7 +68,9 @@
   // the service would be two answers to one question — see
   // `batchObservationService`'s header. `at` therefore leaves here already an
   // instant, and a box that cannot be read blocks Save on the field rather than
-  // handing the service an instant it cannot use.
+  // handing the service an instant it cannot use. The service refuses one too since
+  // #1292 — that is the rail behind this screen, not a second opinion; nothing here
+  // changed when it grew.
   //
   // NEITHER IS EVIDENCE OF A READING. `hasSomething` below still asks for a weight,
   // a note or a photo: a pre-filled default is not something a person typed, so a
@@ -125,18 +127,50 @@
     return String(value).padStart(2, '0');
   }
 
-  /** Now, in the `YYYY-MM-DDTHH:mm` local form a `datetime-local` input wants. */
-  function localNow(): string {
-    const at = new Date();
+  /** An instant in the `YYYY-MM-DDTHH:mm` local form a `datetime-local` input wants. */
+  function toLocalValue(at: Date): string {
     return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
   }
 
-  let whenLocal = $state(localNow());
+  // ─── THE BOX SHOWS MINUTES; THE SEED REMEMBERS THE SECOND (issue #1292) ───────
+  //
+  // A `datetime-local` at its default step edits to the MINUTE, so every entry used
+  // to reach Firestore stamped `:00.000`. Two readings taken four minutes apart on
+  // the same hand — weigh, note, weigh again — therefore tied on `at`, and the log's
+  // order between them fell through to Firestore's `__name__` tiebreak over two
+  // random UUIDs. Not wrong often, but arbitrary every time, and invisible.
+  //
+  // The fix is NOT `step="1"`. Seconds in the box would put a control on screen that
+  // nobody in a kitchen wants to fill in, to solve a problem nobody typing has: the
+  // person who does not touch this box means "now", and "now" already knows its own
+  // second. So the seed keeps the full instant it was read at, and the box shows the
+  // minute of it. Leave the box alone and the reading lands at the second it was
+  // written; touch it and you get the minute you chose, because a minute is what you
+  // said.
+  //
+  // THE BOUNDARY, and it is deliberate: two readings HAND-TYPED to the same minute
+  // are still tied on `at`, because at that point the tie is what the person meant
+  // and inventing an order would be Salt guessing. `buildBatchLog` gives those a
+  // fixed construction-order `seq` on the log surface; nothing pretends the
+  // underlying instants differ.
+  //
+  // Kept as the pair it is used as — the instant the box was SEEDED WITH, and the
+  // minute-form string the box was actually GIVEN. Both are `$state`: `reset()`
+  // re-seeds them together, and a sheet reopened within the same minute assigns
+  // `whenLocal` a string it already holds, so a derived tracking only `whenLocal`
+  // would go on serving the previous open's instant.
+  const openedAt = new Date();
+  let seededAtIso = $state(openedAt.toISOString());
+  let seededLocal = $state(toLocalValue(openedAt));
+  let whenLocal = $state(toLocalValue(openedAt));
   let stageValue = $state(WHOLE_BATCH);
 
   // A `datetime-local` value carries no offset, so it is read as LOCAL time — which
   // is what the person typing it means. `null` while the box is empty or half-typed.
   const atIso = $derived.by(() => {
+    // Untouched: the seed's own instant, seconds and all. `seededLocal` is exactly
+    // what the box was given, so equality here IS "nobody edited this".
+    if (whenLocal === seededLocal) return seededAtIso;
     const ms = new Date(whenLocal).getTime();
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
   });
@@ -239,7 +273,10 @@
     busy = false;
     // Both re-seeded here rather than at declaration: a sheet opened on Thursday must
     // not still be offering Tuesday's clock or the stage the run was on then.
-    whenLocal = localNow();
+    const now = new Date();
+    seededAtIso = now.toISOString();
+    seededLocal = toLocalValue(now);
+    whenLocal = seededLocal;
     stageValue = (run === null ? null : defaultObservationStageId(run)) ?? WHOLE_BATCH;
   }
 

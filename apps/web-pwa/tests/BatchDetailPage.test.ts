@@ -1074,6 +1074,62 @@ describe('BatchDetailPage — the invitation at the end of a run', () => {
     await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
   });
 
+  it('offers the screen when the last outstanding stage is SKIPPED, not marked done', async () => {
+    // Issue #1292. `handleSkip` carries the same auto-open as `handleAdvance` and had
+    // none of its coverage: a run that ends on a skip is as finished as one that ends
+    // on a Mark done, and gets the same invitation.
+    await showRun({
+      stages: [
+        stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }),
+        stage({ id: 'stage-2', optional: true }),
+      ],
+    });
+    skipMock.mockResolvedValueOnce({
+      kind: 'ok',
+      value: makeBatch({
+        stages: [
+          stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }),
+          stage({
+            id: 'stage-2',
+            optional: true,
+            skipped: { at: '2026-08-14T08:10:00.000Z', note: '' },
+          }),
+        ],
+      }),
+    });
+
+    await fireEvent.click(screen.getByTestId('batch-stage-skip'));
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+  });
+
+  it('opens the auto-offered sheet on the whole batch, not on the stage just finished', async () => {
+    // The default the AUTO-opened sheet lands on was asserted only through the manual
+    // prompt button until #1292, and the two are not the same path.
+    //
+    // WHAT THIS PINS, and it is a real coupling rather than a formality: the sheet
+    // reads its default off the STORE's document, while the page decides to open it
+    // off the one the write returned. Those agree only because `batchService.persist`
+    // sets the store optimistically BEFORE awaiting the save — so by the time
+    // `logOpen = true` runs, the store already holds the finished run. The mock below
+    // does exactly what `persist` does, in that order. Make `persist` await first and
+    // this test goes red, which is the point: the sheet would open on "Mix", the stage
+    // that had just been marked done, rather than on the run as a whole.
+    const finished = makeBatch({ stages: DONE_STAGES });
+    await showRun({
+      stages: [stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }), stage({ id: 'stage-2' })],
+    });
+    advanceMock.mockImplementationOnce(async () => {
+      mockBatch._set(finished);
+      return { kind: 'ok', value: finished };
+    });
+
+    await fireEvent.click(screen.getByTestId('batch-stage-advance'));
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('The whole batch');
+  });
+
   it('does not open the screen when a mid-run stage is marked done', async () => {
     await showRun();
 
@@ -1231,6 +1287,50 @@ describe('BatchDetailPage — the log sheet’s two pre-filled rows', () => {
     await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeInTheDocument());
 
     expect(screen.getByTestId('batch-log-stage')).toHaveTextContent('The whole batch');
+  });
+
+  it('keeps the second it was opened at, so same-minute readings do not tie', async () => {
+    // Issue #1292. The box edits to the MINUTE, so an untouched one used to reach
+    // Firestore stamped `:00.000` — and two readings taken a few minutes apart on the
+    // same hand tied on `at`, leaving the log's order between them to Firestore's
+    // `__name__` tiebreak over two random UUIDs. Leaving the box alone means "now",
+    // and now knows its own second.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-08-14T09:37:42.318Z'));
+    try {
+      await showRun();
+      await openLogSheet();
+      await typeWeight('1440');
+      await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+      await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+      expect(loggedArgs().at).toBe('2026-08-14T09:37:42.318Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes the minute you chose when you do touch the box', async () => {
+    // The boundary, and it is deliberate: a hand-typed time means the minute it says.
+    // Two readings typed to the same minute are still tied on `at`, because at that
+    // point the tie is what the person meant — `buildBatchLog` gives those a fixed
+    // construction order on the log surface and nothing pretends otherwise.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-08-14T09:37:42.318Z'));
+    try {
+      await showRun();
+      await openLogSheet();
+      await typeWeight('1440');
+      await fireEvent.input(screen.getByTestId('batch-log-when'), {
+        target: { value: '2026-08-14T08:05' },
+      });
+      await fireEvent.click(screen.getByTestId('batch-log-save'));
+
+      await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+      expect(loggedArgs().at).toBe(new Date('2026-08-14T08:05').toISOString());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('blocks Save on a time it cannot read, and says so on the field', async () => {
