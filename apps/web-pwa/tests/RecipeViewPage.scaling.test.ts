@@ -319,6 +319,28 @@ describe('RecipeViewPage — scaling the amounts', () => {
     );
   });
 
+  it('carries the number into the cook', async () => {
+    // Tap Cook on a recipe scaled to six and the mise list and the per-step amounts
+    // are the six-serving ones. The scale rides the same `?serves=` the recipe page
+    // is reading.
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-cook-button'));
+
+    expect(vi.mocked(push)).toHaveBeenCalledWith(`/recipes/${RECIPE_ID}/cook?serves=6`);
+  });
+
+  it('leaves the Cook link exactly as it was when nothing is scaled', async () => {
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-cook-button'));
+
+    expect(vi.mocked(push)).toHaveBeenCalledWith(`/recipes/${RECIPE_ID}/cook`);
+  });
+
   describe('a recipe with no usable servings count', () => {
     it('shows an inert pill for a null count, exactly as today', () => {
       mockRecipes._set([pancakes(null)]);

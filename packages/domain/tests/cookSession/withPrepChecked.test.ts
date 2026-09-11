@@ -15,6 +15,7 @@ function session(checkedPrepIds: string[]): CookSessionDoc {
     ownerUid: 'u1',
     recipeId: 'r1',
     serveAt: null,
+    servings: null,
     recipeUpdatedAtAtStart: '2026-07-01T09:00:00.000Z',
     checkedIngredientIds: ['i1'],
     checkedPrepIds,

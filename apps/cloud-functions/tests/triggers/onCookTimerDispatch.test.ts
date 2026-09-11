@@ -150,6 +150,7 @@ function makeSession(overrides: Partial<CookSessionDoc> = {}): CookSessionDoc {
     recipeId: 'recipe-1',
     recipeUpdatedAtAtStart: '2026-07-24T09:00:00.000Z',
     serveAt: null,
+    servings: null,
     checkedIngredientIds: [],
     checkedPrepIds: [],
     completedStepIds: [],

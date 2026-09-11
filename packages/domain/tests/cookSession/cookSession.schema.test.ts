@@ -188,3 +188,45 @@ describe('CookSessionSchema.serveAt', () => {
     expect(result.success && result.data.serveAt).toBeNull();
   });
 });
+
+describe('CookSessionSchema.servings', () => {
+  // Reading a recipe at a different number of servings (issue #1314). The cook
+  // session is the ONE place a scale is stored — everywhere else it lives in the
+  // URL — because a cook is explicitly resumable across devices, and it dies with
+  // the cook so it can never go stale.
+  //
+  // The same back-compat obligation as every other field added to this document:
+  // cookSessions have no TTL and a cook can span days, so EVERY session already in
+  // Firestore predates this one.
+  const base = {
+    id: 'r1_u1',
+    schemaVersion: 1,
+    ownerUid: 'u1',
+    recipeId: 'r1',
+    recipeUpdatedAtAtStart: '2026-07-01T09:00:00.000Z',
+    createdAt: '2026-09-10T18:30:00.000Z',
+    updatedAt: '2026-09-10T18:30:00.000Z',
+  };
+
+  it('BACK-COMPAT: a session written without it parses, and reads back null', () => {
+    const result = CookSessionSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    // `.default(null)`, not `.optional()` — no reader has to tell "absent" from
+    // "as written", and both mean the recipe's own number.
+    expect(result.success && result.data.servings).toBeNull();
+  });
+
+  it('keeps a pinned count', () => {
+    const result = CookSessionSchema.safeParse({ ...base, servings: 6 });
+    expect(result.success && result.data.servings).toBe(6);
+  });
+
+  it('accepts an explicit null — cooking as written', () => {
+    const result = CookSessionSchema.safeParse({ ...base, servings: null });
+    expect(result.success && result.data.servings).toBeNull();
+  });
+
+  it('rejects a non-numeric count rather than scaling by a string', () => {
+    expect(CookSessionSchema.safeParse({ ...base, servings: '6' }).success).toBe(false);
+  });
+});

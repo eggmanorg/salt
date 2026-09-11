@@ -44,6 +44,8 @@
   import CookLoadingOrphan from './CookLoadingOrphan.svelte';
   import CookTimeline from './CookTimeline.svelte';
   import CookRecipeChangedBanner from './CookRecipeChangedBanner.svelte';
+  import CookScaledBanner from './CookScaledBanner.svelte';
+  import { createCookServings } from './cookServings.svelte.js';
   import CookTimersBar from './CookTimersBar.svelte';
   import CookStepCollapsed from './CookStepCollapsed.svelte';
   import CookStepKit from './CookStepKit.svelte';
@@ -97,6 +99,16 @@
   const lifecycle = createCookLifecycle({ recipeId: () => params.id });
 
   const recipe = $derived(lifecycle.recipe);
+
+  // ─── Cooking for a different number (issue #1314) ──────────────────────────────
+  // The URL this screen was opened on wins and is pinned onto the session; a resume
+  // arriving with no link reads the session back. The factor goes to
+  // `IngredientText` and nowhere else — this page does no arithmetic of its own,
+  // and nothing but the amounts moves.
+  const servings = createCookServings({
+    recipe: () => lifecycle.recipe,
+    session: () => $cookSession,
+  });
   const { wakeLockSupported, handleRestart, handleComplete, handleClose, toggleWakeLock } =
     lifecycle;
   const restarting = $derived(lifecycle.restarting);
@@ -566,6 +578,11 @@
       <CookRecipeChangedBanner {restarting} onRestart={handleRestart} />
     {/if}
 
+    <!-- Cooking for a different number than the recipe states (issue #1314). -->
+    {#if servings.scaled}
+      <CookScaledBanner servings={servings.scaled.active} base={servings.scaled.base} />
+    {/if}
+
     <!-- Persistent timers bar. Every live/fired timer stays here regardless of stage,
        scroll position, or which step is in focus. The per-step control below is the
        start affordance; this bar is the durable surface. -->
@@ -722,7 +739,7 @@
                             ? 'text-muted-foreground line-through'
                             : ''}"
                         >
-                          <IngredientText {ingredient} />
+                          <IngredientText {ingredient} scale={servings.scale} />
                         </span>
                       </button>
                     </li>
@@ -899,7 +916,7 @@
                               class="min-w-0 {expandedChip ? 'break-words' : 'truncate'}"
                               data-chip-text
                             >
-                              <IngredientText ingredient={ing} />
+                              <IngredientText ingredient={ing} scale={servings.scale} />
                             </span>
                           </button>
                         </li>

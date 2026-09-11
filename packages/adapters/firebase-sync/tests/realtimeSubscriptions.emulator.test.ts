@@ -550,6 +550,7 @@ describe('realtimeSubscriptions — Firestore emulator', () => {
         completedStepIds: [],
         activeTimers: [],
         serveAt: null,
+        servings: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,

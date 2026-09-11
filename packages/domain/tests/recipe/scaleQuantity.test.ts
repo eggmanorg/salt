@@ -91,9 +91,28 @@ describe('scaleQuantity', () => {
       });
     });
 
+    it('refuses to turn a non-finite stored amount into a non-finite one', () => {
+      // `QuantitySchema` is `z.number()`, which admits Infinity, and a corrupt or
+      // hand-edited document can carry one. "Infinity eggs" on a mise list is worse
+      // than nothing there at all, so the rounding floors it — the same reasoning,
+      // and the same answer, as `roundGrams`' own guard.
+      expect(scaleQuantity({ type: 'single', value: Number.POSITIVE_INFINITY }, 2, null)).toEqual({
+        type: 'single',
+        value: 0,
+      });
+    });
+
     it('floors a positive count at a half rather than rounding it away', () => {
-      // 1 egg scaled down for one of four servings is 0.25 — which rounds to 0,
+      // 1 egg cooked for one of eight servings is 0.125, which rounds to nothing —
       // and a row reading "0 eggs" is an ingredient silently left out of the dish.
+      expect(scaleQuantity({ type: 'single', value: 1 }, 1 / 8, null)).toEqual({
+        type: 'mixed',
+        whole: 0,
+        numerator: 1,
+        denominator: 2,
+      });
+      // A quarter is already the nearest half away from zero, so it needs no floor
+      // — the two paths agree on the answer and only one of them is a rescue.
       expect(scaleQuantity({ type: 'single', value: 1 }, 0.25, null)).toEqual({
         type: 'mixed',
         whole: 0,

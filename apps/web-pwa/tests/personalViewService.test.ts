@@ -133,6 +133,7 @@ function session(
     completedStepIds,
     activeTimers,
     serveAt: null,
+    servings: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
   };

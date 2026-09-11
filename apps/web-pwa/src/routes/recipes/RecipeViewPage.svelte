@@ -389,13 +389,10 @@
   // who wants to be offered the plan, and the screen it leads to now offers to
   // write one.
   const showGuidedHalf = $derived(hasGuidedPlan || prefersGuided);
-  const primaryCookHref = $derived(
-    guidedIsPrimary ? `/recipes/${params.id}/cook/guided` : `/recipes/${params.id}/cook`,
-  );
-  const secondaryCookHref = $derived(
-    guidedIsPrimary ? `/recipes/${params.id}/cook` : `/recipes/${params.id}/cook/guided`,
-  );
-
+  // The number being read travels into the cook (issue #1314): tap Cook on a recipe
+  // scaled to six and the mise list and the per-step amounts are the six-serving
+  // ones. `withServingsParam` is a no-op when there is nothing to carry, so an
+  // unscaled recipe's Cook links are exactly the strings they were.
   // ─── Reading this recipe for a different number (issue #1314) ───────────────
   //
   // "Serves 4" becomes a number you can change, and every ingredient amount on the
@@ -437,6 +434,23 @@
   function setServings(next: number, base: number): void {
     void push(withServingsParam(`/recipes/${params.id}`, next === base ? null : next));
   }
+
+  // Null unless this recipe is actually being read at another number — the link
+  // carries a `?serves=` only when there is a scale to carry.
+  const cookServings = $derived(scaling && isScaled ? scaling.active : null);
+
+  const primaryCookHref = $derived(
+    withServingsParam(
+      guidedIsPrimary ? `/recipes/${params.id}/cook/guided` : `/recipes/${params.id}/cook`,
+      cookServings,
+    ),
+  );
+  const secondaryCookHref = $derived(
+    withServingsParam(
+      guidedIsPrimary ? `/recipes/${params.id}/cook` : `/recipes/${params.id}/cook/guided`,
+      cookServings,
+    ),
+  );
 
   // ─── Facts, and why they are not tags (issue #878) ──────────────────────────
   // Six different things used to render as the same grey pill: what the dish

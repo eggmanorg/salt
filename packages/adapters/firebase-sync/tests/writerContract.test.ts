@@ -364,6 +364,7 @@ const COOK_SESSION = {
   activeTimers: [],
   checkedPrepIds: [],
   serveAt: null,
+  servings: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

@@ -123,6 +123,25 @@ export const CookSessionSchema = z.object({
   // predates this field and must still parse (back-compat on read), and a concrete
   // `string | null` means no reader has to tell "absent" from "no serve time".
   serveAt: z.string().nullable().default(null),
+  // How many this cook is being cooked for, when that is NOT what the recipe says
+  // (issue #1314). Null means "as written", which is every cook there has ever been
+  // until now.
+  //
+  // The scale otherwise lives only in the URL — a reading control must not write to
+  // the family-shared recipe, and Rule 3 forbids browser storage. This one document
+  // is the exception, and it earns it: a cook session is explicitly resumable across
+  // devices (see the header), so without this the laptop picks the same cook up at
+  // different amounts. It is also the one place a stored scale cannot go stale,
+  // because it dies with the cook.
+  //
+  // BELONGS TO NEITHER PHASE SCHEME the header warns about — not cook mode's (#556)
+  // and not guided cook's (#751).
+  //
+  // `.default(null)` rather than `.optional()`: cookSessions have no TTL and every
+  // session already in Firestore predates this field, so it must still parse (back-
+  // compat on read), and a concrete `number | null` means no reader has to tell
+  // "absent" from "as written".
+  servings: z.number().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
