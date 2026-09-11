@@ -119,6 +119,16 @@ test.describe('recipes — manual CRUD', () => {
     // write path itself is pinned by `recipeService.coalescedEdit.test.ts` and the
     // flush by `RecipeViewPage.reviewFlag.test.ts`. The Firestore round trip is
     // still exercised below — the delete asserts across a reload.
+    //
+    // `recipe-notes-markdown.spec.ts` has the sibling case (PR #1340 review,
+    // should-fix 8): it asserts an in-place edit survived a `page.goto` back to
+    // the URL it never left. Read that comment alongside this one — it is NOT
+    // the reload this one avoids (a `page.goto` to the current URL is a
+    // same-document hash navigation, proven nowhere near Firestore, not a
+    // network round trip), so there is no real asymmetry to reconcile between
+    // the two specs today. If either spec starts asserting an ACTUAL
+    // `page.reload()` immediately after Done, it needs a settled-flush signal
+    // first, or it inherits this exact race.
 
     // ── Out and back in ──────────────────────────────────────────────────────
     // The retired editor's save was a ROUTE CHANGE, so the recipe page remounted

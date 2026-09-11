@@ -87,7 +87,18 @@ test.describe('recipes — New → a meal', () => {
     await expect(page.getByTestId('recipe-new-btn')).toBeVisible({ timeout: SYNC_TIMEOUT });
 
     // ── There is no way to type a recipe or a cocktail from scratch ───────────
+    // POSITIVES FIRST (PR #1340 review, should-fix 5): this menu is a lazily
+    // mounted bits-ui `PopoverContent`, so a `toHaveCount(0)` negative asserted as
+    // the FIRST thing after the trigger click can pass on its very first poll
+    // simply because nothing has mounted yet — a regression that brought back
+    // "Manual" or "Cocktail" need not turn it red. The `toBeVisible()` waits
+    // establish that the menu has actually opened before the negatives are asked
+    // to mean anything.
     await page.getByTestId('recipe-new-btn').click();
+    await expect(page.getByTestId('recipe-new-import')).toBeVisible();
+    await expect(page.getByTestId('recipe-new-import-photo')).toBeVisible();
+    await expect(page.getByTestId('recipe-new-chat')).toBeVisible();
+    await expect(page.getByTestId('recipe-new-meal')).toBeVisible();
     await expect(page.getByTestId('recipe-new-manual')).toHaveCount(0);
     await expect(page.getByTestId('recipe-new-cocktail')).toHaveCount(0);
 

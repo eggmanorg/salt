@@ -238,10 +238,11 @@
   const showComponents = $derived(recipe !== null && hasComponents(recipe));
 
   // ─── Adding another dish to this meal (issue #752, Phase 3) ─────────────────
-  // All four ways of making a recipe, offered FROM the meal: import a link,
-  // photograph a page, chat one up, or write it out. Each carries this meal's id
-  // in the URL it navigates to (`?meal=<id>`, see lib/mealReturn.ts), and the
-  // save at the far end attaches what it produced and comes back here.
+  // THREE ways of making a recipe, offered FROM the meal — see below for why not
+  // four, and for why only one of the three still carries `?meal=<id>` (PR #1340
+  // review, should-fix 7: this paragraph used to state the pre-Phase-7 contract,
+  // "all four ways" and "the save at the far end attaches and comes back here",
+  // directly contradicting the corrected paragraph ten lines below it).
   //
   // Gated on `showComponents` with the card, deliberately: this surface adds
   // ANOTHER dish to something that is already a meal. Turning an ordinary recipe
@@ -783,6 +784,11 @@
     lastRecipeId = id;
     editing = false;
     titleDraft = '';
+    // A duplicate that never settled (offline, dropped connection) must not stay
+    // dead for every recipe visited after it — see `duplicateBusy`'s own comment
+    // above. This is the "arrival" boundary for a component that persists across
+    // navigations, same role this effect already plays for `editing`.
+    duplicateBusy = false;
     // ...unless this arrival is the New sheet dropping you on an entry it just
     // wrote (issue #1319 Phase 6). The reset above runs on EVERY arrival including
     // the first, so the request has to be consumed after it rather than before —
@@ -1105,6 +1111,23 @@
   // (`applyRecipeOptimistically`), so the page it lands on already has the
   // document. The stash is only needed where the write happened on the SERVER —
   // the two imports — which is why it survives for them and not for this.
+  //
+  // RESET ON ARRIVAL, not only on success (PR #1340 review, blocking 2): a
+  // `setDoc` does not resolve while the client is offline — this app's whole
+  // offline story is Firestore's `persistentLocalCache`, so that is ordinary, not
+  // exotic — and `/recipes/:id` is one route that reuses THIS component instance
+  // across every recipe the user walks to (see the id-keyed `$effect` below).
+  // Without a reset tied to arrival, a duplicate that never settles latches
+  // `duplicateBusy` true for the rest of this instance's life: Duplicate goes
+  // silently dead on every recipe visited from here on, with no toast and no
+  // spinner, and the only recovery is leaving the route entirely (a fresh mount).
+  // The New sheet resets its own `busy` on the same kind of boundary — reopening,
+  // for a component that persists across opens — and this is that reasoning
+  // applied to a component that persists across navigations instead. Reset
+  // happens in the id-keyed `$effect`, right beside `editing`'s own reset, rather
+  // than in a `finally` here, for the same reason the sheet's comment gives: a
+  // `finally` only ever fires on the write settling, which is exactly the case
+  // that leaves nothing to reset.
   let duplicateBusy = $state(false);
 
   //
@@ -1119,7 +1142,15 @@
     const copy = duplicateRecipe(recipe, crypto.randomUUID(), new Date().toISOString());
     const result = await persistRecipe(copy);
     duplicateBusy = false;
-    // Rule 10. Nothing landed, so there is nowhere to go — say so and stay put.
+    // Rule 10. "NOTHING LANDED" IS NOT TRUE OF THE STORE (CLAUDE.md Rule 12 —
+    // PR #1340 review, should-fix 4, the same root cause as blocking finding 1 on
+    // `RecipeNewSheet`): `persistRecipe` already ran `applyRecipeOptimistically`
+    // above, so the copy is sitting in `$recipes` under `copy.id` whether or not
+    // the write below it ever reaches Firestore. What is true, and the boundary
+    // this comment actually means: no Firestore document exists, so there is
+    // nowhere for a next visit — or another device — to find it; the phantom row
+    // is tab-local and vanishes on reload. Saying so and staying put is still the
+    // right call, because there is no server copy to navigate the user to.
     if (result.kind !== 'ok') {
       addToast('Could not duplicate that recipe.', 'destructive');
       return;
@@ -2167,6 +2198,7 @@
                 overflowMenuOpen = false;
                 void handleDuplicate();
               }}
+              disabled={duplicateBusy}
               data-testid="recipe-duplicate-menu-item"
             >
               Duplicate

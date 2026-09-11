@@ -624,6 +624,31 @@ describe('RecipeViewPage — duplicate', () => {
     settle({ kind: 'ok', value: undefined });
   });
 
+  // PR #1340 review, blocking 2: offline, or a dropped connection, is ordinary
+  // here — this app's whole offline story is Firestore's `persistentLocalCache`
+  // — and a `setDoc` simply does not resolve while it holds. `/recipes/:id` is
+  // one route that reuses THIS component instance across every recipe the user
+  // walks to (`RecipeViewPage.reviewFlag.test.ts` pins the same reuse for
+  // `editing`), so without a reset tied to arrival, a duplicate that never
+  // settles leaves Duplicate silently dead for the rest of the visit — not just
+  // on the recipe it was pressed on.
+  it('is usable again on a different recipe, even if a duplicate never settled', async () => {
+    vi.mocked(persistRecipe).mockReturnValueOnce(new Promise(() => {}));
+    const other = makeEntry({ id: 'recipe-2', title: 'Other Recipe' });
+    mockRecipes._set([makeEntry(), other]);
+    const { rerender } = renderPage();
+
+    await duplicate();
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    // Still `duplicateBusy` and Duplicate would be dead for the rest of the
+    // component's life without the reset.
+    await duplicate();
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(2));
+  });
+
   it('goes nowhere and says so when the write fails (Rule 10)', async () => {
     vi.mocked(persistRecipe).mockResolvedValueOnce({
       kind: 'err',

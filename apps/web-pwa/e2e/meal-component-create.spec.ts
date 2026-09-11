@@ -105,12 +105,20 @@ test.describe('meals — a dish joins a meal on the meal’s own page', () => {
     // ── The by-hand route is genuinely closed ────────────────────────────────
     // The menu and its items are action affordances with no stable accessible
     // name of their own (NF-B2), so they are reached by testid.
+    //
+    // POSITIVES FIRST (PR #1340 review, should-fix 5): this menu is a lazily
+    // mounted bits-ui `PopoverContent`, so a `toHaveCount(0)` negative asserted as
+    // the FIRST thing after the trigger click can pass on its very first poll
+    // simply because nothing has mounted yet — a regression that brought back
+    // "Manual" need not turn it red. The three `toBeVisible()` waits establish
+    // that the menu has actually opened before the negative is asked to mean
+    // anything.
     await page.getByTestId('meal-component-new-btn').click();
-    await expect(page.getByTestId('meal-component-new-manual')).toHaveCount(0);
     // The three ways a recipe actually arrives are all still offered here.
     await expect(page.getByTestId('meal-component-new-import')).toBeVisible();
     await expect(page.getByTestId('meal-component-new-import-photo')).toBeVisible();
     await expect(page.getByTestId('meal-component-new-chat')).toBeVisible();
+    await expect(page.getByTestId('meal-component-new-manual')).toHaveCount(0);
     await page.keyboard.press('Escape');
 
     // ── Add a dish where the dishes are read ─────────────────────────────────
@@ -132,7 +140,19 @@ test.describe('meals — a dish joins a meal on the meal’s own page', () => {
     // ── Adding the same dish twice attaches it once ──────────────────────────
     // The picker drops what is already attached, so the second tap is not there to
     // be made — which is the honest place that outcome is enforced.
+    //
+    // REOPENED rather than asserted against what `addComponent` left on screen
+    // (PR #1340 review, blocking 3): `addComponent` bumps `pickerKey` first thing,
+    // remounting the `{#key}`-wrapped Combobox, which CLOSES the listbox — so an
+    // assertion made immediately after the click sees zero `option` nodes
+    // regardless of what the filter does, and passes even with the filter
+    // deleted. Reopening first is what `RecipeMadeFromCard.test.ts` ("drops an
+    // attached dish out of the picker...") and `RecipeNewSheet.test.ts` ("drops a
+    // chosen dish out of the picker...") both do for the same claim; this mirrors
+    // them so the assertion can actually go red.
+    await page.getByTestId('recipe-edit-component-picker').click();
     await expect(page.getByRole('option', { name: NEW_DISH })).toHaveCount(0);
+    await page.keyboard.press('Escape');
 
     await page.getByTestId('recipe-edit-components-done').click();
     await page.getByTestId('recipe-done-button').click();

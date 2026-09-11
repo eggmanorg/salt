@@ -111,9 +111,28 @@ test.describe('recipes — notes formatting toolbar and rendering', () => {
     await expect(page.getByTestId('recipe-notes-input')).toHaveValue(NOTE);
     await page.getByTestId('recipe-notes-done').click();
 
-    // ── Done, then a reload: the stored string is the same plain Markdown ────
-    // There is no Save, so the flush on leaving edit mode is what commits it —
-    // and a reload is the only honest way to assert what actually landed.
+    // ── Done, then back to the same URL: the stored string is the same plain
+    //    Markdown ──────────────────────────────────────────────────────────────
+    // NOT A RELOAD, and the claim this proves is narrower than this section's
+    // name once suggested (CLAUDE.md Rule 12 — PR #1340 review, should-fix 8,
+    // corrected rather than merely restated): `page.goto` to the URL the page is
+    // ALREADY ON is a same-document hash navigation — `mealplan.spec.ts`'s own
+    // comment on exactly this pattern says the app never remounts, so nothing
+    // about Firestore is proved by it, and `recipe-crud.spec.ts` makes the same
+    // point about its own out-and-back-in leg ("the list is a different
+    // component over the SAME STORE"). So this block proves the coalesced flush
+    // ran and the store still holds the write — which "re-opening the box loses
+    // nothing" above already showed — not that the write reached Firestore.
+    //
+    // Deliberately NOT changed to `page.reload()` to actually prove that: this is
+    // the reload-immediately-after-Done race `recipe-crud.spec.ts` documents and
+    // dropped its own assertion over (its comment is the sibling of this one —
+    // read them together). Going from "asserts nothing about Firestore" to "races
+    // the same flush crud avoids" is not a strict improvement, and it cannot be
+    // verified here — e2e only runs in CI, and this PR already cost two rounds on
+    // exactly this class of test bug (an assertion that cannot fail as written).
+    // If this coverage gap is worth closing, it wants a settled-flush signal to
+    // reload behind, not a bare `page.reload()`.
     await page.getByTestId('recipe-done-button').click();
     await page.goto(`/#${recipeUrl.split('#')[1]}`);
     await expect(

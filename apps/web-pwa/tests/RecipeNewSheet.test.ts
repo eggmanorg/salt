@@ -329,6 +329,30 @@ describe('RecipeNewSheet — the dish picker', () => {
     expect(options).toEqual(['Roast chicken', 'Roast potatoes', 'Onion gravy']);
   });
 
+  // PR #1340 review, blocking 1: `handleCreate` applies the document to the
+  // store (`applyRecipeOptimistically`, inside `persistRecipe`) BEFORE the
+  // network result, with no rollback on failure, and the sheet stays open on a
+  // failed Create — so `pendingId` can sit in `$recipes` for as long as the
+  // sheet is open. It is not "a moment-old id that cannot be in the store" —
+  // this fakes exactly that state and checks the meal cannot offer itself as
+  // its own dish.
+  it('never offers the meal itself as a dish, even while pendingId already sits in the store', async () => {
+    // Two calls to mint: the field initializer, then the open-effect's re-seed —
+    // `mockReturnValueOnce` twice rather than a persistent `mockReturnValue`, so
+    // the spy falls back to the real implementation once both are consumed and
+    // cannot leak a fixed id into an unrelated test in this file.
+    const FIXED_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(FIXED_ID).mockReturnValueOnce(FIXED_ID);
+    const ghost: Recipe = { ...emptyRecipe(FIXED_ID, NOW), title: 'Sunday roast' };
+    mockRecipes._set([...LIBRARY, ghost]);
+
+    show('meal');
+    await openPicker();
+
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent?.trim());
+    expect(options).not.toContain('Sunday roast');
+  });
+
   it('drops a chosen dish out of the picker, so choosing it twice is not on offer', async () => {
     show('meal');
     await pickDish('Roast chicken');

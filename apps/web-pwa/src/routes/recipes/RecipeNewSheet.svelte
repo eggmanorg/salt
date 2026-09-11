@@ -21,6 +21,7 @@
   import { push } from 'svelte-spa-router';
   import { trackUsageEvent } from '@salt/observability';
   import {
+    canBeComponentOf,
     emptyRecipe,
     insertComponentByElapsedTime,
     isCookable,
@@ -120,15 +121,24 @@
   // The second is a capability predicate, never a comparison against the kind — an
   // outing has no dish to compose and a placeholder is a photograph and a title.
   //
-  // No `canBeComponentOf(pendingId, r.id)` guard, unlike `RecipeMadeFromCard`'s
-  // picker, and the reason is the boundary rather than an oversight: `pendingId` is
-  // minted in this browser a moment ago and is not written anywhere yet, so it
-  // cannot be in `$recipes` and the self-reference that guard exists to refuse is
-  // unreachable here. The domain still refuses it inside
-  // `insertComponentByElapsedTime`, which is where the rule lives.
+  // `canBeComponentOf(pendingId, r.id)` IS needed, and the sheet used to record the
+  // opposite (CLAUDE.md Rule 12 — corrected, not merely restored, per PR #1340
+  // review finding 1): `handleCreate` applies the document to the store through
+  // `persistRecipe` -> `applyRecipeOptimistically`, which is SYNCHRONOUS and runs
+  // BEFORE the network result, with no rollback on failure. `handleCreate`
+  // deliberately leaves the sheet open on a failed write, so after that failure
+  // `pendingId` sits in `$recipes` for as long as this sheet stays open — reachable,
+  // not a moment-old id that "cannot be in the store". Without this guard the meal
+  // being created would offer itself as its own dish, under its own title, the
+  // instant a Create attempt failed. `insertComponentByElapsedTime` still folds the
+  // same guard in for defence in depth, but the picker must not list the option in
+  // the first place.
   const pickerItems: ComboboxItemType[] = $derived(
     $recipes
-      .filter((r) => !dishIds.includes(r.id) && isCookable(kindOf(r)))
+      .filter(
+        (r) =>
+          canBeComponentOf(pendingId, r.id) && !dishIds.includes(r.id) && isCookable(kindOf(r)),
+      )
       .map((r) => ({ value: r.id, label: r.title })),
   );
 
@@ -172,7 +182,18 @@
     busy = false;
     // Rule 10: the failure crosses as a `Failure<DomainError>` and is said out
     // loud. The sheet stays open holding what was typed, because there is nothing
-    // else left to hold it — nothing was written.
+    // else left to hold it.
+    //
+    // "NOTHING WAS WRITTEN" IS NOT TRUE OF THE STORE (CLAUDE.md Rule 12 — PR #1340
+    // review, should-fix 4, same root cause as finding 1 above): `persistRecipe`
+    // already ran `applyRecipeOptimistically` before this line, so `pendingId` is
+    // sitting in `$recipes` this whole time and stays there while the sheet is
+    // open. What is true, and what this claim actually means, is narrower: no
+    // Firestore document exists, so there is nothing for a next visit to find —
+    // the phantom row is tab-local, vanishes on reload, and is never a document
+    // until a later write (e.g. a retried Create with the SAME `pendingId`, since
+    // this sheet does not re-mint one on failure) actually lands. The picker guard
+    // above is what keeps that phantom from being an offerable dish meanwhile.
     if (result.kind !== 'ok') {
       addToast('Could not create that. Please try again.', 'destructive');
       return;

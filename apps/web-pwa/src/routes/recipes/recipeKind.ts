@@ -219,6 +219,18 @@ export type NewEntryMode = 'outing' | 'meal' | 'placeholder';
 
 interface NewEntryCopy {
   // The kind STORED on the document the sheet writes.
+  //
+  // THE FIELD-SET BOUNDARY LIVES HERE, NOT ONLY IN RecipeNewSheet.svelte
+  // (CLAUDE.md Rule 12 — PR #1340 review, should-fix 6): the sheet asks
+  // `takesComponents(entry.kind)` to decide between a dish picker and a
+  // description box, and today that partitions these three entries exactly,
+  // because only `meal`'s `kind` (`'recipe'`) takes components. This record's
+  // type does not enforce that — `kind` is typed as plain `RecipeKind`, so a
+  // fourth entry here whose kind ALSO takes components (e.g. `kind: 'cocktail'`)
+  // compiles clean and silently produces a sheet that demands a dish and offers
+  // no description box, with no test to catch it. Adding such an entry needs its
+  // own answer for the description question rather than inheriting this one —
+  // read `RecipeNewSheet.svelte`'s header before adding a fourth entry here.
   readonly kind: RecipeKind;
   // The New-menu item, and the sheet's own heading.
   readonly menuLabel: string;
