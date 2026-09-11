@@ -239,6 +239,30 @@ Three things about the editor that the code alone does not say:
   `0`, not `null` — unlike Servings, a phase's minute figure is required by the
   schema, and `0` is a real answer (a prove has no hands-on time at all).
 
+**There are two hand-edit surfaces as of #1319's Phase 2, and they share the rules
+above rather than restating them.** `RecipePhaseEditor.svelte` puts the same row
+editor on the recipe's own page, inside the identity card, where the strip is
+already drawn: a pencil beside the strip opens the rows, a recipe with no strip
+offers a dashed `+ Add a phase` slot while editing, and the strip stays on screen
+above the boxes so an emptied minute box can be SEEN totalling as zero. It writes
+through the page's coalesced `handleInlineEdit` — there is no Save — and it sets
+`phases` directly, exactly as the editor does; `reconcileRecipePhases` governs
+model output and is not in either path. `RecipeEditPage.svelte` keeps working
+until #1319's Phase 8 deletes it.
+
+Reordering on the recipe page goes through one component, `ReorderControl.svelte`,
+and not through row markup: Daniel chose up/down arrows over a drag handle
+**provisionally** (#1319), so the move algorithm and the disabled-ends guard both
+live in that one file and every later editable list on the page renders it,
+rather than four copies of a splice and a bounds check. **That is not the same
+as a free drag swap** (#1332 review, should-fix 1): `ReorderControl` is row-level
+(rendered once per caller-owned each-block), `SortableList` — what a drag version
+would be built on — is list-level and keys rows by id, and a phase (like a
+method step or an ingredient row) has none. A real swap is a rewrite at every
+call site plus a stable-id decision this component cannot make on its own. Read
+its header before adding a second pair of arrows anywhere, or before assuming a
+drag handle is a one-file change.
+
 `diffRecipe` reports both halves of the pair, which is what makes the review gate
 honest about timing (#1208's first bullet). `RecipeMetadataDiff` carries `phases`
 as BOTH SIDES WHOLE rather than a per-phase breakdown, and `RecipeChangeSummary`

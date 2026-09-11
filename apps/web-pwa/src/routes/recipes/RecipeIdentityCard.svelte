@@ -33,7 +33,7 @@
   import { recipes } from '../../lib/recipeService.js';
   import { kindOf } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
-  import RecipePhaseTimeline from './RecipePhaseTimeline.svelte';
+  import RecipePhaseEditor from './RecipePhaseEditor.svelte';
 
   /**
    * The identity card: everything the recipe page says about the dish before its
@@ -192,15 +192,13 @@
   // the whole of a recipe's timing on this page and there is nothing left to fall
   // back to.
   //
-  // `metadata.phases` is optional on the schema, so it is resolved to a list once,
-  // here, and everything below reads that list — the template never asks the recipe
-  // for it again. `recipePhaseTotals` then sums exactly what is drawn, and it is the
-  // only permitted source of a duration (docs/recipe-module.md's single funnel).
-  //
-  // It is declared ABOVE `facts` because the card's gate reads it: a recipe whose
-  // only stated fact is its timing still has something to say in that card.
-  const phases = $derived(recipe.metadata.phases ?? []);
-  const phaseTotals = $derived(recipePhaseTotals(phases));
+  // Since #1319's Phase 2 the strip is `RecipePhaseEditor`'s: it owns the read
+  // drawing, the dashed slot and the editable rows, and the gate that used to sit
+  // in the markup below went with them. What stays here is the summary, because
+  // the CARD's own gate reads it — a recipe whose only stated fact is its timing
+  // still has something to say in that card — and `recipePhaseTotals` is the only
+  // permitted source of a duration (docs/recipe-module.md's single funnel).
+  const phaseTotals = $derived(recipePhaseTotals(recipe.metadata.phases ?? []));
 
   // The card is gated on having something to say — but never while editing, when
   // its whole job is to offer the slots this recipe has never filled in. The read
@@ -646,14 +644,13 @@
       </EditableZone>
       <!-- The planning timeline (issue #1122), and as of #1213 the only timing
            graphic on this page — the #878 ribbon it used to sit above is gone,
-           along with the Prep/Cook/Total chips.
-           Everything drawn and every figure shown is derived inside the
-           component from this list — nothing is passed in pre-summed.
-           Still read-only here; the phase strip becomes editable in its own right
-           with the rest of the recipe body. -->
-      {#if phaseTotals.hasPhases}
-        <RecipePhaseTimeline {phases} timingSummary={recipe.metadata.timingSummary ?? null} />
-      {/if}
+           along with the Prep/Cook/Total chips. Everything drawn and every figure
+           shown is derived from the recipe's own phase list — nothing is passed in
+           pre-summed.
+           Editable in place since #1319's Phase 2, so the component holds both
+           states and its own gate: a recipe with no strip draws nothing when read
+           and offers a dashed `+ Add a phase` while editing. -->
+      <RecipePhaseEditor {recipe} {editing} {onEdit} />
       <EditableZone
         {editing}
         filled={Boolean(sourceUrl)}
