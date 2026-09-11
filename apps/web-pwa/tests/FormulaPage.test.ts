@@ -336,17 +336,20 @@ describe('FormulaPage — what the machine cannot know', () => {
 });
 
 describe('FormulaPage — the declaration', () => {
-  it('will not save while the count is not a count', async () => {
-    // Issue #1325 moved this bar rather than removing it. A blank per-unit weight
-    // box now DIVIDES the dough already there, and "how many tins" opens at 1 — so
-    // the page's default answer is "one lot of what this recipe makes", which is a
-    // real reference yield and saveable. What is still not a declaration is an
-    // unreadable count: there is nothing to divide by.
+  it('will not save until something is genuinely declared', async () => {
+    // Issue #1325 review (blocking-2): the anchor that lets a blank per-unit box
+    // DIVIDE the dough already there is passed for `pieces` only. `tin`'s count
+    // defaults to `'1'`, and passing the anchor there too made "1 tin = whatever's
+    // already written" trivially true of every recipe — the page opened already
+    // declared, and Save was never blocked on saying what this makes. It is
+    // blocked on exactly that again: the page opens undeclared, and typing an
+    // unreadable count (still, as before) has nothing to divide by either way.
     const { getByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false);
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
+    expect(getByTestId('formula-blocked-reason').textContent).toContain('what this makes');
     expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
 
     await fireEvent.input(getByTestId('formula-count'), { target: { value: '' } });
@@ -363,8 +366,12 @@ describe('FormulaPage — the declaration', () => {
 
     // 500 + 350 + 10 + 7 = 867 g of dough as written — the sum of the weights
     // already on the page, and the ONLY figure the card carries while there is no
-    // declaration to state instead (issue #1325).
+    // declaration to state instead (issue #1325). The undeclared branch, not the
+    // declared one landing on the same number by luck — see
+    // `FormulaPage.yieldWins.test.ts`'s "opens genuinely undeclared" case.
     expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
+    expect(getByTestId('formula-dough-total').textContent).toContain('As written');
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
   });
 
   // Characterisation net, issue #933 Phase 1.
@@ -690,8 +697,9 @@ describe('FormulaPage — the tin never reaches the document', () => {
 //
 // The formula screen asks the same question as the bake sheet and stores a
 // DIFFERENT thing: dough figures alone, no vessel. What makes it a recipe edit
-// rather than a run is the re-anchoring disclosure, and that must keep working
-// whichever answer is used.
+// rather than a run is that answering here restates the weights above to the
+// declaration (issue #1325) instead of recording a vessel for tonight, and that
+// must keep working whichever answer is used.
 describe('FormulaPage — what are you filling?', () => {
   async function pickAnswer(container: Element, label: string): Promise<void> {
     const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>

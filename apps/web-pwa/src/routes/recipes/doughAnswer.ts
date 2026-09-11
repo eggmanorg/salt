@@ -227,7 +227,12 @@ export function suggestedTrayGrams(fields: DoughAnswerFields): number | null {
 export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): string | undefined {
   if (mode === 'tin') {
     const grams = parseGrams(fields.tinGramsText);
-    return grams === null ? undefined : `${grams} g loaf tin`;
+    // ROUNDED (issue #1325 review, blocking-1). The box this reads is ordinarily
+    // already clean, but a batch's `vessel` snapshot is permanent the moment it is
+    // written, so a float that slipped past `seedDoughAnswer`'s own round — or a
+    // decimal typed by hand — must not freeze into it as "1031.9999999999998 g
+    // loaf tin".
+    return grams === null ? undefined : `${roundGrams(grams)} g loaf tin`;
   }
   if (mode === 'tray') {
     // FROM THE MEASUREMENT, never from the grams box — so a run whose suggested
@@ -259,7 +264,13 @@ export function seedDoughAnswer(amount: DoughAmount | null): {
   fields: DoughAnswerFields;
 } {
   if (amount === null) return { mode: 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
-  const grams = String(amount.unitDoughGrams);
+  // ROUNDED (issue #1325 review, blocking-1). `amount.unitDoughGrams` can carry a
+  // percentage round-trip's noise — a stored `1031.9999999999998` — and this is
+  // the figure that lands verbatim in an editable box (the formula screen's "Tin
+  // size (g)", the bake sheet's own boxes) and, from there, into a batch's
+  // `vessel` string. The box stays an ordinary editable one; only what SEEDS it
+  // is rounded.
+  const grams = String(roundGrams(amount.unitDoughGrams));
   if (amount.count === 1) {
     return {
       mode: 'tin',

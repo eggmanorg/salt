@@ -162,6 +162,15 @@ describe('vesselFrom', () => {
     expect(vesselFrom('tin', fields())).toBeUndefined();
     expect(vesselFrom('tin', fields({ tinGramsText: 'big' }))).toBeUndefined();
   });
+
+  it('rounds a noisy figure rather than freezing it into the vessel string', () => {
+    // Issue #1325 review, blocking-1: a batch's `vessel` snapshot is permanent
+    // the moment it is written, so a float that slipped past a caller's own
+    // round must not land as "1031.9999999999998 g loaf tin".
+    expect(vesselFrom('tin', fields({ tinGramsText: '1031.9999999999998' }))).toBe(
+      '1032 g loaf tin',
+    );
+  });
 });
 
 describe('seedDoughAnswer', () => {
@@ -196,6 +205,16 @@ describe('seedDoughAnswer', () => {
       const seeded = seedDoughAnswer(amount);
       expect(doughAmountFrom(seeded.mode, seeded.fields)).toEqual(amount);
     }
+  });
+
+  it('rounds a noisy stored figure into the box, rather than showing the float', () => {
+    // Issue #1325 review, blocking-1: a percentage round-trip can come back
+    // `1031.9999999999998`. Reopening must not put that in front of anyone —
+    // the "Tin size (g)" box on the formula screen and the bake sheet both seed
+    // from this.
+    const seeded = seedDoughAnswer({ count: 1, unitDoughGrams: 1031.9999999999998 });
+    expect(seeded.fields.tinGramsText).toBe('1032');
+    expect(seeded.fields.totalGramsText).toBe('1032');
   });
 });
 
