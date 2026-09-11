@@ -64,14 +64,22 @@ test.describe('recipes — duplicate', () => {
     await page.getByTestId('recipe-actions-overflow').click();
     await page.getByTestId('recipe-duplicate-menu-item').click();
 
+    // Wait for the ARRIVAL, not for a pattern the page already matches: we are
+    // standing on `/#/recipes/{original}`, which satisfies the recipe-page regex
+    // before the duplicate's write has even resolved — so `toHaveURL` is no wait at
+    // all here and reading `page.url()` straight after it races the navigation.
+    // The copy's own title is the first thing that can only be true once we are
+    // there.
+    await expect(page.getByRole('heading', { name: COPY })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
     // A new id, never /recipes/new and never an /edit route.
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/);
     expect(page.url()).not.toBe(originalUrl);
     const copyUrl = page.url();
     // Edit mode, which is what "lands you on the duplicate's own page, editing it"
     // looks like from outside: Done replaces the whole action cluster.
-    await expect(page.getByTestId('recipe-done-button')).toBeVisible({ timeout: SYNC_TIMEOUT });
-    await expect(page.getByRole('heading', { name: COPY })).toBeVisible();
+    await expect(page.getByTestId('recipe-done-button')).toBeVisible();
 
     // The whole copy came with it — `duplicateRecipe`'s what-carries policy, read
     // off the page rather than out of an editor's boxes. .nth(0) = the first
@@ -100,11 +108,15 @@ test.describe('recipes — duplicate', () => {
     await page.getByTestId('recipe-actions-overflow').click();
     await page.getByTestId('recipe-duplicate-menu-item').click();
 
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // Same wait as above, and for the same reason: the heading is the arrival, the
+    // URL pattern is not.
+    await expect(page.getByRole('heading', { name: COPY })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
+    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/);
     // A third document: not the original, and not the first copy either.
     expect(page.url()).not.toBe(originalUrl);
     expect(page.url()).not.toBe(copyUrl);
-    await expect(page.getByRole('heading', { name: COPY })).toBeVisible();
 
     // ── All three survive a reload: independent Firestore documents ────────────
     // `hasText` is a substring match and COPY contains ORIGINAL, so the original
