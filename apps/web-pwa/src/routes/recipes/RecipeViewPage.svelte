@@ -369,6 +369,15 @@
   const scaling = $derived.by((): { base: number; active: number } | null => {
     const base = usableServings(recipe?.metadata.servings ?? null);
     if (base === null) return null;
+    // ENTERING EDIT MODE CLEARS AN ACTIVE SCALE (issue #1324, Daniel's call): you
+    // are never editing a scaled view. There are two halves and both are needed.
+    // `startEditing` pushes the param away, which cleans the URL and the cook
+    // links with it; this clause is what makes the RENDERING true whether or not
+    // the router has caught up, and it closes the one route the push cannot —
+    // the back button landing on the history entry the push just created, or a
+    // hand-typed `?serves=`. Without it the pill would show the stored 4 while
+    // the ingredient rows below stayed at the 6 you were reading.
+    if (editing) return { base, active: base };
     // A `?serves=` aimed at an unscalable recipe is ignored, not honoured above.
     return { base, active: readServingsParam(router.querystring) ?? base };
   });
@@ -693,6 +702,19 @@
   // both fail are two toasts, which is the right answer, since the second one is
   // news. `RecipeViewPage.reviewFlag.test.ts` pins both halves.
   let lastFailureToasted: Promise<unknown> | null = null;
+
+  // Edit is not a bare `editing = true`, because entering the mode first puts the
+  // page back to the recipe AS SAVED (issue #1324). This is the URL half: the
+  // SAME call the scaled notice's Reset button makes, so there is one way to
+  // clear a scale rather than two, and `withServingsParam` returning the path
+  // untouched for `null` is why it leaves `/recipes/:id` rather than `?serves=4`.
+  // The cook links drop their `?serves=` with it, through `cookServings`. The
+  // render half is the `editing` clause in the `scaling` derivation above; that
+  // one is what the tests pin, since this push only cleans up the address bar.
+  function startEditing(): void {
+    if (scaling && isScaled) setServings(scaling.base, scaling.base);
+    editing = true;
+  }
 
   function handleInlineEdit(next: Recipe): void {
     const write = queueRecipeEdit(next);
@@ -1653,7 +1675,7 @@
           size="sm"
           variant="ghost"
           class="px-2"
-          onclick={() => (editing = true)}
+          onclick={startEditing}
           ariaLabel="Edit this recipe"
           title="Edit this recipe"
           data-testid="recipe-edit-mode-button"

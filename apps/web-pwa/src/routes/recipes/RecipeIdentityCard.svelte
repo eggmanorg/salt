@@ -4,6 +4,13 @@
     Card,
     CardContent,
     Chip,
+    Combobox,
+    ComboboxContent,
+    ComboboxEmpty,
+    ComboboxField,
+    ComboboxInput,
+    ComboboxItem,
+    ComboboxTrigger,
     Icon,
     Select,
     SelectContent,
@@ -12,8 +19,7 @@
     Textarea,
     TextField,
     valueChipVariants,
-    type ChipTone,
-    type IconName,
+    type ComboboxItemType,
   } from '@salt/ui-components';
   import {
     isCookable,
@@ -23,6 +29,7 @@
     type Recipe,
   } from '@salt/domain';
   import { canonItems } from '../../lib/canonService.js';
+  import { people } from '../../lib/membersService.js';
   import { recipes } from '../../lib/recipeService.js';
   import { kindOf } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
@@ -46,8 +53,12 @@
    * read the moment the field is closed, which is also the moment it could no
    * longer surprise anybody mid-word.
    *
-   * The three FACT pills are read-only here, in both modes, exactly as they
-   * render on the page today; #1324's Phase 4 is what makes them editable.
+   * The Serves pill is the one region with TWO identities rather than a read and
+   * an edit state of the same thing: in read mode it is #1317's scale picker,
+   * driven by the URL and writing nothing; in edit mode that picker is not
+   * rendered at all and the stored count is in its place. The mode settles which
+   * meaning a tap carries, and the page is what guarantees the two can never
+   * disagree — it pins `scaling.active` to `scaling.base` while editing.
    */
   let {
     recipe,
@@ -81,11 +92,14 @@
   );
 
   // "Makes: <name>" chip — resolve the produces canon link to its display name.
-  // null when the recipe isn't linked or the canon item has since been deleted.
+  // EMPTY, not null, when the recipe isn't linked or the canon item has since
+  // been deleted: it is read eagerly by `hasFacts` below, which is what makes
+  // both sides of every fallback here reachable by a test. The label composed
+  // from it is then a plain string and needs no fallback of its own.
   const producesCanonName = $derived(
     recipe.producesCanonId
-      ? ($canonItems.find((c) => c.id === recipe.producesCanonId)?.name ?? null)
-      : null,
+      ? ($canonItems.find((c) => c.id === recipe.producesCanonId)?.name ?? '')
+      : '',
   );
 
   // "Added by X · edited by Y" chip (issue #845). Audit only: it records who did
@@ -147,16 +161,32 @@
   // read, and a control that looked identical to them would be undiscoverable.
   // `Chip variant="fact"` renders a `<span>` and §8.23.8 closed the door on making
   // it pressable; nothing shared changes here.
-  interface RecipeFact {
-    readonly key: string;
-    /** Absent only for the one fact with no honest glyph — see `attribution` above. */
-    readonly icon?: IconName;
-    readonly label: string;
-    /** Which kind of fact this is. See the tint note above. */
-    readonly tone?: ChipTone;
-    /** Only the two facts an e2e spec names carry one. */
-    readonly testId?: string;
-  }
+  //
+  // Since #1324's Phase 4 the three facts are three ZONES rather than one derived
+  // list. The ROW is what became editable, never the chip: §8.23.8 is explicit
+  // that `fact` and `tag` render a span and not a button with its handler
+  // omitted, so the pencil sits beside the chip and `Chip` is untouched.
+
+  // What this entry can do (issue #637) — never a comparison against the kind.
+  const showCooking = $derived(isCookable(kindOf(recipe)));
+  // The stated count as text, `''` for "not stated". `hasServings` reads it, so
+  // it is evaluated on every render and both of its arms are reachable — which
+  // is why `storedServesLabel` below can be a plain string rather than another
+  // `?? ''` no test could get at.
+  const storedServesText = $derived(
+    recipe.metadata.servings === null ? '' : String(recipe.metadata.servings),
+  );
+  const hasServings = $derived(showCooking && storedServesText !== '');
+  const hasFacts = $derived(Boolean(producesCanonName) || hasServings || Boolean(attribution));
+
+  // Both resolved to strings HERE rather than interpolated from a nullable inside
+  // a snippet that only renders when they are set: an inline `{maybeNull}`
+  // compiles to a fallback no test could ever reach.
+  const producesLabel = $derived(`Makes: ${producesCanonName}`);
+  // The STORED count, which is what the edit-mode chip and the inert read-mode
+  // chip both state. The scale picker states `scaling.active` instead, and that
+  // is the only place the two can differ — see the servings zone below.
+  const storedServesLabel = $derived(`Serves ${storedServesText}`);
 
   // The phase strip (issue #1122), ungated as of issue #1213 — the strip is now
   // the whole of a recipe's timing on this page and there is nothing left to fall
@@ -172,57 +202,12 @@
   const phases = $derived(recipe.metadata.phases ?? []);
   const phaseTotals = $derived(recipePhaseTotals(phases));
 
-  const facts = $derived.by((): RecipeFact[] => {
-    const out: RecipeFact[] = [];
-    // What the dish makes leads: it is the fact that says what this document IS
-    // when the document is a component of something else.
-    if (producesCanonName) {
-      out.push({
-        key: 'produces',
-        icon: 'Soup',
-        label: `Makes: ${producesCanonName}`,
-        tone: 'secondary',
-        testId: 'recipe-produces-chip',
-      });
-    }
-    // Serves / Prep / Cook / Total are COOKING facts. An outing has none of
-    // them, and gating here covers the chips and, through this card's own gate,
-    // the card.
-    if (isCookable(kindOf(recipe))) {
-      const m = recipe.metadata;
-      if (m.servings !== null) {
-        out.push({
-          key: 'servings',
-          icon: 'Users',
-          // The number being READ, which is the stored one until somebody changes
-          // it. `metadata.servings` itself is never touched by scaling.
-          label: `Serves ${scaling?.active ?? m.servings}`,
-          tone: 'secondary',
-        });
-      }
-      // No timing chip of any kind. Prep / Cook / Total were retired here by issue
-      // #1213, and nothing phase-derived takes their place: the timeline a few lines
-      // below states its own total, and a chip repeating it is #1122's own complaint
-      // — two accounts of the same fact side by side — at a smaller scale.
-    }
-    // Provenance is a fact about the document rather than about the dish, and it
-    // is the one fact with no honest glyph — `Users` is already Serves, and a
-    // pencil would say "edited" for a chip that usually says "added". It sits in
-    // the fact row without an icon rather than being promoted to a row of its
-    // own for one pill. Its text is asserted verbatim by
-    // `e2e/recipe-author-filter.spec.ts`, so nothing may be interpolated into it.
-    if (attribution) {
-      out.push({ key: 'attribution', label: attribution, testId: 'recipe-attribution-chip' });
-    }
-    return out;
-  });
-
   // The card is gated on having something to say — but never while editing, when
   // its whole job is to offer the slots this recipe has never filled in. The read
   // half of this condition is the page's own, moved here unchanged.
   const hasContent = $derived(
     Boolean(recipe.description) ||
-      facts.length > 0 ||
+      hasFacts ||
       recipe.metadata.tags.length > 0 ||
       Boolean(sourceUrl) ||
       phaseTotals.hasPhases,
@@ -234,12 +219,30 @@
   // document rather than one captured when the editor mounted.
 
   let descriptionDraft = $state('');
+  let servingsDraft = $state('');
   let sourceDraft = $state('');
   let tagInput = $state('');
 
   function setDescription(value: string): void {
     descriptionDraft = value;
     onEdit({ ...recipe, description: value.trim() === '' ? null : value });
+  }
+
+  // The STORED serving count, not the one being read — option 1's second identity
+  // for the pill (issue #1324). Named apart from the `setServings` PROP on
+  // purpose: that one pushes a `?serves=` and writes nothing, this one writes the
+  // document, and a page whose two servings functions shared a name would be one
+  // typo away from a view control saving itself.
+  //
+  // An empty or non-numeric box means "not stated", which is `null` — the
+  // schema's absent value, and what the read card tests for. Zero is not a
+  // serving count, so it is absent too; `usableServings` (issue #1123) refuses
+  // both, so editing the count to nothing turns the read-mode pill inert.
+  function setStoredServings(value: string): void {
+    servingsDraft = value;
+    const n = Number.parseInt(value, 10);
+    const servings = Number.isFinite(n) && n > 0 ? n : null;
+    onEdit({ ...recipe, metadata: { ...recipe.metadata, servings } });
   }
 
   // An empty url clears the source entirely (back to a manual recipe); a
@@ -287,6 +290,47 @@
       close();
     }
   }
+
+  // ─── "Added by" (issue #845) ────────────────────────────────────────────────
+  // The one attribution field a person may set. `createdBy` holds a snapshot of
+  // `Member.name`, and every recipe that predates the field got its name from a
+  // backfill that could only GUESS — so the record can be wrong, and this is
+  // where it is put right.
+  //
+  // Pick-from-roster, never free text: the list's "Added by me" chip compares
+  // with `===` against `Member.name`, so a typo would silently stop matching.
+  // `lastEditedBy` deliberately gets no control at all — a field recording the
+  // last edit that you can type into contradicts itself. And none of it gates
+  // anything: attribution is a record, not a permission.
+  //
+  // `$people`, never `$members` (issue #1300): this is a people-picker, so a
+  // system account is not offered. A recipe ALREADY stamped with one keeps its
+  // name — it arrives through `recipe.createdBy` below, the same path an
+  // off-roster name takes. Nothing to pick from is not a control, so an empty
+  // roster (still loading, or a permission-denied stream) offers no slot at all.
+  const rosterNames = $derived($people.map((m) => m.name));
+  const authorOptions = $derived([
+    ...new Set(recipe.createdBy ? [...rosterNames, recipe.createdBy] : rosterNames),
+  ]);
+  const showAddedBy = $derived(authorOptions.length > 0);
+
+  // ─── "This recipe makes…" (produces canon link) ─────────────────────────────
+  // A searchable picker over the canon store: link this recipe to the grocery
+  // item it produces (e.g. a Mayonnaise recipe makes "Mayonnaise"), or clear it.
+  // The filter also matches synonyms via a lowercased name+synonyms index.
+  const canonComboItems: ComboboxItemType[] = $derived(
+    $canonItems.map((c) => ({ value: c.id, label: c.name })),
+  );
+  const canonSearchIndex = $derived(
+    new Map($canonItems.map((c) => [c.id, [c.name, ...c.synonyms].join(' ').toLowerCase()])),
+  );
+  function canonFilter(input: string, item: ComboboxItemType): boolean {
+    // Index and items are built from the same `$canonItems` in the same flush, so
+    // every item has an entry. Asserted rather than given a `??` fallback: the
+    // fallback would be a branch no test could reach.
+    const hay = canonSearchIndex.get(item.value)!;
+    return hay.includes(input.trim().toLowerCase());
+  }
 </script>
 
 <!-- Description, facts, tags, the phase strip and the source link.
@@ -326,62 +370,199 @@
       <!-- Two rows, two kinds of thing (issue #878). Facts are measured from the
            dish and carry a glyph; tags are words somebody typed and carry none.
            Separate rows rather than one wrapped row so the difference survives a
-           narrow screen, where a single row would interleave them again.
-
-           READ-ONLY in BOTH modes, deliberately: the three pills become editable
-           in #1324's Phase 4, which is also what gives the Serves pill its second
-           identity. This block moved here from the page unaltered. -->
-      {#if facts.length > 0}
+           narrow screen, where a single row would interleave them again. -->
+      {#if hasFacts || editing}
         <div class="flex flex-wrap items-center gap-2">
-          {#each facts as fact (fact.key)}
-            {#if fact.key === 'servings' && scaling}
-              <!-- The one fact that is also a control (issue #1314). The
-                   value-chip SURFACE worn by the `SelectTrigger` that owns
-                   the interaction — ui-spec-v09 §8.27.4's exact shape, the
-                   same one the catalog's review row wears, down to the
-                   width-setting wrapper the surface deliberately does not
-                   provide. It is NOT a `Chip`: §8.23.8 renders `fact` as a
-                   `<span>` and closed off making one pressable, and a
-                   button inside a chip inside a button is the shape that
-                   rule exists to prevent.
-                   The pill shows no label of its own, so the accessible
-                   name comes from `aria-label` (§8.27.6). -->
-              <div class="w-32">
-                <Select
-                  value={String(scaling.active)}
-                  onValueChange={(v) => setServings(Number(v), scaling.base)}
-                >
-                  <SelectTrigger
-                    class={valueChipVariants()}
-                    aria-label="How many this recipe is shown for"
-                    data-testid="recipe-servings-chip"
+          <!-- What the dish makes leads: it is the fact that says what this
+               document IS when the document is a component of something else. -->
+          <EditableZone
+            {editing}
+            filled={Boolean(producesCanonName)}
+            label="Edit what this recipe makes"
+            slotLabel="Makes"
+            testId="recipe-edit-produces"
+          >
+            {#snippet view()}
+              <Chip variant="fact" tone="secondary" icon="Soup" data-testid="recipe-produces-chip">
+                {producesLabel}
+              </Chip>
+            {/snippet}
+            {#snippet edit(close)}
+              <div class="flex w-full items-center gap-2" data-testid="recipe-produces">
+                <div class="relative flex-1">
+                  <Combobox
+                    items={canonComboItems}
+                    value={recipe.producesCanonId ?? ''}
+                    filterFn={canonFilter}
+                    restrict
+                    placeholder="Search grocery items…"
+                    onValueChange={(canonId) => onEdit({ ...recipe, producesCanonId: canonId })}
                   >
-                    <span class="flex items-center gap-1.5">
-                      <Icon name="Users" size={12} />
-                      {fact.label}
+                    <ComboboxField>
+                      <ComboboxInput data-testid="recipe-produces-input" />
+                      <ComboboxTrigger />
+                    </ComboboxField>
+                    <ComboboxContent>
+                      {#snippet children({ filteredItems })}
+                        {#each filteredItems as item, i (item.value)}
+                          <ComboboxItem {item} index={i} />
+                        {/each}
+                        {#if filteredItems.length === 0}
+                          <ComboboxEmpty>No grocery items found</ComboboxEmpty>
+                        {/if}
+                      {/snippet}
+                    </ComboboxContent>
+                  </Combobox>
+                </div>
+                {#if recipe.producesCanonId}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => onEdit({ ...recipe, producesCanonId: null })}
+                    data-testid="recipe-produces-clear"
+                  >
+                    Clear
+                  </Button>
+                {/if}
+                <Button variant="ghost" size="sm" onclick={close}>Done</Button>
+              </div>
+            {/snippet}
+          </EditableZone>
+
+          <!-- ── Serves: one pill, two identities (issue #1324, Daniel's call) ──
+               The mode the page is already in settles which meaning a tap
+               carries, which is #1319's own principle applied to the pill.
+
+               READ mode is #1317's scale picker, untouched: it restates the
+               amounts for reading and writes nothing, and the number it shows
+               is `scaling.active`, which lives in the URL.
+
+               EDIT mode does not render that `Select` at all. In its place is
+               the STORED count, which is what the recipe is — and the page
+               pins `scaling.active` to `scaling.base` while editing, so there
+               is no state in which this box says one number and the amounts
+               below it reflect another.
+
+               The read-mode picker is the value-chip SURFACE worn by a
+               `SelectTrigger` — ui-spec-v09 §8.27.4's exact shape, down to the
+               width-setting wrapper the surface deliberately does not provide.
+               It is NOT a `Chip`: §8.23.8 renders `fact` as a `<span>` and
+               closed off making one pressable, and a button inside a chip
+               inside a button is the shape that rule exists to prevent. The
+               pill shows no label of its own, so its accessible name comes from
+               `aria-label` (§8.27.6). -->
+          {#if editing}
+            {#if showCooking}
+              <EditableZone
+                {editing}
+                filled={hasServings}
+                label="Edit servings"
+                slotLabel="Servings"
+                testId="recipe-edit-servings"
+                onOpen={() =>
+                  (servingsDraft =
+                    recipe.metadata.servings === null ? '' : String(recipe.metadata.servings))}
+              >
+                {#snippet view()}
+                  <Chip variant="fact" tone="secondary" icon="Users">{storedServesLabel}</Chip>
+                {/snippet}
+                {#snippet edit(close)}
+                  <TextField
+                    label="Servings"
+                    inputmode="numeric"
+                    class="w-28"
+                    value={servingsDraft}
+                    onValueChange={setStoredServings}
+                    onblur={close}
+                    data-testid="recipe-servings-input"
+                  />
+                {/snippet}
+              </EditableZone>
+            {/if}
+          {:else if scaling}
+            <div class="w-32">
+              <Select
+                value={String(scaling.active)}
+                onValueChange={(v) => setServings(Number(v), scaling.base)}
+              >
+                <SelectTrigger
+                  class={valueChipVariants()}
+                  aria-label="How many this recipe is shown for"
+                  data-testid="recipe-servings-chip"
+                >
+                  <span class="flex items-center gap-1.5">
+                    <Icon name="Users" size={12} />
+                    <!-- Composed as a string rather than `Serves {scaling.active}`:
+                         a NUMBER in a text node compiles to `n ?? ''`, and that
+                         fallback is a branch no test can reach. -->
+                    {`Serves ${scaling.active}`}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {#each servingsOptions(scaling.base, scaling.active) as option (option)}
+                    <SelectItem
+                      value={String(option)}
+                      label={option === scaling.base ? `${option} (as written)` : String(option)}
+                    />
+                  {/each}
+                </SelectContent>
+              </Select>
+            </div>
+          {:else if hasServings}
+            <!-- A stated count `usableServings` refuses — `null` and `0` both
+                 fail (issue #1123). The fact is still true, it just cannot be a
+                 scaling base, so it reads as a plain pill exactly as it did
+                 before the picker existed. -->
+            <Chip variant="fact" tone="secondary" icon="Users">{storedServesLabel}</Chip>
+          {/if}
+
+          <!-- Provenance is a fact about the document rather than about the dish,
+               and it is the one fact with no honest glyph — `Users` is already
+               Serves, and a pencil would say "edited" for a chip that usually says
+               "added". It sits in the fact row without an icon rather than being
+               promoted to a row of its own for one pill. Its text is asserted
+               verbatim by `e2e/recipe-author-filter.spec.ts`, so nothing may be
+               interpolated into it. -->
+          <EditableZone
+            editing={editing && showAddedBy}
+            filled={Boolean(attribution)}
+            label="Edit who added this"
+            slotLabel="Added by"
+            testId="recipe-edit-added-by"
+          >
+            {#snippet view()}
+              <Chip variant="fact" data-testid="recipe-attribution-chip">{attribution}</Chip>
+            {/snippet}
+            {#snippet edit(close)}
+              <div class="flex w-full items-center gap-2" data-testid="recipe-added-by">
+                <Select
+                  value={recipe.createdBy}
+                  onValueChange={(v) => onEdit({ ...recipe, createdBy: v })}
+                >
+                  <!-- The label is rendered here rather than left to the
+                       trigger's default, as everywhere else in the app:
+                       `SelectItem`s only exist while the listbox is open, so a
+                       closed Select has no registered item to resolve
+                       `displayLabel` from. -->
+                  <SelectTrigger aria-label="Added by" data-testid="recipe-added-by-select">
+                    <span class={recipe.createdBy ? 'text-foreground' : 'text-placeholder italic'}>
+                      {recipe.createdBy ? memberFirstName(recipe.createdBy) : 'Not recorded'}
                     </span>
+                    <Icon name="ChevronDown" size={16} class="text-muted-foreground" />
                   </SelectTrigger>
                   <SelectContent>
-                    {#each servingsOptions(scaling.base, scaling.active) as option (option)}
-                      <SelectItem
-                        value={String(option)}
-                        label={option === scaling.base ? `${option} (as written)` : String(option)}
-                      />
+                    <!-- `value` and the key stay the VERBATIM `Member.name`;
+                         only the label is shortened. Shortening the identity
+                         would collapse two different people into one option. -->
+                    {#each authorOptions as name (name)}
+                      <SelectItem value={name}>{memberFirstName(name)}</SelectItem>
                     {/each}
                   </SelectContent>
                 </Select>
+                <Button variant="ghost" size="sm" onclick={close}>Done</Button>
               </div>
-            {:else}
-              <Chip
-                variant="fact"
-                tone={fact.tone ?? 'neutral'}
-                icon={fact.icon}
-                data-testid={fact.testId}
-              >
-                {fact.label}
-              </Chip>
-            {/if}
-          {/each}
+            {/snippet}
+          </EditableZone>
         </div>
       {/if}
       <!-- No leading `#`. The hash was doing the job the outline now does —

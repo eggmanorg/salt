@@ -121,6 +121,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
   canonicaliseIngredients: vi.fn(),
   matchIngredient: vi.fn(),
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  queueRecipeEdit: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  flushRecipeWrites: vi.fn().mockResolvedValue(undefined),
   stashImportedDraft: vi.fn(),
   authorRecipeTraced: vi.fn(),
   regenerateRecipeImage: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -374,5 +376,94 @@ describe('RecipeViewPage — scaling the amounts', () => {
     expect(screen.getByTestId('recipe-servings-chip').textContent).toContain('Serves 4');
     expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
     expect(amountsText()).toContain('300g');
+  });
+});
+
+// ─── Entering edit mode clears the active scale (issue #1324, Daniel's call) ──
+//
+// "When editing you should never be working with the scaled recipe — it should
+// revert to the normal saved recipe." There are TWO halves and both are needed,
+// so both are pinned separately here:
+//
+//   the URL   — pressing Edit pushes `/recipes/:id` with no `serves` param,
+//               through the same call the Reset button already makes;
+//   the pin   — `scaling.active` is held at `scaling.base` while `editing`, so a
+//               `?serves=` arriving any other way (the back button landing on the
+//               entry the push just created, a hand-typed URL) cannot re-create
+//               the state this decision forbids. The mocked router keeps its
+//               `?serves=6` throughout these, which is exactly that case.
+//
+// The "amounts scaled" line and the ingredient amounts are NOT edited to achieve
+// any of this — they follow `isScaled` on their own, which is why they are what
+// these assert on.
+describe('RecipeViewPage — editing is never a scaled view', () => {
+  it('cleans the ?serves= out of the URL when Edit is pressed', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(vi.mocked(push)).toHaveBeenCalledWith('/recipes/recipe-1');
+  });
+
+  it('pushes nothing when there was no scale to clear', async () => {
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+  });
+
+  it('puts the amounts and the scaled line back to as written, router or no router', async () => {
+    // The router still says `serves=6` after the push — jsdom has no real
+    // history and the mock never changes. That is the point: this is the PIN,
+    // and removing the `editing` clause from `scaling` turns it red.
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(amountsText()).toContain('300g');
+    expect(amountsText()).not.toContain('450g');
+    expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
+  });
+
+  it('shows the stored count as a box you can type in, not the scale picker', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
+    await userEvent.click(screen.getByTestId('recipe-edit-servings'));
+    expect((screen.getByTestId('recipe-servings-input') as HTMLInputElement).value).toBe('4');
+  });
+
+  // ASSUMPTION, and Daniel has not ruled on it (#1324 Decisions): leaving edit
+  // mode leaves the scale CLEARED. Done does not resurrect the number you had
+  // been reading at. If he rules the other way, this test is the one line that
+  // changes.
+  it('leaves the scale cleared after Done, rather than resurrecting it', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+    // `push` is mocked, so the router does not follow it. Moved by hand to where
+    // that push put it — the previous test is what pins that the push happened.
+    // Everything after this line is the real sequence.
+    mockRouter.querystring = '';
+    await userEvent.click(screen.getByTestId('recipe-done-button'));
+
+    expect(screen.getByTestId('recipe-servings-chip').textContent).toContain('Serves 4');
+    expect(amountsText()).toContain('300g');
+    expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
+    // The half that would actually go red: restoring the prior scale on exit
+    // could only be done by pushing the param back.
+    expect(vi.mocked(push).mock.calls.flat().join(' ')).not.toContain('serves=');
   });
 });

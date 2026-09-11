@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { emptyRecipe } from '@salt/domain';
-import type { Recipe } from '@salt/domain';
+import type { Member, Recipe } from '@salt/domain';
 
-// The recipe page's identity card, in both of its modes (issue #1324, Phase 3).
+// The recipe page's identity card, in both of its modes (issue #1324).
 //
 // Two properties carry the whole feature and each is asserted from the outside,
 // on rendered markup rather than on a flag:
@@ -20,19 +21,24 @@ import type { Recipe } from '@salt/domain';
 // into it — and the whole next recipe handed to `onEdit` is asserted, because
 // that is the document that gets written.
 //
-// The three FACT pills are read-only in BOTH modes in this phase. What is pinned
-// here is that they do not change when the mode does; making them editable is
-// Phase 4's job and these assertions are what will have to be rewritten then.
+// The Serves pill carries TWO identities and the mode settles which (Phase 4,
+// Daniel's call). Every test of it asserts WHICH MODE IT IS IN rather than merely
+// finding "the servings pill": `recipe-servings-chip` is the read-mode scale
+// picker and must be absent while editing, `recipe-servings-input` is the stored
+// count and must be absent while reading. A test that found either without
+// saying which would pass on the bug this arrangement exists to prevent.
 
-const { mockCanonItems, mockRecipes } = await vi.hoisted(async () => {
+const { mockCanonItems, mockPeople, mockRecipes } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   return {
     mockCanonItems: makeStore<readonly { id: string; name: string; synonyms: string[] }[]>([]),
+    mockPeople: makeStore<readonly Pick<Member, 'name'>[]>([]),
     mockRecipes: makeStore<readonly Recipe[]>([]),
   };
 });
 
 vi.mock('../src/lib/canonService.js', () => ({ canonItems: mockCanonItems }));
+vi.mock('../src/lib/membersService.js', () => ({ people: mockPeople }));
 vi.mock('../src/lib/recipeService.js', () => ({ recipes: mockRecipes }));
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -70,6 +76,13 @@ function show(
   });
 }
 
+/** The options a picker is currently offering, in order. */
+function offeredOptions(): string[] {
+  return [...document.querySelectorAll('[role="option"]')].map((el) =>
+    (el.textContent ?? '').trim(),
+  );
+}
+
 /** The recipe as the last `onEdit` call composed it. */
 function lastEdit(): Recipe {
   const calls = onEdit.mock.calls;
@@ -79,6 +92,7 @@ function lastEdit(): Recipe {
 beforeEach(() => {
   vi.clearAllMocks();
   mockCanonItems._set([]);
+  mockPeople._set([]);
   mockRecipes._set([]);
 });
 
@@ -92,7 +106,14 @@ describe('RecipeIdentityCard — read mode', () => {
     show(entry({ description: 'Silky', metadata: { servings: 4, tags: ['weeknight'] } }), false);
 
     expect(screen.getByText('Silky')).toBeTruthy();
-    for (const id of ['recipe-edit-description', 'recipe-edit-tags', 'recipe-edit-source']) {
+    for (const id of [
+      'recipe-edit-description',
+      'recipe-edit-tags',
+      'recipe-edit-source',
+      'recipe-edit-produces',
+      'recipe-edit-servings',
+      'recipe-edit-added-by',
+    ]) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
   });
@@ -406,25 +427,223 @@ describe('RecipeIdentityCard — edit mode', () => {
     expect(lastEdit().source).toBeNull();
   });
 
-  // Phase 3's boundary, stated as a test rather than only in prose: the fact row
-  // does not notice the mode. Phase 4 is what changes these.
-  it('leaves the three fact pills exactly as they read, mode or no mode', () => {
-    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: [] }]);
-    show(
-      entry({
-        producesCanonId: 'c1',
-        createdBy: 'Ada Lovelace',
-        metadata: { servings: 4, tags: [] },
-      }),
-      true,
-      { base: 4, active: 4 },
-    );
+  it('reveals what the recipe has never said as dashed slots', () => {
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry(), true);
 
-    expect(screen.getByTestId('recipe-produces-chip').tagName).toBe('SPAN');
-    expect(screen.getByTestId('recipe-attribution-chip').tagName).toBe('SPAN');
-    expect(screen.getByTestId('recipe-servings-chip').textContent).toContain('Serves 4');
-    for (const id of ['recipe-edit-produces', 'recipe-edit-servings', 'recipe-edit-added-by']) {
-      expect(screen.queryByTestId(id)).toBeNull();
-    }
+    expect(screen.getByTestId('recipe-edit-servings').textContent).toContain('Servings');
+    expect(screen.getByTestId('recipe-edit-produces').textContent).toContain('Makes');
+    expect(screen.getByTestId('recipe-edit-added-by').textContent).toContain('Added by');
+  });
+
+  it('finds a grocery item by its name or by one of its synonyms', async () => {
+    const user = userEvent.setup();
+    mockCanonItems._set([
+      { id: 'c1', name: 'Mayonnaise', synonyms: ['mayo'] },
+      { id: 'c2', name: 'Garlic', synonyms: [] },
+    ]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+    const input = screen.getByTestId('recipe-produces-input');
+    await user.click(input);
+    await user.type(input, 'mayo');
+
+    expect(offeredOptions()).toEqual(['Mayonnaise']);
+  });
+
+  it('says so plainly when nothing in the groceries matches', async () => {
+    const user = userEvent.setup();
+    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: [] }]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+    const input = screen.getByTestId('recipe-produces-input');
+    await user.click(input);
+    await user.type(input, 'quinoa');
+
+    expect(offeredOptions()).toEqual([]);
+    expect(screen.getByText('No grocery items found')).toBeTruthy();
+  });
+
+  it('links the recipe to the grocery item picked', async () => {
+    const user = userEvent.setup();
+    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: [] }]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+    const input = screen.getByTestId('recipe-produces-input');
+    await user.click(input);
+    await user.type(input, 'mayo');
+    await user.click(document.querySelector('[role="option"]')!);
+
+    expect(lastEdit().producesCanonId).toBe('c1');
+  });
+
+  it('unlinks what the recipe makes without leaving the page', async () => {
+    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: ['mayo'] }]);
+    show(entry({ producesCanonId: 'c1' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+    await fireEvent.click(screen.getByTestId('recipe-produces-clear'));
+
+    expect(lastEdit().producesCanonId).toBeNull();
+  });
+
+  it('offers no Clear when nothing is linked yet', async () => {
+    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: [] }]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+
+    expect(screen.getByTestId('recipe-produces')).toBeTruthy();
+    expect(screen.queryByTestId('recipe-produces-clear')).toBeNull();
+  });
+
+  it('closes the grocery picker when it is finished with', async () => {
+    mockCanonItems._set([{ id: 'c1', name: 'Mayonnaise', synonyms: [] }]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-produces'));
+    await fireEvent.click(screen.getByText('Done'));
+
+    expect(screen.queryByTestId('recipe-produces')).toBeNull();
+  });
+
+  // Nothing to pick from is not a control: an empty roster — still loading, or a
+  // permission-denied stream — would otherwise offer a slot that opens on
+  // nothing. A name already ON the recipe is itself something to pick from, so
+  // the slot is offered for that alone.
+  it('offers no "Added by" slot when there is nothing at all to pick from', () => {
+    show(entry(), true);
+
+    expect(screen.queryByTestId('recipe-edit-added-by')).toBeNull();
+  });
+
+  it('offers "Added by" once there is a roster, or a name already on the record', () => {
+    show(entry({ createdBy: 'Sam Vale' }), true);
+    expect(screen.getByTestId('recipe-edit-added-by')).toBeTruthy();
+
+    cleanup();
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry(), true);
+    expect(screen.getByTestId('recipe-edit-added-by')).toBeTruthy();
+  });
+
+  it('opens the "Added by" picker on the name already recorded', async () => {
+    mockPeople._set([{ name: 'Sam Vale' }, { name: 'Ada Vale' }]);
+    show(entry({ createdBy: 'Sam Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+
+    expect(screen.getByTestId('recipe-added-by-select').textContent).toContain('Sam');
+  });
+
+  it('says "Not recorded" rather than a placeholder person when nobody is on record', async () => {
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+
+    expect(screen.getByTestId('recipe-added-by-select').textContent).toContain('Not recorded');
+  });
+
+  // Attribution is a record that can be WRONG — every recipe predating the field
+  // got its name from a backfill that could only guess — so putting it right is
+  // the point of the picker. The stored value stays the verbatim `Member.name`;
+  // only the label is shortened to a first name.
+  it('puts a wrong "Added by" right, storing the full name', async () => {
+    const user = userEvent.setup();
+    mockPeople._set([{ name: 'Sam Vale' }, { name: 'Ada Vale' }]);
+    show(entry({ createdBy: 'Sam Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+    await user.click(screen.getByTestId('recipe-added-by-select'));
+    await user.click(screen.getByRole('option', { name: 'Ada' }));
+
+    expect(lastEdit().createdBy).toBe('Ada Vale');
+  });
+
+  it('closes the "Added by" picker when it is finished with', async () => {
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry({ createdBy: 'Sam Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+    await fireEvent.click(screen.getByText('Done'));
+
+    expect(screen.queryByTestId('recipe-added-by-select')).toBeNull();
+  });
+});
+
+// ─── The Serves pill's two identities (Daniel's call, #1324) ──────────────────
+// Every one of these asserts the MODE, not merely the pill.
+describe('RecipeIdentityCard — the Serves pill', () => {
+  it('is the scale picker in read mode and nothing else', () => {
+    show(entry({ metadata: { servings: 4, tags: [] } }), false, { base: 4, active: 4 });
+
+    expect(screen.getByTestId('recipe-servings-chip')).toBeTruthy();
+    expect(screen.queryByTestId('recipe-edit-servings')).toBeNull();
+    expect(screen.queryByTestId('recipe-servings-input')).toBeNull();
+  });
+
+  it('is the stored count in edit mode, and the picker is not rendered at all', async () => {
+    show(entry({ metadata: { servings: 4, tags: [] } }), true, { base: 4, active: 4 });
+
+    expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
+    await fireEvent.click(screen.getByTestId('recipe-edit-servings'));
+    expect((screen.getByTestId('recipe-servings-input') as HTMLInputElement).value).toBe('4');
+  });
+
+  it('shows the STORED count while editing, never the one being read', () => {
+    // The page pins `scaling.active` to `base` while editing, so this input is
+    // defensive rather than decorative: were the pin ever removed, the chip would
+    // still read the document instead of the view.
+    show(entry({ metadata: { servings: 4, tags: [] } }), true, { base: 4, active: 6 });
+
+    expect(screen.getByText('Serves 4')).toBeTruthy();
+    expect(screen.queryByText('Serves 6')).toBeNull();
+  });
+
+  it('takes a serving count from the dashed slot', async () => {
+    show(entry(), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-servings'));
+    await fireEvent.input(screen.getByTestId('recipe-servings-input'), { target: { value: '6' } });
+
+    expect(lastEdit().metadata.servings).toBe(6);
+  });
+
+  it.each([
+    { shape: 'an emptied box', typed: '' },
+    { shape: 'a zero', typed: '0' },
+    { shape: 'a word', typed: 'lots' },
+  ])('reads $shape as "not stated", never as a count', async ({ typed }) => {
+    show(entry({ metadata: { servings: 4, tags: [] } }), true, { base: 4, active: 4 });
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-servings'));
+    await fireEvent.input(screen.getByTestId('recipe-servings-input'), {
+      target: { value: typed },
+    });
+
+    expect(lastEdit().metadata.servings).toBeNull();
+  });
+
+  it('closes the box when it loses focus', async () => {
+    show(entry({ metadata: { servings: 4, tags: [] } }), true, { base: 4, active: 4 });
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-servings'));
+    await fireEvent.blur(screen.getByTestId('recipe-servings-input'));
+
+    expect(screen.queryByTestId('recipe-servings-input')).toBeNull();
+  });
+
+  it('offers no servings control at all on an entry that is not cooked', () => {
+    show(entry({ kind: 'outing', metadata: { servings: 4, tags: [] } }), true, {
+      base: 4,
+      active: 4,
+    });
+
+    expect(screen.queryByTestId('recipe-edit-servings')).toBeNull();
+    expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
   });
 });
