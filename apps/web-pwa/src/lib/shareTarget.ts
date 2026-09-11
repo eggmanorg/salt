@@ -191,11 +191,12 @@ export async function runPendingShareImport(signedIn: boolean): Promise<void> {
   }
 
   // Already persisted server-side and flagged unreviewed (issue #616), so this
-  // opens the existing recipe's editor. The stash just saves the editor a
-  // listener round-trip. A navigation failure is now cosmetic — the recipe is
-  // safely in the collection — so the toast points at where it landed.
+  // opens the existing recipe — its own PAGE since issue #1319 Phase 7, where the
+  // unreviewed banner lives and everything is editable in place. The stash just
+  // saves that page a listener round-trip. A navigation failure is cosmetic — the
+  // recipe is safely in the collection — so the toast points at where it landed.
   stashImportedDraft(result.value);
-  if (!(await goTo(`/recipes/${result.value.id}/edit`))) {
+  if (!(await goTo(`/recipes/${result.value.id}`))) {
     addToast(`Imported "${result.value.title}" — find it in Recipes.`, 'default');
   }
 }

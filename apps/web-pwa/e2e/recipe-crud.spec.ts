@@ -1,10 +1,17 @@
 /**
  * Recipe manual CRUD E2E tests (issue #179, Phase 2).
  *
- * Runs against the Firestore + Auth emulators and exercises the full hand-entry
- * lifecycle with no AI: create a recipe with two ingredient groups and several
- * steps, persist, reload, edit, and delete. This is the schema stress-test the
- * phase is designed around.
+ * Runs against the Firestore + Auth emulators and exercises the full lifecycle
+ * with no AI: create a recipe with two ingredient groups and several steps,
+ * persist, reload, edit, and delete. This is the schema stress-test the phase is
+ * designed around.
+ *
+ * The EDIT half moved onto the recipe's own page in issue #1319 Phase 7 — Edit is
+ * an icon button in the action row and Done replaces it; there is no Save and no
+ * route change. The CREATE half still authors through the retired editor, because
+ * there is no by-hand path left for a recipe at all: this is the spec that has to
+ * be re-cut onto the `seedRecipe` bridge plus the in-place editors when Phase 8
+ * deletes the route, and it is left working rather than rewritten blind here.
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
@@ -87,19 +94,24 @@ test.describe('recipes — manual CRUD', () => {
       '1 ½ cups red lentils, rinsed',
     );
 
-    // ── Edit → change title, save ─────────────────────────────────────────────
-    // Edit and Delete live in the ⋮ overflow menu, which since #735 is their only
-    // surface at any width; the menu items carry their own testids.
-    await page.getByTestId('recipe-actions-overflow').click();
-    await page.getByTestId('recipe-edit-menu-item').click();
-    await expect(page.getByRole('heading', { name: /edit recipe/i })).toBeVisible();
-    const titleInput = page.getByTestId('recipe-title-input');
-    await titleInput.fill('Test Dahl (revised)');
-    await page.getByTestId('recipe-save-btn').click();
+    // ── Edit → change title, in place ─────────────────────────────────────────
+    // Since issue #1319 editing happens on THIS page: an icon-only Edit button in
+    // the action row, at every width, and no item in the ⋮ menu. There is no Save
+    // and no route change — which is the whole point, so the URL is asserted to be
+    // the one it already was rather than navigated back to.
+    await page.getByTestId('recipe-edit-mode-button').click();
+    await page.getByTestId('recipe-edit-title').click();
+    await page.getByTestId('recipe-title-input').fill('Test Dahl (revised)');
+    await page.getByTestId('recipe-done-button').click();
 
-    await expect(page).toHaveURL(new RegExp(`${recipeUrl.split('#')[1]}$`), {
+    await expect(page).toHaveURL(new RegExp(`${recipeUrl.split('#')[1]}$`));
+    await expect(page.getByRole('heading', { name: 'Test Dahl (revised)' })).toBeVisible({
       timeout: SYNC_TIMEOUT,
     });
+
+    // It landed in Firestore, not just in the heading: there is no Save button to
+    // have pressed, so the flush on leaving edit mode is what this proves.
+    await page.reload();
     await expect(page.getByRole('heading', { name: 'Test Dahl (revised)' })).toBeVisible({
       timeout: SYNC_TIMEOUT,
     });

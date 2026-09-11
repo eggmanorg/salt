@@ -151,12 +151,22 @@ export const violationCeilings = {
   // new page's whole behaviour into `BatchDetailPage.test.ts`, which already
   // breaches and is about a different screen. UT-C2 does not move: this suite
   // builds its recipe with `@salt/domain`'s `emptyRecipe`.
+  // UT-C2 34 → 33 and UT-C3 31 → 30 (issue #1319 Phase 7). Both TIGHTEN, and
+  // neither is a test deleted: `RecipeEditPage.mealReturn.test.ts` pinned the
+  // `?meal=` attach at the retired editor's SAVE, and that attach moved onto the
+  // recipe page — the import paths now attach the dish at creation, so the contract
+  // was rewritten into `RecipeViewPage.mealComponents.test.ts`, which is the suite
+  // that owns that surface and already drives its URL-import dialog end to end.
+  // The relocated file took its hand-rolled `makeRecipe` with it (UT-C2 -1); the
+  // suite it landed in also lost the redundant `document.body.style.pointerEvents`
+  // reset `tests/setup.ts` already does (UT-C3 -1). Lowering both rather than
+  // leaving slack is the point of an exact-equality ratchet.
   'apps/web-pwa': {
     'UT-A1': 5,
     'UT-B1': 48,
     'UT-C1': 0,
-    'UT-C2': 34,
-    'UT-C3': 31,
+    'UT-C2': 33,
+    'UT-C3': 30,
     'UT-E4': 0,
     'UT-G1': 0,
     'UT-G3': 0,

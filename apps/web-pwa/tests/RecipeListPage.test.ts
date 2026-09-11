@@ -1166,7 +1166,7 @@ describe('RecipeListPage — import from photo', () => {
     expect(screen.getByTestId('recipe-import-photo-toggle-empty')).toBeInTheDocument();
   });
 
-  it('stashes the draft and opens the saved recipe’s editor on success', async () => {
+  it('stashes the draft and opens the saved recipe’s own page on success', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-9' };
@@ -1184,9 +1184,13 @@ describe('RecipeListPage — import from photo', () => {
     await user.click(await screen.findByTestId('recipe-import-photo-btn'));
 
     // The callable already persisted the recipe flagged as not yet reviewed
-    // (issue #616), so this opens THAT recipe's editor — never /recipes/new.
+    // (issue #616), so this opens THAT recipe — its own page since issue #1319
+    // Phase 7, where the unreviewed banner lives and everything is editable in
+    // place. The stash survives because the write happened on the SERVER: the page
+    // can arrive ahead of the Firestore listener.
     await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(draft));
-    expect(push).toHaveBeenCalledWith('/recipes/imported-9/edit');
+    expect(push).toHaveBeenCalledWith('/recipes/imported-9');
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
   });
 });
 
@@ -1228,7 +1232,7 @@ describe('RecipeListPage — import from URL', () => {
     expect(await screen.findByTestId('recipe-import-url-area')).toBeInTheDocument();
   });
 
-  it('stashes the draft and opens the saved recipe’s editor on success', async () => {
+  it('stashes the draft and opens the saved recipe’s own page on success', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-7' };
@@ -1247,8 +1251,9 @@ describe('RecipeListPage — import from URL', () => {
 
     expect(importRecipeFromUrl).toHaveBeenCalledWith('https://example.com/pie');
     await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(draft));
-    // No meal in play here, so the landing is the plain editor.
-    expect(push).toHaveBeenCalledWith('/recipes/imported-7/edit');
+    // The recipe's own page, never the retired editor (issue #1319 Phase 7).
+    expect(push).toHaveBeenCalledWith('/recipes/imported-7');
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
   });
 
   it('offers the way back in — not a toast — when the session has died', async () => {

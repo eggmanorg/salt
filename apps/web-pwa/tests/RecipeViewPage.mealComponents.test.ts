@@ -2,17 +2,31 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { Recipe } from '@salt/domain';
 
-// Adding another dish to a meal (issue #752, Phase 3).
+// Adding another dish to a meal (issue #752 Phase 3; issue #1319 Phase 7).
 //
-// The meal page grows the same four ways in that the recipe list's New menu
-// offers — import a link, photograph a page, chat one up, write it out — and the
-// only thing they add is the meal's id on the URL they navigate to. That id IS
-// the feature: it is what the far end reads to know what the new dish is for, and
-// it lives nowhere else, so a reload at any hop keeps it.
+// The meal page grows the same ways in that the recipe list's New menu offers,
+// which since #1319 Phase 6 is THREE and not four: a dish for a meal is a recipe
+// like any other, and a recipe arrives by URL, by photo or by chat. Hand-authoring
+// went with the editor, so "Manual" went with it here.
+//
+// WHERE THE ATTACH HAPPENS IS WHAT #1319 PHASE 7 MOVED, and it is the substance of
+// this suite. The editor's SAVE used to be the trigger, reading the meal's id off
+// `?meal=` — a querystring that had to survive every hop because the save was a
+// whole navigation away. With no save left:
+//
+//   - the two IMPORTS attach at CREATION. Their callable has already persisted the
+//     dish (#616), so it exists the moment the dialog hands it back; there is
+//     nothing for the id to survive, and those two paths stop carrying `?meal=`.
+//   - CHAT still carries it, because its dish does not exist until the
+//     conversation produces one. `ChatSessionPage` owns that end and is untouched.
+//
+// The cases below are the relocated contract of `RecipeEditPage.mealReturn.test.ts`,
+// rewritten against the surface that now owns it rather than deleted: the attach is
+// made, it is idempotent, and a meal deleted meanwhile must not cost the user the
+// dish they just imported.
 //
 // The surface is gated on the card, i.e. on the document already having
-// components. Turning an ordinary recipe INTO a meal stays in the editor's
-// picker, where Phase 1 put it.
+// components. Turning an ordinary recipe INTO a meal has no home on this page.
 
 const {
   mockRecipes,
@@ -109,7 +123,10 @@ vi.mock('../src/lib/recipeService.js', () => ({
   canonicaliseIngredients: vi.fn(),
   matchIngredient: vi.fn(),
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // The attach, which issue #1319 Phase 7 moved onto this page.
+  attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   stashImportedDraft: vi.fn(),
+  takeImportedDraft: vi.fn().mockReturnValue(null),
   authorRecipeTraced: vi.fn(),
   regenerateRecipeImage: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   reviseRecipeSceneBrief: vi.fn(),
@@ -130,7 +147,13 @@ vi.mock('../src/lib/recipeService.js', () => ({
 
 import { push } from 'svelte-spa-router';
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { importRecipeFromUrl, stashImportedDraft } from '../src/lib/recipeService.js';
+import {
+  attachComponentToMeal,
+  importRecipeFromUrl,
+  persistRecipe,
+  stashImportedDraft,
+} from '../src/lib/recipeService.js';
+import { addToast } from '../src/lib/toastStore.js';
 
 const MEAL_ID = 'roast';
 
@@ -171,11 +194,11 @@ beforeEach(() => {
   mockGuidedPlan._set(null);
   mockFormula._set(null);
   mockRecipes._set([MEAL, CHICKEN]);
+  vi.mocked(attachComponentToMeal).mockResolvedValue({ kind: 'ok', value: undefined });
 });
 
 afterEach(() => {
   cleanup();
-  document.body.style.pointerEvents = '';
   document.body.style.overflow = '';
   document.body.innerHTML = '';
 });
@@ -188,8 +211,22 @@ async function openNewMenu(): Promise<void> {
   await fireEvent.click(screen.getByTestId('meal-component-new-btn'));
 }
 
+/**
+ * Drive the URL-import dialog to completion, the way a cook does.
+ *
+ * `fireEvent` for the typing: bits-ui focus traps inside a Dialog eat `userEvent`
+ * keystrokes in these suites.
+ */
+async function importALink(): Promise<void> {
+  await openNewMenu();
+  await fireEvent.click(await screen.findByTestId('meal-component-new-import'));
+  const input = await screen.findByTestId('recipe-import-url-input');
+  await fireEvent.input(input, { target: { value: 'https://example.com/gravy' } });
+  await fireEvent.click(screen.getByTestId('recipe-import-url-btn'));
+}
+
 describe('RecipeViewPage — adding a dish to a meal', () => {
-  it('offers the four ways in, and only on a meal', async () => {
+  it('offers the three ways a recipe arrives, and only on a meal', async () => {
     renderPage();
     await openNewMenu();
 
@@ -197,10 +234,12 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
       'meal-component-new-import',
       'meal-component-new-import-photo',
       'meal-component-new-chat',
-      'meal-component-new-manual',
     ]) {
       expect(await screen.findByTestId(testid)).toBeInTheDocument();
     }
+    // Hand-authoring is retired (issue #1319 Phase 6), here as everywhere else: a
+    // typed dish would be the door the New menu closed, reopened on one screen.
+    expect(screen.queryByTestId('meal-component-new-manual')).toBeNull();
   });
 
   it('does not offer it on an ordinary recipe', () => {
@@ -210,14 +249,6 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     renderPage();
 
     expect(screen.queryByTestId('meal-component-new-btn')).toBeNull();
-  });
-
-  it('opens the blank editor carrying the meal', async () => {
-    renderPage();
-    await openNewMenu();
-    await fireEvent.click(await screen.findByTestId('meal-component-new-manual'));
-
-    expect(push).toHaveBeenCalledWith(`/recipes/new?meal=${MEAL_ID}`);
   });
 
   it('opens chat carrying the meal', async () => {
@@ -230,23 +261,54 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     expect(push).toHaveBeenCalledWith(`/chat?meal=${MEAL_ID}`);
   });
 
-  it('imports a link and opens the new recipe’s editor carrying the meal', async () => {
+  it('imports a link, attaches the dish as it lands, and opens the DISH', async () => {
     const imported = makeEntry({ id: 'imported-9', title: 'Onion gravy' });
     vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
     renderPage();
-    await openNewMenu();
-    await fireEvent.click(await screen.findByTestId('meal-component-new-import'));
+    await importALink();
 
-    // `fireEvent` for the typing: bits-ui focus traps inside a Dialog eat
-    // `userEvent` keystrokes in these suites.
-    const input = await screen.findByTestId('recipe-import-url-input');
-    await fireEvent.input(input, { target: { value: 'https://example.com/gravy' } });
-    await fireEvent.click(screen.getByTestId('recipe-import-url-btn'));
+    // The attach is made HERE, not a navigation later off a querystring — which is
+    // why the URL it pushes carries no `?meal=` at all.
+    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'imported-9'));
+    expect(push).toHaveBeenCalledWith('/recipes/imported-9');
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('meal='));
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
+    // Still stashed: the document was written on the SERVER, so the page it lands
+    // on may be ahead of the Firestore listener.
+    expect(stashImportedDraft).toHaveBeenCalledWith(imported);
+  });
 
-    // The callable has already persisted the recipe (issue #616), so this opens
-    // THAT recipe's editor — with the meal on it.
-    await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(imported));
-    expect(push).toHaveBeenCalledWith(`/recipes/imported-9/edit?meal=${MEAL_ID}`);
+  it('leaves the ordering and the duplicate rule to the domain', async () => {
+    // "Adding the same dish twice attaches it once" is
+    // `insertComponentByElapsedTime`'s answer inside `attachComponentToMeal`, so
+    // this surface composes no `componentRecipeIds` of its own and writes the meal
+    // through no other path. Asserted as the absence of a second write rather than
+    // re-expressed here.
+    const imported = makeEntry({ id: 'chicken', title: 'Roast chicken' });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
+    renderPage();
+    await importALink();
+
+    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'chicken'));
+    expect(attachComponentToMeal).toHaveBeenCalledTimes(1);
+    expect(persistRecipe).not.toHaveBeenCalled();
+  });
+
+  it('keeps the dish, and says so, when the meal has been deleted meanwhile', async () => {
+    // The dish is already saved on the server, so a failed attach must not strand
+    // it: say what happened (Rule 10) and still go to what was imported.
+    const imported = makeEntry({ id: 'imported-9', title: 'Onion gravy' });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
+    vi.mocked(attachComponentToMeal).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NotFound', resource: 'recipe', id: MEAL_ID },
+    });
+    renderPage();
+    await importALink();
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(addToast).mock.calls[0]![1]).toBe('destructive');
+    expect(push).toHaveBeenCalledWith('/recipes/imported-9');
   });
 
   it('opens the photo-capture dialog from the same menu', async () => {

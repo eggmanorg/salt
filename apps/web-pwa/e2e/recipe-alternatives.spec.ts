@@ -42,9 +42,13 @@ test.describe('recipes — when you CBA', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
 
     // ── A recipe to be distinguished FROM ────────────────────────────────────
-    // Seeded through the editor rather than the bridge so both entries take the
-    // identical path — the only difference between them is the kind, which is
-    // exactly what the section assertions are about.
+    // Still authored through the retired editor, and the original rationale no
+    // longer holds: since issue #1319 Phase 6 the outing below is created from the
+    // New SHEET, so the two entries no longer take an identical path. There is no
+    // by-hand path left for a RECIPE, which is the point of that phase — so this
+    // seeding has to move to the `seedRecipe` bridge when Phase 8 deletes the
+    // route. It is left here rather than changed blind, because what these
+    // assertions are about is the section a kind lands on, not how it was written.
     await page.goto('/#/recipes/new');
     await expect(page.getByRole('heading', { name: 'New recipe' })).toBeVisible();
     await page.getByLabel('Title').fill(RECIPE_TITLE);
@@ -79,7 +83,6 @@ test.describe('recipes — when you CBA', () => {
     await page.getByTestId('recipe-done-button').click();
 
     // ── Its page offers only what applies ────────────────────────────────────
-    await expect(page.getByTestId('recipe-edit-mode-button')).toBeVisible();
     await expect(page.getByRole('heading', { name: OUTING_TITLE })).toBeVisible({
       timeout: SYNC_TIMEOUT,
     });
@@ -89,14 +92,15 @@ test.describe('recipes — when you CBA', () => {
     await expect(page.getByTestId('recipe-add-to-list-button')).toHaveCount(0);
     await expect(page.getByText('Ingredients', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Method', { exact: true })).toHaveCount(0);
-    // Edit and Delete always apply, so the header is never left bare. On a phone
-    // that is read through the ⋮ overflow: the header's secondary actions are
-    // `hidden sm:inline-flex`, and below `sm` the same items live in the menu
-    // (RecipeViewPage). Asserting the desktop button here only passed because the
-    // spec used to run at the project's 1280px default — the fact being pinned is
-    // the affordance, not which of the two boxes draws it.
+    // Editing and deleting always apply, so the header is never left bare — but
+    // they are read in two different places since issue #1319. Editing is an
+    // icon-only button in the action row, at every width, because it acts on THIS
+    // page; Delete stays in the ⋮ overflow with the other things done TO the
+    // document. The fact being pinned is that both affordances are there on a kind
+    // that offers nothing else.
+    await expect(page.getByTestId('recipe-edit-mode-button')).toBeVisible();
     await page.getByTestId('recipe-actions-overflow').click();
-    await expect(page.getByTestId('recipe-edit-menu-item')).toBeVisible();
+    await expect(page.getByTestId('recipe-delete-menu-item')).toBeVisible();
     await page.keyboard.press('Escape');
 
     // ── Sections ─────────────────────────────────────────────────────────────

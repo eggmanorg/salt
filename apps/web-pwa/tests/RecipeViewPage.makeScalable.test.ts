@@ -120,6 +120,11 @@ vi.mock('../src/lib/clipboardImage.js', () => ({
   imageFromClipboardData: vi.fn(),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
+  // Issue #1319 Phase 7: the page claims an import's stashed draft so a
+  // just-imported recipe paints before the Firestore listener delivers it, and
+  // it owns the meal attach the retired editor's save used to make.
+  takeImportedDraft: vi.fn().mockReturnValue(null),
+  attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   recipes: mockRecipes,
   isLoadingRecipes: mockIsLoading,
   removeRecipe: vi.fn(),

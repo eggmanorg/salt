@@ -866,10 +866,24 @@ bug — the second half appears precisely when the last editor is not the creato
 
 `duplicateRecipe(source, newId, now)` in
 `packages/domain/src/recipe/commands/builders.ts` is the **single home** of the
-what-carries policy. The view page's ⋮ → Duplicate stashes its result through
-`stashImportedDraft` and routes to `/recipes/new`; no field-reset logic lives in
-the UI, and nothing is written to Firestore until the user hits Save. Duplicate is
+what-carries policy; no field-reset logic lives in the UI. Duplicate is
 **unconditional** — every `kind` can be copied, and the copy is the same kind.
+
+**It writes immediately, since issue #1319 Phase 7.** Until then the view page's
+⋮ → Duplicate stashed its result through `stashImportedDraft`, routed to
+`/recipes/new`, and nothing reached Firestore until the user hit Save — so backing
+out cost no document and no hero-image generation. That promise rested entirely on
+the editor being a surface that could hold an unsaved recipe, and the editor is
+gone: every surface in the app now edits a document that exists. So Duplicate
+`persistRecipe`s the copy and lands you on its own page in edit mode
+(`requestEditOnArrival` in `apps/web-pwa/src/routes/recipes/editOnArrival.ts`).
+**The cost that used to be avoided is real and accepted:** a copy you immediately
+abandon is a document to delete, and because `image` is dropped (below) the
+`onRecipeWritten` trigger will have given it a hero of its own. The stash is not
+used on this path at all — `persistRecipe` applies the copy to the store
+synchronously, so the page it lands on already has the document; the stash survives
+only for the two IMPORT paths, whose write happened on the server and can therefore
+arrive ahead of the Firestore listener.
 
 What the code shows: `title` gains `" (copy)"`, `id` and `createdAt` are replaced,
 `updatedAt` is left blank for `persistRecipe`, `producesCanonId` resets,
@@ -888,8 +902,11 @@ say is **why the image cannot**:
   document _verbatim_ and only authors one when it is absent, so a carried brief
   would art-direct the copy as though it were still the original dish. Dropping it
   (along with `imageHint`, `imageRequestedAt` and `imageHidden`) is what makes the
-  copy's hero actually depict the copy: because nothing is written until Save,
-  `describeRecipeScene` sees the _edited_ title and description.
+  copy's hero depict the copy. **The boundary moved with #1319 Phase 7:** the copy
+  is written on the spot, so `describeRecipeScene` now sees the title and
+  description **as copied**, not as later edited — `"X (copy)"` plus the original's
+  description. A rename made in place afterwards is an ordinary edit, and the hero
+  follows it only if something asks for a new one.
 
 Two further asymmetries worth recording:
 

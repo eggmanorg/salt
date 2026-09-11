@@ -321,11 +321,15 @@
 
   function handleUrlImported(recipe: Recipe): void {
     // The callable already persisted the recipe (issue #616), flagged as not yet
-    // reviewed — so this routes into the EXISTING recipe's editor, not
-    // /recipes/new. The draft is still stashed so the editor paints immediately
-    // instead of waiting for the Firestore listener to deliver a doc the server
-    // just wrote. If navigation itself fails, surface it rather than silently
-    // closing the form: the recipe exists either way, so the user isn't stranded.
+    // reviewed — so this opens the EXISTING recipe, and since issue #1319 Phase 7
+    // it opens the recipe's own PAGE rather than an editor. That page is where the
+    // "not checked yet" banner lives and where everything is editable in place, so
+    // checking the AI's work no longer means a different screen from reading it.
+    // The draft is still stashed, for the same reason it always was: the document
+    // was written on the SERVER, so the Firestore listener may not have delivered
+    // it yet and the page would otherwise read "Recipe not found." for a second.
+    // If navigation itself fails, surface it rather than silently closing the
+    // form: the recipe exists either way, so the user isn't stranded.
     trackUsageEvent('recipe.created', {
       recipe_id: recipe.id,
       recipe_kind: recipe.kind,
@@ -333,10 +337,10 @@
     });
     stashImportedDraft(recipe);
     try {
-      push(`/recipes/${recipe.id}/edit`);
+      push(`/recipes/${recipe.id}`);
       showImport = false;
     } catch {
-      addToast('Could not open the editor — please try again.', 'destructive');
+      addToast('Could not open the recipe — please try again.', 'destructive');
     }
   }
 
@@ -361,10 +365,8 @@
   }
 
   function handlePhotoImported(recipe: Recipe): void {
-    // Same hand-off as the URL path (issue #616): the callable has ALREADY
-    // persisted the recipe flagged as not yet reviewed, so this routes into that
-    // recipe's editor rather than /recipes/new. The draft is stashed so the
-    // editor paints immediately instead of waiting for the Firestore listener.
+    // Same hand-off as the URL path above, including where it lands since issue
+    // #1319 Phase 7: the recipe's own page, stash and all.
     trackUsageEvent('recipe.created', {
       recipe_id: recipe.id,
       recipe_kind: recipe.kind,
@@ -372,10 +374,10 @@
     });
     stashImportedDraft(recipe);
     try {
-      push(`/recipes/${recipe.id}/edit`);
+      push(`/recipes/${recipe.id}`);
       showPhotoImport = false;
     } catch {
-      addToast('Could not open the editor — please try again.', 'destructive');
+      addToast('Could not open the recipe — please try again.', 'destructive');
     }
   }
 </script>

@@ -141,9 +141,11 @@ describe('runPendingShareImport', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('routes into the editor for the recipe the callable already persisted', async () => {
-    // Since #616 the CF writes the recipe, so the client edits an EXISTING id
-    // rather than creating one at /recipes/new.
+  it('routes onto the page of the recipe the callable already persisted', async () => {
+    // Since #616 the CF writes the recipe, so the client opens an EXISTING id
+    // rather than creating one at /recipes/new — and since issue #1319 Phase 7 it
+    // opens the recipe's own page, where the unreviewed banner lives and
+    // everything is editable in place, rather than a separate editor.
     const draft = { id: 'r1', title: 'Carbonara' };
     importRecipeFromUrl.mockResolvedValue({ kind: 'ok', value: draft });
     const { runPendingShareImport } = await loadWithShare('?url=https%3A%2F%2Fexample.com%2Fr');
@@ -152,7 +154,7 @@ describe('runPendingShareImport', () => {
 
     expect(importRecipeFromUrl).toHaveBeenCalledWith('https://example.com/r', 'share');
     expect(stashImportedDraft).toHaveBeenCalledWith(draft);
-    expect(push).toHaveBeenCalledWith('/recipes/r1/edit');
+    expect(push).toHaveBeenCalledWith('/recipes/r1');
   });
 
   it('says an import is running for the whole extraction, then takes it down', async () => {
