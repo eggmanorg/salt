@@ -39,24 +39,42 @@
    * label, its note — so a snapshot arriving from another phone or from a chat
    * amendment applied in the docked pane must not repaint a box mid-word (#1332
    * review, blocking 1). `stepsDraft` is what every box, every chip and the rail
-   * itself read WHILE EDITING; `recipe.steps` is what read mode draws. The draft
+   * itself DRAW while editing; `recipe.steps` is what read mode draws. The draft
    * is seeded from the store in exactly three places and nowhere else: when edit
    * mode opens, when a zone opens (so a zone opened later sees what was written
-   * while it was closed), and when `recipe.id` changes. Every keystroke still
-   * goes straight out through `onEdit` — there is no Save — composed against the
-   * freshest `recipe`, so a field this component does not own is never rolled
-   * back to what it was when the box opened.
+   * while it was closed), and when `recipe.id` changes.
+   *
+   * DRAWING and WRITING read from different places, which is what #1336 review's
+   * blocking 1 corrected: every gesture still goes straight out through
+   * `onEdit` — there is no Save — but the WRITE is composed off the freshest
+   * `recipe.steps`, patching in only what that one gesture owns. `updateStep` (a
+   * keystroke in a step's words, its note, or either timer box) patches the
+   * named field onto the matching step in `recipe.steps`. The structural
+   * gestures — reorder, remove, `Add step` — carry no in-flight text at all
+   * (`RecipeMadeFromCard`'s own argument for holding no draft), so they compose
+   * straight off `recipe.steps` with no per-field patch either. Neither path
+   * ever sends the WHOLE draft back — that was the bug: one gesture on step 1
+   * used to write `stepsDraft` in full, which silently deleted a concurrent
+   * amendment's rewording of step 7. `stepsDraft` is still updated alongside
+   * every one of these, purely so the rail keeps DRAWING what the gesture just
+   * did — it is never again the thing a write is composed FROM.
    *
    * The boundary on that, stated rather than implied: while a box is open, a
-   * concurrent write to this recipe's OWN steps is invisible until the draft is
-   * re-seeded. That is the trade the timing strip already made, and it is the
-   * right one for a surface you type into.
+   * concurrent write to this recipe's OWN steps stays out of the rail's own
+   * DRAWING until the draft is re-seeded — the step you are not touching still
+   * SHOWS what it showed when the box opened. It is no longer reverted: every
+   * write this component makes is composed off `recipe.steps` at the moment it
+   * fires, so the concurrent write itself survives every gesture that follows
+   * it, including a keystroke in an unrelated step's box. That is the trade the
+   * timing strip already made for repainting, and it is the right one for a
+   * surface you type into — visibility lags, the write does not.
    *
-   * BLANK STEPS ARE KEPT WHILE EDITING AND DROPPED ON DONE — issue #1319's
-   * settled rule, implemented in `blankRows.ts` and composed into the page's
-   * `finishEditing`, not here: pruning on a keystroke would delete the row you
-   * just added before you could type in it. Phase 5 adds ingredient rows to that
-   * same function.
+   * BLANK STEPS ARE KEPT WHILE EDITING AND DROPPED ON EVERY EXIT FROM EDIT MODE
+   * — issue #1319's settled rule, implemented in `blankRows.ts` and composed
+   * into the page's `finishEditing`, its id-keyed `$effect` and its `onDestroy`
+   * (#1336 review, blocking 2), not here: pruning on a keystroke would delete
+   * the row you just added before you could type in it. Phase 5 adds ingredient
+   * rows to that same function.
    *
    * REORDER IS `ReorderControl` AND NOTHING ELSE (#1332's ruling) — no pair of
    * buttons is inlined here.
@@ -122,21 +140,48 @@
     seedDraft();
   });
 
-  function setSteps(next: Step[]): void {
+  // The one place any of these gestures actually reaches `onEdit`. `next` is
+  // always composed by the CALLER off `recipe.steps` — never off `stepsDraft` —
+  // so this only ever mirrors that result into the draft for drawing and sends
+  // it out. Nothing downstream of this point can smuggle a stale sibling step
+  // back into a write (#1336 review, blocking 1).
+  function commitSteps(next: Step[]): void {
     stepsDraft = next;
     onEdit({ ...recipe, steps: next });
   }
 
+  // A keystroke in one step's words, note, or either timer box. Patches ONLY
+  // the named field(s) onto the matching step in the freshest `recipe.steps` —
+  // never the whole draft — so a concurrent write to a SIBLING step (a chat
+  // amendment, another phone) is never rolled back by typing in this one.
   function updateStep(id: string, patch: Partial<Step>): void {
-    setSteps(stepsDraft.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    commitSteps(recipe.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
+  // Reorder, remove and `Add step` carry no in-flight text at all — the same
+  // argument `RecipeMadeFromCard` makes for holding no draft — so they compose
+  // straight off `recipe.steps` too, never off the possibly-stale `stepsDraft`.
   function addStep(): void {
-    setSteps([...stepsDraft, newStep(crypto.randomUUID(), '')]);
+    commitSteps([...recipe.steps, newStep(crypto.randomUUID(), '')]);
   }
 
   function removeStep(id: string): void {
-    setSteps(stepsDraft.filter((s) => s.id !== id));
+    commitSteps(recipe.steps.filter((s) => s.id !== id));
+  }
+
+  // `ReorderControl` hands back `items` (i.e. `steps`, which while editing IS
+  // `stepsDraft`) reordered by one swap. Its CONTENT can be stale — the same
+  // draft-vs-store gap every other gesture here has to mind — so only the ORDER
+  // OF IDS is taken from it; that order is replayed against the fresh
+  // `recipe.steps` objects, and any step the fresh list has that the reordered
+  // input didn't (added by a concurrent write since the draft was last seeded)
+  // is appended rather than silently dropped.
+  function reorderSteps(next: Step[]): void {
+    const order = next.map((s) => s.id);
+    const byId = new Map(recipe.steps.map((s) => [s.id, s] as const));
+    const reordered = order.map((id) => byId.get(id)).filter((s): s is Step => s !== undefined);
+    const appended = recipe.steps.filter((s) => !order.includes(s.id));
+    commitSteps([...reordered, ...appended]);
   }
 
   // A note is stored as `null` when there is none, never as `''` — that is what
@@ -154,13 +199,26 @@
   // records it. So both setters compose a WHOLE timer rather than patching one,
   // which is also what lets a label be typed before a duration.
   function setTimer(id: string, patch: Partial<NonNullable<Step['timer']>>): void {
+    // `current` reads the DRAFT deliberately, not `recipe.steps`: this composes
+    // what the two timer boxes have typed so far IN THIS SESSION, which is
+    // exactly `stepsDraft`'s job (the sibling-step safety is `updateStep`'s,
+    // composing the actual write off `recipe.steps` below).
     const current = stepsDraft.find((s) => s.id === id)?.timer ?? null;
+    const next = {
+      durationMinutes: current?.durationMinutes ?? 0,
+      description: current?.description ?? null,
+      ...patch,
+    };
+    // An abandoned `+ Timer` — no minutes ever typed, or typed then cleared back
+    // to empty — and no label is not a timer at all. Storing
+    // `{ durationMinutes: 0, description: null }` would leave a phantom "0 min"
+    // chip in read mode with `Remove timer` the only way out and no reason to go
+    // looking (#1336 review, should-fix 4) — and, paired with the blank-row rule
+    // now keeping any step with a timer (`blankRows.ts`), a persisted zero
+    // timer would keep a wordless step alive forever too. Collapsing back to
+    // `null` here is what keeps that state from ever reaching the document.
     updateStep(id, {
-      timer: {
-        durationMinutes: current?.durationMinutes ?? 0,
-        description: current?.description ?? null,
-        ...patch,
-      },
+      timer: next.durationMinutes === 0 && next.description === null ? null : next,
     });
   }
 
@@ -293,7 +351,7 @@
               {#if editing}
                 <span class="flex shrink-0 items-start gap-1" data-testid="recipe-edit-step-tools">
                   <span class="sr-only">{rowNumber(idx)}</span>
-                  <ReorderControl items={steps} index={idx} noun="step" onReorder={setSteps} />
+                  <ReorderControl items={steps} index={idx} noun="step" onReorder={reorderSteps} />
                   <Button
                     variant="ghost"
                     size="sm"
@@ -386,89 +444,96 @@
               </ul>
             {/if}
 
-            <div class="flex flex-wrap items-center gap-1.5">
-              {#if handsOff}
-                <!-- Sage: the quiet end of the palette, for the one step marker
+            {#if editing || handsOff || step.timer}
+              <!-- Read mode draws this row only when there is something to put in
+                   it — an unconditional wrapper here would add one 8px `gap-2` to
+                   every step with neither a timer nor the hands-off marker
+                   (#1336 review, should-fix 7). Editing keeps the row for the
+                   dashed `+ Timer` slot even when both are absent. -->
+              <div class="flex flex-wrap items-center gap-1.5">
+                {#if handsOff}
+                  <!-- Sage: the quiet end of the palette, for the one step marker
                      telling you to walk away rather than to do something, paired
                      against the terracotta timer chip beside it, which is the
                      opposite instruction. (The #878 ribbon keyed its waits to this
                      hue; it went with issue #1213, and the phase timeline that
                      replaced it draws its hands-off time on the teal tint.) -->
-                <span
-                  class="inline-flex items-center rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-secondary-container-foreground"
-                  data-testid="recipe-view-step-handsoff">Hands-off</span
+                  <span
+                    class="inline-flex items-center rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-secondary-container-foreground"
+                    data-testid="recipe-view-step-handsoff">Hands-off</span
+                  >
+                {/if}
+                <EditableZone
+                  {editing}
+                  filled={step.timer !== null}
+                  label="Edit timer"
+                  slotLabel="Timer"
+                  testId="recipe-edit-step-timer"
+                  onOpen={seedDraft}
                 >
-              {/if}
-              <EditableZone
-                {editing}
-                filled={step.timer !== null}
-                label="Edit timer"
-                slotLabel="Timer"
-                testId="recipe-edit-step-timer"
-                onOpen={seedDraft}
-              >
-                {#snippet view()}
-                  {#if step.timer}
-                    <!-- Terracotta, the palette's accent for a thing that wants
+                  {#snippet view()}
+                    {#if step.timer}
+                      <!-- Terracotta, the palette's accent for a thing that wants
                          attention at a moment (design.md), and `formatMinutes`
                          rather than the raw number — this is the markup that
                          genuinely said "720 min". -->
-                    <span
-                      class="inline-flex items-center gap-1 rounded-full bg-tertiary-variant/10 px-2 py-0.5 text-xs font-medium text-tertiary-variant"
-                      data-testid="recipe-view-step-timer"
-                    >
-                      <Icon name="Timer" size={12} />
-                      {timerChipText(step.timer)}
-                    </span>
-                  {/if}
-                {/snippet}
-                {#snippet edit(close)}
-                  <div class="flex w-full flex-col gap-2">
-                    <div class="flex items-end gap-2">
-                      <MinutesField
-                        label="Minutes"
-                        value={step.timer?.durationMinutes ?? 0}
-                        parse={stepTimerMinutes}
-                        onValueChange={(m) => setTimer(step.id, { durationMinutes: m })}
-                        class="w-28"
-                        data-testid="recipe-edit-step-timer-minutes"
-                      />
-                      <TextField
-                        label="Timer label"
-                        placeholder="e.g. until golden"
-                        value={step.timer?.description ?? ''}
-                        onValueChange={(v) => setTimerDescription(step.id, v)}
-                        class="flex-1"
-                        data-testid="recipe-edit-step-timer-label"
-                      />
-                    </div>
-                    <div class="flex justify-between">
-                      {#if step.timer}
+                      <span
+                        class="inline-flex items-center gap-1 rounded-full bg-tertiary-variant/10 px-2 py-0.5 text-xs font-medium text-tertiary-variant"
+                        data-testid="recipe-view-step-timer"
+                      >
+                        <Icon name="Timer" size={12} />
+                        {timerChipText(step.timer)}
+                      </span>
+                    {/if}
+                  {/snippet}
+                  {#snippet edit(close)}
+                    <div class="flex w-full flex-col gap-2">
+                      <div class="flex items-end gap-2">
+                        <MinutesField
+                          label="Minutes"
+                          value={step.timer?.durationMinutes ?? 0}
+                          parse={stepTimerMinutes}
+                          onValueChange={(m) => setTimer(step.id, { durationMinutes: m })}
+                          class="w-28"
+                          data-testid="recipe-edit-step-timer-minutes"
+                        />
+                        <TextField
+                          label="Timer label"
+                          placeholder="e.g. until golden"
+                          value={step.timer?.description ?? ''}
+                          onValueChange={(v) => setTimerDescription(step.id, v)}
+                          class="flex-1"
+                          data-testid="recipe-edit-step-timer-label"
+                        />
+                      </div>
+                      <div class="flex justify-between">
+                        {#if step.timer}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onclick={() => updateStep(step.id, { timer: null })}
+                            data-testid="recipe-edit-step-timer-remove"
+                          >
+                            {#snippet leading()}<Icon name="Trash2" size={16} />{/snippet}
+                            Remove timer
+                          </Button>
+                        {:else}
+                          <span></span>
+                        {/if}
                         <Button
                           variant="ghost"
                           size="sm"
-                          onclick={() => updateStep(step.id, { timer: null })}
-                          data-testid="recipe-edit-step-timer-remove"
+                          onclick={close}
+                          data-testid="recipe-edit-step-timer-done"
                         >
-                          {#snippet leading()}<Icon name="Trash2" size={16} />{/snippet}
-                          Remove timer
+                          Done
                         </Button>
-                      {:else}
-                        <span></span>
-                      {/if}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onclick={close}
-                        data-testid="recipe-edit-step-timer-done"
-                      >
-                        Done
-                      </Button>
+                      </div>
                     </div>
-                  </div>
-                {/snippet}
-              </EditableZone>
-            </div>
+                  {/snippet}
+                </EditableZone>
+              </div>
+            {/if}
 
             <EditableZone
               {editing}

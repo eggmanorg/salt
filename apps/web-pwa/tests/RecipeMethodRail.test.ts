@@ -17,10 +17,10 @@ import type { Ingredient, Recipe, Step } from '@salt/domain';
 //   and a dead timer toggle on every step; a step with neither now shows two
 //   slots while editing and nothing at all when not.
 //
-//   A BLANK STEP SURVIVES THE KEYSTROKE THAT FOLLOWS IT. Pruning belongs to Done
-//   and to `blankRows.ts`, and `RecipeViewPage.blankRows.test.ts` drives that
-//   through the page; what this file pins is that nothing here prunes, which is
-//   the half a component test can actually see.
+//   A BLANK STEP SURVIVES THE KEYSTROKE THAT FOLLOWS IT. Pruning belongs to every
+//   exit from edit mode and to `blankRows.ts`, and `RecipeViewPage.reviewFlag.test.ts`
+//   drives that through the page; what this file pins is that nothing here prunes,
+//   which is the half a component test can actually see.
 //
 //   NO BOX IS REPAINTED BY A CONCURRENT WRITE (#1332 review, blocking 1), and no
 //   editing state outlives its recipe (#1326/#1331's recurring finding). The last
@@ -213,7 +213,7 @@ describe('RecipeMethodRail — editing a step', () => {
     );
   });
 
-  it('reads an emptied minutes box as zero and an emptied label as no label', async () => {
+  it('reads an emptied minutes box as zero, and clearing both boxes drops the timer entirely', async () => {
     show(
       recipeWith([step('s1', 'Prove', { timer: { durationMinutes: 90, description: 'a while' } })]),
       true,
@@ -223,23 +223,52 @@ describe('RecipeMethodRail — editing a step', () => {
     await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
       target: { value: '' },
     });
-    expect(lastSteps()[0]!.timer!.durationMinutes).toBe(0);
+    expect(lastSteps()[0]!.timer).toEqual({ durationMinutes: 0, description: 'a while' });
 
+    // Clearing the label too leaves nothing behind: a 0-minute, unlabelled
+    // timer is not a timer at all (#1336 review, should-fix 4).
     await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-label'), {
       target: { value: '  ' },
     });
-    expect(lastSteps()[0]!.timer!.description).toBeNull();
+    expect(lastSteps()[0]!.timer).toBeNull();
   });
 
   it('keeps an unparseable minutes box at zero rather than storing nonsense', async () => {
-    show(recipeWith([step('s1', 'Prove')]), true);
+    // A label is present throughout so the zero-and-unlabelled collapse
+    // (should-fix 4, pinned separately below) never fires here — this test is
+    // only about `stepTimerMinutes` refusing to store `NaN`.
+    show(
+      recipeWith([
+        step('s1', 'Prove', { timer: { durationMinutes: 5, description: 'while things happen' } }),
+      ]),
+      true,
+    );
     await open('recipe-edit-step-timer');
 
     await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
       target: { value: 'soon' },
     });
 
-    expect(lastSteps()[0]!.timer!.durationMinutes).toBe(0);
+    expect(lastSteps()[0]!.timer).toEqual({
+      durationMinutes: 0,
+      description: 'while things happen',
+    });
+  });
+
+  it('never lets an abandoned + Timer persist as a phantom 0-minute timer (#1336 review, should-fix 4)', async () => {
+    show(recipeWith([step('s1', 'Prove')]), true);
+    await open('recipe-edit-step-timer');
+
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
+      target: { value: '5' },
+    });
+    expect(lastSteps()[0]!.timer).toEqual({ durationMinutes: 5, description: null });
+
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
+      target: { value: '' },
+    });
+
+    expect(lastSteps()[0]!.timer).toBeNull();
   });
 
   it('takes a timer off again', async () => {
@@ -328,14 +357,38 @@ describe('RecipeMethodRail — what the boxes are fed from', () => {
   // #1332 review, blocking 1: the SAME recipe's steps moving under an open box —
   // another phone, or a chat amendment applied in the docked pane — must not
   // repaint what the cook is mid-word in.
-  it('ignores a concurrent write to the same recipe while a box is open', async () => {
-    const mine = recipeWith([step('s1', 'Mix the dough')]);
+  //
+  // #1336 review, blocking 1: nor may a LATER gesture, on a step the cook is
+  // NOT typing in, write that stale pre-amendment list back over the
+  // concurrent write. Before the fix this test's own second half failed: the
+  // reorder wrote `stepsDraft` in full, silently deleting the amendment's
+  // reword of s2 and its new s3.
+  it('ignores a concurrent write to the same recipe while a box is open, and a later gesture does not revert it', async () => {
+    const mine = recipeWith([step('s1', 'Mix the dough'), step('s2', 'Bake')]);
     const { rerender } = show(mine, true);
     await open('recipe-edit-step');
 
-    await rerender(props(recipeWith([step('s1', 'Someone else’s edit')]), true));
+    await rerender(
+      props(
+        recipeWith([
+          step('s1', 'Mix the dough'),
+          step('s2', 'Bake until deep gold'),
+          step('s3', 'Rest before slicing'),
+        ]),
+        true,
+      ),
+    );
 
     expect(screen.getByTestId('recipe-edit-step-field')).toHaveValue('Mix the dough');
+
+    // A gesture on an unrelated step (move step 1 down) must not carry the
+    // stale, pre-amendment draft back over the amendment's reword of s2 and
+    // its new s3.
+    await fireEvent.click(screen.getAllByLabelText('Move step down')[0]!);
+
+    const steps = lastSteps();
+    expect(steps.find((s) => s.id === 's2')!.text).toBe('Bake until deep gold');
+    expect(steps.map((s) => s.id)).toContain('s3');
   });
 
   // Standing requirement 1. `/recipes/:id` is one route, so a "Made from" tap

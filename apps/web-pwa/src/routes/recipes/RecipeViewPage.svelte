@@ -30,7 +30,7 @@
     TextField,
     type ImageCropperHandle,
   } from '@salt/ui-components';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { push, router } from 'svelte-spa-router';
   import { trackUsageEvent } from '@salt/observability';
   // The ⋮ menu's two canned chef turns, declared here until #934. They moved into
@@ -117,7 +117,11 @@
   import { recipeChatPanePrefs } from '../../lib/recipeChatPanePrefs.svelte.js';
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import type { DomainError, ReadResult } from '@salt/shared-types';
-  import { guidedPlan, initGuidedPlanSync } from '../../lib/guidedPlanService.js';
+  import {
+    guidedPlan,
+    initGuidedPlanSync,
+    discardGuidedPlan,
+  } from '../../lib/guidedPlanService.js';
   import { formula, initFormulaSync } from '../../lib/formulaService.js';
   import { currentMember } from '../../lib/membersService.js';
   import { defaultListId } from '../../lib/shoppingListService.svelte.js';
@@ -675,13 +679,46 @@
   // this effect and silently drop the user out of edit mode. Comparing the id
   // value instead makes this react only to an actual recipe change, which is
   // the only case #1324's Phase 4 relies on this clearing for.
+  // The prune's OTHER two doors (issue #1336 review, blocking 2): a route
+  // change while editing must drop a blank step from the recipe being LEFT
+  // before it forgets that recipe, same as `finishEditing` does on Done — else
+  // a "Made from" tap after `Add step`, or any other same-route navigation
+  // taken mid-edit, leaves a wordless step on the recipe forever. Looked up by
+  // the OLD id against the store rather than read off `recipe`: by the time
+  // this effect runs, `recipe` (derived off `params.id`) already reflects the
+  // NEW document, so it cannot be the thing pruned here.
+  function pruneBlankSteps(target: Recipe | null | undefined): void {
+    if (!target) return;
+    const pruned = dropBlankRows(target);
+    if (pruned !== target) handleInlineEdit(pruned);
+  }
+
   let lastRecipeId: string | undefined;
   $effect(() => {
     const id = params.id;
     if (id === lastRecipeId) return;
+    // `previousId` is only ever `undefined` on the very first run of this
+    // effect (the component's own mount), and `editing` starts `false` and can
+    // only become `true` through a later user action — so whenever `editing`
+    // is true here, this is never that first run, and `previousId` is always a
+    // real id. No separate check for that is needed, and none is written: it
+    // would be a branch this file could never legitimately exercise both ways.
+    const previousId = lastRecipeId;
+    if (editing) {
+      pruneBlankSteps($recipes.find((r) => r.id === previousId));
+    }
     lastRecipeId = id;
     editing = false;
     titleDraft = '';
+  });
+
+  // The prune's THIRD door: leaving the page outright (Back, a nav tap, or the
+  // card's own New → Manual) unmounts this component instead of moving
+  // `params.id`, so the effect above never runs. `recipe` here is still
+  // whatever it last resolved to — the document this component was showing —
+  // which is exactly what a page-teardown prune needs.
+  onDestroy(() => {
+    if (editing) pruneBlankSteps(recipe);
   });
 
   // There is no Save, so a failed write is the only thing left to say out loud —
@@ -715,12 +752,42 @@
     editing = true;
   }
 
+  // Same rule `applyRecipeAmendment` enforces for the chat path (recipeAmend.ts,
+  // which this campaign does not touch): a step that is gone, or still present
+  // but reworded, invalidates any guided-plan note pinned to it — a note that
+  // still resolves, onto words it was not written against, is worse than a note
+  // that is gone, because nothing shows the mismatch. `RecipeMethodRail` is the
+  // other door a step's TEXT can change through, and until now it did nothing
+  // about this (#1336 review, should-fix 6) — so every inline edit gets the same
+  // check here, the one door they all already come through.
+  //
+  // Guarded to the document actually being edited: `recipe` may not match
+  // `next.id` for a write this function composes on the caller's behalf for a
+  // DIFFERENT recipe (the auto-prune on the recipe just navigated away from,
+  // below) — comparing `recipe.steps` against an unrelated document's `next`
+  // would be a false answer, so that case is skipped rather than guessed at.
+  // The non-null assertion is the same invariant every other reader of `recipe`
+  // in this block relies on: every caller of this function — the template's own
+  // `{#if recipe}` for the cards below, `setTitle`'s explicit guard, and
+  // `pruneBlankSteps`'s own `!target` return — only ever reaches this with the
+  // page actually showing a recipe.
   function handleInlineEdit(next: Recipe): void {
+    const survivingTextById = new Map(next.steps.map((s) => [s.id, s.text]));
+    const planStepsInvalidated =
+      recipe!.id === next.id
+        ? recipe!.steps.some((s) => survivingTextById.get(s.id) !== s.text)
+        : false;
+
     const write = queueRecipeEdit(next);
     void write.then((result) => {
-      if (result.kind === 'ok' || lastFailureToasted === write) return;
-      lastFailureToasted = write;
-      addToast('Failed to save your change.', 'destructive');
+      if (result.kind !== 'ok') {
+        if (lastFailureToasted !== write) {
+          lastFailureToasted = write;
+          addToast('Failed to save your change.', 'destructive');
+        }
+        return;
+      }
+      if (planStepsInvalidated) void discardGuidedPlan(next.id);
     });
   }
 
@@ -753,16 +820,15 @@
     if (scaling && isScaled) setServings(scaling.base, scaling.base);
     // The blank-row rule (issue #1319): a row you added and never typed into is
     // KEPT while you are editing — pruning on a keystroke would delete it out
-    // from under you — and dropped here, at the one deliberate boundary left in
-    // the flow. Queued through the same seam as every other edit so the flush
-    // below carries it, and `dropBlankRows` returns the recipe unchanged when
-    // there is nothing to drop, so pressing Done on a recipe nobody touched
-    // still issues no write. The BOUNDARY today is steps only; ingredient rows
-    // join it in Phase 5, inside that same function.
-    if (recipe) {
-      const pruned = dropBlankRows(recipe);
-      if (pruned !== recipe) handleInlineEdit(pruned);
-    }
+    // from under you — and dropped on every exit from edit mode, of which Done
+    // is one of three (the other two are the id-keyed `$effect` and `onDestroy`
+    // above — #1336 review, blocking 2). `pruneBlankSteps` is queued through the
+    // same seam as every other edit so the flush below carries it, and
+    // `dropBlankRows` returns the recipe unchanged when there is nothing to
+    // drop, so pressing Done on a recipe nobody touched still issues no write.
+    // The BOUNDARY today is steps only; ingredient rows join it in Phase 5,
+    // inside that same function.
+    pruneBlankSteps(recipe);
     await flushRecipeWrites();
     if (recipe?.needs_approval) await handleMarkReviewed();
   }
