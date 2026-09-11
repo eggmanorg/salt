@@ -420,7 +420,7 @@
     //
     // It leaves the document untouched — `exactGrams` keeps the percentages
     // identical — which is why `dirty` stays false below.
-    rows = rowsRestatedAt(rows, doughAmountFrom(seeded.mode, seeded.fields));
+    rows = rowsRestatedAt(rows, doughAmountFrom(seeded.mode, seeded.fields, doughGramsOf(rows)));
 
     // A formula with no process is a formula with no stages — an empty review
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
@@ -638,10 +638,34 @@
 
   const componentInputs = $derived(componentsFrom(rows));
 
-  // Half-typed is not a lenient declaration with a gap filled in — it is no
-  // declaration yet, and the same `shape === null` that has always disabled Save
-  // covers it without a second rule.
-  const shape = $derived(doughAmountFrom(answerMode, answer));
+  /** What a set of rows adds up to — the dough already there. */
+  function doughGramsOf(from: readonly Row[]): number {
+    return componentsFrom(from).reduce((sum, component) => sum + component.grams, 0);
+  }
+
+  // What the weights on the page add up to. The card shows it only while NOTHING is
+  // declared — once there is a declaration that figure IS the total, and printing a
+  // box sum beside it is how the screen came to state two contradictory facts.
+  const asWrittenDoughGrams = $derived(doughGramsOf(rows));
+
+  // Half-typed is still no declaration, and the same `shape === null` that has
+  // always disabled Save covers it without a second rule — an unreadable count has
+  // nothing to divide by any more than it has anything to multiply.
+  //
+  // THE DOUGH ALREADY THERE IS THE ANCHOR (issue #1325). A count with a blank
+  // per-unit weight box then means "divide what's here" — five rolls out of this
+  // dough — instead of nothing. It composes with the restate rather than fighting
+  // it: the divided amount multiplies back to exactly the sum, so the factor is 1
+  // and no weight moves. The bake sheet passes no anchor; `doughAnswer.ts` says why.
+  const shape = $derived(doughAmountFrom(answerMode, answer, asWrittenDoughGrams));
+  // The figure a blank per-unit box would resolve to, for its PLACEHOLDER. Not
+  // written into the box: a number nobody typed, sitting in a box, gives no
+  // discoverable way back to "divide it for me" — and the card's sentence reads the
+  // resolved declaration back anyway. Rounded here, at the call, because this is the
+  // one place it is shown rather than computed with.
+  const dividedUnitHint = $derived(
+    shape === null ? null : String(roundGrams(shape.unitDoughGrams)),
+  );
   // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
   // become load-bearing on the scaling (`doughAmount.ts`).
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
@@ -719,13 +743,6 @@
   //
   // Both are places information is lost or asserted, and both are stated plainly
   // because this screen is the only moment anyone can object.
-
-  // What the weights on the page add up to. The card shows it only while NOTHING is
-  // declared — once there is a declaration that figure IS the total, and printing a
-  // box sum beside it is how the screen came to state two contradictory facts.
-  const asWrittenDoughGrams = $derived(
-    componentInputs.reduce((sum, component) => sum + component.grams, 0),
-  );
 
   /**
    * What the recipe itself said, for a weight the screen has moved away from it.
@@ -1017,6 +1034,7 @@
                       label="Tin size (g)"
                       inputmode="numeric"
                       class="w-32"
+                      placeholder={dividedUnitHint ?? ''}
                       value={answer.tinGramsText}
                       onValueChange={(v) => {
                         answer = { ...answer, tinGramsText: v };
@@ -1176,6 +1194,7 @@
                     label="Dough each (g)"
                     inputmode="numeric"
                     class="w-32"
+                    placeholder={dividedUnitHint ?? ''}
                     value={answer.pieceGramsText}
                     onValueChange={(v) => {
                       answer = { ...answer, pieceGramsText: v };

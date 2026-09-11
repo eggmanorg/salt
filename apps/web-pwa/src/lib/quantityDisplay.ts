@@ -59,9 +59,17 @@ export function formatDoughWeight(grams: number): string {
  * as `usableGrams`. That is what stops this line disagreeing with the figures
  * beside it — see this module's header on why a second copy of an expression is
  * the failure mode, not the duplication itself.
+ *
+ * BOTH figures are rounded here, and the per-unit one only became able to need it
+ * with issue #1325: "five rolls out of this dough" divides a dough total by a
+ * count, and 867 ÷ 7 is 123.85714285714286. An amount is a stored number that other
+ * things compute with, so it stays exact; a SENTENCE is read, so it rounds — at the
+ * call, through the one authority, exactly as this module's header prescribes. The
+ * two figures can then differ by the per-row rounding `rounding.ts` already declines
+ * to reconcile (7 × 124 g is 868, not 867), and the total is the true one.
  */
 export function formatDoughAmount(amount: { count: number; unitDoughGrams: number }): string {
   const total = formatDoughWeight(roundGrams(doughAmountGrams(amount)));
   if (amount.count === 1) return `${total} of dough`;
-  return `${amount.count} × ${formatGrams(amount.unitDoughGrams)} — ${total} of dough`;
+  return `${amount.count} × ${formatGrams(roundGrams(amount.unitDoughGrams))} — ${total} of dough`;
 }

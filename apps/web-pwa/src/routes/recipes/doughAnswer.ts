@@ -18,6 +18,19 @@ import { parseUnitCount } from './unitCount.js';
 // `DoughAmount`, and that rule is here so the two screens cannot disagree about
 // what "8 × 120 g" means. Everything below is pure and holds no component state.
 //
+// ONE PLACE WHERE THEY DIVERGE, AND IT IS AN ARGUMENT RATHER THAN A FORK (issue
+// #1325). `doughAmountFrom` takes an optional dough-total anchor: with a count and
+// a blank per-unit weight, the amount divides that anchor instead of resolving to
+// nothing. "Five rolls out of this dough" is the commonest way the question gets
+// asked, and on the formula screen it used to be division done on paper.
+//
+// THE BAKE SHEET PASSES NONE, and the reason is principled rather than scoping: a
+// null amount there ALREADY MEANS "the formula's own reference yield"
+// (`RecipeBakeBatchSheet.svelte`, and `canStart` never required an amount), so
+// dividing would silently change what Start Bake does. Whether that screen should
+// eventually offer the same gesture is open, and it needs its own decision about
+// what a blank box means there.
+//
 // PAGE-LOCAL, in the shape `unitCount.ts` establishes: both consumers live in this
 // folder, and `lib/` is for rules a `.ts` service also needs (issue #1055).
 
@@ -97,27 +110,57 @@ function parseGrams(text: string): number | null {
 }
 
 /**
+ * What a blank per-unit box resolves to: the dough already there, shared out.
+ *
+ * UNROUNDED, deliberately. The divided amount then multiplies back to exactly the
+ * anchor, so a caller that restates its weights at this declaration scales them by
+ * a factor of precisely 1 and nothing moves — which is the whole point of the
+ * gesture. Rounding here would put a factor of 0.999-something in its place, and
+ * "five rolls out of this dough" would quietly reweigh the dough. A screen that
+ * wants to SHOW the figure rounds it at the call, where the round can be seen.
+ *
+ * Nothing without both halves — a blank count is still no declaration, and no
+ * anchor (or a formula with nothing in it) is nothing to divide.
+ */
+function dividedUnitGrams(count: number | null, anchorDoughGrams: number | null): number | null {
+  if (count === null || anchorDoughGrams === null) return null;
+  return Number.isFinite(anchorDoughGrams) && anchorDoughGrams > 0
+    ? anchorDoughGrams / count
+    : null;
+}
+
+/**
  * The answer as a dough amount, or nothing.
  *
  * NOTHING RATHER THAN A DEFAULT: a half-typed answer is not a lenient one with a
  * gap filled in, it is no declaration yet, and the same `null` that has always
- * disabled Save covers it without a second rule.
+ * disabled Save covers it without a second rule. `anchorDoughGrams` does not
+ * soften that — it answers a DIFFERENT question ("how much does each of N get out
+ * of this much dough") for the two answers that have an N, and only once the count
+ * itself reads as a count.
+ *
+ * The typed figure always wins. The anchor is what a blank box falls back to, never
+ * something layered over one.
  *
  * A plain weight is one of itself — `count: 1` — which is why the read-back for it
- * is "1.4 kg of dough" and not "1 × 1400 g".
+ * is "1.4 kg of dough" and not "1 × 1400 g". It takes no anchor, and neither does a
+ * tray: a tray has its own suggest button, and a plain weight has nothing to divide.
  */
 export function doughAmountFrom(
   mode: DoughAnswerMode,
   fields: DoughAnswerFields,
+  anchorDoughGrams: number | null = null,
 ): DoughAmount | null {
   if (mode === 'tin') {
-    const unitDoughGrams = parseGrams(fields.tinGramsText);
     const count = parseUnitCount(fields.tinCountText);
+    const unitDoughGrams =
+      parseGrams(fields.tinGramsText) ?? dividedUnitGrams(count, anchorDoughGrams);
     return unitDoughGrams === null || count === null ? null : { count, unitDoughGrams };
   }
   if (mode === 'pieces') {
-    const unitDoughGrams = parseGrams(fields.pieceGramsText);
     const count = parseUnitCount(fields.pieceCountText);
+    const unitDoughGrams =
+      parseGrams(fields.pieceGramsText) ?? dividedUnitGrams(count, anchorDoughGrams);
     return unitDoughGrams === null || count === null ? null : { count, unitDoughGrams };
   }
   if (mode === 'tray') {

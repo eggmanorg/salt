@@ -336,12 +336,23 @@ describe('FormulaPage — what the machine cannot know', () => {
 });
 
 describe('FormulaPage — the declaration', () => {
-  it('will not save until the recipe says what it makes', async () => {
+  it('will not save while the count is not a count', async () => {
+    // Issue #1325 moved this bar rather than removing it. A blank per-unit weight
+    // box now DIVIDES the dough already there, and "how many tins" opens at 1 — so
+    // the page's default answer is "one lot of what this recipe makes", which is a
+    // real reference yield and saveable. What is still not a declaration is an
+    // unreadable count: there is nothing to divide by.
     const { getByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false);
+    expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
+
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '' } });
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
+    );
     expect(getByTestId('formula-blocked-reason').textContent).toContain('what this makes');
   });
 

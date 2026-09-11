@@ -376,6 +376,81 @@ describe('FormulaPage — the declared yield wins', () => {
     expect(getByTestId('formula-restate-note').textContent).toMatch(/change what it makes/i);
   });
 
+  // ─── Divide what's already there (issue #1325, phase 2) ─────────────────────
+  //
+  // The composition case the two phases have to get right together: a blank
+  // per-unit weight box declares `boxSum ÷ count`, which multiplies back to exactly
+  // the box sum — so the restate factor is 1 and phase 1 moves nothing. The two
+  // features meet here rather than fighting.
+
+  async function pickAnswer(container: HTMLElement, label: string): Promise<void> {
+    const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes(label),
+    );
+    if (option === undefined) throw new Error(`no answer labelled ${label}`);
+    await fireEvent.click(option);
+  }
+
+  it('divides the dough already there, and rescales nothing doing it', async () => {
+    const { getByTestId, container } = renderPage();
+    await ready(getByTestId);
+    await declareTin(container, 900);
+    await waitFor(() => expect(weights(container)[0]).toBe('519'));
+    const settled = weights(container);
+
+    await pickAnswer(container, 'A number of pieces');
+    await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '5' } });
+    await fireEvent.blur(getByTestId('formula-piece-count'));
+
+    // It is the SAME DOUGH, so nothing moves — that is the whole claim.
+    expect(weights(container)).toEqual(settled);
+    // The resolved per-unit figure is the box's hint, never its value: a number
+    // nobody typed sitting in a box gives no way back to "divide it for me".
+    const each = getByTestId('formula-piece-grams') as HTMLInputElement;
+    expect(each.value).toBe('');
+    expect(each.getAttribute('placeholder')).toBe('180');
+    // And the card reads the resolved declaration back.
+    expect(getByTestId('formula-dough-total').textContent).toContain('5 × 180 g — 900 g of dough');
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('does the same for a count of tins', async () => {
+    const { getByTestId, container } = renderPage();
+    await ready(getByTestId);
+    await declareTin(container, 900);
+    await waitFor(() => expect(weights(container)[0]).toBe('519'));
+    const settled = weights(container);
+
+    // Clear the tin size and ask for two of them out of the dough there is.
+    await fireEvent.input(getByTestId('formula-grams-each'), { target: { value: '' } });
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
+    await fireEvent.blur(getByTestId('formula-count'));
+
+    expect(weights(container)).toEqual(settled);
+    expect(getByTestId('formula-grams-each').getAttribute('placeholder')).toBe('450');
+    expect(getByTestId('formula-dough-total').textContent).toContain('2 × 450 g — 900 g of dough');
+  });
+
+  it('takes a figure typed over the hint, and restates to it', async () => {
+    // Phase 1's behaviour, reached from the common gesture: 5 × 100 g is a 500 g
+    // dough, so the weights come down to it.
+    const { getByTestId, container } = renderPage();
+    await ready(getByTestId);
+    await declareTin(container, 900);
+    await waitFor(() => expect(weights(container)[0]).toBe('519'));
+
+    await pickAnswer(container, 'A number of pieces');
+    await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '5' } });
+    await fireEvent.input(getByTestId('formula-piece-grams'), { target: { value: '100' } });
+    await fireEvent.blur(getByTestId('formula-piece-grams'));
+
+    await waitFor(() => expect(weights(container)[0]).toBe('288'));
+    expect(Math.abs(weightSum(container) - 500)).toBeLessThanOrEqual(
+      gramsInputs(container).length * 0.5,
+    );
+    expect(getByTestId('formula-dough-total').textContent).toContain('5 × 100 g — 500 g of dough');
+  });
+
   // ─── The round trip ─────────────────────────────────────────────────────────
 
   it('shows the same weights when the saved formula is reopened', async () => {

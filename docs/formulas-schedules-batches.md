@@ -106,6 +106,18 @@ gate. The per-row rounding residual (up to N × 0.5 g across N rows) is the one
 rather than reconciled: once a yield is declared the card prints the declaration
 and no box sum.
 
+**A blank per-unit weight means "divide what's already there."** A count of pieces
+or tins with an empty weight box declares `boxSum ÷ count` — five rolls out of this
+dough — which multiplies back to exactly the box sum, so the restate factor is 1
+and nothing moves. The figure is the box's placeholder, never its value: a number
+nobody typed, sitting in a box, gives no discoverable way back. It is kept
+UNROUNDED on the amount (rounding it would quietly reweigh the dough) and rounded
+only where it is printed. **The bake sheet passes no anchor and is unchanged**, and
+that is principled rather than scoping: a null amount there already means "the
+formula's own reference yield", so dividing would silently change what Start Bake
+does. Whether that screen should offer the same gesture is open and needs its own
+decision about what a blank box means there.
+
 **A vessel is a fact about tonight, not about the recipe.** A formula stores the
 dough figures alone; the batch records what the run was baked in, as a free-text
 snapshot (`BatchSchema.vessel`) that nothing parses and nothing computes from.

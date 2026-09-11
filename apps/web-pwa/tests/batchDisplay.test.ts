@@ -272,6 +272,22 @@ describe('yieldSummary', () => {
       yieldSummary({ basisGrams: 2400, totalGrams: 2460, usableGrams: 2460, units: null }),
     ).toBe('2460 g');
   });
+
+  it('rounds a per-unit figure that came out of a division (issue #1325)', () => {
+    // "Seven rolls out of this dough" divides 867 g by 7, and the exact figure is
+    // 123.85714285714286. The AMOUNT keeps it — other things compute with it — and
+    // the sentence rounds it, so the screen never prints a float. The two then
+    // differ by the residual `rounding.ts` declines to reconcile (7 × 124 is 868),
+    // and the total printed is the true one.
+    expect(
+      yieldSummary({
+        basisGrams: 500,
+        totalGrams: 867,
+        usableGrams: 867,
+        units: { count: 7, unitDoughGrams: 867 / 7 },
+      }),
+    ).toBe('7 × 124 g — 867 g of dough');
+  });
 });
 
 /**
