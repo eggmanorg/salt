@@ -68,7 +68,7 @@
   import RecipeIdentityCard from './RecipeIdentityCard.svelte';
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
-  import { componentTimeLabel } from './recipeTiming.js';
+  import RecipeMadeFromCard from './RecipeMadeFromCard.svelte';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
   import { chatsForRecipe } from './recipeChats.js';
@@ -180,8 +180,8 @@
   const canAuthor = $derived(recipe !== null && isAuthorable(kindOf(recipe)));
 
   // ─── The dishes this dinner is made of (issue #752) ─────────────────────────
-  // Display only — attaching, reordering and removing all live in the editor,
-  // because they are edits to the document and belong with every other one.
+  // Resolved HERE and handed to `RecipeMadeFromCard`, which reads them and — since
+  // issue #1319 Phase 3 — is also where they are attached, removed and reordered.
   //
   // Resolved against the same in-memory `recipes` store the rest of the page
   // reads, so an id whose recipe has been deleted elsewhere simply produces one
@@ -2178,139 +2178,75 @@
           {setServings}
         />
 
-        <!-- Made from (issue #752). A meal's components lead, above its own
-             ingredients: what a Sunday roast IS — chicken, potatoes, gravy — is
-             the headline fact about it, and the ingredient list below belongs to
-             the roast itself, not to the three dishes. Nothing is aggregated.
-             The card is gated on the DOCUMENT having components, in the same
-             idiom as Ingredients above: when the concept applies the card is
-             there, and the inner guard covers the case where every component has
-             since been deleted. Each card is a link to that dish, one level deep;
-             a component's own components are neither shown nor read. -->
+        <!-- Made from (issue #752) — the dishes a meal is built out of, now read
+             AND written in the same place (issue #1319, Phase 3). The card itself
+             is `RecipeMadeFromCard.svelte`; what stays here is the "New" menu,
+             which owns this page's two import dialogs and the navigation Phase 7
+             re-points. Gated on the DOCUMENT having components, in the same idiom
+             as Ingredients below: when the concept applies the card is there, and
+             the card's own guard covers every component having since been deleted. -->
         {#if showComponents}
-          <Card>
-            <CardHeader class="px-4 pt-4 pb-0">
-              <div class="flex items-center justify-between gap-2">
-                <CardTitle class="text-sm">Made from</CardTitle>
-                <!-- The same four ways in the recipe list's New menu offers, in
-                     the same order and the same idiom — a dish for a meal is
-                     made exactly like any other dish. Each entry only says where
-                     to start; `startComponent` is what pins the meal to the URL
-                     so the far end knows where to come back to. -->
-                <Popover bind:open={componentMenuOpen}>
-                  <PopoverTrigger>
-                    {#snippet children()}
-                      <button
-                        type="button"
-                        class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                        data-testid="meal-component-new-btn"
-                        aria-label="Add a dish to this meal"
-                      >
-                        <Icon name="Plus" size={14} />
-                        New
-                        <Icon name="ChevronDown" size={12} class="opacity-80" />
-                      </button>
-                    {/snippet}
-                  </PopoverTrigger>
-                  <PopoverContent align="end" class="min-w-48 p-1">
-                    <PopoverMenuItem
-                      icon="Link"
-                      onclick={() => {
-                        componentMenuOpen = false;
-                        showComponentUrlImport = true;
-                      }}
-                      data-testid="meal-component-new-import"
+          <RecipeMadeFromCard {recipe} {components} {editing} onEdit={handleInlineEdit}>
+            {#snippet newMenu()}
+              <!-- The same four ways in the recipe list's New menu offers, in the
+                   same order and the same idiom — a dish for a meal is made
+                   exactly like any other dish. Each entry only says where to
+                   start; `startComponent` is what pins the meal to the URL so
+                   the far end knows where to come back to. -->
+              <Popover bind:open={componentMenuOpen}>
+                <PopoverTrigger>
+                  {#snippet children()}
+                    <button
+                      type="button"
+                      class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                      data-testid="meal-component-new-btn"
+                      aria-label="Add a dish to this meal"
                     >
-                      Import URL
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Camera"
-                      onclick={() => {
-                        componentMenuOpen = false;
-                        showComponentPhotoImport = true;
-                      }}
-                      data-testid="meal-component-new-import-photo"
-                    >
-                      Import from photo
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Sparkles"
-                      onclick={() => startComponent('/chat')}
-                      data-testid="meal-component-new-chat"
-                    >
-                      Chat with AI
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Pencil"
-                      onclick={() => startComponent('/recipes/new')}
-                      data-testid="meal-component-new-manual"
-                    >
-                      Manual
-                    </PopoverMenuItem>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </CardHeader>
-            <CardContent class="px-4 pb-4 pt-3">
-              {#if components.length === 0}
-                <p class="text-sm text-muted-foreground">
-                  The dishes this was built from are no longer in the library.
-                </p>
-              {:else}
-                <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="recipe-components">
-                  {#each components as component (component.id)}
-                    <li>
-                      <button
-                        type="button"
-                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
-                        onclick={() => push(`/recipes/${component.id}`)}
-                        data-testid="recipe-component-card"
-                        data-recipe-id={component.id}
-                      >
-                        <span
-                          class="h-14 w-14 shrink-0 overflow-hidden rounded bg-muted text-muted-foreground/60"
-                        >
-                          {#if component.image?.url}
-                            <img
-                              src={recipeHeroUrl(component)}
-                              alt=""
-                              loading="lazy"
-                              class="h-full w-full object-cover"
-                              data-testid="recipe-component-thumb"
-                            />
-                          {:else}
-                            <span
-                              class="flex h-full w-full items-center justify-center"
-                              data-testid="recipe-component-thumb-fallback"
-                            >
-                              <!-- The kind's own placeholder icon, not a fixed
-                                   pot: a cocktail component wears a martini glass
-                                   here exactly as it does on the list and in the
-                                   week's shop sheet. Which picture a kind wears is
-                                   COPY, which is what `KIND_COPY` is for. -->
-                              <Icon name={KIND_COPY[kindOf(component)].thumbIcon} size={20} />
-                            </span>
-                          {/if}
-                        </span>
-                        <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span class="truncate text-sm font-medium">{component.title}</span>
-                          {#if componentTimeLabel(component) !== null}
-                            <span
-                              class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                              data-testid="recipe-component-cook-time"
-                            >
-                              <Icon name="Clock" size={12} />
-                              {componentTimeLabel(component)}
-                            </span>
-                          {/if}
-                        </span>
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </CardContent>
-          </Card>
+                      <Icon name="Plus" size={14} />
+                      New
+                      <Icon name="ChevronDown" size={12} class="opacity-80" />
+                    </button>
+                  {/snippet}
+                </PopoverTrigger>
+                <PopoverContent align="end" class="min-w-48 p-1">
+                  <PopoverMenuItem
+                    icon="Link"
+                    onclick={() => {
+                      componentMenuOpen = false;
+                      showComponentUrlImport = true;
+                    }}
+                    data-testid="meal-component-new-import"
+                  >
+                    Import URL
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Camera"
+                    onclick={() => {
+                      componentMenuOpen = false;
+                      showComponentPhotoImport = true;
+                    }}
+                    data-testid="meal-component-new-import-photo"
+                  >
+                    Import from photo
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Sparkles"
+                    onclick={() => startComponent('/chat')}
+                    data-testid="meal-component-new-chat"
+                  >
+                    Chat with AI
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Pencil"
+                    onclick={() => startComponent('/recipes/new')}
+                    data-testid="meal-component-new-manual"
+                  >
+                    Manual
+                  </PopoverMenuItem>
+                </PopoverContent>
+              </Popover>
+            {/snippet}
+          </RecipeMadeFromCard>
         {/if}
 
         <!-- Where the recipe scrolls to when the drawer opens (issue #696): the strip
