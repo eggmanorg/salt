@@ -90,6 +90,22 @@ loss factor**, and both omissions are decisions rather than gaps:
   yields Warburtons' 800 g loaf precisely _because_ of the oven loss, so
   modelling it separately was the same sum twice.
 
+**The declaration is the only place the total is authored** (issue #1325). On the
+formula screen a weight box says what an ingredient is _relative to the others_,
+and "what this makes" says _how much of it there is_ — so committing either one
+re-solves the whole list through `solveFormula` at the declared yield, and the
+screen can never state two totals that disagree. Declaring a 900 g tin on a recipe
+whose ingredients come to 867 g moves 500 g of flour to 519 g; the percentages do
+not move at all, because the unrounded solved figure is carried beside the rounded
+one the box shows. The commit is a blur, a chip or a mode change and never a
+reactive edge — every yield box fires per keystroke, and "100" passes through 1
+and 10 on the way in. Each weight that no longer matches the recipe carries a
+muted line saying what the recipe itself said; there is no confirmation and no
+gate. The per-row rounding residual (up to N × 0.5 g across N rows) is the one
+`rounding.ts` already states and refuses to reconcile, and it stays invisible
+rather than reconciled: once a yield is declared the card prints the declaration
+and no box sum.
+
 **A vessel is a fact about tonight, not about the recipe.** A formula stores the
 dough figures alone; the batch records what the run was baked in, as a free-text
 snapshot (`BatchSchema.vessel`) that nothing parses and nothing computes from.
