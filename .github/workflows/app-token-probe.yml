@@ -1,0 +1,72 @@
+name: App token probe
+
+# TEMPORARY diagnostic. Delete once the salt-autofix push question is settled.
+
+on:
+  push:
+    branches: [chore/app-token-probe]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - id: token-a
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AUTOFIX_APP_ID }}
+          private-key: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
+
+      - name: Push BEFORE claude-code-action
+        env:
+          TOKEN: ${{ steps.token-a.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          git config user.name "salt-autofix[bot]"
+          git config user.email "salt-autofix[bot]@users.noreply.github.com"
+          git commit --no-verify --allow-empty -m "chore: probe before"
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:chore/probe-target" && echo "BEFORE PUSH OK" || echo "BEFORE PUSH DENIED"
+
+      - name: Run claude-code-action (trivial)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "Reply with the single word OK. Do not use any tools."
+          claude_args: "--max-turns 1 --model sonnet"
+
+      - name: Git state after the action
+        run: |
+          set -uo pipefail
+          echo "--- local config ---"
+          git config --local --list | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
+          echo "--- global config ---"
+          git config --global --list | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
+          echo "--- remotes ---"
+          git remote -v | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
+
+      - id: token-b
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AUTOFIX_APP_ID }}
+          private-key: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
+
+      - name: Push AFTER claude-code-action
+        env:
+          TOKEN: ${{ steps.token-b.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          git config user.name "salt-autofix[bot]"
+          git config user.email "salt-autofix[bot]@users.noreply.github.com"
+          git commit --no-verify --allow-empty -m "chore: probe after"
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:chore/probe-target" && echo "AFTER PUSH OK" || echo "AFTER PUSH DENIED"
