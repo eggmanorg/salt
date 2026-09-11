@@ -1,10 +1,12 @@
 name: App token probe
 
-# TEMPORARY diagnostic. Delete once the salt-autofix push question is settled.
+# TEMPORARY diagnostic — mirrors pr-doc-review.yml's shape (checkout PR head,
+# run claude-code-action, then push with the salt-autofix App token) to find
+# why that job's push was denied on #1336. Delete once settled.
 
 on:
-  push:
-    branches: [chore/app-token-probe]
+  pull_request:
+    types: [opened]
 
 permissions:
   contents: read
@@ -13,11 +15,13 @@ permissions:
 
 jobs:
   probe:
+    if: github.event.pull_request.head.ref == 'chore/app-token-probe'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
           persist-credentials: false
 
       - id: token-a
@@ -30,12 +34,13 @@ jobs:
         env:
           TOKEN: ${{ steps.token-a.outputs.token }}
           REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -uo pipefail
           git config user.name "salt-autofix[bot]"
           git config user.email "salt-autofix[bot]@users.noreply.github.com"
           git commit --no-verify --allow-empty -m "chore: probe before"
-          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:chore/probe-target" && echo "BEFORE PUSH OK" || echo "BEFORE PUSH DENIED"
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:${HEAD_REF}" && echo "BEFORE PUSH OK" || echo "BEFORE PUSH DENIED"
 
       - name: Run claude-code-action (trivial)
         uses: anthropics/claude-code-action@v1
@@ -45,28 +50,32 @@ jobs:
           claude_args: "--max-turns 1 --model sonnet"
 
       - name: Git state after the action
+        if: always()
         run: |
           set -uo pipefail
           echo "--- local config ---"
           git config --local --list | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
-          echo "--- global config ---"
-          git config --global --list | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
+          echo "--- includes ---"
+          git config --local --get-all include.path || true
           echo "--- remotes ---"
           git remote -v | sed 's/x-access-token:[^@]*@/x-access-token:HIDDEN@/g'
 
       - id: token-b
+        if: always()
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.AUTOFIX_APP_ID }}
           private-key: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
 
-      - name: Push AFTER claude-code-action
+      - name: Push AFTER claude-code-action — to the PR head branch
+        if: always()
         env:
           TOKEN: ${{ steps.token-b.outputs.token }}
           REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -uo pipefail
           git config user.name "salt-autofix[bot]"
           git config user.email "salt-autofix[bot]@users.noreply.github.com"
           git commit --no-verify --allow-empty -m "chore: probe after"
-          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:chore/probe-target" && echo "AFTER PUSH OK" || echo "AFTER PUSH DENIED"
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "HEAD:${HEAD_REF}" && echo "AFTER PUSH OK" || echo "AFTER PUSH DENIED"
