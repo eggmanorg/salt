@@ -74,6 +74,7 @@ const SESSION: CookSessionDoc = {
   completedStepIds: ['step-1', 'step-2', 'step-3'],
   activeTimers: [],
   serveAt: null,
+  servings: null,
   createdAt: '2026-08-01T11:00:00.000Z',
   updatedAt: '2026-08-01T11:00:00.000Z',
 };

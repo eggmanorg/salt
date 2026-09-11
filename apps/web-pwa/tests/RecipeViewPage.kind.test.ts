@@ -44,7 +44,13 @@ const {
   };
 });
 
-vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
+// `router` joins the mock for issue #1314: the page reads `router.querystring`
+// live to find the `?serves=` it is being read at. An empty querystring is "as
+// written", which is what every assertion in this suite assumes.
+vi.mock('svelte-spa-router', () => ({
+  push: vi.fn(),
+  router: { querystring: '' },
+}));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
 // `uid` as well as `email`: "Make a variation" opens a chat session, which is
 // owner-scoped, so the handler returns early without one.

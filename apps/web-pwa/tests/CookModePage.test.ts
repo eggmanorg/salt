@@ -32,59 +32,68 @@ const {
   };
 });
 
-const { mockCanonItems, mockProductForms, mockWakeLock, mockChime } = vi.hoisted(() => ({
-  mockCanonItems: (() => {
-    // Settable since issue #871: proving the icon SWAPS from the parent's to the
-    // form's needs a canon item that actually has an icon to swap away from.
-    let value: unknown[] = [];
-    const subs = new Set<(v: unknown[]) => void>();
-    return {
-      subscribe(fn: (v: unknown[]) => void) {
-        subs.add(fn);
-        fn(value);
-        return () => {
-          subs.delete(fn);
-        };
-      },
-      _set(v: unknown[]) {
-        value = v;
-        subs.forEach((sub) => sub(v));
-      },
-    };
-  })(),
-  // The page prefers a product form's own icon over its parent's (issue #871).
-  // Settable so a test can put a form in front of it; empty by default, which is
-  // what every pre-existing assertion (all about the canon fallback) needs.
-  mockProductForms: (() => {
-    let value: unknown[] = [];
-    const subs = new Set<(v: unknown[]) => void>();
-    return {
-      subscribe(fn: (v: unknown[]) => void) {
-        subs.add(fn);
-        fn(value);
-        return () => {
-          subs.delete(fn);
-        };
-      },
-      _set(v: unknown[]) {
-        value = v;
-        subs.forEach((sub) => sub(v));
-      },
-    };
-  })(),
-  mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
-  // jsdom has no AudioContext, so the real chime is already a silent no-op — but
-  // it is a no-op we cannot observe. Mocked so the gating around WHEN it fires is
-  // testable at all.
-  mockChime: { primeChime: vi.fn(), playChime: vi.fn() },
-}));
+const { mockCanonItems, mockProductForms, mockWakeLock, mockChime, mockRouter } = vi.hoisted(
+  () => ({
+    mockCanonItems: (() => {
+      // Settable since issue #871: proving the icon SWAPS from the parent's to the
+      // form's needs a canon item that actually has an icon to swap away from.
+      let value: unknown[] = [];
+      const subs = new Set<(v: unknown[]) => void>();
+      return {
+        subscribe(fn: (v: unknown[]) => void) {
+          subs.add(fn);
+          fn(value);
+          return () => {
+            subs.delete(fn);
+          };
+        },
+        _set(v: unknown[]) {
+          value = v;
+          subs.forEach((sub) => sub(v));
+        },
+      };
+    })(),
+    // The page prefers a product form's own icon over its parent's (issue #871).
+    // Settable so a test can put a form in front of it; empty by default, which is
+    // what every pre-existing assertion (all about the canon fallback) needs.
+    mockProductForms: (() => {
+      let value: unknown[] = [];
+      const subs = new Set<(v: unknown[]) => void>();
+      return {
+        subscribe(fn: (v: unknown[]) => void) {
+          subs.add(fn);
+          fn(value);
+          return () => {
+            subs.delete(fn);
+          };
+        },
+        _set(v: unknown[]) {
+          value = v;
+          subs.forEach((sub) => sub(v));
+        },
+      };
+    })(),
+    mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
+    // jsdom has no AudioContext, so the real chime is already a silent no-op — but
+    // it is a no-op we cannot observe. Mocked so the gating around WHEN it fires is
+    // testable at all.
+    mockChime: { primeChime: vi.fn(), playChime: vi.fn() },
+    // svelte-spa-router's `router` is a rune-backed state object; the cook screens
+    // read `router.querystring` live for the `?serves=` they were opened on (#1314).
+    mockRouter: { querystring: '' as string | undefined },
+  }),
+);
 
 // The audible alert lives in the app-level watcher (cookTimerAlerts), not here —
 // this page only unlocks the audio context on the start gesture. `playChime` is
 // mocked alongside it purely so a re-added chime on this page would show up as a
 // failure rather than passing unnoticed.
 
-vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
+// `router` joins the mock for issue #1314: the cook screens read
+// `router.querystring` live to find the `?serves=` they were opened on. An empty
+// querystring is "as written", which is what all but the scaling cases assume, and
+// `beforeEach` puts it back.
+vi.mock('svelte-spa-router', () => ({ push: vi.fn(), router: mockRouter }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
 vi.mock('../src/lib/auth.svelte.js', () => ({ auth: mockAuth }));
 vi.mock('../src/lib/canonService.js', () => ({ canonItems: mockCanonItems }));
@@ -219,6 +228,7 @@ function makeCookSession(over: Partial<CookSessionDoc> = {}): CookSessionDoc {
     completedStepIds: [],
     activeTimers: [],
     serveAt: null,
+    servings: null,
     createdAt: '2026-07-01T11:00:00.000Z',
     updatedAt: '2026-07-01T11:00:00.000Z',
     ...over,
@@ -253,6 +263,7 @@ beforeEach(() => {
   mockCookSession._set(makeCookSession());
   mockCookSessionEnded._set(false);
   mockIsLoadingCookSession._set(false);
+  mockRouter.querystring = '';
 });
 
 afterEach(() => {
@@ -1888,5 +1899,89 @@ describe('CookModePage — product-form icons in mise en place', () => {
     renderCookMode();
     await screen.findByTestId('cook-mise-row');
     expect(iconSrcs().some((src) => src.startsWith(CANON_ICON))).toBe(true);
+  });
+});
+
+// ─── Cooking for a different number (issue #1314) ──────────────────────────────
+describe('CookModePage — cooking for a different number', () => {
+  // The recipe fixture serves 2, so `?serves=4` is exactly double and the arithmetic
+  // is readable without a calculator.
+  function scaledRecipe() {
+    return makeRecipe({
+      ingredients: [
+        {
+          id: 'group-1',
+          name: null,
+          items: [
+            makeIngredient({
+              id: 'ing-1',
+              rawText: '400g tinned tomatoes',
+              parsed: {
+                quantity: { type: 'single', value: 400 },
+                unit: 'g',
+                item: 'tinned tomatoes',
+                preparation: [],
+                notes: null,
+                displayText: null,
+              },
+            }),
+          ],
+        },
+      ],
+    });
+  }
+
+  it('draws the recipe’s own amounts, and says nothing, when opened with no link', async () => {
+    mockRecipes._set([scaledRecipe()]);
+    renderCookMode();
+
+    const row = await screen.findByTestId('cook-mise-row');
+    expect(row.textContent).toContain('400g');
+    expect(screen.queryByTestId('cook-mode-scaled')).not.toBeInTheDocument();
+  });
+
+  it('scales the mise-en-place amounts to the link it was opened on', async () => {
+    mockRouter.querystring = 'serves=4';
+    mockRecipes._set([scaledRecipe()]);
+    renderCookMode();
+
+    const row = await screen.findByTestId('cook-mise-row');
+    expect(row.textContent).toContain('800g');
+    expect(row.textContent).not.toContain('400g');
+  });
+
+  it('says out loud that it is cooking for a different number', async () => {
+    mockRouter.querystring = 'serves=4';
+    mockRecipes._set([scaledRecipe()]);
+    renderCookMode();
+
+    const banner = await screen.findByTestId('cook-mode-scaled');
+    expect(banner.textContent).toContain('4');
+    expect(banner.textContent).toContain('2');
+    // The honest half: a cook mid-recipe cannot check the arithmetic, and what
+    // scaling did NOT touch is what would mislead them.
+    expect(banner.textContent).toMatch(/method/i);
+  });
+
+  it('RESUME: a session carrying the scale shows it without the link', async () => {
+    mockCookSession._set(makeCookSession({ servings: 4 }));
+    mockRecipes._set([scaledRecipe()]);
+    renderCookMode();
+
+    const row = await screen.findByTestId('cook-mise-row');
+    expect(row.textContent).toContain('800g');
+    // A resume is a read: nothing is written back for a value already recorded.
+    expect(vi.mocked(persistCookSession)).not.toHaveBeenCalled();
+  });
+
+  it('pins the scale it opened with onto the session', async () => {
+    mockRouter.querystring = 'serves=4';
+    mockRecipes._set([scaledRecipe()]);
+    renderCookMode();
+
+    await screen.findByTestId('cook-mise-row');
+    await waitFor(() => expect(vi.mocked(persistCookSession)).toHaveBeenCalled());
+    // Whole-document (CLAUDE.md, LWW) — the tick lists ride along untouched.
+    expect(lastPersisted()).toEqual({ ...makeCookSession(), servings: 4 });
   });
 });

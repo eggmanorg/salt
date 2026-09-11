@@ -33,6 +33,11 @@ export { flattenIngredients } from './queries/ingredients.js';
 // list and the formula mapping screen so a range cannot mean two amounts. The
 // choice of which end a range collapses to is argued in the file, once.
 export { quantityToNumber } from './queries/quantity.js';
+// The DRAWING half of scaling an amount (issue #1314) — rounds a scaled quantity
+// to a figure somebody can weigh or count. Deliberately separate from the BUYING
+// half in `buildRecipeAddPlan`, which stays at full float precision; the file
+// header argues why routing one through the other rounds twice.
+export { scaleQuantity } from './queries/scaleQuantity.js';
 // The ONE rule for whether a recipe's own servings count can be a scaling base
 // (issue #1123) — the plan builder and the review sheet both read it, and a 0
 // that reached either divided a shopping list by zero.

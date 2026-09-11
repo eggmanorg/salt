@@ -58,6 +58,8 @@
   import CookLoadingOrphan from './CookLoadingOrphan.svelte';
   import CookTimeline from './CookTimeline.svelte';
   import CookRecipeChangedBanner from './CookRecipeChangedBanner.svelte';
+  import CookScaledBanner from './CookScaledBanner.svelte';
+  import { createCookServings } from './cookServings.svelte.js';
   import CookTimersBar from './CookTimersBar.svelte';
   import CookStepCollapsed from './CookStepCollapsed.svelte';
   import CookStepKit from './CookStepKit.svelte';
@@ -148,6 +150,15 @@
   const restarting = $derived(lifecycle.restarting);
   const completing = $derived(lifecycle.completing);
   const keepAwake = $derived(lifecycle.keepAwake);
+
+  // ─── Cooking for a different number (issue #1314) ──────────────────────────────
+  // Plain cook mode's, verbatim — the same session, so the same rule about which
+  // number wins. The factor goes to `IngredientText` and nowhere else: the plan's
+  // jobs, its containers and its timings are untouched by scaling.
+  const servings = createCookServings({
+    recipe: () => lifecycle.recipe,
+    session: () => $cookSession,
+  });
 
   // The plan itself. Its store has THREE states — `undefined` not loaded, `null`
   // loaded and there is no plan, a document — and all three matter here: the
@@ -572,6 +583,11 @@
       <CookRecipeChangedBanner {restarting} onRestart={handleRestart} />
     {/if}
 
+    <!-- Cooking for a different number than the recipe states (issue #1314). -->
+    {#if servings.scaled}
+      <CookScaledBanner servings={servings.scaled.active} base={servings.scaled.base} />
+    {/if}
+
     <!-- Persistent timers bar -->
     {#if barTimers.length > 0}
       <CookTimersBar
@@ -805,7 +821,7 @@
                                           ? 'text-muted-foreground line-through'
                                           : ''}"
                                       >
-                                        <IngredientText {ingredient} />
+                                        <IngredientText {ingredient} scale={servings.scale} />
                                       </span>
                                     </button>
                                   </li>
@@ -875,7 +891,7 @@
                           ? 'text-muted-foreground line-through'
                           : ''}"
                       >
-                        <IngredientText {ingredient} />
+                        <IngredientText {ingredient} scale={servings.scale} />
                       </span>
                     </button>
                   </li>
@@ -1059,7 +1075,7 @@
                                     size={32}
                                   />
                                   <span class="min-w-0 flex-1 text-base">
-                                    <IngredientText {ingredient} />
+                                    <IngredientText {ingredient} scale={servings.scale} />
                                   </span>
                                 </li>
                               {/each}
@@ -1087,7 +1103,7 @@
                             size={32}
                           />
                           <span class="min-w-0 flex-1 text-base">
-                            <IngredientText {ingredient} />
+                            <IngredientText {ingredient} scale={servings.scale} />
                           </span>
                         </li>
                       {/each}

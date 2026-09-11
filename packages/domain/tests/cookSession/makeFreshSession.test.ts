@@ -28,6 +28,7 @@ describe('makeFreshSession', () => {
       // …and no serve time (issue #752): a fresh session never carries one, not
       // even a meal's — the cook plan writes it on the first set.
       serveAt: null,
+      servings: null,
       createdAt: '2026-07-22T18:30:00.000Z',
       updatedAt: '2026-07-22T18:30:00.000Z',
     });

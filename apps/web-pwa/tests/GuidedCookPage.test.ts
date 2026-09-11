@@ -62,49 +62,54 @@ const {
   };
 });
 
-const { mockCanonItems, mockProductForms, mockWakeLock, mockChime } = vi.hoisted(() => ({
-  mockCanonItems: (() => {
-    // Settable since issue #871: proving the icon SWAPS from the parent's to the
-    // form's needs a canon item that actually has an icon to swap away from.
-    let value: unknown[] = [];
-    const subs = new Set<(v: unknown[]) => void>();
-    return {
-      subscribe(fn: (v: unknown[]) => void) {
-        subs.add(fn);
-        fn(value);
-        return () => {
-          subs.delete(fn);
-        };
-      },
-      _set(v: unknown[]) {
-        value = v;
-        subs.forEach((sub) => sub(v));
-      },
-    };
-  })(),
-  // The page prefers a product form's own icon over its parent's (issue #871).
-  // Settable so a test can put a form in front of it; empty by default, which is
-  // what every pre-existing assertion (all about the canon fallback) needs.
-  mockProductForms: (() => {
-    let value: unknown[] = [];
-    const subs = new Set<(v: unknown[]) => void>();
-    return {
-      subscribe(fn: (v: unknown[]) => void) {
-        subs.add(fn);
-        fn(value);
-        return () => {
-          subs.delete(fn);
-        };
-      },
-      _set(v: unknown[]) {
-        value = v;
-        subs.forEach((sub) => sub(v));
-      },
-    };
-  })(),
-  mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
-  mockChime: { primeChime: vi.fn(), playChime: vi.fn() },
-}));
+const { mockCanonItems, mockProductForms, mockWakeLock, mockChime, mockRouter } = vi.hoisted(
+  () => ({
+    mockCanonItems: (() => {
+      // Settable since issue #871: proving the icon SWAPS from the parent's to the
+      // form's needs a canon item that actually has an icon to swap away from.
+      let value: unknown[] = [];
+      const subs = new Set<(v: unknown[]) => void>();
+      return {
+        subscribe(fn: (v: unknown[]) => void) {
+          subs.add(fn);
+          fn(value);
+          return () => {
+            subs.delete(fn);
+          };
+        },
+        _set(v: unknown[]) {
+          value = v;
+          subs.forEach((sub) => sub(v));
+        },
+      };
+    })(),
+    // The page prefers a product form's own icon over its parent's (issue #871).
+    // Settable so a test can put a form in front of it; empty by default, which is
+    // what every pre-existing assertion (all about the canon fallback) needs.
+    mockProductForms: (() => {
+      let value: unknown[] = [];
+      const subs = new Set<(v: unknown[]) => void>();
+      return {
+        subscribe(fn: (v: unknown[]) => void) {
+          subs.add(fn);
+          fn(value);
+          return () => {
+            subs.delete(fn);
+          };
+        },
+        _set(v: unknown[]) {
+          value = v;
+          subs.forEach((sub) => sub(v));
+        },
+      };
+    })(),
+    mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
+    mockChime: { primeChime: vi.fn(), playChime: vi.fn() },
+    // svelte-spa-router's `router` is a rune-backed state object; the cook screens
+    // read `router.querystring` live for the `?serves=` they were opened on (#1314).
+    mockRouter: { querystring: '' as string | undefined },
+  }),
+);
 
 // UT-B1 WAIVER — 11 `vi.mock` calls against a cap of 5, and the seam cannot be
 // narrowed. Each stands in for a boundary that has no in-process implementation:
@@ -129,7 +134,11 @@ const { mockCanonItems, mockProductForms, mockWakeLock, mockChime } = vi.hoisted
 // working in-memory double that echoes writes back through the store on the real
 // timing (see its note below), so every assertion here is on a persisted payload or
 // on the DOM that came back, never on the fact that a mock was called (UT-A1).
-vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
+// `router` joins the mock for issue #1314: the cook screens read
+// `router.querystring` live to find the `?serves=` they were opened on. An empty
+// querystring is "as written", which is what all but the scaling cases assume, and
+// `beforeEach` puts it back.
+vi.mock('svelte-spa-router', () => ({ push: vi.fn(), router: mockRouter }));
 vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
 vi.mock('../src/lib/auth.svelte.js', () => ({ auth: mockAuth }));
 vi.mock('../src/lib/canonService.js', () => ({ canonItems: mockCanonItems }));
@@ -256,6 +265,7 @@ function makeCookSession(over: Partial<CookSessionDoc> = {}): CookSessionDoc {
     completedStepIds: [],
     activeTimers: [],
     serveAt: null,
+    servings: null,
     createdAt: '2026-08-01T11:00:00.000Z',
     updatedAt: '2026-08-01T11:00:00.000Z',
     ...over,
@@ -396,6 +406,7 @@ beforeEach(() => {
   mockCookSessionEnded._set(false);
   mockIsLoadingCookSession._set(false);
   mockGuidedPlan._set(makePlan());
+  mockRouter.querystring = '';
 });
 
 afterEach(() => {
@@ -1917,5 +1928,83 @@ describe('GuidedCookPage — keeping the screen awake', () => {
       ),
     );
     expect(screen.getByTestId('cook-mode-wakelock')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+// ─── Cooking for a different number (issue #1314) ──────────────────────────────
+describe('GuidedCookPage — cooking for a different number', () => {
+  // The same rule plain cook mode runs, on the same session — asserted here too
+  // because the guided screen draws its amounts from its OWN prep rows, and a
+  // factor that reached one screen and not the other would be invisible until a
+  // cook read two devices side by side. The recipe fixture serves 2.
+  function withParsedTomatoes(): RecipeDoc {
+    return makeRecipe({
+      ingredients: [
+        {
+          ...emptyIngredientGroup('group-1'),
+          items: [
+            makeIngredient({
+              id: 'ing-1',
+              rawText: '400g tinned tomatoes',
+              firstUsedInStepId: 'step-1',
+              parsed: {
+                quantity: { type: 'single', value: 400 },
+                unit: 'g',
+                item: 'tinned tomatoes',
+                preparation: [],
+                notes: null,
+                displayText: null,
+              },
+            }),
+          ],
+        },
+      ],
+    });
+  }
+
+  it('draws the recipe’s own amounts, and says nothing, with no link', async () => {
+    mockRecipes._set([withParsedTomatoes()]);
+    renderGuidedCook();
+
+    await screen.findByTestId('guided-prep-list');
+    expect(screen.getAllByTestId('guided-prep-row')[0]!.textContent).toContain('400g');
+    expect(screen.queryByTestId('cook-mode-scaled')).toBeNull();
+  });
+
+  it('scales the prep board’s amounts to the link it was opened on', async () => {
+    mockRouter.querystring = 'serves=4';
+    mockRecipes._set([withParsedTomatoes()]);
+    renderGuidedCook();
+
+    await screen.findByTestId('guided-prep-list');
+    const row = screen.getAllByTestId('guided-prep-row')[0]!;
+    expect(row.textContent).toContain('800g');
+    expect(row.textContent).not.toContain('400g');
+    expect(screen.getByTestId('cook-mode-scaled').textContent).toContain('4');
+  });
+
+  it('RESUME: a session carrying the scale shows it without the link', async () => {
+    mockCookSession._set(makeCookSession({ servings: 4 }));
+    mockRecipes._set([withParsedTomatoes()]);
+    renderGuidedCook();
+
+    await screen.findByTestId('guided-prep-list');
+    expect(screen.getAllByTestId('guided-prep-row')[0]!.textContent).toContain('800g');
+  });
+
+  it('leaves the plan’s own jobs and containers alone', async () => {
+    // Only amounts move. The plan's sentences, its bowls and its timings are what
+    // the banner promises are untouched.
+    mockRouter.querystring = 'serves=4';
+    renderGuidedCook();
+
+    await screen.findByTestId('guided-prep-list');
+    const card = screen.getAllByTestId('guided-prep-card')[0]!;
+    expect(card.querySelector('[data-testid="guided-prep-card-name"]')).toHaveTextContent(
+      'small bowl',
+    );
+    expect(card.querySelector('[data-testid="guided-prep-job-text"]')).toHaveTextContent(
+      'Dice the onions into 5mm pieces',
+    );
   });
 });

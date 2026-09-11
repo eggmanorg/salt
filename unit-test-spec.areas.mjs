@@ -134,9 +134,16 @@ export const violationCeilings = {
   // characterisation net for the media query, and this is a feature's behaviour.
   // UT-C2 does NOT move, because this suite builds its recipe with `@salt/domain`'s
   // `emptyRecipe` rather than copying the sibling's hand-rolled factory.
+  // UT-B1 46 → 47, and UT-C2 stays at 34 (issue #1314). ONE new file:
+  // `RecipeViewPage.scaling.test.ts`, covering reading a recipe at a different
+  // number of servings. Same reasoning as the two rows above — the page cannot
+  // render without the mock preamble every RecipeViewPage suite carries, and the
+  // only alternative was to fold a feature's behaviour into a suite that already
+  // breaches, which buys the counter at the reader's expense. UT-C2 does not move:
+  // this suite builds its recipe with `emptyRecipe` too.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 46,
+    'UT-B1': 47,
     'UT-C1': 0,
     'UT-C2': 34,
     'UT-C3': 31,

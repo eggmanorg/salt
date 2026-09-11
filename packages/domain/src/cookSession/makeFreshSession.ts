@@ -33,6 +33,10 @@ export function makeFreshSession(args: MakeFreshSessionArgs): CookSessionDoc {
     // carries one, including the meal's own — the cook plan writes it on the first
     // set, which is also what creates the session.
     serveAt: null,
+    // As written (issue #1314). A cook that was OPENED at another number pins it
+    // immediately afterwards, from the URL it arrived on — this constructor knows
+    // nothing about the route and must not guess.
+    servings: null,
     createdAt: args.nowIso,
     updatedAt: args.nowIso,
   };
