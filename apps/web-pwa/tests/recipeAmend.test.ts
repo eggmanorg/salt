@@ -11,14 +11,24 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 // The merge is pure, so nothing here needs a store or a network — the module's
 // two async siblings pull in firebase-sync and recipeService, hence the mocks.
 
+const { STAMPED_AT } = vi.hoisted(() => ({ STAMPED_AT: '2026-08-11T12:00:30.000Z' }));
+
 vi.mock('@salt/firebase-sync', () => ({
   saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
   authorRecipeTraced: vi.fn(),
-  // Identity — attribution (#845) has its own suite; these tests are about the
-  // guided plan and the merge.
-  stampRecipeAttribution: <T>(recipe: T) => recipe,
+  // The three seams the apply path uses (issue #1330). `applyRecipeOptimistically`
+  // stands in for stamping — attribution (#845) and the store apply have their own
+  // suites; these tests are about the guided plan, the merge, and Rule 10. The
+  // ORDERING they exist to enforce is pinned against the real service in
+  // `recipeAmend.coalescedEdit.test.ts`, which a mocked seam cannot show.
+  flushRecipeWrites: vi.fn().mockResolvedValue(undefined),
+  getRecipeSnapshot: vi.fn(() => undefined),
+  applyRecipeOptimistically: <T extends { updatedAt: string }>(recipe: T) => ({
+    ...recipe,
+    updatedAt: STAMPED_AT,
+  }),
 }));
 vi.mock('../src/lib/guidedPlanService.js', () => ({ discardGuidedPlan: vi.fn() }));
 
@@ -28,7 +38,7 @@ import {
   applyRecipeAmendment,
   type RecipeAmendment,
 } from '../src/lib/recipeAmend.js';
-import { authorRecipeTraced } from '../src/lib/recipeService.js';
+import { authorRecipeTraced, flushRecipeWrites } from '../src/lib/recipeService.js';
 import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
 import { saveRecipe } from '@salt/firebase-sync';
 import { diffRecipe } from '@salt/domain';
@@ -335,8 +345,23 @@ function amendmentWith(
   updatedText = 'Chop.',
 ): RecipeAmendment {
   const existing = { ...existingRecipe(), steps: existingStepIds.map((id) => step(id, 'Chop.')) };
-  const updated = { ...existing, steps: updatedStepIds.map((id) => step(id, updatedText)) };
-  return { existing, updated, diff: diffRecipe(existing, updated) };
+  // `draft` carries the SAME steps as `updated` (issue #1330): apply re-runs the
+  // merge from the draft, so a fixture whose two halves disagreed about steps
+  // would be asking the guided-plan rule about a document that is never written.
+  // `updated` stays hand-built rather than merge-derived — it is what the review
+  // sheet's diff was taken from, and a stored recipe whose metadata predates the
+  // phase strip (issue #1122) has no `phases` key at all, which is a shape the
+  // merge can no longer produce and `diffRecipe` still has to handle.
+  const draft = {
+    ...draftWithoutMetadata(),
+    steps: updatedStepIds.map((id) => step(id, updatedText)),
+  };
+  const updated = {
+    ...existing,
+    updatedAt: NOW,
+    steps: updatedStepIds.map((id) => step(id, updatedText)),
+  };
+  return { existing, draft, updated, diff: diffRecipe(existing, updated) };
 }
 
 describe('applyRecipeAmendment — whether the guided plan survives the write', () => {
@@ -404,5 +429,53 @@ describe('applyRecipeAmendment — whether the guided plan survives the write', 
     const result = await applyRecipeAmendment(amendmentWith(['s1'], ['new-1']));
 
     expect(result.kind).toBe('ok');
+  });
+});
+
+describe('applyRecipeAmendment — the pre-write flush crosses the boundary, never throws', () => {
+  it('returns a Failure when the flush rejects, rather than letting it escape (Rule 10)', async () => {
+    // `flushRecipeWrites` resolves `void` today and the coalescer's writer
+    // returns `ReadResult`, so a rejection here is the abnormal case — which is
+    // exactly why it is pinned: both callers (`RecipeViewPage`,
+    // `ChatSessionPage`) only toast on `kind !== 'ok'`, so a throw would reach a
+    // user as an unhandled rejection and no message at all.
+    vi.mocked(flushRecipeWrites).mockRejectedValueOnce(new Error('indexeddb gone'));
+
+    const result = await applyRecipeAmendment(amendmentWith(['s1'], ['s1']));
+
+    expect(result).toEqual({ kind: 'err', error: { kind: 'StorageError', reason: 'unavailable' } });
+    // Nothing was written and no plan was touched: the flush failing means the
+    // typing it held never reached the server, so composing on top of it would
+    // be composing on a document that does not exist.
+    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(discardGuidedPlan).not.toHaveBeenCalled();
+  });
+
+  it('flushes before it writes, not after', async () => {
+    const order: string[] = [];
+    vi.mocked(flushRecipeWrites).mockImplementationOnce(async () => {
+      order.push('flush');
+    });
+    vi.mocked(saveRecipe).mockImplementationOnce(async () => {
+      order.push('save');
+      return { kind: 'ok', value: undefined };
+    });
+
+    await applyRecipeAmendment(amendmentWith(['s1'], ['s1']));
+
+    expect(order).toEqual(['flush', 'save']);
+  });
+
+  it('stamps the document it writes at write time, not at propose time', async () => {
+    // The amendment must be the NEWEST document for `applySnapshot` to accept its
+    // own echo. Here that is only the delegation — that the write goes through
+    // the one stamping site rather than carrying the proposal's clock;
+    // `recipeAmend.coalescedEdit.test.ts` pins the echo itself.
+    const amendment = amendmentWith(['s1'], ['s1']);
+    expect(amendment.updated.updatedAt).toBe(NOW);
+
+    await applyRecipeAmendment(amendment);
+
+    expect(vi.mocked(saveRecipe).mock.calls[0]![0].updatedAt).toBe(STAMPED_AT);
   });
 });

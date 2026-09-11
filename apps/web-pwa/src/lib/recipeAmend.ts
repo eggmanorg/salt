@@ -2,8 +2,13 @@ import { diffRecipe, reconcileRecipePhases, type Recipe } from '@salt/domain';
 import type { RecipeDiff } from '@salt/domain';
 import type { AuthorRecipeInput, RecipeDoc } from '@salt/domain/schemas';
 import { saveRecipe as saveRecipeDoc } from '@salt/firebase-sync';
-import { success, type DomainError, type ReadResult } from '@salt/shared-types';
-import { authorRecipeTraced, stampRecipeAttribution } from './recipeService.js';
+import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
+import {
+  applyRecipeOptimistically,
+  authorRecipeTraced,
+  flushRecipeWrites,
+  getRecipeSnapshot,
+} from './recipeService.js';
 import { discardGuidedPlan } from './guidedPlanService.js';
 
 // Amending a recipe by chat — propose, merge, diff, apply (issue #764).
@@ -38,6 +43,17 @@ export interface RecipeAmendment {
    * not already have.
    */
   existing: Recipe;
+  /**
+   * The librarian's raw answer, before `mergeAmendedRecipe` put it onto the
+   * recipe. Carried so that `applyRecipeAmendment` can re-run that merge against
+   * the recipe as it stands at WRITE time rather than as it stood when the AI
+   * call started (issue #1330) — see there for what that does and does not save.
+   *
+   * Not a second source of truth: `updated` is still the document the review
+   * sheet's diff was taken from, and re-merging the same draft cannot change the
+   * fields the draft is authoritative on.
+   */
+  draft: RecipeDoc;
 }
 
 /**
@@ -150,7 +166,7 @@ async function propose(
   if (result.kind !== 'ok') return result;
 
   const updated = mergeAmendedRecipe(existing, result.value, new Date().toISOString());
-  return success({ existing, updated, diff: diffRecipe(existing, updated) });
+  return success({ existing, draft: result.value, updated, diff: diffRecipe(existing, updated) });
 }
 
 /**
@@ -191,17 +207,70 @@ async function propose(
 export async function applyRecipeAmendment(
   amendment: RecipeAmendment,
 ): Promise<ReadResult<void, DomainError>> {
+  // Order the amendment against the in-place editor's coalesced writes, and take
+  // the write path every other recipe write takes (issue #1330). This used to be
+  // a bare `saveRecipeDoc` of a document frozen at PROPOSE time, which collided
+  // with `queueRecipeEdit` two ways at once: a pending coalesced write fired
+  // afterwards and replaced the amendment with its own older snapshot, and the
+  // amendment's propose-time `updatedAt` lost to the typist's newer one at
+  // `applySnapshot`'s echo guard — so whichever write lost, the device that
+  // pressed Apply saw a success and no revert.
+  const flushed = await flushPendingRecipeEdits();
+  if (flushed.kind !== 'ok') return flushed;
+
+  // Re-merge the SAME draft onto the recipe as it stands now. The pending write
+  // above has landed and the store holds every keystroke typed since the
+  // librarian was called, so this is what lets the amendment carry them instead
+  // of reverting them to the copy the AI call started from.
+  //
+  // WHAT THIS SAVES, exactly — it is not "your typing survives" (CLAUDE.md Rule
+  // 12): re-basing only changes the fields `mergeAmendedRecipe` CARRIES from the
+  // base — servings and tags the librarian omitted, the phase-strip fallback,
+  // `image`, `source`, `createdAt`. The fields the draft is authoritative on —
+  // title, description, notes, ingredients, steps — still replace whatever was
+  // typed into them, because replacing them is what the reviewer approved.
+  // Re-basing therefore cannot change the diff the reviewer was shown into
+  // something they did not agree to; it can only decline to undo an edit they
+  // made themselves.
+  //
+  // No merge or diff logic is added here to reconcile the two writes: this is
+  // the one existing pure merge, re-run with a fresher base. A recipe the store
+  // no longer holds (deleted on another device mid-review) falls back to the
+  // proposal's own base, which is exactly what happened before.
+  const base = getRecipeSnapshot(amendment.updated.id) ?? amendment.existing;
+  const updated = mergeAmendedRecipe(base, amendment.draft, amendment.updated.updatedAt);
+
   // Both halves of the rule in one lookup: a step that is GONE has no entry, so
   // `get` returns undefined and never equals its old text; a step that survived
   // but was reworded returns the new wording, which does not equal it either.
   // Only a step still present AND still saying the same thing leaves the plan
   // standing.
+  //
+  // Unchanged by the re-base above, and deliberately still asked of
+  // `amendment.updated`: `mergeAmendedRecipe` spreads the draft, so `steps` comes
+  // from the draft whatever the base is, and the two documents cannot disagree
+  // about them. Pinned rather than asserted — see the re-base test that writes a
+  // store copy with different steps and checks the saved ones are still the
+  // draft's.
   const survivingTextById = new Map(amendment.updated.steps.map((step) => [step.id, step.text]));
   const planStepsInvalidated = amendment.existing.steps.some(
     (step) => survivingTextById.get(step.id) !== step.text,
   );
 
-  const saveResult = await saveRecipeDoc(stampRecipeAttribution(amendment.updated));
+  // `applyRecipeOptimistically` rather than a second stamping site: it is the one
+  // place `updatedAt` and attribution are stamped and the only place
+  // `latestLocalEdit` is registered, so the amendment lands on this screen
+  // immediately AND its own echo is accepted instead of discarded as stale.
+  //
+  // THE WINDOW THIS LEAVES OPEN: a keystroke arriving during the round trip
+  // below opens a fresh pending entry, stamped newer than this document, which
+  // flushes afterwards and replaces it in the fields it holds. That is the same
+  // window `persistRecipe`'s `cancel` guard deliberately leaves open, for the
+  // same reason — nothing else has ever written those characters — and nothing
+  // here narrows it. `cancel` is not called: with the flush above there is
+  // nothing pending to cancel except an entry queued inside that window, which
+  // must be left to flush.
+  const saveResult = await saveRecipeDoc(applyRecipeOptimistically(updated));
 
   // Only after the save succeeds — throwing away the plan for a write that never
   // landed would be a plain loss. Best-effort: a failed delete leaves a stale
@@ -212,4 +281,29 @@ export async function applyRecipeAmendment(
   }
 
   return saveResult;
+}
+
+/**
+ * Write out any pending in-place recipe edit before the amendment is composed.
+ *
+ * Rule 10: a coalesced write failure must not reach the caller as a THROW.
+ * `flushRecipeWrites` resolves `void` — the write's own `ReadResult` goes to the
+ * promise `queueRecipeEdit` handed the editor, which is what raises the typist's
+ * toast — so a flush whose write merely returns `err` is invisible here and is
+ * deliberately not allowed to block the amendment: the amendment's own write
+ * carries the same text anyway, because the compose above re-bases on the store.
+ * Only a flush that REJECTS crosses back, as a `Failure`.
+ *
+ * It flushes every pending recipe edit, not only this recipe's. There is no
+ * per-id seam on `recipeService` and no reason for one: any other pending recipe
+ * write is one the next blur would have issued within the debounce window
+ * regardless.
+ */
+async function flushPendingRecipeEdits(): Promise<ReadResult<void, DomainError>> {
+  try {
+    await flushRecipeWrites();
+    return success(undefined);
+  } catch {
+    return failure({ kind: 'StorageError', reason: 'unavailable' });
+  }
 }
