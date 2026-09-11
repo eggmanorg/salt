@@ -113,6 +113,7 @@ describe('RecipeIdentityCard — read mode', () => {
       'recipe-edit-produces',
       'recipe-edit-servings',
       'recipe-edit-added-by',
+      'recipe-edit-phases',
     ]) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
@@ -241,6 +242,27 @@ describe('RecipeIdentityCard — edit mode', () => {
     expect(screen.getByTestId('recipe-edit-description')).toBeTruthy();
     expect(screen.getByTestId('recipe-edit-tags')).toBeTruthy();
     expect(screen.getByTestId('recipe-edit-source')).toBeTruthy();
+    // The timing strip is `RecipePhaseEditor`'s since Phase 2, but the card is
+    // what mounts it — so the wiring is asserted here and the behaviour in
+    // `RecipePhaseEditor.test.ts`, rather than neither suite owning it.
+    expect(screen.getByTestId('recipe-edit-phases').textContent).toContain('+ Add a phase');
+  });
+
+  it('hands the stored strip its pencil rather than drawing it read-only', async () => {
+    show(
+      entry({
+        metadata: {
+          servings: null,
+          tags: [],
+          phases: [{ label: 'Bake', handsOnMinutes: 5, handsOffMinutes: 40 }],
+        },
+      }),
+      true,
+    );
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-phases'));
+
+    expect(screen.getByTestId('recipe-phase-label-field')).toHaveValue('Bake');
   });
 
   it('writes the description as it is typed, with no save', async () => {
