@@ -18,7 +18,6 @@
     Divider,
     Icon,
     ImageCropper,
-    Markdown,
     Popover,
     PopoverContent,
     PopoverMenuItem,
@@ -58,6 +57,8 @@
     canonicaliseIngredients,
     matchIngredient,
     persistRecipe,
+    queueRecipeEdit,
+    flushRecipeWrites,
     stashImportedDraft,
     regenerateRecipeImage,
     redoRecipeKit,
@@ -73,6 +74,8 @@
   import IngredientMatchSheet from './IngredientMatchSheet.svelte';
   import RecipeChangeSummary from './RecipeChangeSummary.svelte';
   import RecipePhaseTimeline from './RecipePhaseTimeline.svelte';
+  import EditableZone from './EditableZone.svelte';
+  import RecipeNotesCard from './RecipeNotesCard.svelte';
   import { componentTimeLabel } from './recipeTiming.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
@@ -790,6 +793,89 @@
     if (persisted.kind !== 'ok') {
       addToast('Failed to mark as reviewed.', 'destructive');
     }
+  }
+
+  // ─── Edit mode (issue #1319) ──────────────────────────────────────────────
+  // One boolean is the whole feature's switch. The page does not move, does not
+  // re-route and does not re-fetch: the same components render, each told that a
+  // tap now means "change this". Outside it nothing on this page behaves
+  // differently from how it behaved before the feature existed.
+  let editing = $state(false);
+
+  // The title is the one field that lives in `DetailPage`'s header rather than in
+  // a card, so its draft is held here beside the rest of the page's state.
+  let titleDraft = $state('');
+
+  // `/recipes/:id` is one route (routes/index.ts), so a "Made from" tap
+  // (`push('/recipes/' + component.id)`) reuses THIS component instance and only
+  // moves `params.id` — exactly the model `recipe` itself is written against
+  // ($derived above). Nothing else resets on that move by default, and `editing`
+  // is a mode with an open draft in it: left on, it carries the OLD recipe's
+  // title/notes text onto the NEW document the moment a keystroke lands, because
+  // `setTitle`/`handleInlineEdit` compose against whatever `recipe` is current
+  // when they run (issue #1324 review, finding 1). Clearing `editing` here is
+  // what has to cascade the rest: `EditableZone`'s own `$effect` drops `active`
+  // when `editing` goes false, and `RecipeNotesCard`'s `draft` is reseeded from
+  // the (now correct) recipe the next time a field is opened via `onOpen` — so
+  // one flag closing is enough, nothing downstream needs its own copy of this
+  // effect. `titleDraft` is cleared too, since nothing else ever does.
+  // Keyed on the id STRING, not the `params` prop object (issue #1324 review,
+  // round 2): `params.id` compiles to a tracked read of the whole `$$props`
+  // prop container plus an UNTRACKED property access, so depending on it the
+  // way the line above once did reacts to `params` being a new object, not to
+  // `id` actually changing. svelte-spa-router rebuilds `componentParams` from
+  // a fresh `match()` result on every hashchange, querystring-only ones
+  // included — so `setServings`'s `push('/recipes/<same id>?serves=N')` and
+  // the scaled notice's Reset button (both same-id navigations) would fire
+  // this effect and silently drop the user out of edit mode. Comparing the id
+  // value instead makes this react only to an actual recipe change, which is
+  // the only case #1324's Phase 4 relies on this clearing for.
+  let lastRecipeId: string | undefined;
+  $effect(() => {
+    const id = params.id;
+    if (id === lastRecipeId) return;
+    lastRecipeId = id;
+    editing = false;
+    titleDraft = '';
+  });
+
+  // There is no Save, so a failed write is the only thing left to say out loud —
+  // and it is said ONCE per coalesced burst, not once per keystroke. Every edit
+  // inside one debounce window is handed the SAME promise by the coalescer, so
+  // the promise itself is the burst's identity, and comparing against the last one
+  // toasted is what makes "at most one toast" true rather than merely intended.
+  // The claim's boundary: it is per burst, not per edit mode — two bursts that
+  // both fail are two toasts, which is the right answer, since the second one is
+  // news. `RecipeViewPage.reviewFlag.test.ts` pins both halves.
+  let lastFailureToasted: Promise<unknown> | null = null;
+
+  function handleInlineEdit(next: Recipe): void {
+    const write = queueRecipeEdit(next);
+    void write.then((result) => {
+      if (result.kind === 'ok' || lastFailureToasted === write) return;
+      lastFailureToasted = write;
+      addToast('Failed to save your change.', 'destructive');
+    });
+  }
+
+  // A recipe must have a name, so an emptied title box is not written. It is not
+  // an error either — you are mid-word — so the box keeps what you typed and the
+  // document keeps the last real name until you finish.
+  function setTitle(value: string): void {
+    titleDraft = value;
+    if (!recipe || value.trim() === '') return;
+    handleInlineEdit({ ...recipe, title: value });
+  }
+
+  // Done: flush whatever the debounce is still holding, then clear the import's
+  // "not checked yet" flag. Entering editing and coming out of it is the
+  // deliberate act that says "I have read this", and it routes through the
+  // banner's own `handleMarkReviewed` rather than becoming a fourth clearing
+  // site (issue #1319; the three that exist are listed at that function).
+  async function finishEditing(): Promise<void> {
+    editing = false;
+    await flushRecipeWrites();
+    if (recipe?.needs_approval) await handleMarkReviewed();
   }
 
   // ─── Add to shopping list ─────────────────────────────────────────────────
@@ -1511,459 +1597,524 @@
     class="p-4 sm:p-6"
     fill={chatPaneShown}
   >
+    {#snippet titleSlot()}
+      <!-- `titleSlot` replaces the `<h1>` entirely (ui-spec-v13 §2.4), so the
+           heading is rendered here with the classes `DetailPage` would have used.
+           Read mode is byte-for-byte what it always was; edit mode grows a pencil
+           beside it. -->
+      <EditableZone
+        {editing}
+        filled
+        label="Edit title"
+        testId="recipe-edit-title"
+        class="w-full"
+        onOpen={() => (titleDraft = recipe.title)}
+      >
+        {#snippet view()}
+          <h1 class="min-w-0 truncate text-2xl font-semibold tracking-tight text-foreground">
+            {recipe.title}
+          </h1>
+        {/snippet}
+        {#snippet edit(close)}
+          <input
+            class="w-full min-w-0 border-b border-foreground/30 bg-transparent text-2xl font-semibold tracking-tight text-foreground"
+            value={titleDraft}
+            oninput={(e) => setTitle(e.currentTarget.value)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                close();
+              }
+            }}
+            onblur={close}
+            aria-label="Title"
+            data-testid="recipe-title-input"
+          />
+        {/snippet}
+      </EditableZone>
+    {/snippet}
+
     {#snippet actions()}
-      <!-- Nine actions is far too many to shout at once, so they are ranked and
-           the ranking is carried by BOTH weight and placement.
+      <!-- Edit mode takes the whole cluster (issue #1319). While you are editing,
+           Cook, Shop and Plan are not what you are doing, and the row is already at
+           its budget at every width — so Done replaces it rather than joining it.
+           The ⋮ menu goes with it: its entries are all things done TO the document,
+           and none of them is what this mode is for. -->
+      {#if editing}
+        <Button size="sm" onclick={() => void finishEditing()} data-testid="recipe-done-button">
+          {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
+          Done
+        </Button>
+      {:else}
+        <!-- Nine actions is far too many to shout at once, so they are ranked and
+             the ranking is carried by BOTH weight and placement.
 
-           Cook, Shop and Plan are what this page is for — the three things you
-           came to do with a dish, and the three you want one tap away with your
-           hands full — so they are the only `solid` (filled) buttons and the only
-           ones that render inline. The row reads Cook · Shop · Plan · ⋮ at EVERY
-           width (issue #735): the desktop row was already seven buttons and
-           Duplicate would have made it eight, so the low-frequency actions get one
-           consistent home instead of two divergent layouts to maintain. Labels are
-           single words for the same reason: the row reads as a row rather than as
-           a sentence.
+             Cook, Shop and Plan are what this page is for — the three things you
+             came to do with a dish, and the three you want one tap away with your
+             hands full — so they are the only `solid` (filled) buttons and the only
+             ones that render inline. The row reads Cook · Shop · Plan · ⋮ at EVERY
+             width (issue #735): the desktop row was already seven buttons and
+             Duplicate would have made it eight, so the low-frequency actions get one
+             consistent home instead of two divergent layouts to maintain. Labels are
+             single words for the same reason: the row reads as a row rather than as
+             a sentence.
 
-           SINCE #751 the Cook slot can hold TWO cooks. A recipe with a guided plan
-           can be cooked plainly or cooked guided, and that is not a second action —
-           it is the SAME act, chosen at the same moment, with the plan as a lens.
-           So it earns inline placement (unlike "Guided plan" in the menu below,
-           which is desk work: writing and reading the plan, done before you cook).
-           What it does NOT earn is a fourth labelled button: the row is already
-           sized to the narrowest phone, and a fifth word would push it off the
-           edge. It renders as a SEGMENTED PAIR sharing Cook's own button — one
-           control, two ways to press it — which reads as "cook this, one way or the
-           other" and costs 32px rather than 90. The row therefore still reads
-           Cook · Shop · Plan · ⋮ at every width; only the Cook chip gained a right
-           half, and only on recipes that have a plan.
+             SINCE #751 the Cook slot can hold TWO cooks. A recipe with a guided plan
+             can be cooked plainly or cooked guided, and that is not a second action —
+             it is the SAME act, chosen at the same moment, with the plan as a lens.
+             So it earns inline placement (unlike "Guided plan" in the menu below,
+             which is desk work: writing and reading the plan, done before you cook).
+             What it does NOT earn is a fourth labelled button: the row is already
+             sized to the narrowest phone, and a fifth word would push it off the
+             edge. It renders as a SEGMENTED PAIR sharing Cook's own button — one
+             control, two ways to press it — which reads as "cook this, one way or the
+             other" and costs 32px rather than 90. The row therefore still reads
+             Cook · Shop · Plan · ⋮ at every width; only the Cook chip gained a right
+             half, and only on recipes that have a plan.
 
-           Three of the inline ones are capability-gated (issue #637) — things that
-           don't apply simply aren't offered, so a takeaway shows Plan and the menu
-           and nothing else. Guided rides on the same gate as Cook.
+             Three of the inline ones are capability-gated (issue #637) — things that
+             don't apply simply aren't offered, so a takeaway shows Plan and the menu
+             and nothing else. Guided rides on the same gate as Cook.
 
-           WHICH HALF IS WHICH follows the cook's own preference (issue #776). The
-           wide labelled half is their default and the icon half is the other mode,
-           so standard cook mode is one tap away whichever way it is set — and the
-           control's shape, its testids and its unreviewed dot are the same object
-           either way. Only the destinations swap. -->
-      {#if showCooking}
-        <div
-          class="flex items-center"
-          data-testid="recipe-cook-actions"
-          data-primary={guidedIsPrimary ? 'guided' : 'standard'}
-        >
-          <Button
-            size="sm"
-            class={showGuidedHalf ? 'rounded-r-none' : ''}
-            onclick={() => push(primaryCookHref)}
-            data-testid="recipe-cook-button"
+             WHICH HALF IS WHICH follows the cook's own preference (issue #776). The
+             wide labelled half is their default and the icon half is the other mode,
+             so standard cook mode is one tap away whichever way it is set — and the
+             control's shape, its testids and its unreviewed dot are the same object
+             either way. Only the destinations swap. -->
+        {#if showCooking}
+          <div
+            class="flex items-center"
+            data-testid="recipe-cook-actions"
+            data-primary={guidedIsPrimary ? 'guided' : 'standard'}
           >
-            {#snippet leading()}
-              <Icon name={guidedIsPrimary ? 'ListChecks' : 'CookingPot'} size={16} />
-            {/snippet}
-            Cook
-          </Button>
-          {#if showGuidedHalf}
-            <!-- The right half. Icon-only because it is the second press of a
-                 control the left half has already named; its accessible name says
-                 the whole thing, and the divider is what makes the two read as one
-                 object rather than as two buttons that happen to touch.
-
-                 Present with no plan too, but only for someone whose default is
-                 guided — the person who most wants to be offered one. It leads to
-                 the no-plan screen, which offers to write it. -->
             <Button
               size="sm"
-              class="rounded-l-none border-l border-primary-foreground/30 px-2"
-              onclick={() => push(secondaryCookHref)}
-              ariaLabel={guidedIsPrimary
-                ? 'Cook, standard'
-                : guidedPlanUnread
-                  ? 'Cook, guided — the plan is written by AI and not checked yet'
-                  : 'Cook, guided'}
-              title={guidedIsPrimary
-                ? 'Cook, standard'
-                : guidedPlanUnread
-                  ? 'Cook, guided — written by AI, not checked yet'
-                  : 'Cook, guided'}
-              data-testid="recipe-cook-guided-button"
-              data-unreviewed={guidedPlanUnread && !guidedIsPrimary}
+              class={showGuidedHalf ? 'rounded-r-none' : ''}
+              onclick={() => push(primaryCookHref)}
+              data-testid="recipe-cook-button"
             >
               {#snippet leading()}
-                <!-- "Not checked yet" as a `review` dot on the corner of the icon,
-                     composed the way cook mode's keep-awake toggle composes its
-                     Lock badge — there is no room for a word-bearing pill on a
-                     32px segment, and overhanging one would push the row off a
-                     narrow screen for a flag that is informational by design. The
-                     saffron is the app's `review` role and the words are carried by
-                     the accessible name and the tooltip; the full chip lives on
-                     the plan editor, which is where you act on it.
-
-                     This button is `variant="solid"` → `bg-primary` (teal), and no
-                     member of the four-role family clears 3:1 against that specific
-                     teal (#1268 review) — `review` alone measures 1.96:1 here. Per
-                     WCAG 1.4.11's non-text-contrast technique, a solid `ring-card`
-                     outline (the same corner-badge pattern this file already uses at
-                     the match markers below) separates the dot from the button by
-                     shape rather than by hue, so it reads regardless of colour. -->
-                <span class="relative inline-flex">
-                  <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
-                  {#if guidedPlanUnread && !guidedIsPrimary}
-                    <span
-                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-2 ring-card"
-                      aria-hidden="true"
-                      data-testid="recipe-cook-guided-unreviewed-dot"
-                    ></span>
-                  {/if}
-                </span>
+                <Icon name={guidedIsPrimary ? 'ListChecks' : 'CookingPot'} size={16} />
               {/snippet}
+              Cook
             </Button>
-          {/if}
-        </div>
-      {/if}
-      {#if showIngredients}
-        <Button size="sm" onclick={openAddToList} data-testid="recipe-add-to-list-button">
-          {#snippet leading()}<Icon name="ShoppingCart" size={16} />{/snippet}
-          Shop
-        </Button>
-      {/if}
-      {#if showPlanning}
-        <Button
-          size="sm"
-          onclick={() => (addToPlannerOpen = true)}
-          data-testid="recipe-add-to-planner-button"
-        >
-          {#snippet leading()}<Icon name="CalendarPlus" size={16} />{/snippet}
-          Plan
-        </Button>
-      {/if}
-      <!-- The chat pane's own switch (issue #1141). The TENTH action, and it is allowed
-           inline only because it is icon-only and renders from `split` up — never on the
-           narrowest phone the row above is sized to, where it would have nothing to do
-           anyway (the chat is already a dismissible drawer there). Gated on `docked`
-           rather than `chatPaneShown`, because it is the one control that must still be
-           there when the pane is off; the row it joins therefore still reads
-           Cook · Shop · Plan · ⋮ at every width the budget was set for.
+            {#if showGuidedHalf}
+              <!-- The right half. Icon-only because it is the second press of a
+                   control the left half has already named; its accessible name says
+                   the whole thing, and the divider is what makes the two read as one
+                   object rather than as two buttons that happen to touch.
 
-           A labelled button was rejected: a fifth word pushes the row off the edge, and
-           this is flipped repeatedly, which also rules out the ⋮ menu (two presses, and
-           effectively undiscoverable). The accessible name says which way it will go. -->
-      {#if docked}
+                   Present with no plan too, but only for someone whose default is
+                   guided — the person who most wants to be offered one. It leads to
+                   the no-plan screen, which offers to write it. -->
+              <Button
+                size="sm"
+                class="rounded-l-none border-l border-primary-foreground/30 px-2"
+                onclick={() => push(secondaryCookHref)}
+                ariaLabel={guidedIsPrimary
+                  ? 'Cook, standard'
+                  : guidedPlanUnread
+                    ? 'Cook, guided — the plan is written by AI and not checked yet'
+                    : 'Cook, guided'}
+                title={guidedIsPrimary
+                  ? 'Cook, standard'
+                  : guidedPlanUnread
+                    ? 'Cook, guided — written by AI, not checked yet'
+                    : 'Cook, guided'}
+                data-testid="recipe-cook-guided-button"
+                data-unreviewed={guidedPlanUnread && !guidedIsPrimary}
+              >
+                {#snippet leading()}
+                  <!-- "Not checked yet" as a `review` dot on the corner of the icon,
+                       composed the way cook mode's keep-awake toggle composes its
+                       Lock badge — there is no room for a word-bearing pill on a
+                       32px segment, and overhanging one would push the row off a
+                       narrow screen for a flag that is informational by design. The
+                       saffron is the app's `review` role and the words are carried by
+                       the accessible name and the tooltip; the full chip lives on
+                       the plan editor, which is where you act on it.
+
+                       This button is `variant="solid"` → `bg-primary` (teal), and no
+                       member of the four-role family clears 3:1 against that specific
+                       teal (#1268 review) — `review` alone measures 1.96:1 here. Per
+                       WCAG 1.4.11's non-text-contrast technique, a solid `ring-card`
+                       outline (the same corner-badge pattern this file already uses at
+                       the match markers below) separates the dot from the button by
+                       shape rather than by hue, so it reads regardless of colour. -->
+                  <span class="relative inline-flex">
+                    <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
+                    {#if guidedPlanUnread && !guidedIsPrimary}
+                      <span
+                        class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-2 ring-card"
+                        aria-hidden="true"
+                        data-testid="recipe-cook-guided-unreviewed-dot"
+                      ></span>
+                    {/if}
+                  </span>
+                {/snippet}
+              </Button>
+            {/if}
+          </div>
+        {/if}
+        {#if showIngredients}
+          <Button size="sm" onclick={openAddToList} data-testid="recipe-add-to-list-button">
+            {#snippet leading()}<Icon name="ShoppingCart" size={16} />{/snippet}
+            Shop
+          </Button>
+        {/if}
+        {#if showPlanning}
+          <Button
+            size="sm"
+            onclick={() => (addToPlannerOpen = true)}
+            data-testid="recipe-add-to-planner-button"
+          >
+            {#snippet leading()}<Icon name="CalendarPlus" size={16} />{/snippet}
+            Plan
+          </Button>
+        {/if}
+        <!-- The chat pane's own switch (issue #1141). The TENTH action, and it is allowed
+             inline only because it is icon-only and renders from `split` up — never on the
+             narrowest phone the row above is sized to, where it would have nothing to do
+             anyway (the chat is already a dismissible drawer there). Gated on `docked`
+             rather than `chatPaneShown`, because it is the one control that must still be
+             there when the pane is off; the row it joins therefore still reads
+             Cook · Shop · Plan · ⋮ at every width the budget was set for.
+
+             A labelled button was rejected: a fifth word pushes the row off the edge, and
+             this is flipped repeatedly, which also rules out the ⋮ menu (two presses, and
+             effectively undiscoverable). The accessible name says which way it will go. -->
+        {#if docked}
+          <Button
+            size="sm"
+            variant="ghost"
+            class="px-2"
+            onclick={() => recipeChatPanePrefs.toggle()}
+            ariaLabel={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
+            title={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
+            data-testid="recipe-chat-pane-toggle"
+            data-state={chatPaneShown ? 'shown' : 'hidden'}
+          >
+            {#snippet leading()}
+              <Icon name={chatPaneShown ? 'PanelRightClose' : 'PanelRightOpen'} size={16} />
+            {/snippet}
+          </Button>
+        {/if}
+        <!-- Edit (issue #1319). ICON-ONLY: the note at the top of this row records
+             why a fifth word does not fit, and this control is not worth breaking
+             that for. Pressing it swaps the whole cluster for Done. The ⋮ → Edit
+             item that leads to the old editor is untouched here and is removed with
+             that page. -->
         <Button
           size="sm"
           variant="ghost"
           class="px-2"
-          onclick={() => recipeChatPanePrefs.toggle()}
-          ariaLabel={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
-          title={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
-          data-testid="recipe-chat-pane-toggle"
-          data-state={chatPaneShown ? 'shown' : 'hidden'}
+          onclick={() => (editing = true)}
+          ariaLabel="Edit this recipe"
+          title="Edit this recipe"
+          data-testid="recipe-edit-mode-button"
         >
-          {#snippet leading()}
-            <Icon name={chatPaneShown ? 'PanelRightClose' : 'PanelRightOpen'} size={16} />
-          {/snippet}
+          {#snippet leading()}<Icon name="Pencil" size={16} />{/snippet}
         </Button>
-      {/if}
-      <!-- Overflow (⋮), at every width since #735. Cook, Shop and Plan are never in
-           here — they stay inline, which is the whole point of ranking them, and
-           neither is "Cook, guided", which is a way of pressing Cook.
+        <!-- Overflow (⋮), at every width since #735. Cook, Shop and Plan are never in
+             here — they stay inline, which is the whole point of ranking them, and
+             neither is "Cook, guided", which is a way of pressing Cook.
 
-           GROUPED, not flat (issue #784). The order below was already right, but as
-           one undivided list it read as a pile: three genuinely different intents
-           with nothing to tell them apart, and the list only gets longer. The
-           dividers are the whole of that change — nothing renamed, nothing removed,
-           nothing moved behind a second tap, relative order untouched.
+             GROUPED, not flat (issue #784). The order below was already right, but as
+             one undivided list it read as a pile: three genuinely different intents
+             with nothing to tell them apart, and the list only gets longer. The
+             dividers are the whole of that change — nothing renamed, nothing removed,
+             nothing moved behind a second tap, relative order untouched.
 
-             Chat · Optimise · Refresh ·     work on THIS dish, in place
-             Guided plan · Cook plan ·
-             Bake a batch · Formula
-             ─────
-             Make a variation · Duplicate    produce a SECOND recipe, leaving this
-                                             one alone — the two honest answers to
-                                             "I want this dish, but different"
-             ─────
-             Edit · Delete                   the document, not the food
+               Chat · Optimise · Refresh ·     work on THIS dish, in place
+               Guided plan · Cook plan ·
+               Bake a batch · Formula
+               ─────
+               Make a variation · Duplicate    produce a SECOND recipe, leaving this
+                                               one alone — the two honest answers to
+                                               "I want this dish, but different"
+               ─────
+               Edit · Delete                   the document, not the food
 
-           Duplicate, Edit and Delete are unconditional: every kind of entry can be
-           copied, edited and deleted (deciding that from `kind` is exactly what the
-           capability predicates exist to prevent), so the menu is never empty and
-           the trigger never opens onto nothing, whatever the gates say above.
+             Duplicate, Edit and Delete are unconditional: every kind of entry can be
+             copied, edited and deleted (deciding that from `kind` is exactly what the
+             capability predicates exist to prevent), so the menu is never empty and
+             the trigger never opens onto nothing, whatever the gates say above.
 
-           That is also why only the FIRST divider is gated. Group one is empty on
-           anything that is neither cookable nor authorable (a takeaway, a
-           placeholder), and a divider with nothing above it is a rule across the
-           top of a menu; groups two and three always render at least Duplicate and
-           Edit, so the second divider is unconditional and can never lead or
-           trail. The gate names EVERY condition that can put something in group one
-           rather than leaning on the fact that everything authorable happens to be
-           cookable today — the day cocktails become authorable (#765) that
-           coincidence is what would quietly break. Since #812 that includes
-           `hasFormula`, which is presence rather than a capability and so cannot be
-           implied by either predicate: a cocktail with a 1:1:1 formula and nothing
-           else in group one is exactly the case the third clause covers. #752
-           adds `showComponents` on the same footing: also presence rather than a
-           capability, so it gets its own clause rather than riding on the kinds
-           that happen to be able to take components today. #823 adds
-           `showMakeScalable` for the same reason once more — shape rather than
-           kind, and the one clause that can be true when `hasFormula` is false. -->
-      <Popover bind:open={overflowMenuOpen}>
-        <PopoverTrigger>
-          {#snippet children()}
-            <button
-              type="button"
-              class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="More actions"
-              data-testid="recipe-actions-overflow"
-            >
-              <Icon name="EllipsisVertical" size={20} />
-            </button>
-          {/snippet}
-        </PopoverTrigger>
-        <PopoverContent align="end" class="min-w-44 p-1">
-          {#if showCooking}
+             That is also why only the FIRST divider is gated. Group one is empty on
+             anything that is neither cookable nor authorable (a takeaway, a
+             placeholder), and a divider with nothing above it is a rule across the
+             top of a menu; groups two and three always render at least Duplicate and
+             Edit, so the second divider is unconditional and can never lead or
+             trail. The gate names EVERY condition that can put something in group one
+             rather than leaning on the fact that everything authorable happens to be
+             cookable today — the day cocktails become authorable (#765) that
+             coincidence is what would quietly break. Since #812 that includes
+             `hasFormula`, which is presence rather than a capability and so cannot be
+             implied by either predicate: a cocktail with a 1:1:1 formula and nothing
+             else in group one is exactly the case the third clause covers. #752
+             adds `showComponents` on the same footing: also presence rather than a
+             capability, so it gets its own clause rather than riding on the kinds
+             that happen to be able to take components today. #823 adds
+             `showMakeScalable` for the same reason once more — shape rather than
+             kind, and the one clause that can be true when `hasFormula` is false. -->
+        <Popover bind:open={overflowMenuOpen}>
+          <PopoverTrigger>
+            {#snippet children()}
+              <button
+                type="button"
+                class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="More actions"
+                data-testid="recipe-actions-overflow"
+              >
+                <Icon name="EllipsisVertical" size={20} />
+              </button>
+            {/snippet}
+          </PopoverTrigger>
+          <PopoverContent align="end" class="min-w-44 p-1">
+            {#if showCooking}
+              <PopoverMenuItem
+                icon="ChefHat"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleAskAmend();
+                }}
+                disabled={amendBusy}
+                data-testid="recipe-ask-amend-menu-item"
+              >
+                Chat
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking && hasEquipment}
+              <PopoverMenuItem
+                icon="Blender"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleOptimiseForKitchen();
+                }}
+                disabled={optimiseBusy || chat.isSending}
+                data-testid="recipe-optimise-kitchen-menu-item"
+              >
+                Optimise
+              </PopoverMenuItem>
+            {/if}
+            {#if canAuthor}
+              <!-- Refresh (issue #890). Beside Optimise because both put a canned
+                   turn to the chef about THIS dish, and they are the two halves of a
+                   pair: Optimise asks whether any of it is better on the household's
+                   kit, Refresh asks for the whole thing to be written out again.
+                   Gated on `isAuthorable` rather than `isCookable` — the question is
+                   whether the librarian can write this kind, which is why an outing
+                   and a placeholder never offer it. No equipment gate, unlike
+                   Optimise: the repairs this makes do not depend on owning any. -->
+              <PopoverMenuItem
+                icon="RefreshCw"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleRefresh();
+                }}
+                disabled={refreshBusy || chat.isSending}
+                data-testid="recipe-refresh-menu-item"
+              >
+                Refresh
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking}
+              <!-- "Redo kit" (issue #882). In group one with Optimise and Refresh
+                   because it is the third of the same kind: re-run a model over THIS
+                   dish in place. Gated on `isCookable` rather than `isAuthorable` —
+                   the question is whether there is a method to read, not whether the
+                   librarian can write one — which is the same predicate the server's
+                   kit branch asks before it spends anything.
+
+                   It lives here rather than beside the list because the list has no
+                   controls on it at all: the rows are read, and a recipe whose kit
+                   came back empty shows no Equipment tab (#1140), so an action
+                   attached to that tab would be unreachable in exactly the case you
+                   most want it. -->
+              <PopoverMenuItem
+                icon="CookingPot"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleRedoKit();
+                }}
+                disabled={kitBusy}
+                data-testid="recipe-redo-kit-menu-item"
+              >
+                Redo kit
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking}
+              <!-- The plan EDITOR (issue #751). In the overflow, not inline: writing
+                   or reading the plan is preparation you do BEFORE you cook, at a
+                   desk, and the inline actions are the hands-full ones. Distinct from
+                   the "Cook, guided" half of the Cook button above, which is cooking.
+                   Unconditional within the gate — this is also how you get a first
+                   plan, so it cannot depend on one existing. Gated on the same
+                   predicate as Cook: a plan explains a method, so an entry with no
+                   method has nothing to explain. -->
+              <PopoverMenuItem
+                icon="ListChecks"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/guided`);
+                }}
+                data-testid="recipe-guided-plan-menu-item"
+              >
+                Guided plan
+              </PopoverMenuItem>
+            {/if}
+            {#if showComponents}
+              <!-- The cook plan (issue #752, phase 4). Beside "Guided plan" and for
+                   exactly the same reason: it is what you open BEFORE you cook, to
+                   decide when each dish goes on — the inline row is the hands-full
+                   verbs. Gated on the DOCUMENT having components, like the "Made
+                   from" card below: a dish with nothing hanging off it has no
+                   running order to schedule, and there is no meal `kind` to ask. -->
+              <PopoverMenuItem
+                icon="Clock"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/cook-plan`);
+                }}
+                data-testid="recipe-cook-plan-menu-item"
+              >
+                Cook plan
+              </PopoverMenuItem>
+            {/if}
+            {#if hasFormula}
+              <!-- Bread scaling (issue #812, phase 1 of epic #778). BOTH entries sit
+                   in group one, immediately after "Guided plan", and both are gated on
+                   the FORMULA DOCUMENT EXISTING — never on `kind`.
+
+                   WHY HERE, AND NOT INLINE. The inline row is Cook · Shop · Plan · ⋮
+                   and those three slots are the primary verbs — what you came to do
+                   with a dish, with your hands full. Neither of these is that.
+                   "Guided plan" is the exact precedent: desk work you do BEFORE you
+                   cook, at a bench, with the recipe open. Starting a run is the same
+                   act one document further along — you are deciding what to weigh out
+                   and when to mix, not cooking — and the formula screen is the once-a-
+                   month version of it. Group one is right for both because both work
+                   on THIS dish rather than producing a second recipe (group two) or
+                   editing the document itself (group three).
+
+                   WHY "Bake a batch" LEADS. It is the weekly action; the formula is
+                   the monthly one, and it is the thing you open when the batch is
+                   wrong. Frequency orders them, exactly as it does Chat before
+                   Refresh above.
+
+                   A recipe with NO formula offers neither — there is no batch to
+                   start and nothing to open — and until #823 that left the screen
+                   with no entry point at all for a recipe that had never had one.
+                   What #812 actually objected to was an "add a formula" item on all
+                   ~46 recipes, putting baker's percentages in front of every
+                   weeknight curry to serve the three loaves; the item below answers
+                   that by gating on the basis guess instead of offering it
+                   unconditionally. The typed URL stays as the escape hatch for a loaf
+                   the guess misses — it stopped being the ONLY way in, not a way
+                   in. -->
+              <PopoverMenuItem
+                icon="Hourglass"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  bakeBatchOpen = true;
+                }}
+                data-testid="recipe-bake-batch-menu-item"
+              >
+                Bake a batch
+              </PopoverMenuItem>
+              <PopoverMenuItem
+                icon="Percent"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/formula`);
+                }}
+                data-testid="recipe-formula-menu-item"
+              >
+                Formula
+              </PopoverMenuItem>
+            {/if}
+            {#if showMakeScalable}
+              <!-- The FIRST formula (issue #823). The mutually-exclusive twin of the
+                   pair above, in the same slot and carrying the same icon: this is
+                   the item you tap once in a recipe's life, and from the moment the
+                   formula is saved those two take its place and this one is gone.
+                   Nothing else on the page changes — it leads to the screen #806
+                   already shipped, which has always handled the no-formula-yet case.
+
+                   Gated on the domain's basis guess, never on `kind` — the
+                   `couldHaveFormula` derivation above says why, and what an empty
+                   guess costs. Group one for the same reason as the pair it replaces:
+                   it works on THIS dish, and mapping a formula is desk work rather
+                   than one of the hands-full verbs the inline row is for. "Guided
+                   plan" is again the precedent, and this is the once-in-a-recipe's-
+                   life version of it. -->
+              <PopoverMenuItem
+                icon="Percent"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/formula`);
+                }}
+                data-testid="recipe-make-scalable-menu-item"
+              >
+                Make it scalable
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking || canAuthor || hasFormula || showMakeScalable || showComponents}
+              <Divider class="my-1" />
+            {/if}
+            {#if canAuthor}
+              <!-- Beside Duplicate because they answer the same impulse — "I want this
+                   dish, but different" — and are the two honest answers to it: a literal
+                   copy you hand-edit, or a conversation that works the changes out with
+                   you. Above it, because talking it through is the one you reach for
+                   more often now it exists. -->
+              <PopoverMenuItem
+                icon="Sparkles"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleMakeVariation();
+                }}
+                disabled={variationBusy}
+                data-testid="recipe-make-variation-menu-item"
+              >
+                Make a variation
+              </PopoverMenuItem>
+            {/if}
             <PopoverMenuItem
-              icon="ChefHat"
+              icon="Copy"
               onclick={() => {
                 overflowMenuOpen = false;
-                void handleAskAmend();
+                handleDuplicate();
               }}
-              disabled={amendBusy}
-              data-testid="recipe-ask-amend-menu-item"
+              data-testid="recipe-duplicate-menu-item"
             >
-              Chat
+              Duplicate
             </PopoverMenuItem>
-          {/if}
-          {#if showCooking && hasEquipment}
-            <PopoverMenuItem
-              icon="Blender"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleOptimiseForKitchen();
-              }}
-              disabled={optimiseBusy || chat.isSending}
-              data-testid="recipe-optimise-kitchen-menu-item"
-            >
-              Optimise
-            </PopoverMenuItem>
-          {/if}
-          {#if canAuthor}
-            <!-- Refresh (issue #890). Beside Optimise because both put a canned
-                 turn to the chef about THIS dish, and they are the two halves of a
-                 pair: Optimise asks whether any of it is better on the household's
-                 kit, Refresh asks for the whole thing to be written out again.
-                 Gated on `isAuthorable` rather than `isCookable` — the question is
-                 whether the librarian can write this kind, which is why an outing
-                 and a placeholder never offer it. No equipment gate, unlike
-                 Optimise: the repairs this makes do not depend on owning any. -->
-            <PopoverMenuItem
-              icon="RefreshCw"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleRefresh();
-              }}
-              disabled={refreshBusy || chat.isSending}
-              data-testid="recipe-refresh-menu-item"
-            >
-              Refresh
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking}
-            <!-- "Redo kit" (issue #882). In group one with Optimise and Refresh
-                 because it is the third of the same kind: re-run a model over THIS
-                 dish in place. Gated on `isCookable` rather than `isAuthorable` —
-                 the question is whether there is a method to read, not whether the
-                 librarian can write one — which is the same predicate the server's
-                 kit branch asks before it spends anything.
-
-                 It lives here rather than beside the list because the list has no
-                 controls on it at all: the rows are read, and a recipe whose kit
-                 came back empty shows no Equipment tab (#1140), so an action
-                 attached to that tab would be unreachable in exactly the case you
-                 most want it. -->
-            <PopoverMenuItem
-              icon="CookingPot"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleRedoKit();
-              }}
-              disabled={kitBusy}
-              data-testid="recipe-redo-kit-menu-item"
-            >
-              Redo kit
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking}
-            <!-- The plan EDITOR (issue #751). In the overflow, not inline: writing
-                 or reading the plan is preparation you do BEFORE you cook, at a
-                 desk, and the inline actions are the hands-full ones. Distinct from
-                 the "Cook, guided" half of the Cook button above, which is cooking.
-                 Unconditional within the gate — this is also how you get a first
-                 plan, so it cannot depend on one existing. Gated on the same
-                 predicate as Cook: a plan explains a method, so an entry with no
-                 method has nothing to explain. -->
-            <PopoverMenuItem
-              icon="ListChecks"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/guided`);
-              }}
-              data-testid="recipe-guided-plan-menu-item"
-            >
-              Guided plan
-            </PopoverMenuItem>
-          {/if}
-          {#if showComponents}
-            <!-- The cook plan (issue #752, phase 4). Beside "Guided plan" and for
-                 exactly the same reason: it is what you open BEFORE you cook, to
-                 decide when each dish goes on — the inline row is the hands-full
-                 verbs. Gated on the DOCUMENT having components, like the "Made
-                 from" card below: a dish with nothing hanging off it has no
-                 running order to schedule, and there is no meal `kind` to ask. -->
-            <PopoverMenuItem
-              icon="Clock"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/cook-plan`);
-              }}
-              data-testid="recipe-cook-plan-menu-item"
-            >
-              Cook plan
-            </PopoverMenuItem>
-          {/if}
-          {#if hasFormula}
-            <!-- Bread scaling (issue #812, phase 1 of epic #778). BOTH entries sit
-                 in group one, immediately after "Guided plan", and both are gated on
-                 the FORMULA DOCUMENT EXISTING — never on `kind`.
-
-                 WHY HERE, AND NOT INLINE. The inline row is Cook · Shop · Plan · ⋮
-                 and those three slots are the primary verbs — what you came to do
-                 with a dish, with your hands full. Neither of these is that.
-                 "Guided plan" is the exact precedent: desk work you do BEFORE you
-                 cook, at a bench, with the recipe open. Starting a run is the same
-                 act one document further along — you are deciding what to weigh out
-                 and when to mix, not cooking — and the formula screen is the once-a-
-                 month version of it. Group one is right for both because both work
-                 on THIS dish rather than producing a second recipe (group two) or
-                 editing the document itself (group three).
-
-                 WHY "Bake a batch" LEADS. It is the weekly action; the formula is
-                 the monthly one, and it is the thing you open when the batch is
-                 wrong. Frequency orders them, exactly as it does Chat before
-                 Refresh above.
-
-                 A recipe with NO formula offers neither — there is no batch to
-                 start and nothing to open — and until #823 that left the screen
-                 with no entry point at all for a recipe that had never had one.
-                 What #812 actually objected to was an "add a formula" item on all
-                 ~46 recipes, putting baker's percentages in front of every
-                 weeknight curry to serve the three loaves; the item below answers
-                 that by gating on the basis guess instead of offering it
-                 unconditionally. The typed URL stays as the escape hatch for a loaf
-                 the guess misses — it stopped being the ONLY way in, not a way
-                 in. -->
-            <PopoverMenuItem
-              icon="Hourglass"
-              onclick={() => {
-                overflowMenuOpen = false;
-                bakeBatchOpen = true;
-              }}
-              data-testid="recipe-bake-batch-menu-item"
-            >
-              Bake a batch
-            </PopoverMenuItem>
-            <PopoverMenuItem
-              icon="Percent"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/formula`);
-              }}
-              data-testid="recipe-formula-menu-item"
-            >
-              Formula
-            </PopoverMenuItem>
-          {/if}
-          {#if showMakeScalable}
-            <!-- The FIRST formula (issue #823). The mutually-exclusive twin of the
-                 pair above, in the same slot and carrying the same icon: this is
-                 the item you tap once in a recipe's life, and from the moment the
-                 formula is saved those two take its place and this one is gone.
-                 Nothing else on the page changes — it leads to the screen #806
-                 already shipped, which has always handled the no-formula-yet case.
-
-                 Gated on the domain's basis guess, never on `kind` — the
-                 `couldHaveFormula` derivation above says why, and what an empty
-                 guess costs. Group one for the same reason as the pair it replaces:
-                 it works on THIS dish, and mapping a formula is desk work rather
-                 than one of the hands-full verbs the inline row is for. "Guided
-                 plan" is again the precedent, and this is the once-in-a-recipe's-
-                 life version of it. -->
-            <PopoverMenuItem
-              icon="Percent"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/formula`);
-              }}
-              data-testid="recipe-make-scalable-menu-item"
-            >
-              Make it scalable
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking || canAuthor || hasFormula || showMakeScalable || showComponents}
             <Divider class="my-1" />
-          {/if}
-          {#if canAuthor}
-            <!-- Beside Duplicate because they answer the same impulse — "I want this
-                 dish, but different" — and are the two honest answers to it: a literal
-                 copy you hand-edit, or a conversation that works the changes out with
-                 you. Above it, because talking it through is the one you reach for
-                 more often now it exists. -->
             <PopoverMenuItem
-              icon="Sparkles"
+              icon="Pencil"
               onclick={() => {
                 overflowMenuOpen = false;
-                void handleMakeVariation();
+                push(`/recipes/${recipe.id}/edit`);
               }}
-              disabled={variationBusy}
-              data-testid="recipe-make-variation-menu-item"
+              data-testid="recipe-edit-menu-item"
             >
-              Make a variation
+              Edit
             </PopoverMenuItem>
-          {/if}
-          <PopoverMenuItem
-            icon="Copy"
-            onclick={() => {
-              overflowMenuOpen = false;
-              handleDuplicate();
-            }}
-            data-testid="recipe-duplicate-menu-item"
-          >
-            Duplicate
-          </PopoverMenuItem>
-          <Divider class="my-1" />
-          <PopoverMenuItem
-            icon="Pencil"
-            onclick={() => {
-              overflowMenuOpen = false;
-              push(`/recipes/${recipe.id}/edit`);
-            }}
-            data-testid="recipe-edit-menu-item"
-          >
-            Edit
-          </PopoverMenuItem>
-          <PopoverMenuItem
-            variant="destructive"
-            icon="Trash2"
-            onclick={() => {
-              overflowMenuOpen = false;
-              deleteOpen = true;
-            }}
-            data-testid="recipe-delete-menu-item"
-          >
-            Delete
-          </PopoverMenuItem>
-        </PopoverContent>
-      </Popover>
+            <PopoverMenuItem
+              variant="destructive"
+              icon="Trash2"
+              onclick={() => {
+                overflowMenuOpen = false;
+                deleteOpen = true;
+              }}
+              data-testid="recipe-delete-menu-item"
+            >
+              Delete
+            </PopoverMenuItem>
+          </PopoverContent>
+        </Popover>
+      {/if}
     {/snippet}
 
     <!-- Two columns from the fold up (issue #696, Phase 4). At `split` the halves are
@@ -2902,22 +3053,7 @@
           </Tabs>
         {/if}
 
-        <!-- Notes. BELOW the tab strip, not inside a panel (issue #878): a note is
-             about the dish, not about its ingredients or its method, so it stays
-             visible whichever tab is showing. -->
-        {#if recipe.notes}
-          <Card>
-            <CardHeader class="px-4 pt-4 pb-0">
-              <CardTitle class="text-sm">Notes</CardTitle>
-            </CardHeader>
-            <CardContent class="px-4 pb-4 pt-3">
-              <!-- `breaks` is what makes this a no-op for every note written before
-                   notes were Markdown: it keeps each typed line break a line break,
-                   exactly as the old whitespace-pre-wrap paragraph did. -->
-              <Markdown text={recipe.notes} breaks class="text-sm text-muted-foreground" />
-            </CardContent>
-          </Card>
-        {/if}
+        <RecipeNotesCard {recipe} {editing} onEdit={handleInlineEdit} />
 
         <!-- Every chat about this dish (issue #696). With no chat column — below the
              seam, or above it with the pane switched off (#1141) — the list lives at the
