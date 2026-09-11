@@ -131,8 +131,12 @@ export const CookSessionSchema = z.object({
   // the family-shared recipe, and Rule 3 forbids browser storage. This one document
   // is the exception, and it earns it: a cook session is explicitly resumable across
   // devices (see the header), so without this the laptop picks the same cook up at
-  // different amounts. It is also the one place a stored scale cannot go stale,
-  // because it dies with the cook.
+  // different amounts.
+  //
+  // IT CAN GO STALE, and nothing here prevents that: cookSessions have no TTL, and
+  // the recipe page has no `?serves=` of its own to clear a pin, so an abandoned
+  // cook keeps whatever scale it was last opened at, open indefinitely. That is the
+  // known boundary of this field, not a claim that it is immune.
   //
   // BELONGS TO NEITHER PHASE SCHEME the header warns about — not cook mode's (#556)
   // and not guided cook's (#751).
@@ -141,7 +145,13 @@ export const CookSessionSchema = z.object({
   // session already in Firestore predates this field, so it must still parse (back-
   // compat on read), and a concrete `number | null` means no reader has to tell
   // "absent" from "as written".
-  servings: z.number().nullable().default(null),
+  //
+  // `.int().positive()`, not bare `z.number()`: this is a Firestore read, a trust
+  // boundary, and the value it carries is the same one `readServingsParam`
+  // (apps/web-pwa/src/routes/recipes/servingsParam.ts) hardens the URL against —
+  // zero, negative and non-integer are all nonsense scales, and reading one here
+  // would draw a banner reading "scaled for 0" over amounts that are as written.
+  servings: z.number().int().positive().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

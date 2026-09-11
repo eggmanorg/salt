@@ -62,17 +62,26 @@ export function createCookServings(options: CookServingsOptions) {
   // A whole-document write through `persistCookSession`, exactly as the tick lists
   // do — a client `setDoc` rewrites the whole cook session (CLAUDE.md, LWW), so
   // there is no partial write to add here.
-  let pinned: number | null | undefined = undefined;
+  //
+  // Guarded on the session's OWN value alone, not on anything this screen
+  // remembers writing. `persistCookSession` sets the store optimistically to the
+  // new value SYNCHRONOUSLY, before it awaits the network write, so this effect's
+  // own re-run (triggered by that same store update) already sees
+  // `s.servings === next` and returns on the first check — an instance-level
+  // "already wrote this" flag is redundant with that, and it is actively wrong
+  // across a session REPLACEMENT: a Restart deletes the session and writes a
+  // fresh one (`servings: null`), so the old pinned value can survive in this
+  // closure and wrongly refuse to re-pin the new document. Reading only the
+  // session also makes this self-healing after the ordinary LWW case (CLAUDE.md):
+  // if a concurrent whole-document `setDoc` clobbers this field, the next
+  // snapshot disagrees with `next` again and gets re-pinned.
   $effect(() => {
     const s = options.session();
     const url = fromUrl;
     const b = base;
     if (!s || b === null || url === null) return;
     const next = url === b ? null : url;
-    // Guarded on the session's own value AND on what this screen last wrote, so the
-    // write happens once rather than again on every snapshot that follows it.
-    if (s.servings === next || pinned === next) return;
-    pinned = next;
+    if (s.servings === next) return;
     void persistCookSession({ ...s, servings: next });
   });
 

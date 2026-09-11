@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import type { Recipe } from '@salt/domain';
 import type { CookSessionDoc } from '@salt/domain/schemas';
-import { withEffectRoot } from './support/effectRoot.svelte.js';
+import { withEffectRoot, reactiveBox } from './support/effectRoot.svelte.js';
 
 /**
  * Which number a cook screen is cooking for, and what it writes down (issue #1314).
@@ -215,6 +215,37 @@ describe('createCookServings — pinning the scale onto the session', () => {
     withEffectRoot(
       () => createCookServings({ recipe: () => recipeServing(4), session: () => session(6) }),
       () => expect(mockPersist).not.toHaveBeenCalled(),
+    );
+  });
+
+  it('RESTART: re-pins after the session is REPLACED, not merely updated', () => {
+    // handleRestart (cookLifecycle.svelte.ts) deletes the session and writes a
+    // brand-new one from makeFreshSession — servings: null — without remounting
+    // this factory. If the pin were guarded on an instance-level "already wrote
+    // this" flag rather than on the session's own value, the stale flag would
+    // survive the swap and refuse to re-pin: the screen would go on showing
+    // scaled amounts from the URL while the stored session read unscaled.
+    //
+    // `reactiveBox` stands in for the real caller's `() => $cookSession` — a
+    // plain reassigned closure variable would never re-trigger the effect at all,
+    // which would make this pass regardless of the guard.
+    mockRouter.querystring = 'serves=6';
+    const sessionBox = reactiveBox<CookSessionDoc | null>(session(null));
+    withEffectRoot(
+      () => createCookServings({ recipe: () => recipeServing(4), session: () => sessionBox.get() }),
+      () => {
+        expect(mockPersist).toHaveBeenCalledTimes(1);
+        expect(mockPersist).toHaveBeenLastCalledWith({ ...session(null), servings: 6 });
+
+        // The write lands, then a Restart deletes and replaces the whole document
+        // with a fresh one — a different session object, again servings: null.
+        const restarted = { ...session(null), createdAt: '2026-02-01T00:00:00.000Z' };
+        sessionBox.set(restarted);
+        flushSync();
+
+        expect(mockPersist).toHaveBeenCalledTimes(2);
+        expect(mockPersist).toHaveBeenLastCalledWith({ ...restarted, servings: 6 });
+      },
     );
   });
 

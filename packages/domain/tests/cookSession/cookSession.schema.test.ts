@@ -192,8 +192,9 @@ describe('CookSessionSchema.serveAt', () => {
 describe('CookSessionSchema.servings', () => {
   // Reading a recipe at a different number of servings (issue #1314). The cook
   // session is the ONE place a scale is stored — everywhere else it lives in the
-  // URL — because a cook is explicitly resumable across devices, and it dies with
-  // the cook so it can never go stale.
+  // URL — because a cook is explicitly resumable across devices. It CAN go stale:
+  // cookSessions have no TTL, so an abandoned cook keeps whatever scale it was
+  // last opened at.
   //
   // The same back-compat obligation as every other field added to this document:
   // cookSessions have no TTL and a cook can span days, so EVERY session already in
@@ -228,5 +229,21 @@ describe('CookSessionSchema.servings', () => {
 
   it('rejects a non-numeric count rather than scaling by a string', () => {
     expect(CookSessionSchema.safeParse({ ...base, servings: '6' }).success).toBe(false);
+  });
+
+  // A Firestore read is a trust boundary, and `readServingsParam`
+  // (apps/web-pwa/src/routes/recipes/servingsParam.ts) already hardens the URL
+  // path against exactly these values — a zero or negative count would have the
+  // cook banner claim "scaled for 0" over amounts that are as written.
+  it('rejects zero — not a scaling base', () => {
+    expect(CookSessionSchema.safeParse({ ...base, servings: 0 }).success).toBe(false);
+  });
+
+  it('rejects a negative count', () => {
+    expect(CookSessionSchema.safeParse({ ...base, servings: -2 }).success).toBe(false);
+  });
+
+  it('rejects a non-integer count', () => {
+    expect(CookSessionSchema.safeParse({ ...base, servings: 2.5 }).success).toBe(false);
   });
 });
