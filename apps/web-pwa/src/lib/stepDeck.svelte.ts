@@ -1,7 +1,6 @@
-import { fromStore } from 'svelte/store';
-import { firstIncompleteStepId, withStepDone } from '@salt/domain';
+import { untrack } from 'svelte';
+import { firstIncompleteStepId } from '@salt/domain';
 import type { StepDoc } from '@salt/domain/schemas';
-import { cookSession, persistCookSession, getCookSessionSnapshot } from './cookSessionService.js';
 import { createDeck } from './deck.svelte.js';
 import { fadeHeightFor } from './cookDeck.js';
 
@@ -25,11 +24,17 @@ import { fadeHeightFor } from './cookDeck.js';
  * look-ahead panel is derived in the page off the `currentStep` this returns, because
  * the panel is a reading of the PLAN and the plan is only in hand there.
  *
+ * WHERE COMPLETION LIVES IS THE CALLER'S (issue #1327). This module used to read
+ * `completedStepIds` off the cook session and write through `persistCookSession`, which
+ * quietly made "a deck" and "a cook session" the same thing. They are not: the BATCH cook
+ * page runs this same deck over the same recipe steps with the ticks on the batch
+ * document, which is family-shared and has no session at all. So the progress store is
+ * two options — a getter and a setter — and the two recipe cook screens pass the
+ * session-backed pair, unchanged in behaviour.
+ *
  * Runes in a factory, following `./deck.svelte.ts`, `./cookLifecycle.svelte.ts` and
  * `./cookTimers.svelte.ts`: the state and effects declared here belong to the component
- * that calls it, so its teardown is the component's. The session store is bridged with
- * `fromStore` for the same reason it is there — a `$store` auto-subscription is component
- * syntax and does not exist in a `.svelte.ts` module.
+ * that calls it, so its teardown is the component's.
  */
 
 /** Which of the two screens-within-a-screen is showing. */
@@ -53,26 +58,27 @@ export interface StepDeckOptions {
    * back: this module only ever sets one, or clears it.
    */
   setPeeked: (id: string | null) => void;
+  /**
+   * Which steps are ticked, read LIVE — the caller's store, whichever document it
+   * happens to be (a cook session for the two recipe screens, the batch itself for
+   * the batch cook page).
+   */
+  completedStepIds: () => ReadonlySet<string>;
+  /**
+   * Set a step's completion. Whole-document LWW via whichever service owns it; the
+   * caller is also where the identity short-circuit lives, because only it knows
+   * what "already in that state" means for its document.
+   *
+   * Completion is never a gate: the footer ticks the step you're on, a done step can
+   * be unticked from its expanded view, and earlier steps are never force re-ticked.
+   */
+  setStepDone: (id: string, done: boolean) => void;
 }
 
 export function createStepDeck(options: StepDeckOptions) {
-  const session = fromStore(cookSession);
-
-  /** Which steps are ticked. The one derivation; both screens render off it. */
-  const completedStepIds = $derived(new Set(session.current?.completedStepIds ?? []));
-
-  // Set a step's completion — whole-document LWW via the service (there is no
-  // field-level write). Completion is never a gate: the footer ticks the step you're
-  // on, a done step can be unticked from its expanded view, and earlier steps are
-  // never force re-ticked.
-  function setStepDone(id: string, done: boolean): void {
-    const s = getCookSessionSnapshot();
-    if (!s) return;
-    const next = withStepDone(s, id, done);
-    // Identity means the step was already in that state — skip the write.
-    if (next === s) return;
-    void persistCookSession(next);
-  }
+  /** Which steps are ticked. The one derivation; every screen renders off it. */
+  const completedStepIds = $derived(options.completedStepIds());
+  const setStepDone = (id: string, done: boolean): void => options.setStepDone(id, done);
 
   // ─── The step elements ─────────────────────────────────────────────────────────
   // The only registry of which DOM node is which step. Everything measured below goes
@@ -261,15 +267,18 @@ export function createStepDeck(options: StepDeckOptions) {
   }
 
   // Land-on-first-incomplete. Fires only when the stage flips to `steps`; it reads
-  // completion from a NON-reactive snapshot so completion changes never move the
+  // completion from an UNTRACKED snapshot so completion changes never move the
   // scroll on their own — the only thing that advances the view is the cook tapping
   // the footer (`handleStepDone` / `handleResume`), or their own swipe. Completed
   // steps stay above, collapsed but scrollable back and re-openable.
+  //
+  // `untrack` is what replaced reading the session store directly (issue #1327): the
+  // caller's getter IS reactive, and the non-reactivity is this effect's requirement
+  // rather than a property of where the ticks are kept.
   $effect(() => {
     if (options.stage() !== 'steps') return;
     if (!deck.viewportEl || !deck.contentEl) return;
-    const snap = getCookSessionSnapshot();
-    const done = new Set(snap?.completedStepIds ?? []);
+    const done = untrack(() => options.completedStepIds());
     const steps = options.steps();
     const targetId = firstIncompleteStepId(steps, done);
     const target = steps.find((s) => s.id === targetId) ?? steps[steps.length - 1];

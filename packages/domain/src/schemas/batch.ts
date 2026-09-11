@@ -270,6 +270,31 @@ export const BatchSchema = z.object({
   //
   // Null when the question was skipped, which is always allowed.
   ambientCelsius: z.number().nullable().default(null),
+  // ─── WHAT THE COOK HAS TICKED OFF, ON THE RUN (issue #1327) ─────────────────
+  //
+  // The batch cook page's two check-off lists: which of the frozen `quantities`
+  // (and recipe-only ingredients) have been weighed out, and which of the LIVE
+  // recipe's steps have been done.
+  //
+  // ON THE BATCH, NOT ON A COOK SESSION, AND DELIBERATELY FAMILY-SHARED. Two
+  // people can have hands on one bake, and "the flour is weighed" is a fact about
+  // the batch rather than about whoever weighed it — the same argument that
+  // already put stage done/skip here. Everyone on the run sees everyone's ticks;
+  // that is the intended behaviour, not a tolerated one. A `cookSessions`
+  // document would be the wrong owner and the wrong lifetime
+  // (docs/formulas-schedules-batches.md, "a batch is not a cook session").
+  //
+  // IDS ONLY, AND NOTHING VALIDATES THEM against the recipe or the quantities. An
+  // ingredient edited out of the recipe leaves a tick behind, and a count is taken
+  // over the rows ON SCREEN (`progressOver`), never over these lists — which is
+  // what stops a stale tick inflating "6 of 5 weighed".
+  //
+  // Read defaults, so every `batches/{batchId}` document written before these
+  // fields existed parses unchanged and there is no migration (CLAUDE.md,
+  // production data back-compat) — the same shape `skipped`, `place` and
+  // `abandonedAt` all have.
+  checkedIngredientIds: z.array(z.string()).default([]),
+  completedStepIds: z.array(z.string()).default([]),
   createdAt: z.string(),
   // The ordering token for the write path's stale-echo guard, and the only reason
   // this document carries timestamps at all where `formulas` does not.

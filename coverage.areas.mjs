@@ -462,11 +462,34 @@ export const coverageThresholds = {
   // this is a bank and not a ceiling being raised to admit untested code. No pin
   // here went down. Measured by `pnpm test:coverage` on this branch and pasted
   // from the ratchet's own block.
+  // UNCOVERED COUNTS RAISED in #1327 — 1826 → 1856 lines, 1748 → 1813 branches —
+  // and this is the "untested code added to a growing area" case the header names,
+  // which is the one the count ceiling cannot absorb on its own. `BatchCookPage`
+  // is a whole new full-viewport page, and a new page arrives with markup branches
+  // (every `{#if}` in a template is one) that no unit test in jsdom will ever take:
+  // the deck's peek, its fade and its collapse all depend on a browser having laid
+  // something out, and this file's own note on v8 measuring COMPILED Svelte is
+  // exactly why.
+  //
+  // THE MERGE BASE WAS MEASURED, by running the ratchet twice on this branch. The
+  // ratchet drops files that are not committed, so the run before the phase commit
+  // reports the area over MAIN's file set plus this branch's edits to files already
+  // in it: 1827 uncovered lines and 1747 uncovered branches, against a pin of 1826
+  // and 1748. Within one on both counts — which is what says the pin was not stale,
+  // and that the whole of the delta below is the new page (+29 lines, +66 branches)
+  // rather than anything already here becoming less tested.
+  //
+  // THE RATIO FLOORS ARE NOT TOUCHED, deliberately. Both ratios ROSE — 82.13 → 82.56
+  // and 71.37 → 71.62, because the new page is better covered than the area average
+  // — but by less than the staleness tolerance, so the ratchet cannot certify the
+  // rise as growth rather than a loss it cannot see, and banking an uncertified rise
+  // is the one irreversible move this file forbids. Left at their measured floors,
+  // they still red on any regression.
   'apps/web-pwa/src/routes/**': {
     lines: 82.13,
     branches: 71.37,
-    uncoveredLines: 1826,
-    uncoveredBranches: 1748,
+    uncoveredLines: 1856,
+    uncoveredBranches: 1813,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

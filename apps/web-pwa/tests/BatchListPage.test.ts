@@ -76,6 +76,8 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     abandonedAt: null,
+    checkedIngredientIds: [],
+    completedStepIds: [],
     quantities: [],
     totals: {
       basisGrams: 816,

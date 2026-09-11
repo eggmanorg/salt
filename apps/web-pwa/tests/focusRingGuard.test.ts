@@ -64,6 +64,10 @@ const OUTLINE_NONE_ALLOWED = new Set([
   'routes/recipes/RecipeIdentityCard.svelte',
   'routes/recipes/CookModePage.svelte',
   'routes/recipes/GuidedCookPage.svelte',
+  // The THIRD full-viewport container (issue #1327) — cooking a batch. Same shape
+  // as the two above it: `tabindex="-1"` on the page root, focused on mount as a
+  // handoff (ui-spec-v05 §2.4), with nothing there for a ring to point at.
+  'routes/batches/BatchCookPage.svelte',
 ]);
 
 describe('focus ring source guard', () => {

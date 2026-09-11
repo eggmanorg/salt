@@ -29,7 +29,14 @@ vi.mock('@salt/observability', () => ({
   createObservabilityErrorReportingAdapter: () => ({ report: vi.fn() }),
 }));
 
-import { advanceStage, batch, skipStage, startStage } from '../src/lib/batchService.js';
+import {
+  advanceStage,
+  batch,
+  setIngredientChecked,
+  setStepDone,
+  skipStage,
+  startStage,
+} from '../src/lib/batchService.js';
 import { get } from 'svelte/store';
 
 const NOW = '2026-08-15T05:10:00.000Z';
@@ -54,7 +61,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
   };
 }
 
-function running(): BatchDoc {
+function running(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     id: 'batch-1',
     schemaVersion: 1,
@@ -63,6 +70,8 @@ function running(): BatchDoc {
     state: 'running',
     abandonedAt: null,
     quantities: [],
+    checkedIngredientIds: [],
+    completedStepIds: [],
     totals: { basisGrams: 841, totalGrams: 1483, usableGrams: 1440, units: null },
     stages: [
       stage(),
@@ -79,6 +88,7 @@ function running(): BatchDoc {
     ambientCelsius: null,
     createdAt: '2026-08-14T21:00:00.000Z',
     updatedAt: '2026-08-14T21:00:00.000Z',
+    ...over,
   };
 }
 
@@ -158,6 +168,54 @@ describe('skipStage', () => {
     const result = await skipStage(running(), 'stage-1');
 
     expect(result.kind).toBe('err');
+  });
+});
+
+describe('the tick commands (issue #1327)', () => {
+  // THE RULE-12 PIN for "a tick touches no stage". The batch cook page's weigh-out
+  // and step check-offs write the WHOLE batch document, so the thing that must be
+  // true is not that they leave the stages "equal" — it is that they do not rebuild
+  // them at all, because `onBatchWritten` diffs `${stage.id}@${plannedStartAt}` off
+  // exactly that array. Break the producer and this goes red here; break the trigger
+  // and it goes red in the cloud-functions suite.
+
+  it('leaves `stages` byte-equal, and stamps `updatedAt`', async () => {
+    const before = running();
+    await setIngredientChecked(before, 'ing-flour', true);
+
+    expect(written().checkedIngredientIds).toEqual(['ing-flour']);
+    expect(written().stages).toEqual(before.stages);
+    expect(written().updatedAt).toBe(NOW);
+  });
+
+  it('marks a step done without touching a stage', async () => {
+    const before = running();
+    await setStepDone(before, 'step-3', true);
+
+    expect(written().completedStepIds).toEqual(['step-3']);
+    expect(written().stages).toEqual(before.stages);
+  });
+
+  it('writes NOTHING when the row is already in that state', async () => {
+    // Identity from the producer short-circuits the write, so a Firestore echo
+    // re-rendering the page cannot write the document it has just received back.
+    const already = running({ checkedIngredientIds: ['ing-flour'], completedStepIds: ['step-3'] });
+
+    const a = await setIngredientChecked(already, 'ing-flour', true);
+    const b = await setStepDone(already, 'step-3', true);
+
+    expect(mockSaveBatch).not.toHaveBeenCalled();
+    expect(a.kind).toBe('ok');
+    expect(b.kind).toBe('ok');
+  });
+
+  it('returns the failure when the write fails', async () => {
+    mockSaveBatch.mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+
+    expect((await setStepDone(running(), 'step-3', true)).kind).toBe('err');
   });
 });
 

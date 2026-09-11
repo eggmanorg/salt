@@ -27,6 +27,8 @@ import {
   flattenIngredients,
   freezeBatch,
   withBatchAbandoned,
+  withBatchIngredientChecked,
+  withBatchStepDone,
   withStageAdvanced,
   withStageSkipped,
   withStageStarted,
@@ -495,6 +497,46 @@ export async function skipStage(
   note: string = '',
 ): Promise<ReadResult<BatchDoc, DomainError>> {
   return persist(withStageSkipped(current, stageId, new Date().toISOString(), note));
+}
+
+/**
+ * Tick (or untick) one row of the batch cook page's weigh-out (issue #1327).
+ *
+ * NO CLOCK AND NO STAGE. Unlike the three commands above, this records nothing
+ * about the run's progress through its schedule: it is the family's shared memory
+ * of what is already on the bench. `persist` still stamps `updatedAt`, because
+ * every write to this document does.
+ *
+ * IDENTITY MEANS NO WRITE, and it is checked here rather than left to the
+ * producer's caller: a cook page re-rendering off a Firestore echo would otherwise
+ * write the document it has just received straight back.
+ */
+export async function setIngredientChecked(
+  current: BatchDoc,
+  ingredientId: string,
+  checked: boolean,
+): Promise<ReadResult<BatchDoc, DomainError>> {
+  const next = withBatchIngredientChecked(current, ingredientId, checked);
+  if (next === current) return success(current);
+  return persist(next);
+}
+
+/**
+ * Mark (or unmark) one recipe step done on the run (issue #1327).
+ *
+ * The sibling of `setIngredientChecked`, and the same contract — including the
+ * identity short-circuit. NOT the same thing as marking a STAGE done: a step of
+ * the recipe's method is not a stage of the schedule, and the cook page calls
+ * `advanceStage` as well when the step it ticks carries one.
+ */
+export async function setStepDone(
+  current: BatchDoc,
+  stepId: string,
+  done: boolean,
+): Promise<ReadResult<BatchDoc, DomainError>> {
+  const next = withBatchStepDone(current, stepId, done);
+  if (next === current) return success(current);
+  return persist(next);
 }
 
 /**

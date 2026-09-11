@@ -57,5 +57,10 @@ export {
   withBatchAbandoned,
 } from './transitions.js';
 export type { StageStatus } from './transitions.js';
+// The run's two CHECK-OFF lists (issue #1327) — the batch cook page's weigh-out
+// ticks and step ticks. Producers, in the same style as the transitions above and
+// kept in their own file because they are the only ones that touch neither the
+// stages nor the clock.
+export { withBatchIngredientChecked, withBatchStepDone } from './ticks.js';
 export { buildBatchLog } from './buildBatchLog.js';
 export type { BatchLogEntry } from './buildBatchLog.js';

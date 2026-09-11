@@ -9,11 +9,22 @@
   // shared lifecycle's, so the only per-page facts are the in-flight flag and the
   // handler to call.
 
+  // BOTH CONTROLS ARE OPTIONAL SINCE ISSUE #1327, because the batch cook page has
+  // the same warning to give and nothing to restart: a batch's grams are frozen by
+  // design, so restarting would mean re-freezing them against a recipe that has
+  // moved — which is a new run, not a restart. Absent handler, no button, and the
+  // sentence is the whole banner. The wording is the caller's for the same reason
+  // the condition is: the two pages mean different things by "changed".
+
   interface Props {
-    restarting: boolean;
-    onRestart: () => void;
+    /** What the banner says. */
+    message: string;
+    /** In-flight only while a restart is possible — omit alongside `onRestart`. */
+    restarting?: boolean;
+    /** Omit to render no control at all. */
+    onRestart?: () => void;
   }
-  let { restarting, onRestart }: Props = $props();
+  let { message, restarting = false, onRestart }: Props = $props();
 </script>
 
 <div
@@ -21,16 +32,18 @@
   data-testid="cook-mode-recipe-changed"
 >
   <Icon name="TriangleAlert" size={16} class="shrink-0 text-warning" />
-  <span class="flex-1">This recipe was updated since you started cooking.</span>
-  <Button
-    size="sm"
-    variant="outline"
-    onclick={onRestart}
-    loading={restarting}
-    disabled={restarting}
-    data-testid="cook-mode-restart"
-  >
-    {#snippet leading()}<Icon name="RefreshCw" size={14} />{/snippet}
-    Restart
-  </Button>
+  <span class="flex-1">{message}</span>
+  {#if onRestart}
+    <Button
+      size="sm"
+      variant="outline"
+      onclick={onRestart}
+      loading={restarting}
+      disabled={restarting}
+      data-testid="cook-mode-restart"
+    >
+      {#snippet leading()}<Icon name="RefreshCw" size={14} />{/snippet}
+      Restart
+    </Button>
+  {/if}
 </div>

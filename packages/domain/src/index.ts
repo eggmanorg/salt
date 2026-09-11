@@ -260,6 +260,7 @@ export {
   diffWords,
   unchangedRatio,
   hasRecipeChanged,
+  recipeChangedSince,
   pickPlaceholder,
   PLACEHOLDER_MOODS,
   PLACEHOLDER_CONDITION_TAGS,
@@ -455,6 +456,8 @@ export {
   withStageStarted,
   withStageSkipped,
   withBatchAbandoned,
+  withBatchIngredientChecked,
+  withBatchStepDone,
   buildBatchLog,
 } from './batch/index.js';
 export type { FreezeBatchFailure, StageStatus, BatchLogEntry } from './batch/index.js';

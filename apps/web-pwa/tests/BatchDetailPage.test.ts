@@ -119,6 +119,8 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     abandonedAt: null,
+    checkedIngredientIds: [],
+    completedStepIds: [],
     quantities: [
       { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 816 },
       { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571 },
@@ -772,35 +774,32 @@ describe('BatchDetailPage — four conditions on a run (issue #1275)', () => {
   });
 });
 
-describe('BatchDetailPage — the hand-off to cook mode', () => {
-  it('links an active stage to cook mode, by recipe id alone', async () => {
-    // Cook mode takes only a recipe id — the link lands at the top of it, with its
-    // own timers, which is the whole hand-off.
+describe('BatchDetailPage — cooking the run (issue #1327)', () => {
+  it('offers ONE Cook at the top of a running batch', async () => {
+    // The cook is the batch's, not any one stage's. It opens the batch cook page —
+    // the frozen grams, the recipe's method with this run's stages on it, and this
+    // run's clock — never plain cook mode with the recipe's own 500 g.
     await showRun();
 
-    await fireEvent.click(screen.getByTestId('batch-stage-cook'));
-    expect(pushMock).toHaveBeenCalledWith('/recipes/recipe-1/cook');
+    await fireEvent.click(screen.getByTestId('batch-cook-open'));
+    expect(pushMock).toHaveBeenCalledWith('/batches/batch-1/cook');
   });
 
-  it('does not offer it on a wait, which is the stage you leave the room for', async () => {
-    await showRun({
-      stages: [
-        stage({ actualEndAt: '2026-08-14T07:12:00.000Z' }),
-        stage({ id: 'stage-2', label: 'Bulk ferment', kind: 'wait' }),
-      ],
-    });
+  it('no longer puts a Cook-mode button on a stage', async () => {
+    // There used to be one on every `active` stage in hand: two screens and two
+    // clocks. Its absence is the point of the change, so it is asserted.
+    await showRun();
 
-    expect(stagesWithControls()).toEqual(['stage-2']);
     expect(screen.queryByTestId('batch-stage-cook')).toBeNull();
+    expect(screen.queryByText('Cook mode')).toBeNull();
   });
 
-  it('links off the batch and never through it — the recipe is not read here', async () => {
-    // `recipeId` is the batch's own frozen FK. A run whose dish was retitled or
-    // deleted still links, because nothing on this page joins to a recipe.
-    await showRun({ recipeId: 'recipe-since-renamed' });
+  it('offers no Cook on a run that has been stopped', async () => {
+    // Gated on the run's STATE, exactly as Abandon is: an abandoned run is not
+    // being cooked.
+    await showRun({ state: 'abandoned', abandonedAt: '2026-08-14T09:00:00.000Z' });
 
-    await fireEvent.click(screen.getByTestId('batch-stage-cook'));
-    expect(pushMock).toHaveBeenCalledWith('/recipes/recipe-since-renamed/cook');
+    expect(screen.queryByTestId('batch-cook-open')).toBeNull();
   });
 });
 

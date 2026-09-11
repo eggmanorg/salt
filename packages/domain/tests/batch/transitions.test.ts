@@ -47,6 +47,8 @@ function runningLoaf(): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     abandonedAt: null,
+    checkedIngredientIds: [],
+    completedStepIds: [],
     quantities: [
       { ingredientId: 'ing-flour', label: '500g strong white', percent: 100, grams: 816 },
     ],

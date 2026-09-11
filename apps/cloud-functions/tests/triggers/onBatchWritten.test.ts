@@ -130,6 +130,8 @@ function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
     recipeTitle: 'Overnight white tin',
     state: 'running',
     abandonedAt: null,
+    checkedIngredientIds: [],
+    completedStepIds: [],
     quantities: [],
     totals: { basisGrams: 1000, totalGrams: 1700, usableGrams: 1700, units: null },
     stages: loafStages(),
@@ -310,6 +312,28 @@ describe('onBatchWritten — the diff', () => {
       { batchId: BATCH_ID, stageId: 'bake', plannedStartAt: at(800), notifyUids: ['uid-ada'] },
       { scheduleTime: new Date(at(800)) },
     );
+  });
+
+  it('enqueues NOTHING for a tick write from the batch cook page (#1327)', async () => {
+    // THE RULE-12 PIN for "a tick write enqueues no reminder". The batch cook page
+    // writes `checkedIngredientIds` / `completedStepIds` onto the same document the
+    // schedule lives on, and it does so on every weigh-out row and every step — so
+    // if this trigger's diff looked at anything but the stages, ticking a checklist
+    // would re-queue a Cloud Task per remaining reminder, every tap.
+    //
+    // It is the DIFF that guarantees it (`${stage.id}@${plannedStartAt}`), not the
+    // producers' restraint alone; the producers' half — that `stages` is left
+    // referentially untouched — is pinned in the domain suite.
+    const before = makeBatch();
+    const after = makeBatch({
+      checkedIngredientIds: ['ing-flour', 'ing-water'],
+      completedStepIds: ['step-1'],
+      updatedAt: '2026-08-14T17:30:00.000Z',
+    });
+
+    await (onBatchWritten as unknown as Function)(event(snap(before), snap(after)));
+
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it('stays quiet about the stage a cook has just started', async () => {

@@ -110,6 +110,13 @@ export const routes: RouteDefinition = new Map<
   // plan. ABOVE `/batches/:id` because the more specific pattern has to match first,
   // and an ordinary shell route like the two around it.
   ['/batches/:id/log', lazy(() => import('./batches/BatchLogPage.svelte'))],
+  // Cooking the run (issue #1327). ABOVE `/batches/:id` for the same
+  // more-specific-first reason as the log beside it, and the app's THIRD
+  // full-viewport route — so, unlike its two neighbours, it has an entry in
+  // ./fullViewport.ts. It is cook mode read through the batch: the frozen grams as
+  // the weigh-out, the recipe's steps with their stage bands, and the schedule's
+  // clock instead of a cook timer.
+  ['/batches/:id/cook', lazy(() => import('./batches/BatchCookPage.svelte'))],
   ['/batches/:id', lazy(() => import('./batches/BatchDetailPage.svelte'))],
   ['/settings', SettingsPage],
   // Operator area (issues #155, #157). All routes are guarded client-side by
