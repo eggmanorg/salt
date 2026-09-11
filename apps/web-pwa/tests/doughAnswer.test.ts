@@ -52,13 +52,90 @@ describe('doughAmountFrom', () => {
     });
   });
 
-  it('is nothing rather than a default while an answer is half-typed', () => {
+  it('is nothing rather than a default while an answer is half-typed, with no anchor to divide', () => {
     // A gap is not a lenient answer with a number filled in — it is no
     // declaration yet, and `null` is what has always disabled Save.
+    //
+    // NARROWED BY ISSUE #1325: a blank per-unit weight is no longer a gap when the
+    // caller hands over a dough total to divide. Every case below therefore passes
+    // NO anchor, which is what the bake sheet does and what these four assertions
+    // have always actually been about.
     expect(doughAmountFrom('tin', fields())).toBeNull();
     expect(doughAmountFrom('tin', fields({ tinGramsText: '900', tinCountText: '' }))).toBeNull();
     expect(doughAmountFrom('pieces', fields({ pieceCountText: '' }))).toBeNull();
     expect(doughAmountFrom('weight', fields())).toBeNull();
+  });
+});
+
+// ─── "Divide what's already there" (issue #1325) ───────────────────────────────
+//
+// The formula screen hands over the dough its weight boxes already come to. A
+// count with a blank per-unit box then shares that out instead of resolving to
+// nothing — "five rolls out of this dough", which is how the question is usually
+// asked and which used to be division done on paper.
+//
+// The bake sheet passes no anchor, so every one of these is `null` there. That is
+// pinned on the sheet's own suite, not inferred from the default argument here.
+describe('doughAmountFrom — a dough total to divide', () => {
+  it('shares the dough out when the per-piece weight is blank', () => {
+    expect(doughAmountFrom('pieces', fields({ pieceCountText: '5' }), 400)).toEqual({
+      count: 5,
+      unitDoughGrams: 80,
+    });
+  });
+
+  it('does the same for a count of tins', () => {
+    expect(doughAmountFrom('tin', fields({ tinCountText: '2' }), 1800)).toEqual({
+      count: 2,
+      unitDoughGrams: 900,
+    });
+  });
+
+  it('multiplies back to exactly the anchor', () => {
+    // EXACT on purpose: 867 ÷ 5 is 173.4, and `5 × 173.4` is 867 again. This is a
+    // claim about the DIVISION and nothing further — whether any weights move is
+    // the caller's, because the caller is what rounds (issue #1325 review, round
+    // 2: `FormulaPage.svelte`'s `declarationFrom`, so that what it restates at is
+    // what it saves). Rounding it here would hide that round inside a helper both
+    // screens share, and only one of them does it.
+    const amount = doughAmountFrom('pieces', fields({ pieceCountText: '5' }), 867);
+    expect(amount).not.toBeNull();
+    expect(amount!.count * amount!.unitDoughGrams).toBeCloseTo(867, 10);
+  });
+
+  it('lets the typed figure win, always', () => {
+    // The anchor is what a blank box falls back to, never something layered over
+    // one: 5 × 100 g is 500 g of dough, whatever the boxes above currently sum to.
+    expect(
+      doughAmountFrom('pieces', fields({ pieceCountText: '5', pieceGramsText: '100' }), 400),
+    ).toEqual({ count: 5, unitDoughGrams: 100 });
+  });
+
+  it('still refuses a count that is not a count', () => {
+    // A blank count is still no declaration — there is nothing to divide BY. The
+    // anchor softens the weight box and nothing else.
+    expect(doughAmountFrom('pieces', fields({ pieceCountText: '' }), 400)).toBeNull();
+    expect(doughAmountFrom('pieces', fields({ pieceCountText: '2.5' }), 400)).toBeNull();
+    expect(doughAmountFrom('tin', fields({ tinCountText: '0' }), 400)).toBeNull();
+  });
+
+  it('has nothing to divide when the formula is empty', () => {
+    expect(doughAmountFrom('pieces', fields({ pieceCountText: '5' }), 0)).toBeNull();
+    expect(doughAmountFrom('pieces', fields({ pieceCountText: '5' }), null)).toBeNull();
+  });
+
+  it('leaves the two answers with nothing to share out alone', () => {
+    // A tray already has its suggest button, and a plain weight of dough has no
+    // count to divide by. Neither reads the anchor at all.
+    expect(doughAmountFrom('weight', fields(), 400)).toBeNull();
+    expect(doughAmountFrom('tray', fields(), 400)).toBeNull();
+  });
+
+  it('names no vessel for a divided tin', () => {
+    // `vesselFrom` reads the TIN BOX, never the resolved amount. A divided figure
+    // is a dough weight — nobody said anything about a tin of that size, and a
+    // vessel descriptor invented from one would be a fact nobody stated.
+    expect(vesselFrom('tin', fields({ tinCountText: '2' }))).toBeUndefined();
   });
 
   it('refuses what the schema would refuse, rather than rounding it into shape', () => {
@@ -87,6 +164,15 @@ describe('vesselFrom', () => {
   it('names nothing while the tin size is unreadable', () => {
     expect(vesselFrom('tin', fields())).toBeUndefined();
     expect(vesselFrom('tin', fields({ tinGramsText: 'big' }))).toBeUndefined();
+  });
+
+  it('rounds a noisy figure rather than freezing it into the vessel string', () => {
+    // Issue #1325 review, blocking-1: a batch's `vessel` snapshot is permanent
+    // the moment it is written, so a float that slipped past a caller's own
+    // round must not land as "1031.9999999999998 g loaf tin".
+    expect(vesselFrom('tin', fields({ tinGramsText: '1031.9999999999998' }))).toBe(
+      '1032 g loaf tin',
+    );
   });
 });
 
@@ -122,6 +208,16 @@ describe('seedDoughAnswer', () => {
       const seeded = seedDoughAnswer(amount);
       expect(doughAmountFrom(seeded.mode, seeded.fields)).toEqual(amount);
     }
+  });
+
+  it('rounds a noisy stored figure into the box, rather than showing the float', () => {
+    // Issue #1325 review, blocking-1: a percentage round-trip can come back
+    // `1031.9999999999998`. Reopening must not put that in front of anyone —
+    // the "Tin size (g)" box on the formula screen and the bake sheet both seed
+    // from this.
+    const seeded = seedDoughAnswer({ count: 1, unitDoughGrams: 1031.9999999999998 });
+    expect(seeded.fields.tinGramsText).toBe('1032');
+    expect(seeded.fields.totalGramsText).toBe('1032');
   });
 });
 

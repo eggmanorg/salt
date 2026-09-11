@@ -18,6 +18,19 @@ import { parseUnitCount } from './unitCount.js';
 // `DoughAmount`, and that rule is here so the two screens cannot disagree about
 // what "8 × 120 g" means. Everything below is pure and holds no component state.
 //
+// ONE PLACE WHERE THEY DIVERGE, AND IT IS AN ARGUMENT RATHER THAN A FORK (issue
+// #1325). `doughAmountFrom` takes an optional dough-total anchor: with a count and
+// a blank per-unit weight, the amount divides that anchor instead of resolving to
+// nothing. "Five rolls out of this dough" is the commonest way the question gets
+// asked, and on the formula screen it used to be division done on paper.
+//
+// THE BAKE SHEET PASSES NONE, and the reason is principled rather than scoping: a
+// null amount there ALREADY MEANS "the formula's own reference yield"
+// (`RecipeBakeBatchSheet.svelte`, and `canStart` never required an amount), so
+// dividing would silently change what Start Bake does. Whether that screen should
+// eventually offer the same gesture is open, and it needs its own decision about
+// what a blank box means there.
+//
 // PAGE-LOCAL, in the shape `unitCount.ts` establishes: both consumers live in this
 // folder, and `lib/` is for rules a `.ts` service also needs (issue #1055).
 
@@ -97,27 +110,59 @@ function parseGrams(text: string): number | null {
 }
 
 /**
+ * What a blank per-unit box resolves to: the dough already there, shared out.
+ *
+ * EXACT, and that is this function's whole claim: `count × result` is the anchor
+ * back again. It is deliberately NOT the claim that a caller's weights therefore
+ * never move (issue #1325 review, round 2 — that is how the screen and the
+ * document came to state different totals). Rounding is the CALLER's, at the one
+ * point where its boxes become a declaration, because whatever it restates at is
+ * what it will save and what it will print: `FormulaPage.svelte`'s
+ * `declarationFrom` does it in one place and states what it costs — 867 ÷ 12 is
+ * 72.25, and a declaration of 12 × 72 g moves the dough by 3 g.
+ *
+ * Nothing without both halves — a blank count is still no declaration, and no
+ * anchor (or a formula with nothing in it) is nothing to divide.
+ */
+function dividedUnitGrams(count: number | null, anchorDoughGrams: number | null): number | null {
+  if (count === null || anchorDoughGrams === null) return null;
+  return Number.isFinite(anchorDoughGrams) && anchorDoughGrams > 0
+    ? anchorDoughGrams / count
+    : null;
+}
+
+/**
  * The answer as a dough amount, or nothing.
  *
  * NOTHING RATHER THAN A DEFAULT: a half-typed answer is not a lenient one with a
  * gap filled in, it is no declaration yet, and the same `null` that has always
- * disabled Save covers it without a second rule.
+ * disabled Save covers it without a second rule. `anchorDoughGrams` does not
+ * soften that — it answers a DIFFERENT question ("how much does each of N get out
+ * of this much dough") for the two answers that have an N, and only once the count
+ * itself reads as a count.
+ *
+ * The typed figure always wins. The anchor is what a blank box falls back to, never
+ * something layered over one.
  *
  * A plain weight is one of itself — `count: 1` — which is why the read-back for it
- * is "1.4 kg of dough" and not "1 × 1400 g".
+ * is "1.4 kg of dough" and not "1 × 1400 g". It takes no anchor, and neither does a
+ * tray: a tray has its own suggest button, and a plain weight has nothing to divide.
  */
 export function doughAmountFrom(
   mode: DoughAnswerMode,
   fields: DoughAnswerFields,
+  anchorDoughGrams: number | null = null,
 ): DoughAmount | null {
   if (mode === 'tin') {
-    const unitDoughGrams = parseGrams(fields.tinGramsText);
     const count = parseUnitCount(fields.tinCountText);
+    const unitDoughGrams =
+      parseGrams(fields.tinGramsText) ?? dividedUnitGrams(count, anchorDoughGrams);
     return unitDoughGrams === null || count === null ? null : { count, unitDoughGrams };
   }
   if (mode === 'pieces') {
-    const unitDoughGrams = parseGrams(fields.pieceGramsText);
     const count = parseUnitCount(fields.pieceCountText);
+    const unitDoughGrams =
+      parseGrams(fields.pieceGramsText) ?? dividedUnitGrams(count, anchorDoughGrams);
     return unitDoughGrams === null || count === null ? null : { count, unitDoughGrams };
   }
   if (mode === 'tray') {
@@ -184,7 +229,12 @@ export function suggestedTrayGrams(fields: DoughAnswerFields): number | null {
 export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): string | undefined {
   if (mode === 'tin') {
     const grams = parseGrams(fields.tinGramsText);
-    return grams === null ? undefined : `${grams} g loaf tin`;
+    // ROUNDED (issue #1325 review, blocking-1). The box this reads is ordinarily
+    // already clean, but a batch's `vessel` snapshot is permanent the moment it is
+    // written, so a float that slipped past `seedDoughAnswer`'s own round — or a
+    // decimal typed by hand — must not freeze into it as "1031.9999999999998 g
+    // loaf tin".
+    return grams === null ? undefined : `${roundGrams(grams)} g loaf tin`;
   }
   if (mode === 'tray') {
     // FROM THE MEASUREMENT, never from the grams box — so a run whose suggested
@@ -216,7 +266,13 @@ export function seedDoughAnswer(amount: DoughAmount | null): {
   fields: DoughAnswerFields;
 } {
   if (amount === null) return { mode: 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
-  const grams = String(amount.unitDoughGrams);
+  // ROUNDED (issue #1325 review, blocking-1). `amount.unitDoughGrams` can carry a
+  // percentage round-trip's noise — a stored `1031.9999999999998` — and this is
+  // the figure that lands verbatim in an editable box (the formula screen's "Tin
+  // size (g)", the bake sheet's own boxes) and, from there, into a batch's
+  // `vessel` string. The box stays an ordinary editable one; only what SEEDS it
+  // is rounded.
+  const grams = String(roundGrams(amount.unitDoughGrams));
   if (amount.count === 1) {
     return {
       mode: 'tin',

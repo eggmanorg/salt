@@ -37,11 +37,11 @@
   } from '../../lib/formulaService.js';
   import {
     deriveFormula,
-    doughAmountGrams,
     flattenIngredients,
     gramsFromParsed,
     guessBasisIngredientIds,
     roundGrams,
+    solveFormula,
     takesIngredients,
     targetYield,
     totalDurationMinutes,
@@ -52,6 +52,7 @@
   } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import type {
+    DoughAmount,
     Formula,
     FormulaComponent,
     ProcessStage,
@@ -84,11 +85,15 @@
   // declared basis, with a human confirming the two things the machine cannot know
   // — which ingredients ARE the basis, and what a count-based line weighs.
   //
-  // THE RECIPE IS NEVER TOUCHED. Nothing here writes `recipes`, and no quantity is
-  // ever shown at any yield other than as-written: the only two figures on screen
-  // beyond the recipe's own are the dough total (the recipe's own arithmetic) and
-  // the declared shape (what the user just said). Scaled quantities belong to the
-  // batch, phase 02.
+  // THE RECIPE IS NEVER TOUCHED. Nothing here writes `recipes`.
+  //
+  // THE DECLARATION AUTHORS THE TOTAL (issue #1325). The weights on screen are
+  // this formula AT the declared dough weight, so the screen can never state two
+  // totals that disagree: a weight box says what an ingredient is relative to the
+  // others, and "what this makes" says how much of it there is. Committing either
+  // one re-solves the list through `solveFormula` at the declaration. The recipe's
+  // own figure is still shown beside every weight that has moved away from it —
+  // this restates the screen, never the recipe.
   //
   // ─── Stages (phase 2) ────────────────────────────────────────────────────────
   //
@@ -143,14 +148,27 @@
     ingredientId: string;
     rawText: string;
     // What the recipe itself says this weighs, or null for a count-based line
-    // ("2 eggs") and for anything with no amount at all ("a pinch"). The anchor
-    // every displayed gram figure is pinned to — see `anchorBasisGrams`.
+    // ("2 eggs") and for anything with no amount at all ("a pinch"). The figure a
+    // restate is disclosed against — see `recipeSaysInstead` — and the anchor a
+    // stored formula is recovered at, see `anchorBasisGrams`.
     recipeGrams: number | null;
     // The recipe gave a range and one end of it was taken (`quantityToNumber`,
     // issue #917). Disclosed on screen, because this screen is the only moment
     // anyone can object: once the range is a percentage it is gone for good.
     isRange: boolean;
     gramsText: string;
+    // The UNROUNDED figure a restate last wrote here, or null when the box holds
+    // whatever a person typed or the recipe gave (issue #1325).
+    //
+    // `rounding.ts` is emphatic that the exact float travels beside every rounded
+    // gram, and this is that rule applied to a box: `solveFormula` hands back both,
+    // the box shows `grams` because that is what a scale can weigh, and the maths
+    // keeps reading `exactGrams`. Carrying it is what makes the restate EXACT
+    // rather than merely close — the percentages come back identical instead of
+    // drifting by the per-row rounding, so a repeated commit cannot creep and a
+    // stored formula re-saves byte-identical. Cleared the moment the box is typed
+    // into, because then the text is the truth again.
+    exactGrams: number | null;
     included: boolean;
     inBasis: boolean;
   }
@@ -192,11 +210,27 @@
   // "What are you filling?" — the same three answers the bake sheet asks, held as
   // raw strings for the same reason `gramsText` is. THE STAKES DIFFER, which is why
   // this is not that form rendered twice: answering here EDITS THE RECIPE, and the
-  // re-anchoring disclosure below the card is what says so. Nothing about the
-  // vessel is stored — a formula is written for a quantity of dough, and the tin is
-  // a fact about tonight (`doughAnswer.ts`, `BatchSchema.vessel`).
+  // standing sentence on the card below (`formula-restate-note`) is what says so.
+  // Nothing about the vessel is stored — a formula is written for a quantity of
+  // dough, and the tin is a fact about tonight (`doughAnswer.ts`, `BatchSchema.vessel`).
   let answerMode = $state<DoughAnswerMode>('tin');
   let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
+  // Has anyone actually said how many tins? (Issue #1325 review.)
+  //
+  // "A count of tins with the size box left blank divides the dough already there"
+  // is a gesture #1325 names five times, and it works. What made it a defect was
+  // never the gesture: it was that `tinCountText` OPENS AT `'1'`, so a page nobody
+  // had touched already read as "one tin of whatever is written here" — a
+  // declaration nobody made, trivially true of every weighable recipe. `shape` was
+  // then never null, Save was never blocked on saying what this makes, and typing
+  // into a weight box silently moved the declared total.
+  //
+  // The gate is therefore the gesture rather than the answer: until this box has
+  // been interacted with, `'1'` is a starting value and not an answer, and the
+  // page is genuinely undeclared. `pieces` needs no such gate — it is reached only
+  // by an explicit mode choice, which is itself the declaring act. Reset by
+  // `seed()`, because a re-seed is a fresh reading of the document.
+  let tinCountTouched = $state(false);
   // Whether the working model holds changes the stored document does not. Guards
   // the re-seed below: an incoming snapshot never overwrites work in progress.
   let dirty = $state(false);
@@ -223,8 +257,10 @@
     return Number.isFinite(value) && value > 0 ? value : null;
   }
 
+  // The exact figure a restate left behind outranks the rounded text it wrote; a
+  // box nobody has restated reads as typed. See `Row.exactGrams`.
   function gramsOf(row: Row): number | null {
-    return parsePositiveNumber(row.gramsText);
+    return row.exactGrams ?? parsePositiveNumber(row.gramsText);
   }
 
   // Temperatures, unlike weights, may be zero or below — a freezer is a legitimate
@@ -368,6 +404,11 @@
         recipeGrams,
         isRange: ing.parsed?.quantity?.type === 'range',
         gramsText: grams === null ? '' : String(grams),
+        // Nothing has been restated yet — the boxes hold the recipe's own figures
+        // (or the ones recovered from the stored percentages at that scale). The
+        // restate at the foot of this function is what moves them to the
+        // declaration, and it is what fills this in.
+        exactGrams: null,
         // First visit: an ingredient is in if the recipe weighed it. Revisit: it is
         // in if the stored formula named it, which is what preserves both a
         // hand-typed weight and a deliberate exclusion across a reload.
@@ -386,6 +427,29 @@
     );
     answerMode = seeded.mode;
     answer = seeded.fields;
+    // A re-seed is a fresh reading of the document, so the count box is untouched
+    // again — `seedDoughAnswer` only ever lands on `tin` with a count of one, and
+    // that one is its starting value rather than anybody's answer.
+    tinCountTouched = false;
+
+    // AND THE BOXES MOVE TO IT. Recovery repopulates the weights at the RECIPE's
+    // own scale (`anchorBasisGrams`); a stored declaration then restates them, so
+    // reopening a saved formula shows the same weights it showed when it was saved
+    // rather than the pre-declaration ones. A commit, not a reactive edge: it runs
+    // once, here, on the figures this function just wrote.
+    //
+    // `dirty` stays false because nothing here calls `touch()` — not because some
+    // carried-over exact figure survives the trip. `exactGrams` is `null` on every
+    // row this function just built above, so when there IS a declaration to restate
+    // at, that restate derives from the ROUNDED recovered grams (`recovered`,
+    // `roundGrams(anchor * percent / 100)`), not from anything exact; this call is
+    // what fills `exactGrams` in for the first time.
+    //
+    // THROUGH `declarationFrom`, exactly as the `$derived` `shape` does — the same
+    // touched-gate on a count of tins and the same single round. A seed that read
+    // the boxes any other way would restate at a figure Save would not write, which
+    // is the round-2 defect in its other half.
+    rows = rowsRestatedAt(rows, declarationFrom(seeded.mode, seeded.fields, doughGramsOf(rows)));
 
     // A formula with no process is a formula with no stages — an empty review
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
@@ -451,13 +515,31 @@
   // hidden flag: the checkbox is an explicit override that holds until the weight
   // changes again. This is what makes "2 eggs" work — the prompt is the empty box,
   // and leaving it empty is how you leave the eggs out.
+  //
+  // Per keystroke, and it does NOT restate: "100" passes through 1 and 10 on the
+  // way in, and rescaling the whole list at each of those is exactly the reactive
+  // loop `restateWeightsAtDeclaration` is written to avoid. The box's `onblur` is
+  // the commit. Typing clears `exactGrams`: the text is the truth again.
   function setGrams(ingredientId: string, text: string): void {
-    patchRow(ingredientId, { gramsText: text, included: parsePositiveNumber(text) !== null });
+    patchRow(ingredientId, {
+      gramsText: text,
+      exactGrams: null,
+      included: parsePositiveNumber(text) !== null,
+    });
   }
 
+  // Leaving an ingredient out changes what the list adds up to, so it restates —
+  // a 900 g tin is still 900 g of dough with the salt left out of the formula. A
+  // discrete click, so it commits immediately; there is no half-typed state to
+  // pass through.
   function setIncluded(ingredientId: string, included: boolean): void {
     patchRow(ingredientId, { included });
+    restateWeightsAtDeclaration();
   }
+
+  // The basis deliberately does NOT restate, and it needs none: a target yield
+  // fixes the total, so moving a flour in or out re-cuts the percentages and
+  // leaves every gram figure exactly where it was.
 
   function setInBasis(ingredientId: string, inBasis: boolean): void {
     patchRow(ingredientId, { inBasis });
@@ -574,19 +656,89 @@
 
   // ─── The one piece of maths ───────────────────────────────────────────────────
 
-  const componentInputs = $derived(
-    rows.flatMap((row) => {
+  function componentsFrom(from: readonly Row[]) {
+    return from.flatMap((row) => {
       const grams = gramsOf(row);
       return row.included && grams !== null
         ? [{ ingredientId: row.ingredientId, grams, inBasis: row.inBasis }]
         : [];
-    }),
-  );
+    });
+  }
 
-  // Half-typed is not a lenient declaration with a gap filled in — it is no
-  // declaration yet, and the same `shape === null` that has always disabled Save
-  // covers it without a second rule.
-  const shape = $derived(doughAmountFrom(answerMode, answer));
+  const componentInputs = $derived(componentsFrom(rows));
+
+  /** What a set of rows adds up to — the dough already there. */
+  function doughGramsOf(from: readonly Row[]): number {
+    return componentsFrom(from).reduce((sum, component) => sum + component.grams, 0);
+  }
+
+  // What the weights on the page add up to. The card shows it only while NOTHING is
+  // declared — once there is a declaration that figure IS the total, and printing a
+  // box sum beside it is how the screen came to state two contradictory facts.
+  const asWrittenDoughGrams = $derived(doughGramsOf(rows));
+
+  // Half-typed is still no declaration, and the same `shape === null` that has
+  // always disabled Save covers it without a second rule — an unreadable count has
+  // nothing to divide by any more than it has anything to multiply.
+  //
+  // THE DOUGH ALREADY THERE IS THE ANCHOR (issue #1325). A count with a blank
+  // per-unit weight box then means "divide what's here" — five rolls out of this
+  // dough, or three tins out of it — instead of nothing, which is how the question
+  // is usually asked and which used to be division done on paper.
+  //
+  // `tin` gets the anchor only once its count box has been TOUCHED (issue #1325
+  // review): that box opens at `'1'`, and an untouched box is a starting value
+  // rather than an answer — see `tinCountTouched` for the defect that gate exists
+  // to close. `pieces` is reached only by an explicit mode choice, which is itself
+  // the declaring act, so it needs no gate. The bake sheet passes no anchor at
+  // all; `doughAnswer.ts` says why.
+  function anchorFor(mode: DoughAnswerMode, doughGrams: number): number | null {
+    if (mode === 'pieces') return doughGrams;
+    if (mode === 'tin') return tinCountTouched ? doughGrams : null;
+    return null;
+  }
+
+  // THE DECLARATION, ROUNDED ONCE — one figure for the screen, the restate and the
+  // document alike (issue #1325 review, round 2).
+  //
+  // `roundGrams` sits HERE, at the single point where a set of boxes becomes a
+  // declaration, rather than at each place downstream that shows or stores one.
+  // Rounding only on the way out was the defect: the page restated and printed at
+  // an exact figure it would then save rounded, so 12 pieces of an 867 g dough read
+  // 867 g on screen and 864 g in the document, and 500 g of flour came back as
+  // 498 g on reopen. What will be saved is now what the weights are solved at and
+  // what the card prints, so the three cannot disagree. It also keeps a percentage
+  // round-trip's noise (`1031.9999999999998`) out of the document, the reseeded
+  // boxes and a batch's `vessel` string, which is what round 1 asked for.
+  //
+  // WHAT IT COSTS, stated rather than hidden: a divided declaration no longer
+  // multiplies back to exactly the anchor, so "N of these out of this dough" can
+  // move the weights by up to `count × 0.5 g` — 867 ÷ 12 is 72.25, and 12 × 72 g
+  // is 864 g. That is the per-row residual `rounding.ts` already accepts, paid
+  // once at declare time instead of being carried as a standing disagreement
+  // between the screen and the document. A figure no scale can weigh is not a
+  // yield anyone can bake to.
+  //
+  // A declaration that rounds away to nothing is no declaration: `DoughAmount` is
+  // strictly positive, and 100 pieces of a 1 g dough is not 100 × 0 g.
+  function declarationFrom(
+    mode: DoughAnswerMode,
+    fields: DoughAnswerFields,
+    doughGrams: number,
+  ): DoughAmount | null {
+    const amount = doughAmountFrom(mode, fields, anchorFor(mode, doughGrams));
+    if (amount === null) return null;
+    const unitDoughGrams = roundGrams(amount.unitDoughGrams);
+    return unitDoughGrams > 0 ? { count: amount.count, unitDoughGrams } : null;
+  }
+
+  const shape = $derived(declarationFrom(answerMode, answer, asWrittenDoughGrams));
+  // The figure a blank per-unit box would resolve to, for its PLACEHOLDER. Not
+  // written into the box: a number nobody typed, sitting in a box, gives no
+  // discoverable way back to "divide it for me" — and the card's sentence reads the
+  // resolved declaration back anyway. It is `shape`'s own figure, rounded where
+  // the declaration was, so the hint, the card and the document are one number.
+  const dividedUnitHint = $derived(shape === null ? null : String(shape.unitDoughGrams));
   // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
   // become load-bearing on the scaling (`doughAmount.ts`).
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
@@ -608,6 +760,50 @@
       : new Map<string, number>(),
   );
 
+  // ─── The restate (issue #1325) ────────────────────────────────────────────────
+  //
+  // The screen used to print two totals and a note reconciling them. It now prints
+  // one, because they can no longer disagree: THE DECLARATION AUTHORS THE TOTAL,
+  // and the weights are this formula written at it.
+  //
+  // NO NEW ARITHMETIC. `deriveFormula` turns the boxes into percentages — the same
+  // call the page already makes on every keystroke — and `solveFormula` resolves
+  // them back into grams at the declared yield, through `roundGrams`. So the
+  // figures on screen are provably the ones a batch weighs out, and the rounding
+  // question is answered in exactly the one place that owns it (`rounding.ts`,
+  // which also explains why rounded parts are never reconciled to a rounded total;
+  // the card prints no box sum once a yield is declared, so the residual is never
+  // shown as a disagreement).
+  //
+  // A COMMITTED ACTION, NEVER A REACTIVE EDGE. Every yield box fires per keystroke,
+  // so a `$derived`/`$effect` that read the sum it writes would rescale the list to
+  // 1 g while somebody typed "100" — and would still be a feedback edge even where
+  // its fixed point is harmless. The callers are the commits: a yield box's
+  // `onblur`, a tin chip, the answer-mode radio, the tray's Suggest button, an
+  // ingredient weight box's `onblur`, and an include toggle.
+  function rowsRestatedAt(current: readonly Row[], target: DoughAmount | null): Row[] {
+    if (target === null) return [...current];
+    const derived = deriveFormula({
+      recipeId,
+      components: componentsFrom(current),
+      referenceYield: targetYield(target),
+    });
+    if (!derived.ok) return [...current];
+    const solved = solveFormula(derived.formula);
+    if (!solved.ok) return [...current];
+    const solvedById = new Map(solved.solution.components.map((c) => [c.ingredientId, c]));
+    return current.map((row) => {
+      const component = solvedById.get(row.ingredientId);
+      return component === undefined
+        ? row
+        : { ...row, gramsText: String(component.grams), exactGrams: component.exactGrams };
+    });
+  }
+
+  function restateWeightsAtDeclaration(): void {
+    rows = rowsRestatedAt(rows, shape);
+  }
+
   // Stored at four decimals (`roundPercent`), shown at one: yeast reads 1.4% and
   // flour reads 100%, not 100.0%.
   function formatPercent(percent: number | undefined): string {
@@ -621,21 +817,24 @@
   // Both are places information is lost or asserted, and both are stated plainly
   // because this screen is the only moment anyone can object.
 
-  // The recipe's OWN arithmetic — everything included, added up as written. Not a
-  // scaled quantity and not a projection: it is the sum of the numbers already on
-  // the page.
-  const asWrittenDoughGrams = $derived(
-    componentInputs.reduce((sum, component) => sum + component.grams, 0),
-  );
-  const declaredDoughGrams = $derived(shape ? doughAmountGrams(shape) : null);
-  // A declaration re-anchors the formula. 500 g of flour at a 176.4% grand total is
-  // 882 g of dough, so calling it one 900 g tin loaf moves everything by ~2% — small
-  // and entirely reasonable, but it should be visible rather than silent.
-  const declarationDriftPercent = $derived(
-    declaredDoughGrams !== null && asWrittenDoughGrams > 0
-      ? ((declaredDoughGrams - asWrittenDoughGrams) / asWrittenDoughGrams) * 100
-      : null,
-  );
+  /**
+   * What the recipe itself said, for a weight the screen has moved away from it.
+   *
+   * Null when there is nothing to disclose: the row is out of the formula, the
+   * recipe never weighed it ("2 eggs"), or the box still says what the recipe does.
+   * Compared through `roundGrams` on both sides, so a difference too small to read
+   * off a scale is not announced as a change.
+   *
+   * It sits beside the number that moved and it persists — a toast would be gone
+   * before anyone looked at the weights, and an undo control would be a second way
+   * to author the total, which is the thing this screen no longer has.
+   */
+  function recipeSaysInstead(row: Row): number | null {
+    const shown = row.included ? gramsOf(row) : null;
+    if (shown === null || row.recipeGrams === null) return null;
+    const said = roundGrams(row.recipeGrams);
+    return roundGrams(shown) === said ? null : said;
+  }
 
   const rangeRows = $derived(rows.filter((row) => row.isRange && row.included));
 
@@ -658,8 +857,12 @@
 
   // ─── Save ─────────────────────────────────────────────────────────────────────
 
-  // A declaration is REQUIRED. Without one the formula has no reference yield worth
-  // the name, and phase 02 would have nothing to solve a batch against.
+  // A declaration is REQUIRED — `shape` must resolve to something, and the default
+  // opening state resolves to nothing (issue #1325 review: the anchor that lets a
+  // blank per-unit box "divide what's here" reaches `tin` only once its count box
+  // has been touched, so the opening `'1'` no longer reads as a declaration
+  // nobody made). Without one the formula has no reference yield worth the name,
+  // and phase 02 would have nothing to solve a batch against.
   const canSave = $derived(shape !== null && derivation.ok && !saving);
 
   const blockedReason = $derived.by(() => {
@@ -761,6 +964,7 @@
                 of them.
               </p>
               {#each rows as row (row.ingredientId)}
+                {@const recipeSaid = recipeSaysInstead(row)}
                 <div
                   role="group"
                   aria-label={row.rawText}
@@ -786,6 +990,7 @@
                       placeholder={row.recipeGrams === null ? 'e.g. 100' : ''}
                       value={row.gramsText}
                       onValueChange={(v) => setGrams(row.ingredientId, v)}
+                      onblur={restateWeightsAtDeclaration}
                       data-testid="formula-row-grams"
                     />
                     <Checkbox
@@ -803,6 +1008,17 @@
                       data-testid="formula-row-include"
                     />
                   </div>
+                  {#if recipeSaid !== null}
+                    <!-- THE COST, STATED. A declared yield rewrites round numbers —
+                       500 g of flour becomes 510 g for a 900 g tin — and that is
+                       the point rather than a mishap, but it must never be a
+                       surprise. Informational, beside the figure that moved, and
+                       with no control: there is one place the total is authored and
+                       this is not it. -->
+                    <p class="text-xs text-muted-foreground" data-testid="formula-row-restated">
+                      The recipe says {formatGrams(recipeSaid)}.
+                    </p>
+                  {/if}
                   {#if row.recipeGrams === null}
                     <!-- Count-based ("2 eggs") or no amount at all ("a pinch"). Domain
                        will not guess what an egg weighs — that would be a second
@@ -851,17 +1067,18 @@
             </CardHeader>
             <CardContent class="flex flex-col gap-3">
               <!-- The same three answers the bake sheet asks, with different
-                   stakes: this one EDITS THE RECIPE, and the re-anchoring
-                   disclosure below is what marks it as such. No vessel is stored
-                   here — a recipe is written for a quantity of dough; the tin is a
-                   fact about tonight, and it is recorded on the batch instead
-                   (`doughAnswer.ts`, issue #1274). -->
+                   stakes: THIS ONE IS THE TOTAL. Answering it restates the weights
+                   above, and the standing sentence at the foot of the card is what
+                   says so. No vessel is stored here — a recipe is written for a
+                   quantity of dough; the tin is a fact about tonight, and it is
+                   recorded on the batch instead (`doughAnswer.ts`, issue #1274). -->
               <RadioGroup
                 label="What are you filling?"
                 value={answerMode}
                 onValueChange={(v) => {
                   answerMode = v as DoughAnswerMode;
                   touch();
+                  restateWeightsAtDeclaration();
                 }}
               >
                 <RadioGroupItem value="tin" label="A loaf tin" />
@@ -880,6 +1097,7 @@
                         onclick={() => {
                           answer = { ...answer, tinGramsText: String(grams) };
                           touch();
+                          restateWeightsAtDeclaration();
                         }}
                         data-testid="formula-tin-chip"
                         data-tin-grams={grams}
@@ -893,11 +1111,13 @@
                       label="Tin size (g)"
                       inputmode="numeric"
                       class="w-32"
+                      placeholder={dividedUnitHint ?? ''}
                       value={answer.tinGramsText}
                       onValueChange={(v) => {
                         answer = { ...answer, tinGramsText: v };
                         touch();
                       }}
+                      onblur={restateWeightsAtDeclaration}
                       data-testid="formula-grams-each"
                     />
                     <TextField
@@ -907,8 +1127,13 @@
                       value={answer.tinCountText}
                       onValueChange={(v) => {
                         answer = { ...answer, tinCountText: v };
+                        // Saying how many tins IS the declaring act, and until it
+                        // happens the box's opening `'1'` declares nothing. See
+                        // `tinCountTouched`.
+                        tinCountTouched = true;
                         touch();
                       }}
+                      onblur={restateWeightsAtDeclaration}
                       data-testid="formula-count"
                     />
                   </div>
@@ -1009,6 +1234,7 @@
                         answer = { ...answer, trayGramsText: v };
                         touch();
                       }}
+                      onblur={restateWeightsAtDeclaration}
                       data-testid="formula-tray-grams"
                     />
                     <Button
@@ -1019,6 +1245,7 @@
                         if (suggestedGrams === null) return;
                         answer = { ...answer, trayGramsText: String(suggestedGrams) };
                         touch();
+                        restateWeightsAtDeclaration();
                       }}
                       data-testid="formula-tray-suggest"
                     >
@@ -1041,17 +1268,20 @@
                       answer = { ...answer, pieceCountText: v };
                       touch();
                     }}
+                    onblur={restateWeightsAtDeclaration}
                     data-testid="formula-piece-count"
                   />
                   <TextField
                     label="Dough each (g)"
                     inputmode="numeric"
                     class="w-32"
+                    placeholder={dividedUnitHint ?? ''}
                     value={answer.pieceGramsText}
                     onValueChange={(v) => {
                       answer = { ...answer, pieceGramsText: v };
                       touch();
                     }}
+                    onblur={restateWeightsAtDeclaration}
                     data-testid="formula-piece-grams"
                   />
                 </div>
@@ -1066,34 +1296,34 @@
                       answer = { ...answer, totalGramsText: v };
                       touch();
                     }}
+                    onblur={restateWeightsAtDeclaration}
                     data-testid="formula-total-dough"
                   />
                 </div>
               {/if}
 
-              <!-- DISCLOSURE TWO. The recipe's own dough total sits next to the one
-                 just declared, so re-anchoring the formula is visible rather than
-                 silent. Neither number is a scaled quantity: the first is the sum of
-                 the weights on this page and the second is what the user just said.
-                 -->
+              <!-- DISCLOSURE TWO — ONE STATEMENT, NEVER TWO (issue #1325). With a
+                 declaration this prints the declaration and nothing else: the
+                 weights above have already been restated to it, so a box sum beside
+                 it could only ever differ by the per-row rounding `rounding.ts`
+                 deliberately refuses to reconcile, and printing it would be the
+                 screen asserting two totals again. With no declaration yet there is
+                 only one figure to state, and it is the sum of the boxes. -->
               <div class="text-sm" data-testid="formula-dough-total">
-                <p>
-                  As written, this weighs
-                  <span class="font-medium">{formatGrams(roundGrams(asWrittenDoughGrams))}</span> of dough.
-                </p>
-                {#if declaredDoughGrams !== null && shape !== null}
+                {#if shape !== null}
                   <p>
-                    You've declared
-                    <span class="font-medium">{formatDoughAmount(shape)}</span>.
+                    This makes <span class="font-medium">{formatDoughAmount(shape)}</span>.
                   </p>
-                  {#if declarationDriftPercent !== null && Math.abs(declarationDriftPercent) >= 0.5}
-                    <p class="text-muted-foreground" data-testid="formula-declaration-drift">
-                      That re-anchors the formula by {declarationDriftPercent > 0
-                        ? '+'
-                        : ''}{declarationDriftPercent.toFixed(1)}%. The percentages don't change;
-                      what a batch weighs out does.
-                    </p>
-                  {/if}
+                  <p class="text-muted-foreground" data-testid="formula-restate-note">
+                    The weights above are this recipe at that size. Change what it makes and they
+                    change with it — the percentages don't.
+                  </p>
+                {:else}
+                  <p>
+                    As written, this weighs
+                    <span class="font-medium">{formatGrams(roundGrams(asWrittenDoughGrams))}</span> of
+                    dough.
+                  </p>
                 {/if}
               </div>
             </CardContent>

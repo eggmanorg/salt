@@ -90,6 +90,53 @@ loss factor**, and both omissions are decisions rather than gaps:
   yields Warburtons' 800 g loaf precisely _because_ of the oven loss, so
   modelling it separately was the same sum twice.
 
+**The declaration is the only place the total is authored** (issue #1325). On the
+formula screen a weight box says what an ingredient is _relative to the others_,
+and "what this makes" says _how much of it there is_ — so committing either one
+re-solves the whole list through `solveFormula` at the declared yield, and the
+screen can never state two totals that disagree. Declaring a 900 g tin on a recipe
+whose ingredients come to 867 g moves 500 g of flour to 519 g; the percentages do
+not move at all, because the unrounded solved figure is carried beside the rounded
+one the box shows. The commit is a blur, a chip or a mode change and never a
+reactive edge — every yield box fires per keystroke, and "100" passes through 1
+and 10 on the way in. Each weight that no longer matches the recipe carries a
+muted line saying what the recipe itself said; there is no confirmation and no
+gate. The per-row rounding residual (up to N × 0.5 g across N rows) is the one
+`rounding.ts` already states and refuses to reconcile, and it stays invisible
+rather than reconciled: once a yield is declared the card prints the declaration
+and no box sum.
+
+**A blank per-unit weight means "divide what's already there."** A count of pieces
+— or of tins — with an empty weight box declares `boxSum ÷ count`: five rolls out
+of this dough, which used to be division done on paper. The figure is the box's
+placeholder, never its value: a number nobody typed, sitting in a box, gives no
+discoverable way back. A count of tins is gated on that box having been TOUCHED,
+and only because it opens at `'1'`: without the gate, "one tin of whatever is
+already written" was a declaration nobody made, trivially true of every recipe
+before the page was touched, and it left a weight box authoring the total. An
+untouched box is a starting value, not an answer. `pieces` needs no gate — it is
+reached only by an explicit mode choice, which is itself the declaring act.
+**The bake sheet passes no anchor and is unchanged**, and that is principled
+rather than scoping: a null amount there already means "the formula's own
+reference yield", so dividing would silently change what Start Bake does. Whether
+that screen should offer the same gesture is open and needs its own decision about
+what a blank box means there.
+
+**The declaration is rounded once, where the boxes become a declaration.** What
+the card prints, what the weights are re-solved at, and what reaches the document
+are then the one figure, so reopening a saved formula shows the weights it was
+saved with. Rounding only on the way out is the defect that taught this: the page
+restated at the exact figure and saved the rounded one, so 12 pieces of an 867 g
+dough read 867 g on screen and 864 g in the document, and 500 g of flour came back
+as 498 g on the next open. **What it costs, stated rather than hidden:** a divided
+declaration no longer multiplies back to exactly the box sum, so "N of these out
+of this dough" can move the weights by up to `count × 0.5 g` — the same per-row
+residual `rounding.ts` accepts, paid once at declare time and disclosed per row
+like any other restate, instead of being carried as a standing disagreement. It
+also keeps a percentage round-trip's noise out of the document, a reseeded box and
+a batch's `vessel` string, which must never show or store a stored tin as
+`1031.9999999999998`.
+
 **A vessel is a fact about tonight, not about the recipe.** A formula stores the
 dough figures alone; the batch records what the run was baked in, as a free-text
 snapshot (`BatchSchema.vessel`) that nothing parses and nothing computes from.

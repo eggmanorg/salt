@@ -202,6 +202,31 @@ describe('RecipeBakeBatchSheet — what twelve rolls weigh out to', () => {
     });
   });
 
+  // ─── The bake sheet passes NO anchor (issue #1325) ───────────────────────────
+  //
+  // The formula screen learnt to divide: a count with a blank per-unit weight box
+  // shares out the dough already there. This screen deliberately did not, and the
+  // reason is principled rather than scoping — a null amount HERE already means
+  // "the formula's own reference yield", which `startBatch` implements by omitting
+  // `atYield` entirely. Dividing would silently change what Start Bake does.
+  //
+  // 12 × 120 g is 1 440 g of dough, so a screen that had quietly gained the anchor
+  // would resolve a blank weight box to 120 g again and this test would still see
+  // an `atYield`. Asserting the key is ABSENT is what makes the difference visible.
+  it('takes a blank per-piece weight as no amount at all, and never divides', async () => {
+    renderSheet();
+    await waitFor(() => expect(screen.getByTestId('bake-batch-pieces')).toBeInTheDocument());
+
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-grams'), { target: { value: '' } });
+    await fireEvent.input(screen.getByTestId('bake-batch-piece-count'), { target: { value: '6' } });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    // No `atYield` — the formula's own 12 × 120 g stands. Not six of anything, and
+    // certainly not six of 240 g.
+    expect('atYield' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+
   it('falls back to the formula as written when the count is not a count', async () => {
     renderSheet();
     await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());

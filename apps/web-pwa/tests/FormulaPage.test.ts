@@ -15,12 +15,14 @@ import type { Formula } from '@salt/domain/schemas';
 //     `deriveFormula` is the only maths, so there is one path to get wrong;
 //   • "2 eggs" has no weight the machine can know: it asks, and it can be left out;
 //   • a range is disclosed on screen, because saving is when the range dies;
-//   • the declaration is required, and it is shown next to the recipe's own dough
-//     total so re-anchoring the formula is visible rather than silent.
+//   • the declaration is required, and since issue #1325 it is the only place the
+//     dough total is authored — the weight boxes restate to it, and the screen
+//     never prints a second total beside it.
 //
 // Round-trip is the acceptance bar: what comes back from a stored document is the
 // same basis, the same inclusions, the same percentages and the same shape — with
-// the gram boxes repopulated in the RECIPE's own scale, never a scaled yield.
+// the gram boxes repopulated at the STORED DECLARATION, which is where they were
+// when it was saved. The restate itself is pinned in `FormulaPage.yieldWins.test.ts`.
 
 const { mockRecipes, mockIsLoadingRecipes, mockFormula, mockCanonItems } = await vi.hoisted(
   async () => {
@@ -334,24 +336,42 @@ describe('FormulaPage — what the machine cannot know', () => {
 });
 
 describe('FormulaPage — the declaration', () => {
-  it('will not save until the recipe says what it makes', async () => {
+  it('will not save until something is genuinely declared', async () => {
+    // Issue #1325 review (blocking-2): the anchor that lets a blank per-unit box
+    // DIVIDE the dough already there is passed for `pieces` only. `tin`'s count
+    // defaults to `'1'`, and passing the anchor there too made "1 tin = whatever's
+    // already written" trivially true of every recipe — the page opened already
+    // declared, and Save was never blocked on saying what this makes. It is
+    // blocked on exactly that again: the page opens undeclared, and typing an
+    // unreadable count (still, as before) has nothing to divide by either way.
     const { getByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
     expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
     expect(getByTestId('formula-blocked-reason').textContent).toContain('what this makes');
+    expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
+
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '' } });
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
+    );
+    expect(getByTestId('formula-blocked-reason').textContent).toContain('what this makes');
   });
 
-  it('states the recipe’s own dough total next to the one just declared', async () => {
+  it('states the sum of the weights while nothing has been declared', async () => {
     const { getByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
-    // 500 + 350 + 10 + 7 = 867 g of dough as written. Neither figure is a scaled
-    // quantity: the first is the sum of the weights already on the page, the
-    // second is what the user just said.
+    // 500 + 350 + 10 + 7 = 867 g of dough as written — the sum of the weights
+    // already on the page, and the ONLY figure the card carries while there is no
+    // declaration to state instead (issue #1325). The undeclared branch, not the
+    // declared one landing on the same number by luck — see
+    // `FormulaPage.yieldWins.test.ts`'s "opens genuinely undeclared" case.
     expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
+    expect(getByTestId('formula-dough-total').textContent).toContain('As written');
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
   });
 
   // Characterisation net, issue #933 Phase 1.
@@ -461,15 +481,17 @@ describe('FormulaPage — the round trip', () => {
       'unchecked',
       'unchecked',
     ]);
-    // Recovered against the recipe's OWN scale — 500 g of flour, not the 960 g of
-    // dough the stored shape declares. No surface in this phase shows a scaled
-    // quantity.
+    // Recovered against the recipe's own scale, then restated to the STORED
+    // DECLARATION — 8 × 120 g is 960 g of dough, and a 191.4% grand total puts the
+    // basis at 501.57 g (issue #1325). What a reload shows is what was saved.
     expect(gramsInputs(container).map((i) => i.value)).toEqual([
-      '500',
-      '350',
+      '502',
+      '351',
+      // The salt is not in this formula, so nothing restated it: its box still
+      // holds the recipe's own figure and the row stays out.
       '10',
       '7',
-      '100', // 20% of a 500 g basis — the hand-typed egg weight, back again
+      '100', // the hand-typed egg weight, back again — 20% of the basis
     ]);
   });
 
@@ -675,8 +697,9 @@ describe('FormulaPage — the tin never reaches the document', () => {
 //
 // The formula screen asks the same question as the bake sheet and stores a
 // DIFFERENT thing: dough figures alone, no vessel. What makes it a recipe edit
-// rather than a run is the re-anchoring disclosure, and that must keep working
-// whichever answer is used.
+// rather than a run is that answering here restates the weights above to the
+// declaration (issue #1325) instead of recording a vessel for tonight, and that
+// must keep working whichever answer is used.
 describe('FormulaPage — what are you filling?', () => {
   async function pickAnswer(container: Element, label: string): Promise<void> {
     const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
@@ -706,8 +729,8 @@ describe('FormulaPage — what are you filling?', () => {
     });
   });
 
-  it('reads the declaration back as dough, and still says what re-anchoring costs', async () => {
-    const { getByTestId, container } = renderPage();
+  it('reads the declaration back as dough, and states it as the only total', async () => {
+    const { getByTestId, container, queryByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
 
@@ -716,15 +739,17 @@ describe('FormulaPage — what are you filling?', () => {
     )!;
     await fireEvent.click(chip);
     await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
+    await fireEvent.blur(getByTestId('formula-count'));
 
     await waitFor(() =>
       expect(getByTestId('formula-dough-total')).toHaveTextContent('2 × 900 g — 1.8 kg of dough'),
     );
-    // THE DISCLOSURE THAT MAKES THIS A RECIPE EDIT — it stays, unchanged.
-    expect(getByTestId('formula-declaration-drift')).toHaveTextContent('re-anchors the formula');
-    expect(getByTestId('formula-declaration-drift')).toHaveTextContent(
-      "The percentages don't change",
-    );
+    // WHAT MAKES THIS A RECIPE EDIT, after issue #1325: the weights above have
+    // already moved to the declaration, and the card says so instead of printing a
+    // second figure and a note reconciling the two.
+    expect(getByTestId('formula-restate-note')).toHaveTextContent('Change what it makes');
+    expect(queryByTestId('formula-declaration-drift')).toBeNull();
+    expect(getByTestId('formula-dough-total').textContent).not.toContain('867');
   });
 
   it('mentions no bake loss, no baked weight and no named shape, on any answer', async () => {
