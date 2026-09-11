@@ -157,9 +157,11 @@ from the start:
   of times.
 
 **A stage's link to a recipe step is optional and one-way.** An AI-added fridge
-retard corresponds to no step; the bake stage points at the bake step so it can
-hand off to cook mode. Required, and added stages have nowhere to live; two-way,
-and the batch starts writing back into the recipe. In practice this also decides
+retard corresponds to no step; the bake stage points at the bake step, which is
+what lets the batch cook page (`/batches/:id/cook`, issue #1327) draw that stage as
+a band on the step it cites. Required, and added stages have nowhere to live;
+two-way, and the batch starts writing back into the recipe. A stage with no step is
+never hidden — it gets a card of its own in the deck, in sequence. In practice this also decides
 what extraction does with a hallucinated step id: it drops the **citation**, not
 the stage — a bulk ferment is still a bulk ferment without one. (`generateGuidedPlan`
 drops the whole note, correctly, because a note with no step is nothing at all.)
@@ -376,16 +378,16 @@ ever land) rhythms with a next feed. Same card shape: next action, when.
 
 ## What is reused
 
-|                                        |                                                                                                                                                                                 |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloud Tasks + push + `timerDeliveries` | The cook-timer path is exactly the mechanism a proof reminder or a "day 7, taste it" needs — same shape, longer horizon, exactly-once already solved. The single biggest reuse. |
-| Canon matching                         | Unaffected. Ratios resolve to grams before anything canonicalises.                                                                                                              |
-| Shopping list                          | Works as-is, with one ordering constraint: extract from the **resolved** quantities, never the formula.                                                                         |
-| `guidedPlans`                          | The precedent for a separate family-shared doc keyed by recipe id, and for the AI-authors-once lifecycle.                                                                       |
-| `recipeDiff`                           | The precedent for a pure, never-persisted, human-signal diff.                                                                                                                   |
-| Cook mode                              | Bread still gets baked. The final stage of a bread process hands off to the existing cook session.                                                                              |
-| `RecipeKind`                           | Adding two kinds is a one-file change, and the `Record` forces every consumer to be answered before it compiles.                                                                |
-| Genkit callables + `resolveModel`      | Both new flows are the existing pattern; the model tiering seam already exists.                                                                                                 |
+|                                        |                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud Tasks + push + `timerDeliveries` | The cook-timer path is exactly the mechanism a proof reminder or a "day 7, taste it" needs — same shape, longer horizon, exactly-once already solved. The single biggest reuse.                                                                                                                       |
+| Canon matching                         | Unaffected. Ratios resolve to grams before anything canonicalises.                                                                                                                                                                                                                                    |
+| Shopping list                          | Works as-is, with one ordering constraint: extract from the **resolved** quantities, never the formula.                                                                                                                                                                                               |
+| `guidedPlans`                          | The precedent for a separate family-shared doc keyed by recipe id, and for the AI-authors-once lifecycle.                                                                                                                                                                                             |
+| `recipeDiff`                           | The precedent for a pure, never-persisted, human-signal diff.                                                                                                                                                                                                                                         |
+| Cook mode                              | Bread still gets baked. Its PARTS are reused — the deck, the swipe, the keep-awake, the collapsed step row — by a third cook page read through the batch (`/batches/:id/cook`, #1327). Not its SESSION: a batch is not a cook session, so the ticks live on the batch document and are family-shared. |
+| `RecipeKind`                           | Adding two kinds is a one-file change, and the `Record` forces every consumer to be answered before it compiles.                                                                                                                                                                                      |
+| Genkit callables + `resolveModel`      | Both new flows are the existing pattern; the model tiering seam already exists.                                                                                                                                                                                                                       |
 
 Nothing needs to be built externally. The only thing resembling external data is
 a reference table (hydration norms, cure-salt limits) — a checked-in constant in

@@ -401,6 +401,26 @@
       {/snippet}
 
       <div class="flex flex-col gap-4" data-testid="batch-detail">
+        <!-- ─── COOK THIS RUN ─────────────────────────────────────────────────────
+           One primary, at the top, while the run is going (issue #1327). It opens
+           the full-viewport batch cook page: the frozen grams as the weigh-out, the
+           recipe's method with the stages as bands on it, and this schedule's clock.
+           Gated on the run's STATE rather than on `nextAction`, exactly as Abandon
+           is — an abandoned run is not being cooked, and a run whose stages all
+           happen to be done is still running and may still be opened. -->
+        {#if canAbandon}
+          <Button
+            size="lg"
+            onclick={() => push(`/batches/${batchId}/cook`)}
+            data-testid="batch-cook-open"
+          >
+            {#snippet leading()}
+              <Icon name="CookingPot" size={18} />
+            {/snippet}
+            Cook
+          </Button>
+        {/if}
+
         <p class="text-sm text-muted-foreground" data-testid="batch-detail-started">
           Started {formatDate(run.createdAt)}{#if run.state === 'abandoned'}
             <!-- WHEN it was abandoned, where the run recorded it (issue #1280).
@@ -687,19 +707,13 @@
                      DONE, not when the clock says it should have been: early and
                      late are the same gesture and the schedule re-times either way.
 
-                     COOK MODE rides beside it on an `active` stage. `active` is the
-                     gate — the process's own definition of a stage the cook carries
-                     out and is present for (ProcessStageKindSchema), which is
-                     exactly when having the method in front of you helps. NOT the
-                     label ("Bake" is a word three bread recipes spelled three ways,
-                     which is why that field exists at all) and NOT `stepId`, which
-                     an extraction is allowed to drop when the citation is
-                     hallucinated — losing the bake its link for a reason that has
-                     nothing to do with baking. The link carries only the recipe id
-                     because cook mode takes only a recipe id: it lands at the top of
-                     cook mode with its own timers, which is the whole hand-off (see
-                     docs/formulas-schedules-batches.md) and needs no new machinery
-                     at the sharp end. -->
+                     THE METHOD IS NO LONGER REACHED FROM A STAGE (issue #1327).
+                     There used to be a per-stage "Cook mode" button here, opening
+                     plain cook mode on the recipe with the RECIPE's own 500 g and
+                     its own timers beside the batch's reminders — two screens and
+                     two clocks. The cook is the batch's rather than any one stage's,
+                     so it is one Cook at the top of this page, opening
+                     `/batches/:id/cook`: the same deck, read through this run. -->
                   <!-- ABANDONED RUNS OFFER NOTHING. `next.kind` rather than
                      `run.state` so this page reads the run's condition through the
                      same derivation as everything else on it; a stopped run has no
@@ -773,19 +787,6 @@
                         {/snippet}
                         Why?
                       </Button>
-                      {#if stage.kind === 'active' && (isCurrent || status === 'inProgress')}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onclick={() => push(`/recipes/${run.recipeId}/cook`)}
-                          data-testid="batch-stage-cook"
-                        >
-                          {#snippet leading()}
-                            <Icon name="CookingPot" size={16} />
-                          {/snippet}
-                          Cook mode
-                        </Button>
-                      {/if}
                     </div>
                     {#if noteOpenStageId === stage.id}
                       <TextField

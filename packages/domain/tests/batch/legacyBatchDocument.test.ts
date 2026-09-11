@@ -82,6 +82,15 @@ describe('a batch document written before #1274', () => {
     expect(parsed.stages[0]?.place).toBeNull();
   });
 
+  it('reads as a run with nothing ticked off yet (#1327)', () => {
+    // The batch cook page's two check-off lists are additive with a read default,
+    // so every run already in production opens on that page with an empty weigh-out
+    // and no steps done — which is what it means — rather than failing to parse.
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.checkedIngredientIds).toEqual([]);
+    expect(parsed.completedStepIds).toEqual([]);
+  });
+
   it('still runs — the producers do not depend on anything that was deleted', () => {
     const parsed = BatchSchema.parse(LEGACY_BATCH);
     expect(currentStage(parsed)?.id).toBe('bulk');

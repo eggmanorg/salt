@@ -182,6 +182,12 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       stages,
       rationale: rationale ?? null,
       ambientCelsius: ambientCelsius ?? null,
+      // Nothing is weighed out and nothing is cooked yet (issue #1327). Written
+      // explicitly rather than left to the schema's read default: this is the one
+      // place a batch document is CONSTRUCTED, and a default is what a document
+      // written before the field existed gets, not what a new one is born with.
+      checkedIngredientIds: [],
+      completedStepIds: [],
       createdAt: now,
       updatedAt: now,
     },

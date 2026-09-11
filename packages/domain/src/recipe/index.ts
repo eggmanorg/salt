@@ -75,6 +75,9 @@ export {
 // Recipe-drift comparison, shared by everything that snapshots a recipe's
 // `updatedAt`: the cook session (#556) and the guided plan (#751).
 export { hasRecipeChanged } from './queries/hasRecipeChanged.js';
+// The same question asked of a BATCH, which stores no snapshot stamp and so needs
+// an ordering rather than an inequality (issue #1327).
+export { recipeChangedSince } from './queries/recipeChangedSince.js';
 // Which step each piece of kit should be DRAWN at (issue #882) — the
 // contiguous-run rule, shared by the method column, the cook deck and the guided
 // step screen so the three cannot disagree about when the pan comes out.

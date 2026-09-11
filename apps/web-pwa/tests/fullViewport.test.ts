@@ -20,6 +20,20 @@ describe('isFullViewportRoute', () => {
     expect(isFullViewportRoute('/recipes/A-b_9.zZ/cook/guided')).toBe(true);
   });
 
+  it('matches the batch cook page', () => {
+    // Issue #1327: cook mode read through a running batch — the same hands-full
+    // mode, so the same chrome-less treatment.
+    expect(isFullViewportRoute('/batches/abc123/cook')).toBe(true);
+    expect(isFullViewportRoute('/batches/A-b_9.zZ/cook')).toBe(true);
+  });
+
+  it('leaves the other batch routes their chrome', () => {
+    // The run's own page and its log are desk work at the bench.
+    expect(isFullViewportRoute('/batches')).toBe(false);
+    expect(isFullViewportRoute('/batches/abc123')).toBe(false);
+    expect(isFullViewportRoute('/batches/abc123/log')).toBe(false);
+  });
+
   it('does not match the recipe routes either side of it', () => {
     expect(isFullViewportRoute('/recipes/abc123')).toBe(false);
     expect(isFullViewportRoute('/recipes/abc123/edit')).toBe(false);
@@ -36,6 +50,9 @@ describe('isFullViewportRoute', () => {
     // A nested id segment is a different route, not a cook page.
     expect(isFullViewportRoute('/recipes/a/b/cook')).toBe(false);
     expect(isFullViewportRoute('/recipes/a/b/cook/guided')).toBe(false);
+    expect(isFullViewportRoute('/batches/abc123/cook/steps')).toBe(false);
+    expect(isFullViewportRoute('/admin/batches/abc123/cook')).toBe(false);
+    expect(isFullViewportRoute('/batches/a/b/cook')).toBe(false);
   });
 
   it('leaves every ordinary route with its chrome', () => {

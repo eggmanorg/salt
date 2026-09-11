@@ -154,6 +154,11 @@ function build(): Ctx {
 
   const stepDeck = createStepDeck({
     steps: () => STEPS,
+    // The progress seam (issue #1327). The session is still what this fixture keeps
+    // completion in — these cases are about GEOMETRY, and the deck no longer reads
+    // the store itself.
+    completedStepIds: () => new Set(mockCookSession._get()?.completedStepIds ?? []),
+    setStepDone: () => {},
     stage: () => 'steps',
     setStage: () => {},
     setPeeked: () => {},
@@ -333,6 +338,8 @@ describe('createStepDeck — which step the probe names', () => {
       () =>
         createStepDeck({
           steps: () => STEPS,
+          completedStepIds: () => new Set(mockCookSession._get()?.completedStepIds ?? []),
+          setStepDone: () => {},
           stage: () => 'steps',
           setStage: () => {},
           setPeeked: () => {},

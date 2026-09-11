@@ -141,9 +141,19 @@ export const violationCeilings = {
   // only alternative was to fold a feature's behaviour into a suite that already
   // breaches, which buys the counter at the reader's expense. UT-C2 does not move:
   // this suite builds its recipe with `emptyRecipe` too.
+  // UT-B1 47 → 48, and UT-C2 stays at 34 (issue #1327). ONE new file:
+  // `BatchCookPage.test.ts`, covering the batch cook page. The page joins THREE
+  // stores that the two it is built from do not join together anywhere else — the
+  // batch, its observation log and the live recipe — plus the canon/product-form
+  // pair every ingredient tile needs and the wake lock, and it cannot render
+  // without any of them. That is the case the UT-B1 note in
+  // `scripts/lib/unitTestSpec.mjs` sanctions. The only alternative was to fold a
+  // new page's whole behaviour into `BatchDetailPage.test.ts`, which already
+  // breaches and is about a different screen. UT-C2 does not move: this suite
+  // builds its recipe with `@salt/domain`'s `emptyRecipe`.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 47,
+    'UT-B1': 48,
     'UT-C1': 0,
     'UT-C2': 34,
     'UT-C3': 31,

@@ -40,6 +40,7 @@
   // shared with plain cook mode (issue #994). The pure viewport arithmetic under it
   // stays in `$lib/cookDeck`, whose numbers the markup below still reads.
   import { createStepDeck } from '../../lib/stepDeck.svelte.js';
+  import { createCookSessionStepProgress } from '../../lib/cookSessionStepProgress.svelte.js';
   import {
     sectionMinHeight,
     fadeFitsLookahead,
@@ -298,8 +299,14 @@
   // assignment needs a variable rather than a getter — the same seam the timer sheet's
   // open flag has below.
   let peekedStepId = $state<string | null>(null);
+  // Where completion is kept is the caller's since issue #1327 — this screen's is
+  // the cook session, exactly as it always was.
+  const stepProgress = createCookSessionStepProgress();
+
   const stepDeck = createStepDeck({
     steps: () => recipe?.steps ?? [],
+    completedStepIds: stepProgress.completedStepIds,
+    setStepDone: stepProgress.setStepDone,
     stage: () => lifecycle.stage,
     setStage: (next) => {
       lifecycle.stage = next;
@@ -580,7 +587,11 @@
 
     <!-- Recipe-changed banner -->
     {#if recipeChanged}
-      <CookRecipeChangedBanner {restarting} onRestart={handleRestart} />
+      <CookRecipeChangedBanner
+        message="This recipe was updated since you started cooking."
+        {restarting}
+        onRestart={handleRestart}
+      />
     {/if}
 
     <!-- Cooking for a different number than the recipe states (issue #1314). -->

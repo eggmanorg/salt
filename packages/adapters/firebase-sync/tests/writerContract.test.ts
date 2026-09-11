@@ -413,6 +413,8 @@ const BATCH = {
   stages: [],
   rationale: null,
   ambientCelsius: null,
+  checkedIngredientIds: [],
+  completedStepIds: [],
   createdAt: NOW,
   updatedAt: NOW,
 };
