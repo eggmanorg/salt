@@ -22,7 +22,7 @@
 // (all three exits above) while the rows belong to its children — and because a
 // pure function over a `Recipe` is testable without mounting anything.
 
-import type { IngredientGroup, Recipe } from '@salt/domain';
+import type { Ingredient, IngredientGroup, Recipe } from '@salt/domain';
 
 /**
  * The recipe with its blank rows gone, or the very same object when there are
@@ -32,10 +32,11 @@ import type { IngredientGroup, Recipe } from '@salt/domain';
  * hands back something different, so leaving edit mode on a recipe nobody has
  * changed issues no write at all. THE BOUNDARY of that claim, stated rather
  * than rounded up to an absolute: "nobody has changed" means the DOCUMENT
- * carries no blank row and no empty group. One that already does — written by
- * the retired editor's own `Add group` with nothing typed into it, or by an
- * import — is rewritten by the first Done anyone presses on it, which is the
- * right answer: that press is the one moment a human has been through it.
+ * carries no blank row and no empty UNNAMED group. One that already does —
+ * written by the retired editor's own `Add group` with nothing typed into it,
+ * or by an import — is rewritten by the first Done anyone presses on it, which
+ * is the right answer: that press is the one moment a human has been through
+ * it.
  *
  * A STEP is blank when it has neither words, a note, nor a timer — the note
  * half of the rule is the retired editor's `pruneDraft`, kept verbatim so a
@@ -54,14 +55,25 @@ import type { IngredientGroup, Recipe } from '@salt/domain';
  * which `clearIngredientMatch` resets on every reword, so they cannot outlive
  * the words that produced them; `isOptional` and `firstUsedInStepId` are flags
  * ABOUT a line and say nothing on their own. So an empty line carries nothing a
- * human chose, and the retired editor's own test for it
- * (`i.rawText.trim() !== ''`) is kept verbatim.
+ * human chose, and the retired editor's own test for it is kept verbatim —
+ * `isBlankIngredientRow`, exported so `RecipeIngredientsPanel.svelte`'s `filled`
+ * prop asks the same question of the same row rather than restating it (#1339
+ * review, should-fix 4: the two copies had no way to be kept in sync with each
+ * other, and the panel's own header argued its correctness FROM this rule
+ * without the compiler ever checking that the two agreed).
  *
- * A GROUP goes when it has no rows left, named or not — again the editor's rule
- * verbatim (`.filter((g) => g.items.length > 0)`). A heading with nothing under
- * it is not a part of a recipe, and the `+ Add a group` slot is an imperative
- * that writes the group it promises, so this is what keeps a stray tap on it
- * from leaving a heading behind forever.
+ * A GROUP goes when it has no rows left AND no name. The no-rows half is the
+ * editor's rule verbatim (`.filter((g) => g.items.length > 0)`): a nameless
+ * heading with nothing under it is not a part of a recipe, and the `+ Add a
+ * group` slot is an imperative that writes the group it promises, so this is
+ * what keeps a stray tap on it from leaving a nameless placeholder behind
+ * forever. The "AND no name" half narrows that rule rather than widening it
+ * (#1339 review, should-fix 6): a group's name is typed by a human on purpose,
+ * which is exactly the thing the ingredient-row paragraph above says
+ * `isOptional` and `firstUsedInStepId` are NOT — so the argument that clears a
+ * blank row does not clear a chosen heading, and `+ Add a group` → type "For
+ * the glaze" → leave keeps the heading, empty, rather than losing it at the
+ * very next exit from edit mode.
  */
 export function dropBlankRows(recipe: Recipe): Recipe {
   const steps = recipe.steps.filter(
@@ -82,11 +94,16 @@ export function dropBlankRows(recipe: Recipe): Recipe {
   return { ...recipe, steps, ingredients };
 }
 
+/** A row with no words at all — the whole of the ingredient-row blank rule. */
+export function isBlankIngredientRow(ingredient: Ingredient): boolean {
+  return ingredient.rawText.trim() === '';
+}
+
 function pruneIngredients(groups: readonly IngredientGroup[]): IngredientGroup[] {
   return groups
     .map((g) => {
-      const items = g.items.filter((i) => i.rawText.trim() !== '');
+      const items = g.items.filter((i) => !isBlankIngredientRow(i));
       return items.length === g.items.length ? g : { ...g, items };
     })
-    .filter((g) => g.items.length > 0);
+    .filter((g) => g.items.length > 0 || (g.name ?? '') !== '');
 }

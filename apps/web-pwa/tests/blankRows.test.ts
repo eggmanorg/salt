@@ -12,8 +12,8 @@ import { dropBlankRows } from '../src/routes/recipes/blankRows.js';
 // function can actually be held to:
 //
 //   WHAT COUNTS AS BLANK, for each of the two kinds of row, including the cases
-//   that deliberately SURVIVE — a wordless step carrying a note or a timer, and a
-//   row whose only content is whitespace.
+//   that deliberately SURVIVE — a wordless step carrying a note or a timer, a row
+//   whose only content is whitespace, and a NAMED group with no rows at all.
 //
 //   THE IDENTITY RETURN, which is what makes Done on an untouched recipe issue no
 //   write at all — and its boundary: a document that already carried a blank row
@@ -76,11 +76,28 @@ describe('dropBlankRows — ingredient rows and the groups they empty', () => {
     expect(pruned.ingredients[0]!.name).toBe('Dough');
   });
 
-  // The retired editor's `.filter((g) => g.items.length > 0)` kept verbatim: a
-  // heading with nothing under it is not a part of a recipe, and `+ Add a group`
-  // is an imperative that writes the group it promises — so this is what stops a
-  // stray tap leaving a heading behind forever.
-  it('drops a group once its last row goes, name and all', () => {
+  // An UNNAMED group with no rows left is still disposable: nothing about it was
+  // ever chosen by a human, which is the left side of
+  // `.filter((g) => g.items.length > 0 || (g.name ?? '') !== '')` on its own.
+  it('drops an unnamed group once its last row goes', () => {
+    const recipe = recipeWith({
+      ingredients: [
+        group('g1', 'Dough', [newIngredient('i1', '500g flour')]),
+        group('g2', null, [newIngredient('i2', '')]),
+      ],
+    });
+
+    expect(dropBlankRows(recipe).ingredients.map((g) => g.id)).toEqual(['g1']);
+  });
+
+  // A NAMED group survives losing its last row, and survives never having had one
+  // at all (#1339 review, should-fix 6, correcting this suite's own former pin):
+  // a heading is the one thing on an empty group a human DID choose, which
+  // `isOptional` and `firstUsedInStepId` are not — so the argument that clears a
+  // blank ingredient row does not clear a group's name. `+ Add a group` → type
+  // "For the glaze" → leave with nothing typed into it now keeps the heading
+  // rather than losing it at the very next exit from edit mode.
+  it('keeps a named group once its last row goes', () => {
     const recipe = recipeWith({
       ingredients: [
         group('g1', 'Dough', [newIngredient('i1', '500g flour')]),
@@ -88,10 +105,14 @@ describe('dropBlankRows — ingredient rows and the groups they empty', () => {
       ],
     });
 
-    expect(dropBlankRows(recipe).ingredients.map((g) => g.id)).toEqual(['g1']);
+    const pruned = dropBlankRows(recipe);
+
+    expect(pruned.ingredients.map((g) => g.id)).toEqual(['g1', 'g2']);
+    expect(pruned.ingredients[1]!.name).toBe('For the glaze');
+    expect(pruned.ingredients[1]!.items).toEqual([]);
   });
 
-  it('drops a group that carries a heading and no rows at all', () => {
+  it('keeps a named group that never had any rows at all', () => {
     const recipe = recipeWith({
       ingredients: [
         group('g1', 'Dough', [newIngredient('i1', '500g flour')]),
@@ -99,7 +120,7 @@ describe('dropBlankRows — ingredient rows and the groups they empty', () => {
       ],
     });
 
-    expect(dropBlankRows(recipe).ingredients.map((g) => g.id)).toEqual(['g1']);
+    expect(dropBlankRows(recipe).ingredients.map((g) => g.id)).toEqual(['g1', 'g2']);
   });
 
   // `isOptional` is a flag ABOUT a line and says nothing on its own — the header

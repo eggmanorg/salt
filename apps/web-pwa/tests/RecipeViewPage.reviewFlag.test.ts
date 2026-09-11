@@ -718,10 +718,16 @@ describe('RecipeViewPage — the blank row you never typed into', () => {
     expect(writtenGroups()[0]!.items.map((i) => i.rawText)).toEqual(['500g flour', '350g water']);
   });
 
-  // The outcome in the issue's own words: "Empty a group of every line, press
-  // Done: the group goes." The heading goes with it — a heading with nothing
-  // under it is not a part of a recipe.
-  it('drops a group emptied of its last line, heading and all', async () => {
+  // Issue #1319 originally said: "Empty a group of every line, press Done: the
+  // group goes." The #1339 review (should-fix 6) narrowed that claim, and this
+  // test's own prior version was the false pin it caught: a group's NAME is
+  // something a human typed on purpose, which the ingredient-row rule's own
+  // reasoning for disposability (`isOptional` and `firstUsedInStepId` say
+  // nothing on their own) does not extend to — so a NAMED group now survives
+  // losing its last row, empty rather than gone. `blankRows.test.ts` pins the
+  // rule itself, including that an UNNAMED empty group still goes; this pins
+  // that Done actually reaches `dropBlankRows` for a real, named group.
+  it('keeps a named group once its last row goes, empty rather than gone', async () => {
     mockRecipes._set([
       makeRecipe({
         ...WITH_A_STEP,
@@ -738,7 +744,9 @@ describe('RecipeViewPage — the blank row you never typed into', () => {
 
     await pressDone();
 
-    expect(writtenGroups().map((g) => g.id)).toEqual(['g1']);
+    expect(writtenGroups().map((g) => g.id)).toEqual(['g1', 'g2']);
+    expect(writtenGroups()[1]!.name).toBe('For the glaze');
+    expect(writtenGroups()[1]!.items).toEqual([]);
   });
 
   it('writes nothing at all on Done when only the ingredients were looked at', async () => {

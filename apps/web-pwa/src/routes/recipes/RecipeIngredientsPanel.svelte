@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import {
     Button,
     CanonIcon,
@@ -22,6 +23,7 @@
     type IngredientGroup,
     type Recipe,
   } from '@salt/domain';
+  import { isBlankIngredientRow } from './blankRows';
   import EditableZone from './EditableZone.svelte';
   import IngredientText from './IngredientText.svelte';
   import ReorderControl from './ReorderControl.svelte';
@@ -81,7 +83,10 @@
    * rounded up: it keeps working WHERE IT LIVES, which is read mode. Press Done
    * and every marker is back, unchanged, doing what it did before this phase.
    * Nothing about `handleRematch`, `inspectMatch` or the inspector sheet is
-   * altered here — they stay on the page and are passed in.
+   * altered here — they stay on the page and are passed in. Canonicalise (below,
+   * on the card header) carries the identical boundary and for the identical
+   * reason — it acts on a snapshot of the very ingredients you may be rewriting —
+   * so it is gated on `!editing` too, not just the three per-row markers.
    *
    * ─── SCALING ────────────────────────────────────────────────────────────────
    *
@@ -97,26 +102,47 @@
    * ─── THIS COMPONENT HOLDS A DRAFT ───────────────────────────────────────────
    *
    * `RecipeMethodRail`'s pattern, for its reason: there is real typing here (a
-   * line, a group name), so a snapshot arriving from another phone or from a chat
-   * amendment must not repaint a box mid-word. `groupsDraft` is what every box and
-   * every row DRAW while editing; `recipe.ingredients` is what read mode draws.
-   * The draft is seeded from the store in exactly three places and nowhere else:
-   * when edit mode opens, when a zone opens, and when `recipe.id` changes.
+   * line, a group name), so a snapshot arriving from another phone must not
+   * repaint a box mid-word. `groupsDraft` is what every box and every row DRAW
+   * while editing; `recipe.ingredients` is what read mode draws. The draft is
+   * seeded from the store in three ordinary places — when edit mode opens, when a
+   * zone opens, and when `recipe.id` changes — and in one more that is not
+   * ordinary at all: whenever NONE of the draft's own group ids are still present
+   * in the store (`draftSurvivesInStore`, below).
+   *
+   * THAT FOURTH CASE IS A CHAT AMENDMENT, not an edit. `assembleRecipeDraft.ts`
+   * mints a fresh `crypto.randomUUID()` for every ingredient group on every
+   * amend, unconditionally — so the moment one lands, `recipe.ingredients` shares
+   * not one id with whatever `groupsDraft` was holding, and every gesture below is
+   * keyed by group id. Patching against a group id the store no longer has is not
+   * "a concurrent write this box should ignore" — there is no group left to
+   * ignore it FOR — so `setRowText` wrote nothing, `addRow` appeared on screen and
+   * nowhere in the document, and `removeGroup` deleted a heading the document was
+   * never asked to drop (#1339 review, blocking 1). Re-seeding is the honest
+   * answer precisely because there is nothing left to preserve: the fresh groups
+   * replace `groupsDraft` wholesale, which — the same as `moveRowToGroup` moving a
+   * row into a different `{#each}` key — closes any box that was open, because the
+   * group it belonged to is gone under every name it had.
    *
    * DRAWING and WRITING read from different places. Every gesture goes straight out
    * through `onEdit` — there is no Save — but the WRITE is composed off the
    * freshest `recipe.ingredients`, patching in only what that one gesture owns, and
    * it NEVER sends the whole draft back (that is what silently reverted a
    * concurrent amendment on #1336). Symmetrically, `commitWrite` never touches
-   * `groupsDraft`: each gesture applies its own operation to the draft itself, so a
-   * row a gesture is not about — including one a concurrent write just reworded —
-   * is left alone.
+   * `groupsDraft` and never re-seeds it — re-seeding happens only in the `$effect`
+   * below, on the id/editing key or on the id-divergence just described, and
+   * nowhere else: each ordinary gesture applies its own operation to the draft
+   * itself, so a row a gesture is not about — including one a concurrent write
+   * just reworded — is left alone.
    *
    * The boundary, stated rather than implied: while a box is open, a concurrent
-   * write to this recipe's own ingredients stays out of the panel's DRAWING until
-   * the draft is re-seeded. A line you are not touching goes on showing what it
-   * showed when the box opened, through every later gesture. Visibility lags; the
-   * write does not.
+   * write that leaves at least one group id in common with the draft stays out of
+   * the panel's DRAWING until the draft is re-seeded. A line you are not touching
+   * goes on showing what it showed when the box opened, through every later
+   * gesture — UNLESS every group id changed at once, in which case the box that
+   * was showing it is gone, because so is its only claim to which group was its
+   * own. Visibility lags a same-identity write; it does not survive a re-minted
+   * one.
    *
    * ─── BLANK ROWS ─────────────────────────────────────────────────────────────
    *
@@ -195,19 +221,48 @@
     groupsDraft = recipe.ingredients.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i })) }));
   }
 
-  // Re-seeds on entering edit mode and on the document changing underneath, and on
-  // nothing else. The early return is the whole protection: a concurrent write to
-  // the SAME recipe re-runs this effect (it reads `recipe`) and leaves through the
-  // guard without touching the draft. Keyed on the id STRING plus the mode, never
-  // on the `recipe` object — `/recipes/:id` is one route, so a "Made from" tap
-  // reuses this instance with a different document.
+  // Re-seeds on entering edit mode, on the route's recipe changing, and — see the
+  // header — the moment the store's own group ids stop overlapping the draft's at
+  // all. The guard is `key === seededFor && draftSurvivesInStore()`: a concurrent
+  // write to the SAME recipe that leaves at least one group id in place re-runs
+  // this effect (it reads `recipe.ingredients` through `draftSurvivesInStore`) and
+  // leaves through the guard without touching the draft; one that leaves none does
+  // not. Keyed on the id STRING plus the mode, never on the `recipe` object —
+  // `/recipes/:id` is one route, so a "Made from" tap reuses this instance with a
+  // different document.
   let seededFor: string | undefined;
   $effect(() => {
     const key = `${recipe.id}|${editing}`;
-    if (key === seededFor) return;
+    if (key === seededFor && draftSurvivesInStore()) return;
     seededFor = key;
     seedDraft();
   });
+
+  // Whether the draft's own identity still means anything against the store: true
+  // when at least one of `groupsDraft`'s own group ids is still there. False only
+  // when EVERY id changed at once — the shape a chat amendment leaves and an
+  // ordinary edit never does, because `assembleRecipeDraft.ts` re-mints every
+  // ingredient group id on every amend, unconditionally. (On an empty draft this
+  // is `false` too, by the same `.some` — which is right: an empty draft has
+  // nothing to preserve, so a store that has since gained a group should be
+  // picked up rather than left unseen.)
+  //
+  // `untrack` around the `groupsDraft` read is load-bearing, not decoration: the
+  // `$effect` above calls this function, and that effect is ALSO what writes
+  // `groupsDraft` (via `seedDraft`). Reading it untracked takes `groupsDraft` out
+  // of the effect's own dependency list, so a plain gesture's draft update
+  // (`patchItems`, `addRow`, every keystroke) does not re-run this check at all —
+  // it still compares against whatever the draft holds AT THE MOMENT the effect
+  // runs, just without subscribing to it. Reading it tracked instead made the
+  // effect depend on the very state it conditionally assigns, and on the real
+  // page — where `onEdit` and this draft write land in overlapping ticks — that
+  // read-your-own-write cycle actually ran away: `effect_update_depth_exceeded`
+  // on every suite that mounts this panel inside `RecipeViewPage`, caught only by
+  // running the full page suite rather than this component in isolation.
+  function draftSurvivesInStore(): boolean {
+    const storeIds = new Set(recipe.ingredients.map((g) => g.id));
+    return untrack(() => groupsDraft).some((g) => storeIds.has(g.id));
+  }
 
   // The one place any gesture here reaches `onEdit`. `next` is always composed by
   // the CALLER off `recipe.ingredients` — never off `groupsDraft` — and this NEVER
@@ -360,11 +415,19 @@
   //
   // Composed off the freshest stored groups on BOTH sides: the row taken is the
   // stored one, which after `queueRecipeEdit`'s synchronous optimistic apply is at
-  // least as fresh as the draft's own copy for anything typed this session.
+  // least as fresh as the draft's own copy for anything typed this session — AND
+  // the destination is checked against that same store before either side is
+  // touched. Without the second guard, a concurrent Remove on the TARGET group
+  // (another device, between this box opening and this Select firing) filtered
+  // the row out of its source and appended it nowhere: the store had no group left
+  // to receive it, so the line was deleted from the document while
+  // `move(groupsDraft)` still found the ghost group and drew the move as a success
+  // (#1339 review, blocking 2).
   function moveRowToGroup(fromGroupId: string, id: string, toGroupId: string): void {
     if (fromGroupId === toGroupId) return;
     const row = storedRow(fromGroupId, id);
     if (!row) return;
+    if (!recipe.ingredients.some((g) => g.id === toGroupId)) return;
     const move = (gs: readonly IngredientGroup[]): IngredientGroup[] =>
       gs.map((g) => {
         if (g.id === fromGroupId) return { ...g, items: g.items.filter((i) => i.id !== id) };
@@ -429,8 +492,18 @@
 <Card>
   <!-- The tab names the panel, so the card no longer repeats the word. The header
        survives only to carry Canonicalise, which is why it is gated on the button
-       rather than always rendered. -->
-  {#if hasParsedPending}
+       rather than always rendered.
+
+       `!editing` is the second half of that gate (#1339 review, should-fix 5) —
+       the same reason the three per-row markers disappear while editing: this
+       button acts on the MATCH, composed from a snapshot of `recipe.ingredients`
+       taken before the round trip, so a keystroke landing in any row before the
+       Cloud Function returns is overwritten by a toast that says "Ingredients
+       matched" and a write that carries none of it. The per-row re-match already
+       states its boundary as "it works where it lives, which is read mode";
+       Canonicalise gets the identical boundary rather than being the one control
+       the marker rule was written about and then left out of it. -->
+  {#if hasParsedPending && !editing}
     <CardHeader class="px-4 pt-4 pb-0">
       <div class="flex items-center justify-end">
         <Button
@@ -478,18 +551,27 @@
     {/if}
     {#each groups as group, gIdx (group.id)}
       <div class="flex flex-col gap-1.5 [&+&]:mt-4" data-testid="recipe-view-group">
-        <div class="flex items-start gap-2">
-          <EditableZone
-            {editing}
-            filled={(group.name ?? '') !== ''}
-            label="Edit group name"
-            slotLabel="Group name"
-            testId="recipe-edit-group-name"
-            class="min-w-0 flex-1"
-            onOpen={seedDraft}
-          >
-            {#snippet view()}
-              <!-- Sage, not muted grey (issue #878). A component heading — "For the
+        <!-- Gated on `editing || (group.name ?? '') !== ''`, not just rendered and
+             left to `EditableZone` to draw nothing: that component only hides its
+             OWN `view` snippet when unfilled, so this wrapping `<div>` — a flex
+             child of the column above — was still there, and `gap-1.5` still
+             opened 6px above the `<ul>` on every unnamed group in read mode (#1339
+             review, should-fix 3). Editing keeps the row regardless of a name, for
+             the dashed slot and the group tools; read mode draws it only when
+             there is a heading to draw. -->
+        {#if editing || (group.name ?? '') !== ''}
+          <div class="flex items-start gap-2">
+            <EditableZone
+              {editing}
+              filled={(group.name ?? '') !== ''}
+              label="Edit group name"
+              slotLabel="Group name"
+              testId="recipe-edit-group-name"
+              class="min-w-0 flex-1"
+              onOpen={seedDraft}
+            >
+              {#snippet view()}
+                <!-- Sage, not muted grey (issue #878). A component heading — "For the
                    punchy vinaigrette" — divides the list into the sub-recipes you
                    actually make one at a time, and in grey it read as a caption on
                    the rows above it. The palette's secondary is the app's "this is a
@@ -500,50 +582,56 @@
                    snippet only when `filled` is true, which for this zone IS "the
                    group has a heading", so a guard here would be a branch nothing
                    can reach. -->
-              <p
-                class="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wider text-secondary"
-                data-testid="recipe-view-group-name"
-              >
-                {group.name}
-              </p>
-            {/snippet}
-            {#snippet edit(close)}
-              <div class="flex w-full flex-col gap-2">
-                <TextField
-                  label="Group name"
-                  placeholder="e.g. For the sauce (leave blank for the main list)"
-                  value={group.name ?? ''}
-                  onValueChange={(v) => setGroupName(group.id, v)}
-                  data-testid="recipe-edit-group-name-field"
-                />
-                <div class="flex justify-end">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={close}
-                    data-testid="recipe-edit-group-name-done"
-                  >
-                    Done
-                  </Button>
+                <p
+                  class="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wider text-secondary"
+                  data-testid="recipe-view-group-name"
+                >
+                  {group.name}
+                </p>
+              {/snippet}
+              {#snippet edit(close)}
+                <div class="flex w-full flex-col gap-2">
+                  <TextField
+                    label="Group name"
+                    placeholder="e.g. For the sauce (leave blank for the main list)"
+                    value={group.name ?? ''}
+                    onValueChange={(v) => setGroupName(group.id, v)}
+                    data-testid="recipe-edit-group-name-field"
+                  />
+                  <div class="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onclick={close}
+                      data-testid="recipe-edit-group-name-done"
+                    >
+                      Done
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-          </EditableZone>
-          {#if editing}
-            <span class="flex shrink-0 items-start gap-1" data-testid="recipe-edit-group-tools">
-              <ReorderControl items={groups} index={gIdx} noun="group" onReorder={reorderGroups} />
-              <Button
-                variant="ghost"
-                size="sm"
-                onclick={() => removeGroup(group.id)}
-                aria-label="Remove group"
-                data-testid="recipe-edit-group-remove"
-              >
-                <Icon name="Trash2" size={16} />
-              </Button>
-            </span>
-          {/if}
-        </div>
+              {/snippet}
+            </EditableZone>
+            {#if editing}
+              <span class="flex shrink-0 items-start gap-1" data-testid="recipe-edit-group-tools">
+                <ReorderControl
+                  items={groups}
+                  index={gIdx}
+                  noun="group"
+                  onReorder={reorderGroups}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => removeGroup(group.id)}
+                  aria-label="Remove group"
+                  data-testid="recipe-edit-group-remove"
+                >
+                  <Icon name="Trash2" size={16} />
+                </Button>
+              </span>
+            {/if}
+          </div>
+        {/if}
         <!-- `gap-0` and a hairline instead: the rows used to float 1.5 units apart
              with nothing between them, which reads as nineteen separate things
              rather than one list. A rule per row does the separating, so the gap can
@@ -630,7 +718,7 @@
               </div>
               <EditableZone
                 {editing}
-                filled={ingredient.rawText.trim() !== ''}
+                filled={!isBlankIngredientRow(ingredient)}
                 label="Edit ingredient"
                 slotLabel="Ingredient"
                 testId="recipe-edit-ingredient"

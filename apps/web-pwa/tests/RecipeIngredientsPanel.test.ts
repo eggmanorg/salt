@@ -173,6 +173,23 @@ describe('RecipeIngredientsPanel — read mode is exactly what it always was', (
     expect(screen.getAllByTestId('recipe-view-group')).toHaveLength(2);
   });
 
+  // #1339 review, should-fix 3: the heading row's own wrapper `<div>` used to
+  // render unconditionally, so an unnamed group's `flex flex-col gap-1.5`
+  // container opened 6px of dead space above the `<ul>` even though
+  // `EditableZone` drew nothing inside it. Fixed by gating the wrapper itself
+  // rather than relying on `EditableZone` to look empty.
+  it('renders no heading row at all above an unnamed group’s list', () => {
+    show(recipeWith(TWO_GROUPS), false);
+
+    const containers = screen.getAllByTestId('recipe-view-group');
+    // g1 (unnamed): only the `<ul>` — no heading row above it.
+    expect(containers[0]!.children).toHaveLength(1);
+    expect(containers[0]!.children[0]!.tagName).toBe('UL');
+    // g2 (named, "For the glaze"): the heading row, then the `<ul>`.
+    expect(containers[1]!.children).toHaveLength(2);
+    expect(containers[1]!.children[1]!.tagName).toBe('UL');
+  });
+
   it('says so when there are no ingredients at all', () => {
     show(recipeWith([]), false);
 
@@ -263,6 +280,20 @@ describe('RecipeIngredientsPanel — read mode is exactly what it always was', (
     expect((screen.getByTestId('recipe-canonicalise-button') as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  // #1339 review, should-fix 5: Canonicalise composes its write from a snapshot
+  // of `recipe.ingredients` taken before the round trip, exactly like the
+  // per-row markers it stands beside — so it carries the identical risk a
+  // keystroke lands in some row before the Cloud Function returns, and the
+  // toast then claims a match that never reached the document. Gated on
+  // `!editing` for the same reason the markers already are.
+  it('hides Canonicalise while editing, for the same reason as the per-row markers', () => {
+    show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), true, {
+      hasParsedPending: true,
+    });
+
+    expect(screen.queryByTestId('recipe-canonicalise-button')).toBeNull();
   });
 });
 
@@ -572,6 +603,32 @@ describe('RecipeIngredientsPanel — moving a line to another group', () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
+  // #1339 review, blocking 2: the mirror of the test above, on the DESTINATION
+  // side. Before the fix, `moveRowToGroup` checked only that the source row still
+  // existed; a target group removed from under the open picker (another device,
+  // between the box opening and this Select firing) filtered the row out of its
+  // source and appended it nowhere, deleting the line from the document while the
+  // draft — which still had the ghost group — drew the move as a success.
+  it('writes nothing when the target group has been removed from under the open picker', async () => {
+    const user = userEvent.setup();
+    const { rerender } = show(twoGroups(), true);
+    await open('recipe-edit-ingredient');
+
+    await rerender(
+      props(
+        recipeWith([
+          group('g1', 'Dough', [matched('i1', 'flour'), matched('i2', 'water', 'canon-2')]),
+        ]),
+        true,
+      ),
+    );
+
+    await user.click(screen.getByTestId('recipe-edit-ingredient-group'));
+    await user.click(screen.getByRole('option', { name: 'Glaze' }));
+
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
   it('writes nothing when the group chosen is the one it is already in', async () => {
     const user = userEvent.setup();
     show(twoGroups(), true);
@@ -587,10 +644,19 @@ describe('RecipeIngredientsPanel — moving a line to another group', () => {
 // ─── The draft ────────────────────────────────────────────────────────────────
 //
 // `RecipeMethodRail`'s pattern and its reason: there is real typing here, so a
-// snapshot arriving from another phone or from a chat amendment must not repaint a
-// box mid-word — and the write must not carry the draft's stale siblings back over
-// that amendment either.
-
+// snapshot arriving from another phone must not repaint a box mid-word — and the
+// write must not carry the draft's stale siblings back over that write either.
+//
+// THE TEST BELOW HOLDS GROUP ID 'g1' CONSTANT ON PURPOSE, and that is exactly
+// what makes it a test of an ORDINARY concurrent write (another phone rewording
+// a line, adding a row) rather than of a chat amendment — a real amendment does
+// not merely reword rows, it re-mints every ingredient GROUP id at once
+// (`assembleRecipeDraft.ts`), which is a different failure this fixture cannot
+// reach no matter what its items do. `#1339 review, blocking 1` is exactly this:
+// the PR that first wrote this test cited it as the pin for the amendment case,
+// and it pins only the ordinary one. The amendment case — group ids CHANGING,
+// not held constant — is `recovers when a chat amendment re-mints every group
+// and item id at once`, below.
 describe('RecipeIngredientsPanel — the draft', () => {
   it('ignores a concurrent write while a box is open, and a later gesture does not revert it', async () => {
     const mine = recipeWith([
@@ -599,8 +665,8 @@ describe('RecipeIngredientsPanel — the draft', () => {
     const { rerender } = show(mine, true);
     await open('recipe-edit-ingredient');
 
-    // The docked chat pane's amendment lands: it rewords the very line this box
-    // has open, rewords its sibling, and adds a third.
+    // Another device rewords the very line this box has open, reword its
+    // sibling, and adds a third — all inside the SAME group id.
     await rerender(
       props(
         recipeWith([
@@ -617,14 +683,59 @@ describe('RecipeIngredientsPanel — the draft', () => {
     expect(screen.getByTestId('recipe-edit-ingredient-field')).toHaveValue('flour');
 
     // A gesture that is not a keystroke in this line's own box must not carry the
-    // amendment's words into the open box, and must not carry the stale,
-    // pre-amendment draft back over the amendment either.
+    // concurrent write's words into the open box, and must not carry the stale,
+    // pre-write draft back over that write either.
     await fireEvent.click((screen.getAllByLabelText('Move ingredient down') as HTMLElement[])[0]!);
 
     const items = lastGroups()[0]!.items;
     expect(items.find((i) => i.id === 'i2')!.rawText).toBe('350g water');
     expect(items.map((i) => i.id)).toContain('i3');
     expect(screen.getByTestId('recipe-edit-ingredient-field')).toHaveValue('flour');
+  });
+
+  // #1339 review, blocking 1: the case the test above cannot reach. A chat
+  // amendment does not reword rows inside stable groups — `assembleRecipeDraft.ts`
+  // mints a fresh `crypto.randomUUID()` for every ingredient GROUP on every
+  // amend, unconditionally, so `recipe.ingredients` arrives sharing not one id
+  // with whatever `groupsDraft` held. Before the fix, that meant the panel wrote
+  // nothing ever again until edit mode was re-entered: `setRowText` patched a
+  // group id gone from the store, `addRow` appeared on screen and nowhere in the
+  // document. This is the fixture the PR body wrongly claimed was already
+  // covered — group ids CHANGING, not held constant.
+  it('recovers when a chat amendment re-mints every group and item id at once', async () => {
+    const { rerender } = show(
+      recipeWith([group('g1', null, [matched('i1', 'flour'), matched('i2', 'water', 'canon-2')])]),
+      true,
+    );
+    await open('recipe-edit-ingredient');
+
+    // The amendment lands: not just new words, an entirely new group id and new
+    // item ids — the shape `assembleRecipeDraft.ts` actually produces.
+    await rerender(
+      props(
+        recipeWith([
+          group('gNEW', null, [
+            matched('iNEW1', '500g strong white flour'),
+            matched('iNEW2', '350g water', 'canon-2'),
+          ]),
+        ]),
+        true,
+      ),
+    );
+
+    // The box that was open belonged to a group and a row that no longer exist
+    // under any id — it closes, honestly, the same way `moveRowToGroup` closes a
+    // box that moves group.
+    expect(screen.queryByTestId('recipe-edit-ingredient-field')).toBeNull();
+
+    // The panel is not dead to the document: a fresh gesture against the NEW ids
+    // writes, rather than silently patching a group id the store no longer has.
+    await fireEvent.click(screen.getByTestId('recipe-edit-ingredient-add'));
+
+    expect(lastGroups()).toHaveLength(1);
+    expect(lastGroups()[0]!.id).toBe('gNEW');
+    expect(lastGroups()[0]!.items).toHaveLength(3);
+    expect(lastGroups()[0]!.items[2]!.rawText).toBe('');
   });
 
   it('shows the new recipe’s ingredients when the document changes under an open editor', async () => {
