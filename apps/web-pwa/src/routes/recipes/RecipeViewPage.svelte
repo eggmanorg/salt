@@ -7,7 +7,6 @@
     CardDescription,
     CardHeader,
     CardTitle,
-    Chip,
     DetailPage,
     Dialog,
     DialogContent,
@@ -22,10 +21,6 @@
     PopoverContent,
     PopoverMenuItem,
     PopoverTrigger,
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
     Spinner,
     Tabs,
     TabsContent,
@@ -33,9 +28,6 @@
     TabsTrigger,
     Textarea,
     TextField,
-    valueChipVariants,
-    type ChipTone,
-    type IconName,
     type ImageCropperHandle,
   } from '@salt/ui-components';
   import { tick } from 'svelte';
@@ -73,7 +65,7 @@
   import RecipeBakeBatchSheet from './RecipeBakeBatchSheet.svelte';
   import IngredientMatchSheet from './IngredientMatchSheet.svelte';
   import RecipeChangeSummary from './RecipeChangeSummary.svelte';
-  import RecipePhaseTimeline from './RecipePhaseTimeline.svelte';
+  import RecipeIdentityCard from './RecipeIdentityCard.svelte';
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
   import { componentTimeLabel } from './recipeTiming.js';
@@ -97,7 +89,6 @@
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
   import {
     recipeHeroUrl,
-    recipePhaseTotals,
     duplicateRecipe,
     firstUseByStep as groupIngredientsByFirstUse,
     flattenIngredients,
@@ -114,7 +105,6 @@
     takesIngredients,
     usableServings,
     type IngredientGroup,
-    memberFirstName,
     type Ingredient,
     type Recipe,
     type Step,
@@ -148,42 +138,6 @@
   let { params }: Props = $props();
 
   const recipe = $derived($recipes.find((r) => r.id === params.id) ?? null);
-
-  // Outbound link to the original recipe, only for url-sourced (imported) recipes
-  // with a non-empty url. Manual/legacy recipes (source null) render nothing.
-  const sourceUrl = $derived(
-    recipe?.source?.type === 'url' && (recipe.source.url ?? '').trim() !== ''
-      ? recipe.source.url!
-      : null,
-  );
-
-  // "Makes: <name>" chip — resolve the produces canon link to its display name.
-  // null when the recipe isn't linked or the canon item has since been deleted.
-  const producesCanonName = $derived(
-    recipe?.producesCanonId
-      ? ($canonItems.find((c) => c.id === recipe.producesCanonId)?.name ?? null)
-      : null,
-  );
-
-  // "Added by X · edited by Y" chip (issue #845). Audit only: it records who did
-  // what and gates nothing. `null` — and so no chip at all, rather than a
-  // placeholder — whenever there is no attribution on record, which is every
-  // recipe written before the field existed. A `lastEditedBy` that is the creator
-  // (they added it and they are still the only one to have touched it) adds
-  // nothing to read, so only a DIFFERENT last editor earns the second half.
-  //
-  // First names on screen, full names in the comparison. The stored value is the
-  // verbatim `Member.name`, and `memberFirstName` shortens it only for reading — a
-  // household shares a surname, so the rest is noise. The "is this the same
-  // person" test deliberately stays on the FULL values: comparing first names
-  // would silently merge two genuinely different people who share one.
-  const attribution = $derived(
-    !recipe?.createdBy
-      ? null
-      : recipe.lastEditedBy && recipe.lastEditedBy !== recipe.createdBy
-        ? `Added by ${memberFirstName(recipe.createdBy)} · edited by ${memberFirstName(recipe.lastEditedBy)}`
-        : `Added by ${memberFirstName(recipe.createdBy)}`,
-  );
 
   // What this entry can do (issue #637). Everything that gates a section or an
   // action on this page reads one of these two — never the kind itself. Both are
@@ -454,115 +408,6 @@
       cookServings,
     ),
   );
-
-  // ─── Facts, and why they are not tags (issue #878) ──────────────────────────
-  // Six different things used to render as the same grey pill: what the dish
-  // makes, how many it serves, three durations, who added it, and every tag on
-  // it. Two of those are different KINDS of thing. A fact is measured from the
-  // dish — you can check it — and gets a glyph that carries its meaning before
-  // the number is read. A tag is an arbitrary word somebody typed, and any icon
-  // beside it would be a guess (ui-spec-v09 §8.23.8). So: facts on a tinted
-  // ground with an icon, tags as quiet outlines with none, on their own rows.
-  //
-  // ── What the tint means here ────────────────────────────────────────────────
-  // `Chip`'s `tone` is named for a palette role and says nothing about what the
-  // hue means (ui-spec-v09 §8.23.9) — deciding that is this page's job, and this
-  // is where it is written down. The tint splits the row by what each fact
-  // measures:
-  //
-  //   sage      what comes OUT of it — Makes, Serves. The palette's "fresh /
-  //             organic" accent (design.md), and already this page's colour for
-  //             a part of something: the ingredient group headings below, and a
-  //             matched pictogram tile.
-  //   neutral   anything that is not that: who added the recipe, which is a fact
-  //             about the document rather than about the dish.
-  //
-  // The row used to carry three durations on three further tints; issue #1213
-  // retired them and the phase timeline below states the timing instead. One tint
-  // and a default is not an impoverished version of that scheme — a row where
-  // every chip is a different colour teaches the reader that the colour carries
-  // nothing. And nothing is carried by colour ALONE — every chip says its own kind
-  // in words, so the tint only lets the row be scanned instead of read
-  // (ui-spec-v02 §7).
-  //
-  // ── One fact LEAVES this scheme, and does so on purpose (issue #1314) ───────
-  // Serves is now a decision you can change where it sits, so it is drawn as the
-  // value-chip SURFACE worn by a `SelectTrigger` (ui-spec-v09 §8.27) rather than
-  // as a sage `Chip variant="fact"`. It therefore carries the value chip's own
-  // treatment — bordered, on `bg-background` — and no tint at all. That difference
-  // is the honest part: every other pill in this row is a measurement you can only
-  // read, and a control that looked identical to them would be undiscoverable.
-  // `Chip variant="fact"` renders a `<span>` and §8.23.8 closed the door on making
-  // it pressable; nothing shared changes here.
-  interface RecipeFact {
-    readonly key: string;
-    /** Absent only for the one fact with no honest glyph — see `attribution` below. */
-    readonly icon?: IconName;
-    readonly label: string;
-    /** Which kind of fact this is. See the tint note above. */
-    readonly tone?: ChipTone;
-    /** Only the two facts an e2e spec names carry one. */
-    readonly testId?: string;
-  }
-
-  // The phase strip (issue #1122), ungated as of issue #1213 — the strip is now
-  // the whole of a recipe's timing on this page and there is nothing left to fall
-  // back to.
-  //
-  // `metadata.phases` is optional on the schema, so it is resolved to a list once,
-  // here, and everything below reads that list — the template never asks the recipe
-  // for it again. `recipePhaseTotals` then sums exactly what is drawn, and it is the
-  // only permitted source of a duration (docs/recipe-module.md's single funnel).
-  //
-  // It is declared ABOVE `facts` because the card's gate reads it: a recipe whose
-  // only stated fact is its timing still has something to say in that card.
-  const phases = $derived(recipe?.metadata.phases ?? []);
-  const phaseTotals = $derived(recipePhaseTotals(phases));
-
-  const facts = $derived.by((): RecipeFact[] => {
-    if (!recipe) return [];
-    const out: RecipeFact[] = [];
-    // What the dish makes leads: it is the fact that says what this document IS
-    // when the document is a component of something else.
-    if (producesCanonName) {
-      out.push({
-        key: 'produces',
-        icon: 'Soup',
-        label: `Makes: ${producesCanonName}`,
-        tone: 'secondary',
-        testId: 'recipe-produces-chip',
-      });
-    }
-    // Serves / Prep / Cook / Total are COOKING facts. An outing has none of
-    // them, and gating here covers the chips and, through `hasMeta`, the card.
-    if (isCookable(kindOf(recipe))) {
-      const m = recipe.metadata;
-      if (m.servings !== null) {
-        out.push({
-          key: 'servings',
-          icon: 'Users',
-          // The number being READ, which is the stored one until somebody changes
-          // it. `metadata.servings` itself is never touched by scaling.
-          label: `Serves ${scaling?.active ?? m.servings}`,
-          tone: 'secondary',
-        });
-      }
-      // No timing chip of any kind. Prep / Cook / Total were retired here by issue
-      // #1213, and nothing phase-derived takes their place: the timeline a few lines
-      // below states its own total, and a chip repeating it is #1122's own complaint
-      // — two accounts of the same fact side by side — at a smaller scale.
-    }
-    // Provenance is a fact about the document rather than about the dish, and it
-    // is the one fact with no honest glyph — `Users` is already Serves, and a
-    // pencil would say "edited" for a chip that usually says "added". It sits in
-    // the fact row without an icon rather than being promoted to a row of its
-    // own for one pill. Its text is asserted verbatim by
-    // `e2e/recipe-author-filter.spec.ts`, so nothing may be interpolated into it.
-    if (attribution) {
-      out.push({ key: 'attribution', label: attribution, testId: 'recipe-attribution-chip' });
-    }
-    return out;
-  });
 
   // The #878 cook-shape ribbon was deleted here by issue #1213, along with
   // `cookShape` itself. It drew whatever minutes somebody had happened to attach a
@@ -2277,116 +2122,20 @@
           </div>
         {/if}
 
-        <!-- Description, facts, tags and the phase strip.
-             `phaseTotals.hasPhases` joins the card's gate rather than sitting
-             outside it: a recipe whose only stated fact is its timing still has
-             something to say here (issue #1122). Read through `recipePhaseTotals`
-             rather than `phases.length` — the single funnel docs/recipe-module.md
-             names (issue #1122 review, should-fix 6). -->
-        {#if recipe.description || facts.length > 0 || recipe.metadata.tags.length > 0 || sourceUrl || phaseTotals.hasPhases}
-          <Card>
-            <CardContent class="flex flex-col gap-3 p-4">
-              {#if recipe.description}
-                <p class="text-sm text-muted-foreground">{recipe.description}</p>
-              {/if}
-              <!-- Two rows, two kinds of thing (issue #878). Facts are measured from the
-                   dish and carry a glyph; tags are words somebody typed and carry none.
-                   Separate rows rather than one wrapped row so the difference survives a
-                   narrow screen, where a single row would interleave them again. -->
-              {#if facts.length > 0}
-                <div class="flex flex-wrap items-center gap-2">
-                  {#each facts as fact (fact.key)}
-                    {#if fact.key === 'servings' && scaling}
-                      <!-- The one fact that is also a control (issue #1314). The
-                           value-chip SURFACE worn by the `SelectTrigger` that owns
-                           the interaction — ui-spec-v09 §8.27.4's exact shape, the
-                           same one the catalog's review row wears, down to the
-                           width-setting wrapper the surface deliberately does not
-                           provide. It is NOT a `Chip`: §8.23.8 renders `fact` as a
-                           `<span>` and closed off making one pressable, and a
-                           button inside a chip inside a button is the shape that
-                           rule exists to prevent.
-                           The pill shows no label of its own, so the accessible
-                           name comes from `aria-label` (§8.27.6). -->
-                      <div class="w-32">
-                        <Select
-                          value={String(scaling.active)}
-                          onValueChange={(v) => setServings(Number(v), scaling.base)}
-                        >
-                          <SelectTrigger
-                            class={valueChipVariants()}
-                            aria-label="How many this recipe is shown for"
-                            data-testid="recipe-servings-chip"
-                          >
-                            <span class="flex items-center gap-1.5">
-                              <Icon name="Users" size={12} />
-                              {fact.label}
-                            </span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {#each servingsOptions(scaling.base, scaling.active) as option (option)}
-                              <SelectItem
-                                value={String(option)}
-                                label={option === scaling.base
-                                  ? `${option} (as written)`
-                                  : String(option)}
-                              />
-                            {/each}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    {:else}
-                      <Chip
-                        variant="fact"
-                        tone={fact.tone ?? 'neutral'}
-                        icon={fact.icon}
-                        data-testid={fact.testId}
-                      >
-                        {fact.label}
-                      </Chip>
-                    {/if}
-                  {/each}
-                </div>
-              {/if}
-              <!-- No leading `#`. The hash was doing the job the outline now does —
-                   saying "this is a tag, not a fact" — back when a tag and a fact
-                   were the same grey pill and the punctuation was the only thing
-                   telling them apart. With the two kinds visibly different it is
-                   just a character in front of every word, and "summer" reads
-                   better than "#summer" on a page about dinner. -->
-              {#if recipe.metadata.tags.length > 0}
-                <div class="flex flex-wrap items-center gap-2">
-                  {#each recipe.metadata.tags as tag (tag)}
-                    <Chip variant="tag">{tag}</Chip>
-                  {/each}
-                </div>
-              {/if}
-              <!-- The planning timeline (issue #1122), and as of #1213 the only
-                   timing graphic on this page — the #878 ribbon it used to sit above
-                   is gone, along with the Prep/Cook/Total chips.
-                   Everything drawn and every figure shown is derived inside the
-                   component from this list — nothing is passed in pre-summed. -->
-              {#if phaseTotals.hasPhases}
-                <RecipePhaseTimeline
-                  {phases}
-                  timingSummary={recipe.metadata.timingSummary ?? null}
-                />
-              {/if}
-              {#if sourceUrl}
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1.5 self-start text-sm text-primary hover:underline"
-                  data-testid="recipe-source-link"
-                >
-                  <Icon name="ExternalLink" size={14} />
-                  View original recipe
-                </a>
-              {/if}
-            </CardContent>
-          </Card>
-        {/if}
+        <!-- Everything the page says about the dish before its ingredients, its
+             own component since issue #1324: description, the fact pills, the
+             tags, the phase strip and the source link. `scaling` and its two
+             functions are threaded in because the number being READ lives in the
+             URL, which is the page's business (`servingsParam.ts`) — the card
+             renders #1317's picker, it does not own it. -->
+        <RecipeIdentityCard
+          {recipe}
+          {editing}
+          onEdit={handleInlineEdit}
+          {scaling}
+          {servingsOptions}
+          {setServings}
+        />
 
         <!-- Made from (issue #752). A meal's components lead, above its own
              ingredients: what a Sunday roast IS — chicken, potatoes, gravy — is

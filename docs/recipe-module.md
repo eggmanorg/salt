@@ -994,6 +994,11 @@ layer-map change**. One Cloud Function (the parse flow) arrives in Phase 3.
 - `packages/adapters/firebase-sync/src/recipe*.ts` — subscription + writes
 - `apps/cloud-functions/src/` — `parseRecipeIngredients` Genkit callable (Phase 3), wrapped in `withAiTimeout`
 - `apps/web-pwa/src/lib/recipeService.ts` + routes — store, list/view/edit UI
+- `apps/web-pwa/src/routes/recipes/RecipeIdentityCard.svelte` — the card under
+  the hero (description, fact pills, tags, phase strip, source link), lifted out
+  of `RecipeViewPage.svelte` by #1324 so it could become editable in place. One
+  consumer by design; `EditableZone.svelte` beside it is the tap-to-edit
+  primitive both it and `RecipeNotesCard.svelte` are built on
 
 ## Access & admin
 

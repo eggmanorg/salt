@@ -451,11 +451,22 @@ export const coverageThresholds = {
   // and BOTH UNCOVERED COUNTS FELL (lines 1846 → 1833, branches 1760 → 1741), which
   // is what says this is coverage earned by new tests rather than a denominator that
   // shrank. Nothing moved down.
+  //
+  // BANKED AGAIN in #1324, and for the same reason in the same direction. Lifting
+  // the identity card out of `RecipeViewPage.svelte` into its own component let
+  // `RecipeIdentityCard.test.ts` drive that markup directly instead of only
+  // through a 3,600-line page, so branches rose 1.02 points past the tolerance and
+  // tripped the staleness half. EVERY FIGURE MOVED THE SAFE WAY and both uncovered
+  // COUNTS FELL — lines 1832 → 1826, branches 1751 → 1748 — which is what
+  // distinguishes earned coverage from a denominator that shrank, and it is why
+  // this is a bank and not a ceiling being raised to admit untested code. No pin
+  // here went down. Measured by `pnpm test:coverage` on this branch and pasted
+  // from the ratchet's own block.
   'apps/web-pwa/src/routes/**': {
-    lines: 81.56,
-    branches: 70.35,
-    uncoveredLines: 1832,
-    uncoveredBranches: 1751,
+    lines: 82.13,
+    branches: 71.37,
+    uncoveredLines: 1826,
+    uncoveredBranches: 1748,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
