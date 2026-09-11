@@ -121,6 +121,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
   canonicaliseIngredients: vi.fn(),
   matchIngredient: vi.fn(),
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  queueRecipeEdit: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  flushRecipeWrites: vi.fn().mockResolvedValue(undefined),
   stashImportedDraft: vi.fn(),
   authorRecipeTraced: vi.fn(),
   regenerateRecipeImage: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -374,5 +376,116 @@ describe('RecipeViewPage — scaling the amounts', () => {
     expect(screen.getByTestId('recipe-servings-chip').textContent).toContain('Serves 4');
     expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
     expect(amountsText()).toContain('300g');
+  });
+});
+
+// ─── Entering edit mode clears the active scale (issue #1324, Daniel's call) ──
+//
+// "When editing you should never be working with the scaled recipe — it should
+// revert to the normal saved recipe." There are TWO halves and both are needed,
+// but only ONE test below is sensitive to the render half specifically — stated
+// exactly, not rounded up, per CLAUDE.md rule 12 (issue #1324 review, should-fix
+// 3, correcting an earlier claim of two in the PR body and the Phase 4 handoff
+// comment):
+//
+//   the URL   — pressing Edit pushes `/recipes/:id` with no `serves` param,
+//               through the same call the Reset button already makes. Pinned by
+//               `cleans the ?serves= out of the URL when Edit is pressed` and
+//               `pushes nothing when there was no scale to clear`, below — both
+//               assert on `push` and never read `scaling` at all.
+//   the pin   — `scaling.active` is held at `scaling.base` while `editing`, so a
+//               `?serves=` arriving any other way (the back button landing on the
+//               entry the push just created, a hand-typed URL) cannot re-create
+//               the state this decision forbids. The mocked router keeps its
+//               `?serves=6` throughout these, which is exactly that case. Only
+//               `puts the amounts and the scaled line back to as written, router
+//               or no router` is sensitive to THIS clause: removing it is what
+//               turns that one test red. `shows the stored count as a box you
+//               can type in` reaches the edit branch through `{#if editing}`,
+//               which short-circuits before `scaling` is read at all, so it
+//               proves nothing about the pin either way.
+//
+// The "amounts scaled" line and the ingredient amounts are NOT edited to achieve
+// any of this — they follow `isScaled` on their own, which is why they are what
+// these assert on.
+//
+// A third, separate route closes the SAME URL back out again once `editing`
+// goes false and the pin above no longer applies — `leaves the scale cleared
+// after Done`, at the foot of this block, pins that one on its own.
+describe('RecipeViewPage — editing is never a scaled view', () => {
+  it('cleans the ?serves= out of the URL when Edit is pressed', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(vi.mocked(push)).toHaveBeenCalledWith('/recipes/recipe-1');
+  });
+
+  it('pushes nothing when there was no scale to clear', async () => {
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+  });
+
+  it('puts the amounts and the scaled line back to as written, router or no router', async () => {
+    // The router still says `serves=6` after the push — jsdom has no real
+    // history and the mock never changes. That is the point: this is the PIN,
+    // and removing the `editing` clause from `scaling` turns it red.
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(amountsText()).toContain('300g');
+    expect(amountsText()).not.toContain('450g');
+    expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
+  });
+
+  it('shows the stored count as a box you can type in, not the scale picker', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
+    await userEvent.click(screen.getByTestId('recipe-edit-servings'));
+    expect((screen.getByTestId('recipe-servings-input') as HTMLInputElement).value).toBe('4');
+  });
+
+  // ASSUMPTION, and Daniel has not ruled on it (#1324 Decisions): leaving edit
+  // mode leaves the scale CLEARED. Done does not resurrect the number you had
+  // been reading at. If he rules the other way, this test is the one line that
+  // changes.
+  it('leaves the scale cleared after Done, rather than resurrecting it', async () => {
+    // `push` is mocked and never actually rewrites `router.querystring`, so
+    // leaving it untouched from here on IS the back button: it is exactly the
+    // shape of landing on the history entry `startEditing`'s own push created —
+    // `editing` stays true across that (#1326's id-keyed reset effect), the URL
+    // still reads `serves=6`, and nothing in this test hand-clears it to
+    // manufacture the state under test (issue #1324 review, should-fix 1 — the
+    // previous version of this test zeroed `mockRouter.querystring` by hand
+    // right before Done, which reached the assertions through a fixture rather
+    // than through the route a back button actually takes).
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+    vi.mocked(push).mockClear();
+
+    await userEvent.click(screen.getByTestId('recipe-done-button'));
+
+    // Done has to make the exact same clearing call Edit does, closing the same
+    // route on the way out that `startEditing` closes on the way in. Without it
+    // `finishEditing` pushes nothing at all here — the router is left at
+    // `serves=6` and the number the reviewer flagged rides back in on it.
+    expect(vi.mocked(push)).toHaveBeenCalledWith('/recipes/recipe-1');
   });
 });
