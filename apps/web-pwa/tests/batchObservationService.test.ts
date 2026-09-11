@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, type Mocked } from 'vitest';
 import { get } from 'svelte/store';
 import type { BatchObservationDoc } from '@salt/domain/schemas';
+import { ErrorCode } from '@salt/shared-types';
 
 // The observation log's write path (issue #812, phase 4 of epic #778).
 //
@@ -124,6 +125,69 @@ describe('batchObservationService — the subscription', () => {
     const unsub = vi.fn();
     fs.subscribeBatchObservations.mockReturnValue(unsub);
     expect(initBatchObservationsSync(BATCH_ID)).toBe(unsub);
+  });
+});
+
+describe('batchObservationService — the instant it refuses (issue #1292)', () => {
+  // CLAUDE.md Rule 12. The header claimed "`at` arrives already an instant" and one
+  // component's `canSave` was the whole of the enforcement — so the claim held only
+  // while this path had a single caller, and #1280 gave it more. These are the tests
+  // that go red if the rail comes out.
+
+  it.each([
+    ['empty', ''],
+    ['prose', 'yesterday evening'],
+    ['a half-typed box', '2026-08-14T08:'],
+    ['an impossible date', '2026-02-31T25:99'],
+  ])('refuses %s rather than writing an entry the log cannot place', async (_label, at) => {
+    const result = await logObservation(input({ at, weightGrams: 1440 }));
+
+    expect(result.kind).toBe('err');
+    if (result.kind !== 'err') throw new Error('unreachable');
+    expect(result.error).toEqual({
+      kind: 'ValidationError',
+      code: ErrorCode.INVALID_OBSERVATION_TIME,
+    });
+    // Refused BEFORE the write, not cleaned up after one.
+    expect(fs.addBatchObservation).not.toHaveBeenCalled();
+  });
+
+  it('does not substitute a clock of its own for the one it refused', async () => {
+    // A silent "now" would file the reading at the wrong point in the very ordering
+    // `at` exists to carry. The caller holds the box and is the only thing that can
+    // ask again.
+    await logObservation(input({ at: 'not a time', weightGrams: 1440 }));
+
+    expect(fs.addBatchObservation).not.toHaveBeenCalled();
+    expect(fs.callSetObservationImageUpload).not.toHaveBeenCalled();
+  });
+
+  it('refuses before the photo, so a rejected entry cannot leave an orphan image', async () => {
+    const result = await logObservation(
+      input({ at: 'not a time', weightGrams: 1440, photoBase64: 'AAAA' }),
+    );
+
+    expect(result.kind).toBe('err');
+    expect(fs.callSetObservationImageUpload).not.toHaveBeenCalled();
+  });
+
+  it('asks only that the instant be readable, not that it be formatted one way', async () => {
+    // `Date.parse` is the bar, exactly as it is in the domain's own stage
+    // transitions. A caller is not made to pre-normalise.
+    const result = await logObservation(
+      input({ at: '2026-08-11T21:40:00+01:00', weightGrams: 1440 }),
+    );
+
+    expect(result.kind).toBe('ok');
+  });
+
+  it('stores one canonical form, so the string ordering IS the instant ordering', async () => {
+    // Firestore orders the log with `orderBy('at', 'asc')` over a string. An offset
+    // form and a Z form of the SAME moment sort an hour apart, so the canonicalising
+    // is what makes the log's ordering true of every caller and not just the sheet.
+    await logObservation(input({ at: '2026-08-11T21:40:00+01:00', weightGrams: 1440 }));
+
+    expect(writtenObservation().at).toBe('2026-08-11T20:40:00.000Z');
   });
 });
 
