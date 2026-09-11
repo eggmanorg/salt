@@ -687,10 +687,24 @@
   // the OLD id against the store rather than read off `recipe`: by the time
   // this effect runs, `recipe` (derived off `params.id`) already reflects the
   // NEW document, so it cannot be the thing pruned here.
+  //
+  // Writes through `writeRecipe` directly rather than through
+  // `handleInlineEdit` (#1336 review round 2, blocking 2): a prune is not a
+  // reword. A row nobody typed into vanishing from `next.steps` is
+  // indistinguishable, to `handleInlineEdit`'s id/text comparison, from a real
+  // step being removed — it would read as invalidating a guided-plan note that
+  // was never pinned to a row that never had content. `finishEditing`'s own
+  // comment already promises this prune is invisible; bypassing the check
+  // entirely is what keeps that true regardless of which of the three exits
+  // fires it. It also sidesteps a second fault the shared door had: this
+  // function's `target` can be a DIFFERENT document from whatever `recipe`
+  // currently derives to (the id-keyed `$effect` below prunes the OLD recipe
+  // while `recipe` already reflects the NEW one, which is not even guaranteed
+  // to be loaded yet — see `handleInlineEdit`'s own comment on that).
   function pruneBlankSteps(target: Recipe | null | undefined): void {
     if (!target) return;
     const pruned = dropBlankRows(target);
-    if (pruned !== target) handleInlineEdit(pruned);
+    if (pruned !== target) writeRecipe(pruned, false);
   }
 
   let lastRecipeId: string | undefined;
@@ -752,32 +766,12 @@
     editing = true;
   }
 
-  // Same rule `applyRecipeAmendment` enforces for the chat path (recipeAmend.ts,
-  // which this campaign does not touch): a step that is gone, or still present
-  // but reworded, invalidates any guided-plan note pinned to it — a note that
-  // still resolves, onto words it was not written against, is worse than a note
-  // that is gone, because nothing shows the mismatch. `RecipeMethodRail` is the
-  // other door a step's TEXT can change through, and until now it did nothing
-  // about this (#1336 review, should-fix 6) — so every inline edit gets the same
-  // check here, the one door they all already come through.
-  //
-  // Guarded to the document actually being edited: `recipe` may not match
-  // `next.id` for a write this function composes on the caller's behalf for a
-  // DIFFERENT recipe (the auto-prune on the recipe just navigated away from,
-  // below) — comparing `recipe.steps` against an unrelated document's `next`
-  // would be a false answer, so that case is skipped rather than guessed at.
-  // The non-null assertion is the same invariant every other reader of `recipe`
-  // in this block relies on: every caller of this function — the template's own
-  // `{#if recipe}` for the cards below, `setTitle`'s explicit guard, and
-  // `pruneBlankSteps`'s own `!target` return — only ever reaches this with the
-  // page actually showing a recipe.
-  function handleInlineEdit(next: Recipe): void {
-    const survivingTextById = new Map(next.steps.map((s) => [s.id, s.text]));
-    const planStepsInvalidated =
-      recipe!.id === next.id
-        ? recipe!.steps.some((s) => survivingTextById.get(s.id) !== s.text)
-        : false;
-
+  // The write plumbing every inline edit shares — queue it, and surface at
+  // most one toast per coalesced burst. `pruneBlankSteps` above calls this
+  // directly with `invalidatesGuidedPlan: false`, bypassing the check
+  // `handleInlineEdit` layers on top of it; every genuine inline edit goes
+  // through `handleInlineEdit` instead, which computes that flag.
+  function writeRecipe(next: Recipe, invalidatesGuidedPlan: boolean): void {
     const write = queueRecipeEdit(next);
     void write.then((result) => {
       if (result.kind !== 'ok') {
@@ -787,8 +781,43 @@
         }
         return;
       }
-      if (planStepsInvalidated) void discardGuidedPlan(next.id);
+      if (invalidatesGuidedPlan) void discardGuidedPlan(next.id);
     });
+  }
+
+  // Same rule `applyRecipeAmendment` enforces for the chat path (recipeAmend.ts,
+  // which this campaign does not touch): a step that is gone, or still present
+  // but reworded, invalidates any guided-plan note pinned to it — a note that
+  // still resolves, onto words it was not written against, is worse than a note
+  // that is gone, because nothing shows the mismatch. `RecipeMethodRail` is the
+  // other door a step's TEXT can change through, and until now it did nothing
+  // about this (#1336 review, should-fix 6) — so every GENUINE inline edit gets
+  // the same check here. The boundary that makes "genuine" load-bearing
+  // (#1336 review round 2, blocking 2): `pruneBlankSteps` does NOT come through
+  // this function any more — it calls `writeRecipe` directly — because a row
+  // nobody typed into disappearing is not a reword, and this comparison alone
+  // cannot tell the two apart (see `writeRecipe`'s own comment, and
+  // `pruneBlankSteps`'s).
+  //
+  // `recipe` can legitimately be `null` here for one caller: the docked chat
+  // pane stays mounted and ungated in edit mode (#1141), so its own "Save as
+  // new recipe" can push a SAME-route navigation to an id the local store does
+  // not hold yet, and this component reuses one instance per route
+  // (#1324/#1326/#1331's recurring finding) — `recipe`, derived off the new
+  // `params.id`, resolves to `null` for that turn. `recipe?.id` rather than
+  // `recipe!.id` is the whole fix: every OTHER caller of this function — the
+  // template's own `{#if recipe}` for the cards below, and `setTitle`'s
+  // explicit guard — only ever reaches it with the page actually showing a
+  // recipe, so the optional chaining changes nothing for them and simply
+  // stops being a lie for the one that differs.
+  function handleInlineEdit(next: Recipe): void {
+    const survivingTextById = new Map(next.steps.map((s) => [s.id, s.text]));
+    const planStepsInvalidated =
+      recipe?.id === next.id
+        ? recipe.steps.some((s) => survivingTextById.get(s.id) !== s.text)
+        : false;
+
+    writeRecipe(next, planStepsInvalidated);
   }
 
   // A recipe must have a name, so an emptied title box is not written. It is not

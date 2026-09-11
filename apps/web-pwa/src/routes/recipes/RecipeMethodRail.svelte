@@ -53,21 +53,34 @@
    * gestures — reorder, remove, `Add step` — carry no in-flight text at all
    * (`RecipeMadeFromCard`'s own argument for holding no draft), so they compose
    * straight off `recipe.steps` with no per-field patch either. Neither path
-   * ever sends the WHOLE draft back — that was the bug: one gesture on step 1
-   * used to write `stepsDraft` in full, which silently deleted a concurrent
-   * amendment's rewording of step 7. `stepsDraft` is still updated alongside
-   * every one of these, purely so the rail keeps DRAWING what the gesture just
-   * did — it is never again the thing a write is composed FROM.
+   * ever sends the WHOLE draft back — that was the original bug: one gesture on
+   * step 1 used to write `stepsDraft` in full, which silently deleted a
+   * concurrent amendment's rewording of step 7.
    *
-   * The boundary on that, stated rather than implied: while a box is open, a
+   * ROUND 2 OF THAT SAME REVIEW (#1336, blocking 1) caught the fix's own
+   * overcorrection: `commitWrite` (below) is the only place `onEdit` fires, and
+   * every caller used to hand its RESULT straight to `stepsDraft` too — which
+   * re-seeded the entire draft from `recipe.steps` on every gesture, undoing
+   * the separation this header already claimed. `commitWrite` therefore now
+   * does the write and NOTHING else; each gesture separately applies its own
+   * operation to `stepsDraft` — `updateStep` patches the one id it names,
+   * `addStep`/`removeStep` append/filter that one id, `reorderSteps` reorders
+   * the draft's own objects (never fetching replacement content for them) —
+   * so a sibling step's draft entry is never touched by a gesture that isn't
+   * about it, and neither is the very step a gesture DOES touch, beyond the
+   * field that gesture owns.
+   *
+   * The boundary, stated rather than implied: while a box is open, a
    * concurrent write to this recipe's OWN steps stays out of the rail's own
    * DRAWING until the draft is re-seeded — the step you are not touching still
-   * SHOWS what it showed when the box opened. It is no longer reverted: every
-   * write this component makes is composed off `recipe.steps` at the moment it
-   * fires, so the concurrent write itself survives every gesture that follows
-   * it, including a keystroke in an unrelated step's box. That is the trade the
-   * timing strip already made for repainting, and it is the right one for a
-   * surface you type into — visibility lags, the write does not.
+   * SHOWS what it showed when the box opened, and STAYS showing it through
+   * every later gesture, not just until the next one. A concurrent write
+   * cannot repaint an open box, full stop — `RecipeMethodRail.test.ts` pins
+   * this by rewording the very step a box has open from underneath it and then
+   * firing an unrelated gesture, and asserting the box still shows what it
+   * showed before either. That is the trade the timing strip already made for
+   * repainting, and it is the right one for a surface you type into —
+   * visibility lags, the write does not.
    *
    * BLANK STEPS ARE KEPT WHILE EDITING AND DROPPED ON EVERY EXIT FROM EDIT MODE
    * — issue #1319's settled rule, implemented in `blankRows.ts` and composed
@@ -142,46 +155,64 @@
 
   // The one place any of these gestures actually reaches `onEdit`. `next` is
   // always composed by the CALLER off `recipe.steps` — never off `stepsDraft` —
-  // so this only ever mirrors that result into the draft for drawing and sends
-  // it out. Nothing downstream of this point can smuggle a stale sibling step
-  // back into a write (#1336 review, blocking 1).
-  function commitSteps(next: Step[]): void {
-    stepsDraft = next;
+  // and this NEVER touches `stepsDraft` itself (#1336 review round 2, blocking
+  // 1): re-seeding the whole draft from the write's own result is exactly what
+  // let a concurrent rewording of an open box's own step, or any other step,
+  // get pulled back in by the very next unrelated gesture. Each caller below
+  // updates `stepsDraft` itself, separately, with ONLY the one operation that
+  // gesture owns.
+  function commitWrite(next: Step[]): void {
     onEdit({ ...recipe, steps: next });
   }
 
-  // A keystroke in one step's words, note, or either timer box. Patches ONLY
-  // the named field(s) onto the matching step in the freshest `recipe.steps` —
-  // never the whole draft — so a concurrent write to a SIBLING step (a chat
-  // amendment, another phone) is never rolled back by typing in this one.
+  // A keystroke in one step's words, note, or either timer box. The WRITE
+  // patches ONLY the named field(s) onto the matching step in the freshest
+  // `recipe.steps` — never the whole draft — so a concurrent write to a
+  // SIBLING step (a chat amendment, another phone) is never rolled back by
+  // typing in this one. The DRAFT gets the identical patch applied to its own
+  // matching step and nothing else, so every other step's draft entry —
+  // including one a concurrent write just reworded — is untouched.
   function updateStep(id: string, patch: Partial<Step>): void {
-    commitSteps(recipe.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    commitWrite(recipe.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    stepsDraft = stepsDraft.map((s) => (s.id === id ? { ...s, ...patch } : s));
   }
 
   // Reorder, remove and `Add step` carry no in-flight text at all — the same
-  // argument `RecipeMadeFromCard` makes for holding no draft — so they compose
-  // straight off `recipe.steps` too, never off the possibly-stale `stepsDraft`.
+  // argument `RecipeMadeFromCard` makes for holding no draft — so the WRITE
+  // composes straight off `recipe.steps`, never off the possibly-stale
+  // `stepsDraft`. The DRAFT gets the same structural change applied to its own
+  // list — appending the same new step, or filtering the same id — so a
+  // sibling step's draft entry, open box included, is never touched.
   function addStep(): void {
-    commitSteps([...recipe.steps, newStep(crypto.randomUUID(), '')]);
+    const created = newStep(crypto.randomUUID(), '');
+    commitWrite([...recipe.steps, created]);
+    stepsDraft = [...stepsDraft, created];
   }
 
   function removeStep(id: string): void {
-    commitSteps(recipe.steps.filter((s) => s.id !== id));
+    commitWrite(recipe.steps.filter((s) => s.id !== id));
+    stepsDraft = stepsDraft.filter((s) => s.id !== id);
   }
 
   // `ReorderControl` hands back `items` (i.e. `steps`, which while editing IS
-  // `stepsDraft`) reordered by one swap. Its CONTENT can be stale — the same
-  // draft-vs-store gap every other gesture here has to mind — so only the ORDER
-  // OF IDS is taken from it; that order is replayed against the fresh
-  // `recipe.steps` objects, and any step the fresh list has that the reordered
-  // input didn't (added by a concurrent write since the draft was last seeded)
-  // is appended rather than silently dropped.
+  // `stepsDraft`) reordered by one swap. For the WRITE, its CONTENT can be
+  // stale — the same draft-vs-store gap every other gesture here has to mind —
+  // so only the ORDER OF IDS is taken from it; that order is replayed against
+  // the fresh `recipe.steps` objects, and any step the fresh list has that the
+  // reordered input didn't (added by a concurrent write since the draft was
+  // last seeded) is appended rather than silently dropped. For the DRAFT,
+  // `next` is already exactly right as it stands: `ReorderControl.move` only
+  // splices POSITIONS, never content, so `next` still holds the draft's own
+  // objects — including whatever a still-open box has typed — merely
+  // reordered. Assigning it straight to `stepsDraft` reorders the rail without
+  // fetching replacement content for a single step.
   function reorderSteps(next: Step[]): void {
     const order = next.map((s) => s.id);
     const byId = new Map(recipe.steps.map((s) => [s.id, s] as const));
     const reordered = order.map((id) => byId.get(id)).filter((s): s is Step => s !== undefined);
     const appended = recipe.steps.filter((s) => !order.includes(s.id));
-    commitSteps([...reordered, ...appended]);
+    commitWrite([...reordered, ...appended]);
+    stepsDraft = next;
   }
 
   // A note is stored as `null` when there is none, never as `''` — that is what

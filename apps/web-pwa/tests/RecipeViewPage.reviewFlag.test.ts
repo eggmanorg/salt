@@ -604,6 +604,22 @@ describe('RecipeViewPage — the blank row you never typed into', () => {
     expect(queueRecipeEdit).not.toHaveBeenCalled();
   });
 
+  // #1336 review round 2, blocking 2: a prune is not a reword. A row nobody
+  // typed into disappearing from `next.steps` looks, to a naive id/text
+  // comparison, exactly like a step being removed — which `handleInlineEdit`'s
+  // guided-plan check would otherwise read as invalidating. It must not: the
+  // row never carried a plan note to begin with, and `finishEditing`'s own
+  // comment promises this prune is invisible.
+  it('does not discard the guided plan when Done only prunes a blank row', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+
+    await pressDone();
+
+    expect(discardGuidedPlan).not.toHaveBeenCalled();
+  });
+
   // #1336 review, blocking 3: the same argument that keeps a wordless step
   // carrying a note applies to one carrying a timer — a cook set that
   // deliberately too, and dropping it would lose it just as silently.
@@ -685,6 +701,30 @@ describe('RecipeViewPage — the blank-row prune reaches every exit from edit mo
     await rerender({ params: { id: 'recipe-2' } });
 
     expect(stepsOf(RECIPE_ID).map((s) => s.text)).toEqual(['Mix the dough']);
+  });
+
+  // #1336 review round 2, blocking 2: the docked chat pane stays mounted and
+  // ungated in edit mode (#1141), so its own "Save as new recipe" can push a
+  // SAME-route navigation to an id the local store does not hold yet —
+  // `recipe` (derived off the new `params.id`) resolves to `null` for one
+  // turn, while this effect's prune still targets the OLD id being left
+  // behind. `handleInlineEdit`'s guided-plan check used to dereference the
+  // (now null) `recipe` unconditionally and throw before `editing = false`
+  // ran, stranding the cook in edit mode on the new document.
+  it('drops a blank step and still leaves edit mode when the route moves to an id not yet in the store (Save as new recipe)', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    const { getByTestId, queryByTestId, rerender } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step-add'));
+    expect(stepsOf(RECIPE_ID)).toHaveLength(2);
+
+    await rerender({ params: { id: 'brand-new-id' } });
+
+    expect(stepsOf(RECIPE_ID).map((s) => s.text)).toEqual(['Mix the dough']);
+    expect(queryByTestId('recipe-done-button')).toBeNull();
   });
 
   it('does nothing when the recipe left behind is already gone from the store (e.g. deleted elsewhere)', async () => {

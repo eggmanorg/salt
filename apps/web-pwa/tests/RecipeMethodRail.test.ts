@@ -358,20 +358,25 @@ describe('RecipeMethodRail — what the boxes are fed from', () => {
   // another phone, or a chat amendment applied in the docked pane — must not
   // repaint what the cook is mid-word in.
   //
-  // #1336 review, blocking 1: nor may a LATER gesture, on a step the cook is
-  // NOT typing in, write that stale pre-amendment list back over the
-  // concurrent write. Before the fix this test's own second half failed: the
-  // reorder wrote `stepsDraft` in full, silently deleting the amendment's
-  // reword of s2 and its new s3.
+  // #1336 review round 2, blocking 1: nor may a LATER gesture — on the SAME
+  // step, or an unrelated one — write that stale pre-amendment list back over
+  // the concurrent write. The amendment here rewords step 1 ITSELF, exactly
+  // the review's own repro (an amendment rewording the step whose box is
+  // open, then an unrelated gesture — Move step down counts, since it is not
+  // a keystroke in step 1's own box). Before this fix `commitSteps` re-seeded
+  // `stepsDraft` from `recipe.steps` on every gesture, so the move-down click
+  // repainted the still-open box to the amendment's words — caret and all.
   it('ignores a concurrent write to the same recipe while a box is open, and a later gesture does not revert it', async () => {
     const mine = recipeWith([step('s1', 'Mix the dough'), step('s2', 'Bake')]);
     const { rerender } = show(mine, true);
     await open('recipe-edit-step');
 
+    // The docked chat pane's amendment lands: it rewords the very step this
+    // box has open, and adds a third step.
     await rerender(
       props(
         recipeWith([
-          step('s1', 'Mix the dough'),
+          step('s1', 'Mix the dough thoroughly'),
           step('s2', 'Bake until deep gold'),
           step('s3', 'Rest before slicing'),
         ]),
@@ -379,16 +384,20 @@ describe('RecipeMethodRail — what the boxes are fed from', () => {
       ),
     );
 
+    // The open box still shows what it showed when it opened — the
+    // amendment's reword of THIS step must not repaint it.
     expect(screen.getByTestId('recipe-edit-step-field')).toHaveValue('Mix the dough');
 
-    // A gesture on an unrelated step (move step 1 down) must not carry the
-    // stale, pre-amendment draft back over the amendment's reword of s2 and
-    // its new s3.
+    // A gesture that is not a keystroke in step 1's own box (move it down)
+    // must not carry the amendment's reword into the open box, and must not
+    // carry the stale, pre-amendment draft back over the amendment's reword
+    // of s2 and its new s3 either.
     await fireEvent.click(screen.getAllByLabelText('Move step down')[0]!);
 
     const steps = lastSteps();
     expect(steps.find((s) => s.id === 's2')!.text).toBe('Bake until deep gold');
     expect(steps.map((s) => s.id)).toContain('s3');
+    expect(screen.getByTestId('recipe-edit-step-field')).toHaveValue('Mix the dough');
   });
 
   // Standing requirement 1. `/recipes/:id` is one route, so a "Made from" tap
