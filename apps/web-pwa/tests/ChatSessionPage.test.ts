@@ -49,6 +49,12 @@ vi.mock('../src/lib/recipeService.js', () => ({
   attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   // Identity — attribution (#845) has its own suite; this one is about the page.
   stampRecipeAttribution: <T>(recipe: T) => recipe,
+  // The write-ordering seams `applyRecipeAmendment` uses (issue #1330). Identity
+  // and no-ops here: the ordering itself is pinned in
+  // `recipeAmend.coalescedEdit.test.ts`, against the real service.
+  flushRecipeWrites: vi.fn().mockResolvedValue(undefined),
+  getRecipeSnapshot: vi.fn(() => undefined),
+  applyRecipeOptimistically: <T>(recipe: T) => recipe,
 }));
 // Reached through `applyRecipeAmendment`, not by this page (issue #918) — which
 // is the point of the suite at the bottom of this file.

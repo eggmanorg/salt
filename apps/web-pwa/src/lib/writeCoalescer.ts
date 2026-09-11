@@ -109,11 +109,19 @@ export interface WriteCoalescer<T> {
    * than a pending entry even though its own write is the one landing later,
    * so the comparison cannot tell that case apart from a pending entry that
    * is genuinely newer, and this guard protects neither ordering for it.
-   * `recipeAmend.ts`'s `applyRecipeAmendment` stamps this way (`updatedAt` set
-   * when the AI call starts, never re-stamped before its own direct
-   * `saveRecipeDoc`) — it does not call `cancel` at all today, so it is
-   * outside this guard's scope either way; #1330 tracks that path on its own,
-   * separately from this one.
+   * `recipeAmend.ts`'s `applyRecipeAmendment` used to stamp this way
+   * (`updatedAt` set when the AI call starts, never re-stamped before its own
+   * direct `saveRecipeDoc`); #1330 changed it to flush first and stamp at write
+   * time through `applyRecipeOptimistically`, so it is no longer an example of
+   * this. It still does not call `cancel`, deliberately — after its flush the
+   * only entries that can be pending are ones queued DURING that flush: either
+   * during its own round trip (a keystroke landing while the amendment's write
+   * is out) or during the flush's own await (`flushKey` deletes a key's entry
+   * before awaiting its write, so a keystroke arriving in that gap opens a
+   * fresh one before the flush call even returns) — the wider of the two
+   * windows, and either way something must be left to flush on its own. No
+   * caller of `cancel` stamps early today; this paragraph states the boundary
+   * for the next one that might.
    *
    * A no-op when nothing is pending for `key`.
    */

@@ -94,6 +94,22 @@ export function getRecipesSnapshot(): readonly Recipe[] {
   return get(_recipes);
 }
 
+/**
+ * The store's current copy of one recipe, or `undefined` when it holds none.
+ *
+ * The seam `recipeAmend` composes against (issue #1330). A chat amendment is
+ * merged onto the recipe as it stood when the librarian was CALLED, and the user
+ * can keep typing into the in-place editor for the whole round trip plus however
+ * long they spend reading the diff. Re-basing that merge on this copy is what
+ * lets the amendment carry those keystrokes instead of reverting them.
+ *
+ * A function rather than a second store: the caller wants one document once, at
+ * write time, not a subscription.
+ */
+export function getRecipeSnapshot(id: string): Recipe | undefined {
+  return get(recipesById).get(id);
+}
+
 const _isLoadingRecipes = writable(true);
 export const isLoadingRecipes: Readable<boolean> = _isLoadingRecipes;
 
@@ -157,11 +173,14 @@ export function initRecipeSync(): () => void {
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
-// Stamp attribution (issue #845). The ONE implementation, and exported because
-// the two chat write paths (`chatRecipeAuthor`, `recipeAmend`) go to
-// `saveRecipeDoc` directly rather than through `persistRecipe` — three surfaces
-// stamping their own would be three chances to forget one, exactly as
-// `createdAt`/`updatedAt` are stamped once per path and no more.
+// Stamp attribution (issue #845). The ONE implementation, exported because
+// `chatRecipeAuthor` goes to `saveRecipeDoc` directly rather than through
+// `persistRecipe` and so must stamp itself — a second inline stamp there would
+// be a second chance to forget one, exactly as `createdAt`/`updatedAt` are
+// stamped once per path and no more. `recipeAmend`'s apply used to be a second
+// direct caller of THIS function; since issue #1330 it stamps through
+// `applyRecipeOptimistically` below instead, so this function now has exactly
+// two callers — that function's own body, and `chatRecipeAuthor`.
 //
 // `lastEditedBy` on every write, `createdBy` only when it is still blank: a
 // recipe is added once and edited forever, so `createdBy` is fill-once and is
@@ -183,6 +202,10 @@ export function stampRecipeAttribution(recipe: Recipe): Recipe {
 // Stamp updatedAt + attribution and update the store optimistically —
 // SYNCHRONOUSLY. Split out of `persistRecipe` by issue #1319 so the coalesced
 // path below can share it: only the `setDoc` is ever deferred, never the apply.
+// Exported for `recipeAmend`'s apply (issue #1330), which is the third and last
+// caller: stamping `updatedAt` anywhere but here would be a fourth stamping
+// site, and the amendment's write needs the same `latestLocalEdit` registration
+// every other recipe write gets or `applySnapshot` discards its own echo.
 // Every in-place editor rebuilds the whole recipe from the store copy it is
 // rendering, so a deferred apply would let two edits to different fields both
 // build on the same stale document and the second silently discard the first.
@@ -192,7 +215,7 @@ export function stampRecipeAttribution(recipe: Recipe): Recipe {
 // never mattered while a save was one deliberate tap; with a keystroke-rate
 // writer in front of it, a list re-ordering under the reader on every character
 // would be the visible cost of a detail that carries nothing.
-function applyRecipeOptimistically(recipe: Recipe): Recipe {
+export function applyRecipeOptimistically(recipe: Recipe): Recipe {
   const stamped: Recipe = stampRecipeAttribution({
     ...recipe,
     updatedAt: new Date().toISOString(),
