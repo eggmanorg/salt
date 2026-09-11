@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import type { Recipe } from '@salt/domain';
+import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import type { Recipe, Step } from '@salt/domain';
 
 // Unreviewed-import banner (issue #616). A URL-imported recipe is persisted by
 // the callable with needs_approval set — raw AI output nobody has read. The
@@ -65,6 +65,7 @@ vi.mock('../src/lib/productFormService.js', () => {
 vi.mock('../src/lib/guidedPlanService.js', () => ({
   guidedPlan: mockGuidedPlan,
   initGuidedPlanSync: vi.fn(() => () => {}),
+  discardGuidedPlan: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 // #812: the page subscribes to the recipe's formula to decide whether to offer
 // "Bake a batch" and a link to the formula screen. `null` is loaded-and-there-is-
@@ -128,9 +129,15 @@ vi.mock('../src/lib/recipeService.js', () => ({
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { persistRecipe, queueRecipeEdit, flushRecipeWrites } from '../src/lib/recipeService.js';
+import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const RECIPE_ID = 'recipe-1';
+
+// Shared by the blank-row suite and the exit-from-edit-mode suite below — one
+// step with real words, so a freshly `Add step`-ed second row is the only
+// thing either suite's assertions can be about.
+const WITH_A_STEP = { steps: [{ id: 'step-1', text: 'Mix the dough', note: null, timer: null }] };
 
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
@@ -495,5 +502,304 @@ describe('RecipeViewPage — edit mode', () => {
     await fireEvent.input(getByTestId('recipe-title-input'), { target: { value: 'Carbonara' } });
 
     await waitFor(() => expect(vi.mocked(addToast).mock.calls.length).toBe(2));
+  });
+});
+
+// ─── The blank row you never typed into (issue #1319, Phase 4) ─────────────────
+// A row added and left empty is KEPT while you are editing — pruning on a
+// keystroke would delete it out from under you — and dropped when you press Done,
+// which is already the one deliberate boundary in the flow. The rule itself is
+// `blankRows.ts`; what is pinned here is the FLOW, which is why every case below
+// presses `Add step` in the UI rather than planting a blank step in a fixture
+// (standing requirement 4 — a fixture-planted row pins the filter, not Done).
+//
+// These cases live in this file rather than in one of their own because Done's
+// obligations are already pinned here, and because a second RecipeViewPage suite
+// would breach UT-B1 on its twelve mocked seams for no new coverage.
+//
+// For the flow to mean anything, `queueRecipeEdit` has to behave like the real one
+// in the single respect it depends on: it applies to the store SYNCHRONOUSLY, so
+// the page's `recipe` — and therefore what Done prunes — carries the row the cook
+// just added. A mock that resolves and writes nothing would make every case below
+// pass with the prune deleted.
+describe('RecipeViewPage — the blank row you never typed into', () => {
+  beforeEach(() => {
+    vi.mocked(queueRecipeEdit).mockImplementation((next: Recipe) => {
+      mockRecipes._set([next]);
+      return Promise.resolve({ kind: 'ok', value: undefined });
+    });
+  });
+
+  /** The steps as the last write composed them. */
+  function writtenSteps(): readonly Step[] {
+    return vi.mocked(queueRecipeEdit).mock.calls.at(-1)![0].steps;
+  }
+
+  async function startEditing(): Promise<void> {
+    renderPage();
+    await fireEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+  }
+
+  async function pressDone(): Promise<void> {
+    await fireEvent.click(screen.getByTestId('recipe-done-button'));
+    await waitFor(() => expect(screen.queryByTestId('recipe-done-button')).toBeNull());
+  }
+
+  it('keeps a freshly added step while you are still editing', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+
+    expect(writtenSteps()).toHaveLength(2);
+    expect(screen.getAllByTestId('recipe-view-step')).toHaveLength(2);
+  });
+
+  it('drops it on Done — the step the test itself added, not one a fixture planted', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    expect(writtenSteps()).toHaveLength(2);
+
+    await pressDone();
+
+    expect(writtenSteps().map((s) => s.text)).toEqual(['Mix the dough']);
+  });
+
+  it('keeps the step once it has words in it', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-field'), {
+      target: { value: 'Shape the loaf' },
+    });
+
+    await pressDone();
+
+    expect(writtenSteps().map((s) => s.text)).toEqual(['Mix the dough', 'Shape the loaf']);
+  });
+
+  it('keeps a wordless step that carries a note — somebody wrote that deliberately', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step-note')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-note-field'), {
+      target: { value: 'Ask Nan about the hydration' },
+    });
+
+    await pressDone();
+
+    expect(writtenSteps()).toHaveLength(2);
+    expect(writtenSteps()[1]!.text).toBe('');
+  });
+
+  it('writes nothing at all on Done when there is no blank row to drop', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+
+    await pressDone();
+
+    expect(queueRecipeEdit).not.toHaveBeenCalled();
+  });
+
+  // #1336 review round 2, blocking 2: a prune is not a reword. A row nobody
+  // typed into disappearing from `next.steps` looks, to a naive id/text
+  // comparison, exactly like a step being removed — which `handleInlineEdit`'s
+  // guided-plan check would otherwise read as invalidating. It must not: the
+  // row never carried a plan note to begin with, and `finishEditing`'s own
+  // comment promises this prune is invisible.
+  it('does not discard the guided plan when Done only prunes a blank row', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+
+    await pressDone();
+
+    expect(discardGuidedPlan).not.toHaveBeenCalled();
+  });
+
+  // #1336 review, blocking 3: the same argument that keeps a wordless step
+  // carrying a note applies to one carrying a timer — a cook set that
+  // deliberately too, and dropping it would lose it just as silently.
+  it('keeps a wordless step that carries a timer — a cook set that deliberately', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step-timer')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
+      target: { value: '30' },
+    });
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-label'), {
+      target: { value: 'rest' },
+    });
+
+    await pressDone();
+
+    expect(writtenSteps()).toHaveLength(2);
+    expect(writtenSteps()[1]!.timer).toEqual({ durationMinutes: 30, description: 'rest' });
+  });
+
+  // #1336 review, should-fix 4, adjudicated up because it is coupled to
+  // blocking 3: once a timer protects a step from the prune, a persisted
+  // 0-minute timer would keep a wordless step alive too. `RecipeMethodRail`'s
+  // own collapse-to-null is what keeps that from ever reaching this page.
+  it('drops a wordless step whose + Timer was typed into and abandoned', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step-timer')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
+      target: { value: '5' },
+    });
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-timer-minutes'), {
+      target: { value: '' },
+    });
+
+    await pressDone();
+
+    // No timer ever really existed by the time Done ran, and the step has no
+    // words and no note either — the phantom "0 min" chip this used to leave
+    // behind never gets the chance to render.
+    expect(writtenSteps()).toHaveLength(1);
+  });
+});
+
+// ─── The prune's other two doors (issue #1336 review, blocking 2) ──────────────
+// Done is not the only way edit mode ends. A route change to a different
+// recipe (the id-keyed `$effect`) and the page unmounting outright
+// (`onDestroy`) both used to leave a blank step behind for good — the exact
+// outcome #1319 rejected "never pruning" to prevent. These need a store that
+// holds MORE THAN ONE recipe, and a `queueRecipeEdit` mock that updates only
+// the one being written rather than replacing the whole array (the blank-row
+// suite's own mock does the latter, which would silently delete the other
+// fixture recipe on the very first edit).
+describe('RecipeViewPage — the blank-row prune reaches every exit from edit mode', () => {
+  beforeEach(() => {
+    vi.mocked(queueRecipeEdit).mockImplementation((next: Recipe) => {
+      mockRecipes._set(mockRecipes._get().map((r) => (r.id === next.id ? next : r)));
+      return Promise.resolve({ kind: 'ok', value: undefined });
+    });
+  });
+
+  function stepsOf(id: string): readonly Step[] {
+    return mockRecipes._get().find((r) => r.id === id)!.steps;
+  }
+
+  it('drops a blank step when the route moves to a different recipe while editing (a "Made from" tap)', async () => {
+    const other = makeRecipe({ id: 'recipe-2', title: 'Other' });
+    mockRecipes._set([makeRecipe(WITH_A_STEP), other]);
+    const { getByTestId, rerender } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step-add'));
+    expect(stepsOf(RECIPE_ID)).toHaveLength(2);
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    expect(stepsOf(RECIPE_ID).map((s) => s.text)).toEqual(['Mix the dough']);
+  });
+
+  // #1336 review round 2, blocking 2: the docked chat pane stays mounted and
+  // ungated in edit mode (#1141), so its own "Save as new recipe" can push a
+  // SAME-route navigation to an id the local store does not hold yet —
+  // `recipe` (derived off the new `params.id`) resolves to `null` for one
+  // turn, while this effect's prune still targets the OLD id being left
+  // behind. `handleInlineEdit`'s guided-plan check used to dereference the
+  // (now null) `recipe` unconditionally and throw before `editing = false`
+  // ran, stranding the cook in edit mode on the new document.
+  it('drops a blank step and still leaves edit mode when the route moves to an id not yet in the store (Save as new recipe)', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    const { getByTestId, queryByTestId, rerender } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step-add'));
+    expect(stepsOf(RECIPE_ID)).toHaveLength(2);
+
+    await rerender({ params: { id: 'brand-new-id' } });
+
+    expect(stepsOf(RECIPE_ID).map((s) => s.text)).toEqual(['Mix the dough']);
+    expect(queryByTestId('recipe-done-button')).toBeNull();
+  });
+
+  it('does nothing when the recipe left behind is already gone from the store (e.g. deleted elsewhere)', async () => {
+    const other = makeRecipe({ id: 'recipe-2', title: 'Other' });
+    mockRecipes._set([makeRecipe(WITH_A_STEP), other]);
+    const { getByTestId, rerender } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step-add'));
+    expect(stepsOf(RECIPE_ID)).toHaveLength(2);
+
+    vi.mocked(queueRecipeEdit).mockClear();
+    mockRecipes._set([other]);
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    expect(queueRecipeEdit).not.toHaveBeenCalled();
+  });
+
+  it('drops a blank step when the page unmounts entirely while still editing (Back, a nav tap, or New → Manual)', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    const { getByTestId, unmount } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step-add'));
+    expect(stepsOf(RECIPE_ID)).toHaveLength(2);
+
+    unmount();
+
+    expect(stepsOf(RECIPE_ID).map((s) => s.text)).toEqual(['Mix the dough']);
+  });
+});
+
+// ─── An in-place reword discards a stale guided-plan note (#1336 review,
+// should-fix 6) ──────────────────────────────────────────────────────────────
+// `applyRecipeAmendment` (recipeAmend.ts, untouched by this campaign) already
+// enforces this rule for the chat path: a step that is gone, or present but
+// reworded, invalidates any guided-plan note pinned to it. The rail is the
+// other door a step's text can change through, and `handleInlineEdit` is
+// where every inline write — the rail's included — already comes through, so
+// that is where the same check now lives.
+describe('RecipeViewPage — an in-place reword discards a stale guided-plan note', () => {
+  // Explicit rather than relying on whatever a sibling describe's own
+  // `beforeEach` last left `queueRecipeEdit` doing: this suite only needs the
+  // write to resolve ok, never a store that reflects it.
+  beforeEach(() => {
+    vi.mocked(queueRecipeEdit).mockResolvedValue({ kind: 'ok', value: undefined });
+  });
+
+  it('discards the guided plan when a step is reworded in place', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-step'));
+    await fireEvent.input(getByTestId('recipe-edit-step-field'), {
+      target: { value: 'Mix the dough thoroughly' },
+    });
+
+    await waitFor(() => expect(discardGuidedPlan).toHaveBeenCalledWith(RECIPE_ID));
+  });
+
+  it('leaves the guided plan alone when an edit does not touch any step (e.g. the title)', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-title'));
+    await fireEvent.input(getByTestId('recipe-title-input'), { target: { value: 'New Title' } });
+
+    await waitFor(() => expect(queueRecipeEdit).toHaveBeenCalled());
+    expect(discardGuidedPlan).not.toHaveBeenCalled();
   });
 });

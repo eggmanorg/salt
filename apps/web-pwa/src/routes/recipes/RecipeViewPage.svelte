@@ -30,7 +30,7 @@
     TextField,
     type ImageCropperHandle,
   } from '@salt/ui-components';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { push, router } from 'svelte-spa-router';
   import { trackUsageEvent } from '@salt/observability';
   // The ⋮ menu's two canned chef turns, declared here until #934. They moved into
@@ -68,7 +68,9 @@
   import RecipeIdentityCard from './RecipeIdentityCard.svelte';
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
-  import { componentTimeLabel } from './recipeTiming.js';
+  import RecipeMadeFromCard from './RecipeMadeFromCard.svelte';
+  import RecipeMethodRail from './RecipeMethodRail.svelte';
+  import { dropBlankRows } from './blankRows.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
   import { chatsForRecipe } from './recipeChats.js';
@@ -115,7 +117,11 @@
   import { recipeChatPanePrefs } from '../../lib/recipeChatPanePrefs.svelte.js';
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import type { DomainError, ReadResult } from '@salt/shared-types';
-  import { guidedPlan, initGuidedPlanSync } from '../../lib/guidedPlanService.js';
+  import {
+    guidedPlan,
+    initGuidedPlanSync,
+    discardGuidedPlan,
+  } from '../../lib/guidedPlanService.js';
   import { formula, initFormulaSync } from '../../lib/formulaService.js';
   import { currentMember } from '../../lib/membersService.js';
   import { defaultListId } from '../../lib/shoppingListService.svelte.js';
@@ -180,8 +186,8 @@
   const canAuthor = $derived(recipe !== null && isAuthorable(kindOf(recipe)));
 
   // ─── The dishes this dinner is made of (issue #752) ─────────────────────────
-  // Display only — attaching, reordering and removing all live in the editor,
-  // because they are edits to the document and belong with every other one.
+  // Resolved HERE and handed to `RecipeMadeFromCard`, which reads them and — since
+  // issue #1319 Phase 3 — is also where they are attached, removed and reordered.
   //
   // Resolved against the same in-memory `recipes` store the rest of the page
   // reads, so an id whose recipe has been deleted elsewhere simply produces one
@@ -512,17 +518,6 @@
   // step screen call, so the three cannot disagree about when it comes out.
   const kitByStep = $derived(groupKitByStep(recipe?.kit ?? [], recipe?.steps ?? []));
 
-  // An hour is the point at which a timer stops being something you stand over.
-  // Below it you are still in the kitchen; at or above it the step is a wait you
-  // plan the evening around, and the two overnight proves in a bread recipe are
-  // the whole reason this exists. One threshold, no band in the middle — the same
-  // rule `formatMinutes` switches on, so "12 hr" and "Hands-off" always agree.
-  const HANDS_OFF_MINUTES = 60;
-
-  function isHandsOff(step: Step): boolean {
-    return (step.timer?.durationMinutes ?? 0) >= HANDS_OFF_MINUTES;
-  }
-
   // ─── Canonicalise ────────────────────────────────────────────────────────────
   let canonalising = $state(false);
 
@@ -684,13 +679,60 @@
   // this effect and silently drop the user out of edit mode. Comparing the id
   // value instead makes this react only to an actual recipe change, which is
   // the only case #1324's Phase 4 relies on this clearing for.
+  // The prune's OTHER two doors (issue #1336 review, blocking 2): a route
+  // change while editing must drop a blank step from the recipe being LEFT
+  // before it forgets that recipe, same as `finishEditing` does on Done — else
+  // a "Made from" tap after `Add step`, or any other same-route navigation
+  // taken mid-edit, leaves a wordless step on the recipe forever. Looked up by
+  // the OLD id against the store rather than read off `recipe`: by the time
+  // this effect runs, `recipe` (derived off `params.id`) already reflects the
+  // NEW document, so it cannot be the thing pruned here.
+  //
+  // Writes through `writeRecipe` directly rather than through
+  // `handleInlineEdit` (#1336 review round 2, blocking 2): a prune is not a
+  // reword. A row nobody typed into vanishing from `next.steps` is
+  // indistinguishable, to `handleInlineEdit`'s id/text comparison, from a real
+  // step being removed — it would read as invalidating a guided-plan note that
+  // was never pinned to a row that never had content. `finishEditing`'s own
+  // comment already promises this prune is invisible; bypassing the check
+  // entirely is what keeps that true regardless of which of the three exits
+  // fires it. It also sidesteps a second fault the shared door had: this
+  // function's `target` can be a DIFFERENT document from whatever `recipe`
+  // currently derives to (the id-keyed `$effect` below prunes the OLD recipe
+  // while `recipe` already reflects the NEW one, which is not even guaranteed
+  // to be loaded yet — see `handleInlineEdit`'s own comment on that).
+  function pruneBlankSteps(target: Recipe | null | undefined): void {
+    if (!target) return;
+    const pruned = dropBlankRows(target);
+    if (pruned !== target) writeRecipe(pruned, false);
+  }
+
   let lastRecipeId: string | undefined;
   $effect(() => {
     const id = params.id;
     if (id === lastRecipeId) return;
+    // `previousId` is only ever `undefined` on the very first run of this
+    // effect (the component's own mount), and `editing` starts `false` and can
+    // only become `true` through a later user action — so whenever `editing`
+    // is true here, this is never that first run, and `previousId` is always a
+    // real id. No separate check for that is needed, and none is written: it
+    // would be a branch this file could never legitimately exercise both ways.
+    const previousId = lastRecipeId;
+    if (editing) {
+      pruneBlankSteps($recipes.find((r) => r.id === previousId));
+    }
     lastRecipeId = id;
     editing = false;
     titleDraft = '';
+  });
+
+  // The prune's THIRD door: leaving the page outright (Back, a nav tap, or the
+  // card's own New → Manual) unmounts this component instead of moving
+  // `params.id`, so the effect above never runs. `recipe` here is still
+  // whatever it last resolved to — the document this component was showing —
+  // which is exactly what a page-teardown prune needs.
+  onDestroy(() => {
+    if (editing) pruneBlankSteps(recipe);
   });
 
   // There is no Save, so a failed write is the only thing left to say out loud —
@@ -724,13 +766,58 @@
     editing = true;
   }
 
-  function handleInlineEdit(next: Recipe): void {
+  // The write plumbing every inline edit shares — queue it, and surface at
+  // most one toast per coalesced burst. `pruneBlankSteps` above calls this
+  // directly with `invalidatesGuidedPlan: false`, bypassing the check
+  // `handleInlineEdit` layers on top of it; every genuine inline edit goes
+  // through `handleInlineEdit` instead, which computes that flag.
+  function writeRecipe(next: Recipe, invalidatesGuidedPlan: boolean): void {
     const write = queueRecipeEdit(next);
     void write.then((result) => {
-      if (result.kind === 'ok' || lastFailureToasted === write) return;
-      lastFailureToasted = write;
-      addToast('Failed to save your change.', 'destructive');
+      if (result.kind !== 'ok') {
+        if (lastFailureToasted !== write) {
+          lastFailureToasted = write;
+          addToast('Failed to save your change.', 'destructive');
+        }
+        return;
+      }
+      if (invalidatesGuidedPlan) void discardGuidedPlan(next.id);
     });
+  }
+
+  // Same rule `applyRecipeAmendment` enforces for the chat path (recipeAmend.ts,
+  // which this campaign does not touch): a step that is gone, or still present
+  // but reworded, invalidates any guided-plan note pinned to it — a note that
+  // still resolves, onto words it was not written against, is worse than a note
+  // that is gone, because nothing shows the mismatch. `RecipeMethodRail` is the
+  // other door a step's TEXT can change through, and until now it did nothing
+  // about this (#1336 review, should-fix 6) — so every GENUINE inline edit gets
+  // the same check here. The boundary that makes "genuine" load-bearing
+  // (#1336 review round 2, blocking 2): `pruneBlankSteps` does NOT come through
+  // this function any more — it calls `writeRecipe` directly — because a row
+  // nobody typed into disappearing is not a reword, and this comparison alone
+  // cannot tell the two apart (see `writeRecipe`'s own comment, and
+  // `pruneBlankSteps`'s).
+  //
+  // `recipe` can legitimately be `null` here for one caller: the docked chat
+  // pane stays mounted and ungated in edit mode (#1141), so its own "Save as
+  // new recipe" can push a SAME-route navigation to an id the local store does
+  // not hold yet, and this component reuses one instance per route
+  // (#1324/#1326/#1331's recurring finding) — `recipe`, derived off the new
+  // `params.id`, resolves to `null` for that turn. `recipe?.id` rather than
+  // `recipe!.id` is the whole fix: every OTHER caller of this function — the
+  // template's own `{#if recipe}` for the cards below, and `setTitle`'s
+  // explicit guard — only ever reaches it with the page actually showing a
+  // recipe, so the optional chaining changes nothing for them and simply
+  // stops being a lie for the one that differs.
+  function handleInlineEdit(next: Recipe): void {
+    const survivingTextById = new Map(next.steps.map((s) => [s.id, s.text]));
+    const planStepsInvalidated =
+      recipe?.id === next.id
+        ? recipe.steps.some((s) => survivingTextById.get(s.id) !== s.text)
+        : false;
+
+    writeRecipe(next, planStepsInvalidated);
   }
 
   // A recipe must have a name, so an emptied title box is not written. It is not
@@ -760,6 +847,17 @@
   async function finishEditing(): Promise<void> {
     editing = false;
     if (scaling && isScaled) setServings(scaling.base, scaling.base);
+    // The blank-row rule (issue #1319): a row you added and never typed into is
+    // KEPT while you are editing — pruning on a keystroke would delete it out
+    // from under you — and dropped on every exit from edit mode, of which Done
+    // is one of three (the other two are the id-keyed `$effect` and `onDestroy`
+    // above — #1336 review, blocking 2). `pruneBlankSteps` is queued through the
+    // same seam as every other edit so the flush below carries it, and
+    // `dropBlankRows` returns the recipe unchanged when there is nothing to
+    // drop, so pressing Done on a recipe nobody touched still issues no write.
+    // The BOUNDARY today is steps only; ingredient rows join it in Phase 5,
+    // inside that same function.
+    pruneBlankSteps(recipe);
     await flushRecipeWrites();
     if (recipe?.needs_approval) await handleMarkReviewed();
   }
@@ -2178,139 +2276,75 @@
           {setServings}
         />
 
-        <!-- Made from (issue #752). A meal's components lead, above its own
-             ingredients: what a Sunday roast IS — chicken, potatoes, gravy — is
-             the headline fact about it, and the ingredient list below belongs to
-             the roast itself, not to the three dishes. Nothing is aggregated.
-             The card is gated on the DOCUMENT having components, in the same
-             idiom as Ingredients above: when the concept applies the card is
-             there, and the inner guard covers the case where every component has
-             since been deleted. Each card is a link to that dish, one level deep;
-             a component's own components are neither shown nor read. -->
+        <!-- Made from (issue #752) — the dishes a meal is built out of, now read
+             AND written in the same place (issue #1319, Phase 3). The card itself
+             is `RecipeMadeFromCard.svelte`; what stays here is the "New" menu,
+             which owns this page's two import dialogs and the navigation Phase 7
+             re-points. Gated on the DOCUMENT having components, in the same idiom
+             as Ingredients below: when the concept applies the card is there, and
+             the card's own guard covers every component having since been deleted. -->
         {#if showComponents}
-          <Card>
-            <CardHeader class="px-4 pt-4 pb-0">
-              <div class="flex items-center justify-between gap-2">
-                <CardTitle class="text-sm">Made from</CardTitle>
-                <!-- The same four ways in the recipe list's New menu offers, in
-                     the same order and the same idiom — a dish for a meal is
-                     made exactly like any other dish. Each entry only says where
-                     to start; `startComponent` is what pins the meal to the URL
-                     so the far end knows where to come back to. -->
-                <Popover bind:open={componentMenuOpen}>
-                  <PopoverTrigger>
-                    {#snippet children()}
-                      <button
-                        type="button"
-                        class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                        data-testid="meal-component-new-btn"
-                        aria-label="Add a dish to this meal"
-                      >
-                        <Icon name="Plus" size={14} />
-                        New
-                        <Icon name="ChevronDown" size={12} class="opacity-80" />
-                      </button>
-                    {/snippet}
-                  </PopoverTrigger>
-                  <PopoverContent align="end" class="min-w-48 p-1">
-                    <PopoverMenuItem
-                      icon="Link"
-                      onclick={() => {
-                        componentMenuOpen = false;
-                        showComponentUrlImport = true;
-                      }}
-                      data-testid="meal-component-new-import"
+          <RecipeMadeFromCard {recipe} {components} {editing} onEdit={handleInlineEdit}>
+            {#snippet newMenu()}
+              <!-- The same four ways in the recipe list's New menu offers, in the
+                   same order and the same idiom — a dish for a meal is made
+                   exactly like any other dish. Each entry only says where to
+                   start; `startComponent` is what pins the meal to the URL so
+                   the far end knows where to come back to. -->
+              <Popover bind:open={componentMenuOpen}>
+                <PopoverTrigger>
+                  {#snippet children()}
+                    <button
+                      type="button"
+                      class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                      data-testid="meal-component-new-btn"
+                      aria-label="Add a dish to this meal"
                     >
-                      Import URL
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Camera"
-                      onclick={() => {
-                        componentMenuOpen = false;
-                        showComponentPhotoImport = true;
-                      }}
-                      data-testid="meal-component-new-import-photo"
-                    >
-                      Import from photo
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Sparkles"
-                      onclick={() => startComponent('/chat')}
-                      data-testid="meal-component-new-chat"
-                    >
-                      Chat with AI
-                    </PopoverMenuItem>
-                    <PopoverMenuItem
-                      icon="Pencil"
-                      onclick={() => startComponent('/recipes/new')}
-                      data-testid="meal-component-new-manual"
-                    >
-                      Manual
-                    </PopoverMenuItem>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </CardHeader>
-            <CardContent class="px-4 pb-4 pt-3">
-              {#if components.length === 0}
-                <p class="text-sm text-muted-foreground">
-                  The dishes this was built from are no longer in the library.
-                </p>
-              {:else}
-                <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="recipe-components">
-                  {#each components as component (component.id)}
-                    <li>
-                      <button
-                        type="button"
-                        class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
-                        onclick={() => push(`/recipes/${component.id}`)}
-                        data-testid="recipe-component-card"
-                        data-recipe-id={component.id}
-                      >
-                        <span
-                          class="h-14 w-14 shrink-0 overflow-hidden rounded bg-muted text-muted-foreground/60"
-                        >
-                          {#if component.image?.url}
-                            <img
-                              src={recipeHeroUrl(component)}
-                              alt=""
-                              loading="lazy"
-                              class="h-full w-full object-cover"
-                              data-testid="recipe-component-thumb"
-                            />
-                          {:else}
-                            <span
-                              class="flex h-full w-full items-center justify-center"
-                              data-testid="recipe-component-thumb-fallback"
-                            >
-                              <!-- The kind's own placeholder icon, not a fixed
-                                   pot: a cocktail component wears a martini glass
-                                   here exactly as it does on the list and in the
-                                   week's shop sheet. Which picture a kind wears is
-                                   COPY, which is what `KIND_COPY` is for. -->
-                              <Icon name={KIND_COPY[kindOf(component)].thumbIcon} size={20} />
-                            </span>
-                          {/if}
-                        </span>
-                        <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span class="truncate text-sm font-medium">{component.title}</span>
-                          {#if componentTimeLabel(component) !== null}
-                            <span
-                              class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                              data-testid="recipe-component-cook-time"
-                            >
-                              <Icon name="Clock" size={12} />
-                              {componentTimeLabel(component)}
-                            </span>
-                          {/if}
-                        </span>
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </CardContent>
-          </Card>
+                      <Icon name="Plus" size={14} />
+                      New
+                      <Icon name="ChevronDown" size={12} class="opacity-80" />
+                    </button>
+                  {/snippet}
+                </PopoverTrigger>
+                <PopoverContent align="end" class="min-w-48 p-1">
+                  <PopoverMenuItem
+                    icon="Link"
+                    onclick={() => {
+                      componentMenuOpen = false;
+                      showComponentUrlImport = true;
+                    }}
+                    data-testid="meal-component-new-import"
+                  >
+                    Import URL
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Camera"
+                    onclick={() => {
+                      componentMenuOpen = false;
+                      showComponentPhotoImport = true;
+                    }}
+                    data-testid="meal-component-new-import-photo"
+                  >
+                    Import from photo
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Sparkles"
+                    onclick={() => startComponent('/chat')}
+                    data-testid="meal-component-new-chat"
+                  >
+                    Chat with AI
+                  </PopoverMenuItem>
+                  <PopoverMenuItem
+                    icon="Pencil"
+                    onclick={() => startComponent('/recipes/new')}
+                    data-testid="meal-component-new-manual"
+                  >
+                    Manual
+                  </PopoverMenuItem>
+                </PopoverContent>
+              </Popover>
+            {/snippet}
+          </RecipeMadeFromCard>
         {/if}
 
         <!-- Where the recipe scrolls to when the drawer opens (issue #696): the strip
@@ -2654,191 +2688,23 @@
             </TabsContent>
 
             <TabsContent value="method">
-              <Card>
-                <CardContent class="p-4">
-                  {#if recipe.steps.length === 0}
-                    <p class="text-sm text-muted-foreground">No steps.</p>
-                  {/if}
-                  <!-- The method as a rail (issue #878): a filled disc per step, joined
-                       by a connector down to the next one, so the sequence is a shape
-                       you can take in before you read a word of it.
-
-                       The rail is drawn PER GAP — one segment from each disc to the
-                       one below — rather than as a full-height rule behind the
-                       column. That is what settles the "does a two-step recipe want a
-                       rail?" question without a threshold to remember: two steps get
-                       exactly one short connector, which is the smallest mark that
-                       says "then this", and a one-step recipe gets no rail at all
-                       because there is nothing to join. A count rule would make the
-                       same page draw its steps two different ways depending on how
-                       many there are, which is a rule the reader has to learn in
-                       exchange for nothing. -->
-                  <ol class="flex flex-col">
-                    {#each recipe.steps as step, idx (step.id)}
-                      {@const handsOff = isHandsOff(step)}
-                      {@const firstUse = firstUseByStep.get(step.id) ?? []}
-                      {@const stepKit = kitByStep.get(step.id) ?? []}
-                      <li
-                        class="relative flex gap-3 pb-5 text-sm last:pb-0"
-                        data-testid="recipe-view-step"
-                      >
-                        {#if idx < recipe.steps.length - 1}
-                          <span
-                            class="absolute bottom-0 left-3 top-7 w-px -translate-x-1/2 bg-border"
-                            aria-hidden="true"
-                          ></span>
-                        {/if}
-                        <!-- Hollow for a step you can walk away from. Shape is never
-                             the only carrier — the "Hands-off" pill below says it in
-                             words, which is what a screen reader and a colour-blind
-                             cook actually get. -->
-                        <span
-                          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {handsOff
-                            ? 'border-2 border-primary bg-card text-primary'
-                            : 'bg-primary text-primary-foreground'}"
-                          aria-hidden="true">{idx + 1}</span
-                        >
-                        <div class="flex min-w-0 flex-1 flex-col gap-2">
-                          <span>{step.text}</span>
-
-                          <!-- What this step is the first to call for, from the
-                               `firstUsedInStepId` the recipe already carries. Cook
-                               mode has shown this per step since #532; the reading
-                               list never did, and the reading list is where you
-                               decide whether tonight is the night.
-
-                               The tile is decorative here — the NAME beside it is the
-                               accessible content, so a wall of pictograms reads as a
-                               list of ingredients rather than as nothing at all. -->
-                          {#if firstUse.length > 0}
-                            <ul
-                              class="flex flex-wrap items-center gap-1.5"
-                              aria-label="First used in this step"
-                              data-testid="recipe-view-step-firstuse"
-                            >
-                              {#each firstUse as ing (ing.id)}
-                                <li class="flex items-center" title={ingredientLabel(ing)}>
-                                  <span class="flex" aria-hidden="true">
-                                    <CanonIcon
-                                      thumbnail={thumbnailFor(ing.canonId)}
-                                      name={ingredientLabel(ing)}
-                                      version={iconVersionFor(ing.canonId)}
-                                      matched={hasLiveCanonMatch(ing, liveCanonIds)}
-                                      size={32}
-                                    />
-                                  </span>
-                                  <span class="sr-only">{ingredientLabel(ing)}</span>
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-
-                          <!-- And what to GET OUT for it (issue #882). Beside the
-                               first-use row, in the same idiom, because they answer
-                               two different questions about the same step: what it
-                               is the first to call for, and what it needs in your
-                               hand. Two rows that looked alike but said the same
-                               thing would be the bug; two rows that look alike and
-                               say different things is the point — hence its own
-                               `aria-label`, which is the only thing separating them
-                               for a screen reader.
-
-                               Listed at the step the tool COMES OUT and not again
-                               until it has been put down (the contiguous-run rule in
-                               `kitByStep`), so a long braise does not repeat the same
-                               casserole under every step.
-
-                               The tile is decorative; the NAME beside it is the
-                               accessible content. A label the drawn vocabulary does
-                               not know renders its words with no picture — never
-                               `CanonIcon`'s bare placeholder tile, which reads as a
-                               broken image, and never another tool's drawing. -->
-                          {#if stepKit.length > 0}
-                            <ul
-                              class="flex flex-wrap items-center gap-1.5"
-                              aria-label="Kit this step calls for"
-                              data-testid="recipe-view-step-kit"
-                            >
-                              {#each stepKit as entry (entry.label)}
-                                <li
-                                  class="flex items-center gap-1"
-                                  title={entry.label}
-                                  data-testid="recipe-view-step-kit-item"
-                                >
-                                  {#if $kitIcons.kitIconFor(entry.label)}
-                                    <span class="flex" aria-hidden="true">
-                                      <CanonIcon
-                                        thumbnail={$kitIcons.kitIconFor(entry.label)}
-                                        version={$kitIcons.kitIconVersionFor(entry.label)}
-                                        name={entry.label}
-                                        size={32}
-                                      />
-                                    </span>
-                                    <span class="sr-only">{entry.label}</span>
-                                  {:else}
-                                    <!-- No picture, so the words stop being the
-                                         SR-only label and become the row. -->
-                                    <span class="text-xs text-muted-foreground">{entry.label}</span>
-                                  {/if}
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-
-                          {#if handsOff || step.timer}
-                            <div class="flex flex-wrap items-center gap-1.5">
-                              {#if handsOff}
-                                <!-- Sage: the quiet end of the palette, for the one step
-                                     marker telling you to walk away rather than to do
-                                     something, paired against the terracotta timer chip
-                                     beside it, which is the opposite instruction. (The
-                                     #878 ribbon keyed its waits to this hue; it went with
-                                     issue #1213, and the phase timeline that replaced it
-                                     draws its hands-off time on the teal tint.) -->
-                                <span
-                                  class="inline-flex items-center rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-secondary-container-foreground"
-                                  data-testid="recipe-view-step-handsoff">Hands-off</span
-                                >
-                              {/if}
-                              {#if step.timer}
-                                <!-- Terracotta, the palette's accent for a thing that
-                                     wants attention at a moment (design.md), and
-                                     `formatMinutes` rather than the raw number — this
-                                     is the markup that genuinely said "720 min". -->
-                                <span
-                                  class="inline-flex items-center gap-1 rounded-full bg-tertiary-variant/10 px-2 py-0.5 text-xs font-medium text-tertiary-variant"
-                                  data-testid="recipe-view-step-timer"
-                                >
-                                  <Icon name="Timer" size={12} />
-                                  {formatMinutes(step.timer.durationMinutes)}{step.timer.description
-                                    ? ` — ${step.timer.description}`
-                                    : ''}
-                                </span>
-                              {/if}
-                            </div>
-                          {/if}
-
-                          <!-- Terracotta, NOT the amber family. `review` on this page
-                               means "a human has not looked at this yet" — the
-                               unreviewed-import banner and the guided-plan dot — and a
-                               step note is not that: it is a caution about the cooking,
-                               written deliberately, and wearing the review colour made
-                               it read as an unfinished recipe. -->
-                          {#if step.note}
-                            <div
-                              class="flex items-start gap-2 rounded border border-tertiary-variant/30 bg-tertiary-variant/10 px-3 py-2 text-xs text-tertiary-variant"
-                              data-testid="recipe-step-note-content"
-                            >
-                              <Icon name="TriangleAlert" size={13} class="mt-0.5 shrink-0" />
-                              <span class="whitespace-pre-wrap">{step.note}</span>
-                            </div>
-                          {/if}
-                        </div>
-                      </li>
-                    {/each}
-                  </ol>
-                </CardContent>
-              </Card>
+              <!-- The method rail (issue #878), read and written in the same place
+                   since issue #1319 Phase 4. The drawing, the chips and the editing
+                   are all in `RecipeMethodRail.svelte`; what stays here is the data
+                   the rail reads and does not own — the two domain groupings, the
+                   canon lookups and the ingredient label the ingredients panel
+                   names its rows with too. -->
+              <RecipeMethodRail
+                {recipe}
+                {editing}
+                onEdit={handleInlineEdit}
+                {firstUseByStep}
+                {kitByStep}
+                {thumbnailFor}
+                {iconVersionFor}
+                {ingredientLabel}
+                {liveCanonIds}
+              />
             </TabsContent>
           </Tabs>
         {/if}
