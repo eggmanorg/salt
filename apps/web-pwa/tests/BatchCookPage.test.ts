@@ -68,6 +68,11 @@ vi.mock('../src/lib/wakeLock.js', () => ({
 vi.mock('../src/lib/batchService.js', () => ({
   batch: mockBatch,
   initBatchSync: vi.fn(() => () => {}),
+  // The synchronous escape hatch the page re-reads before its second write
+  // (BLOCKING #1, PR #1334 review) — backed by the same store the mock write
+  // functions below echo into, so it always answers with whatever the LAST
+  // `mockBatch._set` call left behind, concurrent writes included.
+  getBatchSnapshot: vi.fn(() => mockBatch._get()),
   advanceStage: vi.fn(async (current: BatchDoc) => ({ kind: 'ok' as const, value: current })),
   setIngredientChecked: vi.fn(async (current: BatchDoc, id: string, checked: boolean) => {
     const ids = checked
@@ -101,12 +106,18 @@ vi.mock('../src/lib/featureGate.js', () => ({
 }));
 
 import BatchCookPage from '../src/routes/batches/BatchCookPage.svelte';
-import { advanceStage, setIngredientChecked, setStepDone } from '../src/lib/batchService.js';
+import {
+  advanceStage,
+  getBatchSnapshot,
+  setIngredientChecked,
+  setStepDone,
+} from '../src/lib/batchService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const advanceMock = vi.mocked(advanceStage);
 const checkMock = vi.mocked(setIngredientChecked);
 const stepMock = vi.mocked(setStepDone);
+const snapshotMock = vi.mocked(getBatchSnapshot);
 const toastMock = vi.mocked(addToast);
 
 const BATCH_ID = 'batch-1';
@@ -265,6 +276,51 @@ describe('the three loading states', () => {
     renderPage();
     expect(screen.queryByTestId('batch-cook-page')).toBeNull();
   });
+
+  it('focuses the page container once the feature gate settles', async () => {
+    // BLOCKING #4 (PR #1334 review): `pageEl` binds only once `FeatureGuard`
+    // actually renders this page's children, which is after the gate settles —
+    // an `onMount` on this component fires before that and focuses nothing.
+    renderPage();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('batch-cook-page')));
+  });
+});
+
+describe('an abandoned run', () => {
+  // BLOCKING #2 (PR #1334 review): the entry button on `BatchDetailPage` only
+  // shows while `run.state === 'running'`, but this route is reachable by direct
+  // URL or back/forward regardless, and a stopped run must offer nothing to tick
+  // or advance — silently writing and marking nothing is the bug, not a feature.
+  it('offers nothing — no weigh-out, no deck, no stage controls', () => {
+    mockBatch._set(makeBatch({ state: 'abandoned', abandonedAt: STARTED_AT }));
+    renderPage();
+
+    expect(screen.getByText('This batch was abandoned')).toBeTruthy();
+    expect(screen.queryByTestId('batch-cook-mise')).toBeNull();
+    expect(screen.queryByTestId('batch-cook-stage-toggle')).toBeNull();
+    expect(screen.queryByTestId('batch-cook-mise-row')).toBeNull();
+  });
+
+  it('reaching it directly ticks and advances nothing', async () => {
+    mockBatch._set(makeBatch({ state: 'abandoned', abandonedAt: STARTED_AT }));
+    renderPage();
+    await fireEvent.click(screen.getByTestId('batch-cook-back'));
+
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(stepMock).not.toHaveBeenCalled();
+    expect(advanceMock).not.toHaveBeenCalled();
+  });
+
+  it('abandoning mid-visit removes the controls live, rather than leaving them to write and mark nothing', async () => {
+    renderPage();
+    await goToSteps();
+    expect(screen.getByTestId('batch-cook-step-done')).toBeTruthy();
+
+    mockBatch._set({ ...mockBatch._get()!, state: 'abandoned', abandonedAt: STARTED_AT });
+
+    await waitFor(() => expect(screen.getByText('This batch was abandoned')).toBeTruthy());
+    expect(screen.queryByTestId('batch-cook-step-done')).toBeNull();
+  });
 });
 
 describe('the weigh-out', () => {
@@ -394,6 +450,39 @@ describe('the schedule owns the clock', () => {
     expect(screen.getByTestId('batch-cook-stage-countdown').textContent).toContain('45 min over');
   });
 
+  it('spells an hour-plus span the app’s one way, not the retired fork', async () => {
+    // SHOULD-FIX #5 (PR #1334 review): `countdown` used to hand-roll `1 h 30
+    // min` beside `formatStatedDuration`'s `1 hr 30 min` in the very same block
+    // — issue #933's fork, reintroduced. Planned start 07:00, now 05:00: two
+    // hours to go.
+    vi.setSystemTime(new Date('2026-09-11T05:00:00.000Z'));
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          stage({
+            plannedStartAt: '2026-09-11T07:00:00.000Z',
+            plannedEndAt: '2026-09-11T08:30:00.000Z',
+          }),
+          stage({
+            id: 'stage-cool',
+            label: 'Cool the cobs',
+            kind: 'wait',
+            duration: null,
+            until: null,
+            stepId: null,
+            plannedStartAt: '2026-09-11T09:00:00.000Z',
+            plannedEndAt: '2026-09-11T09:00:00.000Z',
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+    expect(screen.getByTestId('batch-cook-stage-countdown').textContent).toContain(
+      '3 hr 30 min left',
+    );
+  });
+
   it('marking the step done marks its stage done — the tick first, then the advance', async () => {
     // Two writes, in that order and never concurrently: both rewrite the whole
     // document (LWW), so overlapping them is one silently overwriting the other.
@@ -406,9 +495,51 @@ describe('the schedule owns the clock', () => {
 
     await waitFor(() => expect(advanceMock).toHaveBeenCalled());
     expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-3', true);
-    // The advance is handed the document the TICK returned, not the stale one.
     const advancedWith = advanceMock.mock.calls.at(-1)!;
     expect(advancedWith[1]).toBe('stage-bulk');
+    expect(advancedWith[0].completedStepIds).toContain('step-3');
+  });
+
+  it('re-reads the freshest batch before the advance, so a concurrent write is not clobbered', async () => {
+    // BLOCKING #1 (PR #1334 review): the advance used to be handed `ticked.value`
+    // — the document as it stood when the TICK's own write started — rather than
+    // a fresh read. The round trip between the tick and the advance is exactly
+    // the window another phone's write can land in, and this pins that the page
+    // re-reads `getBatchSnapshot()` rather than reusing its stale local copy.
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    stepMock.mockImplementationOnce(async (current: BatchDoc, id: string) => {
+      const ticked = { ...current, completedStepIds: [...current.completedStepIds, id] };
+      mockBatch._set(ticked);
+      // A concurrent write from another phone lands here, BEFORE this call
+      // returns and BEFORE the advance is dispatched — the tick's own promise
+      // has not yet resolved back into `markStep`.
+      mockBatch._set({ ...ticked, checkedIngredientIds: ['ing-flour'] });
+      return { kind: 'ok' as const, value: ticked };
+    });
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+    const advancedWith = advanceMock.mock.calls.at(-1)!;
+    expect(advancedWith[0].completedStepIds).toContain('step-3');
+    // Proof it came from the FRESH snapshot rather than the tick's own stamped
+    // copy, which never saw the concurrent flour tick.
+    expect(advancedWith[0].checkedIngredientIds).toEqual(['ing-flour']);
+  });
+
+  it('falls back to the tick’s own copy when there is no fresher snapshot to read', async () => {
+    // `getBatchSnapshot()` can answer `null`/`undefined` (not loaded, or the run
+    // vanished mid-write) — the advance still has to go out on SOMETHING rather
+    // than silently doing nothing.
+    snapshotMock.mockReturnValueOnce(undefined);
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+    const advancedWith = advanceMock.mock.calls.at(-1)!;
     expect(advancedWith[0].completedStepIds).toContain('step-3');
   });
 
@@ -459,6 +590,61 @@ describe('the schedule owns the clock', () => {
 
     await waitFor(() => expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-3', false));
     expect(advanceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('the writing lock covers only the stage-transition family', () => {
+  // BLOCKING #3 (PR #1334 review): the lock used to be one boolean shared by
+  // every write on the page, so it silently dropped taps on the weigh-out rows
+  // and the untick control (neither was even visually disabled), and — because
+  // Firestore's `setDoc` does not resolve while offline — a stage write begun
+  // offline would latch it forever, killing the rest of the page for the whole
+  // session. A weigh-out tick and an untick are each a single write built from
+  // the freshest local snapshot, so neither needs to wait its turn behind an
+  // unrelated stage write that may never come back.
+  function stuckAdvance(): { release: (batch: BatchDoc) => void } {
+    let release!: (batch: BatchDoc) => void;
+    advanceMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = (batch: BatchDoc) => resolve({ kind: 'ok', value: batch });
+        }),
+    );
+    return {
+      release: (batch: BatchDoc) => release(batch),
+    };
+  }
+
+  it('a weigh-out tick still lands while a stage advance is stuck in flight', async () => {
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-back'));
+    await fireEvent.click(screen.getAllByTestId('batch-cook-mise-row')[0]!);
+
+    expect(checkMock).toHaveBeenCalledWith(expect.anything(), 'ing-flour', true);
+    stuck.release(mockBatch._get()!); // don't leak the pending promise
+  });
+
+  it('an untick still lands while a stage advance is stuck in flight', async () => {
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+
+    // Step 1 was already done before this test's own advance got stuck — peek it
+    // open and untick it, an entirely unrelated write to the one in flight.
+    await fireEvent.click(screen.getAllByTestId('cook-step-collapsed')[0]!);
+    await fireEvent.click(await screen.findByTestId('cook-step-untick'));
+
+    expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-1', false);
+    stuck.release(mockBatch._get()!);
   });
 });
 
@@ -553,6 +739,20 @@ describe('when a write fails', () => {
     renderPage();
     await goToSteps();
     await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.any(String), 'destructive'));
+  });
+
+  it('says so when an untick does not land', async () => {
+    stepMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    mockBatch._set(makeBatch({ completedStepIds: ['step-3'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('cook-step-collapsed'));
+    await fireEvent.click(await screen.findByTestId('cook-step-untick'));
 
     await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.any(String), 'destructive'));
   });

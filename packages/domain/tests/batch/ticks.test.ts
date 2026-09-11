@@ -115,9 +115,12 @@ describe('neither producer touches the stages', () => {
 
   it('works on an abandoned run too — a tick is a memory aid, not a transition', () => {
     // The stage producers all refuse a batch that is not running, because they
-    // record what happened to the run. These do not: the cook page is only reachable
-    // while a run is running, and a producer that silently no-op'd would be a gate
-    // nobody asked for (Salt records, it does not police).
+    // record what happened to the run. These do not, and deliberately: a producer
+    // that silently no-op'd on `state` would be a gate nobody asked for (Salt
+    // records, it does not police). Reachability is a PAGE concern, not this
+    // producer's — `apps/web-pwa/tests/BatchCookPage.test.ts` ("an abandoned run")
+    // is where that is actually pinned, by `BatchCookPage` reading `run.state`
+    // itself (PR #1334 review, BLOCKING #2), not by an absolute claimed here.
     const stopped = running({ state: 'abandoned', abandonedAt: '2026-09-11T09:00:00.000Z' });
     expect(withBatchStepDone(stopped, 'step-3', true).completedStepIds).toEqual(['step-3']);
   });

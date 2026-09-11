@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { flattenIngredients, progressOver, recipeChangedSince, stageStatus } from '@salt/domain';
   import type { BatchStageDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
@@ -8,6 +8,7 @@
   import {
     batch,
     initBatchSync,
+    getBatchSnapshot,
     advanceStage,
     setIngredientChecked,
     setStepDone,
@@ -38,6 +39,7 @@
     formatWhen,
     isObservational,
   } from './batchDisplay.js';
+  import { formatMinutes } from '../../lib/durationDisplay.js';
 
   // COOKING A RUN (issue #1327, epic #778) — `/batches/:id/cook`.
   //
@@ -230,19 +232,47 @@
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
   //
-  // ONE WRITE AT A TIME. Every command here rewrites the WHOLE batch document
-  // (LWW, `setDoc`), so two in the air at once is one silently overwriting the
-  // other — the same single lock the batch page keeps across its three stage
-  // commands, and the reason marking a step with a stage is two sequential writes
-  // rather than two concurrent ones.
+  // The lock covers only the STAGE-TRANSITION family — marking a step (or a
+  // step-less stage) done, which can cascade into `advanceStage`. Two of those in
+  // the air at once really would be one whole-document `setDoc` (LWW) silently
+  // overwriting the other, the same reasoning `BatchDetailPage` shares across its
+  // three stage commands (`advancingStageId`).
+  //
+  // The weigh-out ticks and the untick control do NOT share it (PR #1334 review,
+  // BLOCKING #3). Each is a single write built from the freshest local snapshot
+  // the instant it is called — `persist` updates the store before the network
+  // round trip even starts, so a burst of taps composes correctly on its own, the
+  // same guarantee `CookModePage.toggleIngredient` relies on with no lock at all.
+  // Gating them on THIS lock bought nothing and cost two things: a tap on either
+  // could be silently dropped by an unrelated stage write in flight, and — worse
+  // — Firestore's `setDoc` does not resolve while offline, so one stage write
+  // begun offline would have latched every other control on the page dead for the
+  // rest of the session.
   let writing = $state(false);
 
   async function markStep(stepId: string, done: boolean): Promise<void> {
     const current = run;
-    if (!current || writing) return;
+    if (!current) return;
+
+    if (!done) {
+      // UNTICKING IS A SINGLE WRITE, not the two-write advance below, and does not
+      // touch `writing` for the same reason the mise ticks do not (see above).
+      //
+      // UNTICKING DOES NOT UN-MARK THE STAGE. There is no inverse of
+      // `withStageAdvanced` and there deliberately is not one: the tail has
+      // already been re-timed against the instant the stage ended, and
+      // "un-ending" it would have to invent a schedule nobody planned. Unticking a
+      // step is a correction to the METHOD's checklist; the run's record of what
+      // happened stands, and the batch page is where a run is corrected.
+      const result = await setStepDone(current, stepId, false);
+      if (result.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
+      return;
+    }
+
+    if (writing) return;
     writing = true;
     try {
-      const ticked = await setStepDone(current, stepId, done);
+      const ticked = await setStepDone(current, stepId, true);
       if (ticked.kind !== 'ok') {
         addToast("Couldn't save that. Try again.", 'destructive');
         return;
@@ -252,19 +282,17 @@
       // from this instant and `onBatchWritten` re-queues the reminders whose key
       // moved — exactly what Done does on the batch page. Early and late are the
       // same gesture.
-      //
-      // UNTICKING DOES NOT UN-MARK IT. There is no inverse of `withStageAdvanced`
-      // and there deliberately is not one: the tail has already been re-timed
-      // against the instant the stage ended, and "un-ending" it would have to invent
-      // a schedule nobody planned. Unticking a step is a correction to the METHOD's
-      // checklist; the run's record of what happened stands, and the batch page is
-      // where a run is corrected.
-      if (!done) return;
       const placement = layout.onStep.get(stepId);
       if (!placement) return;
       const status = stageStatus(placement.stage);
       if (status === 'done' || status === 'skipped') return;
-      const advanced = await advanceStage(ticked.value, placement.stage.id);
+      // Re-read the FRESHEST copy before this second write. `ticked.value` is the
+      // document as it stood when the write above STARTED; the round trip between
+      // that write and this one is exactly the window a concurrent write from
+      // another phone on the same run can land in, and handing the advance a
+      // stale document would silently overwrite it (PR #1334 review, BLOCKING #1).
+      const freshest = getBatchSnapshot() ?? ticked.value;
+      const advanced = await advanceStage(freshest, placement.stage.id);
       if (advanced.kind !== 'ok') {
         addToast("Couldn't mark that stage done. Try again.", 'destructive');
       }
@@ -275,17 +303,18 @@
 
   async function toggleIngredient(id: string): Promise<void> {
     const current = run;
-    if (!current || writing) return;
+    if (!current) return;
     const next = !checkedIds.has(id);
     if (next) hapticTick();
-    writing = true;
+    // Fire-and-forget, like `CookModePage.toggleIngredient` — see the note on
+    // `writing` above for why this does not take the lock.
     const result = await setIngredientChecked(current, id, next);
-    writing = false;
     if (result.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
   }
 
   // Marking a STAGE-ONLY card done — it has no step to tick, so this is the batch
-  // page's own Done, on the same producer, reached from here.
+  // page's own Done, on the same producer, reached from here. Same family as
+  // `markStep`'s advance, so it shares the same lock.
   async function markStageDone(stageId: string): Promise<void> {
     const current = run;
     if (!current || writing) return;
@@ -312,10 +341,11 @@
     if (!Number.isFinite(endMs)) return '';
     const minutes = Math.round((endMs - nowMs) / 60_000);
     const magnitude = Math.abs(minutes);
-    const span =
-      magnitude >= 60
-        ? `${Math.floor(magnitude / 60)} h ${magnitude % 60} min`
-        : `${magnitude} min`;
+    // `formatMinutes` — never a page-local fork of it. #933 retired the `1 h 30
+    // min` spelling everywhere else; re-deriving it here would put it right back
+    // next to `formatStatedDuration`'s `1 hr 30 min` in the same block (PR #1334
+    // review, SHOULD-FIX #5).
+    const span = formatMinutes(magnitude);
     if (minutes <= -1) return `${span} over`;
     if (minutes < 1) return 'due now';
     return `${span} left`;
@@ -373,8 +403,17 @@
   // focus is unmounted as this route activates, so without this the next Tab would
   // restart at the top of the document. No restore on the way out: this page is
   // entered from the batch page, which unmounts as it opens.
+  //
+  // An `$effect` over `pageEl` rather than `onMount`: `pageEl` is bound INSIDE
+  // `FeatureGuard`, which renders no children — and so never runs the `bind:this`
+  // — until the flag settles, well after this component's own `onMount` already
+  // fired. `onMount` therefore focused nothing, on every load (PR #1334 review,
+  // BLOCKING #4). The effect re-runs when `pageEl` changes, so it catches the
+  // element the moment the guard actually mounts it.
   let pageEl = $state.raw<HTMLElement | null>(null);
-  onMount(() => pageEl?.focus({ preventScroll: true }));
+  $effect(() => {
+    pageEl?.focus({ preventScroll: true });
+  });
 
   function close(): void {
     goBack(`/batches/${batchId}`);
@@ -399,6 +438,27 @@
       <div class="flex flex-1 flex-col items-center justify-center p-6">
         <EmptyState title="Batch not found" description="It may have been deleted." />
         <Button variant="outline" onclick={close} data-testid="batch-cook-back">Back</Button>
+      </div>
+    {:else if run.state === 'abandoned'}
+      <!-- BLOCKING #2 (PR #1334 review): a stopped run offers nothing to mark
+         done. `BatchDetailPage`'s Cook button only shows while `run.state ===
+         'running'`, but this page is reachable by direct URL or back/forward
+         regardless, and it must not accept a tick or an advance from a run
+         nobody is running any more. This branch is the WHOLE of that guard —
+         none of `markStep`/`toggleIngredient`/`markStageDone` re-checks
+         `state`, exactly as `BatchDetailPage`'s stage handlers rely solely on
+         `next?.kind !== 'abandoned'` hiding their own controls rather than
+         also checking inside `handleAdvance` — one gate, not two copies of it
+         to keep in step. Reactive, too: abandoning mid-visit replaces this
+         content live, taking every control with it. -->
+      <div class="flex flex-1 flex-col items-center justify-center p-6">
+        <EmptyState
+          title="This batch was abandoned"
+          description="There's nothing left to cook here."
+        />
+        <Button variant="outline" onclick={close} data-testid="batch-cook-back">
+          Back to the batch
+        </Button>
       </div>
     {:else}
       <header class="flex shrink-0 items-center gap-3 px-4 py-3 {showTimeline ? '' : 'border-b'}">
