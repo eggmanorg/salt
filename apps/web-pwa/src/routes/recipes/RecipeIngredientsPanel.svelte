@@ -129,8 +129,9 @@
    * freshest `recipe.ingredients`, patching in only what that one gesture owns, and
    * it NEVER sends the whole draft back (that is what silently reverted a
    * concurrent amendment on #1336). Symmetrically, `commitWrite` never touches
-   * `groupsDraft` and never re-seeds it — re-seeding happens only in the `$effect`
-   * below, on the id/editing key or on the id-divergence just described, and
+   * `groupsDraft` and never re-seeds it — re-seeding happens only in `seedDraft`,
+   * called from the `$effect` below (on the id/editing key or on the
+   * id-divergence just described) and from `onOpen` when a zone opens, and
    * nowhere else: each ordinary gesture applies its own operation to the draft
    * itself, so a row a gesture is not about — including one a concurrent write
    * just reworded — is left alone.
