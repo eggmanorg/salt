@@ -91,10 +91,13 @@ describe('doughAmountFrom — a dough total to divide', () => {
     });
   });
 
-  it('multiplies back to exactly the anchor, so a restate moves nothing', () => {
-    // UNROUNDED on purpose. 867 ÷ 5 is 173.4, and `5 × 173.4` is 867 again — the
-    // restate factor is precisely 1. Round it to 173 here and the same gesture
-    // would quietly reweigh the dough to 865 g.
+  it('multiplies back to exactly the anchor', () => {
+    // EXACT on purpose: 867 ÷ 5 is 173.4, and `5 × 173.4` is 867 again. This is a
+    // claim about the DIVISION and nothing further — whether any weights move is
+    // the caller's, because the caller is what rounds (issue #1325 review, round
+    // 2: `FormulaPage.svelte`'s `declarationFrom`, so that what it restates at is
+    // what it saves). Rounding it here would hide that round inside a helper both
+    // screens share, and only one of them does it.
     const amount = doughAmountFrom('pieces', fields({ pieceCountText: '5' }), 867);
     expect(amount).not.toBeNull();
     expect(amount!.count * amount!.unitDoughGrams).toBeCloseTo(867, 10);

@@ -106,26 +106,36 @@ gate. The per-row rounding residual (up to N × 0.5 g across N rows) is the one
 rather than reconciled: once a yield is declared the card prints the declaration
 and no box sum.
 
-**A blank per-unit weight means "divide what's already there" — for a count of
-pieces only** (narrowed from "pieces or tins" by the #1325 review). A count of
-pieces with an empty weight box declares `boxSum ÷ count` — five rolls out of this
-dough — which multiplies back to exactly the box sum, so the restate factor is 1
-and nothing moves. `tin` does not get this: its count defaults to `'1'`, so giving
-it the same anchor made "1 tin = whatever's already written" a declaration nobody
-made, true of every recipe before anyone touched the page. `pieces` carries no such
-trap — it is reached only by an explicit mode choice, which is itself the
-declaring act. The figure is the box's placeholder, never its value: a number
-nobody typed, sitting in a box, gives no discoverable way back. It is kept
-UNROUNDED on the working amount, because rounding it would quietly reweigh the
-dough (a caller that restates its weights against a rounded target would scale
-them by a hair rather than exactly 1) — but it is rounded before it reaches the
-document, a reseeded box or a batch's `vessel` string, which are the boundaries
-that must never show or store a percentage round-trip's noise (a stored tin can
-otherwise come back `1031.9999999999998`). **The bake sheet passes no anchor and
-is unchanged**, and that is principled rather than scoping: a null amount there
-already means "the formula's own reference yield", so dividing would silently
-change what Start Bake does. Whether that screen should offer the same gesture is
-open and needs its own decision about what a blank box means there.
+**A blank per-unit weight means "divide what's already there."** A count of pieces
+— or of tins — with an empty weight box declares `boxSum ÷ count`: five rolls out
+of this dough, which used to be division done on paper. The figure is the box's
+placeholder, never its value: a number nobody typed, sitting in a box, gives no
+discoverable way back. A count of tins is gated on that box having been TOUCHED,
+and only because it opens at `'1'`: without the gate, "one tin of whatever is
+already written" was a declaration nobody made, trivially true of every recipe
+before the page was touched, and it left a weight box authoring the total. An
+untouched box is a starting value, not an answer. `pieces` needs no gate — it is
+reached only by an explicit mode choice, which is itself the declaring act.
+**The bake sheet passes no anchor and is unchanged**, and that is principled
+rather than scoping: a null amount there already means "the formula's own
+reference yield", so dividing would silently change what Start Bake does. Whether
+that screen should offer the same gesture is open and needs its own decision about
+what a blank box means there.
+
+**The declaration is rounded once, where the boxes become a declaration.** What
+the card prints, what the weights are re-solved at, and what reaches the document
+are then the one figure, so reopening a saved formula shows the weights it was
+saved with. Rounding only on the way out is the defect that taught this: the page
+restated at the exact figure and saved the rounded one, so 12 pieces of an 867 g
+dough read 867 g on screen and 864 g in the document, and 500 g of flour came back
+as 498 g on the next open. **What it costs, stated rather than hidden:** a divided
+declaration no longer multiplies back to exactly the box sum, so "N of these out
+of this dough" can move the weights by up to `count × 0.5 g` — the same per-row
+residual `rounding.ts` accepts, paid once at declare time and disclosed per row
+like any other restate, instead of being carried as a standing disagreement. It
+also keeps a percentage round-trip's noise out of the document, a reseeded box and
+a batch's `vessel` string, which must never show or store a stored tin as
+`1031.9999999999998`.
 
 **A vessel is a fact about tonight, not about the recipe.** A formula stores the
 dough figures alone; the batch records what the run was baked in, as a free-text

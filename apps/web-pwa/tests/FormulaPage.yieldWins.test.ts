@@ -24,6 +24,13 @@ import type { Formula } from '@salt/domain/schemas';
 //      (2): identical percentages at an identical yield solve to identical grams.
 //   4. ONE TOTAL. No box sum renders beside a declaration, and the re-anchoring
 //      note is gone from the screen.
+//   5. ONE NUMBER. What the card prints, what the weights are solved at and what
+//      the document stores are the same figure, so reopening a saved formula
+//      shows the weights it was saved with. The declaration is rounded ONCE, where
+//      the boxes become a declaration (`declarationFrom`) — which is what this
+//      claim costs: a divided declaration can move the weights by up to
+//      `count × 0.5 g` at the moment it is made, disclosed per row like any other
+//      restate, rather than moving them silently on the next open.
 //
 // And the rule that makes the screen explicable, pinned alongside them: A WEIGHT
 // BOX AUTHORS RATIOS, THE DECLARATION AUTHORS THE TOTAL. Typing 600 into the flour
@@ -376,14 +383,18 @@ describe('FormulaPage — the declared yield wins', () => {
     expect(getByTestId('formula-restate-note').textContent).toMatch(/change what it makes/i);
   });
 
-  // ─── The opening state is genuinely undeclared (issue #1325 review, blocking-2) ─
+  // ─── The opening state is genuinely undeclared (issue #1325 review) ─────────
   //
-  // `tinCountText` defaults to `'1'`, and the anchor used to be the box sum for
-  // `tin` too — so "1 tin = whatever's already written" was true of every
+  // `tinCountText` opens at `'1'`, and the anchor used to reach `tin` whatever the
+  // state of that box — so "1 tin = whatever's already written" was true of every
   // weighable recipe before anyone touched the page, `shape` was never null, and
   // Save was never blocked on saying what this makes. Every case above reaches its
   // declared state through the explicit 900 g chip first, so none of them would
   // have caught this: the rule-12 pin needs a case that never touches the chip.
+  //
+  // The gesture itself is NOT what was wrong and it is not removed — see "divides
+  // a count of tins, but not before the count box is touched" below. What closes
+  // this is the touched-gate: an untouched box is a starting value, not an answer.
   it('does not silently declare a total just because a weight box is typed into', async () => {
     const { getByTestId, container } = renderPage();
     await ready(getByTestId);
@@ -392,6 +403,9 @@ describe('FormulaPage — the declared yield wins', () => {
     expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
     expect(getByTestId('formula-dough-total').textContent).toContain('As written');
     expect(getByTestId('formula-dough-total').textContent).toContain('867 g');
+    // Not even as a hint: an untouched count of tins divides nothing, so there is
+    // no per-unit figure to propose.
+    expect(getByTestId('formula-grams-each').getAttribute('placeholder')).toBe('');
 
     // A WEIGHT BOX AUTHORS RATIOS, NEVER THE TOTAL — but with nothing declared
     // there is no ratio to author either: the box sum simply follows what was
@@ -412,13 +426,15 @@ describe('FormulaPage — the declared yield wins', () => {
   // The composition case the two phases have to get right together: a blank
   // per-unit weight box declares `boxSum ÷ count`, which multiplies back to exactly
   // the box sum — so the restate factor is 1 and phase 1 moves nothing. The two
-  // features meet here rather than fighting.
+  // features meet here rather than fighting — up to the one round the declaration
+  // now goes through (below), which is what keeps the screen and the document
+  // saying the same thing.
   //
-  // PIECES ONLY (issue #1325 review, blocking-2). `pieces` is reached only by an
-  // explicit mode choice — itself the declaring act — so its default count carries
-  // no trap the way `tin`'s does. `tin` never receives the anchor, at any point in
-  // its lifetime, even once a declaration already exists: see the regression case
-  // below.
+  // A COUNT OF TINS IS THE SAME GESTURE and works the same way, behind a gate on
+  // the count box having been touched (issue #1325 review). `pieces` needs no gate:
+  // it is reached only by an explicit mode choice, which is itself the declaring
+  // act. `tin` opens at a count of `'1'`, which is a starting value and not an
+  // answer — the case above pins that, this one pins the gesture.
 
   async function pickAnswer(container: HTMLElement, label: string): Promise<void> {
     const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
@@ -439,7 +455,9 @@ describe('FormulaPage — the declared yield wins', () => {
     await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '5' } });
     await fireEvent.blur(getByTestId('formula-piece-count'));
 
-    // It is the SAME DOUGH, so nothing moves — that is the whole claim.
+    // It is the SAME DOUGH and 900 ÷ 5 is 180 exactly, so nothing moves. Where the
+    // division does not land on whole grams the declaration is rounded and the
+    // weights follow it — claim 5, and the case that pins it at 12 pieces.
     expect(weights(container)).toEqual(settled);
     // The resolved per-unit figure is the box's hint, never its value: a number
     // nobody typed sitting in a box gives no way back to "divide it for me".
@@ -451,14 +469,7 @@ describe('FormulaPage — the declared yield wins', () => {
     expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false);
   });
 
-  it('does not divide a count of tins — the anchor is for pieces only', async () => {
-    // A count of tins looks like the same gesture as a count of pieces, and the
-    // issue that introduced this named it explicitly ("the same applies to a
-    // count of tins"). It is retracted here (issue #1325 review, blocking-2):
-    // `tin`'s count defaults to `'1'`, so giving `tin` the anchor at all made a
-    // default reading as a declaration on every recipe, even before this specific
-    // gesture was reached. Clearing the size box falls back to NO declaration,
-    // not a divided one — even though a real 900 g declaration already stands.
+  it('does the same for a count of tins', async () => {
     const { getByTestId, container } = renderPage();
     await ready(getByTestId);
     await declareTin(container, 900);
@@ -470,14 +481,36 @@ describe('FormulaPage — the declared yield wins', () => {
     await fireEvent.input(getByTestId('formula-count'), { target: { value: '2' } });
     await fireEvent.blur(getByTestId('formula-count'));
 
-    // The restate has nothing to solve at (`shape` is null), so it no-ops rather
-    // than blanking the boxes — the same rule the basis-emptied case already pins.
     expect(weights(container)).toEqual(settled);
+    expect(getByTestId('formula-grams-each').getAttribute('placeholder')).toBe('450');
+    expect(getByTestId('formula-dough-total').textContent).toContain('2 × 450 g — 900 g of dough');
+  });
+
+  it('divides a count of tins, but not before the count box is touched', async () => {
+    // THE HALF THE 900 g CHIP CANNOT REACH. The case above arrives at a count of
+    // tins from an explicit 900 g declaration, so it would still pass if the page
+    // opened already declared — which is exactly the defect the review found. This
+    // one never touches a chip: it asserts the opening state declares nothing, and
+    // then that touching the count box alone is enough to divide.
+    const { getByTestId, container } = renderPage();
+    await ready(getByTestId);
+
+    // Untouched: `'1'` in the count box is a starting value, not an answer.
+    expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true);
+    expect(getByTestId('formula-dough-total').textContent).toContain('As written');
     expect(getByTestId('formula-grams-each').getAttribute('placeholder')).toBe('');
+
+    // Three tins out of the dough that is already written: 867 ÷ 3 is 289 exactly,
+    // so this one divides cleanly and moves nothing.
+    await fireEvent.input(getByTestId('formula-count'), { target: { value: '3' } });
+    await fireEvent.blur(getByTestId('formula-count'));
+
+    expect(weights(container)).toEqual(['500', '350', '10', '7']);
+    expect(getByTestId('formula-grams-each').getAttribute('placeholder')).toBe('289');
+    expect(getByTestId('formula-dough-total').textContent).toContain('3 × 289 g — 867 g of dough');
     await waitFor(() =>
-      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
     );
-    expect(getByTestId('formula-blocked-reason').textContent).toContain('what this makes');
   });
 
   it('takes a figure typed over the hint, and restates to it', async () => {
@@ -500,33 +533,56 @@ describe('FormulaPage — the declared yield wins', () => {
     expect(getByTestId('formula-dough-total').textContent).toContain('5 × 100 g — 500 g of dough');
   });
 
-  // ─── The saved declaration is rounded (issue #1325 review, blocking-1) ──────
-
-  it('rounds the declaration before it reaches the document', async () => {
-    // The divided amount is deliberately UNROUNDED on `shape` itself — that is
-    // what makes "N rolls out of this dough" restate nothing (`doughAnswer.ts`).
-    // But nothing downstream of a division is guaranteed to land on a whole
-    // number, and what reaches Firestore must: 867 ÷ 7 is
-    // 123.85714285714286, never a figure a scale can weigh and never what a
-    // batch should be handed as `referenceYield.shape.unitDoughGrams`.
+  // ─── One number: what is shown, what is saved, what comes back ──────────────
+  //
+  // Claim 5, and the round-2 finding stated as a pin. A declaration that does not
+  // land on whole grams used to be rounded on the way OUT only: the page restated
+  // and printed at the exact figure while the document got the rounded one, so the
+  // two disagreed by up to `count × 0.5 g` and the weights changed under you on
+  // reopen. What is restated at is now what is saved, so they cannot.
+  //
+  // The reviewer's own worked example: 12 pieces of an 867 g dough. 867 ÷ 12 is
+  // 72.25, the declaration is 12 × 72 g = 864 g, and 500 g of flour becomes 498 g
+  // — at declare time, on screen, where it is disclosed, rather than silently on
+  // the next open. That 3 g is the cost, and it is stated in `declarationFrom`.
+  it('shows, saves and reopens the one declared figure', async () => {
     const { getByTestId, container } = renderPage();
     await ready(getByTestId);
 
     await pickAnswer(container, 'A number of pieces');
-    await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '7' } });
+    await fireEvent.input(getByTestId('formula-piece-count'), { target: { value: '12' } });
     await fireEvent.blur(getByTestId('formula-piece-count'));
 
-    await waitFor(() =>
-      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    // SHOWN: the card states the rounded declaration and its true total — 864 g,
+    // not the 867 g the exact division would have printed beside a 72 g piece.
+    await waitFor(() => expect(weights(container)[0]).toBe('498'));
+    expect(getByTestId('formula-dough-total').textContent).toContain('12 × 72 g — 864 g of dough');
+    expect(Math.abs(weightSum(container) - 864)).toBeLessThanOrEqual(
+      gramsInputs(container).length * 0.5,
     );
+    // And what the recipe itself said sits beside the weight that moved.
+    expect(
+      [...container.querySelectorAll('[data-testid="formula-row-restated"]')].map((el) =>
+        el.textContent?.trim(),
+      ),
+    ).toContain('The recipe says 500 g.');
+    const saved = weights(container);
+
+    // SAVED: the same figure, in whole grams, because it is the same figure.
     await fireEvent.click(getByTestId('formula-save-button'));
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
-
     const written = vi.mocked(saveFormula).mock.calls[0]![0];
     expect(written.referenceYield).toEqual({
       kind: 'target',
-      shape: { count: 7, unitDoughGrams: 124 },
+      shape: { count: 12, unitDoughGrams: 72 },
     });
+
+    // REOPENED: recovery anchors back to the recipe's scale and restates to the
+    // stored declaration. Before this fix the flour came back 498 g where the
+    // screen had shown 500 g.
+    mockFormula._set(written);
+    await waitFor(() => expect(weights(container)).toEqual(saved));
+    expect(getByTestId('formula-dough-total').textContent).toContain('12 × 72 g — 864 g of dough');
   });
 
   // ─── The round trip ─────────────────────────────────────────────────────────

@@ -485,11 +485,24 @@ export const coverageThresholds = {
   // rise as growth rather than a loss it cannot see, and banking an uncertified rise
   // is the one irreversible move this file forbids. Left at their measured floors,
   // they still red on any regression.
+  //
+  // BANKED in #1329, and it is the rise the note above declined to certify, now
+  // certifiable. The pin directly above was an exact measurement of MAIN one
+  // commit ago (#1327 set it, and this file's floors carry no margin), so the
+  // merge base needs no second run: main's tree is 1856 uncovered lines and 1813
+  // uncovered branches by construction. This branch measures 1851 and 1812.
+  // BOTH COUNTS FELL while both ratios rose (82.13 → 82.79, 71.37 → 71.88), which
+  // is the test #1324 used and the one that separates earned coverage from a
+  // denominator that shrank: nothing here became less tested, and the only file
+  // this branch touches in the area is `FormulaPage.svelte`, whose declaration
+  // card and restate seam gained `FormulaPage.yieldWins.test.ts`. Left unbanked,
+  // that is coverage a later PR could delete and still land green. Every figure
+  // below is pasted from the ratchet's own block on this branch.
   'apps/web-pwa/src/routes/**': {
-    lines: 82.13,
-    branches: 71.37,
-    uncoveredLines: 1856,
-    uncoveredBranches: 1813,
+    lines: 82.79,
+    branches: 71.88,
+    uncoveredLines: 1851,
+    uncoveredBranches: 1812,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

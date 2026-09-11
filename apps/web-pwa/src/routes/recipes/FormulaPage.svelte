@@ -215,6 +215,22 @@
   // dough, and the tin is a fact about tonight (`doughAnswer.ts`, `BatchSchema.vessel`).
   let answerMode = $state<DoughAnswerMode>('tin');
   let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
+  // Has anyone actually said how many tins? (Issue #1325 review.)
+  //
+  // "A count of tins with the size box left blank divides the dough already there"
+  // is a gesture #1325 names five times, and it works. What made it a defect was
+  // never the gesture: it was that `tinCountText` OPENS AT `'1'`, so a page nobody
+  // had touched already read as "one tin of whatever is written here" — a
+  // declaration nobody made, trivially true of every weighable recipe. `shape` was
+  // then never null, Save was never blocked on saying what this makes, and typing
+  // into a weight box silently moved the declared total.
+  //
+  // The gate is therefore the gesture rather than the answer: until this box has
+  // been interacted with, `'1'` is a starting value and not an answer, and the
+  // page is genuinely undeclared. `pieces` needs no such gate — it is reached only
+  // by an explicit mode choice, which is itself the declaring act. Reset by
+  // `seed()`, because a re-seed is a fresh reading of the document.
+  let tinCountTouched = $state(false);
   // Whether the working model holds changes the stored document does not. Guards
   // the re-seed below: an incoming snapshot never overwrites work in progress.
   let dirty = $state(false);
@@ -411,6 +427,10 @@
     );
     answerMode = seeded.mode;
     answer = seeded.fields;
+    // A re-seed is a fresh reading of the document, so the count box is untouched
+    // again — `seedDoughAnswer` only ever lands on `tin` with a count of one, and
+    // that one is its starting value rather than anybody's answer.
+    tinCountTouched = false;
 
     // AND THE BOXES MOVE TO IT. Recovery repopulates the weights at the RECIPE's
     // own scale (`anchorBasisGrams`); a stored declaration then restates them, so
@@ -425,22 +445,11 @@
     // `roundGrams(anchor * percent / 100)`), not from anything exact; this call is
     // what fills `exactGrams` in for the first time.
     //
-    // THE ANCHOR IS PASSED FOR `pieces` ONLY (issue #1325 review, blocking-2). A
-    // brand-new formula seeds at `seedDoughAnswer(null)`, which always lands on
-    // `tin` with `tinCountText` defaulted to `'1'` — passing the anchor there too
-    // made "1 tin = whatever's already here" a trivial identity, true of every
-    // recipe, so the page opened in a declaration nobody made and Save was never
-    // blocked on saying what this makes. `pieces` has no such trivial default AND
-    // is reached only by reseeding a formula that was actually saved that way, so
-    // its anchor is real recovery, not a default standing in for one.
-    rows = rowsRestatedAt(
-      rows,
-      doughAmountFrom(
-        seeded.mode,
-        seeded.fields,
-        seeded.mode === 'pieces' ? doughGramsOf(rows) : null,
-      ),
-    );
+    // THROUGH `declarationFrom`, exactly as the `$derived` `shape` does — the same
+    // touched-gate on a count of tins and the same single round. A seed that read
+    // the boxes any other way would restate at a figure Save would not write, which
+    // is the round-2 defect in its other half.
+    rows = rowsRestatedAt(rows, declarationFrom(seeded.mode, seeded.fields, doughGramsOf(rows)));
 
     // A formula with no process is a formula with no stages — an empty review
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
@@ -672,46 +681,64 @@
   // always disabled Save covers it without a second rule — an unreadable count has
   // nothing to divide by any more than it has anything to multiply.
   //
-  // THE DOUGH ALREADY THERE IS THE ANCHOR (issue #1325) — BUT ONLY FOR `pieces`
-  // (issue #1325 review, blocking-2). A count with a blank per-unit weight box then
-  // means "divide what's here" — five rolls out of this dough — instead of nothing.
-  // It composes with the restate rather than fighting it: the divided amount
-  // multiplies back to exactly the sum, so the factor is 1 and no weight moves.
+  // THE DOUGH ALREADY THERE IS THE ANCHOR (issue #1325). A count with a blank
+  // per-unit weight box then means "divide what's here" — five rolls out of this
+  // dough, or three tins out of it — instead of nothing, which is how the question
+  // is usually asked and which used to be division done on paper.
   //
-  // `tin` does NOT get the anchor, even though the issue that introduced it named
-  // "a count of tins" as the same gesture. `tinCountText` defaults to `'1'`, so
-  // passing the anchor there made "1 tin = whatever's already written" true on
-  // every weighable recipe before anyone touched the page — `shape` was never
-  // null, Save was never blocked on a declaration, and typing into a weight box
-  // silently moved what the recipe was declared to make. `pieces` has no default
-  // that trivial: it is reached only by an explicit mode choice, which is itself
-  // the declaring act. The bake sheet passes no anchor at all; `doughAnswer.ts`
-  // says why.
-  const shape = $derived(
-    doughAmountFrom(answerMode, answer, answerMode === 'pieces' ? asWrittenDoughGrams : null),
-  );
-  // The DECLARED total, rounded — what crosses into Firestore and what a reload's
-  // boxes see (issue #1325 review, blocking-1). `shape` itself stays exact for
-  // `rowsRestatedAt` below: a "divide what's here" declaration must multiply back
-  // to precisely the anchor, or the restate it drives would quietly reweigh the
-  // dough. But nothing downstream of a percentage round-trip is guaranteed clean —
-  // even a single declared tin can come back `1031.9999999999998` — and that noise
-  // must never reach the document, a reseeded box (`seedDoughAnswer`) or a batch's
-  // `vessel` string. Rounded here, once, at the one place a `shape` becomes what
-  // gets SAVED rather than solved with.
-  const declaredShape = $derived(
-    shape === null
-      ? null
-      : { count: shape.count, unitDoughGrams: roundGrams(shape.unitDoughGrams) },
-  );
+  // `tin` gets the anchor only once its count box has been TOUCHED (issue #1325
+  // review): that box opens at `'1'`, and an untouched box is a starting value
+  // rather than an answer — see `tinCountTouched` for the defect that gate exists
+  // to close. `pieces` is reached only by an explicit mode choice, which is itself
+  // the declaring act, so it needs no gate. The bake sheet passes no anchor at
+  // all; `doughAnswer.ts` says why.
+  function anchorFor(mode: DoughAnswerMode, doughGrams: number): number | null {
+    if (mode === 'pieces') return doughGrams;
+    if (mode === 'tin') return tinCountTouched ? doughGrams : null;
+    return null;
+  }
+
+  // THE DECLARATION, ROUNDED ONCE — one figure for the screen, the restate and the
+  // document alike (issue #1325 review, round 2).
+  //
+  // `roundGrams` sits HERE, at the single point where a set of boxes becomes a
+  // declaration, rather than at each place downstream that shows or stores one.
+  // Rounding only on the way out was the defect: the page restated and printed at
+  // an exact figure it would then save rounded, so 12 pieces of an 867 g dough read
+  // 867 g on screen and 864 g in the document, and 500 g of flour came back as
+  // 498 g on reopen. What will be saved is now what the weights are solved at and
+  // what the card prints, so the three cannot disagree. It also keeps a percentage
+  // round-trip's noise (`1031.9999999999998`) out of the document, the reseeded
+  // boxes and a batch's `vessel` string, which is what round 1 asked for.
+  //
+  // WHAT IT COSTS, stated rather than hidden: a divided declaration no longer
+  // multiplies back to exactly the anchor, so "N of these out of this dough" can
+  // move the weights by up to `count × 0.5 g` — 867 ÷ 12 is 72.25, and 12 × 72 g
+  // is 864 g. That is the per-row residual `rounding.ts` already accepts, paid
+  // once at declare time instead of being carried as a standing disagreement
+  // between the screen and the document. A figure no scale can weigh is not a
+  // yield anyone can bake to.
+  //
+  // A declaration that rounds away to nothing is no declaration: `DoughAmount` is
+  // strictly positive, and 100 pieces of a 1 g dough is not 100 × 0 g.
+  function declarationFrom(
+    mode: DoughAnswerMode,
+    fields: DoughAnswerFields,
+    doughGrams: number,
+  ): DoughAmount | null {
+    const amount = doughAmountFrom(mode, fields, anchorFor(mode, doughGrams));
+    if (amount === null) return null;
+    const unitDoughGrams = roundGrams(amount.unitDoughGrams);
+    return unitDoughGrams > 0 ? { count: amount.count, unitDoughGrams } : null;
+  }
+
+  const shape = $derived(declarationFrom(answerMode, answer, asWrittenDoughGrams));
   // The figure a blank per-unit box would resolve to, for its PLACEHOLDER. Not
   // written into the box: a number nobody typed, sitting in a box, gives no
   // discoverable way back to "divide it for me" — and the card's sentence reads the
-  // resolved declaration back anyway. Rounded here, at the call, because this is the
-  // one place it is shown rather than computed with.
-  const dividedUnitHint = $derived(
-    shape === null ? null : String(roundGrams(shape.unitDoughGrams)),
-  );
+  // resolved declaration back anyway. It is `shape`'s own figure, rounded where
+  // the declaration was, so the hint, the card and the document are one number.
+  const dividedUnitHint = $derived(shape === null ? null : String(shape.unitDoughGrams));
   // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
   // become load-bearing on the scaling (`doughAmount.ts`).
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
@@ -723,7 +750,7 @@
     deriveFormula({
       recipeId,
       components: componentInputs,
-      ...(declaredShape ? { referenceYield: targetYield(declaredShape) } : {}),
+      ...(shape ? { referenceYield: targetYield(shape) } : {}),
     }),
   );
 
@@ -831,11 +858,11 @@
   // ─── Save ─────────────────────────────────────────────────────────────────────
 
   // A declaration is REQUIRED — `shape` must resolve to something, and the default
-  // opening state resolves to nothing (issue #1325 review, blocking-2: the anchor
-  // that lets a blank box "divide what's here" is passed for `pieces` only, so
-  // `tin`'s default count of one tin no longer reads as an implicit declaration).
-  // Without one the formula has no reference yield worth the name, and phase 02
-  // would have nothing to solve a batch against.
+  // opening state resolves to nothing (issue #1325 review: the anchor that lets a
+  // blank per-unit box "divide what's here" reaches `tin` only once its count box
+  // has been touched, so the opening `'1'` no longer reads as a declaration
+  // nobody made). Without one the formula has no reference yield worth the name,
+  // and phase 02 would have nothing to solve a batch against.
   const canSave = $derived(shape !== null && derivation.ok && !saving);
 
   const blockedReason = $derived.by(() => {
@@ -1100,6 +1127,10 @@
                       value={answer.tinCountText}
                       onValueChange={(v) => {
                         answer = { ...answer, tinCountText: v };
+                        // Saying how many tins IS the declaring act, and until it
+                        // happens the box's opening `'1'` declares nothing. See
+                        // `tinCountTouched`.
+                        tinCountTouched = true;
                         touch();
                       }}
                       onblur={restateWeightsAtDeclaration}

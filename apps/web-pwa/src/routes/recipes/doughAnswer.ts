@@ -112,12 +112,14 @@ function parseGrams(text: string): number | null {
 /**
  * What a blank per-unit box resolves to: the dough already there, shared out.
  *
- * UNROUNDED, deliberately. The divided amount then multiplies back to exactly the
- * anchor, so a caller that restates its weights at this declaration scales them by
- * a factor of precisely 1 and nothing moves — which is the whole point of the
- * gesture. Rounding here would put a factor of 0.999-something in its place, and
- * "five rolls out of this dough" would quietly reweigh the dough. A screen that
- * wants to SHOW the figure rounds it at the call, where the round can be seen.
+ * EXACT, and that is this function's whole claim: `count × result` is the anchor
+ * back again. It is deliberately NOT the claim that a caller's weights therefore
+ * never move (issue #1325 review, round 2 — that is how the screen and the
+ * document came to state different totals). Rounding is the CALLER's, at the one
+ * point where its boxes become a declaration, because whatever it restates at is
+ * what it will save and what it will print: `FormulaPage.svelte`'s
+ * `declarationFrom` does it in one place and states what it costs — 867 ÷ 12 is
+ * 72.25, and a declaration of 12 × 72 g moves the dough by 3 g.
  *
  * Nothing without both halves — a blank count is still no declaration, and no
  * anchor (or a formula with nothing in it) is nothing to divide.
