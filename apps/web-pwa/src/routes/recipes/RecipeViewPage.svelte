@@ -72,6 +72,7 @@
   import RecipeMethodRail from './RecipeMethodRail.svelte';
   import RecipeIngredientsPanel from './RecipeIngredientsPanel.svelte';
   import { dropBlankRows } from './blankRows.js';
+  import { takeEditOnArrival } from './editOnArrival.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
   import { chatsForRecipe } from './recipeChats.js';
@@ -725,6 +726,13 @@
     lastRecipeId = id;
     editing = false;
     titleDraft = '';
+    // ...unless this arrival is the New sheet dropping you on an entry it just
+    // wrote (issue #1319 Phase 6). The reset above runs on EVERY arrival including
+    // the first, so the request has to be consumed after it rather than before —
+    // and it goes through `startEditing` rather than a bare `editing = true` so
+    // there is still exactly one way into the mode. One-shot and id-matched: see
+    // `editOnArrival.ts`.
+    if (takeEditOnArrival(id)) startEditing();
   });
 
   // The prune's THIRD door: leaving the page outright (Back, a nav tap, or the

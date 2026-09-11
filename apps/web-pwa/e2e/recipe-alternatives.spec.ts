@@ -52,26 +52,34 @@ test.describe('recipes — when you CBA', () => {
     await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
 
     // ── Create the outing from the New menu ──────────────────────────────────
+    // Since issue #1319 Phase 6 this is a SHEET, not a page: a name and a
+    // description are the whole of what a "When you CBA" entry cannot exist
+    // without, and everything else is done on its own page afterwards.
     await page.goto('/#/recipes');
     await page.getByTestId('recipe-new-btn').click();
     await page.getByTestId('recipe-new-outing').click();
 
-    await expect(page).toHaveURL(/#\/recipes\/new\/outing$/);
-    await expect(page.getByRole('heading', { name: 'New — When you CBA' })).toBeVisible();
+    // Still on the list — the sheet is over it, not a route of its own.
+    await expect(page).toHaveURL(/#\/recipes$/);
+    await expect(page.getByTestId('recipe-new-name')).toBeVisible();
 
-    // Title and description are the whole form. Nothing that does not apply is
-    // offered — no ingredients, no method, no cooking times.
+    // Nothing that does not apply is offered, and nothing that belongs on the
+    // entry's own page is either — no ingredients, no method, no dish picker.
     await expect(page.getByText('Ingredients', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Method', { exact: true })).toHaveCount(0);
-    await expect(page.getByLabel('Servings')).toHaveCount(0);
-    await expect(page.getByLabel('Total (min)')).toHaveCount(0);
+    await expect(page.getByTestId('recipe-new-dish-picker')).toHaveCount(0);
 
-    await page.getByLabel('Title').fill(OUTING_TITLE);
-    await page.getByLabel('Description').fill('Curry from the place on the corner.');
-    await page.getByTestId('recipe-save-btn').click();
+    await page.getByTestId('recipe-new-name').fill(OUTING_TITLE);
+    await page.getByTestId('recipe-new-description').fill('Curry from the place on the corner.');
+    await page.getByTestId('recipe-new-create').click();
+
+    // ── It drops you on the entry's own page, already editing it ─────────────
+    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    await expect(page.getByTestId('recipe-done-button')).toBeVisible({ timeout: SYNC_TIMEOUT });
+    await page.getByTestId('recipe-done-button').click();
 
     // ── Its page offers only what applies ────────────────────────────────────
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    await expect(page.getByTestId('recipe-edit-mode-button')).toBeVisible();
     await expect(page.getByRole('heading', { name: OUTING_TITLE })).toBeVisible({
       timeout: SYNC_TIMEOUT,
     });
