@@ -249,4 +249,47 @@ describe('applyRecipeAmendment — against a pending in-place edit (issue #1330)
     expect(savedDocs()[0]!.description).toBe('A one-pan supper, with chilli.');
     expect(savedDocs()[0]!.metadata.servings).toBe(4);
   });
+
+  it('reverts the store when the amendment write itself fails, so the next keystroke does not silently persist it (issue #1330 review, finding 3)', async () => {
+    // Before this PR the amend path applied nothing optimistically, so a failed
+    // write left the store untouched and the failure toast matched reality.
+    // Now it does apply optimistically — for the immediate-echo property above —
+    // so a failed write must not leave the unwritten amendment staged: the user
+    // is still in edit mode after the toast, and the next in-place keystroke
+    // composes from whatever the store holds.
+    const base = seeded();
+    seedStore([base]);
+    const proposal = proposalAgainst(base);
+
+    fs.saveRecipe.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'unavailable' },
+    } as never);
+
+    const result = await applyRecipeAmendment(proposal);
+
+    expect(result.kind).toBe('err');
+    // Not the amendment's content (the draft's description) — back to what the
+    // store held immediately before the failed apply.
+    expect(fromStore(base.id)?.description).toBe(base.description);
+    expect(fromStore(base.id)?.metadata.servings).toBe(base.metadata.servings);
+  });
+
+  it('falls back to its own proposal base when the store no longer holds the recipe — deleted mid-review (issue #1330 review, finding 4)', async () => {
+    // Deliberately not seeded: the store has no entry for this id, exactly as if
+    // it had been deleted on another device while the review sheet was open.
+    // `getRecipeSnapshot` then returns `undefined`, and the `?? amendment.existing`
+    // fallback is the only thing standing between that and `mergeAmendedRecipe`
+    // dereferencing `existing.metadata` on `undefined` — an unhandled rejection
+    // past both callers' toasts, with the Apply sheet stuck.
+    const base = seeded();
+    seedStore([]);
+    const proposal = proposalAgainst(base);
+
+    const result = await applyRecipeAmendment(proposal);
+
+    expect(result.kind).toBe('ok');
+    expect(savedDocs()).toHaveLength(1);
+    expect(savedDocs()[0]!.description).toBe('A one-pan supper, with chilli.');
+  });
 });

@@ -215,6 +215,19 @@ export async function applyRecipeAmendment(
   // amendment's propose-time `updatedAt` lost to the typist's newer one at
   // `applySnapshot`'s echo guard — so whichever write lost, the device that
   // pressed Apply saw a success and no revert.
+  //
+  // THE BOUNDARY (issue #1330 review, finding 1 — CLAUDE.md Rule 12): this only
+  // orders a write that is still QUEUED when this runs. `flushKey`
+  // (`writeCoalescer.ts`) deletes a key's pending entry BEFORE awaiting its
+  // `setDoc`, so once a keystroke's own 400 ms timer has already fired, the
+  // entry is gone and this flush sees nothing to await — it resolves
+  // immediately while that write is still on the wire. In that window the
+  // amendment's `setDoc` below is issued while the typing write is still in
+  // flight, and which one Firestore keeps rests on the SDK's own per-document
+  // mutation ordering (one client, one document: issued-before is applied-
+  // before) — a property this function depends on but does not establish, and
+  // cannot pin with a test here, since nothing in this codebase controls or
+  // observes that ordering.
   const flushed = await flushPendingRecipeEdits();
   if (flushed.kind !== 'ok') return flushed;
 
@@ -225,13 +238,20 @@ export async function applyRecipeAmendment(
   //
   // WHAT THIS SAVES, exactly — it is not "your typing survives" (CLAUDE.md Rule
   // 12): re-basing only changes the fields `mergeAmendedRecipe` CARRIES from the
-  // base — servings and tags the librarian omitted, the phase-strip fallback,
-  // `image`, `source`, `createdAt`. The fields the draft is authoritative on —
-  // title, description, notes, ingredients, steps — still replace whatever was
-  // typed into them, because replacing them is what the reviewer approved.
-  // Re-basing therefore cannot change the diff the reviewer was shown into
-  // something they did not agree to; it can only decline to undo an edit they
-  // made themselves.
+  // base — servings and tags the librarian omitted, `image`, `source`,
+  // `createdAt`. The phase strip is NOT one of them on this path: the librarian
+  // is always asked for a fresh 3–6 phase strip (`PHASE_RULES`) and
+  // `reconcileRecipePhases`'s stored-pair fallback never fires for an amend (see
+  // the boundary note on `mergeAmendedRecipe` above) — so a strip hand-corrected
+  // in place during the review (#1319/#1332) is LOST, replaced by the fresh
+  // strip, whether or not the base is re-run. The fields the draft is
+  // authoritative on — title, description, notes, ingredients, steps — likewise
+  // still replace whatever was typed into them, because replacing them is what
+  // the reviewer approved. Re-basing therefore cannot change the diff the
+  // reviewer was shown into something they did not agree to; it only declines to
+  // undo whatever edit is already sitting in the store when this runs — which
+  // may equally be another family member's device or a Cloud Function trigger's
+  // write, not only one the user typed themselves.
   //
   // No merge or diff logic is added here to reconcile the two writes: this is
   // the one existing pure merge, re-run with a fresher base. A recipe the store
@@ -272,11 +292,25 @@ export async function applyRecipeAmendment(
   // must be left to flush.
   const saveResult = await saveRecipeDoc(applyRecipeOptimistically(updated));
 
+  if (saveResult.kind !== 'ok') {
+    // A failed write must not leave the store — or `latestLocalEdit` — holding a
+    // document Firestore never has (issue #1330 review, finding 3). The user is
+    // still in edit mode after the failure toast, and the next keystroke
+    // composes from whatever the store holds; left as `updated`, that keystroke
+    // would silently persist the whole amendment the toast just said did not
+    // save. Re-applying `base` — the document exactly as it stood immediately
+    // before the optimistic apply above — undoes only that apply: no second
+    // write, and a fresh local timestamp so a genuine later echo of `base`
+    // itself isn't rejected as stale by `applySnapshot`.
+    applyRecipeOptimistically(base);
+    return saveResult;
+  }
+
   // Only after the save succeeds — throwing away the plan for a write that never
   // landed would be a plain loss. Best-effort: a failed delete leaves a stale
   // plan, which is the situation we were already in, so it must not turn a
   // successful save into an error the user has to interpret.
-  if (saveResult.kind === 'ok' && planStepsInvalidated) {
+  if (planStepsInvalidated) {
     await discardGuidedPlan(amendment.updated.id);
   }
 
@@ -290,9 +324,16 @@ export async function applyRecipeAmendment(
  * `flushRecipeWrites` resolves `void` — the write's own `ReadResult` goes to the
  * promise `queueRecipeEdit` handed the editor, which is what raises the typist's
  * toast — so a flush whose write merely returns `err` is invisible here and is
- * deliberately not allowed to block the amendment: the amendment's own write
- * carries the same text anyway, because the compose above re-bases on the store.
- * Only a flush that REJECTS crosses back, as a `Failure`.
+ * deliberately not allowed to block the amendment. That is not "the amendment's
+ * own write carries the same text anyway" for every field: the compose above
+ * re-bases on the store, but re-basing only carries the fields
+ * `mergeAmendedRecipe` takes from the base (servings/tags the librarian
+ * omitted, `image`, `source`, `createdAt` — see `applyRecipeAmendment`'s
+ * comment). `notes`, `title`, `description`, `ingredients` and `steps` are the
+ * draft's regardless of the base, so a flushed edit to one of THOSE fields is
+ * genuinely replaced by the amendment — which is the reviewed behaviour, not a
+ * gap this flush is covering. Only a flush that REJECTS crosses back, as a
+ * `Failure`.
  *
  * It flushes every pending recipe edit, not only this recipe's. There is no
  * per-id seam on `recipeService` and no reason for one: any other pending recipe

@@ -173,11 +173,14 @@ export function initRecipeSync(): () => void {
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
-// Stamp attribution (issue #845). The ONE implementation, and exported because
-// the two chat write paths (`chatRecipeAuthor`, `recipeAmend`) go to
-// `saveRecipeDoc` directly rather than through `persistRecipe` — three surfaces
-// stamping their own would be three chances to forget one, exactly as
-// `createdAt`/`updatedAt` are stamped once per path and no more.
+// Stamp attribution (issue #845). The ONE implementation, exported because
+// `chatRecipeAuthor` goes to `saveRecipeDoc` directly rather than through
+// `persistRecipe` and so must stamp itself — a second inline stamp there would
+// be a second chance to forget one, exactly as `createdAt`/`updatedAt` are
+// stamped once per path and no more. `recipeAmend`'s apply used to be a second
+// direct caller of THIS function; since issue #1330 it stamps through
+// `applyRecipeOptimistically` below instead, so this function now has exactly
+// two callers — that function's own body, and `chatRecipeAuthor`.
 //
 // `lastEditedBy` on every write, `createdBy` only when it is still blank: a
 // recipe is added once and edited forever, so `createdBy` is fill-once and is

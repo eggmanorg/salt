@@ -114,9 +114,14 @@ export interface WriteCoalescer<T> {
    * direct `saveRecipeDoc`); #1330 changed it to flush first and stamp at write
    * time through `applyRecipeOptimistically`, so it is no longer an example of
    * this. It still does not call `cancel`, deliberately — after its flush the
-   * only entry that can be pending is one queued during its own round trip,
-   * which must be left to flush. No caller of `cancel` stamps early today; this
-   * paragraph states the boundary for the next one that might.
+   * only entries that can be pending are ones queued DURING that flush: either
+   * during its own round trip (a keystroke landing while the amendment's write
+   * is out) or during the flush's own await (`flushKey` deletes a key's entry
+   * before awaiting its write, so a keystroke arriving in that gap opens a
+   * fresh one before the flush call even returns) — the wider of the two
+   * windows, and either way something must be left to flush on its own. No
+   * caller of `cancel` stamps early today; this paragraph states the boundary
+   * for the next one that might.
    *
    * A no-op when nothing is pending for `key`.
    */
