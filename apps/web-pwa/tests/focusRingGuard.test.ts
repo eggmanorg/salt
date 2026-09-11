@@ -58,6 +58,9 @@ const files = sourceFiles(SRC).map((path) => ({
 const OUTLINE_NONE_ALLOWED = new Set([
   'routes/chat/ChatThread.svelte',
   'routes/recipes/RecipeEditPage.svelte',
+  // The tag box on the recipe page's identity card: the same `<input>`-inside-a-
+  // frame shape, with `salt-focus-ring-within` on the frame (issue #1319).
+  'routes/recipes/RecipeIdentityCard.svelte',
   'routes/recipes/CookModePage.svelte',
   'routes/recipes/GuidedCookPage.svelte',
 ]);

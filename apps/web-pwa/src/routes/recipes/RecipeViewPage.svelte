@@ -7,7 +7,6 @@
     CardDescription,
     CardHeader,
     CardTitle,
-    Chip,
     DetailPage,
     Dialog,
     DialogContent,
@@ -18,7 +17,6 @@
     Divider,
     Icon,
     ImageCropper,
-    Markdown,
     Popover,
     PopoverContent,
     PopoverMenuItem,
@@ -30,8 +28,6 @@
     TabsTrigger,
     Textarea,
     TextField,
-    type ChipTone,
-    type IconName,
     type ImageCropperHandle,
   } from '@salt/ui-components';
   import { tick } from 'svelte';
@@ -52,6 +48,8 @@
     canonicaliseIngredients,
     matchIngredient,
     persistRecipe,
+    queueRecipeEdit,
+    flushRecipeWrites,
     stashImportedDraft,
     regenerateRecipeImage,
     redoRecipeKit,
@@ -66,7 +64,9 @@
   import RecipeBakeBatchSheet from './RecipeBakeBatchSheet.svelte';
   import IngredientMatchSheet from './IngredientMatchSheet.svelte';
   import RecipeChangeSummary from './RecipeChangeSummary.svelte';
-  import RecipePhaseTimeline from './RecipePhaseTimeline.svelte';
+  import EditableZone from './EditableZone.svelte';
+  import RecipeIdentityCard from './RecipeIdentityCard.svelte';
+  import RecipeNotesCard from './RecipeNotesCard.svelte';
   import { componentTimeLabel } from './recipeTiming.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
@@ -88,7 +88,6 @@
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
   import {
     recipeHeroUrl,
-    recipePhaseTotals,
     duplicateRecipe,
     firstUseByStep as groupIngredientsByFirstUse,
     flattenIngredients,
@@ -104,7 +103,6 @@
     resolveComponents,
     takesIngredients,
     type IngredientGroup,
-    memberFirstName,
     type Ingredient,
     type Recipe,
     type Step,
@@ -138,42 +136,6 @@
   let { params }: Props = $props();
 
   const recipe = $derived($recipes.find((r) => r.id === params.id) ?? null);
-
-  // Outbound link to the original recipe, only for url-sourced (imported) recipes
-  // with a non-empty url. Manual/legacy recipes (source null) render nothing.
-  const sourceUrl = $derived(
-    recipe?.source?.type === 'url' && (recipe.source.url ?? '').trim() !== ''
-      ? recipe.source.url!
-      : null,
-  );
-
-  // "Makes: <name>" chip — resolve the produces canon link to its display name.
-  // null when the recipe isn't linked or the canon item has since been deleted.
-  const producesCanonName = $derived(
-    recipe?.producesCanonId
-      ? ($canonItems.find((c) => c.id === recipe.producesCanonId)?.name ?? null)
-      : null,
-  );
-
-  // "Added by X · edited by Y" chip (issue #845). Audit only: it records who did
-  // what and gates nothing. `null` — and so no chip at all, rather than a
-  // placeholder — whenever there is no attribution on record, which is every
-  // recipe written before the field existed. A `lastEditedBy` that is the creator
-  // (they added it and they are still the only one to have touched it) adds
-  // nothing to read, so only a DIFFERENT last editor earns the second half.
-  //
-  // First names on screen, full names in the comparison. The stored value is the
-  // verbatim `Member.name`, and `memberFirstName` shortens it only for reading — a
-  // household shares a surname, so the rest is noise. The "is this the same
-  // person" test deliberately stays on the FULL values: comparing first names
-  // would silently merge two genuinely different people who share one.
-  const attribution = $derived(
-    !recipe?.createdBy
-      ? null
-      : recipe.lastEditedBy && recipe.lastEditedBy !== recipe.createdBy
-        ? `Added by ${memberFirstName(recipe.createdBy)} · edited by ${memberFirstName(recipe.lastEditedBy)}`
-        : `Added by ${memberFirstName(recipe.createdBy)}`,
-  );
 
   // What this entry can do (issue #637). Everything that gates a section or an
   // action on this page reads one of these two — never the kind itself. Both are
@@ -388,103 +350,6 @@
   const secondaryCookHref = $derived(
     guidedIsPrimary ? `/recipes/${params.id}/cook` : `/recipes/${params.id}/cook/guided`,
   );
-
-  // ─── Facts, and why they are not tags (issue #878) ──────────────────────────
-  // Six different things used to render as the same grey pill: what the dish
-  // makes, how many it serves, three durations, who added it, and every tag on
-  // it. Two of those are different KINDS of thing. A fact is measured from the
-  // dish — you can check it — and gets a glyph that carries its meaning before
-  // the number is read. A tag is an arbitrary word somebody typed, and any icon
-  // beside it would be a guess (ui-spec-v09 §8.23.8). So: facts on a tinted
-  // ground with an icon, tags as quiet outlines with none, on their own rows.
-  //
-  // ── What the tint means here ────────────────────────────────────────────────
-  // `Chip`'s `tone` is named for a palette role and says nothing about what the
-  // hue means (ui-spec-v09 §8.23.9) — deciding that is this page's job, and this
-  // is where it is written down. The tint splits the row by what each fact
-  // measures:
-  //
-  //   sage      what comes OUT of it — Makes, Serves. The palette's "fresh /
-  //             organic" accent (design.md), and already this page's colour for
-  //             a part of something: the ingredient group headings below, and a
-  //             matched pictogram tile.
-  //   neutral   anything that is not that: who added the recipe, which is a fact
-  //             about the document rather than about the dish.
-  //
-  // The row used to carry three durations on three further tints; issue #1213
-  // retired them and the phase timeline below states the timing instead. One tint
-  // and a default is not an impoverished version of that scheme — a row where
-  // every chip is a different colour teaches the reader that the colour carries
-  // nothing. And nothing is carried by colour ALONE — every chip says its own kind
-  // in words, so the tint only lets the row be scanned instead of read
-  // (ui-spec-v02 §7).
-  interface RecipeFact {
-    readonly key: string;
-    /** Absent only for the one fact with no honest glyph — see `attribution` below. */
-    readonly icon?: IconName;
-    readonly label: string;
-    /** Which kind of fact this is. See the tint note above. */
-    readonly tone?: ChipTone;
-    /** Only the two facts an e2e spec names carry one. */
-    readonly testId?: string;
-  }
-
-  // The phase strip (issue #1122), ungated as of issue #1213 — the strip is now
-  // the whole of a recipe's timing on this page and there is nothing left to fall
-  // back to.
-  //
-  // `metadata.phases` is optional on the schema, so it is resolved to a list once,
-  // here, and everything below reads that list — the template never asks the recipe
-  // for it again. `recipePhaseTotals` then sums exactly what is drawn, and it is the
-  // only permitted source of a duration (docs/recipe-module.md's single funnel).
-  //
-  // It is declared ABOVE `facts` because the card's gate reads it: a recipe whose
-  // only stated fact is its timing still has something to say in that card.
-  const phases = $derived(recipe?.metadata.phases ?? []);
-  const phaseTotals = $derived(recipePhaseTotals(phases));
-
-  const facts = $derived.by((): RecipeFact[] => {
-    if (!recipe) return [];
-    const out: RecipeFact[] = [];
-    // What the dish makes leads: it is the fact that says what this document IS
-    // when the document is a component of something else.
-    if (producesCanonName) {
-      out.push({
-        key: 'produces',
-        icon: 'Soup',
-        label: `Makes: ${producesCanonName}`,
-        tone: 'secondary',
-        testId: 'recipe-produces-chip',
-      });
-    }
-    // Serves / Prep / Cook / Total are COOKING facts. An outing has none of
-    // them, and gating here covers the chips and, through `hasMeta`, the card.
-    if (isCookable(kindOf(recipe))) {
-      const m = recipe.metadata;
-      if (m.servings !== null) {
-        out.push({
-          key: 'servings',
-          icon: 'Users',
-          label: `Serves ${m.servings}`,
-          tone: 'secondary',
-        });
-      }
-      // No timing chip of any kind. Prep / Cook / Total were retired here by issue
-      // #1213, and nothing phase-derived takes their place: the timeline a few lines
-      // below states its own total, and a chip repeating it is #1122's own complaint
-      // — two accounts of the same fact side by side — at a smaller scale.
-    }
-    // Provenance is a fact about the document rather than about the dish, and it
-    // is the one fact with no honest glyph — `Users` is already Serves, and a
-    // pencil would say "edited" for a chip that usually says "added". It sits in
-    // the fact row without an icon rather than being promoted to a row of its
-    // own for one pill. Its text is asserted verbatim by
-    // `e2e/recipe-author-filter.spec.ts`, so nothing may be interpolated into it.
-    if (attribution) {
-      out.push({ key: 'attribution', label: attribution, testId: 'recipe-attribution-chip' });
-    }
-    return out;
-  });
 
   // The #878 cook-shape ribbon was deleted here by issue #1213, along with
   // `cookShape` itself. It drew whatever minutes somebody had happened to attach a
@@ -715,6 +580,54 @@
     if (persisted.kind !== 'ok') {
       addToast('Failed to mark as reviewed.', 'destructive');
     }
+  }
+
+  // ─── Edit mode (issue #1319) ──────────────────────────────────────────────
+  // One boolean is the whole feature's switch. The page does not move, does not
+  // re-route and does not re-fetch: the same components render, each told that a
+  // tap now means "change this". Outside it nothing on this page behaves
+  // differently from how it behaved before the feature existed.
+  let editing = $state(false);
+
+  // The title is the one field that lives in `DetailPage`'s header rather than in
+  // a card, so its draft is held here beside the rest of the page's state.
+  let titleDraft = $state('');
+
+  // There is no Save, so a failed write is the only thing left to say out loud —
+  // and it is said ONCE per coalesced burst, not once per keystroke. Every edit
+  // inside one debounce window is handed the SAME promise by the coalescer, so
+  // the promise itself is the burst's identity and comparing against the last one
+  // toasted is what makes "at most one toast" true rather than merely intended.
+  // `recipeService.inlineEditToast.test.ts` is what keeps it true.
+  let lastFailureToasted: Promise<unknown> | null = null;
+
+  function handleInlineEdit(next: Recipe): void {
+    const write = queueRecipeEdit(next);
+    void write.then((result) => {
+      if (result.kind === 'ok' || lastFailureToasted === write) return;
+      lastFailureToasted = write;
+      addToast('Failed to save your change.', 'destructive');
+    });
+  }
+
+  // A recipe must have a name, so an emptied title box is not written. It is not
+  // an error either — you are mid-word — so the box keeps what you typed and the
+  // document keeps the last real name until you finish.
+  function setTitle(value: string): void {
+    titleDraft = value;
+    if (!recipe || value.trim() === '') return;
+    handleInlineEdit({ ...recipe, title: value });
+  }
+
+  // Done: flush whatever the debounce is still holding, then clear the import's
+  // "not checked yet" flag. Entering editing and coming out of it is the
+  // deliberate act that says "I have read this", and it routes through the
+  // banner's own `handleMarkReviewed` rather than becoming a fourth clearing
+  // site (issue #1319; the three that exist are listed at that function).
+  async function finishEditing(): Promise<void> {
+    editing = false;
+    await flushRecipeWrites();
+    if (recipe?.needs_approval) await handleMarkReviewed();
   }
 
   // ─── Add to shopping list ─────────────────────────────────────────────────
@@ -1436,8 +1349,56 @@
     class="p-4 sm:p-6"
     fill={chatPaneShown}
   >
+    {#snippet titleSlot()}
+      <!-- `titleSlot` replaces the `<h1>` entirely (ui-spec-v13 §2.4), so the
+           heading is rendered here with the classes `DetailPage` would have used.
+           Read mode is byte-for-byte what it always was; edit mode grows a pencil
+           beside it. -->
+      <EditableZone
+        {editing}
+        filled
+        label="Edit title"
+        testId="recipe-edit-title"
+        class="w-full"
+        onOpen={() => (titleDraft = recipe.title)}
+      >
+        {#snippet view()}
+          <h1 class="truncate text-2xl font-semibold tracking-tight text-foreground">
+            {recipe.title}
+          </h1>
+        {/snippet}
+        {#snippet edit(close)}
+          <input
+            class="w-full min-w-0 border-b border-foreground/30 bg-transparent text-2xl font-semibold tracking-tight text-foreground"
+            value={titleDraft}
+            oninput={(e) => setTitle(e.currentTarget.value)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                close();
+              }
+            }}
+            onblur={close}
+            aria-label="Title"
+            data-testid="recipe-title-input"
+          />
+        {/snippet}
+      </EditableZone>
+    {/snippet}
+
     {#snippet actions()}
-      <!-- Nine actions is far too many to shout at once, so they are ranked and
+      <!-- Edit mode takes the whole cluster (issue #1319). While you are editing,
+           Cook, Shop and Plan are not what you are doing, and the row is already
+           at its budget at every width — so Done replaces it rather than joining
+           it. The ⋮ menu goes with it: its entries are all things done TO the
+           document, and none of them is what this mode is for. -->
+      {#if editing}
+        <Button size="sm" onclick={() => void finishEditing()} data-testid="recipe-done-button">
+          {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
+          Done
+        </Button>
+      {:else}
+        <!-- Nine actions is far too many to shout at once, so they are ranked and
            the ranking is carried by BOTH weight and placement.
 
            Cook, Shop and Plan are what this page is for — the three things you
@@ -1472,25 +1433,25 @@
            so standard cook mode is one tap away whichever way it is set — and the
            control's shape, its testids and its unreviewed dot are the same object
            either way. Only the destinations swap. -->
-      {#if showCooking}
-        <div
-          class="flex items-center"
-          data-testid="recipe-cook-actions"
-          data-primary={guidedIsPrimary ? 'guided' : 'standard'}
-        >
-          <Button
-            size="sm"
-            class={showGuidedHalf ? 'rounded-r-none' : ''}
-            onclick={() => push(primaryCookHref)}
-            data-testid="recipe-cook-button"
+        {#if showCooking}
+          <div
+            class="flex items-center"
+            data-testid="recipe-cook-actions"
+            data-primary={guidedIsPrimary ? 'guided' : 'standard'}
           >
-            {#snippet leading()}
-              <Icon name={guidedIsPrimary ? 'ListChecks' : 'CookingPot'} size={16} />
-            {/snippet}
-            Cook
-          </Button>
-          {#if showGuidedHalf}
-            <!-- The right half. Icon-only because it is the second press of a
+            <Button
+              size="sm"
+              class={showGuidedHalf ? 'rounded-r-none' : ''}
+              onclick={() => push(primaryCookHref)}
+              data-testid="recipe-cook-button"
+            >
+              {#snippet leading()}
+                <Icon name={guidedIsPrimary ? 'ListChecks' : 'CookingPot'} size={16} />
+              {/snippet}
+              Cook
+            </Button>
+            {#if showGuidedHalf}
+              <!-- The right half. Icon-only because it is the second press of a
                  control the left half has already named; its accessible name says
                  the whole thing, and the divider is what makes the two read as one
                  object rather than as two buttons that happen to touch.
@@ -1498,25 +1459,25 @@
                  Present with no plan too, but only for someone whose default is
                  guided — the person who most wants to be offered one. It leads to
                  the no-plan screen, which offers to write it. -->
-            <Button
-              size="sm"
-              class="rounded-l-none border-l border-primary-foreground/30 px-2"
-              onclick={() => push(secondaryCookHref)}
-              ariaLabel={guidedIsPrimary
-                ? 'Cook, standard'
-                : guidedPlanUnread
-                  ? 'Cook, guided — the plan is written by AI and not checked yet'
-                  : 'Cook, guided'}
-              title={guidedIsPrimary
-                ? 'Cook, standard'
-                : guidedPlanUnread
-                  ? 'Cook, guided — written by AI, not checked yet'
-                  : 'Cook, guided'}
-              data-testid="recipe-cook-guided-button"
-              data-unreviewed={guidedPlanUnread && !guidedIsPrimary}
-            >
-              {#snippet leading()}
-                <!-- "Not checked yet" as a `review` dot on the corner of the icon,
+              <Button
+                size="sm"
+                class="rounded-l-none border-l border-primary-foreground/30 px-2"
+                onclick={() => push(secondaryCookHref)}
+                ariaLabel={guidedIsPrimary
+                  ? 'Cook, standard'
+                  : guidedPlanUnread
+                    ? 'Cook, guided — the plan is written by AI and not checked yet'
+                    : 'Cook, guided'}
+                title={guidedIsPrimary
+                  ? 'Cook, standard'
+                  : guidedPlanUnread
+                    ? 'Cook, guided — written by AI, not checked yet'
+                    : 'Cook, guided'}
+                data-testid="recipe-cook-guided-button"
+                data-unreviewed={guidedPlanUnread && !guidedIsPrimary}
+              >
+                {#snippet leading()}
+                  <!-- "Not checked yet" as a `review` dot on the corner of the icon,
                      composed the way cook mode's keep-awake toggle composes its
                      Lock badge — there is no room for a word-bearing pill on a
                      32px segment, and overhanging one would push the row off a
@@ -1532,38 +1493,38 @@
                      outline (the same corner-badge pattern this file already uses at
                      the match markers below) separates the dot from the button by
                      shape rather than by hue, so it reads regardless of colour. -->
-                <span class="relative inline-flex">
-                  <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
-                  {#if guidedPlanUnread && !guidedIsPrimary}
-                    <span
-                      class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-2 ring-card"
-                      aria-hidden="true"
-                      data-testid="recipe-cook-guided-unreviewed-dot"
-                    ></span>
-                  {/if}
-                </span>
-              {/snippet}
-            </Button>
-          {/if}
-        </div>
-      {/if}
-      {#if showIngredients}
-        <Button size="sm" onclick={openAddToList} data-testid="recipe-add-to-list-button">
-          {#snippet leading()}<Icon name="ShoppingCart" size={16} />{/snippet}
-          Shop
-        </Button>
-      {/if}
-      {#if showPlanning}
-        <Button
-          size="sm"
-          onclick={() => (addToPlannerOpen = true)}
-          data-testid="recipe-add-to-planner-button"
-        >
-          {#snippet leading()}<Icon name="CalendarPlus" size={16} />{/snippet}
-          Plan
-        </Button>
-      {/if}
-      <!-- The chat pane's own switch (issue #1141). The TENTH action, and it is allowed
+                  <span class="relative inline-flex">
+                    <Icon name={guidedIsPrimary ? 'CookingPot' : 'ListChecks'} size={16} />
+                    {#if guidedPlanUnread && !guidedIsPrimary}
+                      <span
+                        class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-review ring-2 ring-card"
+                        aria-hidden="true"
+                        data-testid="recipe-cook-guided-unreviewed-dot"
+                      ></span>
+                    {/if}
+                  </span>
+                {/snippet}
+              </Button>
+            {/if}
+          </div>
+        {/if}
+        {#if showIngredients}
+          <Button size="sm" onclick={openAddToList} data-testid="recipe-add-to-list-button">
+            {#snippet leading()}<Icon name="ShoppingCart" size={16} />{/snippet}
+            Shop
+          </Button>
+        {/if}
+        {#if showPlanning}
+          <Button
+            size="sm"
+            onclick={() => (addToPlannerOpen = true)}
+            data-testid="recipe-add-to-planner-button"
+          >
+            {#snippet leading()}<Icon name="CalendarPlus" size={16} />{/snippet}
+            Plan
+          </Button>
+        {/if}
+        <!-- The chat pane's own switch (issue #1141). The TENTH action, and it is allowed
            inline only because it is icon-only and renders from `split` up — never on the
            narrowest phone the row above is sized to, where it would have nothing to do
            anyway (the chat is already a dismissible drawer there). Gated on `docked`
@@ -1574,23 +1535,39 @@
            A labelled button was rejected: a fifth word pushes the row off the edge, and
            this is flipped repeatedly, which also rules out the ⋮ menu (two presses, and
            effectively undiscoverable). The accessible name says which way it will go. -->
-      {#if docked}
+        {#if docked}
+          <Button
+            size="sm"
+            variant="ghost"
+            class="px-2"
+            onclick={() => recipeChatPanePrefs.toggle()}
+            ariaLabel={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
+            title={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
+            data-testid="recipe-chat-pane-toggle"
+            data-state={chatPaneShown ? 'shown' : 'hidden'}
+          >
+            {#snippet leading()}
+              <Icon name={chatPaneShown ? 'PanelRightClose' : 'PanelRightOpen'} size={16} />
+            {/snippet}
+          </Button>
+        {/if}
+        <!-- Edit (issue #1319). ICON-ONLY: the note at the top of this row records
+           why a fifth word does not fit, and this control is not worth breaking
+           that for. Pressing it swaps the whole cluster for Done. The ⋮ → Edit
+           item that leads to the old editor is untouched here and is removed with
+           that page. -->
         <Button
           size="sm"
           variant="ghost"
           class="px-2"
-          onclick={() => recipeChatPanePrefs.toggle()}
-          ariaLabel={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
-          title={chatPaneShown ? 'Hide chef chat' : 'Show chef chat'}
-          data-testid="recipe-chat-pane-toggle"
-          data-state={chatPaneShown ? 'shown' : 'hidden'}
+          onclick={() => (editing = true)}
+          ariaLabel="Edit this recipe"
+          title="Edit this recipe"
+          data-testid="recipe-edit-mode-button"
         >
-          {#snippet leading()}
-            <Icon name={chatPaneShown ? 'PanelRightClose' : 'PanelRightOpen'} size={16} />
-          {/snippet}
+          {#snippet leading()}<Icon name="Pencil" size={16} />{/snippet}
         </Button>
-      {/if}
-      <!-- Overflow (⋮), at every width since #735. Cook, Shop and Plan are never in
+        <!-- Overflow (⋮), at every width since #735. Cook, Shop and Plan are never in
            here — they stay inline, which is the whole point of ranking them, and
            neither is "Cook, guided", which is a way of pressing Cook.
 
@@ -1632,48 +1609,48 @@
            that happen to be able to take components today. #823 adds
            `showMakeScalable` for the same reason once more — shape rather than
            kind, and the one clause that can be true when `hasFormula` is false. -->
-      <Popover bind:open={overflowMenuOpen}>
-        <PopoverTrigger>
-          {#snippet children()}
-            <button
-              type="button"
-              class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="More actions"
-              data-testid="recipe-actions-overflow"
-            >
-              <Icon name="EllipsisVertical" size={20} />
-            </button>
-          {/snippet}
-        </PopoverTrigger>
-        <PopoverContent align="end" class="min-w-44 p-1">
-          {#if showCooking}
-            <PopoverMenuItem
-              icon="ChefHat"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleAskAmend();
-              }}
-              disabled={amendBusy}
-              data-testid="recipe-ask-amend-menu-item"
-            >
-              Chat
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking && hasEquipment}
-            <PopoverMenuItem
-              icon="Blender"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleOptimiseForKitchen();
-              }}
-              disabled={optimiseBusy || chat.isSending}
-              data-testid="recipe-optimise-kitchen-menu-item"
-            >
-              Optimise
-            </PopoverMenuItem>
-          {/if}
-          {#if canAuthor}
-            <!-- Refresh (issue #890). Beside Optimise because both put a canned
+        <Popover bind:open={overflowMenuOpen}>
+          <PopoverTrigger>
+            {#snippet children()}
+              <button
+                type="button"
+                class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="More actions"
+                data-testid="recipe-actions-overflow"
+              >
+                <Icon name="EllipsisVertical" size={20} />
+              </button>
+            {/snippet}
+          </PopoverTrigger>
+          <PopoverContent align="end" class="min-w-44 p-1">
+            {#if showCooking}
+              <PopoverMenuItem
+                icon="ChefHat"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleAskAmend();
+                }}
+                disabled={amendBusy}
+                data-testid="recipe-ask-amend-menu-item"
+              >
+                Chat
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking && hasEquipment}
+              <PopoverMenuItem
+                icon="Blender"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleOptimiseForKitchen();
+                }}
+                disabled={optimiseBusy || chat.isSending}
+                data-testid="recipe-optimise-kitchen-menu-item"
+              >
+                Optimise
+              </PopoverMenuItem>
+            {/if}
+            {#if canAuthor}
+              <!-- Refresh (issue #890). Beside Optimise because both put a canned
                  turn to the chef about THIS dish, and they are the two halves of a
                  pair: Optimise asks whether any of it is better on the household's
                  kit, Refresh asks for the whole thing to be written out again.
@@ -1681,20 +1658,20 @@
                  whether the librarian can write this kind, which is why an outing
                  and a placeholder never offer it. No equipment gate, unlike
                  Optimise: the repairs this makes do not depend on owning any. -->
-            <PopoverMenuItem
-              icon="RefreshCw"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleRefresh();
-              }}
-              disabled={refreshBusy || chat.isSending}
-              data-testid="recipe-refresh-menu-item"
-            >
-              Refresh
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking}
-            <!-- "Redo kit" (issue #882). In group one with Optimise and Refresh
+              <PopoverMenuItem
+                icon="RefreshCw"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleRefresh();
+                }}
+                disabled={refreshBusy || chat.isSending}
+                data-testid="recipe-refresh-menu-item"
+              >
+                Refresh
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking}
+              <!-- "Redo kit" (issue #882). In group one with Optimise and Refresh
                  because it is the third of the same kind: re-run a model over THIS
                  dish in place. Gated on `isCookable` rather than `isAuthorable` —
                  the question is whether there is a method to read, not whether the
@@ -1706,20 +1683,20 @@
                  came back empty shows no Equipment tab (#1140), so an action
                  attached to that tab would be unreachable in exactly the case you
                  most want it. -->
-            <PopoverMenuItem
-              icon="CookingPot"
-              onclick={() => {
-                overflowMenuOpen = false;
-                void handleRedoKit();
-              }}
-              disabled={kitBusy}
-              data-testid="recipe-redo-kit-menu-item"
-            >
-              Redo kit
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking}
-            <!-- The plan EDITOR (issue #751). In the overflow, not inline: writing
+              <PopoverMenuItem
+                icon="CookingPot"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleRedoKit();
+                }}
+                disabled={kitBusy}
+                data-testid="recipe-redo-kit-menu-item"
+              >
+                Redo kit
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking}
+              <!-- The plan EDITOR (issue #751). In the overflow, not inline: writing
                  or reading the plan is preparation you do BEFORE you cook, at a
                  desk, and the inline actions are the hands-full ones. Distinct from
                  the "Cook, guided" half of the Cook button above, which is cooking.
@@ -1727,37 +1704,37 @@
                  plan, so it cannot depend on one existing. Gated on the same
                  predicate as Cook: a plan explains a method, so an entry with no
                  method has nothing to explain. -->
-            <PopoverMenuItem
-              icon="ListChecks"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/guided`);
-              }}
-              data-testid="recipe-guided-plan-menu-item"
-            >
-              Guided plan
-            </PopoverMenuItem>
-          {/if}
-          {#if showComponents}
-            <!-- The cook plan (issue #752, phase 4). Beside "Guided plan" and for
+              <PopoverMenuItem
+                icon="ListChecks"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/guided`);
+                }}
+                data-testid="recipe-guided-plan-menu-item"
+              >
+                Guided plan
+              </PopoverMenuItem>
+            {/if}
+            {#if showComponents}
+              <!-- The cook plan (issue #752, phase 4). Beside "Guided plan" and for
                  exactly the same reason: it is what you open BEFORE you cook, to
                  decide when each dish goes on — the inline row is the hands-full
                  verbs. Gated on the DOCUMENT having components, like the "Made
                  from" card below: a dish with nothing hanging off it has no
                  running order to schedule, and there is no meal `kind` to ask. -->
-            <PopoverMenuItem
-              icon="Clock"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/cook-plan`);
-              }}
-              data-testid="recipe-cook-plan-menu-item"
-            >
-              Cook plan
-            </PopoverMenuItem>
-          {/if}
-          {#if hasFormula}
-            <!-- Bread scaling (issue #812, phase 1 of epic #778). BOTH entries sit
+              <PopoverMenuItem
+                icon="Clock"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/cook-plan`);
+                }}
+                data-testid="recipe-cook-plan-menu-item"
+              >
+                Cook plan
+              </PopoverMenuItem>
+            {/if}
+            {#if hasFormula}
+              <!-- Bread scaling (issue #812, phase 1 of epic #778). BOTH entries sit
                  in group one, immediately after "Guided plan", and both are gated on
                  the FORMULA DOCUMENT EXISTING — never on `kind`.
 
@@ -1787,29 +1764,29 @@
                  unconditionally. The typed URL stays as the escape hatch for a loaf
                  the guess misses — it stopped being the ONLY way in, not a way
                  in. -->
-            <PopoverMenuItem
-              icon="Hourglass"
-              onclick={() => {
-                overflowMenuOpen = false;
-                bakeBatchOpen = true;
-              }}
-              data-testid="recipe-bake-batch-menu-item"
-            >
-              Bake a batch
-            </PopoverMenuItem>
-            <PopoverMenuItem
-              icon="Percent"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/formula`);
-              }}
-              data-testid="recipe-formula-menu-item"
-            >
-              Formula
-            </PopoverMenuItem>
-          {/if}
-          {#if showMakeScalable}
-            <!-- The FIRST formula (issue #823). The mutually-exclusive twin of the
+              <PopoverMenuItem
+                icon="Hourglass"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  bakeBatchOpen = true;
+                }}
+                data-testid="recipe-bake-batch-menu-item"
+              >
+                Bake a batch
+              </PopoverMenuItem>
+              <PopoverMenuItem
+                icon="Percent"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/formula`);
+                }}
+                data-testid="recipe-formula-menu-item"
+              >
+                Formula
+              </PopoverMenuItem>
+            {/if}
+            {#if showMakeScalable}
+              <!-- The FIRST formula (issue #823). The mutually-exclusive twin of the
                  pair above, in the same slot and carrying the same icon: this is
                  the item you tap once in a recipe's life, and from the moment the
                  formula is saved those two take its place and this one is gone.
@@ -1823,72 +1800,73 @@
                  than one of the hands-full verbs the inline row is for. "Guided
                  plan" is again the precedent, and this is the once-in-a-recipe's-
                  life version of it. -->
-            <PopoverMenuItem
-              icon="Percent"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/formula`);
-              }}
-              data-testid="recipe-make-scalable-menu-item"
-            >
-              Make it scalable
-            </PopoverMenuItem>
-          {/if}
-          {#if showCooking || canAuthor || hasFormula || showMakeScalable || showComponents}
-            <Divider class="my-1" />
-          {/if}
-          {#if canAuthor}
-            <!-- Beside Duplicate because they answer the same impulse — "I want this
+              <PopoverMenuItem
+                icon="Percent"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  push(`/recipes/${recipe.id}/formula`);
+                }}
+                data-testid="recipe-make-scalable-menu-item"
+              >
+                Make it scalable
+              </PopoverMenuItem>
+            {/if}
+            {#if showCooking || canAuthor || hasFormula || showMakeScalable || showComponents}
+              <Divider class="my-1" />
+            {/if}
+            {#if canAuthor}
+              <!-- Beside Duplicate because they answer the same impulse — "I want this
                  dish, but different" — and are the two honest answers to it: a literal
                  copy you hand-edit, or a conversation that works the changes out with
                  you. Above it, because talking it through is the one you reach for
                  more often now it exists. -->
+              <PopoverMenuItem
+                icon="Sparkles"
+                onclick={() => {
+                  overflowMenuOpen = false;
+                  void handleMakeVariation();
+                }}
+                disabled={variationBusy}
+                data-testid="recipe-make-variation-menu-item"
+              >
+                Make a variation
+              </PopoverMenuItem>
+            {/if}
             <PopoverMenuItem
-              icon="Sparkles"
+              icon="Copy"
               onclick={() => {
                 overflowMenuOpen = false;
-                void handleMakeVariation();
+                handleDuplicate();
               }}
-              disabled={variationBusy}
-              data-testid="recipe-make-variation-menu-item"
+              data-testid="recipe-duplicate-menu-item"
             >
-              Make a variation
+              Duplicate
             </PopoverMenuItem>
-          {/if}
-          <PopoverMenuItem
-            icon="Copy"
-            onclick={() => {
-              overflowMenuOpen = false;
-              handleDuplicate();
-            }}
-            data-testid="recipe-duplicate-menu-item"
-          >
-            Duplicate
-          </PopoverMenuItem>
-          <Divider class="my-1" />
-          <PopoverMenuItem
-            icon="Pencil"
-            onclick={() => {
-              overflowMenuOpen = false;
-              push(`/recipes/${recipe.id}/edit`);
-            }}
-            data-testid="recipe-edit-menu-item"
-          >
-            Edit
-          </PopoverMenuItem>
-          <PopoverMenuItem
-            variant="destructive"
-            icon="Trash2"
-            onclick={() => {
-              overflowMenuOpen = false;
-              deleteOpen = true;
-            }}
-            data-testid="recipe-delete-menu-item"
-          >
-            Delete
-          </PopoverMenuItem>
-        </PopoverContent>
-      </Popover>
+            <Divider class="my-1" />
+            <PopoverMenuItem
+              icon="Pencil"
+              onclick={() => {
+                overflowMenuOpen = false;
+                push(`/recipes/${recipe.id}/edit`);
+              }}
+              data-testid="recipe-edit-menu-item"
+            >
+              Edit
+            </PopoverMenuItem>
+            <PopoverMenuItem
+              variant="destructive"
+              icon="Trash2"
+              onclick={() => {
+                overflowMenuOpen = false;
+                deleteOpen = true;
+              }}
+              data-testid="recipe-delete-menu-item"
+            >
+              Delete
+            </PopoverMenuItem>
+          </PopoverContent>
+        </Popover>
+      {/if}
     {/snippet}
 
     <!-- Two columns from the fold up (issue #696, Phase 4). At `split` the halves are
@@ -2051,75 +2029,7 @@
           </div>
         {/if}
 
-        <!-- Description, facts, tags and the phase strip.
-             `phaseTotals.hasPhases` joins the card's gate rather than sitting
-             outside it: a recipe whose only stated fact is its timing still has
-             something to say here (issue #1122). Read through `recipePhaseTotals`
-             rather than `phases.length` — the single funnel docs/recipe-module.md
-             names (issue #1122 review, should-fix 6). -->
-        {#if recipe.description || facts.length > 0 || recipe.metadata.tags.length > 0 || sourceUrl || phaseTotals.hasPhases}
-          <Card>
-            <CardContent class="flex flex-col gap-3 p-4">
-              {#if recipe.description}
-                <p class="text-sm text-muted-foreground">{recipe.description}</p>
-              {/if}
-              <!-- Two rows, two kinds of thing (issue #878). Facts are measured from the
-                   dish and carry a glyph; tags are words somebody typed and carry none.
-                   Separate rows rather than one wrapped row so the difference survives a
-                   narrow screen, where a single row would interleave them again. -->
-              {#if facts.length > 0}
-                <div class="flex flex-wrap items-center gap-2">
-                  {#each facts as fact (fact.key)}
-                    <Chip
-                      variant="fact"
-                      tone={fact.tone ?? 'neutral'}
-                      icon={fact.icon}
-                      data-testid={fact.testId}
-                    >
-                      {fact.label}
-                    </Chip>
-                  {/each}
-                </div>
-              {/if}
-              <!-- No leading `#`. The hash was doing the job the outline now does —
-                   saying "this is a tag, not a fact" — back when a tag and a fact
-                   were the same grey pill and the punctuation was the only thing
-                   telling them apart. With the two kinds visibly different it is
-                   just a character in front of every word, and "summer" reads
-                   better than "#summer" on a page about dinner. -->
-              {#if recipe.metadata.tags.length > 0}
-                <div class="flex flex-wrap items-center gap-2">
-                  {#each recipe.metadata.tags as tag (tag)}
-                    <Chip variant="tag">{tag}</Chip>
-                  {/each}
-                </div>
-              {/if}
-              <!-- The planning timeline (issue #1122), and as of #1213 the only
-                   timing graphic on this page — the #878 ribbon it used to sit above
-                   is gone, along with the Prep/Cook/Total chips.
-                   Everything drawn and every figure shown is derived inside the
-                   component from this list — nothing is passed in pre-summed. -->
-              {#if phaseTotals.hasPhases}
-                <RecipePhaseTimeline
-                  {phases}
-                  timingSummary={recipe.metadata.timingSummary ?? null}
-                />
-              {/if}
-              {#if sourceUrl}
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1.5 self-start text-sm text-primary hover:underline"
-                  data-testid="recipe-source-link"
-                >
-                  <Icon name="ExternalLink" size={14} />
-                  View original recipe
-                </a>
-              {/if}
-            </CardContent>
-          </Card>
-        {/if}
+        <RecipeIdentityCard {recipe} {editing} onEdit={handleInlineEdit} />
 
         <!-- Made from (issue #752). A meal's components lead, above its own
              ingredients: what a Sunday roast IS — chicken, potatoes, gravy — is
@@ -2754,22 +2664,7 @@
           </Tabs>
         {/if}
 
-        <!-- Notes. BELOW the tab strip, not inside a panel (issue #878): a note is
-             about the dish, not about its ingredients or its method, so it stays
-             visible whichever tab is showing. -->
-        {#if recipe.notes}
-          <Card>
-            <CardHeader class="px-4 pt-4 pb-0">
-              <CardTitle class="text-sm">Notes</CardTitle>
-            </CardHeader>
-            <CardContent class="px-4 pb-4 pt-3">
-              <!-- `breaks` is what makes this a no-op for every note written before
-                   notes were Markdown: it keeps each typed line break a line break,
-                   exactly as the old whitespace-pre-wrap paragraph did. -->
-              <Markdown text={recipe.notes} breaks class="text-sm text-muted-foreground" />
-            </CardContent>
-          </Card>
-        {/if}
+        <RecipeNotesCard {recipe} {editing} onEdit={handleInlineEdit} />
 
         <!-- Every chat about this dish (issue #696). With no chat column — below the
              seam, or above it with the pane switched off (#1141) — the list lives at the

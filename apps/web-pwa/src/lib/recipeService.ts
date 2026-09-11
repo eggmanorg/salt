@@ -55,6 +55,7 @@ import { currentMember } from './membersService.js';
 import { getCanonItemsSnapshot } from './canonService.js';
 import { canonIndex } from './canonIndex.js';
 import { getProductFormsSnapshot } from './productFormService.js';
+import { createWriteCoalescer } from './writeCoalescer.js';
 import { writable, derived, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 
@@ -179,17 +180,87 @@ export function stampRecipeAttribution(recipe: Recipe): Recipe {
   return { ...recipe, createdBy: recipe.createdBy || name, lastEditedBy: name };
 }
 
-// Stamp updatedAt + attribution, update the store optimistically, then persist
-// the whole doc.
-export async function persistRecipe(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
+// Stamp updatedAt + attribution and update the store optimistically —
+// SYNCHRONOUSLY. Split out of `persistRecipe` by issue #1319 so the coalesced
+// path below can share it: only the `setDoc` is ever deferred, never the apply.
+// Every in-place editor rebuilds the whole recipe from the store copy it is
+// rendering, so a deferred apply would let two edits to different fields both
+// build on the same stale document and the second silently discard the first.
+//
+// The edited recipe keeps its POSITION in the store rather than being moved to
+// the end, which is what the filter-and-append this replaced used to do. That
+// never mattered while a save was one deliberate tap; with a keystroke-rate
+// writer in front of it, a list re-ordering under the reader on every character
+// would be the visible cost of a detail that carries nothing.
+function applyRecipeOptimistically(recipe: Recipe): Recipe {
   const stamped: Recipe = stampRecipeAttribution({
     ...recipe,
     updatedAt: new Date().toISOString(),
   });
   latestLocalEdit.set(stamped.id, stamped.updatedAt);
-  const others = get(_recipes).filter((r) => r.id !== stamped.id);
-  _recipes.set([...others, stamped]);
+  const all = get(_recipes);
+  const known = all.some((r) => r.id === stamped.id);
+  _recipes.set(known ? all.map((r) => (r.id === stamped.id ? stamped : r)) : [...all, stamped]);
+  return stamped;
+}
+
+// Stamp, apply optimistically, then persist the whole doc — immediately.
+export async function persistRecipe(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
+  const stamped = applyRecipeOptimistically(recipe);
   return reportIfFailed(getErrorReporter(), await saveRecipeDoc(stamped));
+}
+
+// ─── Coalesced edits (issue #1319) ──────────────────────────────────────────
+// Editing a recipe in place writes at KEYSTROKE rate, so the recipe write gets
+// the same debounced writer the meal planner already uses (`./writeCoalescer.ts`,
+// promoted out of `mealPlanService.ts` for this): a burst of typing becomes one
+// full-document `setDoc`, which is the granularity document-level LWW already
+// works at.
+//
+// `persistRecipe` is unchanged and stays IMMEDIATE. Every existing caller is one
+// deliberate tap — a match saved, a dish attached to a meal, a review flag
+// cleared — so there is no burst to merge, and deferring one would mean a reload
+// inside the window silently discards a finished act. Only `queueRecipeEdit`
+// coalesces, and only the in-place editors call it. That is the same split the
+// planner drew, for the same reason.
+//
+// This SHRINKS the window the old editor opened rather than widening it: that
+// page cloned the recipe once on load and wrote it back minutes later over
+// anything a trigger or another phone had written meanwhile. Sub-second is
+// strictly better than open-ended, and `applySnapshot`'s echo guard above is
+// unchanged and still rejects a snapshot older than the local optimistic write.
+const recipeWrites = createWriteCoalescer(async (recipe: Recipe) =>
+  reportIfFailed(getErrorReporter(), await saveRecipeDoc(recipe)),
+);
+
+/**
+ * Queue an in-place recipe edit. The store is updated synchronously; the write
+ * lands at the end of the debounce window, or sooner if something flushes it.
+ *
+ * The returned promise is the write that will carry this edit, so a caller keeps
+ * the `ReadResult` its failure toast needs (Rule 10) — and every edit in one
+ * window shares one promise, so a burst raises at most one toast.
+ */
+export function queueRecipeEdit(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
+  const stamped = applyRecipeOptimistically(recipe);
+  return recipeWrites.queue(stamped.id, stamped);
+}
+
+/**
+ * Write out every pending recipe edit now.
+ *
+ * Called when a field is left and when edit mode ends: the debounce alone would
+ * lose the last edit when the page is navigated away from inside its window, and
+ * blur alone never fires for `page.fill()` in the e2e. Both, not either. The tab
+ * going away is covered by `writeCoalescer`'s own `pagehide`/`visibilitychange`.
+ */
+export function flushRecipeWrites(): Promise<void> {
+  return recipeWrites.flushAll();
+}
+
+/** Drop pending recipe writes without issuing them — test teardown only. */
+export function discardPendingRecipeWrites(): void {
+  recipeWrites.discardAll();
 }
 
 // Hang a dish off a meal (issue #752, Phase 3). The one write behind "start a
