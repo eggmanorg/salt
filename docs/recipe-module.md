@@ -252,9 +252,16 @@ until #1319's Phase 8 deletes it.
 
 Reordering on the recipe page goes through one component, `ReorderControl.svelte`,
 and not through row markup: Daniel chose up/down arrows over a drag handle
-**provisionally** (#1319), so the affordance and the move both live in that one
-file and every later editable list on the page renders it. Read its header before
-adding a second pair of arrows anywhere.
+**provisionally** (#1319), so the move algorithm and the disabled-ends guard both
+live in that one file and every later editable list on the page renders it,
+rather than four copies of a splice and a bounds check. **That is not the same
+as a free drag swap** (#1332 review, should-fix 1): `ReorderControl` is row-level
+(rendered once per caller-owned each-block), `SortableList` — what a drag version
+would be built on — is list-level and keys rows by id, and a phase (like a
+method step or an ingredient row) has none. A real swap is a rewrite at every
+call site plus a stable-id decision this component cannot make on its own. Read
+its header before adding a second pair of arrows anywhere, or before assuming a
+drag handle is a one-file change.
 
 `diffRecipe` reports both halves of the pair, which is what makes the review gate
 honest about timing (#1208's first bullet). `RecipeMetadataDiff` carries `phases`

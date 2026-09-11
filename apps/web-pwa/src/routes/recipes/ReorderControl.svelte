@@ -13,14 +13,30 @@
    * component rather than their own pair of buttons, so switching the whole app to
    * a drag handle later is one file rather than four.
    *
-   * The prop contract is deliberately affordance-NEUTRAL: a list, a position in
-   * it, and "here is that list in its new order". A drag handle answers exactly
-   * that same question, so a swap rewrites this file's markup and its `move` and
-   * touches no caller. `SortableList` (`@salt/ui-components`, what the retired
-   * editor uses for a meal's components) is what a drag version would be built on;
-   * it keys rows by id, which is the other reason arrows are the cheap option on a
-   * phase strip — `RecipePhaseSchema` is a label and two numbers, and a phase has
-   * no id to key by.
+   * The prop contract is a list, a position in it, and "here is that list in its
+   * new order" — arrow-neutral in the narrow sense that no caller or test here
+   * assumes a chevron specifically. It is NOT neutral against the shape a drag
+   * swap actually needs, and an earlier version of this comment claimed
+   * otherwise (#1332 review, should-fix 1 — the third Rule 12 instance on this
+   * issue). Two real costs, stated rather than papered over:
+   *
+   * `SortableList` (`@salt/ui-components`, what the retired editor uses for a
+   * meal's components) is LIST-level — it owns the `{#each}` and the `<ul>/<li>`
+   * and hands each row back to the caller as a snippet — while THIS component is
+   * rendered once PER ROW, inside the caller's own each-block. A swap to
+   * `SortableList` is therefore a rewrite at every call site, which every caller
+   * gives up its iteration and row markup to, not a same-file change.
+   *
+   * `SortableList` also keys rows by id (`getId`), and `RecipePhaseSchema` is a
+   * label and two numbers with no id to key by — the same is true of the method
+   * steps and ingredient rows Phases 4 and 5 will reorder. A drag version cannot
+   * exist at all until a stable identity is invented for those rows, which is a
+   * domain-level decision this file cannot make and does not attempt.
+   *
+   * What genuinely IS in one place, and the reason this file exists rather than
+   * four copies of a pair of buttons: the MOVE algorithm and the disabled-ends
+   * guard below. No caller writes its own splice or its own bounds check, and
+   * that much of Daniel's ruling holds regardless of the two costs above.
    *
    * THE ENDS ARE GUARDED BY `disabled`, NOT BY A BOUNDS CHECK INSIDE `move`. One
    * guard, and the one the cook can see: the first row's up arrow and the last

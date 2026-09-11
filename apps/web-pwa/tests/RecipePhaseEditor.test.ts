@@ -24,6 +24,18 @@ import RecipePhaseEditor from '../src/routes/recipes/RecipePhaseEditor.svelte';
 //   from" tap reuses this component instance with a different document — the last
 //   case swaps the recipe under an OPEN editor and asserts the boxes are the new
 //   recipe's.
+//
+//   A CONCURRENT WRITE TO THE SAME RECIPE NEVER REPAINTS AN OPEN BOX (#1332
+//   review, blocking 1). The id-swap case above is a DIFFERENT recipe arriving;
+//   this is the SAME recipe's `phases` moving under an editor that is still
+//   open on it — another phone, or a chat amendment applied in the docked pane —
+//   which is the concurrent-change case issue #1319 actually settled and the one
+//   case an earlier version of this suite never exercised.
+//
+//   A HAND EDIT DROPS THE MODEL'S TIMING SENTENCE (#1332 review, should-fix 2).
+//   `timingSummary` is prose paired with `phases` by `reconcileRecipePhases` and
+//   nothing here is that funnel, so a hand edit that changes the list clears the
+//   sentence rather than leaving it to contradict the totals line underneath it.
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -266,6 +278,25 @@ describe('RecipePhaseEditor — edit mode', () => {
     expect(lastPhases()).toEqual([PROVE]);
   });
 
+  // The draft can be emptied without closing the zone — nothing here re-adds
+  // the seed phase except OPENING onto an empty strip. That makes the strip's
+  // own `hasPhases` gate reachable while editing is still open, which is what
+  // this pins: removing the last row drops the strip from above the boxes, the
+  // same way an emptied recipe reads with none at all.
+  it('drops the strip from above the boxes when the last row is removed, without closing the zone', async () => {
+    show(loaf([BAKE]), true);
+    await openRows();
+    expect(screen.getByTestId('recipe-phases')).toBeTruthy();
+
+    await fireEvent.click(screen.getByLabelText('Remove phase'));
+
+    expect(lastPhases()).toEqual([]);
+    expect(screen.queryByTestId('recipe-phases')).toBeNull();
+    expect(rows()).toHaveLength(0);
+    // Still open, not closed — Remove is not Done.
+    expect(screen.getByTestId('recipe-phase-done')).toBeTruthy();
+  });
+
   it('moves a phase, because the order is the plan', async () => {
     show(loaf([MIX, PROVE, BAKE]), true);
     await openRows();
@@ -291,17 +322,23 @@ describe('RecipePhaseEditor — edit mode', () => {
     expect(lastPhases()).toHaveLength(6);
   });
 
+  // Driven by a REMOVE the cook presses, not by a rerender standing in for a
+  // second device: the cap now reads the draft this editing session is
+  // building (#1332 review, blocking 1), not whatever the store happens to say,
+  // so a store snapshot arriving from elsewhere must NOT move this boundary —
+  // see 'ignores a concurrent write…' below, which pins that half directly. This
+  // test's job is only the boundary itself: six withholds Add, five offers it.
   it('withholds Add at exactly six and offers it at five', async () => {
     const six: RecipePhase[] = Array.from({ length: 6 }, (_, i) => ({
       label: `Phase ${i + 1}`,
       handsOnMinutes: 0,
       handsOffMinutes: 0,
     }));
-    const { rerender } = show(loaf(six), true);
+    show(loaf(six), true);
     await openRows();
     expect(screen.queryByTestId('recipe-phase-add')).toBeNull();
 
-    await rerender({ recipe: loaf(six.slice(0, 5)), editing: true, onEdit });
+    await fireEvent.click(screen.getAllByLabelText('Remove phase')[0]!);
 
     expect(screen.getByTestId('recipe-phase-add')).toBeInTheDocument();
   });
@@ -317,10 +354,12 @@ describe('RecipePhaseEditor — edit mode', () => {
     expect(screen.getByTestId('recipe-edit-phases')).toBeTruthy();
   });
 
-  // Standing requirement 1 (#1326/#1331's recurring finding). `/recipes/:id` is one
-  // route, so a "Made from" tap moves `params.id` and reuses this instance. The
-  // boxes are fed from `recipe` and hold no draft, which is what makes the new
-  // document's phases appear rather than the old one's text carrying over.
+  // Standing requirement 1 (#1326/#1331's recurring finding), belt-and-suspenders
+  // half. `/recipes/:id` is one route, so a "Made from" tap moves `params.id` and
+  // reuses this instance — in the real app the page's own id-keyed `$effect`
+  // closes `editing` before that can happen, but this holds `editing: true`
+  // across the swap to pin that the DRAFT itself reseeds on an `id` change too,
+  // and does not merely rely on the page to have closed the zone first.
   it('shows the new recipe’s phases when the document changes under an open editor', async () => {
     const { rerender } = show(loaf([MIX]), true);
     await openRows();
@@ -330,5 +369,53 @@ describe('RecipePhaseEditor — edit mode', () => {
 
     expect(labelValues()).toEqual(['Bake']);
     expect(screen.getByTestId('recipe-phase-hands-off-field')).toHaveValue('40');
+  });
+
+  // The other half, and the one the earlier suite never pinned (#1332 review,
+  // blocking 1): the SAME recipe's `phases` moving under an editor that is still
+  // open on it — another phone, or a chat amendment applied in the docked pane —
+  // must not repaint a box the cook is mid-word in. `id` stays 'entry-1'
+  // throughout, which is what makes this the concurrent-write case rather than
+  // the id-change case above.
+  it('ignores a concurrent write to the same recipe while a box is open', async () => {
+    const { rerender } = show(loaf([PROVE]), true);
+    await openRows();
+    expect(labelValues()).toEqual(['First rise']);
+    expect(totalsLine()).toContain('1 hr 30 min');
+
+    await rerender({
+      recipe: loaf([{ ...PROVE, label: 'Someone else’s edit', handsOffMinutes: 5 }]),
+      editing: true,
+      onEdit,
+    });
+
+    expect(labelValues()).toEqual(['First rise']);
+    expect(totalsLine()).toContain('1 hr 30 min');
+  });
+
+  // #1332 review, should-fix 2: the strip drew a stale prose sentence beside
+  // boxes whose totals had already moved. Clearing `timingSummary` on the same
+  // write that changes `phases` is what stops the two lines from disagreeing —
+  // pinned here by actually reading the summary line before and after.
+  it('drops the model’s timing sentence the moment a hand edit changes the list', async () => {
+    show(
+      loaf([BAKE], {
+        metadata: {
+          servings: null,
+          tags: [],
+          timingSummary: 'About 40 minutes of you, over 2 hours.',
+        },
+      }),
+      true,
+    );
+    await openRows();
+    expect(screen.getByTestId('recipe-timing-summary')).toHaveTextContent('2 hours');
+
+    await fireEvent.input(screen.getByTestId('recipe-phase-hands-off-field'), {
+      target: { value: '' },
+    });
+
+    expect(screen.queryByTestId('recipe-timing-summary')).toBeNull();
+    expect(lastEdit().metadata.timingSummary).toBeNull();
   });
 });

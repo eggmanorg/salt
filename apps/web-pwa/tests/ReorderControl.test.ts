@@ -6,12 +6,18 @@ import ReorderControl from '../src/routes/recipes/ReorderControl.svelte';
 //
 // Daniel chose up/down arrows over a drag handle PROVISIONALLY, so the whole
 // point of this component is that Phases 3, 4 and 5 render it instead of writing
-// their own buttons. Two properties are pinned here because they are what a later
-// swap to a drag handle has to keep true:
+// their own buttons. One property below is genuinely a later-swap guarantee; the
+// other is this component's own contract and is NOT a stand-in for "a drag
+// version would pass these tests unchanged" — it would not: `SortableList` is
+// list-level and keys rows by id, this component is row-level and does not, and
+// `ReorderControl.svelte`'s header states the real cost of that gap (#1332
+// review, should-fix 1).
 //
-//   THE CONTRACT IS AFFORDANCE-NEUTRAL — a list, a position, and the list handed
-//   back in its new order. Nothing below asserts a chevron; a drag version passing
-//   these tests would be a drop-in.
+//   NOTHING BELOW ASSERTS A CHEVRON — the assertions are on `aria-label`s and on
+//   what `onReorder` is called with, not on an icon, so a later affordance swap
+//   at THIS row-level contract would not have to rewrite these particular
+//   assertions. That is narrower than "affordance-neutral"; it says nothing
+//   about `SortableList`'s incompatible shape.
 //
 //   THE ENDS ARE GUARDED BY `disabled` AND BY NOTHING ELSE. `move` carries no
 //   bounds check, so if the first row's up arrow or the last row's down arrow ever
