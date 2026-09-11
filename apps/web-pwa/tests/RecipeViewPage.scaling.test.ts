@@ -447,6 +447,52 @@ describe('RecipeViewPage — editing is never a scaled view', () => {
     expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
   });
 
+  // Issue #1319's Phase 5 outcome, in its own words: "what you type into a line
+  // is what is stored — there is no state where the box shows one number and the
+  // list shows another." It is the SAME pin as the case above, asserted where the
+  // ingredients panel can actually be held to it: the list must read as written
+  // AND the line's own box must hold the stored `rawText`, at the same moment,
+  // with the router still saying `serves=6`. Nothing here hand-clears that
+  // querystring (standing requirement 4), and removing the `editing` clause from
+  // the `scaling` derivation turns it red — the list goes to 450g while the box
+  // goes on holding "300g strong white flour".
+  it('never lets the box and the list disagree about the amount', async () => {
+    mockRouter.querystring = 'serves=6';
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+    await userEvent.click(screen.getAllByTestId('recipe-edit-ingredient')[0]!);
+
+    // The stored line, which is the only thing an edit can write.
+    expect((screen.getByTestId('recipe-edit-ingredient-field') as HTMLInputElement).value).toBe(
+      '300g strong white flour',
+    );
+    // And the rest of the list beside it, at the same moment, as written.
+    expect(amountsText()).toContain('3');
+    expect(amountsText()).not.toContain('4½');
+    expect(screen.queryByTestId('recipe-scaled-notice')).toBeNull();
+  });
+
+  // The other half of the gesture collision, pinned through the page because the
+  // mode is the page's: in read mode the line is the inspector's button, and the
+  // moment Edit is pressed it is not a control at all.
+  it('takes the line’s own tap away in edit mode and gives it back on Done', async () => {
+    mockRecipes._set([servesFour()]);
+    renderPage();
+
+    expect(screen.queryAllByTestId('recipe-view-ingredient-inspect')).toHaveLength(2);
+
+    await userEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+    expect(screen.queryByTestId('recipe-view-ingredient-inspect')).toBeNull();
+    expect(screen.queryAllByTestId('recipe-view-ingredient-text')).toHaveLength(2);
+
+    await userEvent.click(screen.getByTestId('recipe-done-button'));
+    await waitFor(() =>
+      expect(screen.queryAllByTestId('recipe-view-ingredient-inspect')).toHaveLength(2),
+    );
+  });
+
   it('shows the stored count as a box you can type in, not the scale picker', async () => {
     mockRouter.querystring = 'serves=6';
     mockRecipes._set([servesFour()]);

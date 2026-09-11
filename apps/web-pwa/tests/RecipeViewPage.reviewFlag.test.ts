@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import type { Recipe, Step } from '@salt/domain';
+import { newIngredient } from '@salt/domain';
+import type { IngredientGroup, Recipe, Step } from '@salt/domain';
 
 // Unreviewed-import banner (issue #616). A URL-imported recipe is persisted by
 // the callable with needs_approval set — raw AI output nobody has read. The
@@ -663,6 +664,98 @@ describe('RecipeViewPage — the blank row you never typed into', () => {
     // words and no note either — the phantom "0 min" chip this used to leave
     // behind never gets the chance to render.
     expect(writtenSteps()).toHaveLength(1);
+  });
+
+  // ─── The ingredient half of the same rule (issue #1319, Phase 5) ────────────
+  // Phase 4 settled the rule and Phase 5 extends the SAME function to ingredient
+  // rows and the groups they empty, so the flow is pinned the same way: every
+  // case presses the real buttons rather than planting a blank row in a fixture,
+  // because a fixture-planted row pins the filter and not Done (standing
+  // requirement 4).
+
+  /** The ingredient groups as the last write composed them. */
+  function writtenGroups(): readonly IngredientGroup[] {
+    return vi.mocked(queueRecipeEdit).mock.calls.at(-1)![0].ingredients;
+  }
+
+  const WITH_A_ROW = {
+    ...WITH_A_STEP,
+    ingredients: [{ id: 'g1', name: 'Dough', items: [newIngredient('i1', '500g flour')] }],
+  };
+
+  it('keeps a freshly added ingredient row while you are still editing', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_ROW)]);
+    await startEditing();
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-ingredient-add'));
+
+    expect(writtenGroups()[0]!.items).toHaveLength(2);
+    expect(screen.getAllByTestId('recipe-view-ingredient')).toHaveLength(2);
+  });
+
+  it('drops the blank ingredient row on Done', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_ROW)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-ingredient-add'));
+    expect(writtenGroups()[0]!.items).toHaveLength(2);
+
+    await pressDone();
+
+    expect(writtenGroups()[0]!.items.map((i) => i.rawText)).toEqual(['500g flour']);
+  });
+
+  it('keeps the row once it has words in it', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_ROW)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-ingredient-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-ingredient')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-ingredient-field'), {
+      target: { value: '350g water' },
+    });
+
+    await pressDone();
+
+    expect(writtenGroups()[0]!.items.map((i) => i.rawText)).toEqual(['500g flour', '350g water']);
+  });
+
+  // Issue #1319 originally said: "Empty a group of every line, press Done: the
+  // group goes." The #1339 review (should-fix 6) narrowed that claim, and this
+  // test's own prior version was the false pin it caught: a group's NAME is
+  // something a human typed on purpose, which the ingredient-row rule's own
+  // reasoning for disposability (`isOptional` and `firstUsedInStepId` say
+  // nothing on their own) does not extend to — so a NAMED group now survives
+  // losing its last row, empty rather than gone. `blankRows.test.ts` pins the
+  // rule itself, including that an UNNAMED empty group still goes; this pins
+  // that Done actually reaches `dropBlankRows` for a real, named group.
+  it('keeps a named group once its last row goes, empty rather than gone', async () => {
+    mockRecipes._set([
+      makeRecipe({
+        ...WITH_A_STEP,
+        ingredients: [
+          { id: 'g1', name: 'Dough', items: [newIngredient('i1', '500g flour')] },
+          { id: 'g2', name: 'For the glaze', items: [newIngredient('i2', '2 tbsp honey')] },
+        ],
+      }),
+    ]);
+    await startEditing();
+
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-ingredient-remove')[1]!);
+    expect(writtenGroups()).toHaveLength(2);
+
+    await pressDone();
+
+    expect(writtenGroups().map((g) => g.id)).toEqual(['g1', 'g2']);
+    expect(writtenGroups()[1]!.name).toBe('For the glaze');
+    expect(writtenGroups()[1]!.items).toEqual([]);
+  });
+
+  it('writes nothing at all on Done when only the ingredients were looked at', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_ROW)]);
+    await startEditing();
+
+    await pressDone();
+
+    expect(queueRecipeEdit).not.toHaveBeenCalled();
   });
 });
 

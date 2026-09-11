@@ -70,6 +70,7 @@
   import RecipeNotesCard from './RecipeNotesCard.svelte';
   import RecipeMadeFromCard from './RecipeMadeFromCard.svelte';
   import RecipeMethodRail from './RecipeMethodRail.svelte';
+  import RecipeIngredientsPanel from './RecipeIngredientsPanel.svelte';
   import { dropBlankRows } from './blankRows.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
@@ -701,7 +702,7 @@
   // currently derives to (the id-keyed `$effect` below prunes the OLD recipe
   // while `recipe` already reflects the NEW one, which is not even guaranteed
   // to be loaded yet — see `handleInlineEdit`'s own comment on that).
-  function pruneBlankSteps(target: Recipe | null | undefined): void {
+  function pruneBlankRows(target: Recipe | null | undefined): void {
     if (!target) return;
     const pruned = dropBlankRows(target);
     if (pruned !== target) writeRecipe(pruned, false);
@@ -719,7 +720,7 @@
     // would be a branch this file could never legitimately exercise both ways.
     const previousId = lastRecipeId;
     if (editing) {
-      pruneBlankSteps($recipes.find((r) => r.id === previousId));
+      pruneBlankRows($recipes.find((r) => r.id === previousId));
     }
     lastRecipeId = id;
     editing = false;
@@ -732,7 +733,7 @@
   // whatever it last resolved to — the document this component was showing —
   // which is exactly what a page-teardown prune needs.
   onDestroy(() => {
-    if (editing) pruneBlankSteps(recipe);
+    if (editing) pruneBlankRows(recipe);
   });
 
   // There is no Save, so a failed write is the only thing left to say out loud —
@@ -767,7 +768,7 @@
   }
 
   // The write plumbing every inline edit shares — queue it, and surface at
-  // most one toast per coalesced burst. `pruneBlankSteps` above calls this
+  // most one toast per coalesced burst. `pruneBlankRows` above calls this
   // directly with `invalidatesGuidedPlan: false`, bypassing the check
   // `handleInlineEdit` layers on top of it; every genuine inline edit goes
   // through `handleInlineEdit` instead, which computes that flag.
@@ -793,11 +794,11 @@
   // other door a step's TEXT can change through, and until now it did nothing
   // about this (#1336 review, should-fix 6) — so every GENUINE inline edit gets
   // the same check here. The boundary that makes "genuine" load-bearing
-  // (#1336 review round 2, blocking 2): `pruneBlankSteps` does NOT come through
+  // (#1336 review round 2, blocking 2): `pruneBlankRows` does NOT come through
   // this function any more — it calls `writeRecipe` directly — because a row
   // nobody typed into disappearing is not a reword, and this comparison alone
   // cannot tell the two apart (see `writeRecipe`'s own comment, and
-  // `pruneBlankSteps`'s).
+  // `pruneBlankRows`'s).
   //
   // `recipe` can legitimately be `null` here for one caller: the docked chat
   // pane stays mounted and ungated in edit mode (#1141), so its own "Save as
@@ -851,13 +852,15 @@
     // KEPT while you are editing — pruning on a keystroke would delete it out
     // from under you — and dropped on every exit from edit mode, of which Done
     // is one of three (the other two are the id-keyed `$effect` and `onDestroy`
-    // above — #1336 review, blocking 2). `pruneBlankSteps` is queued through the
+    // above — #1336 review, blocking 2). `pruneBlankRows` is queued through the
     // same seam as every other edit so the flush below carries it, and
     // `dropBlankRows` returns the recipe unchanged when there is nothing to
     // drop, so pressing Done on a recipe nobody touched still issues no write.
-    // The BOUNDARY today is steps only; ingredient rows join it in Phase 5,
-    // inside that same function.
-    pruneBlankSteps(recipe);
+    // It covers stepless steps and, since Phase 5, blank ingredient rows and the
+    // groups they empty — one function, both rules. The claim's BOUNDARY is at
+    // that function: a document that ALREADY carried a blank row before anyone
+    // pressed Edit is rewritten by this Done, deliberately.
+    pruneBlankRows(recipe);
     await flushRecipeWrites();
     if (recipe?.needs_approval) await handleMarkReviewed();
   }
@@ -2481,210 +2484,33 @@
             {/if}
 
             <TabsContent value="ingredients">
-              <Card>
-                <!-- The tab names the panel, so the card no longer repeats the word.
-                     The header survives only to carry Canonicalise, which is why it
-                     is gated on the button rather than always rendered. -->
-                {#if hasParsedPending}
-                  <CardHeader class="px-4 pt-4 pb-0">
-                    <div class="flex items-center justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onclick={handleCanonicalise}
-                        loading={canonalising}
-                        disabled={canonalising}
-                        data-testid="recipe-canonicalise-button"
-                      >
-                        {#snippet leading()}<Icon name="Link" size={14} />{/snippet}
-                        Canonicalise
-                      </Button>
-                    </div>
-                  </CardHeader>
-                {/if}
-                <CardContent class={hasParsedPending ? 'px-4 pb-4 pt-3' : 'p-4'}>
-                  <!-- What scaling did, and what it did NOT do (issue #1314).
-                       Stated rather than left obvious: a recipe that genuinely does
-                       not scale linearly — a cake, a loaf, anything where the tin is
-                       the real constraint — scales linearly here too, and the only
-                       honest answer to that is to say so where the amounts are read.
-                       The line names both numbers so the reader can see what was
-                       changed from, and carries the way back in one tap. -->
-                  {#if scaling && isScaled}
-                    <div
-                      class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-tertiary-variant bg-tertiary-variant/15 px-3 py-2 text-xs text-muted-foreground"
-                      data-testid="recipe-scaled-notice"
-                    >
-                      <span>
-                        Amounts scaled for {scaling.active} — the recipe is written for {scaling.base}.
-                        Nothing else changed: the method, the timings and any tin or pan size are as
-                        written.
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onclick={() => setServings(scaling.base, scaling.base)}
-                        data-testid="recipe-scaled-reset"
-                      >
-                        Reset
-                      </Button>
-                    </div>
-                  {/if}
-                  {#if recipe.ingredients.length === 0}
-                    <p class="text-sm text-muted-foreground">No ingredients.</p>
-                  {/if}
-                  {#each recipe.ingredients as group (group.id)}
-                    <div class="flex flex-col gap-1.5 [&+&]:mt-4" data-testid="recipe-view-group">
-                      {#if group.name}
-                        <!-- Sage, not muted grey (issue #878). A component heading —
-                             "For the punchy vinaigrette" — divides the list into the
-                             sub-recipes you actually make one at a time, and in grey
-                             it read as a caption on the rows above it. The palette's
-                             secondary is the app's "this is a part of something"
-                             colour and it is already what a matched tile settles to,
-                             so the heading and the pictograms below it agree. -->
-                        <p
-                          class="text-xs font-semibold uppercase tracking-wider text-secondary"
-                          data-testid="recipe-view-group-name"
-                        >
-                          {group.name}
-                        </p>
-                      {/if}
-                      <!-- `gap-0` and a hairline instead: the rows used to float
-                           1.5 units apart with nothing between them, which reads
-                           as nineteen separate things rather than one list. A rule
-                           per row does the separating, so the gap can close and the
-                           column becomes something you run your eye down. Drawn on
-                           the bottom edge and dropped on the last child, so a group
-                           never ends on a line pointing at the group below it. -->
-                      <ul class="flex flex-col">
-                        {#each group.items as ingredient (ingredient.id)}
-                          {@const marker = rowMarker(ingredient)}
-                          <!-- Three columns (issue #878): the pictogram, the thing,
-                           the amount. The tile is the shopping list's since #571 and
-                           cook mode's since #532 — one ingredient wears the same
-                           picture wherever the app names it — and it is rendered for
-                           every row, matched or not, because a bare tile is what
-                           holds the text column straight instead of ragging in and
-                           out. `matched` lets a matched-but-iconless line settle to
-                           sage rather than sitting in unmatched grey while its icon
-                           generates.
-
-                           The line is a button (tap → match inspector) and the marker
-                           is its SIBLING, not a child: buttons cannot nest, and the
-                           two do different jobs — one explains the match, the other
-                           acts on what is wrong with it. At most one marker: a line
-                           is unmatched, without an amount, or mis-bought — never
-                           more than one at a time. The marker
-                           now sits on the CORNER OF THE TILE rather than at the end
-                           of the line, because what it describes is the match, and
-                           the match is what the tile is a picture of. -->
-                          <li
-                            class="flex items-center gap-2 border-b border-border py-1.5 text-sm last:border-b-0"
-                            data-testid="recipe-view-ingredient"
-                          >
-                            <div class="relative shrink-0">
-                              <CanonIcon
-                                thumbnail={thumbnailFor(ingredient.canonId)}
-                                name={ingredientLabel(ingredient)}
-                                version={iconVersionFor(ingredient.canonId)}
-                                matched={marker === null &&
-                                  hasLiveCanonMatch(ingredient, liveCanonIds)}
-                                size={40}
-                              />
-                              {#if marker === 'unmatched'}
-                                <button
-                                  type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card disabled:opacity-50"
-                                  title="Not matched — tap to match"
-                                  aria-label="Not matched — tap to match"
-                                  onclick={() => handleRematch(group, ingredient)}
-                                  disabled={matchingIds[ingredient.id] ?? false}
-                                  data-testid="match-state-unmatched"
-                                  >{(matchingIds[ingredient.id] ?? false) ? '…' : '✗'}</button
-                                >
-                              {:else if marker === 'no-amount'}
-                                <!-- Terracotta, like the ⚠ — this line looks finished
-                                 too. The glyph and the action are the ✗'s, because
-                                 the remedy is the ✗'s: matchIngredient re-parses the
-                                 line before it matches it, which is precisely the
-                                 repair that populated these rows by hand (issue
-                                 #949). Nothing to explain first, so nothing opens. -->
-                                <button
-                                  type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card disabled:opacity-50"
-                                  title="No amount — tap to read the line again"
-                                  aria-label="No amount — tap to read the line again"
-                                  onclick={() => handleRematch(group, ingredient)}
-                                  disabled={matchingIds[ingredient.id] ?? false}
-                                  data-testid="match-state-no-amount"
-                                  >{(matchingIds[ingredient.id] ?? false) ? '…' : '?'}</button
-                                >
-                              {:else if marker === 'mismatched'}
-                                <!-- Terracotta, the palette's warning accent (design.md),
-                                 and never the ✗'s red: the two say different things and
-                                 want different actions. This one opens the sheet the
-                                 row already opens, because the sheet explains BOTH
-                                 causes and offers the re-match — no new copy. -->
-                                <button
-                                  type="button"
-                                  class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card"
-                                  title="Matched, but buys the wrong thing — tap to see why"
-                                  aria-label="Matched, but buys the wrong thing — tap to see why"
-                                  onclick={() => inspectMatch(ingredient)}
-                                  data-testid="match-state-mismatched">⚠</button
-                                >
-                              {/if}
-                            </div>
-                            <button
-                              type="button"
-                              class="salt-focus-ring-inset flex min-w-0 flex-1 items-center gap-3 rounded text-left"
-                              title="See what this ingredient matched"
-                              onclick={() => inspectMatch(ingredient)}
-                              data-testid="recipe-view-ingredient-inspect"
-                            >
-                              <!-- The thing first, the amount last. Amounts led this
-                                   column until #878 and the order was backwards for
-                                   how the list is actually used: you scan for THE
-                                   INGREDIENT — do I have chorizo — and only then read
-                                   what it says beside it. Names on the left edge means
-                                   nineteen of them start at the same x; amounts pinned
-                                   right means they still line up as a column, which is
-                                   what makes "how much flour, how much water" one
-                                   question rather than nineteen.
-                                   `min-w-0` so a long name wraps inside its cell rather
-                                   than shoving the amount off the row. -->
-                              <span class="min-w-0 flex-1">
-                                <IngredientText {ingredient} part="name" scale={ingredientScale} />
-                              </span>
-                              <!-- The metric amount, and the measure the source
-                                   actually printed sitting UNDER it: "1 ½ cups" is a
-                                   second way of saying 300g, so it belongs beneath the
-                                   number it restates rather than trailing the end of a
-                                   sentence about lentils, where it read as a third
-                                   fact about the ingredient.
-                                   An UNPARSED line has no separable amount, so both are
-                                   empty and the whole raw text sits in the name cell —
-                                   which is what keeps a part-parsed list from ragging. -->
-                              <span class="shrink-0 text-right tabular-nums leading-tight">
-                                <IngredientText
-                                  {ingredient}
-                                  part="quantity"
-                                  scale={ingredientScale}
-                                /><IngredientText
-                                  {ingredient}
-                                  part="display"
-                                  scale={ingredientScale}
-                                />
-                              </span>
-                            </button>
-                          </li>
-                        {/each}
-                      </ul>
-                    </div>
-                  {/each}
-                </CardContent>
-              </Card>
+              <!-- The ingredients panel (issue #878), read and written in the same
+                   place since issue #1319 Phase 5. The list, the scaled notice, the
+                   match markers and the editing are all in
+                   `RecipeIngredientsPanel.svelte`; what stays here is the data and
+                   the behaviour the panel reads and does not own — the scale, the
+                   canon lookups, the match markers' own repair calls and the
+                   inspector sheet. -->
+              <RecipeIngredientsPanel
+                {recipe}
+                {editing}
+                onEdit={handleInlineEdit}
+                {ingredientScale}
+                {scaling}
+                {isScaled}
+                {setServings}
+                {thumbnailFor}
+                {iconVersionFor}
+                {ingredientLabel}
+                {rowMarker}
+                {liveCanonIds}
+                {matchingIds}
+                handleRematch={(group, ing) => void handleRematch(group, ing)}
+                {inspectMatch}
+                {hasParsedPending}
+                {canonalising}
+                handleCanonicalise={() => void handleCanonicalise()}
+              />
             </TabsContent>
 
             <TabsContent value="method">
