@@ -120,6 +120,21 @@ test.describe('recipes — manual CRUD', () => {
     // flush by `RecipeViewPage.reviewFlag.test.ts`. The Firestore round trip is
     // still exercised below — the delete asserts across a reload.
 
+    // ── Out and back in ──────────────────────────────────────────────────────
+    // The retired editor's save was a ROUTE CHANGE, so the recipe page remounted
+    // for free before the delete below. Editing in place is not a navigation, and
+    // without that remount the ⋮ menu's own click was left waiting out the test
+    // budget — so the round trip is made explicitly. It is also the honest place to
+    // read the rename back: the list is a different component over the same store.
+    await page.goto('/#/recipes');
+    await expect(
+      page.getByTestId('recipe-list-item').filter({ hasText: 'Test Dahl (revised)' }),
+    ).toHaveCount(1, { timeout: SYNC_TIMEOUT });
+    await page.goto(`/#${recipeUrl.split('#')[1]}`);
+    await expect(page.getByRole('heading', { name: 'Test Dahl (revised)' })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
+
     // ── Delete ───────────────────────────────────────────────────────────────
     await page.getByTestId('recipe-actions-overflow').click();
     await page.getByTestId('recipe-delete-menu-item').click();
