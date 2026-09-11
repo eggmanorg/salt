@@ -69,6 +69,8 @@
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
   import RecipeMadeFromCard from './RecipeMadeFromCard.svelte';
+  import RecipeMethodRail from './RecipeMethodRail.svelte';
+  import { dropBlankRows } from './blankRows.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
   import { chatsForRecipe } from './recipeChats.js';
@@ -512,17 +514,6 @@
   // step screen call, so the three cannot disagree about when it comes out.
   const kitByStep = $derived(groupKitByStep(recipe?.kit ?? [], recipe?.steps ?? []));
 
-  // An hour is the point at which a timer stops being something you stand over.
-  // Below it you are still in the kitchen; at or above it the step is a wait you
-  // plan the evening around, and the two overnight proves in a bread recipe are
-  // the whole reason this exists. One threshold, no band in the middle — the same
-  // rule `formatMinutes` switches on, so "12 hr" and "Hands-off" always agree.
-  const HANDS_OFF_MINUTES = 60;
-
-  function isHandsOff(step: Step): boolean {
-    return (step.timer?.durationMinutes ?? 0) >= HANDS_OFF_MINUTES;
-  }
-
   // ─── Canonicalise ────────────────────────────────────────────────────────────
   let canonalising = $state(false);
 
@@ -760,6 +751,18 @@
   async function finishEditing(): Promise<void> {
     editing = false;
     if (scaling && isScaled) setServings(scaling.base, scaling.base);
+    // The blank-row rule (issue #1319): a row you added and never typed into is
+    // KEPT while you are editing — pruning on a keystroke would delete it out
+    // from under you — and dropped here, at the one deliberate boundary left in
+    // the flow. Queued through the same seam as every other edit so the flush
+    // below carries it, and `dropBlankRows` returns the recipe unchanged when
+    // there is nothing to drop, so pressing Done on a recipe nobody touched
+    // still issues no write. The BOUNDARY today is steps only; ingredient rows
+    // join it in Phase 5, inside that same function.
+    if (recipe) {
+      const pruned = dropBlankRows(recipe);
+      if (pruned !== recipe) handleInlineEdit(pruned);
+    }
     await flushRecipeWrites();
     if (recipe?.needs_approval) await handleMarkReviewed();
   }
@@ -2590,191 +2593,23 @@
             </TabsContent>
 
             <TabsContent value="method">
-              <Card>
-                <CardContent class="p-4">
-                  {#if recipe.steps.length === 0}
-                    <p class="text-sm text-muted-foreground">No steps.</p>
-                  {/if}
-                  <!-- The method as a rail (issue #878): a filled disc per step, joined
-                       by a connector down to the next one, so the sequence is a shape
-                       you can take in before you read a word of it.
-
-                       The rail is drawn PER GAP — one segment from each disc to the
-                       one below — rather than as a full-height rule behind the
-                       column. That is what settles the "does a two-step recipe want a
-                       rail?" question without a threshold to remember: two steps get
-                       exactly one short connector, which is the smallest mark that
-                       says "then this", and a one-step recipe gets no rail at all
-                       because there is nothing to join. A count rule would make the
-                       same page draw its steps two different ways depending on how
-                       many there are, which is a rule the reader has to learn in
-                       exchange for nothing. -->
-                  <ol class="flex flex-col">
-                    {#each recipe.steps as step, idx (step.id)}
-                      {@const handsOff = isHandsOff(step)}
-                      {@const firstUse = firstUseByStep.get(step.id) ?? []}
-                      {@const stepKit = kitByStep.get(step.id) ?? []}
-                      <li
-                        class="relative flex gap-3 pb-5 text-sm last:pb-0"
-                        data-testid="recipe-view-step"
-                      >
-                        {#if idx < recipe.steps.length - 1}
-                          <span
-                            class="absolute bottom-0 left-3 top-7 w-px -translate-x-1/2 bg-border"
-                            aria-hidden="true"
-                          ></span>
-                        {/if}
-                        <!-- Hollow for a step you can walk away from. Shape is never
-                             the only carrier — the "Hands-off" pill below says it in
-                             words, which is what a screen reader and a colour-blind
-                             cook actually get. -->
-                        <span
-                          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {handsOff
-                            ? 'border-2 border-primary bg-card text-primary'
-                            : 'bg-primary text-primary-foreground'}"
-                          aria-hidden="true">{idx + 1}</span
-                        >
-                        <div class="flex min-w-0 flex-1 flex-col gap-2">
-                          <span>{step.text}</span>
-
-                          <!-- What this step is the first to call for, from the
-                               `firstUsedInStepId` the recipe already carries. Cook
-                               mode has shown this per step since #532; the reading
-                               list never did, and the reading list is where you
-                               decide whether tonight is the night.
-
-                               The tile is decorative here — the NAME beside it is the
-                               accessible content, so a wall of pictograms reads as a
-                               list of ingredients rather than as nothing at all. -->
-                          {#if firstUse.length > 0}
-                            <ul
-                              class="flex flex-wrap items-center gap-1.5"
-                              aria-label="First used in this step"
-                              data-testid="recipe-view-step-firstuse"
-                            >
-                              {#each firstUse as ing (ing.id)}
-                                <li class="flex items-center" title={ingredientLabel(ing)}>
-                                  <span class="flex" aria-hidden="true">
-                                    <CanonIcon
-                                      thumbnail={thumbnailFor(ing.canonId)}
-                                      name={ingredientLabel(ing)}
-                                      version={iconVersionFor(ing.canonId)}
-                                      matched={hasLiveCanonMatch(ing, liveCanonIds)}
-                                      size={32}
-                                    />
-                                  </span>
-                                  <span class="sr-only">{ingredientLabel(ing)}</span>
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-
-                          <!-- And what to GET OUT for it (issue #882). Beside the
-                               first-use row, in the same idiom, because they answer
-                               two different questions about the same step: what it
-                               is the first to call for, and what it needs in your
-                               hand. Two rows that looked alike but said the same
-                               thing would be the bug; two rows that look alike and
-                               say different things is the point — hence its own
-                               `aria-label`, which is the only thing separating them
-                               for a screen reader.
-
-                               Listed at the step the tool COMES OUT and not again
-                               until it has been put down (the contiguous-run rule in
-                               `kitByStep`), so a long braise does not repeat the same
-                               casserole under every step.
-
-                               The tile is decorative; the NAME beside it is the
-                               accessible content. A label the drawn vocabulary does
-                               not know renders its words with no picture — never
-                               `CanonIcon`'s bare placeholder tile, which reads as a
-                               broken image, and never another tool's drawing. -->
-                          {#if stepKit.length > 0}
-                            <ul
-                              class="flex flex-wrap items-center gap-1.5"
-                              aria-label="Kit this step calls for"
-                              data-testid="recipe-view-step-kit"
-                            >
-                              {#each stepKit as entry (entry.label)}
-                                <li
-                                  class="flex items-center gap-1"
-                                  title={entry.label}
-                                  data-testid="recipe-view-step-kit-item"
-                                >
-                                  {#if $kitIcons.kitIconFor(entry.label)}
-                                    <span class="flex" aria-hidden="true">
-                                      <CanonIcon
-                                        thumbnail={$kitIcons.kitIconFor(entry.label)}
-                                        version={$kitIcons.kitIconVersionFor(entry.label)}
-                                        name={entry.label}
-                                        size={32}
-                                      />
-                                    </span>
-                                    <span class="sr-only">{entry.label}</span>
-                                  {:else}
-                                    <!-- No picture, so the words stop being the
-                                         SR-only label and become the row. -->
-                                    <span class="text-xs text-muted-foreground">{entry.label}</span>
-                                  {/if}
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-
-                          {#if handsOff || step.timer}
-                            <div class="flex flex-wrap items-center gap-1.5">
-                              {#if handsOff}
-                                <!-- Sage: the quiet end of the palette, for the one step
-                                     marker telling you to walk away rather than to do
-                                     something, paired against the terracotta timer chip
-                                     beside it, which is the opposite instruction. (The
-                                     #878 ribbon keyed its waits to this hue; it went with
-                                     issue #1213, and the phase timeline that replaced it
-                                     draws its hands-off time on the teal tint.) -->
-                                <span
-                                  class="inline-flex items-center rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-secondary-container-foreground"
-                                  data-testid="recipe-view-step-handsoff">Hands-off</span
-                                >
-                              {/if}
-                              {#if step.timer}
-                                <!-- Terracotta, the palette's accent for a thing that
-                                     wants attention at a moment (design.md), and
-                                     `formatMinutes` rather than the raw number — this
-                                     is the markup that genuinely said "720 min". -->
-                                <span
-                                  class="inline-flex items-center gap-1 rounded-full bg-tertiary-variant/10 px-2 py-0.5 text-xs font-medium text-tertiary-variant"
-                                  data-testid="recipe-view-step-timer"
-                                >
-                                  <Icon name="Timer" size={12} />
-                                  {formatMinutes(step.timer.durationMinutes)}{step.timer.description
-                                    ? ` — ${step.timer.description}`
-                                    : ''}
-                                </span>
-                              {/if}
-                            </div>
-                          {/if}
-
-                          <!-- Terracotta, NOT the amber family. `review` on this page
-                               means "a human has not looked at this yet" — the
-                               unreviewed-import banner and the guided-plan dot — and a
-                               step note is not that: it is a caution about the cooking,
-                               written deliberately, and wearing the review colour made
-                               it read as an unfinished recipe. -->
-                          {#if step.note}
-                            <div
-                              class="flex items-start gap-2 rounded border border-tertiary-variant/30 bg-tertiary-variant/10 px-3 py-2 text-xs text-tertiary-variant"
-                              data-testid="recipe-step-note-content"
-                            >
-                              <Icon name="TriangleAlert" size={13} class="mt-0.5 shrink-0" />
-                              <span class="whitespace-pre-wrap">{step.note}</span>
-                            </div>
-                          {/if}
-                        </div>
-                      </li>
-                    {/each}
-                  </ol>
-                </CardContent>
-              </Card>
+              <!-- The method rail (issue #878), read and written in the same place
+                   since issue #1319 Phase 4. The drawing, the chips and the editing
+                   are all in `RecipeMethodRail.svelte`; what stays here is the data
+                   the rail reads and does not own — the two domain groupings, the
+                   canon lookups and the ingredient label the ingredients panel
+                   names its rows with too. -->
+              <RecipeMethodRail
+                {recipe}
+                {editing}
+                onEdit={handleInlineEdit}
+                {firstUseByStep}
+                {kitByStep}
+                {thumbnailFor}
+                {iconVersionFor}
+                {ingredientLabel}
+                {liveCanonIds}
+              />
             </TabsContent>
           </Tabs>
         {/if}

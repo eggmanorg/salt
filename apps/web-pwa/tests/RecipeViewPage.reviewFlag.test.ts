@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { Recipe } from '@salt/domain';
 
 // Unreviewed-import banner (issue #616). A URL-imported recipe is persisted by
@@ -495,5 +495,107 @@ describe('RecipeViewPage — edit mode', () => {
     await fireEvent.input(getByTestId('recipe-title-input'), { target: { value: 'Carbonara' } });
 
     await waitFor(() => expect(vi.mocked(addToast).mock.calls.length).toBe(2));
+  });
+});
+
+// ─── The blank row you never typed into (issue #1319, Phase 4) ─────────────────
+// A row added and left empty is KEPT while you are editing — pruning on a
+// keystroke would delete it out from under you — and dropped when you press Done,
+// which is already the one deliberate boundary in the flow. The rule itself is
+// `blankRows.ts`; what is pinned here is the FLOW, which is why every case below
+// presses `Add step` in the UI rather than planting a blank step in a fixture
+// (standing requirement 4 — a fixture-planted row pins the filter, not Done).
+//
+// These cases live in this file rather than in one of their own because Done's
+// obligations are already pinned here, and because a second RecipeViewPage suite
+// would breach UT-B1 on its twelve mocked seams for no new coverage.
+//
+// For the flow to mean anything, `queueRecipeEdit` has to behave like the real one
+// in the single respect it depends on: it applies to the store SYNCHRONOUSLY, so
+// the page's `recipe` — and therefore what Done prunes — carries the row the cook
+// just added. A mock that resolves and writes nothing would make every case below
+// pass with the prune deleted.
+describe('RecipeViewPage — the blank row you never typed into', () => {
+  beforeEach(() => {
+    vi.mocked(queueRecipeEdit).mockImplementation((next: Recipe) => {
+      mockRecipes._set([next]);
+      return Promise.resolve({ kind: 'ok', value: undefined });
+    });
+  });
+
+  const WITH_A_STEP = { steps: [{ id: 'step-1', text: 'Mix the dough', note: null, timer: null }] };
+
+  /** The steps as the last write composed them. */
+  function writtenSteps(): readonly { text: string }[] {
+    return vi.mocked(queueRecipeEdit).mock.calls.at(-1)![0].steps;
+  }
+
+  async function startEditing(): Promise<void> {
+    renderPage();
+    await fireEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+  }
+
+  async function pressDone(): Promise<void> {
+    await fireEvent.click(screen.getByTestId('recipe-done-button'));
+    await waitFor(() => expect(screen.queryByTestId('recipe-done-button')).toBeNull());
+  }
+
+  it('keeps a freshly added step while you are still editing', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+
+    expect(writtenSteps()).toHaveLength(2);
+    expect(screen.getAllByTestId('recipe-view-step')).toHaveLength(2);
+  });
+
+  it('drops it on Done — the step the test itself added, not one a fixture planted', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    expect(writtenSteps()).toHaveLength(2);
+
+    await pressDone();
+
+    expect(writtenSteps().map((s) => s.text)).toEqual(['Mix the dough']);
+  });
+
+  it('keeps the step once it has words in it', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-field'), {
+      target: { value: 'Shape the loaf' },
+    });
+
+    await pressDone();
+
+    expect(writtenSteps().map((s) => s.text)).toEqual(['Mix the dough', 'Shape the loaf']);
+  });
+
+  it('keeps a wordless step that carries a note — somebody wrote that deliberately', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+    await fireEvent.click(screen.getByTestId('recipe-edit-step-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-step-note')[1]!);
+    await fireEvent.input(screen.getByTestId('recipe-edit-step-note-field'), {
+      target: { value: 'Ask Nan about the hydration' },
+    });
+
+    await pressDone();
+
+    expect(writtenSteps()).toHaveLength(2);
+    expect(writtenSteps()[1]!.text).toBe('');
+  });
+
+  it('writes nothing at all on Done when there is no blank row to drop', async () => {
+    mockRecipes._set([makeRecipe(WITH_A_STEP)]);
+    await startEditing();
+
+    await pressDone();
+
+    expect(queueRecipeEdit).not.toHaveBeenCalled();
   });
 });
