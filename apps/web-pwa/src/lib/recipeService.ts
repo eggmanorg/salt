@@ -210,17 +210,24 @@ function applyRecipeOptimistically(recipe: Recipe): Recipe {
 // (issue #1324 review, finding 2): `applyRecipeOptimistically` runs
 // synchronously on every `queueRecipeEdit` call too, so by the time a caller
 // here reads `recipe` from the store it already contains whatever a pending
-// coalesced burst was about to write. Left pending, that burst's OLDER
-// snapshot (captured back when it was queued) would still fire later and
-// silently overwrite what this write just committed — reachable today from
-// "Mark reviewed" and the per-row rematch, both immediate writes that can land
-// inside an open edit session's 400 ms debounce window. Cancelling only on
-// success: if this write fails, nothing landed for the coalescer's pending
-// edit to clobber, so it is left to flush on its own as a fallback.
+// coalesced burst was about to write AT THE TIME THIS WRITE WAS COMPOSED. Left
+// pending, that burst's OLDER snapshot (captured back when it was queued)
+// would still fire later and silently overwrite what this write just
+// committed — reachable today from "Mark reviewed" and the per-row rematch,
+// both immediate writes that can land inside an open edit session's 400 ms
+// debounce window. Cancelling only on success: if this write fails, nothing
+// landed for the coalescer's pending edit to clobber, so it is left to flush
+// on its own as a fallback.
+//
+// `stamped` is passed to `cancel` (not just `stamped.id`) because the gap
+// between composing `stamped` above and this success is a full network round
+// trip — unbounded offline — and a keystroke CAN land inside it, opening a
+// pending entry newer than `stamped` itself (issue #1324 review, round 2).
+// `cancel` guards against dropping that entry unwritten; see its doc comment.
 export async function persistRecipe(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
   const stamped = applyRecipeOptimistically(recipe);
   const result = reportIfFailed(getErrorReporter(), await saveRecipeDoc(stamped));
-  if (result.kind === 'ok') recipeWrites.cancel(stamped.id, result);
+  if (result.kind === 'ok') recipeWrites.cancel(stamped.id, result, stamped);
   return result;
 }
 

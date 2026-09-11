@@ -819,8 +819,22 @@
   // the (now correct) recipe the next time a field is opened via `onOpen` — so
   // one flag closing is enough, nothing downstream needs its own copy of this
   // effect. `titleDraft` is cleared too, since nothing else ever does.
+  // Keyed on the id STRING, not the `params` prop object (issue #1324 review,
+  // round 2): `params.id` compiles to a tracked read of the whole `$$props`
+  // prop container plus an UNTRACKED property access, so depending on it the
+  // way the line above once did reacts to `params` being a new object, not to
+  // `id` actually changing. svelte-spa-router rebuilds `componentParams` from
+  // a fresh `match()` result on every hashchange, querystring-only ones
+  // included — so `setServings`'s `push('/recipes/<same id>?serves=N')` and
+  // the scaled notice's Reset button (both same-id navigations) would fire
+  // this effect and silently drop the user out of edit mode. Comparing the id
+  // value instead makes this react only to an actual recipe change, which is
+  // the only case #1324's Phase 4 relies on this clearing for.
+  let lastRecipeId: string | undefined;
   $effect(() => {
-    params.id;
+    const id = params.id;
+    if (id === lastRecipeId) return;
+    lastRecipeId = id;
     editing = false;
     titleDraft = '';
   });

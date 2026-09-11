@@ -60,7 +60,10 @@ export interface WriteCoalescer<T> {
   flushAll(): Promise<void>;
   /**
    * Drop a pending write for `key` WITHOUT ever issuing it, settling its
-   * promise with `result` instead of a real write outcome.
+   * promise with `result` instead of a real write outcome — UNLESS the pending
+   * entry carries an edit newer than `supersededBy`, the document the caller's
+   * own immediate write actually sent, in which case this is a no-op and the
+   * pending entry is left to flush on its own.
    *
    * For a caller whose own IMMEDIATE write to the same key already carries
    * every edit the pending one would have (issue #1324 review, finding 2): the
@@ -72,10 +75,49 @@ export interface WriteCoalescer<T> {
    * device that made the immediate write never sees the revert. Cancelling the
    * pending entry once the immediate write it would otherwise clobber has
    * landed removes the write that could do that, rather than requiring every
-   * such caller to get an ordering (flush-then-write) right on its own. A
-   * no-op when nothing is pending for `key`.
+   * such caller to get an ordering (flush-then-write) right on its own.
+   *
+   * The guard (issue #1324 review, ROUND 2): `persistRecipe` stamps and applies
+   * its document BEFORE awaiting the immediate write, so the gap between
+   * "composed" and "this call" is a full network round trip — unbounded
+   * offline. An edit CAN be queued inside that gap, opening a pending entry
+   * newer than the immediate write the caller is here to cancel against.
+   * Cancelling unconditionally would delete that entry — and the characters it
+   * holds — having issued no write for them at all: the original defect
+   * (a stale write clobbering a fresh one) with the arrow reversed (a fresh
+   * write dropped in favour of a stale one that never landed). So `cancel` only
+   * drops an entry that is NOT newer than `supersededBy` (`pending.doc.updatedAt
+   * <= supersededBy.updatedAt`); a genuinely newer entry is left queued to
+   * flush on its own timer, which is exactly what would have happened had this
+   * `cancel` call never been made. The comparison is duck-typed on an
+   * `updatedAt: string` field rather than a generic constraint on `T`, because
+   * not every `T` a coalescer is created for carries one (`MealPlanTemplate`
+   * does not) — a `T` with no comparable timestamp falls back to the
+   * unconditional drop above, which is the ONLY behaviour it ever had, since
+   * nothing but `recipeService` calls `cancel` today. Guarding lives HERE,
+   * inside the coalescer, rather than at the `persistRecipe` call site, so a
+   * future caller of `cancel` cannot forget to make this comparison itself.
+   *
+   * THE BOUNDARY (issue #1330 — stated so this is not read as an unqualified
+   * guarantee, per CLAUDE.md Rule 12): the comparison trusts `supersededBy
+   * .updatedAt` to be the moment the caller's OWN write actually went out.
+   * That holds for a caller that stamps `updatedAt` immediately before the
+   * write it will later pass here — `persistRecipe` does, so the guard is
+   * sound for it. It does NOT hold for a caller that stamps `updatedAt`
+   * EARLIER than the write itself (e.g. at the start of a round trip rather
+   * than just before sending): such a caller's `supersededBy` can be older
+   * than a pending entry even though its own write is the one landing later,
+   * so the comparison cannot tell that case apart from a pending entry that
+   * is genuinely newer, and this guard protects neither ordering for it.
+   * `recipeAmend.ts`'s `applyRecipeAmendment` stamps this way (`updatedAt` set
+   * when the AI call starts, never re-stamped before its own direct
+   * `saveRecipeDoc`) — it does not call `cancel` at all today, so it is
+   * outside this guard's scope either way; #1330 tracks that path on its own,
+   * separately from this one.
+   *
+   * A no-op when nothing is pending for `key`.
    */
-  cancel(key: string, result: WriteResult): void;
+  cancel(key: string, result: WriteResult, supersededBy: T): void;
   /** Drop pending writes without issuing them — test teardown only. */
   discardAll(): void;
 }
@@ -84,6 +126,31 @@ export interface WriteCoalescer<T> {
 // A `Set` of live objects and nothing else: coalescers are module-level
 // singletons that live as long as the document, so there is nothing to evict.
 const coalescers = new Set<WriteCoalescer<never>>();
+
+// Duck-typed rather than a generic constraint on `T`: `cancel`'s guard needs a
+// comparable timestamp, but not every `T` a coalescer is created for has one
+// (`MealPlanTemplate` is a singleton document with no `updatedAt`). A `T`
+// without one simply never compares as newer, below.
+function hasUpdatedAt(doc: unknown): doc is { updatedAt: string } {
+  return (
+    typeof doc === 'object' &&
+    doc !== null &&
+    typeof (doc as { updatedAt?: unknown }).updatedAt === 'string'
+  );
+}
+
+// Whether `pending` was queued after `supersededBy` was composed — the guard
+// `cancel` uses to tell an edit its caller's immediate write already carries
+// from one it does not (issue #1324 review, round 2). `false` whenever either
+// side has no comparable `updatedAt`, which preserves `cancel`'s original
+// unconditional behaviour for any `T` that carries none.
+function isNewerThan<T>(pending: T, supersededBy: T): boolean {
+  return (
+    hasUpdatedAt(pending) &&
+    hasUpdatedAt(supersededBy) &&
+    pending.updatedAt > supersededBy.updatedAt
+  );
+}
 
 /**
  * A debounced, document-keyed writer. One key, one in-flight document: every
@@ -153,9 +220,16 @@ export function createWriteCoalescer<T>(
     flushAll(): Promise<void> {
       return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined);
     },
-    cancel(key: string, result: WriteResult): void {
+    cancel(key: string, result: WriteResult, supersededBy: T): void {
       const entry = pending.get(key);
       if (!entry) return;
+      if (isNewerThan(entry.doc, supersededBy)) {
+        // The pending edit was queued AFTER the document the immediate write
+        // actually sent (issue #1324 review, round 2) — dropping it here would
+        // lose characters no write has ever carried. Leave it queued; it
+        // fires on its own timer exactly as it would have without this call.
+        return;
+      }
       clearTimeout(entry.timer);
       pending.delete(key);
       entry.settle(result);

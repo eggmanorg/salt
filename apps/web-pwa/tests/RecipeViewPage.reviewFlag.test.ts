@@ -307,6 +307,27 @@ describe('RecipeViewPage — edit mode', () => {
     expect((getByTestId('recipe-title-input') as HTMLInputElement).value).toBe('Ragu');
   });
 
+  // Round 2 of the #1324 review: svelte-spa-router rebuilds `componentParams`
+  // from a fresh `match()` object on every hashchange, INCLUDING a
+  // querystring-only one — `setServings`'s own
+  // `push('/recipes/<same id>?serves=N')` is exactly this shape. The page must
+  // not mistake that for a navigation to a different recipe and drop the
+  // editor out from under someone mid-edit.
+  it('stays in edit mode across a rerender that carries the same id (a querystring-only navigation)', async () => {
+    mockRecipes._set([makeRecipe({ title: 'Carbonara' })]);
+    const { getByTestId, queryByTestId, rerender } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    expect(getByTestId('recipe-done-button')).toBeTruthy();
+
+    // A fresh `params` object, but the SAME id — the shape `setServings` and
+    // the scaled notice's Reset button push.
+    await rerender({ params: { id: RECIPE_ID } });
+
+    expect(getByTestId('recipe-done-button')).toBeTruthy();
+    expect(queryByTestId('recipe-edit-mode-button')).toBeNull();
+  });
+
   // The action row is at its budget at every width (#735), so Done REPLACES the
   // cluster rather than joining it: while you are editing, Cook, Shop and Plan
   // are not what you are doing.

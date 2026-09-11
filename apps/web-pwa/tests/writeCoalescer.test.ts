@@ -246,13 +246,16 @@ describe('createWriteCoalescer', () => {
 
   // `cancel` (issue #1324 review, finding 2): the seam a caller with its own
   // immediate write to the same key uses so a pending coalesced write holding
-  // an older snapshot can't fire later and revert it.
+  // an older snapshot can't fire later and revert it. `T` here is `string`,
+  // which carries no `updatedAt` to compare — so the guard below never applies
+  // and `cancel` keeps the unconditional-drop behaviour these tests pin. The
+  // guard itself is exercised on a `T` that DOES carry one, below.
   it('cancel drops a pending write without issuing it, settling its promise with the given result', async () => {
     const write = vi.fn().mockResolvedValue(OK);
     const writes = coalescer(write);
 
     const pending = writes.queue('week-1', 'stale');
-    writes.cancel('week-1', FAILED);
+    writes.cancel('week-1', FAILED, 'whatever the immediate write sent');
 
     await vi.runAllTimersAsync();
 
@@ -264,7 +267,7 @@ describe('createWriteCoalescer', () => {
     const write = vi.fn().mockResolvedValue(OK);
     const writes = coalescer(write);
 
-    expect(() => writes.cancel('never-queued', OK)).not.toThrow();
+    expect(() => writes.cancel('never-queued', OK, 'whatever')).not.toThrow();
     await vi.runAllTimersAsync();
     expect(write).not.toHaveBeenCalled();
   });
@@ -275,12 +278,95 @@ describe('createWriteCoalescer', () => {
 
     void writes.queue('week-1', 'stale');
     void writes.queue('week-2', 'unrelated');
-    writes.cancel('week-1', FAILED);
+    writes.cancel('week-1', FAILED, 'whatever the immediate write sent');
 
     await vi.runAllTimersAsync();
 
     expect(write).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledWith('unrelated');
+  });
+});
+
+// `cancel`'s guard (issue #1324 review, ROUND 2): `persistRecipe` composes and
+// stamps its document, then AWAITS the immediate write — a full network round
+// trip, unbounded offline. An edit can be queued inside that gap, opening a
+// pending entry that carries characters the immediate write never sent.
+// Cancelling unconditionally would delete that entry, unwritten — the
+// original defect (a stale write clobbering a fresh one) with the arrow
+// reversed. `T` here carries `updatedAt` so the comparison in `cancel` has
+// something to compare.
+describe("cancel's guard against dropping an edit newer than the write it is cancelled against", () => {
+  interface Doc {
+    updatedAt: string;
+    body: string;
+  }
+
+  function docCoalescer(
+    write: (doc: Doc) => Promise<ReadResult<void, DomainError>>,
+  ): WriteCoalescer<Doc> {
+    const api = createWriteCoalescer<Doc>(write);
+    made.push(api as unknown as WriteCoalescer<string>);
+    return api;
+  }
+
+  it('drops the pending entry when it is not newer than the document the immediate write sent', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = docCoalescer(write);
+
+    const pending = writes.queue('recipe-1', { updatedAt: 'T1', body: 'stale' });
+    writes.cancel('recipe-1', OK, { updatedAt: 'T2', body: 'stamped' });
+
+    await vi.runAllTimersAsync();
+
+    expect(write).not.toHaveBeenCalled();
+    expect(await pending).toEqual(OK);
+  });
+
+  it('drops the pending entry when its updatedAt exactly equals the stamped document (<=, not <)', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = docCoalescer(write);
+
+    const pending = writes.queue('recipe-1', { updatedAt: 'T2', body: 'same instant' });
+    writes.cancel('recipe-1', OK, { updatedAt: 'T2', body: 'stamped' });
+
+    await vi.runAllTimersAsync();
+
+    expect(write).not.toHaveBeenCalled();
+    expect(await pending).toEqual(OK);
+  });
+
+  // The failure this pins: a keystroke lands DURING the immediate write's
+  // round trip, opening a pending entry at T3 after the immediate write was
+  // stamped at T2. An unconditional cancel would delete that entry — settling
+  // its promise with `FAILED` below and never calling `write` — so those
+  // characters are lost with no write ever issued for them and no toast,
+  // exactly as the round-2 review reproduced.
+  it('leaves a pending entry queued, to flush on its own, when it is newer than the document the immediate write sent', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = docCoalescer(write);
+
+    const pending = writes.queue('recipe-1', {
+      updatedAt: 'T3',
+      body: 'typed during the round trip',
+    });
+    writes.cancel('recipe-1', FAILED, { updatedAt: 'T2', body: 'stamped' });
+
+    await vi.runAllTimersAsync();
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith({ updatedAt: 'T3', body: 'typed during the round trip' });
+    expect(await pending).toEqual(OK);
+  });
+
+  it('cancel on a key with nothing pending is still a no-op regardless of the guard', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = docCoalescer(write);
+
+    expect(() =>
+      writes.cancel('never-queued', OK, { updatedAt: 'T2', body: 'stamped' }),
+    ).not.toThrow();
+    await vi.runAllTimersAsync();
+    expect(write).not.toHaveBeenCalled();
   });
 });
 

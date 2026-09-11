@@ -208,4 +208,39 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
     expect(fs.saveRecipe).toHaveBeenCalledTimes(2);
     expect(fs.saveRecipe.mock.calls[1]![0].title).toBe('Still queued');
   });
+
+  // Round 2 of the #1324 review: `persistRecipe` stamps and applies its
+  // document BEFORE awaiting `saveRecipeDoc`, which resolves on the server ack
+  // — a full network round trip, unbounded offline. A keystroke landing DURING
+  // that round trip opens a pending coalesced entry newer than the document
+  // the immediate write actually sent. An unconditional `cancel` would delete
+  // that entry — those characters lost, no write ever issued for them, no
+  // toast — the moment the immediate write resolves.
+  it('does not drop an edit queued while an immediate write to the same id is still in flight', async () => {
+    let releaseSave!: (result: { kind: 'ok'; value: undefined }) => void;
+    fs.saveRecipe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+
+    const base = seeded({ needs_approval: true });
+    const immediate = persistRecipe({ ...base, notes: 'Reviewed' });
+
+    // A keystroke lands mid-flight — same id, a strictly later timestamp than
+    // the document the immediate write above already stamped and sent.
+    vi.advanceTimersByTime(1);
+    queueRecipeEdit({ ...fromStore(base.id)!, title: 'Typed mid-flight' });
+
+    releaseSave({ kind: 'ok', value: undefined });
+    await immediate;
+
+    // The pending entry must survive `persistRecipe`'s cancel and flush on its
+    // own timer — a second `saveRecipe` call carrying the mid-flight title.
+    await vi.runAllTimersAsync();
+
+    expect(fs.saveRecipe).toHaveBeenCalledTimes(2);
+    expect(fs.saveRecipe.mock.calls[1]![0].title).toBe('Typed mid-flight');
+  });
 });
