@@ -457,8 +457,11 @@ list. #652 weighed a fourth predicate for this and rejected it: see below.
 
 Decisions worth not relitigating:
 
-- **`kind` is immutable.** It is set at create via `/recipes/new/:kind` and there
-  is no selector in the editor. Flipping a 20-ingredient recipe to `outing` would
+- **`kind` is immutable.** It is set at create — via `/recipes/new/:kind` for a
+  plain recipe or cocktail, or by which New-sheet entry was opened for an outing,
+  a meal or a placeholder (issue #1319 Phase 6, `RecipeNewSheet` calls
+  `emptyRecipe` directly rather than routing through `:kind`) — and there is no
+  selector in the editor. Flipping a 20-ingredient recipe to `outing` would
   hide its ingredients behind a render branch — still on the document, invisible
   and unreachable, with no undo. Immutability is also what lets `diffRecipe` stay
   untouched (pinned by a test).
