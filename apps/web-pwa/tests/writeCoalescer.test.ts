@@ -25,7 +25,13 @@ import type { DomainError, ReadResult } from '@salt/shared-types';
 //   7. `cancel` drops a pending write without ever issuing it, settling its
 //      promise with a result the caller supplies — the seam `persistRecipe`
 //      uses so an immediate write to a key can't be reverted later by a
-//      pending coalesced write holding an older snapshot of it (finding 2).
+//      pending coalesced write holding an older snapshot of it (finding 2);
+//   8. `flushAll` resolves only once the server has ACKED every write this
+//      coalescer has issued — including one already on the wire when it was
+//      called, which is the half that used to be missing (issue #1304). Three
+//      callers read it as "it is safe on the server now" (Done, `recipeAmend`'s
+//      ordering flush, the e2e bridge's settle-before-reload), so a `flushAll`
+//      that only drained the queue made all three sentences false.
 //
 // Each is false under an obvious wrong implementation, which is the bar.
 
@@ -414,5 +420,133 @@ describe('flushAllCoalescedWrites and the unload registration', () => {
     visibility.mockRestore();
 
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #1304 — what `flushAll` resolving actually MEANS.
+//
+// `flushKey` removes a key's entry from `pending` BEFORE awaiting its `setDoc`,
+// so a write whose debounce timer has already fired, or that an earlier flush
+// issued, is invisible to anything that only drains the queue. A `flushAll`
+// written that way resolves while such a write is still travelling — which is the
+// opposite of what its three callers read it as. The recipe e2e specs are where
+// that bit hardest: pressing Done ALREADY flushes, so a spec's own flush found
+// nothing to do and a `page.reload()` behind it raced the save.
+//
+// Each case below is red against the queue-only implementation.
+describe('flushAll waits for writes already on the wire, not only queued ones', () => {
+  type Write = (doc: string) => Promise<ReadResult<void, DomainError>>;
+
+  /** A write that hangs until released — a `setDoc` that has left but not landed. */
+  function hangingWrite(): {
+    write: ReturnType<typeof vi.fn<Write>>;
+    release: (result: ReadResult<void, DomainError>) => void;
+  } {
+    let release!: (result: ReadResult<void, DomainError>) => void;
+    const write = vi
+      .fn<Write>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReadResult<void, DomainError>>((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValue(OK);
+    return { write, release: (result) => release(result) };
+  }
+
+  // The exact sequence the recipe specs hit. Done's handler is `void`-fired, so
+  // Playwright's `click()` returns with the write issued and unawaited; the
+  // spec's own flush arrives a CDP round trip later to a pending map that is
+  // already empty.
+  it("a second flushAll does not resolve while the first flush's write is still in flight", async () => {
+    const { write, release } = hangingWrite();
+    const writes = coalescer(write);
+
+    void writes.queue('recipe-1', 'typed');
+    const doneFlush = writes.flushAll();
+
+    let settled = false;
+    const specFlush = writes.flushAll().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    release(OK);
+    await Promise.all([doneFlush, specFlush]);
+    expect(settled).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  // The same gap reached the other way, and the one `mealplan-split.spec.ts`
+  // named: nobody flushed at all, the 400 ms window simply elapsed first.
+  it('waits for a write the debounce timer issued before flushAll was called', async () => {
+    const { write, release } = hangingWrite();
+    const writes = coalescer(write);
+
+    void writes.queue('week-1', 'typed');
+    await vi.advanceTimersByTimeAsync(WRITE_DEBOUNCE_MS);
+    expect(write).toHaveBeenCalledTimes(1);
+
+    let settled = false;
+    const flush = writes.flushAll().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    release(OK);
+    await flush;
+    expect(settled).toBe(true);
+  });
+
+  it('still resolves promptly when nothing is queued and nothing is in flight', async () => {
+    const write = vi.fn().mockResolvedValue(OK);
+    const writes = coalescer(write);
+
+    await writes.flushAll();
+
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  // THE STATED BOUNDARY (CLAUDE.md Rule 12), pinned so the guarantee above is
+  // not read as an absolute: `flush(key)` waits only for the write it issues
+  // itself. Every production caller of it is fire-and-forget, so nothing needs
+  // otherwise — but the asymmetry is deliberate and a test says so.
+  it('flush(key) does NOT wait for an in-flight write for that same key', async () => {
+    const { write, release } = hangingWrite();
+    const writes = coalescer(write);
+
+    void writes.queue('week-1', 'typed');
+    const issued = writes.flushAll();
+
+    let settled = false;
+    void writes.flush('week-1').then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+
+    release(OK);
+    await issued;
+  });
+
+  // The `finally` in `flushKey`: a rejected write must not leave its promise in
+  // the in-flight set, or every later flushAll would re-await something already
+  // rejected and fail forever.
+  it('a rejected write leaves nothing behind for the next flushAll to trip over', async () => {
+    const write = vi
+      .fn<Write>()
+      .mockRejectedValueOnce(new Error('the SDK threw'))
+      .mockResolvedValue(OK);
+    const writes = coalescer(write);
+
+    void writes.queue('recipe-1', 'doomed');
+    await expect(writes.flushAll()).rejects.toThrow('the SDK threw');
+
+    void writes.queue('recipe-1', 'the next edit');
+    await expect(writes.flushAll()).resolves.toBeUndefined();
+    expect(write).toHaveBeenCalledTimes(2);
   });
 });

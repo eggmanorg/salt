@@ -26,6 +26,7 @@
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
 import { seedRecipe } from './helpers/seed';
+import { settleRecipeWrites } from './helpers/settle';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { Recipe } from '@salt/domain';
 
@@ -141,30 +142,22 @@ test.describe('recipes — notes formatting toolbar and rendering', () => {
     await expect(page.getByTestId('recipe-notes-input')).toHaveValue(NOTE);
     await page.getByTestId('recipe-notes-done').click();
 
-    // ── Done, then back to the same URL: the stored string is the same plain
-    //    Markdown ──────────────────────────────────────────────────────────────
-    // NOT A RELOAD, and the claim this proves is narrower than this section's
-    // name once suggested (CLAUDE.md Rule 12 — PR #1340 review, should-fix 8,
-    // corrected rather than merely restated): `page.goto` to the URL the page is
-    // ALREADY ON is a same-document hash navigation — `mealplan.spec.ts`'s own
-    // comment on exactly this pattern says the app never remounts, so nothing
-    // about Firestore is proved by it, and `recipe-crud.spec.ts` makes the same
-    // point about its own out-and-back-in leg ("the list is a different
-    // component over the SAME STORE"). So this block proves the coalesced flush
-    // ran and the store still holds the write — which "re-opening the box loses
-    // nothing" above already showed — not that the write reached Firestore.
+    // ── Done, then a REAL reload: the stored string is the same plain Markdown ─
+    // This used to be a `page.goto` back to the URL the page was already on — a
+    // same-document hash navigation that never remounts, so it proved the store
+    // still held the note and nothing whatever about Firestore (PR #1340 review,
+    // should-fix 8). It could not be turned into a `page.reload()` at the time
+    // because a reload straight after Done races the coalesced flush, which is
+    // the race `recipe-crud.spec.ts` documented and declined.
     //
-    // Deliberately NOT changed to `page.reload()` to actually prove that: this is
-    // the reload-immediately-after-Done race `recipe-crud.spec.ts` documents and
-    // dropped its own assertion over (its comment is the sibling of this one —
-    // read them together). Going from "asserts nothing about Firestore" to "races
-    // the same flush crud avoids" is not a strict improvement, and it cannot be
-    // verified here — e2e only runs in CI, and this PR already cost two rounds on
-    // exactly this class of test bug (an assertion that cannot fail as written).
-    // If this coverage gap is worth closing, it wants a settled-flush signal to
-    // reload behind, not a bare `page.reload()`.
+    // Issue #1304 supplied the missing signal: `settleRecipeWrites` resolves only
+    // once Firestore has acked the write Done issued — including a write already
+    // on the wire, which is precisely this case, since Done itself flushes. So
+    // the reload below tears the app down and rebuilds it from the server, and
+    // what comes back is the STORED string rather than a survivor of the store.
     await page.getByTestId('recipe-done-button').click();
-    await page.goto(`/#/recipes/${RECIPE_ID}`);
+    await settleRecipeWrites(page);
+    await page.reload();
     await expect(
       page.getByRole('listitem').filter({ hasText: 'rest it for ten minutes' }),
     ).toHaveCount(1, { timeout: SYNC_TIMEOUT });

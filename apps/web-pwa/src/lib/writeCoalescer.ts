@@ -54,9 +54,32 @@ interface PendingWrite<T> {
 export interface WriteCoalescer<T> {
   /** Queue `doc` for `key`, replacing anything already pending for that key. */
   queue(key: string, doc: T): Promise<WriteResult>;
-  /** Write this key's pending document now. No-op when nothing is pending. */
+  /**
+   * Write this key's pending document now. No-op when nothing is pending.
+   *
+   * THE BOUNDARY (CLAUDE.md Rule 12): unlike `flushAll`, this waits only for
+   * the write it ISSUES ITSELF. A write for the same key already on the wire
+   * has left `pending`, so this finds nothing to do and resolves immediately
+   * while that one is still travelling. No caller needs otherwise — every
+   * production caller is fire-and-forget (`void weekWrites.flush(…)`) — and
+   * covering it would mean keying `inFlight` by document rather than holding
+   * one set. `flushAll` is the seam for "has everything landed".
+   */
   flush(key: string): Promise<void>;
-  /** Write every pending document now. */
+  /**
+   * Write every pending document now, resolving once the SERVER HAS ACKED them
+   * all — including any write already on the wire when this was called.
+   *
+   * The second half is the part that took a structure to provide, and it is not
+   * decoration (issue #1304). `flushKey` removes a key's entry from `pending`
+   * BEFORE awaiting its `setDoc`, so a write whose debounce timer has already
+   * fired — or that an earlier flush issued — is invisible to anything that
+   * only drains `pending`. A `flushAll` written that way resolves while such a
+   * write is still travelling, which is the opposite of what every caller reads
+   * it as: `RecipeViewPage`'s Done, `recipeAmend`'s ordering flush against the
+   * typist, and the e2e bridge's settle-before-reload all mean "it is safe on
+   * the server now". `inFlight` is what makes the sentence true.
+   */
   flushAll(): Promise<void>;
   /**
    * Drop a pending write for `key` WITHOUT ever issuing it, settling its
@@ -187,6 +210,11 @@ export function createWriteCoalescer<T>(
   options: { onWritten?: (doc: T) => void } = {},
 ): WriteCoalescer<T> {
   const pending = new Map<string, PendingWrite<T>>();
+  // Writes that have LEFT `pending` and are on the wire, not yet acked. The set
+  // exists so `flushAll` can mean "everything this coalescer has issued has
+  // landed" rather than only "everything still queued has now been issued" —
+  // see `flushAll` below for why that distinction was worth a second structure.
+  const inFlight = new Set<Promise<void>>();
 
   async function flushKey(key: string): Promise<void> {
     const entry = pending.get(key);
@@ -196,9 +224,22 @@ export function createWriteCoalescer<T>(
     // must open a fresh pending entry rather than join one already committed to
     // the wire, which would drop it.
     pending.delete(key);
-    const result = await write(entry.doc);
-    if (result.kind === 'ok') options.onWritten?.(entry.doc);
-    entry.settle(result);
+    // Registered in `inFlight` for exactly the window between "the entry has
+    // left `pending`" and "the server has acked", which is the window
+    // `flushAll` used to be blind to. Removed in a `finally` so a rejecting
+    // `write` cannot leak an entry that every later `flushAll` would then await
+    // forever.
+    const issued = (async () => {
+      const result = await write(entry.doc);
+      if (result.kind === 'ok') options.onWritten?.(entry.doc);
+      entry.settle(result);
+    })();
+    inFlight.add(issued);
+    try {
+      await issued;
+    } finally {
+      inFlight.delete(issued);
+    }
   }
 
   const api: WriteCoalescer<T> = {
@@ -226,7 +267,16 @@ export function createWriteCoalescer<T>(
       return flushKey(key);
     },
     flushAll(): Promise<void> {
-      return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined);
+      // The pending flushes are started FIRST and their promises are spread
+      // alongside `inFlight` rather than instead of it. `flushKey` runs
+      // synchronously as far as ISSUING the write, so by the time `map` has
+      // returned every write this call just started is already in `inFlight`;
+      // the spread therefore covers those AND any write an earlier timer or
+      // `flush(key)` put on the wire that has not been acked yet. Duplicates
+      // between the two are harmless — `Promise.all` simply awaits the same
+      // promise twice.
+      const started = [...pending.keys()].map(flushKey);
+      return Promise.all([...started, ...inFlight]).then(() => undefined);
     },
     cancel(key: string, result: WriteResult, supersededBy: T): void {
       const entry = pending.get(key);
@@ -276,6 +326,9 @@ export function flushAllCoalescedWrites(): Promise<void> {
 // The honest limit: this hands the write to the Firestore SDK, which enqueues it
 // in `persistentLocalCache` and replays it on the next load. It does NOT wait for
 // the server, and nothing here can — an unload handler cannot hold the page open.
+// `flushAll` itself DOES wait (see its docblock); these two call sites `void` the
+// promise rather than awaiting it, which is the whole difference, and it is
+// forced rather than chosen.
 // A tab killed by the OS between the enqueue and the SDK's own persistence still
 // loses the edit. That window is far smaller than the debounce it replaces, but
 // it is not zero, and no in-memory design can make it zero (Rule 3 forbids the

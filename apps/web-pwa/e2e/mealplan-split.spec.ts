@@ -126,11 +126,13 @@ async function readDayNote(page: Page, dayKey: string): Promise<string | undefin
  * so a write that has not been issued is not queued anywhere a reload could replay
  * it — it is simply lost, which is what made the assertion below flake (issue #1085).
  *
- * What this does NOT cover: if the 400 ms window elapses before this runs, the write
- * has already left the coalescer and is in flight, and the flush finds nothing to do.
- * That needs two CDP round trips to overtake a 400 ms timer, so it is far narrower
- * than the window it closes — but it is not zero, and this comment is here so a
- * recurrence is recognised rather than re-investigated.
+ * That gap is now closed at the coalescer (issue #1304). It used to end here: if the
+ * 400 ms window elapsed before this ran, the write had left the coalescer and was in
+ * flight, and the flush found nothing to do — narrow, needing two CDP round trips to
+ * overtake a 400 ms timer, but not zero. `writeCoalescer`'s `flushAll` now waits for
+ * writes already on the wire as well as queued ones, so this resolves on the ack
+ * either way. Kept as a record so a recurrence is recognised rather than
+ * re-investigated.
  */
 async function settlePlannerWrites(page: Page): Promise<void> {
   await page.evaluate(() => window.__e2e!.flushMealPlanWrites());

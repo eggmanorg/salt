@@ -24,11 +24,18 @@
  * THE RELOAD IS FENCED. An in-place edit is coalesced — the store moves
  * synchronously and the `setDoc` lands at the end of the debounce window or on the
  * flush `Done` issues — and nothing the page renders says the round trip finished,
- * so a reload taken straight after Done races that flush (the race
- * `recipe-crud.spec.ts` documents and declines to run). The fence is
- * `storedPhaseLabels` below: it reads the Firestore document itself over the
- * emulator's REST API, so the reload happens only once the server genuinely holds
- * the strip, and what comes back after it can only have come from there.
+ * so a reload taken straight after Done would race that flush. The fence is
+ * `settleRecipeWrites`, the bridge's own settle step (issue #1304): the promise it
+ * awaits is the one the `setDoc` settles, including for a write already on the
+ * wire, which is this case exactly since Done itself flushes.
+ *
+ * It used to be `storedPhaseLabels`, a spec-local poll of the Firestore document
+ * over the emulator's REST API. That read the right thing, but it made a
+ * SPEC-SHAPED fence for an APP-SHAPED gap: the bridge could not answer "has the
+ * write landed" because `writeCoalescer`'s `flushAll` only drained the queue, so
+ * every spec needing that answer had to go around the app and decode
+ * `arrayValue`/`mapValue` wire JSON to get it. #1304 fixed the coalescer instead,
+ * and the two specs that had simply declined their reloads now take them too.
  *
  * Since issue #1233 the strip is also the ONLY timing control on the page: the
  * three Prep / Cook / Total boxes are gone, because `scheduleFor` and
@@ -37,8 +44,8 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
-import { FIRESTORE_DOCUMENTS_BASE_URL } from './helpers/emulator';
 import { seedRecipe } from './helpers/seed';
+import { settleRecipeWrites } from './helpers/settle';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { Recipe } from '@salt/domain';
 import type { Page } from '@playwright/test';
@@ -105,31 +112,6 @@ function legendRows(page: Page) {
   return page.getByTestId('recipe-phase-legend').locator('> li');
 }
 
-/**
- * The phase labels as FIRESTORE holds them, read straight off the emulator's REST
- * API rather than out of the page.
- *
- * This is the settled-flush signal the reload below needs, and the only one
- * available from a spec: the store is updated optimistically, so nothing readable
- * in the browser distinguishes "written" from "about to be written". `Bearer
- * owner` bypasses the rules, exactly as the seeders in `helpers/seed.ts` do.
- */
-interface FirestoreValue {
-  readonly stringValue?: string;
-  readonly mapValue?: { readonly fields?: Record<string, FirestoreValue> };
-  readonly arrayValue?: { readonly values?: readonly FirestoreValue[] };
-}
-
-async function storedPhaseLabels(recipeId: string): Promise<readonly string[]> {
-  const res = await fetch(`${FIRESTORE_DOCUMENTS_BASE_URL}/recipes/${recipeId}`, {
-    headers: { Authorization: 'Bearer owner' },
-  });
-  if (!res.ok) return [];
-  const doc = (await res.json()) as { fields?: Record<string, FirestoreValue> };
-  const phases = doc.fields?.['metadata']?.mapValue?.fields?.['phases']?.arrayValue?.values ?? [];
-  return phases.map((p) => p.mapValue?.fields?.['label']?.stringValue ?? '');
-}
-
 test.describe('recipes — hand-editing the phase strip', () => {
   test('what the cook types is what the timeline draws, and it survives a reload', async ({
     page,
@@ -188,11 +170,9 @@ test.describe('recipes — hand-editing the phase strip', () => {
     }
 
     // ── It reads back into the boxes, from Firestore, after a full reload ─────
-    // Fenced on the document itself, not on anything the page says: see the
-    // header. Only once the server holds all three labels is the reload honest.
-    await expect
-      .poll(() => storedPhaseLabels(DISH_ID), { timeout: SYNC_TIMEOUT })
-      .toEqual(TYPED.map((p) => p.label));
+    // Fenced on the write, not on anything the page says: see the header. Only
+    // once Firestore has acked the strip is the reload honest.
+    await settleRecipeWrites(page);
 
     await page.reload();
     await expect(page.getByTestId('recipe-phases')).toBeVisible({ timeout: SYNC_TIMEOUT });

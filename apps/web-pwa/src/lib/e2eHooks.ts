@@ -11,7 +11,7 @@ import { devSignIn } from './auth.svelte.js';
 import { addAislesBulk, aisles } from './aisleService.js';
 import { canonItems, isLoadingAisles } from './canonService.js';
 import { seedEquipmentManifest, getEquipmentSnapshot } from './equipmentService.js';
-import { getRecipesSnapshot, persistRecipe } from './recipeService.js';
+import { flushRecipeWrites, getRecipesSnapshot, persistRecipe } from './recipeService.js';
 import { flushMealPlanWrites, getMealPlanWeekSnapshot } from './mealPlanService.js';
 import { getChatSessionsSnapshot } from './chatService.js';
 import {
@@ -116,6 +116,15 @@ export function installE2EHooks(): void {
 
     getRecipes() {
       return getRecipesSnapshot();
+    },
+
+    flushRecipeWrites() {
+      // The recipe page's own flush (issue #1319), not a reimplementation of it
+      // — the same call `Done` makes. Since #1304 the promise it returns settles
+      // on the emulator's ack, including for a write already on the wire, which
+      // is what makes it a fence a reload can be taken behind rather than a
+      // hopeful ordering.
+      return flushRecipeWrites();
     },
 
     async seedRecipe(recipe: Recipe) {
