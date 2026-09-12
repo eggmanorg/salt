@@ -162,12 +162,33 @@ four filings takes. `/salt-spec`, `/salt-defect` and `/salt-refactor` attach onl
 another command spawned them and named the parent: invoked directly, what a
 piece of work belongs to is a call for Daniel to make on the board.
 
-**It refuses to re-parent.** `addSubIssue` takes a `replaceParent` flag and this
-never passes it. An agent cannot tell "unattached" from "attached to something I
-cannot see", and silently moving a child out from under a parent a human chose
-is the one mistake here that leaves no trace. Re-running with the parent an
-issue already has is a no-op, which is what makes a retried campaign step safe;
-anything else is a deliberate `removeSubIssue`.
+**It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
+and this never passes it. An agent cannot tell "unattached" from "attached to
+something I cannot see", and silently moving a child out from under a parent a
+human chose is the one mistake here that leaves no trace. Re-running with the
+parent an issue already has is a no-op, which is what makes a retried campaign
+step safe.
+
+**Moving a link names what it displaces.**
+
+```
+node scripts/board.mjs parent <issue> --of <new parent> --detach-from <current parent>
+```
+
+This is the inverse `parent` never had: before it, a link written once could
+only be undone by hand-editing GitHub. It takes the displaced parent's **number**
+rather than being a bare `--reparent` switch, because the refusal above is about
+proof — naming the parent you are displacing is evidence you saw it. A number
+that does not match what the issue actually holds is an error and writes
+nothing, naming the parent it did find; omitting the flag leaves the refusal
+exactly as it was. On a cloud session the same move is Actions → **Board
+dispatch** → `command: parent` with `issue`, `of` and `detach_from`.
+
+It is two mutations, a `removeSubIssue` then an `addSubIssue`, so a failure
+between them leaves the child with no parent at all. That is deliberate — the
+detach is a separately-auditable act rather than an atomic `replaceParent` — and
+the command prints the exact line that restores the old link if the second one
+fails.
 
 **Ask GraphQL whether an issue has a parent.** The REST issue endpoint
 (`gh api repos/{owner}/{repo}/issues/N`) reports `parent: null` for every issue

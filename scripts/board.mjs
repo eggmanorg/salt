@@ -56,6 +56,7 @@
 //   node scripts/board.mjs set 1234 --status "In progress"
 //   node scripts/board.mjs pr 5678 --status "In review"     # via the PR's Closes #N
 //   node scripts/board.mjs parent 1234 --of 1129            # sub-issue link
+//   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
 //   node scripts/board.mjs release --sha <deployed sha>
 //   node scripts/board.mjs check
 
@@ -327,13 +328,21 @@ function cmdRelease(project, rest) {
  * programme of separate ones. So this writes the link and touches no field —
  * the child keeps whatever `add` gave it.
  *
- * WHY IT REFUSES TO RE-PARENT. `addSubIssue` takes `replaceParent`, and this
- * never passes it. An agent filing a follow-up cannot tell "unattached" from
- * "attached to something I cannot see", and silently moving a child out from
- * under a parent a human chose is the one mistake here that leaves no trace.
- * Re-parenting is a decision, so it is a `removeSubIssue` someone runs on
- * purpose. Re-running with the parent it already has is a no-op, which is what
+ * WHY IT REFUSES TO RE-PARENT UNASKED. `addSubIssue` takes `replaceParent`, and
+ * this never passes it. An agent filing a follow-up cannot tell "unattached"
+ * from "attached to something I cannot see", and silently moving a child out
+ * from under a parent a human chose is the one mistake here that leaves no
+ * trace. Re-running with the parent it already has is a no-op, which is what
  * makes a retried campaign step safe.
+ *
+ * SO RE-PARENTING NAMES WHAT IT DISPLACES. `--detach-from <current parent>` is
+ * the inverse the link never had: it detaches the existing link and writes the
+ * new one. It takes the parent's NUMBER rather than being a bare boolean
+ * because the refusal above is about proof — naming the parent you are
+ * displacing is evidence you saw it, and a number that does not match what the
+ * issue actually holds is an error rather than a silent move. (`parseFlags` has
+ * no boolean form either, and dies on a valueless flag.) Omit the flag and
+ * nothing changes: the refusal is still the default.
  */
 function cmdParent(rest0) {
   const [num, ...rest] = rest0;
@@ -341,11 +350,19 @@ function cmdParent(rest0) {
   const flags = parseFlags(rest);
   const parent = Number(flags.of);
   if (!Number.isInteger(child) || !Number.isInteger(parent))
-    die('usage: board.mjs parent <issue> --of <parent issue>');
+    die('usage: board.mjs parent <issue> --of <parent> [--detach-from <current parent>]');
   if (child === parent) die(`#${child} cannot be its own parent`);
 
+  const detachRaw = flags['detach-from'];
+  const detach = detachRaw === undefined ? undefined : Number(detachRaw);
+  if (detachRaw !== undefined && !Number.isInteger(detach))
+    die(`--detach-from takes the number of the parent being displaced, got "${detachRaw}"`);
+
+  // `parent{ id }` as well as its number: `removeSubIssue` takes the node id of
+  // the parent being detached, so reading only the number would mean a second
+  // round trip to displace one.
   const r = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){
-    child: issue(number:${child}){ id title parent{ number title } }
+    child: issue(number:${child}){ id title parent{ id number title } }
     parent: issue(number:${parent}){ id title } } }`).repository;
   if (!r?.child) die(`issue #${child} not found in ${OWNER}/${REPO}`);
   if (!r?.parent) die(`issue #${parent} not found in ${OWNER}/${REPO}`);
@@ -355,11 +372,35 @@ function cmdParent(rest0) {
     console.log(`#${child} is already under #${parent}  ${r.parent.title}`);
     return;
   }
-  if (held)
+  if (held !== undefined && detach === undefined)
     die(
       `#${child} is already a sub-issue of #${held} (${r.child.parent.title}) — ` +
-        `detach it deliberately with removeSubIssue before re-parenting`,
+        `re-parent it deliberately with --detach-from ${held}`,
     );
+  if (detach !== undefined && detach !== held)
+    die(
+      held === undefined
+        ? `--detach-from ${detach} does not match: #${child} has no parent`
+        : `--detach-from ${detach} does not match: #${child} is a sub-issue of ` +
+            `#${held} (${r.child.parent.title})`,
+    );
+
+  if (held !== undefined) {
+    gql(
+      `mutation{ removeSubIssue(input:{issueId:"${r.child.parent.id}", subIssueId:"${r.child.id}"}){ issue{ number } } }`,
+    );
+    console.log(`#${child} detached from #${held}  ${r.child.parent.title}`);
+    // Detach and attach are two mutations, so a failure between them leaves the
+    // child unparented. `gql` exits the process rather than throwing, so the
+    // recovery line is armed here instead of caught around the call below.
+    process.on('exit', (code) => {
+      if (code !== 0)
+        console.error(
+          `board: #${child} is detached and now has no parent — ` +
+            `restore it with: node scripts/board.mjs parent ${child} --of ${held}`,
+        );
+    });
+  }
 
   gql(
     `mutation{ addSubIssue(input:{issueId:"${r.parent.id}", subIssueId:"${r.child.id}"}){ issue{ number } } }`,
@@ -519,7 +560,7 @@ if (!command || command === '--help' || command === '-h') {
   board.mjs add <issue> [--queue X --class Y --size Z --status W]
   board.mjs set <issue> [--queue X --class Y --size Z --status W]
   board.mjs pr <pr> --status "In review"
-  board.mjs parent <issue> --of <parent issue>
+  board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
   board.mjs release --sha <deployed sha>
   board.mjs check`);
   process.exit(command ? 0 : 1);
