@@ -123,6 +123,14 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   belongs off the board, or a PR closed it without the `Closes #N` that moves it,
   and the automation is silently missing work.
 
+  **A campaign ledger is in this rule** (2026-09-12). It used to be exempt, and the
+  cost was 19 closed ledgers at no `Status` at once — one per campaign ever run,
+  accumulating invisibly to the only check that could have said so and surfacing
+  on the `Workflow` board as a column of cards nobody could account for. A ledger
+  is not work, but it does ship: it closes when its campaign finishes, and a
+  finished campaign means the work it ran merged. The exemption a ledger keeps is
+  `Queue` and `Class`, nothing more.
+
 ---
 
 ## `Epic` — a container, not a band
@@ -252,13 +260,23 @@ in this repo, sub-issues of #1202 included — a REST sweep will tell you nothin
 is attached, confidently, and be wrong. `issue.parent` over GraphQL is the field
 that is populated.
 
-**A `/salt-campaign` ledger takes no fields, but it does take a parent.** An
-issue titled `campaign:` is a coordination artefact: no `Queue`, no `Class`,
-closed by hand rather than by a PR, and it is the parent the campaign hangs its
-own filings off. `check` skips it in both the untriaged rule and the
-closed-at-a-shipping-status rule, or every campaign that ever ran would sit in
-its output forever. `campaign follow-ups:` gets no such exemption — that one is
-ordinary work and is triaged like any.
+**A `/salt-campaign` ledger takes no work fields, but it does take a parent and a
+Status.** An issue titled `campaign:` is a coordination artefact: no `Queue`, no
+`Class`, closed by hand rather than by a PR, and it is the parent the campaign
+hangs its own filings off. `check` skips it in the untriaged rule, or every
+campaign that ever ran would sit in its output forever. `campaign follow-ups:`
+gets no such exemption — that one is ordinary work and is triaged like any.
+
+It does **not** skip it in the closed-at-a-shipping-status rule any more, and
+the boundary is worth stating precisely, because a ledger cannot be promoted the
+way work is. `release` moves `Merged` → `Released` by asking whether a closing
+PR's merge commit is an ancestor of the deployed sha, and a ledger has no PR — so
+left to that test alone it would sit at `Merged` for good. Its run-set is the
+honest substitute: `ledgerFullyReleased` promotes a ledger once every issue its
+**title** names is `Released`, in the same pass that released the last of them.
+An empty run-set answers false rather than vacuously true, and one member the
+query could not resolve answers false too — a ledger wrongly marked `Released`
+claims a campaign shipped, and nothing re-checks it.
 
 That exemption is about **fields**, and it used to be about parentage too. It
 should not have been. Everything a campaign throws off attaches to the ledger,

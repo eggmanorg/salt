@@ -62,7 +62,13 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { isEpicTitle, isLedger, ledgerRunSet, ledgerShouldAttachTo } from './lib/boardTitles.mjs';
+import {
+  isEpicTitle,
+  isLedger,
+  ledgerFullyReleased,
+  ledgerRunSet,
+  ledgerShouldAttachTo,
+} from './lib/boardTitles.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -290,14 +296,23 @@ function cmdRelease(project, rest) {
     );
   }
 
-  const statuses = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
-    items(first:100){ nodes{ id
-      content{ ... on Issue { number
-        closedByPullRequestsReferences(first:10, includeClosedPrs:true){ nodes{ merged mergeCommit{ oid } } } } }
-      status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }`)
-    .node.items.nodes;
+  const statuses = [];
+  for (let after = 'null'; ;) {
+    const page = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
+      items(first:100, after:${after}){
+        pageInfo{ hasNextPage endCursor }
+        nodes{ id
+          content{ ... on Issue { number title
+            closedByPullRequestsReferences(first:10, includeClosedPrs:true){ nodes{ merged mergeCommit{ oid } } } } }
+          status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }`)
+      .node.items;
+    statuses.push(...page.nodes);
+    if (!page.pageInfo.hasNextPage) break;
+    after = `"${page.pageInfo.endCursor}"`;
+  }
 
   let moved = 0;
+  const promoted = new Set();
   for (const n of statuses) {
     if (n.status?.name !== 'Merged' || !n.content?.number) continue;
     const commits = (n.content.closedByPullRequestsReferences?.nodes ?? [])
@@ -313,9 +328,37 @@ function cmdRelease(project, rest) {
     });
     if (!shipped) continue;
     setSelect(project, n.id, 'Status', 'Released');
+    promoted.add(n.content.number);
     console.log(`#${n.content.number} → Released`);
     moved += 1;
   }
+
+  // A LEDGER HAS NO MERGE COMMIT, so the ancestry test above can never promote
+  // one and it would sit at `Merged` forever while the campaign it tracks went
+  // live. Its run-set is the honest substitute: the campaign is live exactly
+  // when everything its title names is live. Run after the loop above, so a
+  // ledger whose last work issue was promoted in THIS release is promoted in
+  // the same pass rather than waiting for the next one.
+  // `statuses` is the board as it was BEFORE this run, so what the loop above
+  // just promoted has to be folded in by hand — otherwise a ledger whose last
+  // work issue went live in this very release reads as still Merged and waits
+  // a whole deploy for nothing.
+  const statusOf = new Map(
+    statuses
+      .filter((n) => n.content?.number)
+      .map((n) => [
+        n.content.number,
+        promoted.has(n.content.number) ? 'Released' : (n.status?.name ?? null),
+      ]),
+  );
+  for (const n of statuses) {
+    if (n.status?.name !== 'Merged' || !n.content?.number || !isLedger(n.content.title)) continue;
+    if (!ledgerFullyReleased(ledgerRunSet(n.content.title), statusOf)) continue;
+    setSelect(project, n.id, 'Status', 'Released');
+    console.log(`#${n.content.number} → Released (campaign ledger, run-set all live)`);
+    moved += 1;
+  }
+
   console.log(`release: ${moved} issue(s) moved to Released from ${flags.sha.slice(0, 8)}`);
 }
 
@@ -466,19 +509,27 @@ function cmdCheck(project) {
   // either it was closed without shipping (won't-fix, duplicate) and belongs
   // off the board, or a PR closed it without the `Closes #N` that moves it, and
   // the automation is quietly missing work.
+  //
+  // A LEDGER IS IN THIS RULE, and used to be out of it (2026-09-12). The exemption a
+  // ledger carries is QUEUE AND CLASS — it is not work and must not sit in a
+  // work queue — and extending that to Status bought nothing while costing the
+  // only check that could see the problem: 19 closed ledgers accumulated at no
+  // Status, one per campaign ever run, showing up on the Workflow board as a
+  // column of cards nobody could account for. A ledger closes when its campaign
+  // finishes, and what a finished campaign means is that its work merged.
   const SHIPPING = new Set(['Merged', 'Released']);
   for (const item of items) {
     if (item.state !== 'CLOSED') continue;
-    if (isLedger(item.title)) continue; // closes by hand, never by a PR — see isLedger
-    // A FIELD-ONLY EXEMPTION. A ledger is out of this rule and the untriaged one
-    // below because it is not work; it is emphatically NOT out of the
-    // attachment rule further down, which is the one thing about a ledger that
-    // has to be true.
     if (item.status === 'Released') {
       console.log(`  note: #${item.number} is Released — safe to remove from the board`);
     } else if (!SHIPPING.has(item.status)) {
+      // The remedy differs for a ledger: it has no PR, so nothing automated
+      // will ever move it. Its Status comes from the work its title names, and
+      // `release` promotes it once all of that work is live.
       failures.push(
-        `#${item.number} is closed at Status="${item.status ?? 'unset'}" — it never reached Merged, so either it was closed without shipping (remove it) or its PR had no "Closes #${item.number}"`,
+        isLedger(item.title)
+          ? `#${item.number} is a closed campaign ledger at Status="${item.status ?? 'unset'}" — a ledger has no PR, so set it by hand from its run-set: \`board.mjs set ${item.number} --status Merged\` (or Released if every issue its title names is already Released)`
+          : `#${item.number} is closed at Status="${item.status ?? 'unset'}" — it never reached Merged, so either it was closed without shipping (remove it) or its PR had no "Closes #${item.number}"`,
       );
     }
   }
@@ -513,7 +564,9 @@ function cmdCheck(project) {
   // sat there in a week before anyone noticed. `add --queue` is what fills it,
   // and this is what makes skipping that call visible.
   for (const item of items) {
-    // Field-only exemption again — see the note beside the closed-status rule.
+    // THE one exemption a ledger still has: a coordination artefact must not
+    // sit in a work queue. See isLedger, and the closed-status rule above for
+    // the half that was wrongly exempted alongside it.
     if (item.state !== 'OPEN' || item.queue || isLedger(item.title)) continue;
     failures.push(
       `#${item.number} is on the board with no Queue — triage it with \`board.mjs set ${item.number} --queue <band>\``,
