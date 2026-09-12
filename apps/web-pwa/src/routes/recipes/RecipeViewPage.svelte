@@ -231,10 +231,19 @@
   // rendering a row nobody can act on. ONE LEVEL ONLY — a component's own
   // components are not shown and are not read, which is what makes a cycle inert.
   const components = $derived(recipe === null ? [] : resolveComponents(recipe, $recipes));
-  // The section appears for a MEAL, not for anything that could become one, and
-  // the question is asked of the document rather than of the resolved list: a meal
-  // all of whose components have been deleted still says it is a meal, and saying
-  // so with an empty list is more honest than pretending the field is not there.
+  // PRESENCE — does this document actually have dishes — asked of the document
+  // rather than of the resolved list: a meal all of whose components have been
+  // deleted still says it is a meal, and saying so with an empty list is more
+  // honest than pretending the field is not there.
+  //
+  // It NO LONGER GATES THE "Made from" CARD (issue #1343). The card owns that
+  // question itself now, and answers a different one — capability while editing —
+  // so an ordinary recipe pressed into edit mode is offered a dashed `+ Dishes`
+  // slot and can become a meal where it is read. What is left here are the three
+  // things that genuinely want presence and not capability: the ⋮ Cook plan item
+  // and its divider clause (an ordinary recipe has no running order to schedule)
+  // and the two import dialogs below, which are the card's "New" menu's landing
+  // and are gated on `hasComponents` at both ends.
   const showComponents = $derived(recipe !== null && hasComponents(recipe));
 
   // ─── Adding another dish to this meal (issue #752, Phase 3) ─────────────────
@@ -244,10 +253,18 @@
   // "all four ways" and "the save at the far end attaches and comes back here",
   // directly contradicting the corrected paragraph ten lines below it).
   //
-  // Gated on `showComponents` with the card, deliberately: this surface adds
-  // ANOTHER dish to something that is already a meal. Turning an ordinary recipe
-  // into one in the first place has no home on this page — see the note on
-  // `showComponents` above.
+  // Gated on `showComponents`, deliberately, and NO LONGER WITH THE CARD around
+  // it (issue #1343): this surface adds ANOTHER dish to something that is already
+  // a meal. Turning an ordinary recipe into one now DOES have a home on this page
+  // — the card's dashed `+ Dishes` slot and the picker behind it — and that door
+  // is deliberately not this one. Two of these three entries import over the
+  // network and the third navigates away into a chat: a heavy, navigating first
+  // move for a conversion, on a recipe you are mid-edit on. Keeping it on
+  // `showComponents` also keeps it in lockstep with the two dialogs it opens,
+  // which are mounted on the same read further down; `RecipeMadeFromCard` renders
+  // this snippet only when the document already has dishes, and
+  // `RecipeViewPage.mealComponents.test.ts` pins the two gates against each other
+  // rather than trusting this paragraph to keep them together.
   //
   // THREE ways, not four, since issue #1319 Phase 7: "Manual" is gone with
   // hand-authoring. A dish for a meal is a recipe like any other, and a recipe now
@@ -2407,13 +2424,18 @@
              AND written in the same place (issue #1319, Phase 3). The card itself
              is `RecipeMadeFromCard.svelte`; what stays here is the "New" menu,
              which owns this page's two import dialogs and the navigation Phase 7
-             re-points. Gated on the DOCUMENT having components, in the same idiom
-             as Ingredients below: when the concept applies the card is there, and
-             the card's own guard covers every component having since been deleted. -->
-        {#if showComponents}
-          <RecipeMadeFromCard {recipe} {components} {editing} onEdit={handleInlineEdit}>
-            {#snippet newMenu()}
-              <!-- The three ways a recipe arrives, in the recipe list's own order
+             re-points.
+             UNGATED HERE SINCE ISSUE #1343: the card owns its own mount condition,
+             in `RecipeNotesCard`'s idiom — the document having dishes, OR edit mode
+             on a kind that can take them, which is what turns an ordinary recipe
+             into a meal where it is read. Wrapping it in the page's presence gate
+             again would put that decision back in two places and would bring back
+             the card unmounting under a finger that has just removed the last
+             dish. The "New" menu snippet below keeps the page's own presence gate,
+             inside the card. -->
+        <RecipeMadeFromCard {recipe} {components} {editing} onEdit={handleInlineEdit}>
+          {#snippet newMenu()}
+            <!-- The three ways a recipe arrives, in the recipe list's own order
                    and idiom — a dish for a meal is made exactly like any other
                    dish, which is why "Manual" left this menu with issue #1319
                    Phase 6's removal of hand-authoring rather than surviving here.
@@ -2421,54 +2443,53 @@
                    (`handleComponentImported`) and carry no meal id at all. Chat is
                    the one path whose dish does not exist yet, so it is the one
                    `startComponent` still pins the meal to the URL for. -->
-              <Popover bind:open={componentMenuOpen}>
-                <PopoverTrigger>
-                  {#snippet children()}
-                    <button
-                      type="button"
-                      class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                      data-testid="meal-component-new-btn"
-                      aria-label="Add a dish to this meal"
-                    >
-                      <Icon name="Plus" size={14} />
-                      New
-                      <Icon name="ChevronDown" size={12} class="opacity-80" />
-                    </button>
-                  {/snippet}
-                </PopoverTrigger>
-                <PopoverContent align="end" class="min-w-48 p-1">
-                  <PopoverMenuItem
-                    icon="Link"
-                    onclick={() => {
-                      componentMenuOpen = false;
-                      showComponentUrlImport = true;
-                    }}
-                    data-testid="meal-component-new-import"
+            <Popover bind:open={componentMenuOpen}>
+              <PopoverTrigger>
+                {#snippet children()}
+                  <button
+                    type="button"
+                    class="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                    data-testid="meal-component-new-btn"
+                    aria-label="Add a dish to this meal"
                   >
-                    Import URL
-                  </PopoverMenuItem>
-                  <PopoverMenuItem
-                    icon="Camera"
-                    onclick={() => {
-                      componentMenuOpen = false;
-                      showComponentPhotoImport = true;
-                    }}
-                    data-testid="meal-component-new-import-photo"
-                  >
-                    Import from photo
-                  </PopoverMenuItem>
-                  <PopoverMenuItem
-                    icon="Sparkles"
-                    onclick={() => startComponent('/chat')}
-                    data-testid="meal-component-new-chat"
-                  >
-                    Chat with AI
-                  </PopoverMenuItem>
-                </PopoverContent>
-              </Popover>
-            {/snippet}
-          </RecipeMadeFromCard>
-        {/if}
+                    <Icon name="Plus" size={14} />
+                    New
+                    <Icon name="ChevronDown" size={12} class="opacity-80" />
+                  </button>
+                {/snippet}
+              </PopoverTrigger>
+              <PopoverContent align="end" class="min-w-48 p-1">
+                <PopoverMenuItem
+                  icon="Link"
+                  onclick={() => {
+                    componentMenuOpen = false;
+                    showComponentUrlImport = true;
+                  }}
+                  data-testid="meal-component-new-import"
+                >
+                  Import URL
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                  icon="Camera"
+                  onclick={() => {
+                    componentMenuOpen = false;
+                    showComponentPhotoImport = true;
+                  }}
+                  data-testid="meal-component-new-import-photo"
+                >
+                  Import from photo
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                  icon="Sparkles"
+                  onclick={() => startComponent('/chat')}
+                  data-testid="meal-component-new-chat"
+                >
+                  Chat with AI
+                </PopoverMenuItem>
+              </PopoverContent>
+            </Popover>
+          {/snippet}
+        </RecipeMadeFromCard>
 
         <!-- Where the recipe scrolls to when the drawer opens (issue #696): the strip
              left above the chat should hold what the chef is talking about, not the

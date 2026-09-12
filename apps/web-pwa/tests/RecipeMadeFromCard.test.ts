@@ -33,6 +33,18 @@ import type { Recipe } from '@salt/domain';
 //   so unlike the timing strip a concurrent write to the SAME meal repaints the
 //   rows. That is intended here (there is no text in flight to protect) and is
 //   pinned as behaviour rather than left an untested consequence.
+//
+//   THE CARD DECIDES WHETHER IT EXISTS (issue #1343), and the two halves of that
+//   gate are asserted separately. PRESENCE is what a reader sees — an ordinary
+//   recipe shows no card at all. CAPABILITY is what an editor gets — a dashed
+//   `+ Dishes` slot on a kind `takesComponents` admits, which is the only door
+//   left that turns an ordinary recipe into a meal once the old editor is gone.
+//
+//   A MEAL IS NOT DEMOTED UNDER THE FINGER THAT EMPTIED IT. Removing the last
+//   dish leaves the card, the rows and the picker exactly where they were; the
+//   slot comes back when the zone is closed and the card goes when edit mode
+//   ends. Every step of that is a case below, because the whole first half of
+//   this feature rests on the card not unmounting mid-gesture.
 
 const { mockRecipes } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
@@ -88,6 +100,16 @@ const LIBRARY: readonly Recipe[] = [CHICKEN, POTATOES, GRAVY, TAKEAWAY, PLACEHOL
 
 function meal(componentRecipeIds: string[]): Recipe {
   return { ...emptyRecipe(MEAL_ID, NOW), title: 'Sunday roast', componentRecipeIds };
+}
+
+/** The same entry under another kind — what `takesComponents` is asked about. */
+function ofKind(kind: 'cocktail' | 'outing' | 'placeholder', ids: string[] = []): Recipe {
+  return { ...emptyRecipe(MEAL_ID, NOW, kind), title: 'Sunday roast', componentRecipeIds: ids };
+}
+
+/** Did the card mount at all? Its title is the only thing it always renders. */
+function cardIsThere(): boolean {
+  return screen.queryByText('Made from') !== null;
 }
 
 let onEdit: ReturnType<typeof vi.fn>;
@@ -361,5 +383,118 @@ describe('RecipeMadeFromCard — what the rows are fed from', () => {
     await rerender(props(moved, true, LIBRARY));
 
     expect(rowTitles()).toEqual(['Roast chicken', 'Onion gravy']);
+  });
+});
+
+describe('RecipeMadeFromCard — who gets the card at all', () => {
+  it('shows nothing whatever on an ordinary recipe being read', () => {
+    show(meal([]), false);
+
+    expect(cardIsThere()).toBe(false);
+    expect(screen.queryByTestId('recipe-edit-components')).toBeNull();
+  });
+
+  it('offers an ordinary recipe a dashed “+ Dishes” slot in edit mode, and the picker behind it', async () => {
+    show(meal([]), true);
+
+    expect(cardIsThere()).toBe(true);
+    const slot = screen.getByTestId('recipe-edit-components');
+    expect(slot).toHaveTextContent('+ Dishes');
+    // Nothing is open until it is pressed — the slot is the door, not the editor.
+    expect(screen.queryByTestId('recipe-edit-component-picker')).toBeNull();
+
+    await openRows();
+
+    expect(screen.getByTestId('recipe-edit-component-picker')).toBeInTheDocument();
+  });
+
+  it('offers the slot on a cocktail, because that is what the domain says', () => {
+    // `takesComponents`, never `kind === 'recipe'` (CLAUDE.md → Data model
+    // conventions). A cocktail is the domain's existing answer, so this case goes
+    // red the moment the gate becomes a comparison against a kind.
+    show(ofKind('cocktail'), true);
+
+    expect(screen.getByTestId('recipe-edit-components')).toHaveTextContent('+ Dishes');
+  });
+
+  it('never offers it on an outing or a placeholder, in either mode', () => {
+    for (const kind of ['outing', 'placeholder'] as const) {
+      for (const editing of [false, true]) {
+        show(ofKind(kind), editing);
+        expect(cardIsThere()).toBe(false);
+        cleanup();
+      }
+    }
+  });
+
+  it('still shows the card for a kind that takes no dishes but already carries some', async () => {
+    // The gate's stated boundary rather than an unqualified absolute: presence is
+    // the FIRST clause, so a document with dishes on it reads as a meal whatever
+    // kind it declares — which is the only way such an entry stays editable at
+    // all.
+    show(ofKind('outing', ['chicken']), false);
+    expect(readTitles()).toEqual(['Roast chicken']);
+
+    cleanup();
+    show(ofKind('outing', ['chicken']), true);
+    await openRows();
+    expect(rowTitles()).toEqual(['Roast chicken']);
+  });
+
+  it('keeps the “New” menu off the dashed-slot path, and on a meal', async () => {
+    // The card's gate and the page's dialog gate are one predicate in two files;
+    // `RecipeViewPage.mealComponents.test.ts` pins them against each other. This
+    // is the card's end of it.
+    show(meal([]), true);
+    expect(screen.queryByTestId('meal-component-new-btn')).toBeNull();
+    await openRows();
+    expect(screen.queryByTestId('meal-component-new-btn')).toBeNull();
+
+    cleanup();
+    show(meal(['chicken']), true);
+    expect(screen.getByTestId('meal-component-new-btn')).toBeInTheDocument();
+  });
+});
+
+describe('RecipeMadeFromCard — a meal emptied while it is being edited', () => {
+  it('keeps the card, the rows and the picker when the last dish is taken off', async () => {
+    const { rerender } = show(meal(['chicken']), true);
+    await openRows();
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-component-remove-chicken'));
+    expect(lastEdit().componentRecipeIds).toEqual([]);
+
+    // The page writes it and hands the emptied document back, which is where the
+    // old presence gate used to pull the card out from under the gesture.
+    await rerender(props(meal([]), true, LIBRARY));
+
+    expect(cardIsThere()).toBe(true);
+    expect(screen.getByTestId('recipe-edit-component-rows')).toBeInTheDocument();
+    expect(rowTitles()).toEqual([]);
+    expect(screen.getByTestId('recipe-edit-component-picker')).toBeInTheDocument();
+  });
+
+  it('comes back as the dashed slot when the zone is closed, not as an empty list', async () => {
+    const { rerender } = show(meal(['chicken']), true);
+    await openRows();
+    await rerender(props(meal([]), true, LIBRARY));
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-components-done'));
+
+    expect(cardIsThere()).toBe(true);
+    expect(screen.getByTestId('recipe-edit-components')).toHaveTextContent('+ Dishes');
+    expect(readTitles()).toEqual([]);
+  });
+
+  it('lets go of the card when edit mode ends, which is where the demotion lands', async () => {
+    const { rerender } = show(meal(['chicken']), true);
+    await openRows();
+    await rerender(props(meal([]), true, LIBRARY));
+
+    // Done on the page, not on the zone: `editing` goes false and the gate is back
+    // to presence alone.
+    await rerender(props(meal([]), false, LIBRARY));
+
+    expect(cardIsThere()).toBe(false);
   });
 });

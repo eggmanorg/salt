@@ -25,8 +25,19 @@ import type { Recipe } from '@salt/domain';
 // made, it is idempotent, and a meal deleted meanwhile must not cost the user the
 // dish they just imported.
 //
-// The surface is gated on the card, i.e. on the document already having
-// components. Turning an ordinary recipe INTO a meal has no home on this page.
+// THE MENU IS GATED ON PRESENCE; THE CARD AROUND IT NO LONGER IS (issue #1343).
+// Turning an ordinary recipe into a meal now DOES have a home on this page — the
+// card mounts on capability in edit mode and offers a dashed `+ Dishes` slot — but
+// this menu is deliberately not that door. Its three entries start a dish for a
+// meal that already exists: two import over the network and the third navigates
+// away, and the two import dialogs they open are mounted further down the page on
+// the very same `showComponents` read.
+//
+// That is one predicate written in two files, which is what the last describe
+// block below is for. What those cases pin is that the menu and the dialogs answer
+// the same way about the same document in both modes; they do not — and no test
+// can — prove the two expressions are textually the same, so a change to either
+// gate has to be made against them.
 
 const {
   mockRecipes,
@@ -244,7 +255,8 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
 
   it('does not offer it on an ordinary recipe', () => {
     // This surface adds ANOTHER dish to something already built from dishes. A
-    // recipe becomes a meal in the editor's picker, not here.
+    // recipe becomes a meal through the card's own dashed slot and picker (issue
+    // #1343), not through this menu.
     mockRecipes._set([makeEntry(), CHICKEN]);
     renderPage();
 
@@ -319,6 +331,39 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     // The capture flow itself is RecipeImportPhotoDialog's own suite; what this
     // page owns is the way in and the landing, and the landing is shared with
     // the URL path above.
+    expect(await screen.findByTestId('recipe-import-photo-dialog')).toBeInTheDocument();
+  });
+});
+
+describe('RecipeViewPage — the card’s gate and the import dialogs’ gate', () => {
+  it('gives an ordinary recipe the card in edit mode and withholds the New menu', async () => {
+    mockRecipes._set([makeEntry(), CHICKEN]);
+    renderPage();
+
+    // Read mode: no card at all, so the menu's absence below cannot be mistaken
+    // for the card simply not being there.
+    expect(screen.queryByText('Made from')).toBeNull();
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    // The conversion door #1343 opened — the card mounts on CAPABILITY…
+    expect(screen.getByText('Made from')).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-edit-components')).toHaveTextContent('+ Dishes');
+    // …and the menu stays behind PRESENCE, with the dialogs it opens. Offered
+    // here it would open a dialog this page has not mounted.
+    expect(screen.queryByTestId('meal-component-new-btn')).toBeNull();
+  });
+
+  it('offers the menu on a meal in edit mode, and its dialog is mounted to receive it', async () => {
+    // The other end of the same predicate: where the menu IS offered, pressing it
+    // reaches a dialog that exists. The photo path is the one a jsdom test can
+    // drive to a mounted dialog without a network.
+    renderPage();
+    await fireEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+
+    await openNewMenu();
+    await fireEvent.click(await screen.findByTestId('meal-component-new-import-photo'));
+
     expect(await screen.findByTestId('recipe-import-photo-dialog')).toBeInTheDocument();
   });
 });
