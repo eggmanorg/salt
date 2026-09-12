@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import type { CanonItem, Ingredient, ProductForm, Recipe } from '@salt/domain';
 import { recipeMatchIssueCount } from '@salt/domain';
 
@@ -119,7 +119,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { matchIngredient } from '../src/lib/recipeService.js';
+import { matchIngredient, persistRecipe } from '../src/lib/recipeService.js';
+import { addToast } from '../src/lib/toastStore.js';
 
 const RECIPE_ID = 'recipe-1';
 
@@ -435,5 +436,93 @@ describe('RecipeViewPage — a line with no amount', () => {
 
     expect(getAllByTestId('match-state-unmatched')).toHaveLength(1);
     expect(queryByTestId('match-state-no-amount')).toBeNull();
+  });
+});
+
+// ─── The other end of the tap (relocated from `RecipeEditPage.matchRow.test.ts`)
+//
+// Tapping a marker is not "call `matchIngredient`" — it is a round trip, and the
+// three things the cook actually observes are at the far end of it: the marker
+// goes away, the repaired line is WRITTEN, and a failure says so instead of
+// pretending. The retired editor's suite owned all three; the cases above stop
+// at the call, which is the assertion that cannot tell a working repair from one
+// that silently drops the result.
+//
+// `handleRematch` re-derives from the store copy before composing the write, so
+// each case sets the store to the repaired recipe the way a real subscription
+// would, rather than asserting against a snapshot the page never saw.
+describe('RecipeViewPage — what a repaired row actually does', () => {
+  const unmatched = line({
+    id: 'ing-bay',
+    rawText: '2 bay leaves',
+    canonId: null,
+    matchState: 'pending',
+  });
+  const repaired: Ingredient = { ...unmatched, canonId: 'canon-bay', matchState: 'matched' };
+
+  it('writes the repaired line, carrying its new canon and match state', async () => {
+    vi.mocked(matchIngredient).mockResolvedValue({ kind: 'ok', value: repaired } as never);
+    mockRecipes._set([makeRecipe([unmatched])]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('match-state-unmatched'));
+
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+    const written = vi.mocked(persistRecipe).mock.calls[0]![0] as Recipe;
+    expect(written.ingredients[0]!.items[0]).toMatchObject({
+      id: 'ing-bay',
+      canonId: 'canon-bay',
+      matchState: 'matched',
+    });
+  });
+
+  it('clears the marker once the repaired line is in the store', async () => {
+    vi.mocked(matchIngredient).mockResolvedValue({ kind: 'ok', value: repaired } as never);
+    mockRecipes._set([makeRecipe([unmatched])]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('match-state-unmatched'));
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+    // What the write's own subscription delivers back.
+    mockRecipes._set([makeRecipe([repaired])]);
+
+    await waitFor(() => expect(queryByTestId('match-state-unmatched')).toBeNull());
+  });
+
+  it('keeps the marker and says so when the match itself fails', async () => {
+    vi.mocked(matchIngredient).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    mockRecipes._set([makeRecipe([unmatched])]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('match-state-unmatched'));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('Failed to match ingredient.', 'destructive'),
+    );
+    expect(persistRecipe).not.toHaveBeenCalled();
+    expect(getByTestId('match-state-unmatched')).toBeTruthy();
+  });
+
+  it('says so when the match lands but the write does not', async () => {
+    vi.mocked(matchIngredient).mockResolvedValue({ kind: 'ok', value: repaired } as never);
+    vi.mocked(persistRecipe).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'StorageError', operation: 'write' },
+    } as never);
+    mockRecipes._set([makeRecipe([unmatched])]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('match-state-unmatched'));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('Failed to save match.', 'destructive'),
+    );
+    // The two failures are deliberately different sentences: one says the match
+    // never happened, the other that it happened and did not stick. A cook who
+    // taps again is right in the first case and wasting a call in the second.
+    expect(addToast).not.toHaveBeenCalledWith('Failed to match ingredient.', 'destructive');
   });
 });

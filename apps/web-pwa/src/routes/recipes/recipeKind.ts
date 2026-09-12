@@ -42,9 +42,10 @@ export function kindOf(recipe: { readonly kind?: RecipeKind } | Recipe): RecipeK
 // below for issue #752: Meals is a section that is not a kind — a meal is an
 // ordinary recipe that has gained components — so the list's vocabulary and the
 // creatable kinds' vocabulary stopped being the same set of words. Everything a
-// grid of cards needs lives here; everything an EDITOR needs lives on `KindCopy`.
+// grid of cards needs lives here; everything only a CREATABLE kind needs lives
+// on `KindCopy`.
 interface SectionCopy {
-  // Section name: the filter chip on the list, and the suffix on editor titles.
+  // Section name: the filter chip on the list, and the New sheet's own title.
   readonly label: string;
   // Count noun for the result line ("3 recipes", "3 ideas").
   readonly one: string;
@@ -57,17 +58,18 @@ interface SectionCopy {
   readonly thumbIcon: IconProps['name'];
 }
 
-// What a CREATABLE KIND additionally needs: the words the editor wears and the
-// way in from the New menu. A section you cannot create — Meals — has none of
-// these, which is exactly why they are not on `SectionCopy`.
+// What a CREATABLE KIND additionally needs: the words it wears when it is made
+// and the way in from the New menu. A section you cannot create — Meals — has
+// none of these, which is exactly why they are not on `SectionCopy`.
+//
+// It used to carry `newTitle`, `editTitle` and `savedToast` as well; those were
+// the retired editor page's heading and its save toast, and they went with it in
+// #1319 Phase 8. `createdToast` stayed because a recipe is still CREATED — by
+// the New sheet, by an import and by the chef — it is just never "saved" as a
+// separate act any more.
 interface KindCopy extends SectionCopy {
-  // Editor page titles. `recipe` keeps today's exact wording — /recipes/new is
-  // pinned by an e2e spec and three unit suites that must pass unedited.
-  readonly newTitle: string;
-  readonly editTitle: string;
-  // Toasts on save — first save, then every save after it.
+  // The toast when an entry of this kind first comes into existence.
   readonly createdToast: string;
-  readonly savedToast: string;
   // New-menu entry icon.
   readonly menuIcon: IconProps['name'];
   // Help text under the tags field. OPTIONAL, and present on exactly one kind:
@@ -81,8 +83,9 @@ interface KindCopy extends SectionCopy {
   //
   // This is COPY, which is what this module is for — no control, no validation and
   // no write-path change hangs off it. The `kind`-gated mood <Select> that #652
-  // rejected was a branch on BEHAVIOUR inside RecipeEditPage; a sentence that is
-  // simply undefined for three kinds is not.
+  // rejected was a branch on BEHAVIOUR; a sentence that is simply undefined for
+  // three kinds is not. Rendered by `RecipeIdentityCard`'s tag zone, which is
+  // where tags are typed since #1319 Phase 8.
   readonly tagsHint?: string;
 }
 
@@ -91,10 +94,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     label: 'Recipes',
     one: 'recipe',
     many: 'recipes',
-    newTitle: 'New recipe',
-    editTitle: 'Edit recipe',
     createdToast: 'Recipe created',
-    savedToast: 'Recipe saved',
     emptyText: 'No recipes yet.',
     noMatchText: 'No recipes match your filters.',
     thumbIcon: 'CookingPot',
@@ -104,10 +104,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     label: 'When you CBA',
     one: 'idea',
     many: 'ideas',
-    newTitle: 'New — When you CBA',
-    editTitle: 'Edit — When you CBA',
     createdToast: 'Saved',
-    savedToast: 'Saved',
     emptyText: 'Nothing here yet — a takeaway, a picnic, or a night off.',
     noMatchText: 'Nothing here matches your filters.',
     thumbIcon: 'HandPlatter',
@@ -117,10 +114,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     label: 'Cocktails',
     one: 'cocktail',
     many: 'cocktails',
-    newTitle: 'New cocktail',
-    editTitle: 'Edit cocktail',
     createdToast: 'Cocktail created',
-    savedToast: 'Cocktail saved',
     emptyText: 'No cocktails yet.',
     noMatchText: 'No cocktails match your filters.',
     thumbIcon: 'Martini',
@@ -135,10 +129,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     label: 'Placeholders',
     one: 'placeholder',
     many: 'placeholders',
-    newTitle: 'New placeholder',
-    editTitle: 'Edit placeholder',
     createdToast: 'Placeholder created',
-    savedToast: 'Placeholder saved',
     emptyText: 'No placeholders yet — build a few and a note-only night gets a picture.',
     noMatchText: 'No placeholders match your filters.',
     thumbIcon: 'Images',
@@ -161,8 +152,8 @@ export type ListSection = RecipeKind | typeof MEAL_SECTION;
 // The words each shelf wears. `KIND_COPY` supplies four of the five entries
 // unchanged — a section that IS a kind talks about itself exactly as it always
 // did — and Meals adds the fifth. Note what the extra entry cannot do: it has no
-// `newTitle`, `savedToast` or `menuIcon`, because you cannot create a meal. You
-// create a recipe and then give it components.
+// `createdToast` or `menuIcon`, because a meal is not a kind you stamp on a
+// document — a recipe becomes one by gaining components, however it was made.
 export const SECTION_COPY: Record<ListSection, SectionCopy> = {
   ...KIND_COPY,
   [MEAL_SECTION]: {
@@ -187,15 +178,17 @@ export function sectionOf(recipe: Recipe): ListSection {
   return hasComponents(recipe) ? MEAL_SECTION : kindOf(recipe);
 }
 
-// The KINDS YOU CAN CREATE, in New-menu order — and, minus the first, the
-// New-menu entries themselves. `recipe` leads because it is where you land and
-// what most entries are; it is also the only one whose New entry is NOT derived
-// from this list, because /recipes/new (no kind segment) is pinned by an e2e spec.
+// The four KINDS a stored recipe can be, in the order the list page shelves
+// them. `recipe` leads because it is where you land and what most entries are.
 //
-// Since #752 this is deliberately NOT the list page's sections (see LIST_SECTIONS
-// below): there is no "New meal" entry, because a meal is not created — a recipe
-// BECOMES one by gaining components, and offering a way to mint an empty meal
-// would be offering a recipe under another name.
+// It is no longer the New menu's list. It stopped being that in #1319 Phase 6,
+// which gave the menu its own `NEW_ENTRY_ORDER` below, and the last tie was cut
+// in Phase 8 with the editor: you cannot type out a recipe or a cocktail at all
+// now, and a meal — which is not a kind — has a New entry that this list, being
+// kinds only, could never have carried.
+//
+// This is deliberately NOT the list page's sections either (see LIST_SECTIONS
+// below), which add Meals as a fifth shelf.
 export const KIND_SECTIONS: readonly RecipeKind[] = ['recipe', 'outing', 'cocktail', 'placeholder'];
 
 // The creatable kinds whose chips are shown before you ask for the rest. Kept as

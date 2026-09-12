@@ -40,6 +40,7 @@ const GUTTER_PX = 40;
 const EPSILON = 1;
 
 const RECIPE_TITLE = 'Split Test Dahl';
+const RECIPE_ID = 'split-test-dahl';
 
 test.describe('recipes — the dish and its chef, side by side', () => {
   test.use({ viewport: VIEWPORT });
@@ -47,19 +48,25 @@ test.describe('recipes — the dish and its chef, side by side', () => {
   test('the chat docks beside the recipe as equal halves, with no drawer, and swaps on a tap', async ({
     page,
   }, testInfo) => {
-    // One create plus two session writes and a reload's worth of settling — the
+    // One seed plus two session writes and a reload's worth of settling — the
     // single-tab tier, with headroom.
     test.setTimeout(90_000);
     const email = uniqueEmail(testInfo.testId);
     // Recipes are gated to admins while the module is incomplete (#179).
     await gotoAndSignIn(page, email, '/', { admin: true });
 
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill(RECIPE_TITLE);
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-    await expect(page.getByRole('heading', { name: RECIPE_TITLE })).toBeVisible();
+    // Bridge-seeded through the same `buildRecipe` the two describes below use
+    // (NF-C4). It used to be typed into the retired editor, which issue #1319
+    // Phase 8 deleted; the subject here is the LAYOUT the two columns take, which
+    // owes nothing to how the dish was written. `openSeeded` is deliberately not
+    // reused: it starts a conversation, and the counts below need none to exist.
+    await seedRecipe(page, buildRecipe(RECIPE_ID, RECIPE_TITLE, 'recipe'));
+    await page.goto(`/#/recipes/${RECIPE_ID}`);
+    // The arrival. A URL assertion here would pass on the hash `goto` was handed,
+    // before the document had reached the store.
+    await expect(page.getByRole('heading', { name: RECIPE_TITLE })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
 
     // ── The chat is docked, and it is not a drawer ───────────────────────────
     const chatColumn = page.getByTestId('recipe-chat-sidebar');
@@ -133,6 +140,9 @@ const SEED_TIME = '2026-01-01T00:00:00.000Z';
  * definition has no ingredients and no method, and is therefore the case with nothing
  * to scroll at all. Both exist to prove the composer's reachability does not depend on
  * the recipe's length, which under the old `sticky` + `calc()` pairing it did.
+ *
+ * Also the fixture the FIRST describe seeds, since issue #1319 Phase 8 left no
+ * by-hand way to author a dish: one builder for every recipe this file needs.
  */
 function buildRecipe(id: string, title: string, kind: 'recipe' | 'outing'): Recipe {
   const long = kind === 'recipe';

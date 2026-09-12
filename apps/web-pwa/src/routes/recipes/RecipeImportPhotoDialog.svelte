@@ -37,8 +37,9 @@
 
   interface Props {
     open?: boolean;
-    /** Called with the persisted draft once extraction succeeds. The caller
-     * stashes it and routes to the editor — navigation is not this dialog's job. */
+    /** Called with the persisted recipe once extraction succeeds. The caller
+     * stashes it and routes to the recipe's own page — navigation is not this
+     * dialog's job. */
     onImported: (recipe: Recipe) => void;
   }
 
@@ -62,8 +63,8 @@
   // Bumped on every reset. An extraction that lands after the dialog was
   // dismissed belongs to nobody: the recipe is already saved and flagged
   // Unreviewed in the library (that is the whole point of persisting at
-  // extraction time), so dropping the hand-off is honest — yanking someone into
-  // an editor they walked away from is not.
+  // extraction time), so dropping the hand-off is honest — yanking someone onto
+  // a page they walked away from is not.
   let session = 0;
 
   const atCapacity = $derived(pages.length >= MAX_RECIPE_PAGE_PHOTOS);
@@ -167,8 +168,8 @@
         <DialogTitle>Import from photo</DialogTitle>
         <DialogDescription>
           Photograph the recipe page. If it runs across a spread, add the facing page too — up to {MAX_RECIPE_PAGE_PHOTOS}
-          pages of the same recipe. We'll read them, convert to metric and British terms, and drop you
-          into the editor to review.
+          pages of the same recipe. We'll read them, convert to metric and British terms, save the recipe,
+          and open it for you to check.
         </DialogDescription>
       </DialogHeader>
 

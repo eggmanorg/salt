@@ -56,13 +56,12 @@ const TAG = 'reviewgate';
 // value checked on both surfaces IS the "identical saved document" assertion.
 const SEEDED_METADATA = {
   servings: 4,
-  // Null since #1212: the editor's three time boxes are gone with the phase key
-  // on, and this dish is authored through the editor. Servings and the tag carry
-  // the "the librarian dropped it, the merge kept it" assertion.
-  // Stamped by `emptyRecipe` on every new recipe (issue #1122), so it is part of
-  // the seeded document even though nobody typed it. Its presence here is what
-  // pins `mergeAmendedRecipe` carrying the strip through an amend rather than
-  // dropping the key — this equality is the "identical saved document" assertion.
+  // An empty strip and no timing sentence, stated rather than defaulted: a recipe
+  // minted by `emptyRecipe` carries both keys from creation (issue #1122), and
+  // this is a whole-`metadata` equality, so every key on the stored document has
+  // to be here. Their presence is what pins `mergeAmendedRecipe` carrying the
+  // strip through an amend rather than dropping the key — the same job the tag
+  // already does for the metadata the librarian forgets.
   phases: [],
   timingSummary: null,
   tags: [TAG],
@@ -146,6 +145,12 @@ function recipeFixture(
   };
 }
 
+const DISH_ID = 'review-gate-pilaf';
+
+// The dish tests 1 and 2 amend. Built by the same `recipeFixture` as the meal case
+// below rather than a second builder: one shape, three documents.
+const DISH_FIXTURE = recipeFixture(DISH_ID, DISH, { rawText: INGREDIENT });
+
 const COMPONENT_DISH = recipeFixture('review-gate-chicken', 'Review Gate Roast Chicken', {
   rawText: COMPONENT_INGREDIENT,
 });
@@ -169,41 +174,16 @@ async function stubModel(page: Page): Promise<void> {
   await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
 }
 
-/** Creates the dish through the editor and returns its id. */
+/** Seeds the dish and leaves the page on it, ready for the ⋮ menu. */
 async function seedDish(page: Page): Promise<string> {
-  await page.goto('/#/recipes/new');
-  await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-  await page.getByTestId('recipe-title-input').fill(DISH);
-
-  await page.getByTestId('recipe-servings-input').fill(String(SEEDED_METADATA.servings));
-  // Prep / Cook / Total are no longer typed here (issue #1212): with the phase key
-  // on the editor offers the strip instead, and an e2e build has no PostHog key so
-  // every gate reads ON. They stay null on this document, which costs this spec
-  // nothing — Servings and the tag are the metadata the librarian drops, and they
-  // are what the preservation assertion below actually rests on.
-  await page.getByTestId('recipe-tags-input').fill(TAG);
-  await page.getByTestId('recipe-tags-input').press('Enter');
-
-  await page.getByTestId('recipe-add-group-btn').click();
-  // .nth(0) indexes the single group row THIS test just added — its own set.
-  const group0 = page.getByTestId('recipe-group').nth(0);
-  await group0.getByTestId('recipe-add-ingredient-btn').click();
-  await group0.getByTestId('recipe-ingredient-input').nth(0).fill(INGREDIENT);
-
-  await page.getByTestId('recipe-add-step-btn').click();
-  await page.getByTestId('recipe-step-input').nth(0).fill(STEP);
-
-  await page.getByTestId('recipe-save-btn').click();
-  await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-  const id = page.url().match(/#\/recipes\/([a-z0-9-]+)/)?.[1];
-  expect(id).toBeTruthy();
-
-  await expect
-    .poll(async () => (await getRecipes(page)).find((r) => r.id === id)?.metadata.servings, {
-      timeout: SYNC_TIMEOUT,
-    })
-    .toBe(SEEDED_METADATA.servings);
-  return id!;
+  await seedRecipe(page, DISH_FIXTURE);
+  await page.goto(`/#/recipes/${DISH_ID}`);
+  // The arrival: the page renders nothing under `recipe-view` until the seeded
+  // document has reached the store. A URL assertion would be no wait at all —
+  // `goto` has already put that hash in the bar.
+  await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
+  await expect(page.getByRole('heading', { name: DISH })).toBeVisible();
+  return DISH_ID;
 }
 
 /** ⋮ → Ask/amend, then one turn of conversation. Returns the session id. */
@@ -258,7 +238,7 @@ test.describe('recipes — the chat review gate', () => {
   test('from the recipe page sidebar: applies the change and keeps the metadata the librarian dropped', async ({
     page,
   }, testInfo) => {
-    // 120s: a seed save, a chat round-trip and a librarian round-trip through the
+    // 120s: a bridge seed, a chat round-trip and a librarian round-trip through the
     // emulator, each gated on its own signal-bound wait.
     test.setTimeout(120_000);
     // Recipes are gated to admins while the module is incomplete (#179).
@@ -320,9 +300,9 @@ test.describe('recipes — the chat review gate', () => {
    * the other end of that: amend a meal by chat, apply, and the saved document
    * still has only its own ingredient and still has its dish attached.
    *
-   * Seeded through `seedRecipe` rather than the editor's component picker: the
-   * subject here is what the amend writes, and the attach UI has its own coverage
-   * in `meal-component-create.spec.ts`.
+   * Seeded through `seedRecipe` rather than attached through the meal page's own
+   * "Made from" picker: the subject here is what the amend writes, and the attach
+   * UI has its own coverage in `meal-component-create.spec.ts`.
    */
   test('a meal keeps its own ingredients and its dishes: no component lines merged in', async ({
     page,

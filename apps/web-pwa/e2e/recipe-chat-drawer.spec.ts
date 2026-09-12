@@ -2,8 +2,8 @@
  * The chef, raised over the recipe rather than instead of it (issue #696, Phase 3).
  *
  * The promise this spec pins is the one thing the feature is for: on a phone, opening a
- * chat about a dish does not take you off the dish. So it walks the journey — create a
- * recipe with an ingredient, start a chat from the recipe page, and then assert what has
+ * chat about a dish does not take you off the dish. So it walks the journey — a dish with
+ * an ingredient on screen, a chat started from the recipe page, and then assert what has
  * to be true while the chat is up:
  *
  *   the drawer is on screen AND the ingredients are still readable above it
@@ -14,10 +14,15 @@
  *
  * No AI stub: nothing here sends a turn. Creating the session is an ordinary Firestore
  * write, and every wait below is bound to a rendered signal rather than a clock.
+ *
+ * The dish is BRIDGE-SEEDED (NF-C4): issue #1319 Phase 8 deleted the editor and its
+ * routes, and what this spec is about starts once a dish is on screen.
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
+import type { Recipe } from '@salt/domain';
 
 // A phone, pinned explicitly: the drawer only exists below the docked seam, and the
 // project's default desktop viewport would put this spec on the column layout instead.
@@ -29,6 +34,46 @@ test.use({ viewport: { width: 393, height: 851 } });
 // only shows on a title whose untruncated width beats the column.
 const RECIPE_TITLE = 'Drawer Test Dahl With Preserved Lemon And Coconut';
 const INGREDIENT = '1 ½ cups red lentils, rinsed';
+const RECIPE_ID = 'drawer-test-dahl';
+
+// One ingredient, because "the thing you are chatting about is still readable" is
+// asserted against a rendered ingredient row. Nothing else on the dish matters here.
+const RECIPE: Recipe = {
+  id: RECIPE_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: RECIPE_TITLE,
+  description: null,
+  ingredients: [
+    {
+      id: `${RECIPE_ID}-g1`,
+      name: null,
+      items: [
+        {
+          id: `${RECIPE_ID}-i1`,
+          rawText: INGREDIENT,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
 
 test.describe('recipes — the chef drawer on a phone', () => {
   test('opening a chat keeps you on the recipe, drags between two stops, and closes back', async ({
@@ -41,19 +86,16 @@ test.describe('recipes — the chef drawer on a phone', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
 
     // ── A recipe with something to read while you chat ───────────────────────
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill(RECIPE_TITLE);
-    await page.getByTestId('recipe-add-group-btn').click();
-    // .nth(0) = the single group row this test just created, not a global index.
-    const group = page.getByTestId('recipe-group').nth(0);
-    await group.getByTestId('recipe-add-ingredient-btn').click();
-    await group.getByTestId('recipe-ingredient-input').nth(0).fill(INGREDIENT);
-    await page.getByTestId('recipe-save-btn').click();
-
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    await seedRecipe(page, RECIPE);
+    await page.goto(`/#/recipes/${RECIPE_ID}`);
+    // The heading is the arrival — it cannot render until the seeded document has
+    // reached the store, whereas the URL is already whatever `goto` was handed. The
+    // URL is read AFTER it, so the "you never left the dish" comparison below is
+    // against a page that is genuinely showing the dish.
+    await expect(page.getByRole('heading', { name: RECIPE_TITLE })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
     const recipeUrl = page.url();
-    await expect(page.getByRole('heading', { name: RECIPE_TITLE })).toBeVisible();
 
     // ── The chat list is on the dish, and empty ──────────────────────────────
     await expect(page.getByTestId('recipe-chat-list')).toBeVisible();

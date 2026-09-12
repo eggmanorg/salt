@@ -13,7 +13,9 @@
  * The list itself is setup, not subject: both tests get one already-default list
  * seeded before the app boots (`seedShoppingListBeforeBoot`). Creating a list
  * through the UI is covered by shopping-list-multi-list.spec.ts and
- * shopping-list-happy-path.spec.ts.
+ * shopping-list-happy-path.spec.ts. The recipes are setup too, and bridge-seeded
+ * for the same reason — plus a harder one since issue #1319 Phase 8: the editor
+ * they used to be typed into no longer exists.
  *
  * Covers:
  * - Items from all ingredient groups reach the shopping list.
@@ -24,9 +26,9 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail, waitForBridge } from './helpers/auth';
-import { seedShoppingListBeforeBoot } from './helpers/seed';
+import { seedRecipe, seedShoppingListBeforeBoot } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
-import type { ShoppingListItem } from '@salt/domain';
+import type { Ingredient, Recipe, ShoppingListItem } from '@salt/domain';
 import type { Page } from '@playwright/test';
 
 // A phone, pinned explicitly (#696, Phase 4). The recipe page docks its chat column
@@ -45,6 +47,74 @@ test.use({ viewport: { width: 393, height: 851 } });
 // than the old bet on a post-attach update that the emulator transport could drop
 // for good. One gate, straight after sign-in, is enough: the store only moves
 // forward from there, and everything that needs a default list happens later.
+// Both recipes are bridge-seeded (NF-C4). They used to be typed into the recipe
+// editor, which issue #1319 Phase 8 deleted along with its routes — and authoring
+// was never the subject here: what these tests are about is what the "Add to
+// shopping list" sheet does with a recipe's ingredients once it has one.
+//
+// Every item is seeded as a freshly typed one stands — `parsed: null`,
+// `canonId: null`, `matchState: 'pending'` — because that is what the assertions
+// downstream rest on. An unmatched ingredient defaults to add: true in the review
+// sheet (hence "Add 3 to list"), and the row label comes from
+// `resolveItemDisplayName` stripping the leading amount at display time rather
+// than from a canon match. Seeding a matched item would quietly change both.
+function pendingItem(id: string, rawText: string): Ingredient {
+  return {
+    id,
+    rawText,
+    parsed: null,
+    canonId: null,
+    matchState: 'pending',
+    isOptional: false,
+    firstUsedInStepId: null,
+  };
+}
+
+function recipeFixture(
+  id: string,
+  title: string,
+  servings: number,
+  groups: readonly { readonly name: string | null; readonly items: Ingredient[] }[],
+): Recipe {
+  return {
+    id,
+    schemaVersion: 1,
+    kind: 'recipe',
+    title,
+    description: null,
+    ingredients: groups.map((g, i) => ({ id: `${id}-g${i + 1}`, name: g.name, items: g.items })),
+    steps: [],
+    metadata: { servings, phases: [], timingSummary: null, tags: [] },
+    source: null,
+    notes: null,
+    producesCanonId: null,
+    componentRecipeIds: [],
+    kit: [],
+    image: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: '',
+    lastEditedBy: '',
+  };
+}
+
+const PASTA_ID = 'test-pasta';
+const PASTA = recipeFixture(PASTA_ID, 'Test Pasta', 4, [
+  {
+    name: null,
+    items: [
+      pendingItem(`${PASTA_ID}-i1`, '400g spaghetti'),
+      pendingItem(`${PASTA_ID}-i2`, '2 cloves garlic'),
+    ],
+  },
+  { name: 'For the sauce', items: [pendingItem(`${PASTA_ID}-i3`, '100ml double cream')] },
+]);
+
+const QUICK_ID = 'quick-recipe';
+const QUICK = recipeFixture(QUICK_ID, 'Quick Recipe', 2, [
+  { name: null, items: [pendingItem(`${QUICK_ID}-i1`, '1 onion')] },
+]);
+
 async function awaitDefaultList(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.__e2e!.getDefaultListId() ?? null), {
@@ -67,29 +137,14 @@ test.describe('recipe → shopping list extraction', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
     await awaitDefaultList(page);
 
-    // ── Create a recipe with two ingredient groups (servings: 4) ─────────────
-    await page.goto('/#/recipes/new');
-    await page.getByTestId('recipe-title-input').fill('Test Pasta');
-    await page.getByTestId('recipe-servings-input').fill('4');
-
-    await page.getByTestId('recipe-add-group-btn').click();
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill('400g spaghetti');
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(1).fill('2 cloves garlic');
-
-    await page.getByTestId('recipe-add-group-btn').click();
-    const group1 = page.getByTestId('recipe-group').nth(1);
-    await group1.getByTestId('recipe-group-name-input').fill('For the sauce');
-    await group1.getByTestId('recipe-add-ingredient-btn').click();
-    await group1.getByTestId('recipe-ingredient-input').nth(0).fill('100ml double cream');
-
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-
-    const recipeId = page.url().match(/#\/recipes\/([a-z0-9-]+)/)?.[1];
-    expect(recipeId).toBeTruthy();
+    // ── A recipe with two ingredient groups (servings: 4) ────────────────────
+    await seedRecipe(page, PASTA);
+    await page.goto(`/#/recipes/${PASTA_ID}`);
+    // The arrival. `recipe-view` renders only once the seeded document has reached
+    // the store — the URL is already the one `goto` was handed, so asserting it
+    // would let the "Add to list" click below land on a page with no recipe.
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
+    const recipeId = PASTA_ID;
 
     // ── Open review sheet: default servings = 4, confirm ──────────────────────
     // Unmatched ingredients (no canon match in the client store) default to
@@ -153,16 +208,11 @@ test.describe('recipe → shopping list extraction', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
     await awaitDefaultList(page);
 
-    // Create a recipe with servings: 2.
-    await page.goto('/#/recipes/new');
-    await page.getByTestId('recipe-title-input').fill('Quick Recipe');
-    await page.getByTestId('recipe-servings-input').fill('2');
-    await page.getByTestId('recipe-add-group-btn').click();
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill('1 onion');
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // A recipe with servings: 2, seeded and opened. `recipe-view` is the arrival;
+    // the URL is true the moment `goto` returns and proves nothing.
+    await seedRecipe(page, QUICK);
+    await page.goto(`/#/recipes/${QUICK_ID}`);
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
 
     // Open review sheet: default should be 2.
     await page.getByTestId('recipe-add-to-list-button').click();

@@ -31,7 +31,7 @@
   import { canonItems } from '../../lib/canonService.js';
   import { people } from '../../lib/membersService.js';
   import { recipes } from '../../lib/recipeService.js';
-  import { kindOf } from './recipeKind.js';
+  import { KIND_COPY, kindOf } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
   import RecipePhaseEditor from './RecipePhaseEditor.svelte';
 
@@ -626,6 +626,22 @@
                 Done
               </Button>
             </div>
+            <!-- The one kind whose tags are load-bearing says so (issue #652).
+                 `pickPlaceholder` FILTERS on the mood and WEIGHTS on the
+                 conditions, so a typo here silently drops a picture out of its
+                 mood; on the other three kinds tags are free-form keywords and
+                 `tagsHint` is simply undefined. It moved here from the retired
+                 editor's tag field in #1319 Phase 8 — the words are unchanged
+                 and still interpolated from the domain constants, so the hint
+                 cannot name a tag the picker does not recognise.
+
+                 A comparison against the kind, which is sanctioned: this picks
+                 WORDS and gates no capability (CLAUDE.md → Data model). -->
+            {#if KIND_COPY[kindOf(recipe)].tagsHint}
+              <p class="text-xs text-muted-foreground" data-testid="recipe-tags-hint">
+                {KIND_COPY[kindOf(recipe)].tagsHint}
+              </p>
+            {/if}
             {#if availableSuggestions.length > 0}
               <div class="flex flex-wrap gap-1.5">
                 {#each availableSuggestions as tag (tag)}

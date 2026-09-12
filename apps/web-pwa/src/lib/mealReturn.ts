@@ -17,10 +17,19 @@
  *     server already persisted; it is not tolerable for the only record of where
  *     the user is trying to get back to, because losing it strands a saved dish
  *     with no way to say what it was for.
- *   - The import paths are MULTI-STEP by construction: the callable persists the
- *     recipe and routes to `/recipes/{id}/edit`, a whole navigation later. The
- *     chat path is two hops (`/chat` → `/chat/{id}`). Anything that does not
- *     survive a navigation cannot serve them.
+ *   - The paths that need it are MULTI-STEP by construction: the chat path is two
+ *     hops (`/chat` → `/chat/{id}`) and the dish it attaches does not exist
+ *     until the conversation makes one, so the meal id has to outlive a
+ *     navigation. Anything that does not survive one cannot serve it.
+ *
+ *     THE JUSTIFICATION HAS NARROWED, and this is the honest version of it. It
+ *     used to rest on the import paths too — the callable persisted the recipe
+ *     and routed to `/recipes/{id}/edit`, a whole navigation later. #1319 Phase 7
+ *     moved that attach to the moment the dish is created, and Phase 8 deleted
+ *     the route, so the imports no longer carry the param at all. Chat is the
+ *     only consumer left. One consumer is still enough to need the URL — the
+ *     reasoning above applies unchanged to it — but "the import paths need this"
+ *     is no longer a reason anyone can check.
  *   - Browser storage is forbidden (CLAUDE.md Rule 3), and rightly: this is
  *     page-scoped navigation intent, not user data.
  *

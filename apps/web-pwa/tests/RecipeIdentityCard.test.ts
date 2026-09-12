@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { emptyRecipe } from '@salt/domain';
+import { emptyRecipe, PLACEHOLDER_CONDITION_TAGS, PLACEHOLDER_MOODS } from '@salt/domain';
 import type { Member, Recipe } from '@salt/domain';
 
 // The recipe page's identity card, in both of its modes (issue #1324).
@@ -349,6 +349,102 @@ describe('RecipeIdentityCard — edit mode', () => {
     expect((screen.getByTestId('recipe-tags-input') as HTMLInputElement).value).toBe('');
   });
 
+  it('adds nothing for whitespace alone', async () => {
+    show(entry({ metadata: { servings: null, tags: [] } }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+    const input = screen.getByTestId('recipe-tags-input');
+    await fireEvent.input(input, { target: { value: '   ' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  // The comma is a SEPARATOR KEY as well as a character the domain rule splits
+  // on, and the two are different paths: this one commits mid-run without ever
+  // putting a comma in the box. The paste case above types the whole string and
+  // lets `normaliseTags` do the splitting.
+  it('commits on a comma keystroke, mid-run, without waiting for Enter', async () => {
+    show(entry({ metadata: { servings: null, tags: [] } }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+    const input = screen.getByTestId('recipe-tags-input');
+    await fireEvent.input(input, { target: { value: 'summer' } });
+    await fireEvent.keyDown(input, { key: ',' });
+
+    expect(lastEdit().metadata.tags).toEqual(['summer']);
+    expect((screen.getByTestId('recipe-tags-input') as HTMLInputElement).value).toBe('');
+  });
+
+  it('clears the box after a tag is committed, not only after a no-op', async () => {
+    show(entry({ metadata: { servings: null, tags: [] } }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+    const input = screen.getByTestId('recipe-tags-input');
+    await fireEvent.input(input, { target: { value: 'Summer' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect((screen.getByTestId('recipe-tags-input') as HTMLInputElement).value).toBe('');
+  });
+
+  // A tag written before #1054 can be malformed — the library still holds
+  // `vegetarian,-quick` — and it is offered as a suggestion like any other.
+  // Taking it puts the RULE's answer on the recipe, not the stored string, so
+  // one bad tag cannot propagate itself around the library a click at a time.
+  //
+  // Note exactly how far the rule goes, because the unqualified "it fixes the
+  // tag" is false: it SPLITS on the comma and leaves the leading hyphen the old
+  // kebab-casing left behind. Nothing rewrites stored data either — the
+  // malformed tag keeps rendering, and keeps being searchable, on every recipe
+  // that already carries it.
+  it('splits a malformed legacy suggestion rather than re-adding it verbatim', async () => {
+    mockRecipes._set([
+      { ...entry({ id: 'other' }), metadata: { servings: null, tags: ['vegetarian,-quick'] } },
+    ]);
+    show(entry({ metadata: { servings: null, tags: [] } }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+    await fireEvent.click(screen.getByText('+ vegetarian,-quick'));
+
+    expect(lastEdit().metadata.tags).toEqual(['vegetarian', '-quick']);
+  });
+
+  // ─── The placeholder tag hint (relocated from `RecipeEditPage.kind.test.ts`)
+  // A placeholder's tags are the only load-bearing ones in the app:
+  // `pickPlaceholder` FILTERS on the mood and WEIGHTS on the conditions, so a
+  // word outside the vocabulary silently drops the picture out of rotation with
+  // nothing on screen to say so. The hint is what makes that visible, and it
+  // came here when the editor that used to carry it was deleted (#1319 Phase 8).
+
+  it('tells you the vocabulary while tagging a placeholder', async () => {
+    show(entry({ kind: 'placeholder', metadata: { servings: null, tags: [] } }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+
+    const hint = screen.getByTestId('recipe-tags-hint').textContent ?? '';
+    // Interpolated from the domain constants, never retyped — so the hint cannot
+    // name a mood or a condition `pickPlaceholder` does not recognise.
+    for (const mood of PLACEHOLDER_MOODS) expect(hint).toContain(mood);
+    for (const condition of PLACEHOLDER_CONDITION_TAGS) expect(hint).toContain(condition);
+  });
+
+  it.each(['recipe', 'outing', 'cocktail'] as const)(
+    'says nothing about vocabulary while tagging a %s, whose tags are free-form',
+    async (kind) => {
+      show(entry({ kind, metadata: { servings: null, tags: [] } }), true);
+
+      await fireEvent.click(screen.getByTestId('recipe-edit-tags'));
+
+      expect(screen.queryByTestId('recipe-tags-hint')).toBeNull();
+    },
+  );
+
+  it('keeps the hint out of read mode, where there is nothing to type into', () => {
+    show(entry({ kind: 'placeholder', metadata: { servings: null, tags: ['bright'] } }), false);
+
+    expect(screen.queryByTestId('recipe-tags-hint')).toBeNull();
+  });
+
   it('removes a tag from the row that holds it', async () => {
     show(entry({ metadata: { servings: null, tags: ['weeknight', 'summer'] } }), true);
 
@@ -591,6 +687,66 @@ describe('RecipeIdentityCard — edit mode', () => {
     await user.click(screen.getByRole('option', { name: 'Ada' }));
 
     expect(lastEdit().createdBy).toBe('Ada Vale');
+  });
+
+  // ─── Relocated from `RecipeEditPage.addedBy.test.ts` (#1319 Phase 8) ────────
+  // Four claims the retired editor's suite pinned and this one did not. Each is
+  // a property of `authorOptions`, which is commented at its declaration as
+  // deliberate — an invariant asserted in a comment and guaranteed by nothing is
+  // exactly what CLAUDE.md Rule 12 is about.
+
+  it('keeps a name that is no longer on the roster, and keeps it selected', async () => {
+    // Somebody left the household, or the roster has not loaded yet. Dropping
+    // the name would silently rewrite who added a recipe.
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry({ createdBy: 'Ada Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+
+    expect(screen.getByTestId('recipe-added-by-select').textContent).toContain('Ada');
+    await userEvent.setup().click(screen.getByTestId('recipe-added-by-select'));
+    expect(offeredOptions()).toContain('Ada');
+  });
+
+  it('still offers a system account a recipe is already stamped with', async () => {
+    // `$people` excludes system accounts (#1300), so a recipe the importer
+    // stamped arrives ONLY through `recipe.createdBy` — the same path an
+    // off-roster name takes. Asserted on the OPTION rather than on the trigger:
+    // the trigger renders `recipe.createdBy` directly and would keep saying
+    // "Salt" even if the list had dropped it, leaving the name shown and
+    // unpickable.
+    mockPeople._set([{ name: 'Sam Vale' }]);
+    show(entry({ createdBy: 'Salt Importer' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+    await userEvent.setup().click(screen.getByTestId('recipe-added-by-select'));
+
+    expect(offeredOptions()).toContain('Salt');
+  });
+
+  it('keeps two people who share a first name as two options', async () => {
+    // The options are keyed on the FULL name and labelled with the first, so two
+    // Sams are two rows. Keyed on the label they would collapse into one and one
+    // of them would become unpickable.
+    mockPeople._set([{ name: 'Sam Vale' }, { name: 'Sam Okafor' }]);
+    show(entry({ createdBy: 'Sam Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+    await userEvent.setup().click(screen.getByTestId('recipe-added-by-select'));
+
+    expect(offeredOptions().filter((o) => o === 'Sam')).toHaveLength(2);
+  });
+
+  it('offers the roster in the order the household store hands it over', async () => {
+    mockPeople._set([{ name: 'Zoe Vale' }, { name: 'Ada Vale' }, { name: 'Sam Vale' }]);
+    show(entry({ createdBy: 'Ada Vale' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-added-by'));
+    await userEvent.setup().click(screen.getByTestId('recipe-added-by-select'));
+
+    // Not sorted here: `membersService` owns the ordering, and re-sorting in the
+    // card would make the picker disagree with every other roster in the app.
+    expect(offeredOptions()).toEqual(['Zoe', 'Ada', 'Sam']);
   });
 
   it('closes the "Added by" picker when it is finished with', async () => {

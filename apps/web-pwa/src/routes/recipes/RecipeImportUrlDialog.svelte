@@ -9,13 +9,13 @@
   // Same contract as RecipeImportPhotoDialog next door, deliberately: `bind:open`
   // in, the persisted draft out via `onImported`, and NO NAVIGATION of its own.
   // The host page decides where an import lands — the list page opens the new
-  // recipe's editor, the meal page opens it carrying the meal it belongs to — so
-  // routing cannot live here.
+  // recipe's own page, the meal page attaches the dish first — so routing cannot
+  // live here.
   //
   // The callable PERSISTS the recipe before this returns (issue #616), flagged
-  // `needs_approval`. That is why abandoning the editor afterwards still leaves
-  // the recipe in the library, and why a hand-off dropped by a closed dialog
-  // loses nothing.
+  // `needs_approval`. That is why navigating away afterwards still leaves the
+  // recipe in the library, and why a hand-off dropped by a closed dialog loses
+  // nothing.
   import {
     Button,
     Dialog,
@@ -38,8 +38,9 @@
 
   interface Props {
     open?: boolean;
-    /** Called with the persisted draft once the import succeeds. The caller
-     * stashes it and routes to the editor — navigation is not this dialog's job. */
+    /** Called with the persisted recipe once the import succeeds. The caller
+     * stashes it and routes to the recipe's own page — navigation is not this
+     * dialog's job. */
     onImported: (recipe: Recipe) => void;
     /** Pre-fills the field. Read ONCE, at mount: the host uses it to hand back a
      * URL rescued from an import that died on a signed-out session (see
@@ -85,7 +86,7 @@
         return;
       }
       // Friendly, specific message; the input stays open so the user can fix the
-      // URL and retry, or fall back to manual/chat.
+      // URL and retry, or take the page to the chef instead.
       addToast(urlImportMessage(result.error), 'destructive');
       return;
     }
@@ -112,8 +113,8 @@
       <DialogHeader>
         <DialogTitle>Import from a link</DialogTitle>
         <DialogDescription>
-          Paste a recipe link. We'll read the page and convert it to metric and British terms — then
-          drop you into the editor to review and save.
+          Paste a recipe link. We'll read the page and convert it to metric and British terms, save
+          it, and open it for you to check.
         </DialogDescription>
       </DialogHeader>
 

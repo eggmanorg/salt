@@ -44,9 +44,9 @@ export interface E2EBridge {
   // that lives in the store but is only partially surfaced in the DOM.
   getRecipes(): readonly Recipe[];
   // Seeds a whole recipe document through the real `persistRecipe` adapter path
-  // (NF-C4). The cook-mode spec needs a recipe the editor cannot author: the AI
-  // author flow is what stamps `firstUsedInStepId` on each ingredient, and a
-  // UI-built recipe leaves it null — so a step's first-use chips (the thing the
+  // (NF-C4). The cook-mode spec needs a recipe no UI can author: the AI author
+  // flow is what stamps `firstUsedInStepId` on each ingredient, and a hand-built
+  // recipe leaves it null — so a step's first-use chips (the thing the
   // layout assertions measure) never render. Emulator-only, like every other
   // seeder here.
   seedRecipe(recipe: Recipe): Promise<void>;

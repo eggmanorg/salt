@@ -123,7 +123,7 @@ async function goTo(path: string): Promise<boolean> {
 
 /**
  * Run the import for a captured share. Walks the exact path the "Import from URL"
- * button walks (importRecipeFromUrl → stashImportedDraft → /recipes/new) so there
+ * button walks (importRecipeFromUrl → stashImportedDraft → /recipes/{id}) so there
  * is only one import flow to maintain.
  *
  * `signedIn` false drops the share with a toast rather than resuming after

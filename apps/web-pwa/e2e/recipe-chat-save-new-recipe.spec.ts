@@ -31,6 +31,7 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { Recipe } from '@salt/domain';
@@ -39,6 +40,48 @@ import type { Page } from '@playwright/test';
 const DISH = 'Accompaniment Lamb Shoulder';
 const DISH_INGREDIENT = '2 kg lamb shoulder';
 const DISH_STEP = 'Roast low and slow for four hours.';
+const DISH_ID = 'accompaniment-lamb-shoulder';
+
+// The lamb, bridge-seeded (NF-C4): issue #1319 Phase 8 deleted the editor and its
+// routes, and this journey's subject starts at the conversation. Its exact stored
+// shape matters — the last assertion compares the document field for field against
+// this one, to prove saving the salad left its host untouched.
+const DISH_FIXTURE: Recipe = {
+  id: DISH_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: DISH,
+  description: null,
+  ingredients: [
+    {
+      id: `${DISH_ID}-g1`,
+      name: null,
+      items: [
+        {
+          id: `${DISH_ID}-i1`,
+          rawText: DISH_INGREDIENT,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [{ id: `${DISH_ID}-s1`, text: DISH_STEP, timer: null, note: null }],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
 
 const USER_MESSAGE = 'what would go well with this?';
 const STUB_REPLY =
@@ -102,7 +145,7 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
   test('keeps the accompaniment as its own dish and leaves the one you asked from alone', async ({
     page,
   }, testInfo) => {
-    // 120s: a seed save, a chat round-trip and a librarian round-trip through the
+    // 120s: a bridge seed, a chat round-trip and a librarian round-trip through the
     // emulator, each gated on its own signal-bound wait below.
     test.setTimeout(120_000);
     // Recipes are gated to admins while the module is incomplete (#179).
@@ -115,33 +158,21 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
     await page.evaluate((p) => window.__e2e!.stubAi('parseRecipeIngredients', p), STUB_PARSE);
 
     // ── Seed: the dish the conversation is attached to ─────────────────────────
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill(DISH);
-
-    await page.getByTestId('recipe-add-group-btn').click();
-    // .nth(0) indexes the single group row THIS test just added — its own set.
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill(DISH_INGREDIENT);
-
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').nth(0).fill(DISH_STEP);
-
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    await seedRecipe(page, DISH_FIXTURE);
+    await page.goto(`/#/recipes/${DISH_ID}`);
+    // `recipe-view` is the arrival — the page renders nothing under it until the
+    // seeded document has reached the store. The URL is not: `goto` put that hash
+    // in the bar before the read could possibly have come back.
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
     const originalUrl = page.url();
-    const originalId = originalUrl.match(/#\/recipes\/([a-z0-9-]+)/)?.[1];
-    expect(originalId).toBeTruthy();
+    const originalId = DISH_ID;
     await expect(page.getByRole('heading', { name: DISH })).toBeVisible();
 
     // The lamb exactly as it stands, for the field-for-field comparison at the end.
-    await expect
-      .poll(async () => (await getRecipes(page)).some((r) => r.id === originalId), {
-        timeout: SYNC_TIMEOUT,
-      })
-      .toBe(true);
+    // Read from the store rather than assumed to equal the fixture: `persistRecipe`
+    // stamps `updatedAt` and the attribution fields on the way through.
     const originalBefore = (await getRecipes(page)).find((r) => r.id === originalId)!;
+    expect(originalBefore).toBeTruthy();
 
     // ── Ask the chef what would go with it ────────────────────────────────────
     await page.getByTestId('recipe-actions-overflow').click();

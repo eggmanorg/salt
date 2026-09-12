@@ -106,11 +106,10 @@
 
   // Seeds the draft from the CURRENT store — the only two callers are `onOpen`
   // (a zone opening onto whatever is stored now) and the `id`-tracking effect
-  // below (this instance reused for a different document). Value-cloned like
-  // `RecipeEditPage.svelte`'s own copy of `phases`: the draft is mutated only
-  // through `setPhases`, never in place, but cloning here is what stops a
-  // straight reference to the store's own array from being restyled as "the
-  // draft".
+  // below (this instance reused for a different document). Value-cloned: the
+  // draft is mutated only through `setPhases`, never in place, but cloning here
+  // is what stops a straight reference to the store's own array from being
+  // restyled as "the draft".
   function seedDraft(): void {
     phasesDraft = storedPhases.map((p) => ({ ...p }));
     timingSummaryDraft = storedTimingSummary;

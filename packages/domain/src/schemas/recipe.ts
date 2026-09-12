@@ -285,9 +285,14 @@ export const RecipeSchema = z.object({
   // semantics as CanonItem/ProductForm `needs_approval`: the recipe is fully live
   // — cookable, plannable, searchable — the flag ONLY records that no human has
   // read it yet. It is never a gate on use, and it is never filtered out.
-  // Cleared by an editor save (that save IS the review) or by tapping the chip on
-  // the recipe. `.optional()` (mirroring ProductFormSchema) so the production
-  // recipes collection parses unchanged on read — absent means reviewed (#240).
+  // THREE things clear it, and no fourth semantic exists (#1319 Phase 8, which
+  // removed a fourth — the retired editor's save): pressing Done on the recipe's
+  // own page after editing it, tapping the banner's own button on that page
+  // (both `handleMarkReviewed` in `RecipeViewPage.svelte`), and **Mark reviewed**
+  // on the `/mine` review-queue row (`MinePage.svelte`). All three drop the field
+  // rather than setting it false. `.optional()` (mirroring ProductFormSchema) so
+  // the production recipes collection parses unchanged on read — absent means
+  // reviewed (#240).
   needs_approval: z.boolean().optional(),
   // The dishes this entry is built from (issue #752). A Sunday roast is one
   // recipe document that points at roast chicken, roast potatoes and onion gravy;

@@ -1028,6 +1028,65 @@ describe('RecipeViewPage — a just-imported recipe', () => {
     expect(queryByTestId('recipe-view')).toBeNull();
   });
 
+  // ─── The pre-#616 rescue, and what is left of it (#1319 Phase 8) ────────────
+  // `persistImportedRecipe` (CF) does NOT fail an import when its Firestore write
+  // fails: the callable still returns the recipe, the client stashes it, and the
+  // page paints it. That used to degrade to "the user saves it themselves" in the
+  // editor — a surface Phase 8 deleted.
+  //
+  // The rescue survives because of TWO things meeting: `recipe` falls back to the
+  // stash while the store has no such document, so an edit COMPOSES off the
+  // rescued copy rather than off nothing — and the write path it composes into is
+  // whole-document. So the edit does not patch a row that is missing; it writes
+  // the whole thing, which creates it.
+  //
+  // WHAT THIS FILE CAN AND CANNOT SEE. The page's seam is `queueRecipeEdit`, and
+  // that is what is asserted here: the whole rescued document reaching the write
+  // path. That `queueRecipeEdit` ends in a whole-document `setDoc` is
+  // `recipeService`'s own contract and is pinned in
+  // `recipeService.coalescedEdit.test.ts`, not restated here — two halves, each
+  // pinned where it lives.
+  //
+  // Pinned at all because `persistImportedRecipe.ts` now ASSERTS this recovery in
+  // prose. Left unpinned it is the exact shape CLAUDE.md rule 12 is about: a
+  // promise that two unrelated pieces of code happen to keep, either of which
+  // could move without anything objecting.
+
+  it('rescues an import whose server-side write failed, on the first edit', async () => {
+    // The store never receives it: this is the write-FAILED case, not the
+    // listener-is-a-beat-behind case the tests above cover.
+    vi.mocked(takeImportedDraft).mockReturnValue(
+      makeRecipe({ title: 'Never Written', description: 'From the callable' }),
+    );
+    mockRecipes._set([]);
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-edit-mode-button'));
+    await fireEvent.click(getByTestId('recipe-edit-title'));
+    await fireEvent.input(getByTestId('recipe-title-input'), { target: { value: 'Now Written' } });
+
+    await waitFor(() => expect(queueRecipeEdit).toHaveBeenCalled());
+    const written = vi.mocked(queueRecipeEdit).mock.calls[0]![0];
+    expect(written.id).toBe(RECIPE_ID);
+    expect(written.title).toBe('Now Written');
+    // The WHOLE document, composed off the stash — a field the edit never touched
+    // rides along, which is what makes the write a create rather than an update
+    // against a row that is not there.
+    expect(written.description).toBe('From the callable');
+  });
+
+  it('writes nothing if the cook only reads it — the boundary, not a bug', () => {
+    // The honest half of the claim above, and the reason `persistImportedRecipe`
+    // states a boundary rather than "it recovers". Reading a rescued import and
+    // walking away loses it, and nothing on screen says so.
+    vi.mocked(takeImportedDraft).mockReturnValue(makeRecipe({ title: 'Never Written' }));
+    mockRecipes._set([]);
+    renderPage();
+
+    expect(queueRecipeEdit).not.toHaveBeenCalled();
+    expect(persistRecipe).not.toHaveBeenCalled();
+  });
+
   it('ignores a stash for a different recipe rather than painting the wrong dish', () => {
     // `takeImportedDraft` is id-matched itself, but the page must not trust that
     // blindly: a draft whose id is not the one on screen is not this page's.

@@ -305,7 +305,7 @@
   <div class="p-6" data-testid="cook-plan-not-a-meal">
     <EmptyState
       title="This isn't a meal"
-      description="A cook plan schedules the dishes a meal is made from, and this one isn't built from any. Add some in the editor's “Made from” list."
+      description="A cook plan schedules the dishes a meal is made from, and this one isn't built from any. Open the recipe, press Edit, and add some to its “Made from” list."
     />
   </div>
 {:else}

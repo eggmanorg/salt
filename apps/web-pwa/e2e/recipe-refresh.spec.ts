@@ -33,9 +33,15 @@
  *
  * Left on the project's 1280x720 desktop default. The ⋮ menu is the only surface
  * Refresh has at any width (#735), so there is no second surface to drive.
+ *
+ * The dish under test is BRIDGE-SEEDED (NF-C4). It used to be typed into the
+ * retired editor, which issue #1319 Phase 8 deleted along with its routes; the
+ * subject here was never how the dish got written, only what Refresh does to one
+ * that exists, so the fixture below states the stored document outright instead.
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { Recipe } from '@salt/domain';
 import type { Page } from '@playwright/test';
@@ -50,14 +56,12 @@ const TAG = 'refreshgate';
 // answer forgets all of it, so this doubles as the metadata-preserve assertion.
 const SEEDED_METADATA = {
   servings: 4,
-  // Null since #1212: the editor's three time boxes are gone with the phase key
-  // on, and this dish is authored through the editor. Servings and the tag carry
-  // the "the librarian dropped it, the merge kept it" assertion.
-  // Not typed by anyone: `emptyRecipe` stamps an empty phase strip on every new
-  // recipe (issue #1122), so the stored document carries both keys from creation.
-  // They are here because this is a whole-`metadata` equality — it is the
-  // assertion that would catch a refresh QUIETLY CLEARING a strip the cook had
-  // corrected, which is the same job it already does for the tags.
+  // An empty strip and no timing sentence, stated rather than defaulted: this is a
+  // whole-`metadata` equality, so every key the stored document carries has to be
+  // here or the comparison fails on the seed rather than on the merge. A recipe
+  // minted by `emptyRecipe` carries both keys from creation (issue #1122), and the
+  // assertion they earn is the one the tags already earn — it would catch a
+  // refresh QUIETLY CLEARING a strip the cook had corrected.
   phases: [],
   timingSummary: null,
   tags: [TAG],
@@ -113,41 +117,61 @@ async function titleOf(page: Page, recipeId: string): Promise<string | undefined
   return (await getRecipes(page)).find((r) => r.id === recipeId)?.title;
 }
 
-/** Creates the dish through the editor and returns its id. */
+/**
+ * The dish this journey refreshes: written straight through the bridge, then
+ * opened. Every field the assertions read is stated here rather than typed into a
+ * form — the ingredient's `rawText`, which the librarian's canned answer repeats
+ * verbatim, and the metadata it drops.
+ */
+const DISH_ID = 'refresh-pilaf';
+
+const DISH_FIXTURE: Recipe = {
+  id: DISH_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: DISH,
+  description: null,
+  ingredients: [
+    {
+      id: `${DISH_ID}-g1`,
+      name: null,
+      items: [
+        {
+          id: `${DISH_ID}-i1`,
+          rawText: INGREDIENT,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [{ id: `${DISH_ID}-s1`, text: STEP, timer: null, note: null }],
+  metadata: { ...SEEDED_METADATA },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
+
+/** Seeds the dish and leaves the page on it, ready for the ⋮ menu. */
 async function seedDish(page: Page): Promise<string> {
-  await page.goto('/#/recipes/new');
-  await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-  await page.getByTestId('recipe-title-input').fill(DISH);
-
-  await page.getByTestId('recipe-servings-input').fill(String(SEEDED_METADATA.servings));
-  // Prep / Cook / Total are no longer typed here (issue #1212): with the phase key
-  // on the editor offers the strip instead, and an e2e build has no PostHog key so
-  // every gate reads ON. They stay null on this document, which costs this spec
-  // nothing — Servings and the tag are the metadata the librarian drops, and they
-  // are what the preservation assertion below actually rests on.
-  await page.getByTestId('recipe-tags-input').fill(TAG);
-  await page.getByTestId('recipe-tags-input').press('Enter');
-
-  await page.getByTestId('recipe-add-group-btn').click();
-  // .nth(0) indexes the single group row THIS test just added — its own set.
-  const group0 = page.getByTestId('recipe-group').nth(0);
-  await group0.getByTestId('recipe-add-ingredient-btn').click();
-  await group0.getByTestId('recipe-ingredient-input').nth(0).fill(INGREDIENT);
-
-  await page.getByTestId('recipe-add-step-btn').click();
-  await page.getByTestId('recipe-step-input').nth(0).fill(STEP);
-
-  await page.getByTestId('recipe-save-btn').click();
-  await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-  const id = page.url().match(/#\/recipes\/([a-z0-9-]+)/)?.[1];
-  expect(id).toBeTruthy();
-
-  await expect
-    .poll(async () => (await getRecipes(page)).find((r) => r.id === id)?.metadata.servings, {
-      timeout: SYNC_TIMEOUT,
-    })
-    .toBe(SEEDED_METADATA.servings);
-  return id!;
+  await seedRecipe(page, DISH_FIXTURE);
+  await page.goto(`/#/recipes/${DISH_ID}`);
+  // The page renders nothing under this testid until the document has reached the
+  // store, so this is the arrival — not a URL pattern the browser satisfied the
+  // moment `goto` returned.
+  await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
+  await expect(page.getByRole('heading', { name: DISH })).toBeVisible();
+  return DISH_ID;
 }
 
 /**
@@ -170,7 +194,7 @@ test.describe('recipes — refresh through the review gate', () => {
   test('applies the re-written dish and keeps the metadata the librarian dropped', async ({
     page,
   }, testInfo) => {
-    // 180s: a seed save plus TWO model round-trips through the emulator, each
+    // 180s: a bridge seed plus TWO model round-trips through the emulator, each
     // gated on its own signal-bound wait.
     test.setTimeout(180_000);
     // Recipes are gated to admins while the module is incomplete (#179).

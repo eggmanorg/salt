@@ -346,12 +346,6 @@ export async function attachComponentToMeal(
   });
 }
 
-export async function parseIngredients(
-  rawText: string,
-): Promise<ReadResult<IngredientGroup[], DomainError>> {
-  return callParseRecipeIngredients(rawText);
-}
-
 // ─── Hero image (issue #148, Tier-2) ────────────────────────────────────────────
 // The photoreal hero is generated server-side by the onRecipeWritten trigger on
 // create. These two commands are the manual controls.
@@ -501,10 +495,21 @@ export async function setRecipeImageUpload(
 
 // ─── URL import ────────────────────────────────────────────────────────────────
 // SSRF-hardened import: paste a recipe URL, get back a fully-converted (metric +
-// British) draft. The draft is NOT persisted here — the caller hydrates the
-// editor with it so the user reviews/saves. On failure we return a specific,
-// friendly message keyed off the import failure code; the UI shows it and lets
-// the user fall back to manual/chat.
+// British) recipe.
+//
+// IT IS ALREADY PERSISTED when this returns. The CALLABLE writes it, server-side,
+// before replying (#616) — which is what lets a share-sheet import survive the
+// PWA being killed mid-extraction. Nothing here writes it and nothing downstream
+// needs to: the caller stashes the returned copy only so the page it routes to
+// can paint before the Firestore listener has caught up, and the store wins the
+// moment it has the document.
+//
+// (This used to say the draft was NOT persisted and the editor saved it. Both
+// halves were false — the first since #616, the second since #1319 Phase 8
+// deleted the editor.)
+//
+// On failure we return a specific, friendly message keyed off the import failure
+// code; the UI shows it and offers the chef as the way in.
 
 // User-facing copy per failure code. Mirrors the CF entrypoint's HttpsError
 // messages but lives client-side so we never depend on the server message text.
@@ -513,7 +518,8 @@ const URL_IMPORT_COPY: Record<UrlImportFailureCode, string> = {
   'blocked-url': "That link can't be imported.",
   'fetch-failed': "We couldn't reach that page — it may be down, paywalled, or blocking us.",
   'not-a-recipe': "We couldn't find a recipe on that page.",
-  'ai-failed': 'The recipe reader had trouble with that page — try again, or add it manually.',
+  'ai-failed':
+    'The recipe reader had trouble with that page — try again, or paste the recipe into the chef.',
 };
 
 // Copy for the failures that are NOT about the recipe site (issue #740). Shared
@@ -645,7 +651,8 @@ async function tracedUserAction<T, E>(
 
 // Import a recipe from a URL. Returns the assembled draft as a Recipe entity
 // (RecipeDoc is structurally identical), with source.type='url' already set.
-// `updatedAt` is left as the server stamp; the editor re-stamps on save.
+// `updatedAt` is left as the server stamp. Nothing re-stamps it on arrival —
+// the first hand edit on the recipe's own page does, like any other write.
 //
 // Distributed tracing (issue #362, Phase 4): start a ROOT span at this user action
 // so the trace ORIGINATES here in the browser. Its W3C traceparent is handed to
@@ -706,7 +713,7 @@ const PHOTO_IMPORT_COPY: Record<PhotoImportFailureCode, string> = {
   'unreadable-photos':
     'We couldn’t read a recipe from those photos — try a sharper, brighter shot of the whole page.',
   'import-failed':
-    'The recipe reader had trouble with those photos — try again, or add it manually.',
+    'The recipe reader had trouble with those photos — try again, or type the recipe to the chef.',
 };
 
 // Same split as urlImportMessage (issue #740): a photo-specific verdict keeps its
@@ -781,11 +788,16 @@ export async function authorRecipeTraced(
   );
 }
 
-// Hand-off slot for the imported draft. The list page imports, stashes the
-// draft here, then routes to /recipes/new; the edit page consumes it once on
-// mount (single-use — taking it clears it so a later blank "New recipe" doesn't
-// pick up a stale import). Kept in module state (not the route) because the
-// draft is a rich object that doesn't belong in a URL.
+// Hand-off slot for the imported draft. The importer stashes the draft here and
+// routes to the recipe's own page, which claims it once on arrival (single-use —
+// taking it clears it, so a later visit cannot pick up a stale import). Kept in
+// module state, not the route, because the draft is a rich object that does not
+// belong in a URL.
+//
+// It exists because the import's write happens on the SERVER, so the page can
+// arrive ahead of the Firestore listener and would otherwise read "Recipe not
+// found." for a document written a second earlier. It is a fallback and never an
+// override: the store wins the moment it has the document.
 // Hand-off slot for the URL a signed-out import was carrying (issue #740).
 // Signing back in tears down and remounts the app tree — AuthGate swaps its
 // children — so the list page's local `importUrl` is gone by the time the user
@@ -819,15 +831,19 @@ export function stashImportedDraft(draft: Recipe): void {
   _pendingImportDraft = draft;
 }
 
-// Single-use read. Since #616 an import is persisted server-side and opens as
-// /recipes/{id}/edit, so the editor asks for a SPECIFIC id: passing `expectedId`
-// leaves a non-matching stash in place, so opening some other recipe's editor
-// can't silently swallow a pending import. Called with no argument (from
-// /recipes/new) it takes whatever is stashed, as before.
-export function takeImportedDraft(expectedId?: string): Recipe | null {
+// Single-use read. An import is persisted server-side (#616) and opens as
+// /recipes/{id}, so the page claiming the stash asks for a SPECIFIC id: passing
+// `expectedId` leaves a non-matching stash in place, so landing on some other
+// recipe can't silently swallow a pending import.
+//
+// The id is REQUIRED. It used to be optional because `/recipes/new` — a page
+// with no id of its own — took whatever was stashed; #1319 Phase 8 deleted that
+// route, leaving `RecipeViewPage`'s id-keyed claim as the only caller, so the
+// unconditional arm went with it rather than sitting here untaken.
+export function takeImportedDraft(expectedId: string): Recipe | null {
   const d = _pendingImportDraft;
   if (d === null) return null;
-  if (expectedId !== undefined && d.id !== expectedId) return null;
+  if (d.id !== expectedId) return null;
   _pendingImportDraft = null;
   return d;
 }

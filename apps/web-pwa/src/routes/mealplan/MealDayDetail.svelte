@@ -154,7 +154,7 @@
     return item.label.toLowerCase().includes(input.trim().toLowerCase());
   }
   // Remount key: bumped after each add so the Combobox input clears (it only
-  // syncs its label from `value` at mount — same reason RecipeEditPage keys it).
+  // syncs its label from `value` at mount).
   let recipePickerKey = $state(0);
   function addRecipe(id: string): void {
     if (!id || day.recipeIds.includes(id)) return;
