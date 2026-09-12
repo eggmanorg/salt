@@ -87,7 +87,7 @@ is the one thing the band is for. This is an invariant, so per CLAUDE.md rule 12
 it is mechanical rather than remembered — `node scripts/board.mjs check` goes red
 when a Recommended item's blocker is absent from Recommended or ordered below it.
 
-`check` covers four more things — plus the `Epic` rule below:
+`check` covers five more things — plus the `Epic` rule below:
 
 - **An open issue on the board has a `Queue`.** GitHub's own "add item to
   project" workflow puts every new issue on the board with every field empty,
@@ -96,6 +96,18 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   stays invisible until somebody scrolls the unfiltered board. That is what the
   agent commands' `board.mjs add --queue …` line is for, and this is what makes
   skipping it visible. Ledgers are exempt; see below.
+
+- **A campaign ledger is attached to the work it ran.** Where every issue a
+  ledger's title names sits under one parent, the ledger sits under that parent
+  too; where they do not share one, it stays a root and `check` says nothing in
+  either direction. Open and closed alike, because a ledger closes when its
+  campaign finishes and closed is where nearly every orphan was. The rule's real
+  boundary is worth stating: the run-set is what the ledger's **title** names,
+  never every issue the campaign touched, so an issue added mid-run without a
+  title edit is invisible to it. The pure halves — parsing the run-set, and
+  deciding from a map of issue → parent — are `ledgerRunSet` and
+  `ledgerShouldAttachTo` in [`scripts/lib/boardTitles.mjs`](../scripts/lib/boardTitles.mjs),
+  unit-tested offline; only the GraphQL fetch lives in `check`.
 
 - **No two options of a field share a name.** Everything in `board.mjs` resolves
   options by name at call time and takes the first match, so a field carrying the

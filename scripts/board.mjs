@@ -62,7 +62,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { isEpicTitle, isLedger } from './lib/boardTitles.mjs';
+import { isEpicTitle, isLedger, ledgerRunSet, ledgerShouldAttachTo } from './lib/boardTitles.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -409,6 +409,29 @@ function cmdParent(rest0) {
 }
 
 /**
+ * `issue number → parent number | null`, for as many issues as you like.
+ *
+ * Aliased into batches rather than one query per issue: `check` asks about
+ * every ledger plus every issue those ledgers name, which is well over a
+ * hundred numbers on the live board. GraphQL only — `gh api
+ * repos/{owner}/{repo}/issues/N` reports `parent: null` for every issue in this
+ * repo, sub-issues included (:29).
+ */
+function fetchParents(numbers) {
+  const out = new Map();
+  for (let i = 0; i < numbers.length; i += 50) {
+    const batch = numbers.slice(i, i + 50);
+    const data = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${batch
+        .map((n) => `i${n}: issue(number:${n}){ number parent{ number } }`)
+        .join(' ')} } }`,
+    ).repository;
+    for (const n of batch) out.set(n, data[`i${n}`]?.parent?.number ?? null);
+  }
+  return out;
+}
+
+/**
  * The promotion rule, made mechanical: a Recommended issue blocked by another
  * issue in this repo is only actionable if that blocker is also Recommended and
  * ordered above it. `Blocked by` leads with the reference precisely so this can
@@ -447,6 +470,10 @@ function cmdCheck(project) {
   for (const item of items) {
     if (item.state !== 'CLOSED') continue;
     if (isLedger(item.title)) continue; // closes by hand, never by a PR — see isLedger
+    // A FIELD-ONLY EXEMPTION. A ledger is out of this rule and the untriaged one
+    // below because it is not work; it is emphatically NOT out of the
+    // attachment rule further down, which is the one thing about a ledger that
+    // has to be true.
     if (item.status === 'Released') {
       console.log(`  note: #${item.number} is Released — safe to remove from the board`);
     } else if (!SHIPPING.has(item.status)) {
@@ -486,10 +513,52 @@ function cmdCheck(project) {
   // sat there in a week before anyone noticed. `add --queue` is what fills it,
   // and this is what makes skipping that call visible.
   for (const item of items) {
+    // Field-only exemption again — see the note beside the closed-status rule.
     if (item.state !== 'OPEN' || item.queue || isLedger(item.title)) continue;
     failures.push(
       `#${item.number} is on the board with no Queue — triage it with \`board.mjs set ${item.number} --queue <band>\``,
     );
+  }
+
+  // A CAMPAIGN IS REACHABLE FROM THE WORK IT RAN. Everything a campaign throws
+  // off — follow-ups, re-specs, mid-run defects — attaches to its ledger, so a
+  // ledger with no parent of its own puts all of it one hop from unreachable.
+  // Epic #913 showed nine closed children and no sign that campaign #1266 had
+  // run three of them and left #1269 behind. That was prose in four command
+  // files and guaranteed by nothing, which is the defect class CLAUDE.md rule
+  // 12 names; this is where it stops being prose.
+  //
+  // THE RULE'S REAL BOUNDARY. The run-set is what the ledger's TITLE names —
+  // see `ledgerRunSet` — never every issue the campaign touched. A ledger whose
+  // run-set shares no single parent passes in both directions, deliberately:
+  // see `ledgerShouldAttachTo`. Open and closed alike are checked, because a
+  // ledger closes when its campaign finishes and closed is where nearly every
+  // orphan was.
+  //
+  // The parents come from a separate query because `loadItems` reads project
+  // fields and `parent` is not one — and it must be GraphQL, since the REST
+  // issue endpoint reports `parent: null` for every issue in this repo (:29).
+  const ledgers = items.filter((it) => isLedger(it.title));
+  if (ledgers.length > 0) {
+    const wanted = new Set();
+    for (const led of ledgers) {
+      wanted.add(led.number);
+      for (const n of ledgerRunSet(led.title)) wanted.add(n);
+    }
+    const parentOf = fetchParents([...wanted]);
+    for (const led of ledgers) {
+      const expected = ledgerShouldAttachTo(ledgerRunSet(led.title), parentOf);
+      if (expected === null) continue;
+      const held = parentOf.get(led.number) ?? null;
+      if (held === expected) continue;
+      failures.push(
+        `#${led.number} is a campaign ledger whose issues all sit under #${expected}, but it ` +
+          (held === null ? 'has no parent' : `hangs off #${held}`) +
+          ` — attach it with \`board.mjs parent ${led.number} --of ${expected}` +
+          (held === null ? '`' : ` --detach-from ${held}\``) +
+          `, or everything the campaign filed is unreachable from #${expected}`,
+      );
+    }
   }
 
   // TWO OPTIONS CANNOT SHARE A NAME. Everything here resolves options by name
