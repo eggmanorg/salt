@@ -50,6 +50,19 @@ export interface E2EBridge {
   // layout assertions measure) never render. Emulator-only, like every other
   // seeder here.
   seedRecipe(recipe: Recipe): Promise<void>;
+  // Writes out the recipe page's debounced in-place edits now, resolving once
+  // Firestore has acked them (issue #1304). The sibling of `flushMealPlanWrites`
+  // above, for the same reason and with the same guarantee — but the recipe
+  // specs need it for a case the planner does not have: pressing Done ALREADY
+  // flushes, so what a spec must wait for there is not "issue the queued write"
+  // but "the write Done issued has landed". Nothing the page renders can say
+  // that — `getRecipes` reads the STORE, which the optimistic apply updated
+  // synchronously before the write went out — and under emulators the client
+  // runs without `persistentLocalCache` (`src/lib/firebase.ts`), so a write
+  // still on the wire is not queued anywhere a reload can replay it. Awaiting
+  // this after Done is what makes a `page.reload()` there read Firestore rather
+  // than race it.
+  flushRecipeWrites(): Promise<void>;
   // Synchronous snapshot of the current meal-plan week store. Lets the meal
   // planner spec assert per-day config (note, attendees, chefs, guests) and
   // prove the Firestore round-trip across reload.
@@ -62,10 +75,12 @@ export interface E2EBridge {
   // queued anywhere a reload can replay it. A spec that reloads to prove a typed
   // field round-tripped must await this first (issue #1085).
   //
-  // Settles writes still inside the debounce window. A write whose window has
-  // ALREADY elapsed has left the coalescer and is in flight to the server, and
-  // this does not wait for that one — see the caller's note in
-  // `e2e/mealplan-split.spec.ts`.
+  // Settles writes in BOTH states since issue #1304: still inside the debounce
+  // window, and already on the wire because the window elapsed. The second used
+  // to be the gap — `writeCoalescer`'s `flushKey` drops a key's pending entry
+  // before awaiting its `setDoc`, so a flush that only drained the queue
+  // resolved while that write was still travelling — and it is now closed at
+  // the coalescer, for this and `flushRecipeWrites` alike.
   flushMealPlanWrites(): Promise<void>;
   // Seeds a whole week document through the real `saveMealPlanWeek` adapter path
   // (NF-C4). The planner's layout tests need a week that is already full when the

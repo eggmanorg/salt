@@ -17,6 +17,7 @@
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
 import { seedRecipe } from './helpers/seed';
+import { settleRecipeWrites } from './helpers/settle';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { Recipe } from '@salt/domain';
 
@@ -119,8 +120,9 @@ test.describe('recipes — manual CRUD', () => {
     // ── Reload → persisted ─────────────────────────────────────────────────
     // The seed went through the real `persistRecipe` path and resolved before
     // `seedRecipe` returned, so this reload is reading Firestore rather than
-    // racing a debounce — unlike one taken straight after an in-place Done, which
-    // is the race the note further down explains.
+    // racing a debounce. The reload further down needs `settleRecipeWrites` to
+    // say the same thing, because an in-place edit is coalesced and this one is
+    // not — see the note there.
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Test Dahl' })).toBeVisible({
       timeout: SYNC_TIMEOUT,
@@ -144,33 +146,29 @@ test.describe('recipes — manual CRUD', () => {
       timeout: SYNC_TIMEOUT,
     });
 
-    // NO RELOAD HERE, deliberately, and the boundary is worth stating. An in-place
-    // edit is COALESCED: the store is updated synchronously and the `setDoc` lands
-    // at the end of the debounce window or on the flush `Done` issues — and nothing
-    // the page renders says the round trip finished. So a reload immediately after
-    // Done races that flush, which is what it did on the first run of this spec:
-    // the rename showed in the heading and was gone after the refresh. What this
-    // spec can honestly pin is the rename being applied where it was made; the
-    // write path itself is pinned by `recipeService.coalescedEdit.test.ts` and the
-    // flush by `RecipeViewPage.reviewFlag.test.ts`. The Firestore round trip is
-    // still exercised below — the delete asserts across a reload.
-    //
-    // `recipe-notes-markdown.spec.ts` has the sibling case (PR #1340 review,
-    // should-fix 8): it asserts an in-place edit survived a `page.goto` back to
-    // the URL it never left. Read that comment alongside this one — it is NOT
-    // the reload this one avoids (a `page.goto` to the current URL is a
-    // same-document hash navigation, proven nowhere near Firestore, not a
-    // network round trip), so there is no real asymmetry to reconcile between
-    // the two specs today. If either spec starts asserting an ACTUAL
-    // `page.reload()` immediately after Done, it needs a settled-flush signal
-    // first, or it inherits this exact race.
+    // ── The rename is on the SERVER, not just in the store ───────────────────
+    // This reload used to be declined: an in-place edit is COALESCED, the store
+    // moves synchronously, and nothing the page renders says the round trip
+    // finished — so a refresh taken straight after Done raced the flush and the
+    // rename came back gone. Issue #1304 gave the bridge the missing signal.
+    // `settleRecipeWrites` resolves only once Firestore has acked the write Done
+    // issued, so what the heading says after the reload below can only have come
+    // from the server. (It is the flush being AWAITABLE that is new, not the
+    // flush: Done always issued the write, but its promise was not one any spec
+    // could reach, and a flush that only drained the queue found nothing left to
+    // wait for. See `writeCoalescer.ts`'s `flushAll`.)
+    await settleRecipeWrites(page);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Test Dahl (revised)' })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
 
-    // ── Out and back in ──────────────────────────────────────────────────────
-    // The retired editor's save was a ROUTE CHANGE, so the recipe page remounted
-    // for free before the delete below. Editing in place is not a navigation, and
-    // without that remount the ⋮ menu's own click was left waiting out the test
-    // budget — so the round trip is made explicitly. It is also the honest place to
-    // read the rename back: the list is a different component over the same store.
+    // ── …and in the list, which is a different component over it ─────────────
+    // Kept for the list surface itself, not for the remount it used to be doing
+    // double duty as: editing in place is not a navigation, so before #1304 this
+    // leg was also what remounted the page before the delete below (without it the
+    // ⋮ menu's click waited out the test budget). The reload above now does that,
+    // and does it against Firestore.
     await page.goto('/#/recipes');
     await expect(
       page.getByTestId('recipe-list-item').filter({ hasText: 'Test Dahl (revised)' }),

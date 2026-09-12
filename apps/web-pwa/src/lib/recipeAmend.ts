@@ -216,18 +216,21 @@ export async function applyRecipeAmendment(
   // `applySnapshot`'s echo guard — so whichever write lost, the device that
   // pressed Apply saw a success and no revert.
   //
-  // THE BOUNDARY (issue #1330 review, finding 1 — CLAUDE.md Rule 12): this only
-  // orders a write that is still QUEUED when this runs. `flushKey`
+  // This orders the amendment against a typing write in EITHER state, queued or
+  // already on the wire (issue #1304 — it used to cover only the first). `flushKey`
   // (`writeCoalescer.ts`) deletes a key's pending entry BEFORE awaiting its
-  // `setDoc`, so once a keystroke's own 400 ms timer has already fired, the
-  // entry is gone and this flush sees nothing to await — it resolves
-  // immediately while that write is still on the wire. In that window the
-  // amendment's `setDoc` below is issued while the typing write is still in
-  // flight, and which one Firestore keeps rests on the SDK's own per-document
-  // mutation ordering (one client, one document: issued-before is applied-
-  // before) — a property this function depends on but does not establish, and
-  // cannot pin with a test here, since nothing in this codebase controls or
-  // observes that ordering.
+  // `setDoc`, so a keystroke whose own 400 ms timer had already fired was invisible
+  // to this flush, which resolved immediately while that write was still
+  // travelling; the amendment's `setDoc` below then went out alongside it and which
+  // one Firestore kept rested on the SDK's per-document mutation ordering — a
+  // property this function depended on but did not establish. `flushAll` now waits
+  // for in-flight writes too, so the typing write is ACKED before the amendment is
+  // composed and the ordering is this code's own rather than the SDK's.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12): what is ordered is every recipe write
+  // ISSUED BEFORE THIS LINE. A keystroke queued during the flush's own await, or
+  // during the amendment's round trip below, is not — it is a genuinely later
+  // edit, it flushes on its own timer, and LWW keeping it is the right answer.
   const flushed = await flushPendingRecipeEdits();
   if (flushed.kind !== 'ok') return flushed;
 
