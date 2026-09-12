@@ -15,7 +15,14 @@
     Icon,
     type ComboboxItemType,
   } from '@salt/ui-components';
-  import { canBeComponentOf, isCookable, recipeHeroUrl, type Recipe } from '@salt/domain';
+  import {
+    canBeComponentOf,
+    hasComponents,
+    isCookable,
+    recipeHeroUrl,
+    takesComponents,
+    type Recipe,
+  } from '@salt/domain';
   import type { Snippet } from 'svelte';
   import { push } from 'svelte-spa-router';
   import { attachComponentToMeal, recipes } from '../../lib/recipeService.js';
@@ -65,6 +72,47 @@
    * REORDER IS `ReorderControl` AND NOTHING ELSE (#1332's ruling) — no pair of
    * buttons is inlined here, so switching the campaign to a drag handle stays one
    * file. Read its header before using it.
+   *
+   * THE CARD OWNS ITS OWN MOUNT GATE (issue #1343), in the idiom `RecipeNotesCard`
+   * already uses: it renders when the document HAS dishes, or when the page is
+   * editing and the kind CAN take them. The second half is the door in — an
+   * ordinary recipe pressed into edit mode gets the dashed `+ Dishes` slot and
+   * becomes a meal through the picker that is already here, which is the
+   * capability the retired editor's picker used to be the only holder of.
+   *
+   * Capability comes from `takesComponents` and never from a comparison against
+   * `recipe.kind` (CLAUDE.md -> Data model conventions). A cocktail gets the slot
+   * because that is the domain's existing answer, not a new claim made here.
+   *
+   * The same line is why a meal being edited no longer vanishes under the finger
+   * emptying it — ON A KIND `takesComponents` ADMITS, which is the qualifier the
+   * rest of this paragraph earns rather than an escape hatch. `EditableZone`
+   * ignores `filled` entirely while its editor is open (`EditableZone.svelte:90`),
+   * and `canTakeDishes` holds the `{#if}` up once `isMeal` goes false, so taking
+   * the last dish off leaves the rows and the picker where they were; the demotion
+   * lands on Done, when `editing` goes false and the gate reads presence alone.
+   *
+   * THE GATE'S BOUNDARY, in both halves, because the mount half alone would leave
+   * the sentence above an unqualified absolute that the very next paragraph
+   * contradicts (PR #1345 review round 1, should-fix 1):
+   *
+   * MOUNT — a kind that takes no components but already carries ids (an outing
+   * seeded before this campaign, say) still shows its card in BOTH modes, because
+   * `hasComponents` is the first clause and a document with dishes on it is a meal
+   * whatever kind it declares. `RecipeMadeFromCard.test.ts` pins that reading.
+   *
+   * DEMOTION — and on THAT document alone the claim above is false: remove its
+   * last dish and both clauses go false at once, so the card does unmount
+   * mid-gesture. It is latent rather than triggerable, and the reason is worth
+   * writing down so it is not re-derived. Nothing in the app rewrites `kind` on an
+   * existing document: the editor reads it from the URL on create only, the chat
+   * amendment path says the same in as many words (`lib/recipeAmend.ts:82`), and
+   * `duplicateRecipe` copies kind and components together — so it can PROPAGATE
+   * such a pairing but never originate one. This card's picker never offers a kind
+   * that takes no components either. No reachable path therefore both gives an
+   * outing or a placeholder its first dish AND lets someone take it off here. A
+   * "was mounted" latch would be real machinery bought for a state nothing
+   * produces; the day some path does, this is the paragraph to come back to.
    */
   let {
     recipe,
@@ -84,13 +132,18 @@
     /** Called with the whole next recipe. The page decides how it is written. */
     onEdit: (next: Recipe) => void;
     /**
-     * The "New" menu in the card's header — the four ways to start a dish FROM
-     * this meal. It stays on the page because it owns page state (the two import
-     * dialogs) and page navigation, which issue #1319's Phase 7 re-points; this
-     * card owns where it sits and nothing about what it does.
+     * The "New" menu in the card's header — the three ways to start a dish FROM
+     * this meal (it was four until #1319 Phase 6 retired hand-authoring). It stays
+     * on the page because it owns page state (the two import dialogs) and page
+     * navigation, which issue #1319's Phase 7 re-points; this card owns where it
+     * sits, and since #1343 WHETHER it sits there at all — see the gate at the
+     * render — and nothing about what it does.
      */
     newMenu: Snippet;
   } = $props();
+
+  const isMeal = $derived(hasComponents(recipe));
+  const canTakeDishes = $derived(takesComponents(kindOf(recipe)));
 
   /**
    * A stored id's dish, or the plain truth about it. The edit rows iterate the
@@ -157,160 +210,177 @@
   }
 </script>
 
-<Card>
-  <CardHeader class="px-4 pt-4 pb-0">
-    <div class="flex items-center justify-between gap-2">
-      <CardTitle class="text-sm">Made from</CardTitle>
-      {@render newMenu()}
-    </div>
-  </CardHeader>
-  <CardContent class="px-4 pt-3 pb-4">
-    <!-- `filled` is constant because the card itself is gated on the DOCUMENT
-         having components: the region always has something to say, either the
-         dishes or the sentence explaining where they went, so there is never a
-         dashed slot to offer in its place. Adding a dish lives inside the editor,
-         where the picker is. -->
-    <EditableZone
-      {editing}
-      filled={true}
-      label="Edit the dishes"
-      testId="recipe-edit-components"
-      class="w-full"
-    >
-      {#snippet view()}
-        <div class="min-w-0 flex-1">
-          {#if components.length === 0}
-            <p class="text-sm text-muted-foreground">
-              The dishes this was built from are no longer in the library.
-            </p>
-          {:else}
-            <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="recipe-components">
-              {#each components as component (component.id)}
-                <!-- Bound once rather than called twice. It does NOT remove
+{#if isMeal || (editing && canTakeDishes)}
+  <Card>
+    <CardHeader class="px-4 pt-4 pb-0">
+      <div class="flex items-center justify-between gap-2">
+        <CardTitle class="text-sm">Made from</CardTitle>
+        <!-- The "New" menu stays PRESENCE-gated while the card no longer is
+             (issue #1343), and the two are deliberately not the same question.
+             Its three entries start a dish FOR this meal: two import over the
+             network and the third navigates away into a chat — a heavy first move
+             for a conversion, and one that takes you off a recipe you are
+             mid-edit on. It is also the gate the page mounts the two import
+             dialogs behind (`RecipeViewPage.svelte`'s `showComponents`), so
+             widening it here alone would offer a menu whose dialogs are not
+             mounted. That is one predicate written in two files, so
+             `RecipeViewPage.mealComponents.test.ts` pins the two together rather
+             than this comment asking for them to be kept in step. -->
+        {#if isMeal}
+          {@render newMenu()}
+        {/if}
+      </div>
+    </CardHeader>
+    <CardContent class="px-4 pt-3 pb-4">
+      <!-- `filled` is the DOCUMENT's answer rather than a constant (issue #1343):
+           a meal always has something to say here — its dishes, or the sentence
+           explaining where they went — while a recipe that is not one yet has
+           nothing to show and gets the dashed `+ Dishes` slot in its place. Both
+           branches open the same editor and carry the same `testId`, which is
+           what the specs key on. -->
+      <EditableZone
+        {editing}
+        filled={isMeal}
+        label="Edit the dishes"
+        slotLabel="Dishes"
+        testId="recipe-edit-components"
+        class="w-full"
+      >
+        {#snippet view()}
+          <div class="min-w-0 flex-1">
+            {#if components.length === 0}
+              <p class="text-sm text-muted-foreground">
+                The dishes this was built from are no longer in the library.
+              </p>
+            {:else}
+              <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="recipe-components">
+                {#each components as component (component.id)}
+                  <!-- Bound once rather than called twice. It does NOT remove
                      the `?? ''` Svelte compiles this interpolation to, which is
                      this file's one uncovered branch: the fallback needs a null
                      inside the `!== null` guard above it, so nothing can reach
                      it. The branch came with the markup out of
                      `RecipeViewPage.svelte` rather than being added here. -->
-                {@const timeLabel = componentTimeLabel(component)}
-                <li>
-                  <button
-                    type="button"
-                    class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
-                    onclick={() => push(`/recipes/${component.id}`)}
-                    data-testid="recipe-component-card"
-                    data-recipe-id={component.id}
-                  >
-                    <span
-                      class="h-14 w-14 shrink-0 overflow-hidden rounded bg-muted text-muted-foreground/60"
+                  {@const timeLabel = componentTimeLabel(component)}
+                  <li>
+                    <button
+                      type="button"
+                      class="group flex w-full items-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-2 text-left transition-shadow hover:shadow-md"
+                      onclick={() => push(`/recipes/${component.id}`)}
+                      data-testid="recipe-component-card"
+                      data-recipe-id={component.id}
                     >
-                      {#if component.image?.url}
-                        <img
-                          src={recipeHeroUrl(component)}
-                          alt=""
-                          loading="lazy"
-                          class="h-full w-full object-cover"
-                          data-testid="recipe-component-thumb"
-                        />
-                      {:else}
-                        <span
-                          class="flex h-full w-full items-center justify-center"
-                          data-testid="recipe-component-thumb-fallback"
-                        >
-                          <!-- The kind's own placeholder icon, not a fixed pot: a
+                      <span
+                        class="h-14 w-14 shrink-0 overflow-hidden rounded bg-muted text-muted-foreground/60"
+                      >
+                        {#if component.image?.url}
+                          <img
+                            src={recipeHeroUrl(component)}
+                            alt=""
+                            loading="lazy"
+                            class="h-full w-full object-cover"
+                            data-testid="recipe-component-thumb"
+                          />
+                        {:else}
+                          <span
+                            class="flex h-full w-full items-center justify-center"
+                            data-testid="recipe-component-thumb-fallback"
+                          >
+                            <!-- The kind's own placeholder icon, not a fixed pot: a
                                cocktail component wears a martini glass here exactly
                                as it does on the list and in the week's shop sheet.
                                Which picture a kind wears is COPY, which is what
                                `KIND_COPY` is for. -->
-                          <Icon name={KIND_COPY[kindOf(component)].thumbIcon} size={20} />
-                        </span>
-                      {/if}
-                    </span>
-                    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span class="truncate text-sm font-medium">{component.title}</span>
-                      {#if timeLabel !== null}
-                        <span
-                          class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                          data-testid="recipe-component-cook-time"
-                        >
-                          <Icon name="Clock" size={12} />
-                          {timeLabel}
-                        </span>
-                      {/if}
-                    </span>
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      {/snippet}
-      {#snippet edit(close)}
-        <div class="flex w-full flex-col gap-3" data-testid="recipe-edit-component-rows">
-          <!-- Keyed by id, which a component row has and a phase row does not. The
+                            <Icon name={KIND_COPY[kindOf(component)].thumbIcon} size={20} />
+                          </span>
+                        {/if}
+                      </span>
+                      <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span class="truncate text-sm font-medium">{component.title}</span>
+                        {#if timeLabel !== null}
+                          <span
+                            class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                            data-testid="recipe-component-cook-time"
+                          >
+                            <Icon name="Clock" size={12} />
+                            {timeLabel}
+                          </span>
+                        {/if}
+                      </span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {/snippet}
+        {#snippet edit(close)}
+          <div class="flex w-full flex-col gap-3" data-testid="recipe-edit-component-rows">
+            <!-- Keyed by id, which a component row has and a phase row does not. The
                rows iterate the STORED ids so a dangling one is visible and
                removable here rather than dropped by the first reorder. -->
-          {#each recipe.componentRecipeIds as id, i (id)}
-            <div
-              class="flex items-center gap-2 rounded border border-border px-3 py-2"
-              data-testid="recipe-edit-component-row"
-              data-recipe-id={id}
-            >
-              <span class="min-w-0 flex-1 truncate text-sm">{rowTitle(id)}</span>
-              <ReorderControl
-                items={recipe.componentRecipeIds}
-                index={i}
-                noun="dish"
-                onReorder={setComponentIds}
-              />
+            {#each recipe.componentRecipeIds as id, i (id)}
+              <div
+                class="flex items-center gap-2 rounded border border-border px-3 py-2"
+                data-testid="recipe-edit-component-row"
+                data-recipe-id={id}
+              >
+                <span class="min-w-0 flex-1 truncate text-sm">{rowTitle(id)}</span>
+                <ReorderControl
+                  items={recipe.componentRecipeIds}
+                  index={i}
+                  noun="dish"
+                  onReorder={setComponentIds}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => removeComponent(id)}
+                  aria-label={`Remove ${rowTitle(id)}`}
+                  data-testid={`recipe-edit-component-remove-${id}`}
+                >
+                  <Icon name="X" size={16} />
+                </Button>
+              </div>
+            {/each}
+            {#key pickerKey}
+              <Combobox
+                items={pickerItems}
+                value=""
+                filterFn={componentFilter}
+                restrict
+                placeholder="Add a dish…"
+                onValueChange={addComponent}
+              >
+                <ComboboxField>
+                  <ComboboxInput data-testid="recipe-edit-component-picker" />
+                  <ComboboxTrigger />
+                </ComboboxField>
+                <ComboboxContent>
+                  {#snippet children({ filteredItems })}
+                    {#each filteredItems as item, i (item.value)}
+                      <ComboboxItem {item} index={i} />
+                    {/each}
+                    {#if filteredItems.length === 0}
+                      <ComboboxEmpty>Nothing found</ComboboxEmpty>
+                    {/if}
+                  {/snippet}
+                </ComboboxContent>
+              </Combobox>
+            {/key}
+            <div class="flex justify-end">
               <Button
                 variant="ghost"
                 size="sm"
-                onclick={() => removeComponent(id)}
-                aria-label={`Remove ${rowTitle(id)}`}
-                data-testid={`recipe-edit-component-remove-${id}`}
+                onclick={close}
+                data-testid="recipe-edit-components-done"
               >
-                <Icon name="X" size={16} />
+                Done
               </Button>
             </div>
-          {/each}
-          {#key pickerKey}
-            <Combobox
-              items={pickerItems}
-              value=""
-              filterFn={componentFilter}
-              restrict
-              placeholder="Add a dish…"
-              onValueChange={addComponent}
-            >
-              <ComboboxField>
-                <ComboboxInput data-testid="recipe-edit-component-picker" />
-                <ComboboxTrigger />
-              </ComboboxField>
-              <ComboboxContent>
-                {#snippet children({ filteredItems })}
-                  {#each filteredItems as item, i (item.value)}
-                    <ComboboxItem {item} index={i} />
-                  {/each}
-                  {#if filteredItems.length === 0}
-                    <ComboboxEmpty>Nothing found</ComboboxEmpty>
-                  {/if}
-                {/snippet}
-              </ComboboxContent>
-            </Combobox>
-          {/key}
-          <div class="flex justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={close}
-              data-testid="recipe-edit-components-done"
-            >
-              Done
-            </Button>
           </div>
-        </div>
-      {/snippet}
-    </EditableZone>
-  </CardContent>
-</Card>
+        {/snippet}
+      </EditableZone>
+    </CardContent>
+  </Card>
+{/if}

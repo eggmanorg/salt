@@ -218,7 +218,11 @@ describe('RecipeViewPage — the dishes a meal is made of', () => {
     renderPage();
 
     // Derived, never declared: nothing is attached, so there is no meal and no
-    // card. A recipe that COULD take components is not offered an empty one.
+    // card. READ MODE is the whole of this claim since issue #1343 — a recipe that
+    // could take components IS offered an empty card, with a dashed `+ Dishes`
+    // slot, the moment the page is put into edit mode. That half lives in
+    // `RecipeMadeFromCard.test.ts`; what this case still pins is that nothing
+    // about it leaks into the page a reader sees.
     expect(screen.queryByTestId('recipe-components')).toBeNull();
   });
 
