@@ -14,9 +14,15 @@
   //
   // So the box owns its text and the number owns the model, and they are kept in
   // step deliberately rather than by echo. This is NOT a general-purpose numeric
-  // primitive and it deliberately does not live in `@salt/ui-components`: the
-  // recipe editor is the only surface with this shape today, and promoting it is
-  // a decision for the second one.
+  // primitive and it deliberately does not live in `@salt/ui-components`: both
+  // callers are page-local to `routes/recipes/` — the phase strip
+  // (`RecipePhaseEditor`) and a step timer (`RecipeMethodRail`) — and a caller
+  // outside this folder is what would earn it a promotion.
+  //
+  // `tests/MinutesField.test.ts` pins the behaviour below, and is where it is
+  // pinned: neither caller's suite reads the box's live text, only the number
+  // that reached `onEdit`, which is precisely the assertion that cannot see this
+  // defect.
 
   interface Props {
     label: string;

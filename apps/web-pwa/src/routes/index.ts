@@ -62,17 +62,19 @@ export const routes: RouteDefinition = new Map<
   // shell route, so no entry in ./fullViewport.ts.
   ['/chat/remembered', lazy(() => import('./chat/ChatMemoryPage.svelte'))],
   ['/chat/:id', lazy(() => import('./chat/ChatSessionPage.svelte'))],
-  // Recipe module (issue #179). More-specific static/edit routes precede the
+  // Recipe module (issue #179). More-specific static routes precede the
   // parameterised view route. Lazy-loaded (#411).
+  //
+  // There is no `/recipes/new`, no `/recipes/new/:kind` and no `/recipes/:id/edit`
+  // (issue #1319 Phase 8): the separate editor page is gone. A recipe is read and
+  // written in the same place — `/recipes/:id` turns editable in place — and the
+  // three things that cannot be imported (an outing, a meal, a placeholder) are
+  // minted by `RecipeNewSheet`, which writes the document and lands on its page.
+  // The `kind` is still set once and immutable; the sheet sets it where the route
+  // segment used to. A stale bookmark to any of the three now falls through to
+  // the app's not-found handling, which is the correct answer for a page that no
+  // longer exists.
   ['/recipes', lazy(() => import('./recipes/RecipeListPage.svelte'))],
-  ['/recipes/new', lazy(() => import('./recipes/RecipeEditPage.svelte'))],
-  // Same editor, creating a non-recipe kind (issue #637): `/recipes/new/outing`
-  // is "When you CBA". The kind is set here and only here — it is immutable, so
-  // there is no selector in the form and no way to change it after the fact. An
-  // unrecognised segment falls back to a plain new recipe (the page validates it
-  // with RecipeKindSchema); a URL is user input.
-  ['/recipes/new/:kind', lazy(() => import('./recipes/RecipeEditPage.svelte'))],
-  ['/recipes/:id/edit', lazy(() => import('./recipes/RecipeEditPage.svelte'))],
   // Guided cook (issue #751, Phase 2) precedes plain cook mode for the same
   // more-specific-first reason as every other pair here. A SECOND full-viewport
   // route, and so a second entry in ./fullViewport.ts: it is cook mode with the

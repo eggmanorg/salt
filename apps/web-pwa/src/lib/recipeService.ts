@@ -346,12 +346,6 @@ export async function attachComponentToMeal(
   });
 }
 
-export async function parseIngredients(
-  rawText: string,
-): Promise<ReadResult<IngredientGroup[], DomainError>> {
-  return callParseRecipeIngredients(rawText);
-}
-
 // ─── Hero image (issue #148, Tier-2) ────────────────────────────────────────────
 // The photoreal hero is generated server-side by the onRecipeWritten trigger on
 // create. These two commands are the manual controls.
@@ -819,15 +813,19 @@ export function stashImportedDraft(draft: Recipe): void {
   _pendingImportDraft = draft;
 }
 
-// Single-use read. Since #616 an import is persisted server-side and opens as
-// /recipes/{id}/edit, so the editor asks for a SPECIFIC id: passing `expectedId`
-// leaves a non-matching stash in place, so opening some other recipe's editor
-// can't silently swallow a pending import. Called with no argument (from
-// /recipes/new) it takes whatever is stashed, as before.
-export function takeImportedDraft(expectedId?: string): Recipe | null {
+// Single-use read. An import is persisted server-side (#616) and opens as
+// /recipes/{id}, so the page claiming the stash asks for a SPECIFIC id: passing
+// `expectedId` leaves a non-matching stash in place, so landing on some other
+// recipe can't silently swallow a pending import.
+//
+// The id is REQUIRED. It used to be optional because `/recipes/new` — a page
+// with no id of its own — took whatever was stashed; #1319 Phase 8 deleted that
+// route, leaving `RecipeViewPage`'s id-keyed claim as the only caller, so the
+// unconditional arm went with it rather than sitting here untaken.
+export function takeImportedDraft(expectedId: string): Recipe | null {
   const d = _pendingImportDraft;
   if (d === null) return null;
-  if (expectedId !== undefined && d.id !== expectedId) return null;
+  if (d.id !== expectedId) return null;
   _pendingImportDraft = null;
   return d;
 }

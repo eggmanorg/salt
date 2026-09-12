@@ -120,7 +120,11 @@ Schema constraints, each load-bearing:
   that fail validation, so a required field would hide every production recipe.
 - `ingredients` / `steps` stay required arrays (`[]` when empty) — never a
   discriminated union.
-- `kind` is **immutable**: set at create via `/recipes/new/:kind`, never editable.
+- `kind` is **immutable**: set at create — by the New sheet for an outing, a meal
+  or a placeholder, by the import or the chef for a recipe or a cocktail — and
+  never editable. There is no route or control that changes it (the
+  `/recipes/new/:kind` segment that used to set it went with the editor, #1319
+  Phase 8).
 
 Outings and placeholders are **not** separate collections — they occupy a planner
 slot in place of a recipe. If they ever need their own fields, add optional nullable

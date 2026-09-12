@@ -161,11 +161,28 @@ export const violationCeilings = {
   // suite it landed in also lost the redundant `document.body.style.pointerEvents`
   // reset `tests/setup.ts` already does (UT-C3 -1). Lowering both rather than
   // leaving slack is the point of an exact-equality ratchet.
+  // UT-B1 48 → 45 and UT-C2 33 → 25 (issue #1319 Phase 8). Both TIGHTEN, and
+  // both are the same event: the ten `RecipeEditPage.*.test.ts` suites were
+  // deleted with the page they mounted. Every one of them carried the editor's
+  // six-mock preamble (three of them a seventh), and eight of them hand-rolled a
+  // recipe fixture rather than taking `@salt/domain`'s builders — so the two
+  // rules fall by 3 and 8 respectively without a single remaining suite changing.
+  //
+  // These are NOT earned tightenings and it would be dishonest to bank them as
+  // such: no test got better, some tests stopped existing. They are lowered
+  // anyway because an exact-equality ratchet with slack in it stops measuring —
+  // the slack would silently absorb the next eight new violations. UT-C3 does
+  // not move: the deleted suites did not breach it.
+  //
+  // The three suites this PR ADDS or extends (`MinutesField.test.ts`, and cases
+  // in `RecipeIdentityCard.test.ts` and `RecipeViewPage.matchMarkers.test.ts`)
+  // breach nothing new — the new file mounts one component and needs no mocks at
+  // all, and the two extended suites were already counted.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 48,
+    'UT-B1': 45,
     'UT-C1': 0,
-    'UT-C2': 33,
+    'UT-C2': 25,
     'UT-C3': 30,
     'UT-E4': 0,
     'UT-G1': 0,

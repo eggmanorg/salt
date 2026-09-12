@@ -185,8 +185,8 @@ the feature key and the `phasesEnabled` argument that threaded it: `phaseMinutes
 now takes only the recipe, and returns `null` for a recipe with no strip. Through
 the normal authoring paths only placeholders and outings reach that state — neither
 ever showed a timing — but that is the claim's boundary, not a property of the
-type: a recipe starts life with an empty strip, and the editor can remove its last
-phase (#1232). Issue
+type: a recipe starts life with an empty strip, and a cook can remove its last
+phase by hand (#1232). Issue
 #1233 then closed the boundary that was left open: the ORDERING and the CLOCK moved
 onto the same figure the line shows. `scheduleFor` works a start time back from
 `recipePhaseTotals().elapsedMinutes`, and `insertComponentByElapsedTime` positions a
@@ -218,37 +218,35 @@ yet what happens on the amend path.
 ### Hand-editing the strip, and seeing it in the review gate (issue #1212)
 
 The model writes the strip and is usually right; when it is not, the cook has the
-pen. `RecipeEditPage.svelte` replaces the three "Prep / Cook / Total" boxes with
-the phase list itself — one row per phase, a free-text label and its two minute
-figures, with add / remove / move-up / move-down, built on the same plain row
-editor the method steps use. Issue #1213 retired the feature key that used to
-gate this, and the three boxes it once hid behind along with it: the three
-numbers keep their STORED values, read by nothing on this page, because the
-authoring flows still emit them and #1211 is what eventually deletes the fields
-themselves.
+pen. The strip IS the timing control — the three "Prep / Cook / Total" boxes went
+with #1213's feature key, and the fields themselves with #1211.
 
-Three things about the editor that the code alone does not say:
+**There is one hand-edit surface**, `RecipePhaseEditor.svelte`, on the recipe's
+own page inside the identity card where the strip is already drawn: a pencil
+beside the strip opens the rows, a recipe with no strip offers a dashed
+`+ Add a phase` slot while editing, and the strip stays on screen above the boxes
+so an emptied minute box can be SEEN totalling as zero. It writes through the
+page's coalesced `handleInlineEdit` — there is no Save — and it sets `phases`
+directly; `reconcileRecipePhases` governs model output and is not in this path.
+Until #1319's Phase 8 there was a second surface, the retired `RecipeEditPage`,
+and the rules below were written to be shared between the two; they now have one
+reader.
+
+Three things the code alone does not say:
 
 - **Two minute fields per row, never three.** Elapsed time is computed at the point
   of use and never stored, so there is no total to type.
 - **The six-phase cap is inbound only** (#1123). The editor stops the cook adding a
   seventh; it never truncates, hides or refuses a stored strip that already has
   one, which renders row for row and stays fully editable. Pinned by
-  `apps/web-pwa/tests/RecipeEditPage.phases.test.ts`.
+  `apps/web-pwa/tests/RecipePhaseEditor.test.ts`.
 - **Validation is non-negative whole minutes and nothing more.** An empty box means
   `0`, not `null` — unlike Servings, a phase's minute figure is required by the
-  schema, and `0` is a real answer (a prove has no hands-on time at all).
-
-**There are two hand-edit surfaces as of #1319's Phase 2, and they share the rules
-above rather than restating them.** `RecipePhaseEditor.svelte` puts the same row
-editor on the recipe's own page, inside the identity card, where the strip is
-already drawn: a pencil beside the strip opens the rows, a recipe with no strip
-offers a dashed `+ Add a phase` slot while editing, and the strip stays on screen
-above the boxes so an emptied minute box can be SEEN totalling as zero. It writes
-through the page's coalesced `handleInlineEdit` — there is no Save — and it sets
-`phases` directly, exactly as the editor does; `reconcileRecipePhases` governs
-model output and is not in either path. `RecipeEditPage.svelte` keeps working
-until #1319's Phase 8 deletes it.
+  schema, and `0` is a real answer (a prove has no hands-on time at all). What the
+  BOX shows while it is being typed into is a separate contract, owned by
+  `MinutesField.svelte` and pinned by `apps/web-pwa/tests/MinutesField.test.ts`
+  (#1221): asserting the stored figure cannot see that defect, which is why it has
+  a suite of its own rather than more cases in this one.
 
 Reordering on the recipe page goes through one component, `ReorderControl.svelte`,
 and not through row markup: Daniel chose up/down arrows over a drag handle
@@ -457,11 +455,13 @@ list. #652 weighed a fourth predicate for this and rejected it: see below.
 
 Decisions worth not relitigating:
 
-- **`kind` is immutable.** It is set at create — via `/recipes/new/:kind` for a
-  plain recipe or cocktail, or by which New-sheet entry was opened for an outing,
-  a meal or a placeholder (issue #1319 Phase 6, `RecipeNewSheet` calls
-  `emptyRecipe` directly rather than routing through `:kind`) — and there is no
-  selector in the editor. Flipping a 20-ingredient recipe to `outing` would
+- **`kind` is immutable.** It is set at create — by which New-sheet entry was
+  opened for an outing, a meal or a placeholder (issue #1319 Phase 6,
+  `RecipeNewSheet` calls `emptyRecipe` directly), and by the import or the chef
+  for a recipe or a cocktail, neither of which can be started by hand at all
+  since Phase 8 — and there is no selector anywhere that changes it afterwards.
+  The `/recipes/new/:kind` route that used to carry it died with the editor.
+  Flipping a 20-ingredient recipe to `outing` would
   hide its ingredients behind a render branch — still on the document, invisible
   and unreachable, with no undo. Immutability is also what lets `diffRecipe` stay
   untouched (pinned by a test).
@@ -503,10 +503,15 @@ Decisions worth not relitigating:
   exported from `@salt/domain` (`PLACEHOLDER_MOODS`) so the library and the picker
   cannot drift. A typed `mood` field would be null on every production document to
   serve ten, and — the real cost — would need a mood `<Select>` shown only for
-  placeholders, which is a `kind` branch on _behaviour_ inside `RecipeEditPage`,
-  exactly what the rule above keeps out of the app layer. The accepted downside is
-  that a typo silently drops one document out of a mood; `pickPlaceholder`
-  degrades to `null`, which is cheap to spot across ten hand-made documents.
+  placeholders, which is a `kind` branch on _behaviour_, exactly what the rule
+  above keeps out of the app layer. What IS shown for a placeholder alone is a
+  sentence: `KIND_COPY.placeholder.tagsHint`, rendered by the identity card's tag
+  zone while editing (it moved there from the retired editor in #1319 Phase 8),
+  interpolated from `PLACEHOLDER_MOODS` / `PLACEHOLDER_CONDITION_TAGS` so it
+  cannot name a word the picker does not know. Copy, gating nothing. The accepted
+  downside is that a typo silently drops one document out of a mood;
+  `pickPlaceholder` degrades to `null`, which is cheap to spot across ten
+  hand-made documents.
 - **No fourth capability predicate.** #652 weighed a `countsAsMeal(kind)` driving
   the planner's hero pick, the note re-seed and an auto-detach, and rejected it:
   three new behaviours to pre-empt two states the user undoes with one tap on the
@@ -815,7 +820,7 @@ chip is suppressed entirely rather than showing a placeholder.
 surname, so "Added by Kate Pendery" spends a word distinguishing nobody. The
 document keeps the **verbatim `Member.name`** and the split happens at RENDER —
 `firstName` in `membersService.ts` (the same helper `kitchenLabel` uses), applied
-by the view chip and the editor picker's labels only. Deliberately not at write
+by the view chip and the picker's option labels only. Deliberately not at write
 time: the list's "Added by me" chip is a plain `===` against the stored value, so
 truncating on the way in would force the stamper, the filter, the picker and the
 backfill to agree on one truncation in four places, and would merge two people
@@ -825,17 +830,17 @@ list's filter — therefore stays on the full name. Lossless, and no migration.
 
 Where each field is stamped — every write path, and nothing else writes them:
 
-| Write path                                                                                                                                                                                  | `createdBy`                                                                                                     | `lastEditedBy`                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `persistRecipe` (`recipeService.ts`) — editor save, ingredient re-match, review-clear, `attachComponentToMeal`, the e2e seed hook                                                           | filled if blank, never re-pointed                                                                               | re-stamped on every write                                                                          |
-| `authorRecipeFromChat` (`chatRecipeAuthor.ts`) — writes via `saveRecipeDoc`, not `persistRecipe`                                                                                            | filled (a new dish)                                                                                             | stamped                                                                                            |
-| `applyRecipeAmendment` (`recipeAmend.ts`) — confirming a chat amend or a ⋮ → Refresh IS the human edit                                                                                      | carried from the base recipe, untouched                                                                         | stamped with the amender                                                                           |
-| `duplicateRecipe` (domain)                                                                                                                                                                  | blank — a copy belongs to whoever copied it, not to the original's author                                       | blank                                                                                              |
-| `assembleRecipeDraft` (CF)                                                                                                                                                                  | carried from `baseRecipe`, `''` on a create                                                                     | carried from `baseRecipe`, `''` on a create                                                        |
-| `persistImportedRecipe` (CF, #616)                                                                                                                                                          | **unattributed on purpose** — the client stamps it on the save out of the editor the import drops you into      | unattributed                                                                                       |
-| `onRecipeWritten` (CF)                                                                                                                                                                      | never                                                                                                           | **never** — a generated hero is not an edit                                                        |
-| The "Added by" roster picker — `RecipeEditPage.svelte`'s editor field and, since #1324 Phase 4, the identity card's fact pill (`RecipeIdentityCard.svelte`); the two user-editable surfaces | set to the picked roster name, which then survives the save because `stampRecipeAttribution` only fills a blank | untouched by the picker; re-stamped by the save that follows, like any other edit                  |
-| `scripts/backfill-recipe-attribution.mjs` — the one-off #845 pass                                                                                                                           | filled if blank, by field-level `PATCH`                                                                         | **never** — nobody knows who last edited a pre-#845 recipe, and inventing it is worse than silence |
+| Write path                                                                                                                                                                   | `createdBy`                                                                                                      | `lastEditedBy`                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `persistRecipe` (`recipeService.ts`) — every in-place edit, ingredient re-match, review-clear, `attachComponentToMeal`, the e2e seed hook                                    | filled if blank, never re-pointed                                                                                | re-stamped on every write                                                                          |
+| `authorRecipeFromChat` (`chatRecipeAuthor.ts`) — writes via `saveRecipeDoc`, not `persistRecipe`                                                                             | filled (a new dish)                                                                                              | stamped                                                                                            |
+| `applyRecipeAmendment` (`recipeAmend.ts`) — confirming a chat amend or a ⋮ → Refresh IS the human edit                                                                       | carried from the base recipe, untouched                                                                          | stamped with the amender                                                                           |
+| `duplicateRecipe` (domain)                                                                                                                                                   | blank — a copy belongs to whoever copied it, not to the original's author                                        | blank                                                                                              |
+| `assembleRecipeDraft` (CF)                                                                                                                                                   | carried from `baseRecipe`, `''` on a create                                                                      | carried from `baseRecipe`, `''` on a create                                                        |
+| `persistImportedRecipe` (CF, #616)                                                                                                                                           | **unattributed on purpose** — the client stamps it on the first edit made to the recipe the import lands on      | unattributed                                                                                       |
+| `onRecipeWritten` (CF)                                                                                                                                                       | never                                                                                                            | **never** — a generated hero is not an edit                                                        |
+| The "Added by" roster picker — the identity card's fact pill (`RecipeIdentityCard.svelte`), the one user-editable surface since #1319 Phase 8 removed the editor's own field | set to the picked roster name, which then survives the write because `stampRecipeAttribution` only fills a blank | untouched by the picker; re-stamped by the write that follows, like any other edit                 |
+| `scripts/backfill-recipe-attribution.mjs` — the one-off #845 pass                                                                                                            | filled if blank, by field-level `PATCH`                                                                          | **never** — nobody knows who last edited a pre-#845 recipe, and inventing it is worse than silence |
 
 All three client stamps go through the one `stampRecipeAttribution` helper in
 `recipeService.ts`, which fills `createdBy` only when it is empty and rewrites
@@ -846,17 +851,23 @@ because a store had not settled is worse than recording nothing. The domain
 builders stay identity-free for the same reason they read no clock.
 
 **Correcting the record.** The backfill asserted something it could only guess at,
-so `createdBy` is editable — a roster picker, shown only for an entry that
-already exists (on the create routes the author is whoever is typing), reachable
-two ways since #1324 Phase 4: `RecipeEditPage.svelte`'s own field, and the
-"Added by" fact pill on the identity card while the view page is in edit mode.
-Both are the same pick-from-roster control against the same `$people` list, and
-both land through `stampRecipeAttribution`; there is no second write path to
-reconcile, only a second place to open the picker. It is a **pick, never free
-text**: the list's "Added by me" chip is a
-plain `===` against `Member.name`, so a typo or a uid would silently stop
-matching. A `createdBy` that is no longer on the roster is offered as an extra
-option rather than dropped, so merely opening the editor cannot erase a record.
+so `createdBy` is editable — a roster picker on the "Added by" fact pill of the
+identity card, while the recipe's own page is in edit mode. It is the ONLY place
+the field is set by hand: #1324 Phase 4 added it beside the retired editor's own
+field, and #1319 Phase 8 removed that one, so the two surfaces became one. The
+write path was always single (`stampRecipeAttribution`); what changed is that
+there is now one place to open the picker rather than two.
+
+It is a **pick, never free text**: the list's "Added by me" chip is a plain `===`
+against `Member.name`, so a typo or a uid would silently stop matching. A
+`createdBy` that is no longer on the roster — someone who left, a system account
+`$people` filters out (#1300), or simply a roster that has not synced yet — is
+offered as an extra option rather than dropped, so merely opening the picker
+cannot erase a record. Options are keyed and stored on the VERBATIM full name and
+only labelled with the first, so two people called Sam stay two options. Those
+three claims are pinned in `apps/web-pwa/tests/RecipeIdentityCard.test.ts`, on
+the offered options rather than on the trigger — the trigger renders
+`recipe.createdBy` directly and would keep showing a name the list had dropped.
 `lastEditedBy` gets no control at all — a field recording the last edit that you
 can type into contradicts itself.
 
@@ -873,11 +884,12 @@ what-carries policy; no field-reset logic lives in the UI. Duplicate is
 **unconditional** — every `kind` can be copied, and the copy is the same kind.
 
 **It writes immediately, since issue #1319 Phase 7.** Until then the view page's
-⋮ → Duplicate stashed its result through `stashImportedDraft`, routed to
-`/recipes/new`, and nothing reached Firestore until the user hit Save — so backing
-out cost no document and no hero-image generation. That promise rested entirely on
-the editor being a surface that could hold an unsaved recipe, and the editor is
-gone: every surface in the app now edits a document that exists. So Duplicate
+⋮ → Duplicate stashed its result through `stashImportedDraft`, routed to the
+editor's own `/recipes/new`, and nothing reached Firestore until the user hit
+Save — so backing out cost no document and no hero-image generation. That promise
+rested entirely on there being a surface that could hold an UNSAVED recipe;
+Phase 8 deleted the last one, and every surface in the app now edits a document
+that already exists. So Duplicate
 `persistRecipe`s the copy and lands you on its own page in edit mode
 (`requestEditOnArrival` in `apps/web-pwa/src/routes/recipes/editOnArrival.ts`).
 **The cost that used to be avoided is real and accepted:** a copy you immediately
@@ -1041,8 +1053,8 @@ layer-map change**. One Cloud Function (the parse flow) arrives in Phase 3.
 - `packages/domain/src/recipe/` — entities, pure commands/queries
 - `packages/domain/src/schemas/recipe*.ts` — zod schemas (validated on read in firebase-sync; on flow output in the CF)
 - `packages/adapters/firebase-sync/src/recipe*.ts` — subscription + writes
-- `apps/cloud-functions/src/` — `parseRecipeIngredients` Genkit callable (Phase 3), wrapped in `withAiTimeout`
-- `apps/web-pwa/src/lib/recipeService.ts` + routes — store, list/view/edit UI
+- `apps/cloud-functions/src/` — `parseRecipeIngredients` Genkit callable (Phase 3), wrapped in `withAiTimeout`. #1319 Phase 8 retired "Parse from text" — the editor's paste-a-block affordance, whose replacement for the cook is pasting the page into the chef — but the callable is NOT dead and was deliberately kept: `matchIngredient` in `recipeService.ts` calls it for a single ingredient line, which is what the ✗ marker on a recipe row runs
+- `apps/web-pwa/src/lib/recipeService.ts` + routes — store, list/view UI (a recipe is edited on the page it is read on; there is no edit route)
 - `apps/web-pwa/src/routes/recipes/RecipeIdentityCard.svelte` — the card under
   the hero (description, fact pills, tags, phase strip, source link), lifted out
   of `RecipeViewPage.svelte` by #1324 so it could become editable in place. One

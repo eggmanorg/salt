@@ -27,6 +27,7 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { Recipe } from '@salt/domain';
@@ -35,6 +36,48 @@ import type { Page } from '@playwright/test';
 const ORIGINAL = 'Chorizo Variation Pilaf';
 const ORIGINAL_INGREDIENT = '200 g chorizo, sliced';
 const ORIGINAL_STEP = 'Fry the chorizo until the oil runs red.';
+const ORIGINAL_ID = 'chorizo-variation-pilaf';
+
+// The dish the variation starts from, bridge-seeded (NF-C4): issue #1319 Phase 8
+// deleted the editor and its routes, and this journey begins at the ⋮ menu. Its
+// stored shape is load-bearing — the last assertion compares the document field
+// for field against what it was before the variation was talked through.
+const ORIGINAL_RECIPE: Recipe = {
+  id: ORIGINAL_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: ORIGINAL,
+  description: null,
+  ingredients: [
+    {
+      id: `${ORIGINAL_ID}-g1`,
+      name: null,
+      items: [
+        {
+          id: `${ORIGINAL_ID}-i1`,
+          rawText: ORIGINAL_INGREDIENT,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [{ id: `${ORIGINAL_ID}-s1`, text: ORIGINAL_STEP, timer: null, note: null }],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
 
 // The variation the user asks for, and the chef's canned answer. Phrases a real
 // model would never produce verbatim, so their appearance can only be the stub.
@@ -101,7 +144,7 @@ test.describe('recipes — make a variation', () => {
   test('⋮ → Make a variation talks through a new dish and saves it, leaving the original alone', async ({
     page,
   }, testInfo) => {
-    // 120s: a seed save, a chat round-trip and a librarian round-trip through the
+    // 120s: a bridge seed, a chat round-trip and a librarian round-trip through the
     // emulator, each gated on its own signal-bound wait below.
     test.setTimeout(120_000);
     const email = uniqueEmail(testInfo.testId);
@@ -114,34 +157,22 @@ test.describe('recipes — make a variation', () => {
     await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
     await page.evaluate((p) => window.__e2e!.stubAi('parseRecipeIngredients', p), STUB_PARSE);
 
-    // ── Seed: the dish the variation starts from, created through the UI ───────
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill(ORIGINAL);
-
-    await page.getByTestId('recipe-add-group-btn').click();
-    // .nth(0) indexes the single group row THIS test just added — its own set.
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill(ORIGINAL_INGREDIENT);
-
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').nth(0).fill(ORIGINAL_STEP);
-
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // ── Seed: the dish the variation starts from ──────────────────────────────
+    await seedRecipe(page, ORIGINAL_RECIPE);
+    await page.goto(`/#/recipes/${ORIGINAL_ID}`);
+    // `recipe-view` is the arrival, and it is what makes the store read below
+    // safe: the page cannot render it until the seeded document is in the store.
+    // A URL assertion would be true the moment `goto` returned.
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
     const originalUrl = page.url();
-    const originalId = originalUrl.match(/#\/recipes\/([a-z0-9-]+)/)?.[1];
-    expect(originalId).toBeTruthy();
+    const originalId = ORIGINAL_ID;
     await expect(page.getByRole('heading', { name: ORIGINAL })).toBeVisible();
 
-    // The original exactly as it stands, for the byte-comparison at the end.
-    await expect
-      .poll(async () => (await getRecipes(page)).some((r) => r.id === originalId), {
-        timeout: SYNC_TIMEOUT,
-      })
-      .toBe(true);
+    // The original exactly as it stands, for the byte-comparison at the end. Read
+    // from the store rather than assumed to equal the fixture: `persistRecipe`
+    // stamps `updatedAt` and the attribution fields on the way through.
     const originalBefore = (await getRecipes(page)).find((r) => r.id === originalId)!;
+    expect(originalBefore).toBeTruthy();
 
     // ── ⋮ → Make a variation opens a NEW chat that knows the dish ──────────────
     await page.getByTestId('recipe-actions-overflow').click();

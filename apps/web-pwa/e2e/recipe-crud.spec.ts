@@ -2,20 +2,23 @@
  * Recipe manual CRUD E2E tests (issue #179, Phase 2).
  *
  * Runs against the Firestore + Auth emulators and exercises the full lifecycle
- * with no AI: create a recipe with two ingredient groups and several steps,
- * persist, reload, edit, and delete. This is the schema stress-test the phase is
- * designed around.
+ * with no AI: a recipe with two ingredient groups and several steps reaches the
+ * page, survives a reload, is edited in place, and is deleted. This is the schema
+ * stress-test the phase is designed around.
  *
  * The EDIT half moved onto the recipe's own page in issue #1319 Phase 7 — Edit is
  * an icon button in the action row and Done replaces it; there is no Save and no
- * route change. The CREATE half still authors through the retired editor, because
- * there is no by-hand path left for a recipe at all: this is the spec that has to
- * be re-cut onto the `seedRecipe` bridge plus the in-place editors when Phase 8
- * deletes the route, and it is left working rather than rewritten blind here.
+ * route change. Phase 8 then deleted the editor and its three routes, so the C of
+ * CRUD is no longer a journey a person can take by hand: the document is
+ * BRIDGE-SEEDED (NF-C4) and what this spec pins from there is unchanged — the
+ * two-group, two-step shape renders, round-trips through Firestore, and can be
+ * renamed and deleted.
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
+import type { Recipe } from '@salt/domain';
 
 // A phone, pinned explicitly (#696, Phase 4). The recipe page docks its chat column
 // from 700x480 up, and this spec inherits the project's 1280x720 desktop default —
@@ -23,76 +26,108 @@ import { SYNC_TIMEOUT } from './helpers/timeouts';
 // written for. Same numbers as `recipe-alternatives.spec.ts`.
 test.use({ viewport: { width: 393, height: 851 } });
 
+const RECIPE_ID = 'test-dahl';
+const LENTILS = '1 ½ cups red lentils, rinsed';
+const GHEE = '2 tbsp ghee';
+
+// The schema stress-test itself: two groups, one of them named, and two steps.
+// Stated as a document rather than typed into a form — the shape is what the
+// assertions below read back, and it is the same shape either way.
+const RECIPE: Recipe = {
+  id: RECIPE_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: 'Test Dahl',
+  description: null,
+  ingredients: [
+    {
+      id: `${RECIPE_ID}-g1`,
+      name: 'For the dahl',
+      items: [
+        {
+          id: `${RECIPE_ID}-i1`,
+          rawText: LENTILS,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+    {
+      id: `${RECIPE_ID}-g2`,
+      name: 'For the tarka',
+      items: [
+        {
+          id: `${RECIPE_ID}-i2`,
+          rawText: GHEE,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [
+    { id: `${RECIPE_ID}-s1`, text: 'Simmer the lentils until soft.', timer: null, note: null },
+    { id: `${RECIPE_ID}-s2`, text: 'Pour over the sizzling tarka.', timer: null, note: null },
+  ],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
+
 test.describe('recipes — manual CRUD', () => {
-  test('create with two groups + steps, reload, edit, delete', async ({ page }, testInfo) => {
+  test('two groups + steps render, reload, edit, delete', async ({ page }, testInfo) => {
     test.setTimeout(60_000);
     const email = uniqueEmail(testInfo.testId);
     // Recipes are gated to admins while the module is incomplete (#179).
     await gotoAndSignIn(page, email, '/', { admin: true });
 
-    // ── Create ─────────────────────────────────────────────────────────────
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
+    // ── Seed ───────────────────────────────────────────────────────────────
+    await seedRecipe(page, RECIPE);
+    await page.goto(`/#/recipes/${RECIPE_ID}`);
 
-    await page.getByTestId('recipe-title-input').fill('Test Dahl');
-
-    // First group: named "For the dahl" with one ingredient. The .nth(0) here
-    // indexes the group rows THIS test just created via add-group-btn (it added
-    // exactly one so far) — not a global/pre-existing ordering.
-    await page.getByTestId('recipe-add-group-btn').click();
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-group-name-input').fill('For the dahl');
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    // .nth(0) = the single ingredient row this test just added inside group0.
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill('1 ½ cups red lentils, rinsed');
-
-    // Second group: named "For the tarka". .nth(1) is the second group row this
-    // test created (it has now clicked add-group-btn twice) — its own set, not
-    // a global index.
-    await page.getByTestId('recipe-add-group-btn').click();
-    const group1 = page.getByTestId('recipe-group').nth(1);
-    await group1.getByTestId('recipe-group-name-input').fill('For the tarka');
-    await group1.getByTestId('recipe-add-ingredient-btn').click();
-    // .nth(0) = the single ingredient row this test just added inside group1.
-    await group1.getByTestId('recipe-ingredient-input').nth(0).fill('2 tbsp ghee');
-
-    // Two steps. Each .nth(N) indexes into the step rows this test is creating
-    // by clicking add-step-btn — .nth(0) is the first one it added, .nth(1) the
-    // second; both are the test's own self-created set.
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').nth(0).fill('Simmer the lentils until soft.');
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').nth(1).fill('Pour over the sizzling tarka.');
-
-    await page.getByTestId('recipe-save-btn').click();
-
-    // ── View page after save ─────────────────────────────────────────────────
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // ── The page renders the whole shape ─────────────────────────────────────
+    // `recipe-view` is the arrival: the page renders nothing under it until the
+    // seeded document has reached the store. The URL is not — it is whatever
+    // `goto` was handed, true before the write could possibly have landed.
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
     await expect(page.getByRole('heading', { name: 'Test Dahl' })).toBeVisible();
     await expect(page.getByTestId('recipe-view-group-name')).toContainText([
       'For the dahl',
       'For the tarka',
     ]);
-    // .nth(0) = the first rendered ingredient of the recipe this test just
-    // created and saved (group0's lentils) — indexing the test's own data, not
-    // a global ingredient ordering.
-    await expect(page.getByTestId('recipe-view-ingredient').nth(0)).toContainText(
-      '1 ½ cups red lentils, rinsed',
-    );
+    // .nth(0) = the first rendered ingredient of this test's own recipe (group
+    // one's lentils) — indexing the test's own data, not a global ordering.
+    await expect(page.getByTestId('recipe-view-ingredient').nth(0)).toContainText(LENTILS);
     await expect(page.getByTestId('recipe-view-step')).toHaveCount(2);
 
     const recipeUrl = page.url();
 
     // ── Reload → persisted ─────────────────────────────────────────────────
+    // The seed went through the real `persistRecipe` path and resolved before
+    // `seedRecipe` returned, so this reload is reading Firestore rather than
+    // racing a debounce — unlike one taken straight after an in-place Done, which
+    // is the race the note further down explains.
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Test Dahl' })).toBeVisible({
       timeout: SYNC_TIMEOUT,
     });
     // .nth(0) = the first ingredient of this test's own recipe, re-rendered from
     // Firestore after reload — still the test's self-created set, not a global index.
-    await expect(page.getByTestId('recipe-view-ingredient').nth(0)).toContainText(
-      '1 ½ cups red lentils, rinsed',
-    );
+    await expect(page.getByTestId('recipe-view-ingredient').nth(0)).toContainText(LENTILS);
 
     // ── Edit → change title, in place ─────────────────────────────────────────
     // Since issue #1319 editing happens on THIS page: an icon-only Edit button in

@@ -6,7 +6,8 @@ import { appendCacheBuster } from './appendCacheBuster.js';
 // This rule was written out at EIGHT sites in seven files: five private
 // `heroUrl` functions (`MealDayEditor`, `MealDayDetail`, `WeekShopSheet`,
 // `RecipeListPage`, `MinePage`) and three inline expressions (`RecipeViewPage`
-// twice, `RecipeEditPage`). They agreed, which is why nothing ever caught them —
+// twice, and the recipe editor retired in #1319). They agreed, which is why
+// nothing ever caught them —
 // but "eight copies that happen to agree" is a fact about today, and the nonce
 // precedence below is the kind of thing a well-meaning edit gets subtly wrong at
 // one site.

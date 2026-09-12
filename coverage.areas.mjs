@@ -417,7 +417,10 @@ export const coverageThresholds = {
   // three minute boxes in `RecipeEditPage.svelte`, one of which (the step timer's
   // duration) had no unit coverage at all before it, and the new
   // `MinutesField.svelte` arrives fully covered. Branches rose 1.02 points, past
-  // the 1.00 tolerance, which is what tripped CI.
+  // the 1.00 tolerance, which is what tripped CI. (#1319 Phase 8 deleted that
+  // suite with the page it mounted; the box's own contract is now pinned by
+  // `apps/web-pwa/tests/MinutesField.test.ts`, which drives the component
+  // directly.)
   // CEILING RAISED BY ONE in #1275, and only the branch ceiling. The skipped-stage
   // row on `BatchDetailPage.svelte` adds one text interpolation,
   // `Skipped {formatWhen(skip.at)}`, and Svelte's compiler emits an
@@ -498,11 +501,40 @@ export const coverageThresholds = {
   // card and restate seam gained `FormulaPage.yieldWins.test.ts`. Left unbanked,
   // that is coverage a later PR could delete and still land green. Every figure
   // below is pasted from the ratchet's own block on this branch.
+  // RE-PINNED in #1319 Phase 8, and this is the OPPOSITE of the dedup shape the
+  // header above warns about: all four numbers moved the good way at once —
+  // lines 82.79 → 83.87, branches 71.88 → 72.96, uncovered lines 1851 → 1724,
+  // uncovered branches 1812 → 1718. A dedup is a falling ratio with a flat
+  // uncovered count; this is a rising ratio with the count falling by 127 and 94.
+  //
+  // Two separate causes, and the direction of each is argued rather than assumed:
+  //
+  //   DELETING `RecipeEditPage.svelte` (1,476 lines) took more UNCOVERED lines
+  //   out of the denominator than covered ones. Its ten suites were thorough
+  //   about the fields they drove and silent about the rest of the page — the
+  //   save/toast/route plumbing, the kind and meal-return branches — so the file
+  //   sat below the area average and removing it raises the average. That is an
+  //   arithmetic fact about what was deleted, not coverage that was earned, and
+  //   banking it is not a claim that anything got better tested.
+  //
+  //   THE TESTS THIS PR ADDS are the part that was earned, and they are on code
+  //   that still runs: `handleRematch`'s write, its two failure toasts and the
+  //   marker clearing (`RecipeViewPage.matchMarkers.test.ts`), and the
+  //   `authorOptions` retention branches plus the placeholder tag hint
+  //   (`RecipeIdentityCard.test.ts`). Those branches were uncovered before.
+  //
+  // Banked rather than left as slack because 1.08 points is over the staleness
+  // tolerance, so the alternative is a window in which the new tests could be
+  // deleted and CI stay green. `apps/web-pwa/src/lib/**` moved the same way by a
+  // smaller amount (77.32 vs its 76.93 pin; uncovered lines 772 against a ceiling
+  // of 773, branches 591 against 596) when `parseIngredients` and
+  // `takeImportedDraft`'s optional-id arm went; it is inside tolerance, so the
+  // ratchet did not ask for it and it is left alone rather than retyped by hand.
   'apps/web-pwa/src/routes/**': {
-    lines: 82.79,
-    branches: 71.88,
-    uncoveredLines: 1851,
-    uncoveredBranches: 1812,
+    lines: 83.87,
+    branches: 72.96,
+    uncoveredLines: 1724,
+    uncoveredBranches: 1718,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

@@ -259,11 +259,12 @@
   }
 
   // Deliberately NOT the phase boxes' `phaseMinutesOrZero`: that one floors and
-  // clamps negatives and this one never has (issue #1221). Same arithmetic as the
-  // retired editor's `parseNumberOrNull(value) ?? 0`, so a step timer that
-  // accepted `-5` before still does — tying the two rules together is a
-  // behaviour change for another issue. Spelled out rather than imported because
-  // that helper is private to `RecipeEditPage.svelte`, which Phase 8 deletes.
+  // clamps negatives and this one never has (issue #1221). It is the arithmetic
+  // the retired editor's `parseNumberOrNull(value) ?? 0` performed, kept so a
+  // step timer that accepted `-5` before still does — tying the two rules
+  // together is a behaviour change for another issue. Spelled out here because
+  // the editor it came from is gone (#1319 Phase 8) and this is now its only
+  // home; a second caller is what would earn it a module.
   function stepTimerMinutes(value: string): number {
     const trimmed = value.trim();
     if (trimmed === '') return 0;

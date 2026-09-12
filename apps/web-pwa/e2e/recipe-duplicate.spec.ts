@@ -11,6 +11,9 @@
  * there is no unsaved-recipe surface left, so the cost is accepted and stated: a
  * copy you abandon is a document to delete.
  *
+ * The dish being duplicated is BRIDGE-SEEDED (NF-C4): Phase 8 deleted the editor's
+ * routes, and how the original came to exist was never what Duplicate promises.
+ *
  * Deliberately left on the project's 1280x720 desktop default rather than pinned
  * to a phone the way `recipe-crud.spec.ts` is: the point of #735 is that the ⋮
  * menu now exists at every width, and running here is what pins that. Nothing
@@ -19,46 +22,79 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
+import type { Recipe } from '@salt/domain';
 
 const ORIGINAL = 'Duplicate Source Stew';
 const COPY = `${ORIGINAL} (copy)`;
 const INGREDIENT = '2 tbsp olive oil';
 const STEP = 'Brown the beef in batches.';
+const ORIGINAL_ID = 'duplicate-source-stew';
+
+// One ingredient and one step, because what-carries is read off the COPY's page:
+// a document with nothing on it would let `duplicateRecipe` carry nothing and
+// still pass. Bridge-seeded (NF-C4) — issue #1319 Phase 8 deleted the editor.
+const ORIGINAL_RECIPE: Recipe = {
+  id: ORIGINAL_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: ORIGINAL,
+  description: null,
+  ingredients: [
+    {
+      id: `${ORIGINAL_ID}-g1`,
+      name: null,
+      items: [
+        {
+          id: `${ORIGINAL_ID}-i1`,
+          rawText: INGREDIENT,
+          parsed: null,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [{ id: `${ORIGINAL_ID}-s1`, text: STEP, timer: null, note: null }],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
 
 test.describe('recipes — duplicate', () => {
   test('⋮ → Duplicate writes the copy and lands on it, editing; doing it twice gives two', async ({
     page,
   }, testInfo) => {
-    // 90s: three full save round-trips through the emulator (the original, then two
-    // duplicates, each of which writes as it is made since issue #1319 Phase 7),
-    // each gated on its own signal-bound wait below.
+    // 90s: three full write round-trips through the emulator (the seeded original,
+    // then two duplicates, each of which writes as it is made since issue #1319
+    // Phase 7), each gated on its own signal-bound wait below.
     test.setTimeout(90_000);
     const email = uniqueEmail(testInfo.testId);
     // Recipes are gated to admins while the module is incomplete (#179).
     await gotoAndSignIn(page, email, '/', { admin: true });
 
-    // ── Seed: one recipe with an ingredient and a step, created through the UI ──
-    // Still the retired editor: there is no by-hand path left for a recipe, so this
-    // moves to the `seedRecipe` bridge when Phase 8 deletes the route.
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill(ORIGINAL);
-
-    await page.getByTestId('recipe-add-group-btn').click();
-    // .nth(0) indexes the single group row THIS test just added — its own set,
-    // not a global ordering.
-    const group0 = page.getByTestId('recipe-group').nth(0);
-    await group0.getByTestId('recipe-add-ingredient-btn').click();
-    await group0.getByTestId('recipe-ingredient-input').nth(0).fill(INGREDIENT);
-
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').nth(0).fill(STEP);
-
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // ── Seed: one recipe with an ingredient and a step ─────────────────────────
+    // Through the bridge, then opened. The heading is the arrival — a URL
+    // assertion here would match the hash `goto` was handed, before the seeded
+    // document could have reached the store, and `page.url()` read behind it
+    // would be the same string either way.
+    await seedRecipe(page, ORIGINAL_RECIPE);
+    await page.goto(`/#/recipes/${ORIGINAL_ID}`);
+    await expect(page.getByRole('heading', { name: ORIGINAL })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
     const originalUrl = page.url();
-    await expect(page.getByRole('heading', { name: ORIGINAL })).toBeVisible();
 
     // ── Duplicate → the copy's own page, already editing it ────────────────────
     await page.getByTestId('recipe-actions-overflow').click();

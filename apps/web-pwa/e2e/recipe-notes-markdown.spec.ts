@@ -16,12 +16,18 @@
  * CLOSED card instead — the same `<Markdown … breaks />`, reached by closing the
  * box rather than by toggling a mode.
  *
+ * The recipe the note hangs on is BRIDGE-SEEDED (NF-C4). Phase 8 deleted the
+ * editor's routes outright, so there is no by-hand path left to author one — and
+ * authoring was never this spec's subject, only the note is.
+ *
  * No AI and no second tab: single-tab local state plus the coalesced write, so
  * SYNC_TIMEOUT is the only budget needed.
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
+import type { Recipe } from '@salt/domain';
 
 // A phone, pinned explicitly — same reason as `recipe-crud.spec.ts`: the recipe
 // view page docks its chat column from 700x480 up, and the notes assertions here
@@ -30,6 +36,33 @@ import { SYNC_TIMEOUT } from './helpers/timeouts';
 test.use({ viewport: { width: 393, height: 851 } });
 
 const NOTE = 'watch the **salt**\nghee not *butter*\n- rest it for ten minutes';
+
+const RECIPE_ID = 'notes-formatting-test';
+
+// A recipe with nothing on it but a name — the note is what this spec writes, so
+// everything else is deliberately empty. Bridge-seeded (NF-C4): there is no
+// by-hand path left for a recipe since issue #1319 Phase 8 deleted the editor,
+// and authoring one was never what this spec was about.
+const RECIPE: Recipe = {
+  id: RECIPE_ID,
+  schemaVersion: 1,
+  kind: 'recipe',
+  title: 'Notes Formatting Test',
+  description: null,
+  ingredients: [],
+  steps: [],
+  metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+  source: null,
+  notes: null,
+  producesCanonId: null,
+  componentRecipeIds: [],
+  kit: [],
+  image: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  createdBy: '',
+  lastEditedBy: '',
+};
 
 test.describe('recipes — notes formatting toolbar and rendering', () => {
   test('toolbar formats the selection, the closed card renders it, and the stored string stays plain', async ({
@@ -41,15 +74,12 @@ test.describe('recipes — notes formatting toolbar and rendering', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
 
     // ── Seed a recipe to hang a note on ──────────────────────────────────────
-    // Still the retired editor: there is no by-hand path left for a recipe, so this
-    // moves to the `seedRecipe` bridge when Phase 8 deletes the route. Nothing
-    // below touches the editor again.
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: /new recipe/i })).toBeVisible();
-    await page.getByTestId('recipe-title-input').fill('Notes Formatting Test');
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-    const recipeUrl = page.url();
+    // Through the bridge, then opened. `recipe-view` is the arrival signal: the
+    // page renders nothing under it until the seeded document has reached the
+    // store, whereas the URL is whatever `goto` was given the moment it returned.
+    await seedRecipe(page, RECIPE);
+    await page.goto(`/#/recipes/${RECIPE_ID}`);
+    await expect(page.getByTestId('recipe-view')).toBeVisible({ timeout: SYNC_TIMEOUT });
 
     // ── Open the note where it is read ───────────────────────────────────────
     // A recipe with no note shows nothing at all until the page is editing, and
@@ -134,7 +164,7 @@ test.describe('recipes — notes formatting toolbar and rendering', () => {
     // If this coverage gap is worth closing, it wants a settled-flush signal to
     // reload behind, not a bare `page.reload()`.
     await page.getByTestId('recipe-done-button').click();
-    await page.goto(`/#${recipeUrl.split('#')[1]}`);
+    await page.goto(`/#/recipes/${RECIPE_ID}`);
     await expect(
       page.getByRole('listitem').filter({ hasText: 'rest it for ten minutes' }),
     ).toHaveCount(1, { timeout: SYNC_TIMEOUT });

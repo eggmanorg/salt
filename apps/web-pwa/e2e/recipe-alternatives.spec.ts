@@ -18,10 +18,43 @@
  */
 import { expect, test } from './fixtures/test';
 import { gotoAndSignIn, uniqueEmail } from './helpers/auth';
+import { seedRecipe } from './helpers/seed';
 import { SYNC_TIMEOUT } from './helpers/timeouts';
+import type { Recipe, RecipeKind } from '@salt/domain';
 
 const OUTING_TITLE = 'Takeaway — Indian';
 const RECIPE_TITLE = 'Reference Recipe';
+const RECIPE_ID = 'alternatives-reference-recipe';
+const SEEDED_OUTING_ID = 'alternatives-planned-outing';
+
+// A title and a kind, which is the whole of what these two tests need seeded: one
+// is a foil to be distinguished FROM, the other is the entry the planner offers.
+// Bridge-seeded (NF-C4) since issue #1319 Phase 8 deleted the editor's routes —
+// including `/recipes/new/outing`, the one an outing used to be typed into. What
+// these assertions are about is the section a kind lands on and the day it fills,
+// not how it was written.
+function entry(id: string, title: string, kind: RecipeKind): Recipe {
+  return {
+    id,
+    schemaVersion: 1,
+    kind,
+    title,
+    description: null,
+    ingredients: [],
+    steps: [],
+    metadata: { servings: null, phases: [], timingSummary: null, tags: [] },
+    source: null,
+    notes: null,
+    producesCanonId: null,
+    componentRecipeIds: [],
+    kit: [],
+    image: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: '',
+    lastEditedBy: '',
+  };
+}
 
 // A phone, pinned explicitly (#663, Phase 2). The second test below plans a night
 // through the day's BOTTOM SHEET, and from 700x480 up the planner shows that same
@@ -42,18 +75,10 @@ test.describe('recipes — when you CBA', () => {
     await gotoAndSignIn(page, email, '/', { admin: true });
 
     // ── A recipe to be distinguished FROM ────────────────────────────────────
-    // Still authored through the retired editor, and the original rationale no
-    // longer holds: since issue #1319 Phase 6 the outing below is created from the
-    // New SHEET, so the two entries no longer take an identical path. There is no
-    // by-hand path left for a RECIPE, which is the point of that phase — so this
-    // seeding has to move to the `seedRecipe` bridge when Phase 8 deletes the
-    // route. It is left here rather than changed blind, because what these
-    // assertions are about is the section a kind lands on, not how it was written.
-    await page.goto('/#/recipes/new');
-    await expect(page.getByRole('heading', { name: 'New recipe' })).toBeVisible();
-    await page.getByLabel('Title').fill(RECIPE_TITLE);
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
+    // Bridge-seeded. The outing below is still CREATED, through the New sheet,
+    // because that half is the journey under test; this one is only the foil the
+    // section filter has to keep separate from it.
+    await seedRecipe(page, entry(RECIPE_ID, RECIPE_TITLE, 'recipe'));
 
     // ── Create the outing from the New menu ──────────────────────────────────
     // Since issue #1319 Phase 6 this is a SHEET, not a page: a name and a
@@ -135,22 +160,21 @@ test.describe('recipes — when you CBA', () => {
     page,
   }, testInfo) => {
     // Single-tab and no AI/trigger wait, but two separate document round-trips
-    // (the recipe create, then the meal-plan week) plus a route change — the same
+    // (the seeded outing, then the meal-plan week) plus a route change — the same
     // budget the planner spec runs on, not the 60 s create-only tier (NF-F2).
     test.setTimeout(90_000);
     const email = uniqueEmail(testInfo.testId);
     await gotoAndSignIn(page, email, '/', { admin: true });
 
-    // ── Seed the outing through the editor ───────────────────────────────────
-    // Authored, not bridge-seeded: the point is that the thing a user creates in
-    // Phase 3 is the thing the planner offers in Phase 4.
-    await page.goto('/#/recipes/new/outing');
-    await expect(page.getByRole('heading', { name: 'New — When you CBA' })).toBeVisible();
-    await page.getByLabel('Title').fill(OUTING_TITLE);
-    await page.getByTestId('recipe-save-btn').click();
-    await expect(page).toHaveURL(/#\/recipes\/(?!new)[a-z0-9-]+$/, { timeout: SYNC_TIMEOUT });
-    const outingId = new URL(page.url()).hash.split('/').pop()!;
-    expect(outingId).toBeTruthy();
+    // ── Seed the outing ──────────────────────────────────────────────────────
+    // Bridge-seeded. It was authored through `/#/recipes/new/outing` so that the
+    // thing a user creates in Phase 3 was demonstrably the thing the planner
+    // offers in Phase 4 — but that route is gone (issue #1319 Phase 8), and the
+    // creation half is now pinned by the test above and by
+    // `recipe-new-sheet.spec.ts`. What is left here is the planner's side of it:
+    // an entry of kind `outing` is offered, fills a day, and asks for no shopping.
+    const outingId = SEEDED_OUTING_ID;
+    await seedRecipe(page, entry(outingId, OUTING_TITLE, 'outing'));
 
     // ── Anchor on a real day of the current week ─────────────────────────────
     await page.goto('/#/mealplan');

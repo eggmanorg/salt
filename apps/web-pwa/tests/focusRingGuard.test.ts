@@ -57,10 +57,8 @@ const files = sourceFiles(SRC).map((path) => ({
  */
 const OUTLINE_NONE_ALLOWED = new Set([
   'routes/chat/ChatThread.svelte',
-  'routes/recipes/RecipeEditPage.svelte',
   // The tag box (issue #1324): a bare `<input>` sharing a frame with the tag
-  // chips, and that frame carries `salt-focus-ring-within`. Same shape as the
-  // retired editor's, which is the entry above.
+  // chips, and that frame carries `salt-focus-ring-within`.
   'routes/recipes/RecipeIdentityCard.svelte',
   'routes/recipes/CookModePage.svelte',
   'routes/recipes/GuidedCookPage.svelte',
