@@ -1,27 +1,30 @@
 /**
- * Building a meal out of NEW dishes (issue #752, Phase 3).
+ * Building a meal out of dishes (issue #752 Phase 3; rewritten for issue #1319
+ * Phase 7).
  *
- * A meal is an ordinary `recipes/{id}` carrying `componentRecipeIds`. Phase 1 let
- * you attach dishes that already exist; Phase 3 lets you make one that doesn't —
- * from the meal, by any of the four routes into a recipe — and have it come back
- * attached.
+ * A meal is an ordinary `recipes/{id}` carrying `componentRecipeIds`. What this
+ * spec drives is the AI-free way a dish joins one, end to end in a real browser.
  *
- * This spec drives the BY-HAND route end to end, and only that one. The other
- * three (import a link, photograph a page, chat one up) end in exactly the same
- * place — an editor at `/recipes/{id}/edit?meal=…`, or the chat page's save — and
- * differ only in what makes the recipe, which is an AI call each. Their landing
- * is covered by unit tests; what needs a real browser is the round trip itself.
+ * WHAT CHANGED, AND WHY THE JOURNEY IT USED TO DRIVE IS GONE. It used to take the
+ * BY-HAND route: the meal's New menu -> Manual -> the editor at
+ * `/recipes/new?meal=<id>` -> save -> back on the meal with the dish attached. Two
+ * halves of that no longer exist. Hand-authoring a recipe was retired with the
+ * editor (#1319 Phase 6), so there is no Manual entry to press; and for the two
+ * IMPORT routes the attach no longer waits for a save at all — their callable has
+ * already persisted the dish, so it is attached the moment the dialog hands it
+ * back and nothing needs to ride the URL. `?meal=` survives for exactly one path,
+ * chat, whose dish does not exist until the conversation produces one.
  *
- * What the round trip actually rests on is the QUERYSTRING: the meal's id lives
- * in the URL and nowhere else, so the assertions below check the address bar at
- * each hop as deliberately as they check the outcome. A reload in the middle is
- * part of the journey for the same reason — module state would not survive it,
- * and that is the class of bug this phase exists to avoid.
+ * So the journey here is the one that is both AI-free and still real: adding a dish
+ * to a meal THROUGH THE MEAL'S OWN PAGE, in place, with the page's own picker
+ * (#1319 Phase 3). Plus the negative that the old route is genuinely closed rather
+ * than merely unused. The import-path attach is pinned by
+ * `RecipeViewPage.mealComponents.test.ts`, which drives the URL-import dialog to
+ * completion — a browser cannot, because that path fetches a real page.
  *
- * The meal and its first dish are bridge-seeded (NF-C4): authoring them through
- * the editor is two round trips plus the "Made from" picker before the thing
- * under test begins, and none of that is what this journey is about. No AI stub
- * is needed — nothing here calls a flow, and the `onRecipeWritten` hero trigger
+ * Both dishes are bridge-seeded (NF-C4): authoring them is two round trips before
+ * the thing under test begins, and their only job is to be pickable. No AI stub is
+ * needed — nothing here calls a flow, and the `onRecipeWritten` hero trigger
  * short-circuits under `FUNCTIONS_AI_FAKE` regardless.
  */
 import type { Page } from '@playwright/test';
@@ -38,6 +41,7 @@ test.use({ viewport: { width: 393, height: 851 } });
 
 const MEAL_ID = 'meal-roast';
 const CHICKEN_ID = 'meal-chicken';
+const GRAVY_ID = 'meal-gravy';
 const NEW_DISH = 'Onion gravy';
 
 function recipe(id: string, title: string, componentRecipeIds: string[] = []): Recipe {
@@ -74,12 +78,12 @@ function readComponents(page: Page): Promise<string[]> {
   }, MEAL_ID);
 }
 
-test.describe('meals — a dish written for the meal comes back attached', () => {
-  test('by hand: from the meal, into the editor, and back onto the meal', async ({
+test.describe('meals — a dish joins a meal on the meal’s own page', () => {
+  test('in place: the picker attaches it, twice is once, and the old by-hand route is gone', async ({
     page,
   }, testInfo) => {
-    // Two seeded recipes, one authored, one whole-document write on top — the
-    // create-and-edit tier (NF-F2), not the trigger/AI one.
+    // Three bridge-seeded writes plus one in-place attach — the create-and-edit
+    // tier (NF-F2), not the trigger/AI one.
     test.setTimeout(60_000);
     const email = uniqueEmail(testInfo.testId);
     // Recipes are gated to admins while the module is incomplete (#179).
@@ -89,6 +93,7 @@ test.describe('meals — a dish written for the meal comes back attached', () =>
     // component is what makes the "Made from" card — and so the New menu inside
     // it — exist at all; a recipe with nothing attached is not a meal yet.
     await seedRecipe(page, recipe(CHICKEN_ID, 'Roast chicken'));
+    await seedRecipe(page, recipe(GRAVY_ID, NEW_DISH));
     await seedRecipe(page, recipe(MEAL_ID, 'Sunday roast', [CHICKEN_ID]));
 
     await page.goto(`/#/recipes/${MEAL_ID}`);
@@ -97,32 +102,32 @@ test.describe('meals — a dish written for the meal comes back attached', () =>
     });
     await expect(page.getByTestId('recipe-component-card')).toHaveCount(1);
 
-    // ── From the meal, start a dish by hand ──────────────────────────────────
+    // ── The by-hand route is genuinely closed ────────────────────────────────
     // The menu and its items are action affordances with no stable accessible
     // name of their own (NF-B2), so they are reached by testid.
+    //
+    // POSITIVES FIRST (PR #1340 review, should-fix 5): this menu is a lazily
+    // mounted bits-ui `PopoverContent`, so a `toHaveCount(0)` negative asserted as
+    // the FIRST thing after the trigger click can pass on its very first poll
+    // simply because nothing has mounted yet — a regression that brought back
+    // "Manual" need not turn it red. The three `toBeVisible()` waits establish
+    // that the menu has actually opened before the negative is asked to mean
+    // anything.
     await page.getByTestId('meal-component-new-btn').click();
-    await page.getByTestId('meal-component-new-manual').click();
+    // The three ways a recipe actually arrives are all still offered here.
+    await expect(page.getByTestId('meal-component-new-import')).toBeVisible();
+    await expect(page.getByTestId('meal-component-new-import-photo')).toBeVisible();
+    await expect(page.getByTestId('meal-component-new-chat')).toBeVisible();
+    await expect(page.getByTestId('meal-component-new-manual')).toHaveCount(0);
+    await page.keyboard.press('Escape');
 
-    // THE mechanism: the meal rides the URL. Nothing else knows where this
-    // editor came from, which is exactly why the next step can reload.
-    await expect(page).toHaveURL(new RegExp(`#/recipes/new\\?meal=${MEAL_ID}$`));
-
-    // ── Reload mid-flow: the return target survives ──────────────────────────
-    // The point of the phase in one line. A module-level stash would be gone by
-    // the time the editor came back.
-    await page.reload();
-    await expect(page.getByTestId('recipe-title-input')).toBeVisible({ timeout: SYNC_TIMEOUT });
-    await expect(page).toHaveURL(new RegExp(`#/recipes/new\\?meal=${MEAL_ID}$`));
-
-    // ── Write it and save ────────────────────────────────────────────────────
-    await page.getByTestId('recipe-title-input').fill(NEW_DISH);
-    await page.getByTestId('recipe-add-step-btn').click();
-    await page.getByTestId('recipe-step-input').fill('Soften the onions, then thicken.');
-    await page.getByTestId('recipe-save-btn').click();
-
-    // ── Back on the meal, with the new dish attached ─────────────────────────
-    await expect(page).toHaveURL(new RegExp(`#/recipes/${MEAL_ID}$`), { timeout: SYNC_TIMEOUT });
-    await expect(page.getByRole('heading', { name: 'Sunday roast' })).toBeVisible();
+    // ── Add a dish where the dishes are read ─────────────────────────────────
+    await page.getByTestId('recipe-edit-mode-button').click();
+    await page.getByTestId('recipe-edit-components').click();
+    await page.getByTestId('recipe-edit-component-picker').click();
+    const option = page.getByRole('option', { name: NEW_DISH });
+    await expect(option).toBeVisible({ timeout: SYNC_TIMEOUT });
+    await option.click();
 
     // The attach is a whole-document write settling asynchronously, so poll the
     // store (NF-A3/NF-D3). The chicken keeps its place — attaching adds, it never
@@ -130,6 +135,27 @@ test.describe('meals — a dish written for the meal comes back attached', () =>
     await expect.poll(() => readComponents(page), { timeout: SYNC_TIMEOUT }).toHaveLength(2);
     const components = await readComponents(page);
     expect(components).toContain(CHICKEN_ID);
+    expect(components).toContain(GRAVY_ID);
+
+    // ── Adding the same dish twice attaches it once ──────────────────────────
+    // The picker drops what is already attached, so the second tap is not there to
+    // be made — which is the honest place that outcome is enforced.
+    //
+    // REOPENED rather than asserted against what `addComponent` left on screen
+    // (PR #1340 review, blocking 3): `addComponent` bumps `pickerKey` first thing,
+    // remounting the `{#key}`-wrapped Combobox, which CLOSES the listbox — so an
+    // assertion made immediately after the click sees zero `option` nodes
+    // regardless of what the filter does, and passes even with the filter
+    // deleted. Reopening first is what `RecipeMadeFromCard.test.ts` ("drops an
+    // attached dish out of the picker...") and `RecipeNewSheet.test.ts` ("drops a
+    // chosen dish out of the picker...") both do for the same claim; this mirrors
+    // them so the assertion can actually go red.
+    await page.getByTestId('recipe-edit-component-picker').click();
+    await expect(page.getByRole('option', { name: NEW_DISH })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    await page.getByTestId('recipe-edit-components-done').click();
+    await page.getByTestId('recipe-done-button').click();
 
     // …and the card the user actually sees.
     await expect(page.getByTestId('recipe-component-card')).toHaveCount(2);

@@ -108,6 +108,11 @@ vi.mock('../src/lib/clipboardImage.js', () => ({
   imageFromClipboardData: vi.fn(),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
+  // Issue #1319 Phase 7: the page claims an import's stashed draft so a
+  // just-imported recipe paints before the Firestore listener delivers it, and
+  // it owns the meal attach the retired editor's save used to make.
+  takeImportedDraft: vi.fn().mockReturnValue(null),
+  attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   recipes: mockRecipes,
   isLoadingRecipes: mockIsLoading,
   removeRecipe: vi.fn(),
@@ -129,9 +134,15 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { persistRecipe, queueRecipeEdit, flushRecipeWrites } from '../src/lib/recipeService.js';
+import {
+  persistRecipe,
+  queueRecipeEdit,
+  flushRecipeWrites,
+  takeImportedDraft,
+} from '../src/lib/recipeService.js';
 import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
 import { addToast } from '../src/lib/toastStore.js';
+import { clearEditOnArrival, requestEditOnArrival } from '../src/routes/recipes/editOnArrival.js';
 
 const RECIPE_ID = 'recipe-1';
 
@@ -179,6 +190,9 @@ beforeEach(() => {
   mockCanonItems._set([]);
   mockIsLoading._set(false);
   mockRecipes._set([]);
+  // `vi.clearAllMocks` drops the factory's return value too, so restore the
+  // default: nothing stashed, which is every test in this file but the import ones.
+  vi.mocked(takeImportedDraft).mockReturnValue(null);
 });
 
 function renderPage() {
@@ -894,5 +908,135 @@ describe('RecipeViewPage — an in-place reword discards a stale guided-plan not
 
     await waitFor(() => expect(queueRecipeEdit).toHaveBeenCalled());
     expect(discardGuidedPlan).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Landing already editing (issue #1319 Phase 6) ────────────────────────────
+// The New sheet writes an entry and drops you on its own page in edit mode, which
+// it asks for through `editOnArrival.ts`. The page's id-keyed reset effect sets
+// `editing` false on EVERY arrival including the first, so the request has to be
+// consumed after that reset — these cases are what pins the ordering, since
+// consuming it before would leave the page in read mode with the request spent.
+describe('RecipeViewPage — arriving in edit mode', () => {
+  beforeEach(() => {
+    clearEditOnArrival();
+  });
+
+  it('opens in read mode when nobody asked for edit mode', () => {
+    mockRecipes._set([makeRecipe()]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    expect(getByTestId('recipe-edit-mode-button')).toBeTruthy();
+    expect(queryByTestId('recipe-done-button')).toBeNull();
+  });
+
+  it('opens in edit mode when the New sheet asked for it', () => {
+    requestEditOnArrival(RECIPE_ID);
+    mockRecipes._set([makeRecipe()]);
+    const { getByTestId, queryByTestId } = renderPage();
+
+    // Done, not Edit: the cluster is the one the mode owns.
+    expect(getByTestId('recipe-done-button')).toBeTruthy();
+    expect(queryByTestId('recipe-edit-mode-button')).toBeNull();
+  });
+
+  it('ignores a request made for a different entry', () => {
+    requestEditOnArrival('some-other-recipe');
+    mockRecipes._set([makeRecipe()]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('recipe-done-button')).toBeNull();
+  });
+
+  it('does not re-enter edit mode on a later "Made from" tap — the request is spent', async () => {
+    requestEditOnArrival(RECIPE_ID);
+    const other = makeRecipe({ id: 'recipe-2', title: 'Other' });
+    mockRecipes._set([makeRecipe(), other]);
+    const { getByTestId, queryByTestId, rerender } = render(RecipeViewPage, {
+      props: { params: { id: RECIPE_ID } },
+    });
+    expect(getByTestId('recipe-done-button')).toBeTruthy();
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    expect(queryByTestId('recipe-done-button')).toBeNull();
+  });
+});
+
+// ─── An import lands ahead of the listener (issue #1319 Phase 7) ──────────────
+// The URL importer, the photo importer and the share target all open
+// `/recipes/{id}` for a recipe their callable persisted on the SERVER. The
+// Firestore listener can be a beat behind that, and this page derives its recipe
+// from the store — so without the stash it would read "Recipe not found." for the
+// document the server wrote a second ago. `stashImportedDraft` keeps the job it
+// always had; the page it paints is what moved.
+describe('RecipeViewPage — a just-imported recipe', () => {
+  it('paints the stashed draft when the store has not caught up', () => {
+    vi.mocked(takeImportedDraft).mockReturnValue(makeRecipe({ title: 'Just Imported' }));
+    mockRecipes._set([]);
+    const { getByTestId, getByRole } = renderPage();
+
+    expect(getByTestId('recipe-view')).toBeTruthy();
+    expect(getByRole('heading', { name: 'Just Imported' })).toBeTruthy();
+  });
+
+  it('asks for the stash by THIS id, so another recipe cannot swallow it', () => {
+    vi.mocked(takeImportedDraft).mockReturnValue(null);
+    mockRecipes._set([]);
+    renderPage();
+
+    expect(takeImportedDraft).toHaveBeenCalledWith(RECIPE_ID);
+  });
+
+  it('is a fallback, never an override — the store wins once it has the document', async () => {
+    // The stash is a snapshot of what the server wrote; the store is what every
+    // write composes against. A page that kept drawing the stash would let an edit
+    // be composed off a copy that had stopped being current.
+    vi.mocked(takeImportedDraft).mockReturnValue(makeRecipe({ title: 'Just Imported' }));
+    mockRecipes._set([]);
+    const { getByRole } = renderPage();
+    expect(getByRole('heading', { name: 'Just Imported' })).toBeTruthy();
+
+    mockRecipes._set([makeRecipe({ title: 'Renamed by the trigger' })]);
+
+    await waitFor(() =>
+      expect(getByRole('heading', { name: 'Renamed by the trigger' })).toBeTruthy(),
+    );
+  });
+
+  it('claims the stash once per recipe, not once per render', async () => {
+    // The claim is keyed on the id, so a re-render that does not change it — a
+    // querystring-only navigation, a store update — must not ask again. Asking
+    // twice is how a single-use stash gets consumed by the render that did not
+    // need it.
+    vi.mocked(takeImportedDraft).mockReturnValue(makeRecipe({ title: 'Just Imported' }));
+    mockRecipes._set([]);
+    const { getByRole, rerender } = renderPage();
+    expect(takeImportedDraft).toHaveBeenCalledTimes(1);
+
+    await rerender({ params: { id: RECIPE_ID } });
+
+    expect(takeImportedDraft).toHaveBeenCalledTimes(1);
+    expect(getByRole('heading', { name: 'Just Imported' })).toBeTruthy();
+  });
+
+  it('still says so when there is no recipe and nothing was stashed', () => {
+    vi.mocked(takeImportedDraft).mockReturnValue(null);
+    mockRecipes._set([]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('recipe-view')).toBeNull();
+  });
+
+  it('ignores a stash for a different recipe rather than painting the wrong dish', () => {
+    // `takeImportedDraft` is id-matched itself, but the page must not trust that
+    // blindly: a draft whose id is not the one on screen is not this page's.
+    vi.mocked(takeImportedDraft).mockReturnValue(
+      makeRecipe({ id: 'someone-else', title: 'Other' }),
+    );
+    mockRecipes._set([]);
+    const { queryByTestId } = renderPage();
+
+    expect(queryByTestId('recipe-view')).toBeNull();
   });
 });

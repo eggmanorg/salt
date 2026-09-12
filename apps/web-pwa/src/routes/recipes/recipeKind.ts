@@ -202,6 +202,80 @@ export const KIND_SECTIONS: readonly RecipeKind[] = ['recipe', 'outing', 'cockta
 // the kind-level list it always was; the list page reads PRIMARY_LIST_SECTIONS.
 export const PRIMARY_KIND_SECTIONS: readonly RecipeKind[] = ['recipe', 'cocktail'];
 
+// ─── The New menu's hand-written entries (issue #1319 Phase 6) ────────────────
+// What you can still START BY HAND, now that a recipe arrives by URL, by photo or
+// by chat and the editor is gone. Three entries, and this list is the whole of
+// their existence: the New menu used to derive them from `KIND_SECTIONS.slice(1)`,
+// which made "which kinds exist" and "which kinds you type out by hand" the same
+// question. They are not. `KIND_SECTIONS` stays exactly what it was — the
+// creatable-kinds vocabulary, read by nothing on the New menu any more.
+//
+// `meal` is on this list and is NOT a kind (see MEAL_SECTION above): its `kind` is
+// an ordinary `recipe`, and what makes it a meal is the dish the sheet refuses to
+// write it without. So `sectionOf` still derives Meals from `hasComponents` and no
+// empty meal can be minted — which is how this honours #752's objection rather
+// than overruling it.
+export type NewEntryMode = 'outing' | 'meal' | 'placeholder';
+
+interface NewEntryCopy {
+  // The kind STORED on the document the sheet writes.
+  //
+  // THE FIELD-SET BOUNDARY LIVES HERE, NOT ONLY IN RecipeNewSheet.svelte
+  // (CLAUDE.md Rule 12 — PR #1340 review, should-fix 6): the sheet asks
+  // `takesComponents(entry.kind)` to decide between a dish picker and a
+  // description box, and today that partitions these three entries exactly,
+  // because only `meal`'s `kind` (`'recipe'`) takes components. This record's
+  // type does not enforce that — `kind` is typed as plain `RecipeKind`, so a
+  // fourth entry here whose kind ALSO takes components (e.g. `kind: 'cocktail'`)
+  // compiles clean and silently produces a sheet that demands a dish and offers
+  // no description box, with no test to catch it. Adding such an entry needs its
+  // own answer for the description question rather than inheriting this one —
+  // read `RecipeNewSheet.svelte`'s header before adding a fourth entry here.
+  readonly kind: RecipeKind;
+  // The New-menu item, and the sheet's own heading.
+  readonly menuLabel: string;
+  readonly sheetTitle: string;
+  readonly namePlaceholder: string;
+  readonly menuIcon: IconProps['name'];
+}
+
+// A RECORD, not an array, so the sheet's lookup cannot miss — a `find` over a list
+// returns `undefined` for a mode the union already rules out, which is a branch no
+// test can reach. The menu's order is the separate list below.
+export const NEW_ENTRY_COPY: Record<NewEntryMode, NewEntryCopy> = {
+  outing: {
+    kind: 'outing',
+    // Both labels come from `KIND_COPY` rather than being retyped: the menu and
+    // the section must not be able to disagree about what this shelf is called.
+    menuLabel: KIND_COPY.outing.label,
+    sheetTitle: KIND_COPY.outing.label,
+    namePlaceholder: 'e.g. Curry from the place on the corner',
+    menuIcon: KIND_COPY.outing.menuIcon,
+  },
+  meal: {
+    // The one entry whose words are its own. `SECTION_COPY[MEAL_SECTION].label`
+    // is the plural shelf name ("Meals") and reads wrong in a New menu, where
+    // every item names the single thing you are about to make.
+    kind: 'recipe',
+    menuLabel: 'A meal',
+    sheetTitle: 'A meal',
+    namePlaceholder: 'e.g. Sunday roast',
+    menuIcon: SECTION_COPY[MEAL_SECTION].thumbIcon,
+  },
+  placeholder: {
+    kind: 'placeholder',
+    menuLabel: KIND_COPY.placeholder.label,
+    sheetTitle: KIND_COPY.placeholder.label,
+    namePlaceholder: 'e.g. Something warm and slow',
+    menuIcon: KIND_COPY.placeholder.menuIcon,
+  },
+};
+
+// New-menu order, after the three import entries. "When you CBA" leads because it
+// is the one with real production use (eight entries, the newest made on
+// 4 September); a placeholder is normally written by the planner rather than here.
+export const NEW_ENTRY_ORDER: readonly NewEntryMode[] = ['outing', 'meal', 'placeholder'];
+
 // The shelves the list page offers, in chip order. Meals sits second, straight
 // after Recipes, because it is a way of browsing dinner rather than an aside.
 //

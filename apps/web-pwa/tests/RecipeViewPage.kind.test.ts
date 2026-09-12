@@ -125,6 +125,11 @@ vi.mock('../src/lib/clipboardImage.js', () => ({
   imageFromClipboardData: vi.fn(),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
+  // Issue #1319 Phase 7: the page claims an import's stashed draft so a
+  // just-imported recipe paints before the Firestore listener delivers it, and
+  // it owns the meal attach the retired editor's save used to make.
+  takeImportedDraft: vi.fn().mockReturnValue(null),
+  attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   recipes: mockRecipes,
   isLoadingRecipes: mockIsLoading,
   removeRecipe: vi.fn(),
@@ -146,6 +151,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
 import { push } from 'svelte-spa-router';
 import { createChatSession } from '../src/lib/chatService.js';
 import { persistRecipe, stashImportedDraft } from '../src/lib/recipeService.js';
+import { addToast } from '../src/lib/toastStore.js';
+import { clearEditOnArrival, takeEditOnArrival } from '../src/routes/recipes/editOnArrival.js';
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 
 const RECIPE_ID = 'entry-1';
@@ -224,6 +231,9 @@ beforeEach(() => {
   // Same three-state store, same reason (issue #812): loaded, and there is no
   // formula. Nearly every recipe in Salt is this.
   mockFormula._set(null);
+  // Module state, so it has to be cleared explicitly or a duplicate in one test
+  // leaves the next page opening in edit mode (issue #1319 Phase 7).
+  clearEditOnArrival();
 });
 
 const RECIPE_UPDATED_AT = '2026-08-01T09:00:00.000Z';
@@ -249,13 +259,15 @@ function renderPage() {
 
 // The ⋮ menu's contents only exist in the DOM once it is open (bits-ui renders
 // PopoverContent lazily), so it has to be opened before it can be asserted on.
-// Edit is unconditional, which makes it the reliable signal that the menu is
-// actually mounted — an assertion about what is MISSING would otherwise pass
-// against a menu that never opened. Since #735 this is the ONLY surface the
-// demoted actions have, at any width.
+// DELETE is the unconditional item, which makes it the reliable signal that the
+// menu is actually mounted — an assertion about what is MISSING would otherwise
+// pass against a menu that never opened. It used to be Edit; issue #1319 Phase 7
+// removed that item, because editing is the icon button in the action row, on the
+// page it edits. Since #735 this menu is the ONLY surface the demoted actions
+// have, at any width.
 async function openOverflowMenu(): Promise<void> {
   await fireEvent.click(screen.getByTestId('recipe-actions-overflow'));
-  await waitFor(() => expect(screen.getByTestId('recipe-edit-menu-item')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByTestId('recipe-delete-menu-item')).toBeInTheDocument());
 }
 
 // The ⋮ menu read top to bottom: each item by its test id, each divider as
@@ -264,7 +276,7 @@ async function openOverflowMenu(): Promise<void> {
 // against the flat list this replaced, or against a menu whose dividers had
 // drifted a row (issue #784).
 function overflowMenuLayout(): string[] {
-  const menu = screen.getByTestId('recipe-edit-menu-item').parentElement;
+  const menu = screen.getByTestId('recipe-delete-menu-item').parentElement;
   expect(menu).not.toBeNull();
   return [...menu!.children].map((el) =>
     el.getAttribute('role') === 'separator'
@@ -347,7 +359,6 @@ describe('RecipeViewPage — a recipe keeps everything', () => {
       'recipe-make-variation-menu-item',
       'recipe-duplicate-menu-item',
       'separator',
-      'recipe-edit-menu-item',
       'recipe-delete-menu-item',
     ]);
   });
@@ -478,14 +489,16 @@ describe('RecipeViewPage — an outing offers only what applies', () => {
     expect(screen.queryByText('Serves 4')).toBeNull();
   });
 
-  it('keeps Duplicate, Edit and Delete, so the ⋮ menu never opens onto nothing', async () => {
+  it('keeps Duplicate and Delete, so the ⋮ menu never opens onto nothing', async () => {
     renderPage();
 
     expect(screen.getByTestId('recipe-actions-overflow')).toBeInTheDocument();
 
     await openOverflowMenu();
     // Unconditional for every kind: what an entry IS never decides whether it can
-    // be copied, edited or deleted.
+    // be copied or deleted. Edit left this menu in issue #1319 Phase 7 — it is the
+    // icon button in the action row, on the page it edits — so these two are what
+    // keep the menu from opening onto nothing.
     expect(screen.getByTestId('recipe-duplicate-menu-item')).toBeInTheDocument();
     expect(screen.getByTestId('recipe-delete-menu-item')).toBeInTheDocument();
   });
@@ -500,7 +513,6 @@ describe('RecipeViewPage — an outing offers only what applies', () => {
     expect(overflowMenuLayout()).toEqual([
       'recipe-duplicate-menu-item',
       'separator',
-      'recipe-edit-menu-item',
       'recipe-delete-menu-item',
     ]);
   });
@@ -552,20 +564,103 @@ describe('RecipeViewPage — duplicate', () => {
     await fireEvent.click(screen.getByTestId('recipe-duplicate-menu-item'));
   }
 
-  it('stashes an unsaved copy and opens the editor — nothing is persisted', async () => {
+  /** The copy as the one `persistRecipe` call composed it. */
+  function copy(): Recipe {
+    return vi.mocked(persistRecipe).mock.calls[0]![0];
+  }
+
+  // Issue #1319 Phase 7 changed this deliberately. #735 could promise "nothing is
+  // written" because the copy was an unsaved draft the editor painted; with the
+  // editor retired there is no surface in this app that edits a document which does
+  // not exist, so Duplicate writes first and lands you on what it made, editing it.
+  it('writes the copy and lands on it in edit mode', async () => {
     mockRecipes._set([makeEntry()]);
     renderPage();
 
     await duplicate();
 
-    expect(vi.mocked(stashImportedDraft)).toHaveBeenCalledTimes(1);
-    const draft = vi.mocked(stashImportedDraft).mock.calls[0]![0];
-    expect(draft.title).toBe('Test Recipe (copy)');
-    expect(draft.id).not.toBe(RECIPE_ID);
-    expect(draft.steps).toEqual(makeEntry().steps);
-    expect(push).toHaveBeenCalledWith('/recipes/new');
-    // The copy is a draft, not a document: no write of any kind on the way out.
-    expect(persistRecipe).not.toHaveBeenCalled();
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+    expect(copy().title).toBe('Test Recipe (copy)');
+    expect(copy().id).not.toBe(RECIPE_ID);
+    expect(copy().steps).toEqual(makeEntry().steps);
+    expect(push).toHaveBeenCalledWith(`/recipes/${copy().id}`);
+    // Never the retired editor, and never the old bare create route.
+    expect(push).not.toHaveBeenCalledWith('/recipes/new');
+    // No stash: `persistRecipe` applies the copy to the store synchronously, so the
+    // page it lands on already has the document. The stash is only for the imports,
+    // whose write happened on the server.
+    expect(stashImportedDraft).not.toHaveBeenCalled();
+  });
+
+  it('asks the page it lands on to open in edit mode', async () => {
+    mockRecipes._set([makeEntry()]);
+    renderPage();
+
+    await duplicate();
+
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+    // The request is what makes "lands on the duplicate's own page, EDITING it"
+    // true rather than merely intended; consuming it here proves it was made for
+    // this exact id.
+    expect(takeEditOnArrival(copy().id)).toBe(true);
+  });
+
+  it('writes one copy however fast the item is pressed twice', async () => {
+    // Without the busy guard a double tap is two documents, and the second is
+    // indistinguishable from the first — there is no Save step left to catch it.
+    let settle: (v: { kind: 'ok'; value: undefined }) => void = () => {};
+    vi.mocked(persistRecipe).mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    mockRecipes._set([makeEntry()]);
+    renderPage();
+
+    await duplicate();
+    await duplicate();
+
+    expect(persistRecipe).toHaveBeenCalledTimes(1);
+    settle({ kind: 'ok', value: undefined });
+  });
+
+  // PR #1340 review, blocking 2: offline, or a dropped connection, is ordinary
+  // here — this app's whole offline story is Firestore's `persistentLocalCache`
+  // — and a `setDoc` simply does not resolve while it holds. `/recipes/:id` is
+  // one route that reuses THIS component instance across every recipe the user
+  // walks to (`RecipeViewPage.reviewFlag.test.ts` pins the same reuse for
+  // `editing`), so without a reset tied to arrival, a duplicate that never
+  // settles leaves Duplicate silently dead for the rest of the visit — not just
+  // on the recipe it was pressed on.
+  it('is usable again on a different recipe, even if a duplicate never settled', async () => {
+    vi.mocked(persistRecipe).mockReturnValueOnce(new Promise(() => {}));
+    const other = makeEntry({ id: 'recipe-2', title: 'Other Recipe' });
+    mockRecipes._set([makeEntry(), other]);
+    const { rerender } = renderPage();
+
+    await duplicate();
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+
+    await rerender({ params: { id: 'recipe-2' } });
+
+    // Still `duplicateBusy` and Duplicate would be dead for the rest of the
+    // component's life without the reset.
+    await duplicate();
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(2));
+  });
+
+  it('goes nowhere and says so when the write fails (Rule 10)', async () => {
+    vi.mocked(persistRecipe).mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'unavailable' },
+    });
+    mockRecipes._set([makeEntry()]);
+    renderPage();
+
+    await duplicate();
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.any(String), 'destructive'));
+    expect(push).not.toHaveBeenCalledWith(expect.stringMatching(/^\/recipes\/(?!recipe-1$)/));
   });
 
   it.each(['recipe', 'outing', 'cocktail', 'placeholder'] as const)(
@@ -576,7 +671,8 @@ describe('RecipeViewPage — duplicate', () => {
 
       await duplicate();
 
-      expect(vi.mocked(stashImportedDraft).mock.calls[0]![0].kind).toBe(kind);
+      await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+      expect(copy().kind).toBe(kind);
     },
   );
 });
@@ -715,7 +811,6 @@ describe('RecipeViewPage — bread scaling is gated on the formula, never the ki
       'recipe-make-variation-menu-item',
       'recipe-duplicate-menu-item',
       'separator',
-      'recipe-edit-menu-item',
       'recipe-delete-menu-item',
     ]);
   });
@@ -739,7 +834,6 @@ describe('RecipeViewPage — bread scaling is gated on the formula, never the ki
       'separator',
       'recipe-duplicate-menu-item',
       'separator',
-      'recipe-edit-menu-item',
       'recipe-delete-menu-item',
     ]);
   });

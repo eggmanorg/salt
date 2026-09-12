@@ -52,6 +52,8 @@
     queueRecipeEdit,
     flushRecipeWrites,
     stashImportedDraft,
+    takeImportedDraft,
+    attachComponentToMeal,
     regenerateRecipeImage,
     redoRecipeKit,
     reviseRecipeSceneBrief,
@@ -72,6 +74,7 @@
   import RecipeMethodRail from './RecipeMethodRail.svelte';
   import RecipeIngredientsPanel from './RecipeIngredientsPanel.svelte';
   import { dropBlankRows } from './blankRows.js';
+  import { requestEditOnArrival, takeEditOnArrival } from './editOnArrival.js';
   import RecipeChatList from './RecipeChatList.svelte';
   import RecipeChatDrawer from './RecipeChatDrawer.svelte';
   import { chatsForRecipe } from './recipeChats.js';
@@ -144,7 +147,39 @@
   }
   let { params }: Props = $props();
 
-  const recipe = $derived($recipes.find((r) => r.id === params.id) ?? null);
+  // A recipe an import stashed on its way here (issue #1319 Phase 7). Until this
+  // phase the importers painted the EDITOR off this stash, because their callable
+  // persists the recipe server-side (#616) and the Firestore listener may not have
+  // delivered it yet — arriving a round trip ahead of the snapshot would otherwise
+  // read "Recipe not found." for the document the server wrote a second ago. The
+  // page the stash paints has moved; the reason it exists has not, which is the
+  // answer to whether `stashImportedDraft` still has a job.
+  //
+  // Claimed in an `$effect.pre` keyed on the id, which covers BOTH ways an import
+  // can land with one call site: a fresh mount (an import from the list page, or
+  // the share target) and a same-route id change (an import started from a meal,
+  // which only moves `params.id` on the instance already showing the meal).
+  // `$effect.pre` rather than `$effect` because it runs before the DOM is updated,
+  // including on mount — a plain effect would paint "Recipe not found." for one
+  // frame first. Id-matched and single-use (`takeImportedDraft`), so a stale stash
+  // can never bleed into another recipe's page.
+  //
+  // It is a FALLBACK and never an override: the store wins the moment it has the
+  // document, so an edit made here is never composed off a copy that has stopped
+  // being current.
+  let importedFallback = $state<Recipe | null>(null);
+  let lastFallbackId: string | undefined;
+  $effect.pre(() => {
+    const id = params.id;
+    if (id === lastFallbackId) return;
+    lastFallbackId = id;
+    importedFallback = takeImportedDraft(id);
+  });
+
+  const recipe = $derived(
+    $recipes.find((r) => r.id === params.id) ??
+      (importedFallback?.id === params.id ? importedFallback : null),
+  );
 
   // What this entry can do (issue #637). Everything that gates a section or an
   // action on this page reads one of these two — never the kind itself. Both are
@@ -203,45 +238,69 @@
   const showComponents = $derived(recipe !== null && hasComponents(recipe));
 
   // ─── Adding another dish to this meal (issue #752, Phase 3) ─────────────────
-  // All four ways of making a recipe, offered FROM the meal: import a link,
-  // photograph a page, chat one up, or write it out. Each carries this meal's id
-  // in the URL it navigates to (`?meal=<id>`, see lib/mealReturn.ts), and the
-  // save at the far end attaches what it produced and comes back here.
+  // THREE ways of making a recipe, offered FROM the meal — see below for why not
+  // four, and for why only one of the three still carries `?meal=<id>` (PR #1340
+  // review, should-fix 7: this paragraph used to state the pre-Phase-7 contract,
+  // "all four ways" and "the save at the far end attaches and comes back here",
+  // directly contradicting the corrected paragraph ten lines below it).
   //
   // Gated on `showComponents` with the card, deliberately: this surface adds
   // ANOTHER dish to something that is already a meal. Turning an ordinary recipe
-  // into one in the first place stays in the editor's "Made from" picker, where
-  // Phase 1 put it.
+  // into one in the first place has no home on this page — see the note on
+  // `showComponents` above.
   //
-  // It lives on the VIEW page and not the editor for two reasons: leaving the
-  // editor mid-flow would silently bin an unsaved draft of the meal, and "land
-  // back on the meal" means this page — so the round trip starts and ends in the
-  // same place.
+  // THREE ways, not four, since issue #1319 Phase 7: "Manual" is gone with
+  // hand-authoring. A dish for a meal is a recipe like any other, and a recipe now
+  // arrives by URL, by photo or by chat — so offering a typed one here would be the
+  // door Phase 6 closed, reopened on one screen.
   let componentMenuOpen = $state(false);
   let showComponentUrlImport = $state(false);
   let showComponentPhotoImport = $state(false);
 
   // Both imports are already PERSISTED by their callable (issue #616), flagged
-  // unreviewed, so the hand-off is exactly the list page's: stash the draft so
-  // the editor paints without waiting for the Firestore listener, then open that
-  // recipe's editor — carrying the meal, which is the only difference.
-  function openComponentEditor(imported: Recipe, method: 'url' | 'photo'): void {
+  // unreviewed. So the dish EXISTS the moment the dialog hands it back, and that is
+  // where the attach now happens (issue #1319 Phase 7): the editor's save used to
+  // be the attach's trigger, read off `?meal=`, and there is no save left to hang
+  // it on. Attaching at creation is strictly earlier and strictly simpler — the
+  // meal id never has to survive a navigation for these two paths, so they stop
+  // carrying `?meal=` at all. The CHAT path still carries it, because its dish is
+  // not written until the conversation produces one (ChatSessionPage, untouched).
+  //
+  // Still idempotent, and still the domain's answer rather than a flag here:
+  // `attachComponentToMeal` builds the new list with `insertComponentByElapsedTime`,
+  // which refuses a duplicate — so importing the same page twice attaches once.
+  //
+  // Standing requirement 2: this writes the MEAL document through `persistRecipe`,
+  // whose guarded `recipeWrites.cancel` arbitrates a coalesced edit already pending
+  // on that same meal. Nothing here reaches around it. It is the same write
+  // `RecipeMadeFromCard`'s own picker makes.
+  //
+  // Where it LANDS changed with it: the new dish, not back here. The banner that
+  // says nobody has checked the AI's work lives on the dish's own page, and that
+  // page is now where it is checked and fixed (Phases 1-5). The meal already has
+  // it, so there is nothing left to come back for.
+  //
+  // The `recipe === null` guard below is a type narrowing, not a reachable state:
+  // the dialogs that call this are mounted inside `{#if showComponents}`, which is
+  // false whenever `recipe` is null. It is one uncovered branch and it is named
+  // here rather than dressed up with a test that fakes the state.
+  async function handleComponentImported(imported: Recipe, method: 'url' | 'photo'): Promise<void> {
     if (recipe === null) return;
     trackUsageEvent('recipe.created', {
       recipe_id: imported.id,
       recipe_kind: imported.kind,
       recipe_method: method,
     });
-    stashImportedDraft(imported);
     showComponentUrlImport = false;
     showComponentPhotoImport = false;
-    // If navigation itself fails, surface it rather than silently closing: the
-    // recipe exists either way, so the user isn't stranded. Same as the list page.
-    try {
-      push(withMealParam(`/recipes/${imported.id}/edit`, recipe.id));
-    } catch {
-      addToast('Could not open the editor — please try again.', 'destructive');
+    const attached = await attachComponentToMeal(recipe.id, imported.id);
+    // Rule 10. The dish is already saved on the server, so a failed attach must
+    // not strand it — say what happened and still go to it.
+    if (attached.kind !== 'ok') {
+      addToast('Saved the dish, but could not add it to this meal.', 'destructive');
     }
+    stashImportedDraft(imported);
+    push(`/recipes/${imported.id}`);
   }
 
   function startComponent(path: string): void {
@@ -725,6 +784,18 @@
     lastRecipeId = id;
     editing = false;
     titleDraft = '';
+    // A duplicate that never settled (offline, dropped connection) must not stay
+    // dead for every recipe visited after it — see `duplicateBusy`'s own comment
+    // above. This is the "arrival" boundary for a component that persists across
+    // navigations, same role this effect already plays for `editing`.
+    duplicateBusy = false;
+    // ...unless this arrival is the New sheet dropping you on an entry it just
+    // wrote (issue #1319 Phase 6). The reset above runs on EVERY arrival including
+    // the first, so the request has to be consumed after it rather than before —
+    // and it goes through `startEditing` rather than a bare `editing = true` so
+    // there is still exactly one way into the mode. One-shot and id-matched: see
+    // `editOnArrival.ts`.
+    if (takeEditOnArrival(id)) startEditing();
   });
 
   // The prune's THIRD door: leaving the page outright (Back, a nav tap, or the
@@ -1022,16 +1093,70 @@
     await handleNewChat();
   }
 
-  // "Duplicate" in the ⋮ menu (issue #735). Nothing is written: the copy is
-  // stashed as an unsaved draft and the editor picks it up, so backing out costs
-  // no document and no hero-image generation. `duplicateRecipe` owns the whole
-  // what-carries policy — do not reset fields here. The stash is the SAME
-  // single-use seam URL and photo import already use; there is deliberately no
-  // second draft-passing mechanism, no query param and no store.
-  function handleDuplicate(): void {
-    if (!recipe) return;
-    stashImportedDraft(duplicateRecipe(recipe, crypto.randomUUID(), new Date().toISOString()));
-    push('/recipes/new');
+  // "Duplicate" in the ⋮ menu (issue #735). `duplicateRecipe` owns the whole
+  // what-carries policy — do not reset fields here.
+  //
+  // IT NOW WRITES, and that is a deliberate change of behaviour rather than a
+  // mechanical one (issue #1319 Phase 7). Until this phase the copy was stashed as
+  // an unsaved draft for the editor to paint, so #735 could promise that backing
+  // out cost no document and no hero-image generation. With the editor gone there
+  // is nowhere for an unsaved recipe to live: every surface in this app edits a
+  // document that exists. So Duplicate joins the New sheet in writing first and
+  // landing you on what it made, in edit mode — and the cost #735 avoided is real
+  // and accepted: a copy you immediately abandon is a document to delete, and
+  // `duplicateRecipe` drops `image`, so the onRecipeWritten trigger will give it a
+  // hero of its own. `docs/recipe-module.md` -> "Duplicating a recipe" records it.
+  //
+  // No stash: `persistRecipe` applies the copy to the store SYNCHRONOUSLY
+  // (`applyRecipeOptimistically`), so the page it lands on already has the
+  // document. The stash is only needed where the write happened on the SERVER —
+  // the two imports — which is why it survives for them and not for this.
+  //
+  // RESET ON ARRIVAL, not only on success (PR #1340 review, blocking 2): a
+  // `setDoc` does not resolve while the client is offline — this app's whole
+  // offline story is Firestore's `persistentLocalCache`, so that is ordinary, not
+  // exotic — and `/recipes/:id` is one route that reuses THIS component instance
+  // across every recipe the user walks to (see the id-keyed `$effect` below).
+  // Without a reset tied to arrival, a duplicate that never settles latches
+  // `duplicateBusy` true for the rest of this instance's life: Duplicate goes
+  // silently dead on every recipe visited from here on, with no toast and no
+  // spinner, and the only recovery is leaving the route entirely (a fresh mount).
+  // The New sheet resets its own `busy` on the same kind of boundary — reopening,
+  // for a component that persists across opens — and this is that reasoning
+  // applied to a component that persists across navigations instead. Reset
+  // happens in the id-keyed `$effect`, right beside `editing`'s own reset, rather
+  // than in a `finally` here, for the same reason the sheet's comment gives: a
+  // `finally` only ever fires on the write settling, which is exactly the case
+  // that leaves nothing to reset.
+  let duplicateBusy = $state(false);
+
+  //
+  // `!recipe` is the same kind of narrowing as `handleComponentImported`'s: the ⋮
+  // menu this is reached from only renders with a recipe loaded, so that arm is one
+  // uncovered branch and is named rather than faked. `duplicateBusy` is NOT — a
+  // double tap is two documents without it, and `writes one copy however fast the
+  // item is pressed twice` pins that.
+  async function handleDuplicate(): Promise<void> {
+    if (!recipe || duplicateBusy) return;
+    duplicateBusy = true;
+    const copy = duplicateRecipe(recipe, crypto.randomUUID(), new Date().toISOString());
+    const result = await persistRecipe(copy);
+    duplicateBusy = false;
+    // Rule 10. "NOTHING LANDED" IS NOT TRUE OF THE STORE (CLAUDE.md Rule 12 —
+    // PR #1340 review, should-fix 4, the same root cause as blocking finding 1 on
+    // `RecipeNewSheet`): `persistRecipe` already ran `applyRecipeOptimistically`
+    // above, so the copy is sitting in `$recipes` under `copy.id` whether or not
+    // the write below it ever reaches Firestore. What is true, and the boundary
+    // this comment actually means: no Firestore document exists, so there is
+    // nowhere for a next visit — or another device — to find it; the phantom row
+    // is tab-local and vanishes on reload. Saying so and staying put is still the
+    // right call, because there is no server copy to navigate the user to.
+    if (result.kind !== 'ok') {
+      addToast('Could not duplicate that recipe.', 'destructive');
+      return;
+    }
+    requestEditOnArrival(copy.id);
+    push(`/recipes/${copy.id}`);
   }
 
   // "Make a variation" in the ⋮ menu (issue #763). Opens a NEW chat that holds
@@ -2071,23 +2196,18 @@
               icon="Copy"
               onclick={() => {
                 overflowMenuOpen = false;
-                handleDuplicate();
+                void handleDuplicate();
               }}
+              disabled={duplicateBusy}
               data-testid="recipe-duplicate-menu-item"
             >
               Duplicate
             </PopoverMenuItem>
             <Divider class="my-1" />
-            <PopoverMenuItem
-              icon="Pencil"
-              onclick={() => {
-                overflowMenuOpen = false;
-                push(`/recipes/${recipe.id}/edit`);
-              }}
-              data-testid="recipe-edit-menu-item"
-            >
-              Edit
-            </PopoverMenuItem>
+            <!-- No Edit item (issue #1319 Phase 7). Editing is the icon button in
+                 the action row above, on the page it edits; an item here would be
+                 a second way in, nine items down a hidden list next to Delete,
+                 which is the thing this issue set out to remove. -->
             <PopoverMenuItem
               variant="destructive"
               icon="Trash2"
@@ -2289,11 +2409,14 @@
         {#if showComponents}
           <RecipeMadeFromCard {recipe} {components} {editing} onEdit={handleInlineEdit}>
             {#snippet newMenu()}
-              <!-- The same four ways in the recipe list's New menu offers, in the
-                   same order and the same idiom — a dish for a meal is made
-                   exactly like any other dish. Each entry only says where to
-                   start; `startComponent` is what pins the meal to the URL so
-                   the far end knows where to come back to. -->
+              <!-- The three ways a recipe arrives, in the recipe list's own order
+                   and idiom — a dish for a meal is made exactly like any other
+                   dish, which is why "Manual" left this menu with issue #1319
+                   Phase 6's removal of hand-authoring rather than surviving here.
+                   The two imports attach the dish as they create it
+                   (`handleComponentImported`) and carry no meal id at all. Chat is
+                   the one path whose dish does not exist yet, so it is the one
+                   `startComponent` still pins the meal to the URL for. -->
               <Popover bind:open={componentMenuOpen}>
                 <PopoverTrigger>
                   {#snippet children()}
@@ -2336,13 +2459,6 @@
                     data-testid="meal-component-new-chat"
                   >
                     Chat with AI
-                  </PopoverMenuItem>
-                  <PopoverMenuItem
-                    icon="Pencil"
-                    onclick={() => startComponent('/recipes/new')}
-                    data-testid="meal-component-new-manual"
-                  >
-                    Manual
                   </PopoverMenuItem>
                 </PopoverContent>
               </Popover>
@@ -2691,11 +2807,11 @@
 {#if showComponents}
   <RecipeImportUrlDialog
     bind:open={showComponentUrlImport}
-    onImported={(imported) => openComponentEditor(imported, 'url')}
+    onImported={(imported) => void handleComponentImported(imported, 'url')}
   />
   <RecipeImportPhotoDialog
     bind:open={showComponentPhotoImport}
-    onImported={(imported) => openComponentEditor(imported, 'photo')}
+    onImported={(imported) => void handleComponentImported(imported, 'photo')}
   />
 {/if}
 

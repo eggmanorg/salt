@@ -28,17 +28,19 @@
   import { phaseMinutes } from './recipeTiming.js';
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
   import {
-    KIND_COPY,
-    KIND_SECTIONS,
     LIST_SECTIONS,
+    NEW_ENTRY_COPY,
+    NEW_ENTRY_ORDER,
     PRIMARY_LIST_SECTIONS,
     SECTION_COPY,
     sectionOf,
     sectionTakesIngredients,
     type ListSection,
+    type NewEntryMode,
   } from './recipeKind.js';
   import RecipeImportPhotoDialog from './RecipeImportPhotoDialog.svelte';
   import RecipeImportUrlDialog from './RecipeImportUrlDialog.svelte';
+  import RecipeNewSheet from './RecipeNewSheet.svelte';
 
   function ingredientCount(recipe: Recipe): number {
     return recipe.ingredients.reduce((n, g) => n + g.items.length, 0);
@@ -319,11 +321,15 @@
 
   function handleUrlImported(recipe: Recipe): void {
     // The callable already persisted the recipe (issue #616), flagged as not yet
-    // reviewed — so this routes into the EXISTING recipe's editor, not
-    // /recipes/new. The draft is still stashed so the editor paints immediately
-    // instead of waiting for the Firestore listener to deliver a doc the server
-    // just wrote. If navigation itself fails, surface it rather than silently
-    // closing the form: the recipe exists either way, so the user isn't stranded.
+    // reviewed — so this opens the EXISTING recipe, and since issue #1319 Phase 7
+    // it opens the recipe's own PAGE rather than an editor. That page is where the
+    // "not checked yet" banner lives and where everything is editable in place, so
+    // checking the AI's work no longer means a different screen from reading it.
+    // The draft is still stashed, for the same reason it always was: the document
+    // was written on the SERVER, so the Firestore listener may not have delivered
+    // it yet and the page would otherwise read "Recipe not found." for a second.
+    // If navigation itself fails, surface it rather than silently closing the
+    // form: the recipe exists either way, so the user isn't stranded.
     trackUsageEvent('recipe.created', {
       recipe_id: recipe.id,
       recipe_kind: recipe.kind,
@@ -331,10 +337,10 @@
     });
     stashImportedDraft(recipe);
     try {
-      push(`/recipes/${recipe.id}/edit`);
+      push(`/recipes/${recipe.id}`);
       showImport = false;
     } catch {
-      addToast('Could not open the editor — please try again.', 'destructive');
+      addToast('Could not open the recipe — please try again.', 'destructive');
     }
   }
 
@@ -344,11 +350,23 @@
   // back the persisted draft and we do exactly what the URL path does with one.
   let showPhotoImport = $state(false);
 
+  // ─── The things that cannot be imported (issue #1319 Phase 6) ────────────────
+  // One sheet, three entries. This page owns only the way in; the fields, the
+  // validation and the write all live in RecipeNewSheet, exactly as they do for the
+  // two import dialogs above. `newEntryMode` is never null — the sheet always has
+  // an entry to describe — so opening it is two assignments and no loading state.
+  let showNewEntry = $state(false);
+  let newEntryMode = $state<NewEntryMode>('outing');
+
+  function openNewEntry(mode: NewEntryMode): void {
+    newMenuOpen = false;
+    newEntryMode = mode;
+    showNewEntry = true;
+  }
+
   function handlePhotoImported(recipe: Recipe): void {
-    // Same hand-off as the URL path (issue #616): the callable has ALREADY
-    // persisted the recipe flagged as not yet reviewed, so this routes into that
-    // recipe's editor rather than /recipes/new. The draft is stashed so the
-    // editor paints immediately instead of waiting for the Firestore listener.
+    // Same hand-off as the URL path above, including where it lands since issue
+    // #1319 Phase 7: the recipe's own page, stash and all.
     trackUsageEvent('recipe.created', {
       recipe_id: recipe.id,
       recipe_kind: recipe.kind,
@@ -356,10 +374,10 @@
     });
     stashImportedDraft(recipe);
     try {
-      push(`/recipes/${recipe.id}/edit`);
+      push(`/recipes/${recipe.id}`);
       showPhotoImport = false;
     } catch {
-      addToast('Could not open the editor — please try again.', 'destructive');
+      addToast('Could not open the recipe — please try again.', 'destructive');
     }
   }
 </script>
@@ -417,33 +435,23 @@
         >
           Chat with AI
         </PopoverMenuItem>
-        <PopoverMenuItem
-          icon="Pencil"
-          onclick={() => {
-            newMenuOpen = false;
-            push('/recipes/new');
-          }}
-          data-testid="recipe-new-manual"
-        >
-          Manual
-        </PopoverMenuItem>
-        <!-- One entry per non-recipe section (issue #637) — "When you CBA", then
-             Cocktails. Derived from KIND_SECTIONS rather than written out per kind
-             so a section and its way in can never disagree about which kinds
-             exist. `recipe` is sliced off because its entry is the "Manual" button
-             above, which routes to the bare /recipes/new an e2e spec pins.
-             The kind is set by the route and never again — there is no selector in
-             the editor, because an outing does not become a recipe. -->
-        {#each KIND_SECTIONS.slice(1) as kind (kind)}
+        <!-- The three things that cannot arrive by URL, by photo or by chat
+             (issue #1319 Phase 6). There is no longer a Manual entry and no
+             Cocktails entry: a cocktail comes in the same three ways a recipe does
+             and the model already classifies a drink as one, so typing one out by
+             hand would be a fourth door to the same shelf.
+             Driven by NEW_ENTRY_ORDER — the sheet's own list — and NOT by
+             KIND_SECTIONS, which this menu used to derive from. "Which kinds
+             exist" and "which entries you write by hand" stopped being the same
+             question the moment a meal joined the menu and manual recipes left
+             it. -->
+        {#each NEW_ENTRY_ORDER as mode (mode)}
           <PopoverMenuItem
-            icon={KIND_COPY[kind].menuIcon}
-            onclick={() => {
-              newMenuOpen = false;
-              push(`/recipes/new/${kind}`);
-            }}
-            data-testid="recipe-new-{kind}"
+            icon={NEW_ENTRY_COPY[mode].menuIcon}
+            onclick={() => openNewEntry(mode)}
+            data-testid="recipe-new-{mode}"
           >
-            {KIND_COPY[kind].label}
+            {NEW_ENTRY_COPY[mode].menuLabel}
           </PopoverMenuItem>
         {/each}
       </PopoverContent>
@@ -453,9 +461,10 @@
   {#snippet empty()}
     <EmptyState title="No recipes yet.">
       {#snippet actions()}
-        <!-- The inner wrapper stays: EmptyState's own actions row is
-             `flex items-center gap-2` and does not wrap, and three buttons do
-             not fit a phone on one line. -->
+        <!-- The inner wrapper stays even though issue #1319 took the third button
+             away: EmptyState's own actions row is `flex items-center gap-2` and
+             does not wrap, and "Import from URL" + "Import from photo" are already
+             wider than a narrow phone on one line. -->
         <div class="flex flex-wrap justify-center gap-2">
           <Button
             variant="outline"
@@ -478,7 +487,11 @@
             {#snippet leading()}<Icon name="Camera" size={16} />{/snippet}
             Import from photo
           </Button>
-          <Button size="sm" onclick={() => push('/recipes/new')}>Create your first recipe</Button>
+          <!-- "Create your first recipe" is gone with hand-authoring (issue
+               #1319): an empty library is exactly where someone stands holding a
+               cookbook or a phone, and the two doors that actually work are the
+               two offered. The New menu above still holds everything else,
+               including the three entries that cannot be imported. -->
         </div>
       {/snippet}
     </EmptyState>
@@ -816,3 +829,6 @@
   onImported={handleUrlImported}
 />
 <RecipeImportPhotoDialog bind:open={showPhotoImport} onImported={handlePhotoImported} />
+<!-- One sheet for all three hand-written entries, mounted once: the mode decides
+     which fields it asks for, so three menu items cannot drift into three forms. -->
+<RecipeNewSheet bind:open={showNewEntry} mode={newEntryMode} />

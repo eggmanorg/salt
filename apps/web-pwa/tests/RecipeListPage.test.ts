@@ -73,6 +73,9 @@ vi.mock('../src/lib/recipeService.js', () => ({
   isSignedOutFailure: vi.fn((outcome: { kind: string }) => outcome.kind === 'AuthError'),
   stashPendingImportUrl: vi.fn(),
   takePendingImportUrl: vi.fn(() => null),
+  // The New sheet's write (issue #1319 Phase 6). It is mounted by this page, so
+  // its import has to be in this factory even for the tests that never open it.
+  persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 
 // Only the cropper is swapped out of @salt/ui-components: jsdom has no canvas,
@@ -648,7 +651,11 @@ describe('RecipeListPage — sections', () => {
     expect(card.textContent).not.toContain('0');
   });
 
-  it('routes the New menu straight to the outing editor', async () => {
+  // Since issue #1319 Phase 6 this opens the New SHEET rather than routing to an
+  // editor page: the entry is written from the sheet and you land on its own page
+  // already editing it. The fields and the write are `RecipeNewSheet.test.ts`'s;
+  // what belongs here is that the menu item reaches the sheet at all.
+  it('opens the New sheet for an outing rather than routing to an editor', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     seed([APPLE]);
@@ -657,7 +664,9 @@ describe('RecipeListPage — sections', () => {
     await user.click(screen.getByTestId('recipe-new-btn'));
     await user.click(screen.getByTestId('recipe-new-outing'));
 
-    expect(push).toHaveBeenCalledWith('/recipes/new/outing');
+    expect(await screen.findByTestId('recipe-new-name')).toBeInTheDocument();
+    expect(screen.getByText('When you CBA')).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
   });
 
   // ─── Cocktails (Phase 5) ───────────────────────────────────────────────────
@@ -699,16 +708,19 @@ describe('RecipeListPage — sections', () => {
     expect(screen.getByTestId('recipe-list-item').textContent).toContain('3');
   });
 
-  it('routes the New menu straight to the cocktail editor', async () => {
+  // Issue #1319 Phase 6 took the Cocktails entry off the New menu: a drink arrives
+  // by URL, by photo or by chat exactly as a recipe does, and the model already
+  // classifies it as a cocktail on the way in, so a hand-typed one was a fourth
+  // door to the same shelf. The CHIP and the section are untouched — the two tests
+  // above this one still pin them.
+  it('offers no way to type a cocktail from scratch', async () => {
     const user = userEvent.setup();
-    const { push } = await import('svelte-spa-router');
     seed([APPLE]);
     render(RecipeListPage);
 
     await user.click(screen.getByTestId('recipe-new-btn'));
-    await user.click(screen.getByTestId('recipe-new-cocktail'));
 
-    expect(push).toHaveBeenCalledWith('/recipes/new/cocktail');
+    expect(screen.queryByTestId('recipe-new-cocktail')).toBeNull();
   });
 
   // ─── Meals (issue #752) ────────────────────────────────────────────────────
@@ -770,19 +782,45 @@ describe('RecipeListPage — sections', () => {
     expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('0 meals');
   });
 
-  it('offers no way to create a meal — a recipe BECOMES one', async () => {
+  // Issue #1319 Phase 6 reverses the "no New meal entry" half of #752 and honours
+  // the reason behind it: the sheet will not write a meal without a dish, so the
+  // document IS a meal the instant it exists and there is still no way to mint an
+  // empty one. `sectionOf` is untouched — Meals is still derived from
+  // `hasComponents` and is still not a kind.
+  it('offers a way to start a meal, which the sheet will not write without a dish', async () => {
+    const user = userEvent.setup();
+    seed([APPLE]);
+    render(RecipeListPage);
+
+    await user.click(screen.getByTestId('recipe-new-btn'));
+    await user.click(screen.getByTestId('recipe-new-meal'));
+
+    expect(await screen.findByTestId('recipe-new-dish-picker')).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-new-create')).toBeDisabled();
+  });
+
+  // The whole New menu, asserted as a list, because "what you can start by hand"
+  // is the thing this phase changed and a missing entry is invisible otherwise.
+  it('offers three imports and the three entries that cannot be imported, and nothing else', async () => {
     const user = userEvent.setup();
     seed([APPLE]);
     render(RecipeListPage);
 
     await user.click(screen.getByTestId('recipe-new-btn'));
 
-    // The New menu is still derived from the creatable KINDS, which Meals is not.
-    // An empty meal would just be a recipe under another name.
-    expect(screen.queryByTestId('recipe-new-meal')).toBeNull();
-    expect(screen.getByTestId('recipe-new-outing')).toBeInTheDocument();
-    expect(screen.getByTestId('recipe-new-cocktail')).toBeInTheDocument();
-    expect(screen.getByTestId('recipe-new-placeholder')).toBeInTheDocument();
+    for (const id of [
+      'recipe-new-import',
+      'recipe-new-import-photo',
+      'recipe-new-chat',
+      'recipe-new-outing',
+      'recipe-new-meal',
+      'recipe-new-placeholder',
+    ]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+    // Gone with hand-authoring: a recipe typed from scratch, and a cocktail.
+    expect(screen.queryByTestId('recipe-new-manual')).toBeNull();
+    expect(screen.queryByTestId('recipe-new-cocktail')).toBeNull();
   });
 });
 
@@ -1117,7 +1155,18 @@ describe('RecipeListPage — import from photo', () => {
     expect(await screen.findByTestId('recipe-import-photo-dialog')).toBeInTheDocument();
   });
 
-  it('stashes the draft and opens the saved recipe’s editor on success', async () => {
+  it('offers no "create your first recipe" in the empty state — the two imports are the doors', async () => {
+    seed([]);
+    render(RecipeListPage);
+
+    // Issue #1319 retired hand-authoring, so the third button that used to sit
+    // beside these two and route to /recipes/new is gone.
+    expect(screen.queryByText('Create your first recipe')).toBeNull();
+    expect(screen.getByTestId('recipe-import-url-toggle-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-import-photo-toggle-empty')).toBeInTheDocument();
+  });
+
+  it('stashes the draft and opens the saved recipe’s own page on success', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-9' };
@@ -1135,9 +1184,13 @@ describe('RecipeListPage — import from photo', () => {
     await user.click(await screen.findByTestId('recipe-import-photo-btn'));
 
     // The callable already persisted the recipe flagged as not yet reviewed
-    // (issue #616), so this opens THAT recipe's editor — never /recipes/new.
+    // (issue #616), so this opens THAT recipe — its own page since issue #1319
+    // Phase 7, where the unreviewed banner lives and everything is editable in
+    // place. The stash survives because the write happened on the SERVER: the page
+    // can arrive ahead of the Firestore listener.
     await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(draft));
-    expect(push).toHaveBeenCalledWith('/recipes/imported-9/edit');
+    expect(push).toHaveBeenCalledWith('/recipes/imported-9');
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
   });
 });
 
@@ -1179,7 +1232,7 @@ describe('RecipeListPage — import from URL', () => {
     expect(await screen.findByTestId('recipe-import-url-area')).toBeInTheDocument();
   });
 
-  it('stashes the draft and opens the saved recipe’s editor on success', async () => {
+  it('stashes the draft and opens the saved recipe’s own page on success', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-7' };
@@ -1198,8 +1251,9 @@ describe('RecipeListPage — import from URL', () => {
 
     expect(importRecipeFromUrl).toHaveBeenCalledWith('https://example.com/pie');
     await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(draft));
-    // No meal in play here, so the landing is the plain editor.
-    expect(push).toHaveBeenCalledWith('/recipes/imported-7/edit');
+    // The recipe's own page, never the retired editor (issue #1319 Phase 7).
+    expect(push).toHaveBeenCalledWith('/recipes/imported-7');
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
   });
 
   it('offers the way back in — not a toast — when the session has died', async () => {

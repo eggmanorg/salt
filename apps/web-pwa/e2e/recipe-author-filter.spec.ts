@@ -3,9 +3,9 @@
  *
  * Two things, one shared setup. The two chips on the recipe list — "Added by
  * me" / "Edited by me" — matched against the signed-in member's `Member.name`;
- * and the editor's "Added by" picker, which is how a name the backfill got
- * wrong is put right. Runs against the Firestore + Auth emulators with no AI
- * anywhere on the path.
+ * and the "Added by" picker, which is how a name the backfill got wrong is put
+ * right — on the recipe's own page since issue #1319 Phase 7, not in an editor.
+ * Runs against the Firestore + Auth emulators with no AI anywhere on the path.
  *
  * Why this needs TWO browser contexts rather than a hand-shaped fixture: the
  * names under test are not test data, they are STAMPED by the app. Every write
@@ -192,8 +192,8 @@ test.describe('recipes — authorship filters', () => {
   test('corrects a misattributed entry, and both the chip and her filter follow', async ({
     browser,
   }, testInfo) => {
-    // 90s: two sign-ins, a save round-trip and an editor round-trip through the
-    // emulator, each gated on its own signal-bound wait below.
+    // 90s: two sign-ins and two write round-trips through the emulator (the seed,
+    // then the in-place correction), each gated on its own signal-bound wait below.
     test.setTimeout(90_000);
 
     const ctxA = await browser.newContext();
@@ -223,12 +223,13 @@ test.describe('recipes — authorship filters', () => {
         timeout: SYNC_TIMEOUT,
       });
 
-      // ── The correction, in the editor ──────────────────────────────────────
-      // Reached the way a person reaches it: Edit lives in the ⋮ overflow menu,
-      // which is its only surface at any width since #735.
-      await pageB.getByTestId('recipe-actions-overflow').click();
-      await pageB.getByTestId('recipe-edit-menu-item').click();
-      await expect(pageB.getByRole('heading', { name: /edit recipe/i })).toBeVisible();
+      // ── The correction, in place ────────────────────────────────────────────
+      // Reached the way a person reaches it, which changed in issue #1319: Edit is
+      // an icon-only button in the action row at every width, and the picker is in
+      // the identity card on THIS page rather than on a separate editor. The ⋮ menu
+      // no longer carries an Edit item at all.
+      await pageB.getByTestId('recipe-edit-mode-button').click();
+      await pageB.getByTestId('recipe-edit-added-by').click();
 
       const addedBy = pageB.getByTestId('recipe-added-by-select');
       // It opens on the record as it stands, not on a blank.
@@ -238,11 +239,12 @@ test.describe('recipes — authorship filters', () => {
       // `Member.name`, so the option's own text is what has to land.
       await pageB.getByRole('option', { name: nameA }).click();
       await expect(addedBy).toHaveText(nameA);
-      await pageB.getByTestId('recipe-save-btn').click();
+      // No Save: Done leaves edit mode and flushes what was written on the pick.
+      await pageB.getByTestId('recipe-done-button').click();
 
-      // Saving lands on the recipe. The chip now names the real author — and
-      // still names B as the last editor, because that is exactly what happened
-      // and `lastEditedBy` is re-stamped by every save.
+      // The chip now names the real author — and still names B as the last editor,
+      // because that is exactly what happened and `lastEditedBy` is re-stamped by
+      // every write.
       await expect(pageB.getByTestId('recipe-attribution-chip')).toHaveText(
         `Added by ${nameA} · edited by ${nameB}`,
         { timeout: SYNC_TIMEOUT },
