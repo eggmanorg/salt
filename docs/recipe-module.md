@@ -178,9 +178,9 @@ compression costs the reader nothing.
 
 **Every other surface asks `routes/recipes/recipeTiming.ts`.** `phaseMinutes` is the
 one place that decides what a recipe's timing is — the recipe list's chip and its
-Quickest sort, the "Made from" rows on the view and edit pages, and the meal cook
-plan's per-dish line all go through it, so a recipe cannot read 45 min on one
-screen and 13 hr on another. Issue #1213 removed the old-field fallback along with
+Quickest sort, the recipe's own "Made from" rows (one page now, since #1319 Phase
+8 retired the separate edit page), and the meal cook plan's per-dish line all go
+through it, so a recipe cannot read 45 min on one screen and 13 hr on another. Issue #1213 removed the old-field fallback along with
 the feature key and the `phasesEnabled` argument that threaded it: `phaseMinutes`
 now takes only the recipe, and returns `null` for a recipe with no strip. Through
 the normal authoring paths only placeholders and outings reach that state — neither
@@ -277,11 +277,12 @@ that gap with an empty list would tell a reviewer the recipe has no phases at th
 moment they are approving something else.
 
 `componentTimeLabel` lives in `routes/recipes/recipeTiming.ts` beside
-`phaseMinutes` and is called by both the view and the edit page (#1208's third
-bullet). That is not a walk-back of that file's "smallest shared thing" header: the
-component row is the same row on two screens and the two copies were byte-for-byte
-identical, where the list chip and the cook-plan line genuinely say different
-things and keep their own words.
+`phaseMinutes`. It was called by both the view and the edit page (#1208's third
+bullet) until #1319 Phase 8 retired the edit page, leaving `RecipeMadeFromCard.svelte`
+as its one reader. That is not a walk-back of that file's "smallest shared thing"
+header: the component row was the same row on two screens and the two copies were
+byte-for-byte identical, where the list chip and the cook-plan line genuinely say
+different things and keep their own words.
 
 ### How the three prep / cook / total fields were retired (issues #952, #1233, #1211)
 
