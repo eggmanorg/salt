@@ -2100,9 +2100,12 @@
               <!-- The cook plan (issue #752, phase 4). Beside "Guided plan" and for
                    exactly the same reason: it is what you open BEFORE you cook, to
                    decide when each dish goes on — the inline row is the hands-full
-                   verbs. Gated on the DOCUMENT having components, like the "Made
-                   from" card below: a dish with nothing hanging off it has no
-                   running order to schedule, and there is no meal `kind` to ask. -->
+                   verbs. Gated on the DOCUMENT having components — NOT like the
+                   "Made from" card below, which since issue #1343 mounts on
+                   capability while editing and so appears on a recipe that has no
+                   dishes yet. This one stays presence-gated because a dish with
+                   nothing hanging off it has no running order to schedule, and
+                   there is no meal `kind` to ask. -->
               <PopoverMenuItem
                 icon="Clock"
                 onclick={() => {

@@ -84,18 +84,35 @@
    * `recipe.kind` (CLAUDE.md -> Data model conventions). A cocktail gets the slot
    * because that is the domain's existing answer, not a new claim made here.
    *
-   * The same line is why a meal can no longer vanish under the finger editing it.
-   * `EditableZone` ignores `filled` entirely while its editor is open
-   * (`EditableZone.svelte:90`), so taking the last dish off leaves the rows and
-   * the picker exactly where they were; the demotion lands on Done, when
-   * `editing` goes false and the gate is back to reading presence alone.
+   * The same line is why a meal being edited no longer vanishes under the finger
+   * emptying it — ON A KIND `takesComponents` ADMITS, which is the qualifier the
+   * rest of this paragraph earns rather than an escape hatch. `EditableZone`
+   * ignores `filled` entirely while its editor is open (`EditableZone.svelte:90`),
+   * and `canTakeDishes` holds the `{#if}` up once `isMeal` goes false, so taking
+   * the last dish off leaves the rows and the picker where they were; the demotion
+   * lands on Done, when `editing` goes false and the gate reads presence alone.
    *
-   * THE GATE'S BOUNDARY, stated rather than left an unqualified absolute: a kind
-   * that takes no components but already carries ids — an outing seeded before
-   * this campaign, say — still shows its card in BOTH modes, because
-   * `hasComponents` is the first clause and a document with dishes on it is a
-   * meal whatever kind it declares. `RecipeMadeFromCard.test.ts` pins that
-   * reading rather than leaving it to this sentence.
+   * THE GATE'S BOUNDARY, in both halves, because the mount half alone would leave
+   * the sentence above an unqualified absolute that the very next paragraph
+   * contradicts (PR #1345 review round 1, should-fix 1):
+   *
+   * MOUNT — a kind that takes no components but already carries ids (an outing
+   * seeded before this campaign, say) still shows its card in BOTH modes, because
+   * `hasComponents` is the first clause and a document with dishes on it is a meal
+   * whatever kind it declares. `RecipeMadeFromCard.test.ts` pins that reading.
+   *
+   * DEMOTION — and on THAT document alone the claim above is false: remove its
+   * last dish and both clauses go false at once, so the card does unmount
+   * mid-gesture. It is latent rather than triggerable, and the reason is worth
+   * writing down so it is not re-derived. Nothing in the app rewrites `kind` on an
+   * existing document: the editor reads it from the URL on create only, the chat
+   * amendment path says the same in as many words (`lib/recipeAmend.ts:82`), and
+   * `duplicateRecipe` copies kind and components together — so it can PROPAGATE
+   * such a pairing but never originate one. This card's picker never offers a kind
+   * that takes no components either. No reachable path therefore both gives an
+   * outing or a placeholder its first dish AND lets someone take it off here. A
+   * "was mounted" latch would be real machinery bought for a state nothing
+   * produces; the day some path does, this is the paragraph to come back to.
    */
   let {
     recipe,

@@ -14,11 +14,13 @@
  *   using it is a SHELF CHANGE on another route, which only a real navigation can
  *   show.
  *
- *   THE CARD SURVIVES BEING EMPTIED. Taking the last dish off used to unmount the
- *   card under the finger doing it, picker and all. The unit suites pin the
- *   component's own gate; what this adds is the same gesture against a real
- *   Firestore write settling underneath it, which is where the old defect
- *   actually bit.
+ *   THE CARD SURVIVES BEING EMPTIED, on a kind `takesComponents` admits — which
+ *   is every kind that can reach the conversion, and the qualifier
+ *   `RecipeMadeFromCard.svelte`'s header states in full. Taking the last dish off
+ *   used to unmount the card under the finger doing it, picker and all. The unit
+ *   suites pin the component's own gate; what this adds is the same gesture
+ *   against a real Firestore write settling underneath it, which is where the old
+ *   defect actually bit.
  *
  * The demotion lands on Done, never on the tap — Salt records what you did rather
  * than policing it half-way through — so the return trip to the Recipes shelf is

@@ -40,11 +40,17 @@ import type { Recipe } from '@salt/domain';
 //   `+ Dishes` slot on a kind `takesComponents` admits, which is the only door
 //   left that turns an ordinary recipe into a meal once the old editor is gone.
 //
-//   A MEAL IS NOT DEMOTED UNDER THE FINGER THAT EMPTIED IT. Removing the last
-//   dish leaves the card, the rows and the picker exactly where they were; the
-//   slot comes back when the zone is closed and the card goes when edit mode
-//   ends. Every step of that is a case below, because the whole first half of
-//   this feature rests on the card not unmounting mid-gesture.
+//   A MEAL IS NOT DEMOTED UNDER THE FINGER THAT EMPTIED IT — on a kind
+//   `takesComponents` admits, which is every kind the conversion can reach.
+//   Removing the last dish leaves the card, the rows and the picker where they
+//   were; the slot comes back when the zone is closed and the card goes when edit
+//   mode ends. Every step of that is a case below. The qualifier is load-bearing
+//   and is NOT covered by a case: on a kind that takes no components but already
+//   carries ids — the document "still shows the card for a kind that takes no
+//   dishes but already carries some" mounts — emptying it drops both clauses of
+//   the gate at once and the card does unmount. That state is unreachable in the
+//   app today; `RecipeMadeFromCard.svelte`'s header says why, and says what would
+//   have to change for it to stop being unreachable.
 
 const { mockRecipes } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
