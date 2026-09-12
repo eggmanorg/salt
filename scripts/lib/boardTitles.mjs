@@ -7,8 +7,17 @@
  * can resume, and the parent it hangs its own filings off. It is not work: no
  * `Queue`, no `Class`, closed by hand rather than through a PR, and GitHub's own
  * "add item to project" workflow puts it on the board regardless. `check` skips
- * it in the untriaged rule and the closed-at-a-shipping-status rule, or every
- * campaign that ever ran would sit in its output forever.
+ * it in the untriaged rule, or every campaign that ever ran would sit in its
+ * output forever.
+ *
+ * THE EXEMPTION IS QUEUE AND CLASS, NOT STATUS (2026-09-12). It used to cover the
+ * closed-at-a-shipping-status rule too, and the cost of that was 19 closed
+ * ledgers sitting at no Status at once, invisible to the one check that would
+ * have said so and showing up in the Workflow board as a column of cards nobody
+ * could account for. A ledger is not work, but it does ship — when the campaign
+ * finishes, the work it ran is merged — so it carries `Merged` or `Released`
+ * like anything else that closed. `ledgerFullyReleased` is how it gets promoted
+ * without a PR of its own.
  *
  * The prefix is the test because `/salt-campaign` already resumes by searching for it
  * (`.claude/commands/salt-campaign.md` → Setup).
@@ -76,4 +85,31 @@ export function ledgerShouldAttachTo(runSet, parentOf) {
   const [first] = parents;
   if (first === null) return null;
   return parents.every((p) => p === first) ? first : null;
+}
+
+/**
+ * Has every issue a ledger's title names reached `Released`?
+ *
+ * A ledger closes by hand and has no PR, so `board.mjs release` — which promotes
+ * `Merged` → `Released` by asking whether a closing PR's merge commit is an
+ * ancestor of the deployed sha — can never promote one on its own. Left at that,
+ * a ledger set to `Merged` on close would sit there forever while the work it
+ * ran went live, which is the stranding this exists to prevent. The honest
+ * substitute for a ledger's own merge commit is its run-set: the campaign is
+ * live exactly when everything it dispatched is live.
+ *
+ * `statusOf` is `issue number → Status name | null`. A run-set member missing
+ * from it, or at any status other than `Released`, answers false — the ledger
+ * stays at `Merged` and is re-tested on the next release. Failing safe matters
+ * more here than being prompt: a ledger wrongly marked `Released` claims a
+ * campaign shipped, and nothing downstream ever re-checks it.
+ *
+ * An EMPTY run-set answers false, deliberately. "Every member of nothing is
+ * Released" is vacuously true and would promote a ledger whose title names no
+ * issues at all — a mis-titled one, or `campaign: <slug>` with the numbers left
+ * off — on the strength of no evidence whatsoever.
+ */
+export function ledgerFullyReleased(runSet, statusOf) {
+  if (!runSet.length) return false;
+  return runSet.every((n) => statusOf.get(n) === 'Released');
 }

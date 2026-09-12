@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { isEpicTitle, isLedger, ledgerRunSet, ledgerShouldAttachTo } from '../lib/boardTitles.mjs';
+import {
+  isEpicTitle,
+  isLedger,
+  ledgerFullyReleased,
+  ledgerRunSet,
+  ledgerShouldAttachTo,
+} from '../lib/boardTitles.mjs';
 
 describe('isLedger', () => {
   it('matches a campaign ledger, which carries no board fields', () => {
@@ -129,5 +135,49 @@ describe('ledgerShouldAttachTo', () => {
         ]),
       ),
     ).toBe(913);
+  });
+});
+
+describe('ledgerFullyReleased', () => {
+  const statuses = (pairs) => new Map(pairs);
+
+  it('is true once every issue the ledger names is Released', () => {
+    expect(
+      ledgerFullyReleased(
+        [968, 971, 993],
+        statuses([
+          [968, 'Released'],
+          [971, 'Released'],
+          [993, 'Released'],
+        ]),
+      ),
+    ).toBe(true);
+  });
+
+  // The ledger stays at Merged and is re-tested next release. Promoting on a
+  // partial run-set would claim a campaign is live while part of it is not,
+  // and nothing downstream ever re-checks a Released item.
+  it('is false while one run-set issue is only Merged', () => {
+    expect(
+      ledgerFullyReleased(
+        [968, 971],
+        statuses([
+          [968, 'Released'],
+          [971, 'Merged'],
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  // Fails safe: one issue the query could not resolve must not let the rest
+  // carry the ledger to Released.
+  it('is false when a run-set issue is missing from the map', () => {
+    expect(ledgerFullyReleased([968, 4242], statuses([[968, 'Released']]))).toBe(false);
+  });
+
+  // "Every member of nothing is Released" is vacuously true, and would promote
+  // a mis-titled ledger on the strength of no evidence at all.
+  it('is false for an empty run-set rather than vacuously true', () => {
+    expect(ledgerFullyReleased([], statuses([]))).toBe(false);
   });
 });
