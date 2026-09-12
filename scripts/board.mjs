@@ -56,12 +56,13 @@
 //   node scripts/board.mjs set 1234 --status "In progress"
 //   node scripts/board.mjs pr 5678 --status "In review"     # via the PR's Closes #N
 //   node scripts/board.mjs parent 1234 --of 1129            # sub-issue link
+//   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
 //   node scripts/board.mjs release --sha <deployed sha>
 //   node scripts/board.mjs check
 
 import { execFileSync } from 'node:child_process';
 
-import { isEpicTitle, isLedger } from './lib/boardTitles.mjs';
+import { isEpicTitle, isLedger, ledgerRunSet, ledgerShouldAttachTo } from './lib/boardTitles.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -327,13 +328,21 @@ function cmdRelease(project, rest) {
  * programme of separate ones. So this writes the link and touches no field —
  * the child keeps whatever `add` gave it.
  *
- * WHY IT REFUSES TO RE-PARENT. `addSubIssue` takes `replaceParent`, and this
- * never passes it. An agent filing a follow-up cannot tell "unattached" from
- * "attached to something I cannot see", and silently moving a child out from
- * under a parent a human chose is the one mistake here that leaves no trace.
- * Re-parenting is a decision, so it is a `removeSubIssue` someone runs on
- * purpose. Re-running with the parent it already has is a no-op, which is what
+ * WHY IT REFUSES TO RE-PARENT UNASKED. `addSubIssue` takes `replaceParent`, and
+ * this never passes it. An agent filing a follow-up cannot tell "unattached"
+ * from "attached to something I cannot see", and silently moving a child out
+ * from under a parent a human chose is the one mistake here that leaves no
+ * trace. Re-running with the parent it already has is a no-op, which is what
  * makes a retried campaign step safe.
+ *
+ * SO RE-PARENTING NAMES WHAT IT DISPLACES. `--detach-from <current parent>` is
+ * the inverse the link never had: it detaches the existing link and writes the
+ * new one. It takes the parent's NUMBER rather than being a bare boolean
+ * because the refusal above is about proof — naming the parent you are
+ * displacing is evidence you saw it, and a number that does not match what the
+ * issue actually holds is an error rather than a silent move. (`parseFlags` has
+ * no boolean form either, and dies on a valueless flag.) Omit the flag and
+ * nothing changes: the refusal is still the default.
  */
 function cmdParent(rest0) {
   const [num, ...rest] = rest0;
@@ -341,11 +350,19 @@ function cmdParent(rest0) {
   const flags = parseFlags(rest);
   const parent = Number(flags.of);
   if (!Number.isInteger(child) || !Number.isInteger(parent))
-    die('usage: board.mjs parent <issue> --of <parent issue>');
+    die('usage: board.mjs parent <issue> --of <parent> [--detach-from <current parent>]');
   if (child === parent) die(`#${child} cannot be its own parent`);
 
+  const detachRaw = flags['detach-from'];
+  const detach = detachRaw === undefined ? undefined : Number(detachRaw);
+  if (detachRaw !== undefined && !Number.isInteger(detach))
+    die(`--detach-from takes the number of the parent being displaced, got "${detachRaw}"`);
+
+  // `parent{ id }` as well as its number: `removeSubIssue` takes the node id of
+  // the parent being detached, so reading only the number would mean a second
+  // round trip to displace one.
   const r = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){
-    child: issue(number:${child}){ id title parent{ number title } }
+    child: issue(number:${child}){ id title parent{ id number title } }
     parent: issue(number:${parent}){ id title } } }`).repository;
   if (!r?.child) die(`issue #${child} not found in ${OWNER}/${REPO}`);
   if (!r?.parent) die(`issue #${parent} not found in ${OWNER}/${REPO}`);
@@ -355,16 +372,63 @@ function cmdParent(rest0) {
     console.log(`#${child} is already under #${parent}  ${r.parent.title}`);
     return;
   }
-  if (held)
+  if (held !== undefined && detach === undefined)
     die(
       `#${child} is already a sub-issue of #${held} (${r.child.parent.title}) — ` +
-        `detach it deliberately with removeSubIssue before re-parenting`,
+        `re-parent it deliberately with --detach-from ${held}`,
     );
+  if (detach !== undefined && detach !== held)
+    die(
+      held === undefined
+        ? `--detach-from ${detach} does not match: #${child} has no parent`
+        : `--detach-from ${detach} does not match: #${child} is a sub-issue of ` +
+            `#${held} (${r.child.parent.title})`,
+    );
+
+  if (held !== undefined) {
+    gql(
+      `mutation{ removeSubIssue(input:{issueId:"${r.child.parent.id}", subIssueId:"${r.child.id}"}){ issue{ number } } }`,
+    );
+    console.log(`#${child} detached from #${held}  ${r.child.parent.title}`);
+    // Detach and attach are two mutations, so a failure between them leaves the
+    // child unparented. `gql` exits the process rather than throwing, so the
+    // recovery line is armed here instead of caught around the call below.
+    process.on('exit', (code) => {
+      if (code !== 0)
+        console.error(
+          `board: #${child} is detached and now has no parent — ` +
+            `restore it with: node scripts/board.mjs parent ${child} --of ${held}`,
+        );
+    });
+  }
 
   gql(
     `mutation{ addSubIssue(input:{issueId:"${r.parent.id}", subIssueId:"${r.child.id}"}){ issue{ number } } }`,
   );
   console.log(`#${child} → sub-issue of #${parent}  ${r.parent.title}`);
+}
+
+/**
+ * `issue number → parent number | null`, for as many issues as you like.
+ *
+ * Aliased into batches rather than one query per issue: `check` asks about
+ * every ledger plus every issue those ledgers name, which is well over a
+ * hundred numbers on the live board. GraphQL only — `gh api
+ * repos/{owner}/{repo}/issues/N` reports `parent: null` for every issue in this
+ * repo, sub-issues included (:29).
+ */
+function fetchParents(numbers) {
+  const out = new Map();
+  for (let i = 0; i < numbers.length; i += 50) {
+    const batch = numbers.slice(i, i + 50);
+    const data = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${batch
+        .map((n) => `i${n}: issue(number:${n}){ number parent{ number } }`)
+        .join(' ')} } }`,
+    ).repository;
+    for (const n of batch) out.set(n, data[`i${n}`]?.parent?.number ?? null);
+  }
+  return out;
 }
 
 /**
@@ -406,6 +470,10 @@ function cmdCheck(project) {
   for (const item of items) {
     if (item.state !== 'CLOSED') continue;
     if (isLedger(item.title)) continue; // closes by hand, never by a PR — see isLedger
+    // A FIELD-ONLY EXEMPTION. A ledger is out of this rule and the untriaged one
+    // below because it is not work; it is emphatically NOT out of the
+    // attachment rule further down, which is the one thing about a ledger that
+    // has to be true.
     if (item.status === 'Released') {
       console.log(`  note: #${item.number} is Released — safe to remove from the board`);
     } else if (!SHIPPING.has(item.status)) {
@@ -445,10 +513,52 @@ function cmdCheck(project) {
   // sat there in a week before anyone noticed. `add --queue` is what fills it,
   // and this is what makes skipping that call visible.
   for (const item of items) {
+    // Field-only exemption again — see the note beside the closed-status rule.
     if (item.state !== 'OPEN' || item.queue || isLedger(item.title)) continue;
     failures.push(
       `#${item.number} is on the board with no Queue — triage it with \`board.mjs set ${item.number} --queue <band>\``,
     );
+  }
+
+  // A CAMPAIGN IS REACHABLE FROM THE WORK IT RAN. Everything a campaign throws
+  // off — follow-ups, re-specs, mid-run defects — attaches to its ledger, so a
+  // ledger with no parent of its own puts all of it one hop from unreachable.
+  // Epic #913 showed nine closed children and no sign that campaign #1266 had
+  // run three of them and left #1269 behind. That was prose in four command
+  // files and guaranteed by nothing, which is the defect class CLAUDE.md rule
+  // 12 names; this is where it stops being prose.
+  //
+  // THE RULE'S REAL BOUNDARY. The run-set is what the ledger's TITLE names —
+  // see `ledgerRunSet` — never every issue the campaign touched. A ledger whose
+  // run-set shares no single parent passes in both directions, deliberately:
+  // see `ledgerShouldAttachTo`. Open and closed alike are checked, because a
+  // ledger closes when its campaign finishes and closed is where nearly every
+  // orphan was.
+  //
+  // The parents come from a separate query because `loadItems` reads project
+  // fields and `parent` is not one — and it must be GraphQL, since the REST
+  // issue endpoint reports `parent: null` for every issue in this repo (:29).
+  const ledgers = items.filter((it) => isLedger(it.title));
+  if (ledgers.length > 0) {
+    const wanted = new Set();
+    for (const led of ledgers) {
+      wanted.add(led.number);
+      for (const n of ledgerRunSet(led.title)) wanted.add(n);
+    }
+    const parentOf = fetchParents([...wanted]);
+    for (const led of ledgers) {
+      const expected = ledgerShouldAttachTo(ledgerRunSet(led.title), parentOf);
+      if (expected === null) continue;
+      const held = parentOf.get(led.number) ?? null;
+      if (held === expected) continue;
+      failures.push(
+        `#${led.number} is a campaign ledger whose issues all sit under #${expected}, but it ` +
+          (held === null ? 'has no parent' : `hangs off #${held}`) +
+          ` — attach it with \`board.mjs parent ${led.number} --of ${expected}` +
+          (held === null ? '`' : ` --detach-from ${held}\``) +
+          `, or everything the campaign filed is unreachable from #${expected}`,
+      );
+    }
   }
 
   // TWO OPTIONS CANNOT SHARE A NAME. Everything here resolves options by name
@@ -519,7 +629,7 @@ if (!command || command === '--help' || command === '-h') {
   board.mjs add <issue> [--queue X --class Y --size Z --status W]
   board.mjs set <issue> [--queue X --class Y --size Z --status W]
   board.mjs pr <pr> --status "In review"
-  board.mjs parent <issue> --of <parent issue>
+  board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
   board.mjs release --sha <deployed sha>
   board.mjs check`);
   process.exit(command ? 0 : 1);

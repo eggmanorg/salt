@@ -92,6 +92,11 @@ on:
         type: string
         required: false
         default: ''
+      detach_from:
+        description: 'Current parent being displaced — parent only, and only to move a link'
+        type: string
+        required: false
+        default: ''
       sha:
         description: 'Deployed sha — release only'
         type: string
@@ -169,6 +174,7 @@ jobs:
           BOARD_SIZE: ${{ inputs.size }}
           BOARD_STATUS: ${{ inputs.status }}
           BOARD_OF: ${{ inputs.of }}
+          BOARD_DETACH_FROM: ${{ inputs.detach_from }}
           BOARD_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
@@ -196,6 +202,10 @@ jobs:
           # default is what add_flag skips on. A `parent` dispatch that omits it
           # reaches board.mjs with no `--of` and prints that command's usage.
           add_flag --of "$BOARD_OF"
+          # Left empty, `parent` refuses to move a link that already exists —
+          # which is the default and stays it. Filled in, it must name the
+          # parent actually held or board.mjs dies without writing anything.
+          add_flag --detach-from "$BOARD_DETACH_FROM"
           add_flag --sha "$BOARD_SHA"
 
           echo "board.mjs ${args[*]}"

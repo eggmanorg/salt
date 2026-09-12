@@ -39,7 +39,7 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 
 ## Filing an issue
 
-This command files issues of its own — the ledger, a `BLOCKED: oversized` re-spec, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created:**
+This command files issues of its own — the ledger, a `BLOCKED: oversized` re-spec, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created — and the ledger gets its own parent at Finish:**
 
 ```
 gh issue create --title "…" --body-file <file>       # take the number out of the URL it prints
@@ -49,16 +49,20 @@ node scripts/board.mjs parent <new> --of <parent>
 
 Neither of those lines is somebody else's job later. GitHub's own project workflow puts a new issue on the board with **every field empty**, and an item with no `Queue` appears in no queue view — so an issue filed and not triaged is not "waiting in Triage", it is invisible, and it stays invisible until someone happens to scroll the unfiltered board. `board.mjs check` fails on one now, which is how you find out you skipped this.
 
-| What you filed                                                               | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`          |
-| ---------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ---------------------- |
-| the **ledger**                                                               | — none of it —                            |                                                              |                             | — none —               |
-| **`BLOCKED: oversized`** re-spec (a single phase too big — see **Dispatch**) | the issue's own Class                     | the issue's own band                                         | `M` or `L`                  | the issue it came from |
-| **adjudicated blocking finding**                                             | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger             |
-| **follow-ups checklist** (Finish)                                            | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger             |
+| What you filed                                                               | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`            |
+| ---------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------------------------ |
+| the **ledger**                                                               | — none of it —                            |                                                              |                             | at **Finish**, see below |
+| **`BLOCKED: oversized`** re-spec (a single phase too big — see **Dispatch**) | the issue's own Class                     | the issue's own band                                         | `M` or `L`                  | the issue it came from   |
+| **adjudicated blocking finding**                                             | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger               |
+| **follow-ups checklist** (Finish)                                            | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger               |
 
-**The ledger is the one exception, and it is deliberate.** It is not work: it carries no priority, it closes by hand rather than through a PR, and it exists to be resumed from and then finished with. `board.mjs check` skips any issue titled `campaign:` for exactly that reason — so putting fields on one is not merely unnecessary, it puts a coordination artefact into a work queue. `campaign follow-ups:` does **not** get that exemption and is ordinary work.
+**The ledger is the one exception on fields, and it is deliberate.** It is not work: it carries no priority, it closes by hand rather than through a PR, and it exists to be resumed from and then finished with. `board.mjs check` skips any issue titled `campaign:` in its field rules for exactly that reason — so putting fields on one is not merely unnecessary, it puts a coordination artefact into a work queue. `campaign follow-ups:` does **not** get that exemption and is ordinary work.
+
+**The exemption is about fields, not about reachability.** A ledger used to take no parent either, and the cost of that was the whole point of #1346: everything a campaign throws off attaches to the ledger, so a root ledger puts every follow-up, re-spec and mid-run defect one hop from being unreachable. Campaign #1266 ran #968, #971 and #993 — all three under epic #913 — and left #1269 behind where nobody opening #913 would ever see it. So the ledger is attached too, upward, at **Finish**.
 
 **A parent is not an epic**, and this command never creates one. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. The `BLOCKED: oversized` re-spec is the exception in the other direction: it is the remaining work of the issue it came out of, so it hangs off that issue and inherits whatever epic that issue already sits under.
+
+**The ledger goes up, the work stays put.** A GitHub sub-issue link is a strict tree — one parent, no second one — so an issue sits under its epic or under a ledger, never both. Attaching the _ledger_ to the run-set's shared parent is what buys reachability without emptying that parent of its own work: its progress count keeps counting the same issues and gains one extra node whose subtree holds everything the campaign produced. **Never re-parent a run-set issue away from its epic to sit under the ledger.**
 
 **`Recommended` still means proven.** A review finding that is real, agreed and never once triggered is `Low`, however alarming the reviewer made it sound — [docs/issue-board.md](../../docs/issue-board.md) has the discriminator and #1056 as the worked example. You are filing at the end of a long unattended run and there is nobody to correct an inflated band; err low, and say in the issue what would prove it higher.
 
@@ -185,7 +189,7 @@ If no issue is currently startable (everything left is blocked behind something 
 gh issue create --title "campaign: <slug> (#a #b #c)" --body-file <file>   # write the plan below to a file first
 ```
 
-No label, no board fields and no parent — see **Filing an issue**; the `campaign:` title prefix is the discoverable marker, it is what the resume search matches, and it is what `board.mjs check` recognises to leave the ledger out of triage. The body is the live state of the campaign and it is what a fresh session reads. Keep it current with `gh issue edit <ledger> --body-file <file>` on every transition:
+No label and no board fields — see **Filing an issue**; the `campaign:` title prefix is the discoverable marker, it is what the resume search matches, and it is what `board.mjs check` recognises to leave the ledger out of triage. **No parent yet either**, but for a different reason and only for now: the ledger's own parent is the run-set's shared one, which is not reliably known until every issue has reached a terminal state — so it is written at **Finish**, not here. The body is the live state of the campaign and it is what a fresh session reads. Keep it current with `gh issue edit <ledger> --body-file <file>` on every transition:
 
 ```
 ## Plan
@@ -543,8 +547,16 @@ On a full stop: leave every branch pushed and every worktree intact, write the s
 When the queue is empty:
 
 1. **File the should-fix issue first**, before anything closes — `campaign follow-ups: <slug> (#<ledger>)`, a `- [ ]` checklist, one line and one PR number per finding (see **Review**). Skip only if the list is empty. Its number goes in the closing comment below, so the ledger points at it rather than containing it.
-2. **Confirm every issue this campaign filed is triaged and attached** — `node scripts/board.mjs check`. It fails on any open board item with no `Queue`, so a filing where you skipped **Filing an issue** shows up here by number. Fix yours; findings naming issues this campaign did not file are not your business and go unmentioned. Where `board.mjs` cannot run (a cloud session — see **Standing rules**), say so in the closing comment rather than reporting a check you did not run: the dispatches were fire-and-forget and nothing has confirmed them.
-3. Final ledger comment, and set the body's table to its terminal state:
+2. **Attach the ledger to the work it ran.** Look up the parent of every issue in the run-set — the `#N` list in the ledger's own title — and where all of them share one parent, that is the ledger's parent too:
+
+   ```
+   node scripts/board.mjs parent <ledger> --of <the shared parent>
+   ```
+
+   Ask GraphQL, never REST: `gh api repos/{owner}/{repo}/issues/N` reports `parent: null` for every issue in this repo, sub-issues included ([docs/issue-board.md](../../docs/issue-board.md)). **Where the run-set shares no single parent — a campaign over four unrelated issues — leave the ledger a root and say so in the closing comment.** That is correct, not a miss: forcing a parent there would mean inventing a relationship the work does not have. Do this before the check below, so a campaign's own `check` passes. (`gh` absent: **Board dispatch**, `command: parent` with `issue` (the ledger) and `of`.)
+
+3. **Confirm every issue this campaign filed is triaged and attached** — `node scripts/board.mjs check`. It fails on any open board item with no `Queue`, so a filing where you skipped **Filing an issue** shows up here by number. Fix yours; findings naming issues this campaign did not file are not your business and go unmentioned. Where `board.mjs` cannot run (a cloud session — see **Standing rules**), say so in the closing comment rather than reporting a check you did not run: the dispatches were fire-and-forget and nothing has confirmed them.
+4. Final ledger comment, and set the body's table to its terminal state:
    ```
    ## Campaign complete
    **Landed:** #a (PR #1), #b (PR #2 → PR #3)   ← an issue split at the ceiling lists every PR that carried it, in order
@@ -553,5 +565,5 @@ When the queue is empty:
    **Decisions taken:** [one line each]
    ```
    Close the ledger issue only if nothing is parked. A parked issue is unfinished business and the open ledger is where it lives. Nothing that must outlive the campaign may live only in this comment — the ledger closes, the follow-ups issue does not.
-4. `TaskStop` any watchdog still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
-5. Report **once**, and stop. Landed, parked with reasons, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue; do not reproduce either. A clean campaign is a sentence. Do not follow this message with a second one that says the same thing in different words: the last run closed with four.
+5. `TaskStop` any watchdog still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
+6. Report **once**, and stop. Landed, parked with reasons, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue; do not reproduce either. A clean campaign is a sentence. Do not follow this message with a second one that says the same thing in different words: the last run closed with four.

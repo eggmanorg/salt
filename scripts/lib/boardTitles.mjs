@@ -30,3 +30,50 @@ export const isLedger = (title) => /^campaign:/i.test(title ?? '');
  * epic this repo has had titles itself `epic:` (#778, #894, #913, #941, #1129).
  */
 export const isEpicTitle = (title) => /^epic:/i.test(title ?? '');
+
+/**
+ * The issues a campaign dispatched, read out of its ledger's own title —
+ * `campaign: <slug> (#a #b #c)`.
+ *
+ * WHAT THIS DOES NOT COVER, stated rather than implied (CLAUDE.md rule 12).
+ * This is the DISPATCHED set, not everything the campaign touched. An issue
+ * added to a campaign mid-run without a title edit is invisible here, and so is
+ * anything the campaign filed along the way. The title is what `/salt-campaign`'s
+ * own resume search already relies on, which is why it is the checkable thing —
+ * but the rule built on it is "every issue the ledger's TITLE names", and it
+ * must never be described as "every issue the campaign ran".
+ *
+ * Every `#N` counts, wherever it sits: #1009's live title is
+ * `campaign: overnight next-5 sweep (#995 #1006 #1007 +#985)`, and that `+#985`
+ * is a run-set member like any other.
+ */
+export const ledgerRunSet = (title) =>
+  [...String(title ?? '').matchAll(/#(\d+)/g)].map((m) => Number(m[1]));
+
+/**
+ * The parent a ledger should hang off, or `null` for "leave it a root".
+ *
+ * A sub-issue link is a strict tree — one parent, never two — so an issue sits
+ * under its epic or under a ledger, and the choice was made in favour of the
+ * epic keeping its work. Attaching the LEDGER upward is what buys reachability
+ * instead: the epic keeps counting the same work issues and gains one node
+ * whose subtree holds every follow-up, re-spec and mid-run defect the campaign
+ * produced. Without it, #1269 hung off #1266, #1266 hung off nothing, and an
+ * epic that looked finished was not.
+ *
+ * `null` — no shared parent — is a correct outcome, not a missing one. A
+ * campaign over four unrelated issues belongs to nothing in particular, and
+ * picking the first or the majority would fabricate a relationship the work
+ * does not have. It is also what an unparseable title and an empty run-set
+ * produce, both of which should pass rather than fail.
+ *
+ * `parentOf` is `issue number → parent number | null`. A run-set member missing
+ * from it counts as unparented, which fails safe: the ledger stays a root.
+ */
+export function ledgerShouldAttachTo(runSet, parentOf) {
+  if (!runSet.length) return null;
+  const parents = runSet.map((n) => parentOf.get(n) ?? null);
+  const [first] = parents;
+  if (first === null) return null;
+  return parents.every((p) => p === first) ? first : null;
+}

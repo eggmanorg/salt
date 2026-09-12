@@ -87,7 +87,7 @@ is the one thing the band is for. This is an invariant, so per CLAUDE.md rule 12
 it is mechanical rather than remembered — `node scripts/board.mjs check` goes red
 when a Recommended item's blocker is absent from Recommended or ordered below it.
 
-`check` covers four more things — plus the `Epic` rule below:
+`check` covers five more things — plus the `Epic` rule below:
 
 - **An open issue on the board has a `Queue`.** GitHub's own "add item to
   project" workflow puts every new issue on the board with every field empty,
@@ -96,6 +96,18 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   stays invisible until somebody scrolls the unfiltered board. That is what the
   agent commands' `board.mjs add --queue …` line is for, and this is what makes
   skipping it visible. Ledgers are exempt; see below.
+
+- **A campaign ledger is attached to the work it ran.** Where every issue a
+  ledger's title names sits under one parent, the ledger sits under that parent
+  too; where they do not share one, it stays a root and `check` says nothing in
+  either direction. Open and closed alike, because a ledger closes when its
+  campaign finishes and closed is where nearly every orphan was. The rule's real
+  boundary is worth stating: the run-set is what the ledger's **title** names,
+  never every issue the campaign touched, so an issue added mid-run without a
+  title edit is invisible to it. The pure halves — parsing the run-set, and
+  deciding from a map of issue → parent — are `ledgerRunSet` and
+  `ledgerShouldAttachTo` in [`scripts/lib/boardTitles.mjs`](../scripts/lib/boardTitles.mjs),
+  unit-tested offline; only the GraphQL fetch lives in `check`.
 
 - **No two options of a field share a name.** Everything in `board.mjs` resolves
   options by name at call time and takes the first match, so a field carrying the
@@ -156,18 +168,50 @@ it is, and the child keeps whatever band `add` gave it.
 
 It exists because nothing could set that link before, so an issue an agent filed
 mid-flight was only ever attached if a human went back and did it. `/salt-campaign`
-now attaches everything it files — see **Filing an issue** in
+attaches everything it files — see **Filing an issue** in
 [`salt-campaign.md`](../.claude/commands/salt-campaign.md) for which parent each of its
-four filings takes. `/salt-spec`, `/salt-defect` and `/salt-refactor` attach only when
-another command spawned them and named the parent: invoked directly, what a
-piece of work belongs to is a call for Daniel to make on the board.
+four filings takes.
 
-**It refuses to re-parent.** `addSubIssue` takes a `replaceParent` flag and this
-never passes it. An agent cannot tell "unattached" from "attached to something I
-cannot see", and silently moving a child out from under a parent a human chose
-is the one mistake here that leaves no trace. Re-running with the parent an
-issue already has is a no-op, which is what makes a retried campaign step safe;
-anything else is a deliberate `removeSubIssue`.
+**`/salt-spec`, `/salt-defect` and `/salt-refactor` attach whenever there is a live
+originating context** — the issue a run is executing, a campaign ledger, the
+issue a review finding was raised against, or simply the work that was in hand
+when Daniel said yes. The test used to be _who invoked the command_, and it was
+wrong: Daniel almost never originates an issue out of the blue, so an agent
+recommending one and him approving it is how nearly every issue here gets filed,
+and the originating work is fully known either way. Written around the wrong
+test, the rule left #1239 — whose own body says "#1228 is superseded by this
+issue" — and #1308 unattached. The chain holds at every depth: an issue filed out
+of a follow-up hangs off that follow-up, not off the epic above it. Only a
+genuinely context-free filing leaves the parent unset, and that is now the
+exception rather than the rule.
+
+**It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
+and this never passes it. An agent cannot tell "unattached" from "attached to
+something I cannot see", and silently moving a child out from under a parent a
+human chose is the one mistake here that leaves no trace. Re-running with the
+parent an issue already has is a no-op, which is what makes a retried campaign
+step safe.
+
+**Moving a link names what it displaces.**
+
+```
+node scripts/board.mjs parent <issue> --of <new parent> --detach-from <current parent>
+```
+
+This is the inverse `parent` never had: before it, a link written once could
+only be undone by hand-editing GitHub. It takes the displaced parent's **number**
+rather than being a bare `--reparent` switch, because the refusal above is about
+proof — naming the parent you are displacing is evidence you saw it. A number
+that does not match what the issue actually holds is an error and writes
+nothing, naming the parent it did find; omitting the flag leaves the refusal
+exactly as it was. On a cloud session the same move is Actions → **Board
+dispatch** → `command: parent` with `issue`, `of` and `detach_from`.
+
+It is two mutations, a `removeSubIssue` then an `addSubIssue`, so a failure
+between them leaves the child with no parent at all. That is deliberate — the
+detach is a separately-auditable act rather than an atomic `replaceParent` — and
+the command prints the exact line that restores the old link if the second one
+fails.
 
 **Ask GraphQL whether an issue has a parent.** The REST issue endpoint
 (`gh api repos/{owner}/{repo}/issues/N`) reports `parent: null` for every issue
@@ -175,12 +219,28 @@ in this repo, sub-issues of #1202 included — a REST sweep will tell you nothin
 is attached, confidently, and be wrong. `issue.parent` over GraphQL is the field
 that is populated.
 
-**A `/salt-campaign` ledger is neither.** An issue titled `campaign:` is a
-coordination artefact: no `Queue`, no `Class`, closed by hand rather than by a
-PR, and it is the parent the campaign hangs its own filings off. `check` skips
-it in both the untriaged rule and the closed-at-a-shipping-status rule, or every
-campaign that ever ran would sit in its output forever. `campaign follow-ups:`
-gets no such exemption — that one is ordinary work and is triaged like any.
+**A `/salt-campaign` ledger takes no fields, but it does take a parent.** An
+issue titled `campaign:` is a coordination artefact: no `Queue`, no `Class`,
+closed by hand rather than by a PR, and it is the parent the campaign hangs its
+own filings off. `check` skips it in both the untriaged rule and the
+closed-at-a-shipping-status rule, or every campaign that ever ran would sit in
+its output forever. `campaign follow-ups:` gets no such exemption — that one is
+ordinary work and is triaged like any.
+
+That exemption is about **fields**, and it used to be about parentage too. It
+should not have been. Everything a campaign throws off attaches to the ledger,
+so a ledger with no parent of its own puts every follow-up one hop from
+unreachable: epic #913 showed nine closed children and no sign that campaign
+#1266 had run three of them and left #1269 behind. So at **Finish** a campaign
+attaches its ledger to the parent its run-set shares — the epic gains one node
+whose subtree holds the campaign's output, and **no work issue moves**, so the
+epic's progress count is exactly what it was. A sub-issue link is a strict tree,
+which is why it is the ledger that moves up rather than the work that moves
+down.
+
+Where a run-set shares no single parent — a campaign over four unrelated issues
+— the ledger stays a root and that is correct, not a miss. Inventing a parent
+there would claim a relationship the work does not have.
 
 ---
 
