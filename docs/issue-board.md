@@ -155,9 +155,17 @@ a parent link as proof of an epic, and a parent link is nothing of the kind: it
 is the ordinary way to group an issue with the work it came out of. #1122 and
 #1202 each hold their own phase issues while correctly sitting in a work band,
 and both were failing this check on live data. Every epic this repo has had
-titles itself `epic:` (#778, #894, #913, #941, #1129), so that is what is
+opens its title with `epic` (#778, #894, #913, #941, #1129), so that is what is
 actually checkable — and it catches the epic with no children at all, which the
 old form's "one direction only" carve-out had to let through.
+
+**Where that rule stops, stated rather than implied.** `isEpicTitle` matches
+`^epic:` and nothing else, so a **scoped** epic title is outside it: #941 is
+`epic(test): make the test suite safe for the #913 refactor`, and `check` would
+not have made it hold the `Epic` band. Four of the five match, not five. The
+band rule is deliberately left that narrow — widening what counts as an epic
+title is a naming decision, not a check tweak — so read it as "an open issue
+titled `epic:`", never as "every epic".
 
 ## A parent is not an epic
 
@@ -186,12 +194,18 @@ stays reachable through it.
 
 **With no originating context at all, an open epic the work belongs to is the
 next thing tried**, not a straight fall to root. Every epic this repo has had
-titles itself `epic:`, so the candidate set is one command:
+opens its title with `epic`, so the candidate set is one command — and it is
+`^epic`, not `^epic:`, because #941 is `epic(test):` and the tighter form drops
+it:
 
 ```
 gh issue list --state open --limit 200 --json number,title \
-  --jq '.[] | select(.title | test("^epic:";"i")) | "#\(.number) \(.title)"'
+  --jq '.[] | select(.title | test("^epic";"i")) | "#\(.number) \(.title)"'
 ```
+
+That is wider than the band rule above on purpose. This one produces a list a
+person then judges, so offering one candidate too many costs nothing and missing
+the only epic that fits costs the link.
 
 Only where neither a context nor an epic fits does the parent stay unset, and
 that is the rare case. It is a last resort, never a shortcut: inventing a parent,
