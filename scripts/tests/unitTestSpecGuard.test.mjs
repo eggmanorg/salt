@@ -228,8 +228,8 @@ function rawOf(path) {
 // The doc named this fix itself and called it one assertion long. It is that,
 // plus one anchor: the equality below is self-anchoring in the `guarded`
 // direction (a regex that stopped matching would compare an empty set against
-// nine ids and red), but not in the `review-only` direction — twenty-one
-// unparsed rules are indistinguishable from twenty-one absent ones, and the
+// nine ids and red), but not in the `review-only` direction — twenty-two
+// unparsed rules are indistinguishable from twenty-two absent ones, and the
 // two floors below cannot tell either apart from a bullet RULE_HEADER simply
 // failed to recognise (both floors still hold at the old counts). The
 // "recognises every UT-* rule bullet" test below is what covers that half —

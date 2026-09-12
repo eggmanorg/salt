@@ -56,7 +56,7 @@ derived from the tree (files, assertions, `vi.mock` calls) were **re-measured on
   guarded rule reds on a **new** breach and on a fixed one whose ceiling was not lowered with it.
   Where the matcher sees less than the prose says, the marker says so — read it, because three of
   the nine are narrower than they look.
-- **`review-only`** — nothing checks it. Twenty-one rules, and they are the valuable half: `UT-B4`,
+- **`review-only`** — nothing checks it. Twenty-two rules, and they are the valuable half: `UT-B4`,
   `UT-F2` and `UT-H1` each encode an investigation no scanner can express. They are stated here with
   their limit rather than deleted or left as absolutes nothing enforces, which is the second branch
   CLAUDE.md Rule 12 permits.
@@ -331,7 +331,11 @@ has. It is also the easiest to render vacuously green.
   so `waitFor`, `userEvent` and CSS animations are unaffected — and derive the date constants from
   that same instant. Then **pin it**: assert the production accessor (`todayIso()`, not a re-derived
   copy) equals the constant, so removing the freeze reds a named test rather than a random 21.
-  Choose an instant at noon UTC, so CI's UTC and a developer's local zone land on the same date.
+  Choose an instant at noon UTC: that keeps the date the same across the zones this repo is
+  actually run in — UTC on CI, Europe/London on the machine it is developed on — and NOT across
+  every zone, since noon UTC is already the next day from UTC+12 eastward. If a suite ever needs
+  to be zone-proof rather than merely zone-stable here, derive its constants through the same
+  accessor the component uses instead of formatting the instant yourself.
   **Evidence:** #1341 — `MealPlanWeekPage.test.ts` failed 21 date-keyed assertions at once on PR
   #1340 and passed on a re-run minutes later; its own comment called the approach "deterministic",
   making it a Rule 12 instance as well as a flake. This is the third unit-suite flake family, after
