@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import {
@@ -14,6 +14,7 @@ import {
   type RecipeKind,
 } from '@salt/domain';
 import { formatDayKey } from '../src/lib/dateFormat.js';
+import { todayIso } from '../src/lib/today.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -278,10 +279,50 @@ const ALICE = member('alice@e.org', 'Alice');
 const BOB = member('bob@e.org', 'Bob');
 
 // ─── Landing on today (#639, Phase 2) ──────────────────────────────────────
-// "Today" comes from the real clock inside the component, so instead of freezing
-// time these helpers build a week AROUND today at a known offset — deterministic
-// on any day the suite happens to run.
-const TODAY = new Date().toLocaleDateString('en-CA');
+// "Today" comes from the real clock inside the component (`todayIso()`), so the
+// clock is FROZEN for this suite and `TODAY` is derived from the same frozen
+// instant. The helpers below still build a week around today at a known offset,
+// which is what makes the assertions readable; freezing is what makes them true.
+//
+// This used to read `new Date().toLocaleDateString('en-CA')` at module load and
+// call itself deterministic. It was not: the component kept reading the live
+// clock, so a run that straddled local midnight froze `TODAY` on one date and
+// rendered the next — 21 date-keyed assertions failed at once on PR #1340 and
+// passed on a re-run minutes later. Recorded as a third unit-suite flake family
+// in `docs/unit-test-spec.md`, and as a CLAUDE.md Rule 12 instance: the word
+// "deterministic" was asserted in a comment and enforced by nothing.
+//
+// `toFake: ['Date']` freezes the calendar and NOTHING else — `setTimeout` and
+// friends stay real, so `waitFor`, `userEvent` and the deck's spring animation
+// behave exactly as they did. The instant is noon UTC so that the date is the
+// same in the two zones this suite runs in (UTC in CI, Europe/London locally),
+// and it is deliberately AFTER the default `mockStart` week of 2026-06-08 so the
+// tests that do not arrange a week around today keep the relationship they were
+// written against.
+const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
+const TODAY = FIXED_NOW.toLocaleDateString('en-CA');
+
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: FIXED_NOW });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
+// The pin for the paragraph above, so "frozen" is mechanical rather than stated
+// (CLAUDE.md Rule 12 — the previous "deterministic" claim had no such test, which
+// is exactly why it went on being false). `todayIso()` is the function
+// `MealPlanWeekPage` itself calls and is NOT mocked in this suite, so this fails
+// the moment the freeze stops covering the component's own source of today —
+// whether because the hook is removed, because `toFake` stops including `Date`,
+// or because the page starts asking something else.
+describe('MealPlanWeekPage — the suite clock', () => {
+  it("freezes the component's own source of today, so a run cannot straddle midnight", () => {
+    expect(todayIso()).toBe(TODAY);
+    expect(new Date().toISOString()).toBe(FIXED_NOW.toISOString());
+  });
+});
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00.000Z`);
@@ -620,9 +661,9 @@ describe('MealPlanWeekPage', () => {
   });
 
   // ─── Load template asks which week (#639, Phase 7) ───────────────────────
-  // The offered weeks are anchored on the REAL today (the page reads the clock),
-  // so the expectations are derived the same way rather than hard-coded — the
-  // household's first day is 'mon' in these tests.
+  // The offered weeks are anchored on today (the page reads the clock, which this
+  // suite freezes), so the expectations are derived the same way rather than being
+  // hard-coded — the household's first day is 'mon' in these tests.
   const offered = () => templateWeekStarts(TODAY, 'mon');
 
   async function openLoadPicker(): Promise<void> {

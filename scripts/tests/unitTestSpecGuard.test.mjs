@@ -1,7 +1,7 @@
 /**
  * Source guard: the unit-test spec's countable rules are counted (issue #1134).
  *
- * `docs/unit-test-spec.md` states 30 `UT-*` rules, 26 of them `MUST`, and until
+ * `docs/unit-test-spec.md` states 31 `UT-*` rules, 27 of them `MUST`, and until
  * this file nothing checked any of them. #1134 measured what that produced: in
  * the seven days after the spec was written the repo gained 76 test files, and
  * the two rules the spec supplies its own grep for got worse in ABSOLUTE terms —
@@ -16,7 +16,7 @@
  * direction. The matchers live in `scripts/lib/unitTestSpec.mjs`; its header
  * carries the anti-vacuity argument and the honest limits of each one.
  *
- * The other twenty-one rules need a reader, and Phase 2 of #1134 marks them in
+ * The other twenty-two rules need a reader, and Phase 2 of #1134 marks them in
  * the spec as review-only rather than leaving them stated as absolutes that
  * nothing enforces.
  *
@@ -246,7 +246,7 @@ describe("the spec's `guarded` markers name the rules this guard implements", ()
   const headers = [...specDoc.matchAll(RULE_HEADER)].map(([, id, marker]) => ({ id, marker }));
 
   it('still parses the spec, both markers', () => {
-    // Thirty rules today, nine of them guarded. A floor rather than an equality
+    // Thirty-one rules today, nine of them guarded. A floor rather than an equality
     // so that adding a rule is a doc edit, not a two-file one — the point is
     // that the parse still reaches the review-only half, which the assertion
     // below cannot tell apart from an empty file.

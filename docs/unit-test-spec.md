@@ -323,6 +323,21 @@ has. It is also the easiest to render vacuously green.
   **Evidence:** #967 — `savedTick`'s 1.5 s clear ran on CI's runner and not on macOS, so the module
   measured 7/7 lines on one and 6/7 on the other with the suite green either way.
 
+- **UT-F6 (MUST · review-only) — If the component reads the clock, freeze the clock.** A suite that
+  computes its expectations from `new Date()` at module load while the component under test goes on
+  reading the live clock is not deterministic, however the comment beside it is worded: a run that
+  straddles local midnight freezes the expectation on one date and renders the next. Freeze with
+  `vi.useFakeTimers({ toFake: ['Date'], now: FIXED })` — `toFake: ['Date']` leaves `setTimeout` real,
+  so `waitFor`, `userEvent` and CSS animations are unaffected — and derive the date constants from
+  that same instant. Then **pin it**: assert the production accessor (`todayIso()`, not a re-derived
+  copy) equals the constant, so removing the freeze reds a named test rather than a random 21.
+  Choose an instant at noon UTC, so CI's UTC and a developer's local zone land on the same date.
+  **Evidence:** #1341 — `MealPlanWeekPage.test.ts` failed 21 date-keyed assertions at once on PR
+  #1340 and passed on a re-run minutes later; its own comment called the approach "deterministic",
+  making it a Rule 12 instance as well as a flake. This is the third unit-suite flake family, after
+  the unset `asyncUtilTimeout` (UT-F1) and `userEvent` keystrokes eaten by a bits-ui focus trap
+  (UT-F2).
+
 - **UT-F3 (MUST NOT · review-only) — No arbitrary sleeps.** Wait on the real signal: `await
 waitFor(...)`, `findBy*`, or `vi.advanceTimersByTime` under fake timers. A bare `setTimeout` race
   resolves differently under the ~nCPU thread pool this suite runs on.
@@ -461,6 +476,7 @@ Async & harness
 [ ] UT-F3  No arbitrary sleeps; waitFor/findBy/fake timers
 [ ] UT-F4  Fake timers, stubEnv, stubGlobal, window writes restored in afterEach
 [ ] UT-F5  A production timer is driven with fake timers, never waited out
+[ ] UT-F6  A clock-reading component is tested against a frozen clock, with the freeze pinned
 
 Tooling (only if a test directory or config is added)
 [ ] UT-G1  New TS tests/ dir has a tsconfig.test.json (guard can't see one that's simply missing)

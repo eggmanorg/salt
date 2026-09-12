@@ -150,7 +150,17 @@ test.describe('meals — a dish joins a meal on the meal’s own page', () => {
     // attached dish out of the picker...") and `RecipeNewSheet.test.ts` ("drops a
     // chosen dish out of the picker...") both do for the same claim; this mirrors
     // them so the assertion can actually go red.
+    //
+    // POSITIVE FIRST (#1341), for the same reason as the three above: `toHaveCount(0)`
+    // was still the first query made against the reopened listbox, and
+    // `ComboboxContent` renders nothing at all until `ctx.open` — so the count was
+    // mitigated only by the click happening to open the popup synchronously, which
+    // is an implementation detail and not something this spec should rest on.
+    // Waiting on the listbox itself is fixture-independent (it does not assume how
+    // many candidates the seed leaves) and it is exactly the precondition the
+    // negative needs: the box is open, and `NEW_DISH` is not in it.
     await page.getByTestId('recipe-edit-component-picker').click();
+    await expect(page.getByRole('listbox')).toBeVisible();
     await expect(page.getByRole('option', { name: NEW_DISH })).toHaveCount(0);
     await page.keyboard.press('Escape');
 

@@ -156,13 +156,21 @@
    * REORDER IS `ReorderControl` AND NOTHING ELSE (#1332's ruling) — no pair of
    * buttons is inlined here, on either list.
    *
-   * THIS FILE'S TWO UNCOVERABLE BRANCHES are both in the scaled notice, stated
-   * rather than left to be found: `{scaling.active}` and `{scaling.base}` in a
-   * text node each compile to `value ?? ''`, and on a number that is always
-   * present that fallback is unreachable. Both came with the markup out of
-   * `RecipeViewPage.svelte` rather than being added here, and composing the
-   * sentence into one derived string would remove one of the two at the cost of
-   * changing read markup this phase is meant to move verbatim.
+   * THIS FILE HAS NO UNCOVERED BRANCHES, and #1341 is what closed the last two.
+   * They were both in the scaled notice: `{scaling.active}` and `{scaling.base}`
+   * interpolated into a text node each compiled to `value ?? ''`, and on a number
+   * that is always present that fallback is unreachable. Both were inherited with
+   * the read markup this phase was told to move verbatim, so they were stated in
+   * this header rather than fixed. Composing the sentence in `scaledNotice`
+   * removed them. It is a plain function and not a `$derived` on purpose: a
+   * ternary or an optional chain over `scaling` would put a branch back that is
+   * only reachable when the enclosing `{#if scaling && isScaled}` is false, which
+   * is exactly when nothing reads it.
+   *
+   * Measured, not assumed — `pnpm test:coverage`, 0 of 67 branches uncovered in
+   * this file. Nothing enforces the count per file (the ratchet's ceilings are
+   * per AREA), so treat this paragraph as a measurement with a date on it and
+   * re-measure before trusting it, rather than as a guarantee.
    */
   let {
     recipe,
@@ -206,6 +214,18 @@
     canonalising: boolean;
     handleCanonicalise: () => void;
   } = $props();
+
+  /**
+   * The scaled notice as one string. The wording is unchanged from the markup
+   * this panel inherited; composing it here is what takes the sentence from two
+   * unreachable `?? ''` text-node fallbacks to one (#1341, and see the header).
+   */
+  function scaledNotice(active: number, base: number): string {
+    return (
+      `Amounts scaled for ${active} — the recipe is written for ${base}. ` +
+      'Nothing else changed: the method, the timings and any tin or pan size are as written.'
+    );
+  }
 
   // What every box reads while editing. Seeded in `seedDraft` and never re-synced
   // from the store for any other reason — see the header for why.
@@ -533,10 +553,7 @@
         class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-tertiary-variant bg-tertiary-variant/15 px-3 py-2 text-xs text-muted-foreground"
         data-testid="recipe-scaled-notice"
       >
-        <span>
-          Amounts scaled for {scaling.active} — the recipe is written for {scaling.base}. Nothing
-          else changed: the method, the timings and any tin or pan size are as written.
-        </span>
+        <span>{scaledNotice(scaling.active, scaling.base)}</span>
         <Button
           size="sm"
           variant="ghost"

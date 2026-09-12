@@ -702,15 +702,26 @@ describe('RecipeIngredientsPanel — the draft', () => {
   // group id gone from the store, `addRow` appeared on screen and nowhere in the
   // document. This is the fixture the PR body wrongly claimed was already
   // covered — group ids CHANGING, not held constant.
+  // TWO groups, deliberately (#1341). This fixture was written with one, and a
+  // one-group fixture cannot tell the threshold the panel actually keys on —
+  // `draftSurvivesInStore()` is a `.some`, so it re-seeds only when NONE of the
+  // draft's group ids survive — apart from the much weaker "any group id
+  // changed". With one group the two are the same sentence. With two, "none
+  // survive" means neither, and the paired test below pins the other side: one
+  // surviving group must NOT re-seed.
   it('recovers when a chat amendment re-mints every group and item id at once', async () => {
     const { rerender } = show(
-      recipeWith([group('g1', null, [matched('i1', 'flour'), matched('i2', 'water', 'canon-2')])]),
+      recipeWith([
+        group('g1', null, [matched('i1', 'flour'), matched('i2', 'water', 'canon-2')]),
+        group('g2', 'For the glaze', [matched('i3', 'honey', 'canon-3')]),
+      ]),
       true,
     );
     await open('recipe-edit-ingredient');
 
-    // The amendment lands: not just new words, an entirely new group id and new
-    // item ids — the shape `assembleRecipeDraft.ts` actually produces.
+    // The amendment lands: not just new words, entirely new group ids and new
+    // item ids — the shape `assembleRecipeDraft.ts` actually produces, which
+    // re-mints EVERY group in one unconditional `map`.
     await rerender(
       props(
         recipeWith([
@@ -718,6 +729,7 @@ describe('RecipeIngredientsPanel — the draft', () => {
             matched('iNEW1', '500g strong white flour'),
             matched('iNEW2', '350g water', 'canon-2'),
           ]),
+          group('gNEW2', 'For the glaze', [matched('iNEW3', '2 tbsp honey', 'canon-3')]),
         ]),
         true,
       ),
@@ -730,12 +742,65 @@ describe('RecipeIngredientsPanel — the draft', () => {
 
     // The panel is not dead to the document: a fresh gesture against the NEW ids
     // writes, rather than silently patching a group id the store no longer has.
-    await fireEvent.click(screen.getByTestId('recipe-edit-ingredient-add'));
+    await fireEvent.click(screen.getAllByTestId('recipe-edit-ingredient-add')[0]!);
 
-    expect(lastGroups()).toHaveLength(1);
-    expect(lastGroups()[0]!.id).toBe('gNEW');
+    expect(lastGroups().map((g) => g.id)).toEqual(['gNEW', 'gNEW2']);
     expect(lastGroups()[0]!.items).toHaveLength(3);
     expect(lastGroups()[0]!.items[2]!.rawText).toBe('');
+  });
+
+  // The other side of that threshold, and the reason the fixture above needed a
+  // second group (#1341). An ordinary concurrent edit from another phone can
+  // replace ONE group — remove it and add another — without touching its
+  // sibling. That is not the amendment shape, and it must not re-seed: re-seeding
+  // on "any group id changed" would close a box the user is typing in and discard
+  // the draft for a change made somewhere else on the page.
+  it('does NOT re-seed when one group id changes and a sibling survives', async () => {
+    const { rerender } = show(
+      recipeWith([
+        group('g1', null, [matched('i1', 'flour')]),
+        group('g2', 'For the glaze', [matched('i2', 'honey', 'canon-2')]),
+      ]),
+      true,
+    );
+    // Open the box in the group that is about to survive, and TYPE — the typed
+    // text is what makes a re-seed visible at all. `onEdit` is a spy here, so the
+    // `recipe` prop still holds `honey` while the draft holds `set honey`: that
+    // divergence is precisely what re-seeding from the store would throw away.
+    // (Asserting only that the box is still open would not discriminate — the box
+    // survives either way, because its own row `i2` never goes missing. Verified
+    // by flipping `.some` to `.every` and watching this test stay green without
+    // the keystroke.)
+    await open('recipe-edit-ingredient', 1);
+    await fireEvent.input(screen.getByTestId('recipe-edit-ingredient-field'), {
+      target: { value: 'set honey' },
+    });
+    expect(screen.getByTestId('recipe-edit-ingredient-field')).toHaveValue('set honey');
+
+    // Only `g1` is replaced. `g2` — and so the draft's identity — is still there.
+    await rerender(
+      props(
+        recipeWith([
+          group('gNEW', null, [matched('iNEW', '500g strong white flour')]),
+          group('g2', 'For the glaze', [matched('i2', 'honey', 'canon-2')]),
+        ]),
+        true,
+      ),
+    );
+
+    // The draft was kept, so the half-typed line is still on screen.
+    expect(screen.getByTestId('recipe-edit-ingredient-field')).toHaveValue('set honey');
+
+    // And the next write still composes off the FRESHEST store rather than the
+    // draft: it patches the surviving group and carries the replacement group
+    // beside it, instead of writing the panel's stale copy of `g1` back over it.
+    await fireEvent.input(screen.getByTestId('recipe-edit-ingredient-field'), {
+      target: { value: 'set honey, warmed' },
+    });
+
+    expect(lastGroups().map((g) => g.id)).toEqual(['gNEW', 'g2']);
+    expect(lastGroups()[0]!.items[0]!.rawText).toBe('500g strong white flour');
+    expect(lastGroups()[1]!.items[0]!.rawText).toBe('set honey, warmed');
   });
 
   it('shows the new recipe’s ingredients when the document changes under an open editor', async () => {
