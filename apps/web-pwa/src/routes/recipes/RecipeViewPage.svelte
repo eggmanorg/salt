@@ -108,8 +108,8 @@
     groupKitByEquipment,
     looksScalable,
     resolveComponents,
+    servingsScale,
     takesIngredients,
-    usableServings,
     type IngredientGroup,
     type Ingredient,
     type Recipe,
@@ -424,33 +424,37 @@
   // again. The chosen number lives in the URL and nowhere else — `servingsParam.ts`
   // argues why, and CLAUDE.md Rule 3 forbids the alternative.
   //
-  // `usableServings` is the one rule for whether a stated count can be a scaling
-  // base (issue #1123): `null` and `0` cannot, so those recipes keep today's inert
-  // pill and a `?serves=` on them does nothing.
   // ONE nullable, not three. `null` is the whole of "this recipe cannot be read at
   // another number" — no usable stated count, per `usableServings` (issue #1123),
   // where `null` and `0` both fail. Everything downstream narrows through this
   // object, so there is no second place that can disagree about whether the pill
   // is a control or a label.
-  const scaling = $derived.by((): { base: number; active: number } | null => {
-    const base = usableServings(recipe?.metadata.servings ?? null);
-    if (base === null) return null;
-    // ENTERING EDIT MODE CLEARS AN ACTIVE SCALE (issue #1324, Daniel's call): you
-    // are never editing a scaled view. There are two halves and both are needed.
-    // `startEditing` pushes the param away, which cleans the URL and the cook
-    // links with it; this clause is what makes the RENDERING true whether or not
-    // the router has caught up, and it closes the one route the push cannot —
-    // the back button landing on the history entry the push just created, or a
-    // hand-typed `?serves=`. Without it the pill would show the stored 4 while
-    // the ingredient rows below stayed at the 6 you were reading.
-    if (editing) return { base, active: base };
-    // A `?serves=` aimed at an unscalable recipe is ignored, not honoured above.
-    return { base, active: readServingsParam(router.querystring) ?? base };
-  });
+  //
+  // The arithmetic itself is `servingsScale` in the pure module (issue #1321), not
+  // written out here: the cook screens derive the same base/active/factor rule from
+  // a different source, and two copies of it are two rules waiting to disagree.
+  // This page's own contribution is just WHICH number it asks for, below.
+  //
+  // `$derived.by` rather than `$derived`: `editing` is declared further down the
+  // file, and only a callback defers the read past its TDZ.
+  const scaling = $derived.by(() =>
+    servingsScale(
+      recipe?.metadata.servings ?? null,
+      // ENTERING EDIT MODE CLEARS AN ACTIVE SCALE (issue #1324, Daniel's call): you
+      // are never editing a scaled view. There are two halves and both are needed.
+      // `startEditing` pushes the param away, which cleans the URL and the cook
+      // links with it; this clause is what makes the RENDERING true whether or not
+      // the router has caught up, and it closes the one route the push cannot —
+      // the back button landing on the history entry the push just created, or a
+      // hand-typed `?serves=`. Without it the pill would show the stored 4 while
+      // the ingredient rows below stayed at the 6 you were reading.
+      editing ? null : readServingsParam(router.querystring),
+    ),
+  );
   // The DISPLAY factor handed to `IngredientText`. Exactly 1 whenever the page is
   // as written, which is the value that renders identically to before.
-  const ingredientScale = $derived(scaling === null ? 1 : scaling.active / scaling.base);
-  const isScaled = $derived(ingredientScale !== 1);
+  const ingredientScale = $derived(scaling?.factor ?? 1);
+  const isScaled = $derived(scaling?.isScaled ?? false);
 
   // What the picker offers: 1–12, plus the recipe's own count and the number
   // currently being read if either falls outside that. The range is a household

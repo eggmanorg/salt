@@ -41,7 +41,10 @@ export { scaleQuantity } from './queries/scaleQuantity.js';
 // The ONE rule for whether a recipe's own servings count can be a scaling base
 // (issue #1123) — the plan builder and the review sheet both read it, and a 0
 // that reached either divided a shopping list by zero.
-export { usableServings } from './queries/servings.js';
+// `servingsScale` is the base/active/factor arithmetic that sits on top of it,
+// held once because the recipe page and both cook screens each derive it (#1321).
+export { usableServings, servingsScale } from './queries/servings.js';
+export type { ServingsScale } from './queries/servings.js';
 // Silent match problems — a line that reads as matched and buys the wrong thing
 // (or nothing). Shared by the recipe list's pip and the ingredient match sheet so
 // the two can never disagree about what counts as wrong.

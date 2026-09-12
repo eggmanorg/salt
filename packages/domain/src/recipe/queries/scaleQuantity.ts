@@ -31,9 +31,14 @@ import { roundGrams } from '../../formula/rounding.js';
 //     below it. "399.94g flour" is not a number anybody weighs.
 //
 //   a count (`unit === null`) — the nearest half, rendered by the caller as a
-//     fraction ("4½"). "2⅔ eggs" asserts a precision the scaling never had. A
-//     POSITIVE count never rounds away to zero: it floors at ½, because a row
-//     reading "0 eggs" is an ingredient the cook silently leaves out.
+//     fraction ("4½"). "2⅔ eggs" asserts a precision the scaling never had.
+//
+// A POSITIVE AMOUNT NEVER ROUNDS AWAY TO ZERO, in EITHER unit (issue #1321,
+// Daniel's call: the minimum always shows). A count floors at ½ and a measure at
+// the finest figure the rounding can express; a row reading "0g" or "0 eggs" is
+// an ingredient the cook silently leaves out of the dish, which is the one
+// failure this whole path exists to avoid. The two floors are different numbers
+// for the same reason the two roundings are.
 //
 // **Stated limit (CLAUDE.md Rule 12).** `roundGrams` is named for grams and its
 // 10g decimal threshold was chosen for a domestic scale. Reusing it for
@@ -73,8 +78,24 @@ function roundCount(exact: number): number {
   return exact > 0 && rounded === 0 ? COUNT_STEP : rounded;
 }
 
+// The smallest figure a measure can be shown as: one decimal, which is the
+// granularity `roundGrams` keeps below its 10g threshold. Coupled to that rounding
+// by construction rather than by arithmetic — if `roundGrams` ever gained a second
+// decimal this would want to follow it, and the test that pins "a positive measure
+// never reads 0" goes red if the two ever disagree.
+const MEASURE_FLOOR = 0.1;
+
+function roundMeasure(exact: number): number {
+  const rounded = roundGrams(exact);
+  // Same rescue as `roundCount`, and the same reason. The finiteness check is what
+  // keeps it a floor rather than a laundering of nonsense: `roundGrams` answers 0
+  // for Infinity too, and "Infinity g" must go on reading as 0 rather than be
+  // promoted to a plausible-looking 0.1g.
+  return Number.isFinite(exact) && exact > 0 && rounded === 0 ? MEASURE_FLOOR : rounded;
+}
+
 function scaleValue(value: number, factor: number, unit: 'g' | 'ml' | null): number {
-  return unit === null ? roundCount(value * factor) : roundGrams(value * factor);
+  return unit === null ? roundCount(value * factor) : roundMeasure(value * factor);
 }
 
 // A scaled COUNT that landed on a half becomes a `mixed` quantity, which is the

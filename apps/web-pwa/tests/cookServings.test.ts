@@ -131,6 +131,25 @@ describe('createCookServings — which number wins', () => {
     );
   });
 
+  it('refuses a session that pinned a count `usableServings` would not accept', () => {
+    // Issue #1321. The link is validated on the way in by `readServingsParam`, but
+    // the SESSION is a stored document and a 0 in it used to reach the division
+    // unchecked — scaling every amount on the cook screen to nothing. Sharing
+    // `servingsScale` with the recipe page applies the one rule to both sources,
+    // so an unusable pinned value falls back to the recipe as written.
+    for (const pinned of [0, -2]) {
+      withEffectRoot(
+        () =>
+          createCookServings({ recipe: () => recipeServing(4), session: () => session(pinned) }),
+        (s) => {
+          expect(s.active).toBe(4);
+          expect(s.scale).toBe(1);
+          expect(s.isScaled).toBe(false);
+        },
+      );
+    }
+  });
+
   it('cannot scale a recipe with no usable servings count, and ignores the link', () => {
     // `usableServings` (issue #1123): null and 0 are both refused as a base.
     mockRouter.querystring = 'serves=6';
