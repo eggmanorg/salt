@@ -181,9 +181,28 @@ recommending one and him approving it is how nearly every issue here gets filed,
 and the originating work is fully known either way. Written around the wrong
 test, the rule left #1239 — whose own body says "#1228 is superseded by this
 issue" — and #1308 unattached. The chain holds at every depth: an issue filed out
-of a follow-up hangs off that follow-up, not off the epic above it. Only a
-genuinely context-free filing leaves the parent unset, and that is now the
-exception rather than the rule.
+of a follow-up hangs off that follow-up, not off the epic above it — the epic
+stays reachable through it.
+
+**With no originating context at all, an open epic the work belongs to is the
+next thing tried**, not a straight fall to root. Every epic this repo has had
+titles itself `epic:`, so the candidate set is one command:
+
+```
+gh issue list --state open --limit 200 --json number,title \
+  --jq '.[] | select(.title | test("^epic:";"i")) | "#\(.number) \(.title)"'
+```
+
+Only where neither a context nor an epic fits does the parent stay unset, and
+that is the rare case. It is a last resort, never a shortcut: inventing a parent,
+or creating an epic to have somewhere to attach, is worse than leaving a root.
+
+The converse holds too, and matters more often: **an epic is not the only thing
+that can be a parent.** An ordinary work issue holds sub-issues perfectly well —
+#1122 and #1202 each hold their own phase issues from inside a work band, and a
+`campaign:` ledger holds everything its campaign throws off. So a filing with no
+place to go is never a reason to create an epic: a container with one child is
+worse than a root.
 
 **It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
 and this never passes it. An agent cannot tell "unattached" from "attached to
@@ -232,9 +251,10 @@ should not have been. Everything a campaign throws off attaches to the ledger,
 so a ledger with no parent of its own puts every follow-up one hop from
 unreachable: epic #913 showed nine closed children and no sign that campaign
 #1266 had run three of them and left #1269 behind. So at **Finish** a campaign
-attaches its ledger to the parent its run-set shares — the epic gains one node
-whose subtree holds the campaign's output, and **no work issue moves**, so the
-epic's progress count is exactly what it was. A sub-issue link is a strict tree,
+attaches its ledger to the parent its run-set shares — epic or ordinary work
+issue, whichever it is — and that parent gains one node whose subtree holds the
+campaign's output, while **no work issue moves**, so its progress count is
+exactly what it was. A sub-issue link is a strict tree,
 which is why it is the ledger that moves up rather than the work that moves
 down.
 
