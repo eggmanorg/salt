@@ -207,6 +207,7 @@ export type {
   RecipePhase,
   RecipePhaseStrip,
   AuthorableRecipeKind,
+  ServingsScale,
 } from './recipe/index.js';
 export {
   emptyRecipe,
@@ -227,6 +228,7 @@ export {
   quantityToNumber,
   scaleQuantity,
   usableServings,
+  servingsScale,
   ingredientMatchIssue,
   recipeMatchIssueCount,
   takesIngredients,

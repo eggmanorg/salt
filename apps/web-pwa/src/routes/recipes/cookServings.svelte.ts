@@ -1,5 +1,5 @@
 import { router } from 'svelte-spa-router';
-import { usableServings } from '@salt/domain';
+import { servingsScale } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 import type { CookSessionDoc } from '@salt/domain/schemas';
 import { persistCookSession } from '../../lib/cookSessionService.js';
@@ -29,6 +29,10 @@ import { readServingsParam } from './servingsParam.js';
  * and `0` both fail) cannot be scaled at all, and a `?serves=` aimed at one is
  * ignored rather than honoured.
  *
+ * WHICH number wins is this file's rule, above. What that number MEANS — the
+ * base/active/factor arithmetic — is `servingsScale` in the pure module, shared
+ * with the recipe page (issue #1321), for exactly the reason this file exists.
+ *
  * It lives in `routes/recipes/` rather than `lib/` because `readServingsParam` is
  * the recipe routes' own parameter and `lib/` must not reach up into a route
  * folder to find it.
@@ -41,12 +45,14 @@ export interface CookServingsOptions {
 }
 
 export function createCookServings(options: CookServingsOptions) {
-  const base = $derived(usableServings(options.recipe()?.metadata.servings ?? null));
   const fromUrl = $derived(readServingsParam(router.querystring));
-  const active = $derived(base === null ? null : (fromUrl ?? options.session()?.servings ?? base));
-  /** The DISPLAY factor for `IngredientText`. Exactly 1 when cooking as written. */
-  const scale = $derived(base === null || active === null ? 1 : active / base);
-  const isScaled = $derived(scale !== 1);
+  const scaling = $derived(
+    servingsScale(
+      options.recipe()?.metadata.servings ?? null,
+      fromUrl ?? options.session()?.servings ?? null,
+    ),
+  );
+  const base = $derived(scaling?.base ?? null);
 
   // ─── Pin the scale the cook OPENED with ──────────────────────────────────────
   //
@@ -92,25 +98,25 @@ export function createCookServings(options: CookServingsOptions) {
     },
     /** How many this cook is for. `null` only when the recipe cannot be scaled. */
     get active(): number | null {
-      return active;
+      return scaling?.active ?? null;
     },
     /** The factor every amount on the screen is drawn at. */
     get scale(): number {
-      return scale;
+      return scaling?.factor ?? 1;
     },
     /** Whether this cook is for a different number than the recipe states. */
     get isScaled(): boolean {
-      return isScaled;
+      return scaling?.isScaled ?? false;
     },
     /**
      * The two numbers to say out loud, or `null` when this cook is as written.
      *
-     * One nullable rather than three checks at each call site: `isScaled` already
-     * implies both of the others are numbers, and a screen re-deriving that
+     * One nullable rather than three checks at each call site: an unscaled cook and
+     * an unscalable recipe are the same answer here, and a screen re-deriving that
      * implication is a screen that can get it wrong.
      */
     get scaled(): { active: number; base: number } | null {
-      return isScaled && active !== null && base !== null ? { active, base } : null;
+      return scaling?.isScaled ? { active: scaling.active, base: scaling.base } : null;
     },
   };
 }

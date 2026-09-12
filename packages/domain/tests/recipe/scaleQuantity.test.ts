@@ -9,7 +9,8 @@ import type { Quantity } from '../../src/index.js';
 // implementation detail:
 //
 //   1. what a scaled number is rounded to — grams through `roundGrams`, counts to
-//      the nearest half, and a positive count never to zero;
+//      the nearest half, and a positive amount never to zero in EITHER unit
+//      (issue #1321);
 //   2. that this rounding is NOT what the shopping list buys. The display/purchase
 //      boundary is the claim the issue makes (CLAUDE.md Rule 12), and the half of
 //      it that lives in this package is asserted below; the other half — that
@@ -59,6 +60,47 @@ describe('scaleQuantity', () => {
       expect(scaleQuantity({ type: 'single', value: 3 }, 1.5, 'g')).toEqual({
         type: 'single',
         value: 4.5,
+      });
+    });
+
+    it('floors a positive measure at 0.1 rather than rounding it away', () => {
+      // Issue #1321, Daniel's call: the minimum always shows. 1g of yeast for one
+      // of forty is 0.025g, which `roundGrams` takes to zero — and a row reading
+      // "0g yeast" is an ingredient the cook silently leaves out, exactly the
+      // hazard the count path was floored against.
+      expect(scaleQuantity({ type: 'single', value: 1 }, 1 / 40, 'g')).toEqual({
+        type: 'single',
+        value: 0.1,
+      });
+      // The same rule through the jug.
+      expect(scaleQuantity({ type: 'single', value: 2 }, 0.02, 'ml')).toEqual({
+        type: 'single',
+        value: 0.1,
+      });
+      // 0.05 is already the nearest tenth away from zero, so it needs no floor —
+      // the two paths agree on the answer and only one of them is a rescue.
+      expect(scaleQuantity({ type: 'single', value: 1 }, 0.05, 'g')).toEqual({
+        type: 'single',
+        value: 0.1,
+      });
+    });
+
+    it('floors each end of a vanishing range on its own', () => {
+      // Both ends survive as a range rather than collapsing to "0–0g".
+      expect(scaleQuantity({ type: 'range', min: 1, max: 2 }, 1 / 100, 'g')).toEqual({
+        type: 'range',
+        min: 0.1,
+        max: 0.1,
+      });
+    });
+
+    it('leaves a non-finite stored measure at zero rather than promoting it', () => {
+      // `QuantitySchema` is `z.number()`, which admits Infinity. The floor is a
+      // rescue for a REAL small amount; "Infinity g" is not one, and 0.1g would
+      // read as a plausible figure somebody might actually weigh out.
+      expect(scaleQuantity({ type: 'single', value: Number.POSITIVE_INFINITY }, 2, 'g')).toEqual({
+        type: 'single',
+        value: 0,
       });
     });
   });
@@ -172,6 +214,43 @@ describe('scaleQuantity', () => {
       expect(scaleQuantity(original, Number.NaN, null)).toBe(original);
       expect(scaleQuantity(original, Number.POSITIVE_INFINITY, null)).toBe(original);
     });
+  });
+
+  // ─── Rule 12: a positive amount never reads as nothing ──────────────────────
+  //
+  // The claim the header makes, stated once and asserted here across both units
+  // and every shape a stored quantity comes in — rather than only at the two
+  // factors somebody thought to write a case for. An ingredient that disappears
+  // from a scaled list, while the list still LOOKS complete, is the failure this
+  // path exists to avoid, and it is invisible to every other gate in the repo.
+  describe('a positive amount never scales away to nothing', () => {
+    const stated: Quantity[] = [
+      { type: 'single', value: 1 },
+      { type: 'single', value: 0.5 },
+      { type: 'mixed', whole: 0, numerator: 1, denominator: 4 },
+      { type: 'range', min: 1, max: 2 },
+    ];
+    // Every factor the picker can produce against the largest base it offers, plus
+    // the extremes a hand-typed `?serves=` reaches (`SERVINGS_PARAM_MAX` is 100).
+    const factors = [1 / 100, 1 / 40, 1 / 12, 0.05, 0.125, 0.25, 1 / 3, 0.5, 0.99];
+
+    for (const unit of ['g', 'ml', null] as const) {
+      it(`holds for ${unit ?? 'a count'}`, () => {
+        for (const quantity of stated) {
+          for (const factor of factors) {
+            const scaled = scaleQuantity(quantity, factor, unit);
+            const ends =
+              scaled.type === 'range' ? [scaled.min, scaled.max] : [quantityToNumber(scaled)];
+            for (const end of ends) {
+              expect(
+                end,
+                `${JSON.stringify(quantity)} × ${factor} ${unit ?? 'count'}`,
+              ).toBeGreaterThan(0);
+            }
+          }
+        }
+      });
+    }
   });
 
   // ─── Rule 12: the display figure is not the purchase figure ─────────────────
