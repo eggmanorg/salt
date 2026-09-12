@@ -124,10 +124,13 @@
    * If a meal sent us here, hang the new dish off it and go back to the meal.
    * Returns true when it has taken responsibility for the navigation.
    *
-   * The attach is idempotent and gated purely on the param — same contract as
-   * the editor's save path, so the two doors behave identically. A meal that has
-   * been deleted meanwhile must not cost the user the recipe they just made:
-   * say so, and land them on what was written.
+   * The attach is idempotent and gated purely on the param. It used to be one of
+   * two doors and was written to match the editor's save path exactly; #1319
+   * Phase 8 deleted that one, and Phase 7 moved the imports' attach to the moment
+   * the dish is created, so there is no longer a second door for this to agree
+   * with — chat is the only path whose dish does not exist until the conversation
+   * makes it. A meal that has been deleted meanwhile must not cost the user the
+   * recipe they just made: say so, and land them on what was written.
    */
   async function returnToMeal(saved: Recipe): Promise<boolean> {
     const mealId = mealReturnId;

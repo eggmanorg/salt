@@ -495,10 +495,21 @@ export async function setRecipeImageUpload(
 
 // ─── URL import ────────────────────────────────────────────────────────────────
 // SSRF-hardened import: paste a recipe URL, get back a fully-converted (metric +
-// British) draft. The draft is NOT persisted here — the caller hydrates the
-// editor with it so the user reviews/saves. On failure we return a specific,
-// friendly message keyed off the import failure code; the UI shows it and lets
-// the user fall back to manual/chat.
+// British) recipe.
+//
+// IT IS ALREADY PERSISTED when this returns. The CALLABLE writes it, server-side,
+// before replying (#616) — which is what lets a share-sheet import survive the
+// PWA being killed mid-extraction. Nothing here writes it and nothing downstream
+// needs to: the caller stashes the returned copy only so the page it routes to
+// can paint before the Firestore listener has caught up, and the store wins the
+// moment it has the document.
+//
+// (This used to say the draft was NOT persisted and the editor saved it. Both
+// halves were false — the first since #616, the second since #1319 Phase 8
+// deleted the editor.)
+//
+// On failure we return a specific, friendly message keyed off the import failure
+// code; the UI shows it and offers the chef as the way in.
 
 // User-facing copy per failure code. Mirrors the CF entrypoint's HttpsError
 // messages but lives client-side so we never depend on the server message text.
@@ -507,7 +518,8 @@ const URL_IMPORT_COPY: Record<UrlImportFailureCode, string> = {
   'blocked-url': "That link can't be imported.",
   'fetch-failed': "We couldn't reach that page — it may be down, paywalled, or blocking us.",
   'not-a-recipe': "We couldn't find a recipe on that page.",
-  'ai-failed': 'The recipe reader had trouble with that page — try again, or add it manually.',
+  'ai-failed':
+    'The recipe reader had trouble with that page — try again, or paste the recipe into the chef.',
 };
 
 // Copy for the failures that are NOT about the recipe site (issue #740). Shared
@@ -639,7 +651,8 @@ async function tracedUserAction<T, E>(
 
 // Import a recipe from a URL. Returns the assembled draft as a Recipe entity
 // (RecipeDoc is structurally identical), with source.type='url' already set.
-// `updatedAt` is left as the server stamp; the editor re-stamps on save.
+// `updatedAt` is left as the server stamp. Nothing re-stamps it on arrival —
+// the first hand edit on the recipe's own page does, like any other write.
 //
 // Distributed tracing (issue #362, Phase 4): start a ROOT span at this user action
 // so the trace ORIGINATES here in the browser. Its W3C traceparent is handed to
@@ -700,7 +713,7 @@ const PHOTO_IMPORT_COPY: Record<PhotoImportFailureCode, string> = {
   'unreadable-photos':
     'We couldn’t read a recipe from those photos — try a sharper, brighter shot of the whole page.',
   'import-failed':
-    'The recipe reader had trouble with those photos — try again, or add it manually.',
+    'The recipe reader had trouble with those photos — try again, or type the recipe to the chef.',
 };
 
 // Same split as urlImportMessage (issue #740): a photo-specific verdict keeps its

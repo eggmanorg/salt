@@ -120,11 +120,13 @@ export function installE2EHooks(): void {
 
     async seedRecipe(recipe: Recipe) {
       // Goes through the real `persistRecipe` → `@salt/firebase-sync` write path
-      // (NF-C4), exactly as the editor does — the only difference is that the
-      // fixture is handed over whole instead of typed in. Cook mode needs recipes
-      // the editor cannot author: `firstUsedInStepId` is stamped by the AI author
-      // flow, and a UI-built recipe leaves it null, so every step renders zero
-      // first-use chips. `persistRecipe` stamps `updatedAt` and updates the store
+      // (NF-C4), exactly as the app's own edits do — the only difference is that
+      // the fixture is handed over whole instead of being built a field at a
+      // time. Specs need recipes NO UI can author: `firstUsedInStepId` is stamped
+      // by the AI author flow, and a hand-built recipe leaves it null, so every
+      // step renders zero first-use chips. Since #1319 Phase 8 retired
+      // hand-authoring altogether this is also the only way a spec gets a recipe
+      // at all without driving an import or the chef. `persistRecipe` stamps `updatedAt` and updates the store
       // before it resolves, so an `ok` result means the doc is live.
       const result = await persistRecipe(recipe);
       if (result.kind !== 'ok') {

@@ -12,7 +12,7 @@
 // lists, so it must start with `- tags:` and use matching two-space indentation.
 //
 // Only the PROMPT COPY lives here. What a tag becomes once it exists is
-// `normaliseTags` in `@salt/domain` (issue #1054), because the recipe editor
+// `normaliseTags` in `@salt/domain` (issue #1054), because the recipe page
 // applies the same rule to what a person types and is in an app this one cannot
 // import. Nothing in `web-pwa` may see the prompt text below.
 export const CATEGORY_TAG_RULES = `- tags: categories for search and filtering ONLY. Assign high-level classifications that describe what KIND of dish this is — the way a cook would filter a cookbook. Draw from these dimensions, using only the ones that clearly apply (a few accurate tags beat a long list):
