@@ -39,6 +39,29 @@ const files = sourceFiles(SRC).map((path) => ({
 }));
 
 /**
+ * Is this line prose rather than code?
+ *
+ * Several comments deliberately NAME a dead route to explain why it is dead,
+ * which is the opposite of a regression, so they have to be skipped. This is a
+ * line test and not a comment PARSER on purpose: stripping block and Svelte
+ * comment spans with a regex is the incomplete-multi-character-sanitization
+ * shape CodeQL rejects (it flagged exactly that in this file's first draft), and
+ * writing a real parser to serve a guard would be more machinery than the guard
+ * is worth.
+ *
+ * THE BOUNDARY, since a line test is not a complete answer: every mention in the
+ * tree today is a `//` line or a ` * ` JSDoc continuation, and a block or Svelte
+ * comment whose MIDDLE line began with neither would not be skipped. That
+ * direction is the safe one — such a line fails the guard and somebody reformats
+ * a comment — and it is the direction a guard should err in. What it must never
+ * do is skip a line of real code, and no line of code starts this way.
+ */
+function isProse(line: string): boolean {
+  const t = line.trimStart();
+  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*') || t.startsWith('<!--');
+}
+
+/**
  * A retired path as it would appear in code — in a route key, a `push()`, an
  * `href`, or a string built with a template literal id.
  *
@@ -55,15 +78,7 @@ const RETIRED = [
 describe('the retired recipe editor routes', () => {
   it.each(RETIRED)('$name is not a route and nothing navigates to it', ({ pattern }) => {
     const offenders = files
-      .filter(({ text }) => {
-        // Comments may name a dead route — several explain why it is dead, which
-        // is the opposite of a regression. Strip them before looking.
-        const code = text
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/(^|[^:])\/\/.*$/gm, '$1')
-          .replace(/<!--[\s\S]*?-->/g, '');
-        return pattern.test(code);
-      })
+      .filter(({ text }) => text.split('\n').some((l) => !isProse(l) && pattern.test(l)))
       .map(({ path }) => path);
 
     expect(

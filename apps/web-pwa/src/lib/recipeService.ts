@@ -775,11 +775,16 @@ export async function authorRecipeTraced(
   );
 }
 
-// Hand-off slot for the imported draft. The list page imports, stashes the
-// draft here, then routes to /recipes/new; the edit page consumes it once on
-// mount (single-use — taking it clears it so a later blank "New recipe" doesn't
-// pick up a stale import). Kept in module state (not the route) because the
-// draft is a rich object that doesn't belong in a URL.
+// Hand-off slot for the imported draft. The importer stashes the draft here and
+// routes to the recipe's own page, which claims it once on arrival (single-use —
+// taking it clears it, so a later visit cannot pick up a stale import). Kept in
+// module state, not the route, because the draft is a rich object that does not
+// belong in a URL.
+//
+// It exists because the import's write happens on the SERVER, so the page can
+// arrive ahead of the Firestore listener and would otherwise read "Recipe not
+// found." for a document written a second earlier. It is a fallback and never an
+// override: the store wins the moment it has the document.
 // Hand-off slot for the URL a signed-out import was carrying (issue #740).
 // Signing back in tears down and remounts the app tree — AuthGate swaps its
 // children — so the list page's local `importUrl` is gone by the time the user
