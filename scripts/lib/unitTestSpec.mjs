@@ -1,7 +1,7 @@
 // The mechanically-checkable half of docs/unit-test-spec.md, as matchers.
 //
-// The spec states 30 `UT-*` rules. Nine of them are countable off the source of
-// a test file or a test project's config; the other twenty-one need a reader.
+// The spec states 31 `UT-*` rules. Nine of them are countable off the source of
+// a test file or a test project's config; the other twenty-two need a reader.
 // This module is the nine, and `unit-test-spec.areas.mjs` at the repo root is
 // the per-area ceiling each one is currently frozen at. The test that drives
 // both is `scripts/tests/unitTestSpecGuard.test.mjs`.

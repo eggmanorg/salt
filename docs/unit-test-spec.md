@@ -56,7 +56,7 @@ derived from the tree (files, assertions, `vi.mock` calls) were **re-measured on
   guarded rule reds on a **new** breach and on a fixed one whose ceiling was not lowered with it.
   Where the matcher sees less than the prose says, the marker says so — read it, because three of
   the nine are narrower than they look.
-- **`review-only`** — nothing checks it. Twenty-one rules, and they are the valuable half: `UT-B4`,
+- **`review-only`** — nothing checks it. Twenty-two rules, and they are the valuable half: `UT-B4`,
   `UT-F2` and `UT-H1` each encode an investigation no scanner can express. They are stated here with
   their limit rather than deleted or left as absolutes nothing enforces, which is the second branch
   CLAUDE.md Rule 12 permits.
@@ -323,6 +323,25 @@ has. It is also the easiest to render vacuously green.
   **Evidence:** #967 — `savedTick`'s 1.5 s clear ran on CI's runner and not on macOS, so the module
   measured 7/7 lines on one and 6/7 on the other with the suite green either way.
 
+- **UT-F6 (MUST · review-only) — If the component reads the clock, freeze the clock.** A suite that
+  computes its expectations from `new Date()` at module load while the component under test goes on
+  reading the live clock is not deterministic, however the comment beside it is worded: a run that
+  straddles local midnight freezes the expectation on one date and renders the next. Freeze with
+  `vi.useFakeTimers({ toFake: ['Date'], now: FIXED })` — `toFake: ['Date']` leaves `setTimeout` real,
+  so `waitFor`, `userEvent` and CSS animations are unaffected — and derive the date constants from
+  that same instant. Then **pin it**: assert the production accessor (`todayIso()`, not a re-derived
+  copy) equals the constant, so removing the freeze reds a named test rather than a random 21.
+  Choose an instant at noon UTC: that keeps the date the same across the zones this repo is
+  actually run in — UTC on CI, Europe/London on the machine it is developed on — and NOT across
+  every zone, since noon UTC is already the next day from UTC+12 eastward. If a suite ever needs
+  to be zone-proof rather than merely zone-stable here, derive its constants through the same
+  accessor the component uses instead of formatting the instant yourself.
+  **Evidence:** #1341 — `MealPlanWeekPage.test.ts` failed 21 date-keyed assertions at once on PR
+  #1340 and passed on a re-run minutes later; its own comment called the approach "deterministic",
+  making it a Rule 12 instance as well as a flake. This is the third unit-suite flake family, after
+  the unset `asyncUtilTimeout` (UT-F1) and `userEvent` keystrokes eaten by a bits-ui focus trap
+  (UT-F2).
+
 - **UT-F3 (MUST NOT · review-only) — No arbitrary sleeps.** Wait on the real signal: `await
 waitFor(...)`, `findBy*`, or `vi.advanceTimersByTime` under fake timers. A bare `setTimeout` race
   resolves differently under the ~nCPU thread pool this suite runs on.
@@ -461,6 +480,7 @@ Async & harness
 [ ] UT-F3  No arbitrary sleeps; waitFor/findBy/fake timers
 [ ] UT-F4  Fake timers, stubEnv, stubGlobal, window writes restored in afterEach
 [ ] UT-F5  A production timer is driven with fake timers, never waited out
+[ ] UT-F6  A clock-reading component is tested against a frozen clock, with the freeze pinned
 
 Tooling (only if a test directory or config is added)
 [ ] UT-G1  New TS tests/ dir has a tsconfig.test.json (guard can't see one that's simply missing)
