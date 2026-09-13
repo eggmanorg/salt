@@ -191,6 +191,8 @@ If no issue is currently startable (everything left is blocked behind something 
 gh issue create --title "campaign: <slug> (#a #b #c)" --body-file <file>   # write the plan below to a file first
 ```
 
+Name the session in the same breath — `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and `title: "CAMPAIGN: #<ledger> — <what the set is about>"`. That is the run-set's shared theme in a few words, not a list of issue numbers: the ledger already carries those, and they are exactly what a title has no room for. That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
+
 No label and no board fields — see **Filing an issue**; the `campaign:` title prefix is the discoverable marker, it is what the resume search matches, and it is what `board.mjs check` recognises to leave the ledger out of triage. **No parent yet either**, but for a different reason and only for now: the ledger's own parent is the run-set's shared one, which is not reliably known until every issue has reached a terminal state — so it is written at **Finish**, not here. The body is the live state of the campaign and it is what a fresh session reads. Keep it current with `gh issue edit <ledger> --body-file <file>` on every transition:
 
 ```

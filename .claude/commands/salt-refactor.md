@@ -66,6 +66,8 @@ Once we've agreed, post it with `gh issue create`.
 
   Name the parent you chose — or why there is none — in your report. Nothing else in this repo sets a sub-issue link, so an issue filed mid-flight and left unattached is one nobody finds again from the work it came out of. **A parent is not an epic, and an epic is not the only thing that can be a parent** — `parent` writes the link and touches no field, so grouping an issue with its neighbours claims nothing about priority, and an ordinary work issue holds sub-issues perfectly well: #1122 and #1202 each hold their own phase issues from inside a work band. Attached to the wrong thing, a link is not permanent: `--detach-from <the parent it currently has>` moves it, and without that flag the command still refuses. (`gh` absent: the epic sweep is the GitHub MCP server's issue search, and the write is the same **Board dispatch** route as the line above — `command: parent` with `issue` and `of`, plus `detach_from` to move one.)
 
+**Then name the session**, now that the issue has a number: `REFACTOR: #<issue> — <subject>`, through `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"`. `<subject>` is the title you just posted with its `refactor:` prefix and imperative verb dropped, cut to the few words that make it recognisable in a list of sessions. That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
+
 **Issue body — use exactly this structure.** `/salt-run` consumes these headings; the phase blocks are its scope contract.
 
 ---

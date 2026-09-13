@@ -61,6 +61,10 @@ If the phase blocks are missing the fields this loop consumes — no scope, no o
 
 Your held copy is authoritative. Don't re-read the issue mid-run and drift.
 
+### Name the session
+
+Rename this session from what you have just read — `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and `title: "RUN: #<issue> — <subject>"`. `<subject>` is the issue's own title with its `feat:`/`fix:`/`refactor:` prefix and its imperative verb dropped, cut to the few words that make it recognisable in a list: `RUN: #1333 — Chef's Specials in the data`, not `RUN: #1333 — feat: rename "When you CBA" to Chef's Specials`. The title this session is given automatically is the prompt that started it, so a sidebar of `salt-run 1333` rows is unreadable at the four concurrent sessions this command is normally run at. That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
+
 ### Resume, don't restart
 
 A multi-phase run outlives a session. Before touching anything, work out what has already landed — the comments you just fetched hold it:

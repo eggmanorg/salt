@@ -34,6 +34,8 @@ gh pr view <pr> --json number,title,headRefName,headRefOid,isDraft,mergeStateSta
 gh pr checks <pr>
 ```
 
+Name the session from that first read, before judging anything — the gate below stops a good half of the time, and a session that stopped still sits in the list. `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and `title: "REVIEW: #<pr> — <subject>"`, `<subject>` being the PR's title with its conventional-commit prefix and trailing issue reference dropped, cut to what reads at a glance. That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
+
 Three required contexts, all from `ci.yml`: `Lint, typecheck, test, boundary`, `Vitest integration (emulator)`, `E2E (Playwright)`. Judge:
 
 - **Anything still pending or in progress** → stop. "CI is still running — N of M checks pending."
