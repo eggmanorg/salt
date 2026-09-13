@@ -410,17 +410,33 @@ _In review_ is a PR raised, _Merged_ is on `main` and not yet live, _Released_ i
 in production. **Blocked and Deferred are deliberately not statuses** — an issue
 can be in progress _and_ blocked, and the old board could not say so.
 
-| To          | Set by                                                                                                                            |                                                                                         |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Triage      | GitHub's built-in "item added to project" project workflow                                                                        |                                                                                         |
-| Todo        | a person, or `/triage`                                                                                                            | the one real decision; no event can observe it                                          |
-| In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session | a branch push is too noisy to key on                                                    |
-| In review   | `board-status.yml`                                                                                                                | `pull_request` opened / ready_for_review                                                |
-| Merged      | `board-status.yml`                                                                                                                | `pull_request` closed && merged                                                         |
-| Released    | `board-status.yml`                                                                                                                | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha |
+| To          | Set by                                                                                                                                                                                                             |                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Triage      | GitHub's built-in "item added to project" project workflow                                                                                                                                                         |                                                                                         |
+| Todo        | a person, or `/triage`                                                                                                                                                                                             | the one real decision; no event can observe it                                          |
+| In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session; **and `board-status.yml`** for the two kinds of issue no branch is ever cut for | a branch push is too noisy to key on                                                    |
+| In review   | `board-status.yml`                                                                                                                                                                                                 | `pull_request` opened / ready_for_review                                                |
+| Merged      | `board-status.yml`                                                                                                                                                                                                 | `pull_request` closed && merged                                                         |
+| Released    | `board-status.yml`                                                                                                                                                                                                 | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha |
 
 The issue↔PR link is the `Closes #N` that `/salt-run` writes into every PR body —
 the same text GitHub derives its own linked-issue relation from.
+
+**`In progress` also has events, for the work no branch is cut for.** A campaign
+ledger is in progress from the moment it opens — `/salt-campaign` opens one to
+_be_ the running state of a campaign and closes it when the campaign finishes, so
+there is no point in its life when it is waiting. And a multi-item issue — a
+`campaign follow-ups:` list, a spec with phases — starts when its first box is
+ticked: nobody cuts a branch for "the issue", agents land its items one at a
+time, and the tick is the durable record that one of them did. `board-status.yml`
+runs `board.mjs start` on every `issues` open and edit, which promotes **only**
+from unset / `Triage` / `Todo` — so a body edit can never drag an issue back out
+of a status a `pull_request` event established. What counts as started, and what
+it cannot see, is in [`scripts/lib/boardProgress.mjs`](../scripts/lib/boardProgress.mjs).
+
+The ledger half is also checked: `board.mjs check` fails on an **open** ledger at
+a pre-work status, which is the case the webhook cannot cover — an item that
+reached the board after the `issues.opened` run had already looked for it.
 
 **`Released` is not "everything Merged".** Production deploys a _tag_, and
 `Merged` only means "on `main`". Between a release tag being cut and its

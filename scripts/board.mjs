@@ -56,6 +56,7 @@
 // Usage:
 //   node scripts/board.mjs add 1234 --queue Medium --class Defect --size S
 //   node scripts/board.mjs set 1234 --status "In progress"
+//   node scripts/board.mjs start 1234                       # work started — see cmdStart
 //   node scripts/board.mjs pr 5678 --status "In review"     # via the PR's Closes #N
 //   node scripts/board.mjs parent 1234 --of 1129            # sub-issue link
 //   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
@@ -64,6 +65,7 @@
 
 import { execFileSync } from 'node:child_process';
 
+import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -238,6 +240,66 @@ function cmdSet(project, [num, ...rest]) {
       .map(([k, v]) => `${FLAG_FIELD[k] ?? k}=${v}`)
       .join(' ')}`,
   );
+}
+
+/**
+ * Promote an issue to `In progress` when an EVENT has proved work started on it.
+ *
+ * WHY THIS IS NOT `set --status "In progress"`. That writes unconditionally, and
+ * this runs from an `issues` webhook — every open and every body edit, for the
+ * life of the issue. Firing one of those at an issue whose PR is already open
+ * would drag it back out of `In review`, and the board would then disagree with
+ * a fact GitHub itself established. So the promotion is guarded on BOTH sides:
+ * `startReason` decides whether the issue looks started, and refuses to answer
+ * yes for anything already past `Todo`.
+ *
+ * A NO-OP IS THE COMMON CASE and prints a line saying which guard stopped it.
+ * Most edits to most issues move nothing, and a silent exit there is
+ * indistinguishable from a write that was lost.
+ *
+ * NOT ON THE BOARD IS A SKIP, NOT A FAILURE. GitHub's own "add item to project"
+ * workflow runs asynchronously, so an `issues.opened` run can reach here before
+ * the item exists. Adding it here instead would put an item on the board with no
+ * `Queue`, which is the state `check` exists to catch — and it self-heals
+ * anyway, since anything this command cares about gets edited again (a ledger
+ * within minutes: `/salt-campaign` rewrites its body on every transition).
+ */
+function cmdStart(project, [num]) {
+  const number = Number(num);
+  if (!Number.isInteger(number)) die('usage: board.mjs start <issue>');
+
+  const issue = gql(
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${number}){ title state body } } }`,
+  ).repository?.issue;
+  if (!issue) die(`issue #${number} not found in ${OWNER}/${REPO}`);
+
+  const item = loadItems(project).find((i) => i.number === number);
+  if (!item) {
+    console.log(`#${number} is not on the board yet — nothing to move`);
+    return;
+  }
+
+  const reason = startReason({
+    title: issue.title,
+    state: issue.state,
+    status: item.status,
+    body: issue.body,
+  });
+  if (!reason) {
+    console.log(
+      `#${number} stays at Status="${item.status ?? 'unset'}" — ${
+        issue.state !== 'OPEN'
+          ? 'closed'
+          : item.status
+            ? `already at ${item.status}`
+            : 'no ticked task, and not a campaign ledger'
+      }`,
+    );
+    return;
+  }
+
+  setSelect(project, item.id, 'Status', 'In progress');
+  console.log(`#${number} → Status=In progress — ${reason}`);
 }
 
 /**
@@ -537,6 +599,21 @@ function cmdCheck(project) {
     }
   }
 
+  // A LEDGER IS IN PROGRESS FROM THE MOMENT IT OPENS. `/salt-campaign` opens one
+  // to BE the running state of a campaign and closes it when the campaign
+  // finishes, so there is no point in its life when it is waiting rather than
+  // running — the closed rule above already insists it end at a shipping
+  // status, and this is the same claim at the other end. `board-status.yml`
+  // moves it on `issues.opened`; what this catches is the case that job cannot,
+  // where the item reached the board after the run had already looked for it.
+  for (const item of items) {
+    if (item.state !== 'OPEN' || !isLedger(item.title)) continue;
+    if (!BEFORE_WORK.has(item.status ?? null)) continue;
+    failures.push(
+      `#${item.number} is an open campaign ledger at Status="${item.status ?? 'unset'}" — a campaign is in progress from the moment its ledger exists: \`board.mjs start ${item.number}\``,
+    );
+  }
+
   // An epic is a container, not a work unit: it sits in the `Epic` band so it
   // never competes for sequence with the work it holds, and never carries a
   // priority its children already carry. Left as prose that is the unguarded
@@ -675,6 +752,7 @@ if (!command || command === '--help' || command === '-h') {
   console.log(`usage:
   board.mjs add <issue> [--queue X --class Y --size Z --status W]
   board.mjs set <issue> [--queue X --class Y --size Z --status W]
+  board.mjs start <issue>
   board.mjs pr <pr> --status "In review"
   board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
   board.mjs release --sha <deployed sha>
@@ -692,7 +770,8 @@ if (command === 'parent') {
 const project = loadProject();
 if (command === 'add') cmdAdd(project, args);
 else if (command === 'set') cmdSet(project, args);
+else if (command === 'start') cmdStart(project, args);
 else if (command === 'pr') cmdPr(project, args);
 else if (command === 'release') cmdRelease(project, args);
 else if (command === 'check') cmdCheck(project);
-else die(`unknown command "${command}" — expected add, set, pr, parent, release or check`);
+else die(`unknown command "${command}" — expected add, set, start, pr, parent, release or check`);

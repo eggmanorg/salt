@@ -6,8 +6,12 @@ name: Board status
 #
 #   Triage      — GitHub's own "item added to project" project workflow.
 #   Todo        — a decision. /triage or Daniel. No event exists for "I have decided".
-#   In progress — /salt-run and /salt-campaign, when the worktree is cut. A branch push is
-#                 far too noisy to key on, and a draft PR is raised much later.
+#   In progress — /salt-run, when the worktree is cut, AND HERE for the two kinds
+#                 of issue no worktree is ever cut for: a campaign ledger the
+#                 moment it opens, and a multi-item issue the moment one of its
+#                 boxes is ticked. A branch push is far too noisy to key on, and
+#                 a draft PR is raised much later. `scripts/lib/boardProgress.mjs`
+#                 holds what counts as started and what this cannot see.
 #   In review   — HERE. A pull request opened, or taken out of draft.
 #   Merged      — HERE. That pull request merged. Staging follows on its own
 #                 (deploy-staging.yml runs on CI-green main), so there is no
@@ -34,21 +38,52 @@ name: Board status
 # board that is quietly out of date is worse than one that is visibly broken.
 
 on:
+  issues:
+    types: [opened, edited]
   pull_request:
     types: [opened, ready_for_review, closed]
   workflow_run:
     workflows: ['Deploy Production']
     types: [completed]
 
-# Never let two board writers race on the same issue.
+# Never let two board writers race on the same issue. An `issues` run is keyed
+# separately from a `pull_request` one because the two number spaces overlap and
+# name different things — a PR and an issue sharing a number are not the same
+# item, and sharing a group would serialise them for no reason.
 concurrency:
-  group: board-status-${{ github.event.pull_request.number || github.event.workflow_run.id }}
+  group: >-
+    board-status-${{ github.event_name == 'issues' && format('issue-{0}',
+    github.event.issue.number) || github.event.pull_request.number ||
+    github.event.workflow_run.id }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  # Runs on EVERY issue open and EVERY body edit in the repo, and moves nothing
+  # for almost all of them — `board.mjs start` is guarded on both sides and says
+  # which guard stopped it. Deliberately cheap rather than clever: the
+  # alternative is teaching YAML which bodies and which statuses qualify, in a
+  # job that holds PROJECT_TOKEN, when the script already knows.
+  #
+  # The body is never read from the webhook payload and never interpolated into
+  # `run:` — an issue body is attacker-supplied text, and this job holds the PAT.
+  # `board.mjs start` fetches it over GraphQL from the number alone, the same way
+  # spec-shape.yml deliberately re-fetches rather than trusting the payload.
+  started:
+    name: Work started → In progress
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/board.mjs start ${{ github.event.issue.number }}
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+
   # BOTH pull_request jobs skip Dependabot's own PRs. A run triggered by
   # Dependabot reads GitHub's separate Dependabot secrets store, so
   # `secrets.PROJECT_TOKEN` arrives empty and board.mjs dies on its first API
