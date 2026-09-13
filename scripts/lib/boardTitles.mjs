@@ -41,6 +41,42 @@ export const isLedger = (title) => /^campaign:/i.test(title ?? '');
 export const isEpicTitle = (title) => /^epic:/i.test(title ?? '');
 
 /**
+ * A kind of issue that CLOSES BY HAND, with no pull request — so no PR body ever
+ * carries `Closes #N` and nothing automated will ever move its `Status` along.
+ * Consulted in exactly one place: the closed-at-a-shipping-status rule in
+ * `board.mjs check`, where demanding these reached `Merged` is incoherent rather
+ * than merely strict.
+ *
+ * Three kinds, each hand-closed for a structural reason:
+ *
+ * - `epic:` — a container closes when its children are done (#913).
+ * - `campaign follow-ups:` — a checklist closes when its `- [ ]` lines are ticked
+ *   off across several PRs, so no single PR closes it (#1196, #1197, #1228,
+ *   #1232, #1236, #1259 — six at once on the live board).
+ * - `question(` — closes when it is answered or superseded. There was never
+ *   going to be a PR (#1099).
+ *
+ * THIS IS NOT `isLedger` AND MUST NEVER BECOME IT. `isLedger` also gates the
+ * untriaged-`Queue` rule, and widening it to reach `campaign follow-ups:` would
+ * silently stop triaging the single kind of issue an agent files most often —
+ * its own declaration above says so. A `campaign:` ledger deliberately does NOT
+ * match here: it keeps its own branch in that rule, which tells you to set its
+ * Status from its run-set.
+ *
+ * WHAT THIS PREDICATE CANNOT DO, stated rather than implied (CLAUDE.md rule 12).
+ * It reads the TITLE and nothing else, so an epic or a checklist that forgets
+ * its prefix is not exempt — which is the safe direction, because the rule then
+ * fires and the output says so. The cost of the exemption, equally: a
+ * `campaign follow-ups:` issue whose move was genuinely missed is no longer
+ * distinguishable from one that closed the way it should, so these are reported
+ * as a NOTE rather than passed in silence (see `closedItemVerdict`).
+ */
+export const isHandClosed = (title) =>
+  isEpicTitle(title) ||
+  /^campaign follow-ups:/i.test(title ?? '') ||
+  /^question\(/i.test(title ?? '');
+
+/**
  * The issues a campaign dispatched, read out of its ledger's own title —
  * `campaign: <slug> (#a #b #c)`.
  *

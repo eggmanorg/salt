@@ -103,6 +103,53 @@ export const coverageExclude = ['apps/storybook/src/**', '**/__boundary_tests__/
 // they carry NO margin: a margin would only buy room for a real regression
 // to hide in.
 //
+// THAT SENTENCE IS NOW CHECKED, and until #1333 it was not. It had been an
+// unqualified absolute guaranteed by a comment for as long as the pins had
+// existed (#943) — the CLAUDE.md Rule 12 shape — and it is the premise the
+// no-margin rule is DERIVED from, so wherever it was quietly false the
+// no-margin rule was unsafe too. `ci.yml`'s `coverage-platforms` job runs the
+// suite on `macos-latest` alongside the `ubuntu-latest` run and compares the
+// two `coverage-final.json` reports file by file on all four raw totals
+// (`scripts/check-coverage-platforms.mjs`). It reds when they disagree.
+//
+// The ratchet could not have done this on any number of runners, which is why
+// the job is not simply "run the ratchet on macOS too": the ratchet compares
+// one measurement against a PIN, never two measurements against each other, so
+// a platform reading anything from the pinned figure up to a full
+// `staleAbovePoints` above it passes as quietly as one reading the pin exactly.
+// That band is where a divergence hides, and it is the band #1328's reported
+// 0.02 sat in. `scripts/tests/coveragePlatforms.test.mjs` pins that gap with a
+// case the ratchet calls green on both platforms and the comparison calls red.
+//
+// WHAT THE CHECK DOES NOT COVER, stated because the sentence above is an
+// absolute and this is its real boundary:
+//   - TWO RUNNERS, `ubuntu-latest` and `macos-latest`. A developer's own
+//     machine is not one of them and never will be: nothing in CI can measure
+//     a laptop. What the job protects is the pair drifting apart, which is the
+//     leading indicator — every mechanism that has ever split this repo's two
+//     platforms (#967, #977) would split the runners the same way. The direct
+//     evidence for the laptop is a one-off: #1333 measured this Mac against CI
+//     at `74ecd144` and found no divergence, and the procedure for repeating
+//     that is in `docs/unit-test-spec.md`.
+//   - Node is pinned to major 22 and to no patch (`.nvmrc`, the workspace
+//     action, `engines.node` — three independent pins, none patch-level), so
+//     the two runners may sit on different patch releases and on different
+//     architectures. That is deliberately left alone: agreement ACROSS a
+//     difference is a stronger result than agreement enforced by removing it,
+//     and #1333 measured exactly that — v22.23.2 on ubuntu x64 against v22.22.3
+//     on arm64 macOS, 920 files, no divergence on any of the four totals. If
+//     the pair ever does diverge, pinning the patch is one candidate fix and
+//     the job is what will say whether it worked.
+//   - It compares one run per platform. Nondeterminism WITHIN a platform is a
+//     different failure, and the one #977 was; the check would catch it only on
+//     the run where it happened to fall the other way.
+//
+// The two times this claim has actually broken, the fix was at the SOURCE and
+// never a pin — #967's two host-timing tests, #977's in-flight `import()`. The
+// check's failure message says so, because the tempting fix is the one #1328
+// tried and discarded: bank whichever platform reads lower, which manufactures
+// precisely the margin this paragraph forbids.
+//
 // `apps/web-pwa/src/lib/**` used to be the exception, pinned one line and
 // one branch low because `deck.svelte.ts` and `savedTick.svelte.ts` landed
 // differently under CI's scheduler — the whole cross-platform delta in the

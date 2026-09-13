@@ -65,6 +65,7 @@
 
 import { execFileSync } from 'node:child_process';
 
+import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
 import {
   isEpicTitle,
@@ -74,6 +75,7 @@ import {
   ledgerShouldAttachTo,
 } from './lib/boardTitles.mjs';
 import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
+import { disabledWorkflowFailures } from './lib/boardWorkflows.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -147,8 +149,8 @@ function loadItems(project) {
     const page = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
       items(first:100, after:${after}){
         pageInfo{ hasNextPage endCursor }
-        nodes{ id
-          content{ ... on Issue { number title state } }
+        nodes{ id createdAt
+          content{ ... on Issue { number title state stateReason closedAt } }
           queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
@@ -160,6 +162,15 @@ function loadItems(project) {
         number: n.content.number,
         title: n.content.title,
         state: n.content.state,
+        // `COMPLETED` | `NOT_PLANNED` | null. The check needs it to tell a
+        // won't-fix close from one that shipped — see `closedItemVerdict`.
+        stateReason: n.content.stateReason ?? null,
+        // WHEN THE BOARD ITEM APPEARED, against when the issue closed. An item
+        // created AFTER its issue closed was never in the pipeline at all —
+        // GitHub's "Auto-add sub-issues to project" workflow put it there when
+        // something linked it to a parent. See `closedItemVerdict`.
+        createdAt: n.createdAt ?? null,
+        closedAt: n.content.closedAt ?? null,
         queue: n.queue?.name ?? null,
         status: n.status?.name ?? null,
         blockedBy: n.blockedBy?.text ?? '',
@@ -314,7 +325,7 @@ function cmdPr(project, [num, ...rest]) {
   if (!flags.status) die('board.mjs pr needs --status');
 
   const pr = gql(
-    `{ repository(owner:"${OWNER}",name:"${REPO}"){ pullRequest(number:${number}){ body } } }`,
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ pullRequest(number:${number}){ body createdAt } } }`,
   ).repository?.pullRequest;
   if (!pr) die(`PR #${number} not found`);
 
@@ -328,15 +339,55 @@ function cmdPr(project, [num, ...rest]) {
   }
 
   const items = loadItems(project);
+  const absent = targets.filter((issue) => !items.some((i) => i.number === issue));
+  // Only asked for when something IS absent, which is the rare case — and it is
+  // asked once for all of them rather than per target.
+  const closedAt = absent.length === 0 ? new Map() : fetchClosedAt(absent);
+
+  let missed = 0;
   for (const issue of targets) {
     const item = items.find((i) => i.number === issue);
     if (!item) {
-      console.log(`#${issue} is not on the board — skipped`);
+      // An absent target is not automatically a miss, and not automatically
+      // fine either. `absentTargetVerdict` holds which is which and why.
+      const verdict = absentTargetVerdict({
+        number: issue,
+        closedAt: closedAt.get(issue) ?? null,
+        prNumber: number,
+        prCreatedAt: pr.createdAt,
+      });
+      if (verdict.level === 'failure') {
+        console.error(verdict.message);
+        missed += 1;
+      } else {
+        console.log(verdict.message);
+      }
       continue;
     }
     setSelect(project, item.id, 'Status', flags.status);
     console.log(`#${issue} → Status=${flags.status}  (PR #${number})`);
   }
+
+  // EXIT NON-ZERO ON A REAL MISS. The moves that could be made have already been
+  // made — this fails at the end, not instead. A board job that reports success
+  // having moved nothing is worse than one that is visibly broken, which is the
+  // same reasoning that made PROJECT_TOKEN fail loudly rather than skip.
+  if (missed > 0) process.exitCode = 1;
+}
+
+/** `issue number → closedAt | null`, batched the way `fetchParents` is. */
+function fetchClosedAt(numbers) {
+  const out = new Map();
+  for (let i = 0; i < numbers.length; i += 50) {
+    const batch = numbers.slice(i, i + 50);
+    const data = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${batch
+        .map((n) => `i${n}: issue(number:${n}){ closedAt }`)
+        .join(' ')} } }`,
+    ).repository;
+    for (const n of batch) out.set(n, data[`i${n}`]?.closedAt ?? null);
+  }
+  return out;
 }
 
 /**
@@ -567,36 +618,16 @@ function cmdCheck(project) {
     }
   }
 
-  // A closed issue is NOT by itself stale. An issue closes the moment its PR
-  // merges, and it then has to STAY on the board at `Merged` — that is exactly
-  // the set `board.mjs release` walks to find what a production deploy made
-  // live. What is wrong is a closed issue that never reached the merge states:
-  // either it was closed without shipping (won't-fix, duplicate) and belongs
-  // off the board, or a PR closed it without the `Closes #N` that moves it, and
-  // the automation is quietly missing work.
-  //
-  // A LEDGER IS IN THIS RULE, and used to be out of it (2026-09-12). The exemption a
-  // ledger carries is QUEUE AND CLASS — it is not work and must not sit in a
-  // work queue — and extending that to Status bought nothing while costing the
-  // only check that could see the problem: 19 closed ledgers accumulated at no
-  // Status, one per campaign ever run, showing up on the Workflow board as a
-  // column of cards nobody could account for. A ledger closes when its campaign
-  // finishes, and what a finished campaign means is that its work merged.
-  const SHIPPING = new Set(['Merged', 'Released']);
+  // The closed-at-a-shipping-status rule lives in `closedItemVerdict` — read its
+  // header for what each outcome means and why the note/failure line is drawn
+  // where it is. It is a pure function of the item so that every branch is
+  // covered by a test rather than by whatever the live board happens to hold
+  // today.
   for (const item of items) {
     if (item.state !== 'CLOSED') continue;
-    if (item.status === 'Released') {
-      console.log(`  note: #${item.number} is Released — safe to remove from the board`);
-    } else if (!SHIPPING.has(item.status)) {
-      // The remedy differs for a ledger: it has no PR, so nothing automated
-      // will ever move it. Its Status comes from the work its title names, and
-      // `release` promotes it once all of that work is live.
-      failures.push(
-        isLedger(item.title)
-          ? `#${item.number} is a closed campaign ledger at Status="${item.status ?? 'unset'}" — a ledger has no PR, so set it by hand from its run-set: \`board.mjs set ${item.number} --status Merged\` (or Released if every issue its title names is already Released)`
-          : `#${item.number} is closed at Status="${item.status ?? 'unset'}" — it never reached Merged, so either it was closed without shipping (remove it) or its PR had no "Closes #${item.number}"`,
-      );
-    }
+    const verdict = closedItemVerdict(item);
+    if (verdict.level === 'failure') failures.push(verdict.message);
+    else if (verdict.level === 'note') console.log(`  note: ${verdict.message}`);
   }
 
   // A LEDGER IS IN PROGRESS FROM THE MOMENT IT OPENS. `/salt-campaign` opens one
@@ -726,6 +757,12 @@ function cmdCheck(project) {
       verticalGroupByFields(first:5){ nodes{ ... on ProjectV2FieldCommon { name } } }
       sortByFields(first:5){ nodes{ direction field{ ... on ProjectV2FieldCommon { name } } } } } } } } }`)
     .node.views.nodes;
+
+  // The pipeline's first rung is a GitHub built-in, not code — see
+  // `disabledWorkflowFailures` for which are pinned and why only those.
+  const workflows = gql(`{ organization(login:"${OWNER}"){ projectV2(number:${PROJECT_NUMBER}){
+    workflows(first:20){ nodes{ name enabled } } } } }`).organization?.projectV2?.workflows?.nodes;
+  for (const f of disabledWorkflowFailures(workflows)) failures.push(f);
 
   for (const v of views) {
     const sortFailure = forbiddenSortMessage(v);

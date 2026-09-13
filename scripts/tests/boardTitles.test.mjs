@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isEpicTitle,
+  isHandClosed,
   isLedger,
   ledgerFullyReleased,
   ledgerRunSet,
@@ -44,6 +45,59 @@ describe('isEpicTitle', () => {
 
   it('survives a title that is missing', () => {
     expect(isEpicTitle(undefined)).toBe(false);
+  });
+});
+
+describe('isHandClosed', () => {
+  // The three kinds that never carry a `Closes #N`, each with a live title.
+  it('matches an epic, which closes when its children are done', () => {
+    expect(isHandClosed('epic: act on the architecture review — validated findings')).toBe(true);
+  });
+
+  it('matches a campaign follow-ups checklist, which no single PR closes', () => {
+    expect(isHandClosed('campaign follow-ups: fold the side nav away (#1194)')).toBe(true);
+  });
+
+  it('matches a question, which was never going to have a PR', () => {
+    expect(isHandClosed('question(chat): should a chat go read-only after ~two days')).toBe(true);
+  });
+
+  // THIS IS THE TEST THAT GOES RED IF THE PREDICATE WIDENS TO BARE `campaign`.
+  // A ledger keeps its own branch in the closed-status rule — one that tells you
+  // to set its Status from its run-set — so matching it here would replace an
+  // actionable failure with a note that says the wrong thing.
+  it('does NOT match a campaign ledger, which has its own branch in the rule', () => {
+    expect(isHandClosed('campaign: fold the side nav away (#1143)')).toBe(false);
+    expect(isHandClosed('campaign: canon dedup + amber tokens (#968 #971 #993)')).toBe(false);
+  });
+
+  it('does not match ordinary work that ships through a PR', () => {
+    expect(isHandClosed('fix(domain): the librarian accepts a recipe that serves nobody')).toBe(
+      false,
+    );
+    expect(isHandClosed('feat(recipes): bread yield is dough')).toBe(false);
+  });
+
+  // Only at the start, like the predicates it sits beside. An issue discussing a
+  // checklist is ordinary work.
+  it('only matches at the start of the title', () => {
+    expect(isHandClosed('fix: campaign follow-ups: issues lose their parent')).toBe(false);
+    expect(isHandClosed('fix: answer the question(chat) properly')).toBe(false);
+  });
+
+  it('survives a title that is missing', () => {
+    expect(isHandClosed(undefined)).toBe(false);
+    expect(isHandClosed(null)).toBe(false);
+  });
+
+  // The constraint `isHandClosed` exists to avoid breaking, asserted from both
+  // sides: the untriaged-`Queue` rule keys off `isLedger`, so the day
+  // `campaign follow-ups:` matches it is the day agent-filed issues stop being
+  // triaged. See isLedger's declaration.
+  it('leaves isLedger alone — a follow-ups issue is still triaged like any work', () => {
+    const followUps = 'campaign follow-ups: retire prep/cook/total, phases 1-2';
+    expect(isHandClosed(followUps)).toBe(true);
+    expect(isLedger(followUps)).toBe(false);
   });
 });
 
