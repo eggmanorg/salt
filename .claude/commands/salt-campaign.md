@@ -58,6 +58,8 @@ Neither of those lines is somebody else's job later. GitHub's own project workfl
 
 **The ledger is the one exception on fields, and it is deliberate.** It is not work: it carries no priority, it closes by hand rather than through a PR, and it exists to be resumed from and then finished with. `board.mjs check` skips any issue titled `campaign:` in its field rules for exactly that reason — so putting fields on one is not merely unnecessary, it puts a coordination artefact into a work queue. `campaign follow-ups:` does **not** get that exemption and is ordinary work.
 
+**`Status` is not one of those fields, and a closed ledger must carry one** (2026-09-12). The exemption is `Queue` and `Class`; extending it to `Status` let 19 closed ledgers pile up at no Status, invisible to `check` and visible to Daniel as a column of cards on the `Workflow` board nobody could account for. So **Finish** sets it alongside the parent — see step 2 there.
+
 **The exemption is about fields, not about reachability.** A ledger used to take no parent either, and the cost of that was the whole point of #1346: everything a campaign throws off attaches to the ledger, so a root ledger puts every follow-up, re-spec and mid-run defect one hop from being unreachable. Campaign #1266 ran #968, #971 and #993 — all three under epic #913 — and left #1269 behind where nobody opening #913 would ever see it. So the ledger is attached too, upward, at **Finish**.
 
 **A parent is not an epic, and an epic is not the only thing that can be a parent** — and this command never creates one of either. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. A run-set frequently shares an ordinary work issue as its parent rather than an epic (#1122 and #1202 each hold their own phase issues from inside a work band); the ledger attaches to that exactly the same way. The `BLOCKED: oversized` re-spec is the exception in the other direction: it is the remaining work of the issue it came out of, so it hangs off that issue and inherits whatever epic that issue already sits under.
@@ -555,7 +557,15 @@ When the queue is empty:
 
    Ask GraphQL, never REST: `gh api repos/{owner}/{repo}/issues/N` reports `parent: null` for every issue in this repo, sub-issues included ([docs/issue-board.md](../../docs/issue-board.md)). **Where the run-set shares no single parent — a campaign over four unrelated issues — leave the ledger a root and say so in the closing comment.** That is correct, not a miss: forcing a parent there would mean inventing a relationship the work does not have. Do this before the check below, so a campaign's own `check` passes. (`gh` absent: **Board dispatch**, `command: parent` with `issue` (the ledger) and `of`.)
 
-3. **Confirm every issue this campaign filed is triaged and attached** — `node scripts/board.mjs check`. It fails on any open board item with no `Queue`, so a filing where you skipped **Filing an issue** shows up here by number. Fix yours; findings naming issues this campaign did not file are not your business and go unmentioned. Where `board.mjs` cannot run (a cloud session — see **Standing rules**), say so in the closing comment rather than reporting a check you did not run: the dispatches were fire-and-forget and nothing has confirmed them.
+   **Set the ledger's Status in the same breath.** A closed ledger carries `Merged` or `Released` like anything else that closed — the fields exemption is `Queue` and `Class` only, and `check` now fails on a ledger without one:
+
+   ```
+   node scripts/board.mjs set <ledger> --status Merged
+   ```
+
+   `Merged` is almost always right at Finish, and it is the safe answer: `release` promotes the ledger to `Released` by itself once every issue its title names is live, so there is nothing to come back for. Use `Released` only where the whole run-set is already `Released` at the moment you close. (`gh` absent: **Board dispatch**, `command: set` with `issue` and `status`.)
+
+3. **Confirm every issue this campaign filed is triaged and attached** — `node scripts/board.mjs check`. It fails on any open board item with no `Queue`, and on any closed one — this ledger included — that is not at `Merged` or `Released`, so a filing where you skipped **Filing an issue** shows up here by number. Fix yours; findings naming issues this campaign did not file are not your business and go unmentioned. Where `board.mjs` cannot run (a cloud session — see **Standing rules**), say so in the closing comment rather than reporting a check you did not run: the dispatches were fire-and-forget and nothing has confirmed them.
 4. Final ledger comment, and set the body's table to its terminal state:
    ```
    ## Campaign complete
