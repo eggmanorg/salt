@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { onDestroy } from 'svelte';
+  import { push } from 'svelte-spa-router';
   import { flattenIngredients, progressOver, recipeChangedSince, stageStatus } from '@salt/domain';
   import type { BatchStageDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
@@ -10,6 +11,7 @@
     initBatchSync,
     getBatchSnapshot,
     advanceStage,
+    startStage,
     setIngredientChecked,
     setStepDone,
   } from '../../lib/batchService.js';
@@ -30,6 +32,7 @@
   import CookStepKit from '../recipes/CookStepKit.svelte';
   import CookStepDoneControls from '../recipes/CookStepDoneControls.svelte';
   import CookRecipeChangedBanner from '../recipes/CookRecipeChangedBanner.svelte';
+  import CookLoadingOrphan from '../recipes/CookLoadingOrphan.svelte';
   // The timer parts, reused exactly as the deck parts above are (issue #1327,
   // Phase 2). `createBatchTimers` widens each kitchen timer into the shape these
   // three already take — see its header for why that is a widening and not a cast.
@@ -287,31 +290,63 @@
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
   //
-  // The lock covers only the STAGE-TRANSITION family — marking a step (or a
-  // step-less stage) done, which can cascade into `advanceStage`. Two of those in
-  // the air at once really would be one whole-document `setDoc` (LWW) silently
-  // overwriting the other, the same reasoning `BatchDetailPage` shares across its
-  // three stage commands (`advancingStageId`).
+  // NOTHING IN THIS SECTION WAITS FOR A WRITE. There is no lock, no `disabled`
+  // gate and no in-flight flag anywhere in the command functions below, and that
+  // is the whole of the rule for the page's own controls (issue #1365, fault 4).
+  // It does not extend to `BatchObservationSheet` (mounted at `:1212`, opened
+  // from the deck's own `batch-cook-log` pencil): its `handleSave` sets `busy`
+  // before awaiting `addBatchObservation`'s `setDoc` and clears it with no
+  // `finally`, so offline that `busy` never clears, latching Skip and both photo
+  // controls dead for the rest of the visit. That is the same construct this
+  // section removes, left standing in the one control this section does not own;
+  // fixing it is out of scope here (issue #1365).
   //
-  // The weigh-out ticks and the untick control do NOT share it (PR #1334 review,
-  // BLOCKING #3). Each is a single write built from the freshest local snapshot
-  // the instant it is called — `persist` updates the store before the network
-  // round trip even starts, so a burst of taps composes correctly on its own, the
-  // same guarantee `CookModePage.toggleIngredient` relies on with no lock at all.
-  // Gating them on THIS lock bought nothing and cost two things: a tap on either
-  // could be silently dropped by an unrelated stage write in flight, and — worse
-  // — Firestore's `setDoc` does not resolve while offline, so one stage write
-  // begun offline would have latched every other control on the page dead for the
-  // rest of the session.
-  let writing = $state(false);
+  // WHY A LOCK CANNOT WORK HERE. Firestore's `setDoc` does not resolve while
+  // offline: the write is durably queued by `persistentLocalCache` and lands when
+  // signal returns, but its promise stays pending, possibly for hours. Any UI state
+  // released when that promise settles is therefore unbounded BY CONSTRUCTION, and
+  // `try/finally` does not help — `finally` runs when a promise settles and this one
+  // does not. That is not a hypothesis: `markStep` below already had a `try/finally`
+  // and latched anyway, greying out both controls gated on the old `writing` boolean
+  // for the rest of the visit. The weigh-out ticks were taken off that lock for
+  // exactly this reason (PR #1334 review, BLOCKING #3); the note doing so named the
+  // hazard and then left it standing for the two controls that kept the lock.
+  //
+  // WHAT REPLACES IT. `persist` (`batchService.ts:163-175`) stamps the document,
+  // sets the local store and only THEN starts the round trip. So:
+  //
+  //   • the document this page renders is already the new one the instant a command
+  //     has been CALLED — no resolution required — and `getBatchSnapshot()` answers
+  //     with it synchronously. Every command below builds from that read, so a burst
+  //     of taps composes correctly and in order, on its own;
+  //   • the awaited promise carries exactly ONE extra fact — whether the network
+  //     write failed — which is only ever used for a toast. Nothing the cook can see
+  //     or press is derived from it.
+  //
+  // Re-entrancy is guarded on the DOCUMENT rather than on a flag: a step already
+  // ticked is not re-ticked, a stage already done or skipped is not re-advanced.
+  // A flag would have to be cleared by something, and the only candidate is the
+  // promise that never settles.
+  //
+  // WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md rule 12). It guarantees
+  // that no control driven by THIS section is ever disabled by a write in flight,
+  // and that every write a gesture implies is DISPATCHED before that gesture
+  // returns rather than sequenced behind a network promise — both pinned by the
+  // stuck-write tests in `BatchCookPage.test.ts`. It does NOT guarantee the write
+  // reaches Firestore, that a failure is reported promptly (offline, the toast
+  // arrives whenever the promise finally settles, and may not arrive at all this
+  // visit), that two phones tapping one stage produce a single write, or that
+  // every control on this page is free of the hazard — `BatchObservationSheet`,
+  // above, still has it. The first three are `persistentLocalCache`'s job,
+  // unknowable offline, and document-level LWW as designed, respectively; the
+  // fourth is that sheet's own bug, not this section's claim.
 
   async function markStep(stepId: string, done: boolean): Promise<void> {
-    const current = run;
+    const current = getBatchSnapshot() ?? run;
     if (!current) return;
 
     if (!done) {
-      // UNTICKING IS A SINGLE WRITE, not the two-write advance below, and does not
-      // touch `writing` for the same reason the mise ticks do not (see above).
+      // UNTICKING IS A SINGLE WRITE, not the two-write advance below.
       //
       // UNTICKING DOES NOT UN-MARK THE STAGE. There is no inverse of
       // `withStageAdvanced` and there deliberately is not one: the tail has
@@ -324,36 +359,58 @@
       return;
     }
 
-    if (writing) return;
-    writing = true;
-    try {
-      const ticked = await setStepDone(current, stepId, true);
-      if (ticked.kind !== 'ok') {
-        addToast("Couldn't save that. Try again.", 'destructive');
-        return;
-      }
-      // MARKING THE STEP OF A STAGE MARKS THE STAGE. That write is the one the whole
-      // reminder engine hangs off: `withStageAdvanced` re-times every later stage
-      // from this instant and `onBatchWritten` re-queues the reminders whose key
-      // moved — exactly what Done does on the batch page. Early and late are the
-      // same gesture.
-      const placement = layout.onStep.get(stepId);
-      if (!placement) return;
-      const status = stageStatus(placement.stage);
-      if (status === 'done' || status === 'skipped') return;
-      // Re-read the FRESHEST copy before this second write. `ticked.value` is the
-      // document as it stood when the write above STARTED; the round trip between
-      // that write and this one is exactly the window a concurrent write from
-      // another phone on the same run can land in, and handing the advance a
-      // stale document would silently overwrite it (PR #1334 review, BLOCKING #1).
-      const freshest = getBatchSnapshot() ?? ticked.value;
-      const advanced = await advanceStage(freshest, placement.stage.id);
+    // THE TICK. Dispatched, not awaited — see the note above. Already ticked means a
+    // double tap or the other phone got there first, and a second whole-document
+    // write saying the same thing is worth nothing.
+    if (!current.completedStepIds.includes(stepId)) {
+      void setStepDone(current, stepId, true).then((ticked) => {
+        if (ticked.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
+      });
+    }
+
+    // MARKING THE STEP OF A STAGE MARKS THE STAGE. That write is the one the whole
+    // reminder engine hangs off: `withStageAdvanced` re-times every later stage
+    // from this instant and `onBatchWritten` re-queues the reminders whose key
+    // moved — exactly what Done does on the batch page. Early and late are the
+    // same gesture.
+    const placement = layout.onStep.get(stepId);
+    if (!placement) return;
+
+    // Re-read the FRESHEST copy before this second write. Two things ride on this
+    // one read:
+    //
+    //   • CORRECTNESS. The round trip is exactly the window a concurrent write from
+    //     another phone on the same run lands in, and handing the advance a stale
+    //     document would silently overwrite it (PR #1334 review, BLOCKING #1).
+    //   • LIVENESS. It is also what makes the advance independent of the tick's
+    //     NETWORK promise rather than sequenced behind it. `persist` has already put
+    //     the ticked document in the store, so there is nothing left to wait for.
+    //     This used to be `await setStepDone(...)`, and offline that await never
+    //     returned — so the second write never went out AT ALL. The step was ticked
+    //     locally and its stage silently left open, with no `actualEndAt` and no
+    //     re-timed tail, which no reload could recover.
+    const freshest = getBatchSnapshot() ?? current;
+
+    // THE TICK HAS TO HAVE LANDED LOCALLY. This is the guard that used to be
+    // "the tick's promise resolved ok", which offline is a promise that never
+    // resolves. The local document is this page's truth, so the question the advance
+    // actually needs answered is whether that document now says the step is done —
+    // and `persist` answers it synchronously, offline included. A tick that never
+    // reached the store (`withBatchStepDone` returned the same document, or the
+    // write refused before persisting) does not get a stage advance on top of it.
+    if (!freshest.completedStepIds.includes(stepId)) return;
+
+    // Read the stage off the freshest document too, not off `layout` — the same
+    // concurrent write could have marked or skipped it in the meantime.
+    const stageDoc = freshest.stages.find((s) => s.id === placement.stage.id) ?? placement.stage;
+    const status = stageStatus(stageDoc);
+    if (status === 'done' || status === 'skipped') return;
+
+    void advanceStage(freshest, placement.stage.id).then((advanced) => {
       if (advanced.kind !== 'ok') {
         addToast("Couldn't mark that stage done. Try again.", 'destructive');
       }
-    } finally {
-      writing = false;
-    }
+    });
   }
 
   async function toggleIngredient(id: string): Promise<void> {
@@ -361,22 +418,46 @@
     if (!current) return;
     const next = !checkedIds.has(id);
     if (next) hapticTick();
-    // Fire-and-forget, like `CookModePage.toggleIngredient` — see the note on
-    // `writing` above for why this does not take the lock.
+    // Fire-and-forget, like `CookModePage.toggleIngredient` — see the note above
+    // `markStep` for why nothing here waits on a write.
     const result = await setIngredientChecked(current, id, next);
     if (result.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
   }
 
   // Marking a STAGE-ONLY card done — it has no step to tick, so this is the batch
-  // page's own Done, on the same producer, reached from here. Same family as
-  // `markStep`'s advance, so it shares the same lock.
+  // page's own Done, on the same producer, reached from here. One write, where
+  // `markStep` is two.
   async function markStageDone(stageId: string): Promise<void> {
-    const current = run;
-    if (!current || writing) return;
-    writing = true;
+    const current = getBatchSnapshot() ?? run;
+    if (!current) return;
+    // Re-entrancy on the document, not on a flag: the second tap of a double tap
+    // reads a stage this page has already advanced locally.
+    const stageDoc = current.stages.find((s) => s.id === stageId);
+    if (!stageDoc) return;
+    const status = stageStatus(stageDoc);
+    if (status === 'done' || status === 'skipped') return;
+    // Awaited only to say whether it failed. Nothing on the page is gated on it, so
+    // an await that never returns costs a toast that never arrives and nothing else.
     const result = await advanceStage(current, stageId);
-    writing = false;
     if (result.kind !== 'ok') addToast("Couldn't mark that stage done. Try again.", 'destructive');
+  }
+
+  // STARTING a stage from the deck — the batch page's own Start, on the same
+  // producer, reached from here (issue #1365). Started-without-done is a first-class
+  // state, not a lesser Done: `docs/formulas-schedules-batches.md` :237-239 has it
+  // recording overlap without planning it, and until now the deck could only say
+  // "finished" about a stage you had merely begun.
+  //
+  // Like every other command in this section it holds nothing across its write; see
+  // the note above `markStep`. `withStageStarted` re-times nothing, so this is one
+  // whole-document write built from the freshest local snapshot.
+  async function markStageStarted(stageId: string): Promise<void> {
+    const current = getBatchSnapshot() ?? run;
+    if (!current) return;
+    const stageDoc = current.stages.find((s) => s.id === stageId);
+    if (!stageDoc || stageStatus(stageDoc) !== 'notStarted') return;
+    const result = await startStage(current, stageId);
+    if (result.kind !== 'ok') addToast("Couldn't start that stage. Try again.", 'destructive');
   }
 
   // ─── The clock ────────────────────────────────────────────────────────────────
@@ -750,10 +831,29 @@
           onwheel={deck.handleWheel}
           onkeydown={deck.handleKeyDown}
         >
-          {#if steps.length === 0}
+          {#if recipe === null}
+            <!-- STILL LOADING, OR GONE — and they are not the same sentence (issue
+               #1365). `recipe` is `null` for both, so this used to read "Loading the
+               method…" forever for a run whose dish had been deleted. The split is
+               the recipe store's own loading flag, which `CookLoadingOrphan` already
+               owns for the two recipe cook screens; what is batch-specific is only
+               the words and the way out, which it now takes as props.
+
+               The copy says NOTHING about a session being closed: there is no cook
+               session here (see the header), the run is untouched by the deletion,
+               and the way out is the run itself. -->
+            <div class="flex h-full flex-col">
+              <CookLoadingOrphan
+                deletedTitle="This recipe was deleted"
+                deletedDescription="The method lived on the recipe, which no longer exists. The run itself is fine — its grams, stages and readings are all on the batch."
+                backLabel="Back to the batch"
+                onBack={() => push(`/batches/${batchId}`)}
+              />
+            </div>
+          {:else if steps.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-6">
               <EmptyState
-                title={recipe === null ? 'Loading the method…' : 'This recipe has no steps'}
+                title="This recipe has no steps"
                 description="The stages are still on the batch page."
               />
             </div>
@@ -784,16 +884,39 @@
                 </div>
                 {@render stageFacts(stageDoc)}
                 {#if status === 'notStarted' || status === 'inProgress'}
-                  <div>
+                  <!-- MARK DONE LEADS, START FOLLOWS — `BatchDetailPage.svelte`
+                     :726-757's pairing for the stage in hand, which on this screen is
+                     every stage card there is. The batch page reads a whole list at
+                     once and can tell the stage in hand from one further down the
+                     queue (`isCurrent`); the deck pages through the method one card
+                     at a time, so the card under the thumb IS the one in hand and
+                     there is no second case to distinguish. That is the boundary of
+                     the mirroring, stated rather than implied: this renders the
+                     sibling's current-stage shape on every card, and deliberately
+                     does not import its `isCurrent` split.
+
+                     Start appears only while the stage has not begun — once it has,
+                     there is nothing left to record but the end. -->
+                  <div class="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       onclick={() => void markStageDone(stageDoc.id)}
-                      disabled={writing}
                       data-testid="batch-cook-stage-done"
                     >
                       {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
                       Mark done
                     </Button>
+                    {#if status === 'notStarted'}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onclick={() => void markStageStarted(stageDoc.id)}
+                        data-testid="batch-cook-stage-mark-started"
+                      >
+                        {#snippet leading()}<Icon name="Play" size={16} />{/snippet}
+                        Start
+                      </Button>
+                    {/if}
                   </div>
                 {/if}
               </section>
@@ -803,7 +926,26 @@
               {@const status = stageStatus(stageDoc)}
               {@const stated = formatStatedDuration(stageDoc.duration)}
               <div class="flex flex-col gap-1 text-sm">
-                {#if isObservational(stageDoc)}
+                {#if stageDoc.skipped !== null}
+                  {@const skip = stageDoc.skipped}
+                  <!-- A SKIPPED STAGE SHOWS WHAT HAPPENED, NOT WHAT WAS PLANNED —
+                     `BatchDetailPage.svelte:602-615` word for word, because the deck
+                     and the batch page must not tell two stories about one bake
+                     (issue #1365). Its `plannedStartAt`/`plannedEndAt` are still on
+                     the document deliberately (`docs/formulas-schedules-batches.md`
+                     :236-238 — a skip leaves them alone), and they are now
+                     meaningless, so they are not rendered. This branch leads, so it
+                     also takes the observational stage below it and the wait-stage
+                     countdown out: there is nothing to count down to for a stage that
+                     will never run. `stageFacts` renders on both the stage card and
+                     the step band, so one guard covers both surfaces. -->
+                  <span class="text-muted-foreground" data-testid="batch-cook-stage-skipped">
+                    Skipped {formatWhen(skip.at)}
+                  </span>
+                  {#if skip.note !== ''}
+                    <span data-testid="batch-cook-stage-skipped-note">{skip.note}</span>
+                  {/if}
+                {:else if isObservational(stageDoc)}
                   <span class="text-muted-foreground" data-testid="batch-cook-stage-observational">
                     No fixed time — mark it done when it's ready.
                   </span>
@@ -1052,12 +1194,7 @@
             Weigh out
           </Button>
           {#if currentStep && !currentStepDone}
-            <Button
-              size="lg"
-              onclick={handleStepDone}
-              disabled={writing}
-              data-testid="batch-cook-step-done"
-            >
+            <Button size="lg" onclick={handleStepDone} data-testid="batch-cook-step-done">
               {#snippet leading()}<Icon name="Check" size={18} />{/snippet}
               {nextIncompleteStep ? 'Done · next' : 'Done'}
             </Button>

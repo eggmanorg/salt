@@ -37,6 +37,7 @@ const {
   mockBatch,
   mockObservations,
   mockRecipes,
+  mockIsLoadingRecipes,
   mockBreadGate,
   mockWakeLock,
   mockKitchenTimers,
@@ -48,6 +49,10 @@ const {
     mockBatch: makeStore<BatchDoc | null | undefined>(undefined),
     mockObservations: makeStore<BatchObservationDoc[] | undefined>([]),
     mockRecipes: makeStore<RecipeDoc[]>([]),
+    // A real store, not the constant `false` this file used to pass: the deck's
+    // deleted-versus-loading split (issue #1365) is read off this flag, so a test
+    // that cannot move it cannot tell the two apart either.
+    mockIsLoadingRecipes: makeStore<boolean>(false),
     mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
       enabled: true,
       settled: true,
@@ -70,7 +75,7 @@ vi.mock('../src/lib/productFormService.js', () => ({
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
   recipes: mockRecipes,
-  isLoadingRecipes: { subscribe: (f: (v: boolean) => void) => (f(false), () => {}) },
+  isLoadingRecipes: mockIsLoadingRecipes,
 }));
 vi.mock('../src/lib/wakeLock.js', () => ({
   isWakeLockSupported: vi.fn(() => true),
@@ -89,6 +94,7 @@ vi.mock('../src/lib/batchService.js', () => ({
   // `mockBatch._set` call left behind, concurrent writes included.
   getBatchSnapshot: vi.fn(() => mockBatch._get()),
   advanceStage: vi.fn(async (current: BatchDoc) => ({ kind: 'ok' as const, value: current })),
+  startStage: vi.fn(async (current: BatchDoc) => ({ kind: 'ok' as const, value: current })),
   setIngredientChecked: vi.fn(async (current: BatchDoc, id: string, checked: boolean) => {
     const ids = checked
       ? [...current.checkedIngredientIds, id]
@@ -129,9 +135,11 @@ vi.mock('../src/lib/featureGate.js', () => ({
   isFeatureEnabled: () => true,
 }));
 
+import { push } from 'svelte-spa-router';
 import BatchCookPage from '../src/routes/batches/BatchCookPage.svelte';
 import {
   advanceStage,
+  startStage,
   getBatchSnapshot,
   setIngredientChecked,
   setStepDone,
@@ -139,10 +147,12 @@ import {
 import { addToast } from '../src/lib/toastStore.js';
 
 const advanceMock = vi.mocked(advanceStage);
+const startMock = vi.mocked(startStage);
 const checkMock = vi.mocked(setIngredientChecked);
 const stepMock = vi.mocked(setStepDone);
 const snapshotMock = vi.mocked(getBatchSnapshot);
 const toastMock = vi.mocked(addToast);
+const pushMock = vi.mocked(push);
 
 const BATCH_ID = 'batch-1';
 const RECIPE_ID = 'recipe-1';
@@ -272,6 +282,7 @@ beforeEach(() => {
   mockBatch._set(makeBatch());
   mockObservations._set([]);
   mockRecipes._set([recipeWith()]);
+  mockIsLoadingRecipes._set(false);
   mockBreadGate._set({ enabled: true, settled: true });
   mockKitchenTimers._set(null);
   advanceMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
@@ -622,7 +633,12 @@ describe('the schedule owns the clock', () => {
   });
 });
 
-describe('the writing lock covers only the stage-transition family', () => {
+describe('no control waits for a write', () => {
+  // Renamed from "the writing lock covers only the stage-transition family"
+  // (issue #1365, fault 4): there is no lock left to scope. The three tests below
+  // it are untouched — what changed is that the claim in the name is now the one
+  // the whole block actually pins.
+  //
   // BLOCKING #3 (PR #1334 review): the lock used to be one boolean shared by
   // every write on the page, so it silently dropped taps on the weigh-out rows
   // and the untick control (neither was even visually disabled), and — because
@@ -673,6 +689,94 @@ describe('the writing lock covers only the stage-transition family', () => {
     await fireEvent.click(await screen.findByTestId('cook-step-untick'));
 
     expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-1', false);
+    stuck.release(mockBatch._get()!);
+  });
+
+  // ─── Issue #1365, fault 4 ───────────────────────────────────────────────────
+  //
+  // The two tests above only ever asserted that the controls TAKEN OFF the lock
+  // survived a write that never comes back. The two that kept it did not, and the
+  // comment in the page asserting the hazard had been dealt with was half true.
+  // These pin the other half.
+  //
+  // `stuckAdvance` above is `setDoc` offline exactly: durably queued, never
+  // resolving. `stuckStepDone` below is the same for the tick, and echoes into the
+  // store first — which is what the REAL `persist` does (`batchService.ts:163-175`
+  // sets the store before it awaits) and the whole reason the page can carry on
+  // without the promise.
+  function stuckStepDone(): { release: (batch: BatchDoc) => void } {
+    let release!: (batch: BatchDoc) => void;
+    stepMock.mockImplementationOnce((current: BatchDoc, id: string, done: boolean) => {
+      const ids = done
+        ? [...current.completedStepIds, id]
+        : current.completedStepIds.filter((existing) => existing !== id);
+      mockBatch._set({ ...current, completedStepIds: ids });
+      return new Promise((resolve) => {
+        release = (batch: BatchDoc) => resolve({ kind: 'ok', value: batch });
+      });
+    });
+    return { release: (batch: BatchDoc) => release(batch) };
+  }
+
+  it('the stage card’s Done control stays live while a stage write is stuck in flight', async () => {
+    // THE FAULT ITSELF. `writing` was set true, the `setDoc` never resolved, and
+    // both controls gated on it greyed out for the rest of the visit — a screen
+    // that reads as broken rather than merely slow, in the one room where signal
+    // drops.
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+
+    // The card's Done is for the step-less stage, which nothing in this gesture
+    // touched, and stays live. The fixture's three steps are all complete after
+    // this tick, so the footer has already moved on to `batch-cook-to-batch` —
+    // there is no footer stage control left to assert live here; the next test
+    // covers a second stage control staying live and actually writing while this
+    // one is stuck.
+    expect(screen.getByTestId('batch-cook-stage-done')).not.toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-back'));
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-toggle'));
+    expect(screen.queryByTestId('batch-cook-step-done')).toBeNull();
+
+    stuck.release(mockBatch._get()!);
+  });
+
+  it('another stage can still be marked done while one write is stuck in flight', async () => {
+    // Not merely "the button is pressable" — the write it dispatches actually goes
+    // out. A lock that only LOOKED released would pass the assertion above.
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    // The step-less stage first, which is the one that gets stuck.
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-cool'));
+
+    // Now the OTHER stage, through its step, with the first write still pending.
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-3', true));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-bulk'));
+    stuck.release(mockBatch._get()!);
+  });
+
+  it('a step ticked with no signal still marks its stage done', async () => {
+    // THE WORSE HALF of fault 4, and the one a reload could not recover. `markStep`
+    // is two writes; the advance used to hang off the tick's network promise, so
+    // offline the second write never went out AT ALL — the step was ticked locally
+    // and its stage silently left open, with no `actualEndAt` and no re-timed tail.
+    const stuck = stuckStepDone();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-bulk'));
+    // And on the ticked document, not the one from before the tick.
+    expect(advanceMock.mock.calls.at(-1)![0].completedStepIds).toContain('step-3');
     stuck.release(mockBatch._get()!);
   });
 });
@@ -729,6 +833,130 @@ describe('a stage that cites no step', () => {
   });
 });
 
+describe('a skipped stage, on both surfaces', () => {
+  // Issue #1365, fault 1. `stageFacts` renders from two places — the step-less
+  // stage's own card and the band on the step a stage cites — so the window was
+  // stale on both. One guard covers both, and this test is the thing that says so:
+  // it skips one stage of each shape in a single run.
+  it('shows when it was skipped and why, never the window it was planned for', async () => {
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          // On step 3, so it renders as a BAND.
+          stage({ skipped: { at: '2026-09-11T07:05:00.000Z', note: 'proved overnight instead' } }),
+          // No step, so it renders as a CARD — and it keeps a duration, so it would
+          // print a window rather than falling into the observational branch.
+          stage({
+            id: 'stage-cool',
+            label: 'Cool the cobs',
+            stepId: null,
+            skipped: { at: '2026-09-11T09:05:00.000Z', note: '' },
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('batch-cook-stage-band').getAttribute('data-status')).toBe('skipped');
+    expect(screen.getByTestId('batch-cook-stage-card').getAttribute('data-status')).toBe('skipped');
+    expect(screen.queryAllByTestId('batch-cook-stage-window')).toHaveLength(0);
+    // And no countdown either: there is no end to count to for a stage that will
+    // never run, which is the same fact the window was asserting.
+    expect(screen.queryAllByTestId('batch-cook-stage-countdown')).toHaveLength(0);
+
+    const skipped = screen.getAllByTestId('batch-cook-stage-skipped');
+    expect(skipped).toHaveLength(2);
+    for (const line of skipped) expect(line.textContent).toContain('Skipped');
+    // The reason, where one was given — and nothing at all where it was not.
+    const notes = screen.getAllByTestId('batch-cook-stage-skipped-note');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.textContent).toContain('proved overnight instead');
+  });
+});
+
+describe('when the recipe behind the run has gone', () => {
+  // Issue #1365, fault 2. `recipe` is `null` both while the library loads and once
+  // the dish is deleted, and the deck used to say "Loading the method…" for both —
+  // forever, in the second case, because there is nothing left to load.
+  it('says the recipe was deleted, in the run’s words, with the way back to the batch', async () => {
+    mockRecipes._set([]);
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByText(/Loading/)).toBeNull();
+    const orphan = screen.getByTestId('cook-mode-orphan');
+    expect(orphan.textContent).toContain('This recipe was deleted');
+    // NOT the recipe-cook copy. There is no cook session on this page to close, and
+    // saying there is would contradict the feature's own design.
+    expect(orphan.textContent).not.toContain('cook session');
+
+    await fireEvent.click(screen.getByTestId('cook-mode-orphan-back'));
+    expect(pushMock).toHaveBeenCalledWith(`/batches/${BATCH_ID}`);
+  });
+
+  it('shows the spinner instead while the library is genuinely still loading', async () => {
+    mockRecipes._set([]);
+    mockIsLoadingRecipes._set(true);
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByTestId('cook-mode-orphan')).toBeNull();
+    expect(screen.getByText('Loading…')).toBeTruthy();
+  });
+});
+
+describe('a stage you have begun', () => {
+  // Issue #1365, fault 3. Started-without-done is a first-class state
+  // (`docs/formulas-schedules-batches.md`:237-239), and the deck could only say
+  // "finished" about a stage you had merely begun.
+  it('can be recorded as begun from the deck, on the same producer the batch page uses', async () => {
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-mark-started'));
+
+    await waitFor(() => expect(startMock).toHaveBeenCalledWith(expect.anything(), 'stage-cool'));
+    // Start is not a quiet Done: nothing is advanced and nothing is re-timed.
+    expect(advanceMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no Start once the stage is already under way — only the end is left to record', async () => {
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          stage(),
+          stage({
+            id: 'stage-cool',
+            stepId: null,
+            duration: null,
+            actualStartAt: '2026-09-11T09:00:00.000Z',
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('batch-cook-stage-card').getAttribute('data-status')).toBe(
+      'inProgress',
+    );
+    expect(screen.queryByTestId('batch-cook-stage-mark-started')).toBeNull();
+    expect(screen.getByTestId('batch-cook-stage-done')).toBeTruthy();
+  });
+
+  it('says so when the start does not land, and leaves the cook where they were', async () => {
+    startMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-mark-started'));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.any(String), 'destructive'));
+  });
+});
+
 describe('when a write fails', () => {
   // The service returns `Failure` and never throws (CLAUDE.md rule 10), so the page
   // says something true and leaves the cook where they were. A silent failure on a
@@ -746,6 +974,14 @@ describe('when a write fails', () => {
   });
 
   it('says so when the step tick does not land, and never advances the stage on top', async () => {
+    // WHAT MAKES THIS TRUE, stated because issue #1365 changed the mechanism: the
+    // advance is no longer gated on the tick's promise resolving ok (offline it
+    // never resolves at all), it is gated on the LOCAL DOCUMENT saying the step is
+    // now done. This mock replaces the implementation outright and so never echoes
+    // into the store — which is the same thing a tick that refused before
+    // persisting does. That is the boundary of the claim: a tick that DID reach the
+    // store and only then failed its network write will advance, and the advance's
+    // own whole-document write carries the tick with it.
     stepMock.mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
