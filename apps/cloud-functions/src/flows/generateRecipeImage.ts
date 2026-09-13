@@ -69,19 +69,22 @@ export const RECIPE_IMAGE_STYLE_ANCHORS =
 export const RECIPE_IMAGE_DISH_READING_FALLBACK =
   'First read the dish itself — is it fresh and light or hearty and slow-cooked, what cuisine is it, and which season does it naturally belong to — then let that reading drive the season, setting, surface, props, colour palette and quality of light of the scene: a fresh salad calls for high summer — bright, sunny, airy, cool clear light, a breezy outdoor or sun-lit table; a cottage pie or a slow-cooked stew calls for autumn or winter — cosy and warm, low golden or soft overcast light, deeper earthy tones, a hearty indoor table. Make this seasonal and situational shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each dish feels like it lives in its own moment.';
 
-// ─── The OUTING anchors + fallback (issues #637, #671) ──────────────────────
-// An outing — "When you CBA" on screen — is a NIGHT OFF FROM COOKING: it fills a
-// planner slot but no recipe was cooked for it, so it has no ingredients and no
-// method. Painting one with the recipe anchors gets a home-plated dish on rustic
+// ─── The SPECIAL anchors + fallback (issues #637, #671) ──────────────────────
+// A special — "Chef's Specials" on screen — is a MEAL THAT NEEDS NO RECIPE CARD:
+// it fills a planner slot but has no ingredients and no method, either because
+// nobody cooked (a takeaway, a pub meal) or because the cook knows it by heart
+// (a Sunday roast, a fry-up). Painting one with the recipe anchors gets a home-plated dish on rustic
 // ceramic — a picture of a meal that never happened. These siblings paint the food
 // as it REALLY TURNS UP.
 //
 // What "really turns up" means is NOT one picture, and #671 is what it cost to
-// assume it was. There are at least four, and only the first is a takeaway:
+// assume it was. There are at least five (the fifth added by #1322), and only the
+// first is a takeaway:
 // food someone else made and handed over; a meal eaten out on the restaurant's
 // own plate; something good bought ready to eat from a baker, butcher or deli;
-// and something assembled at home with no cooking at all — a sandwich, cheese and
-// crackers, beans on toast. This block used to enumerate takeaway vessels ("the
+// something assembled at home with no cooking at all — a sandwich, cheese and
+// crackers, beans on toast; and a dish the household cooks so often it was never
+// written down, which IS cooked, at home, on their own plates. This block used to enumerate takeaway vessels ("the
 // open foil tray, the lidded carton, the pizza box…") and assert the takeaway
 // premise outright ("the whole point is food someone else made and handed over",
 // "do NOT plate it up onto home crockery"). Both were false for three of the four,
@@ -90,7 +93,7 @@ export const RECIPE_IMAGE_DISH_READING_FALLBACK =
 //
 // It read as a bug rather than a bias because of WHERE it sat. This text is
 // appended LAST, after the brief, the description, the tags and the hint, so the
-// enumeration outranked everything a user could type and every outing came back in
+// enumeration outranked everything a user could type and every special came back in
 // a foil tray no matter what it was. That is the identical failure #652 diagnosed
 // in the placeholder anchors, and it takes the identical fix: a VESSEL is a subject
 // decision, and by this file's contract subjects belong to the per-doc brief while
@@ -100,8 +103,17 @@ export const RECIPE_IMAGE_DISH_READING_FALLBACK =
 // it fed those same nouns back in a negation, which conditions an image model far
 // more weakly than the noun does.
 //
-// The one prohibition that survives is the one true of all four: this was not
-// cooked from a recipe tonight, so it must not be styled as though it were.
+// The one prohibition that survives is the one true of all of them: no recipe was
+// FOLLOWED here, so the food must not be styled as a chef's plated composition.
+//
+// #1322 narrowed it once more. "Nobody cooked a recipe here" was flatly false for
+// the three entries that are a Sunday roast, a fry-up and a cheese sandwich —
+// somebody cooked those, they simply never wrote it down. Because this text is
+// appended LAST it outranked the per-doc brief, so a brief correctly describing a
+// plated roast would be overruled by an anchor insisting nothing was cooked. The
+// prohibition now says what it always meant: no RESTAURANT plating, no chef's
+// garnish, no arranged still life — home cooking on the household's own plates is
+// exactly right where the brief calls for it.
 //
 // Same contract as the recipe pair otherwise: LOCKED IN CODE, appended LAST on
 // every prompt, carrying the same prohibitions. "No logos" earns its keep twice
@@ -111,10 +123,10 @@ export const RECIPE_IMAGE_DISH_READING_FALLBACK =
 // The kind switch lives in `anchorsFor`/`fallbackFor`/`openerFor` below, with
 // 'recipe' as the default arm, so an absent or unrecognised kind is byte-for-byte
 // today's prompt.
-export const OUTING_IMAGE_STYLE_ANCHORS =
-  "But the FOOD is always the star of the shot: fill the frame with it, composing tight and close so the food is unmistakably the subject and takes up most of the image. The table, the room and the background are only supporting context glimpsed around and behind the food — never the main event; avoid wide or pulled-back shots where the surroundings occupy more of the frame than the food itself. NOBODY COOKED A RECIPE HERE: show the food exactly as it really turns up, served however the direction above says it is served, and never dressed up into something it is not. Do NOT stage it as a dish cooked from scratch — no careful plating, no chef's garnish, no arranged still life. If it came in packaging, leave it in its packaging; if it arrived on the restaurant's own plate, leave it on that plate; if it was thrown together at home, let it look thrown together. Let the vessel, the surface and the angle follow the direction above rather than a habit. Within that, hold a recognisable house style: a photorealistic photograph with the warm, unfussy, appetising feel of a good evening, shot with real affection. Always keep these anchors — the food generous and filling most of the frame as the clear subject; soft natural light; a shallow depth of field with the food in crisp focus and the surroundings falling softly out of focus; everything real and a little lived-in, never pristine studio product photography. Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people. A single, mouth-watering hero shot of one spread of food, framed large and close so it fills the frame and makes you want to eat it.";
+export const SPECIAL_IMAGE_STYLE_ANCHORS =
+  "But the FOOD is always the star of the shot: fill the frame with it, composing tight and close so the food is unmistakably the subject and takes up most of the image. The table, the room and the background are only supporting context glimpsed around and behind the food — never the main event; avoid wide or pulled-back shots where the surroundings occupy more of the frame than the food itself. NO RECIPE WAS FOLLOWED HERE: show the food exactly as it really turns up, served however the direction above says it is served, and never dressed up into something it is not. Do NOT stage it as a restaurant would — no careful plating, no chef's garnish, no arranged still life. If it came in packaging, leave it in its packaging; if it arrived on the restaurant's own plate, leave it on that plate; if it was thrown together at home, let it look thrown together; and if the direction above says this is a dish the household cooks by heart, then it WAS cooked here — show it hot on their own plates or in the dish it came out of the oven in, generous and unfussy, still never styled as a restaurant's plate. Let the vessel, the surface and the angle follow the direction above rather than a habit. Within that, hold a recognisable house style: a photorealistic photograph with the warm, unfussy, appetising feel of a good evening, shot with real affection. Always keep these anchors — the food generous and filling most of the frame as the clear subject; soft natural light; a shallow depth of field with the food in crisp focus and the surroundings falling softly out of focus; everything real and a little lived-in, never pristine studio product photography. Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people. A single, mouth-watering hero shot of one spread of food, framed large and close so it fills the frame and makes you want to eat it.";
 
-// The outing counterpart to RECIPE_IMAGE_DISH_READING_FALLBACK: used only when no
+// The special counterpart to RECIPE_IMAGE_DISH_READING_FALLBACK: used only when no
 // scene brief is available. It asks the same question the recipe fallback asks —
 // read the thing, then let that reading drive the scene — but the reading it asks
 // for is about the OCCASION, because that is what decides how the food shows up.
@@ -123,10 +135,10 @@ export const OUTING_IMAGE_STYLE_ANCHORS =
 // when there is no brief, so it is the one place on that path with anything
 // specific in it. What #671 changed here is the SPREAD of what it names — it used
 // to offer takeaway, picnic, chippy, street food and restaurant, which are five
-// wordings of two of the four cases, so the shop-bought haul and the sandwich had
-// no picture to reach for at all.
-export const OUTING_SCENE_FALLBACK =
-  "First read what kind of night off this is — food someone else made and handed over (a takeaway, a chippy tea, street food, a picnic); a meal eaten out, plated by the restaurant's own kitchen; something good bought ready to eat (a pie from the butcher, bread and cheese from the baker, a deli counter, a good thing out of a packet); or something assembled at home with no real cooking (a sandwich, cheese and crackers, beans on toast) — and what cuisine it is, then let that reading drive how the food is served, the setting, the surface, the props, the colour palette and the quality of light: a curry delivered home calls for a cosy indoor evening — warm lamplight, a kitchen table, cartons opened out; a picnic calls for bright outdoor daylight — a rug on the grass, a spread of wrapped and tubbed things; a meal out calls for the restaurant itself — low warm light, a laid table, the dish as the kitchen sent it; a baker's or butcher's haul calls for a board and a bread knife on a worktop in honest daylight; a sandwich made standing up calls for a plate, a kitchen counter and no ceremony at all. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each one feels like it lives in its own moment.";
+// wordings of two of the cases, so the shop-bought haul and the sandwich had no
+// picture to reach for at all. #1322 added the fifth, the dish cooked by heart.
+export const SPECIAL_SCENE_FALLBACK =
+  "First read what kind of chef's special this is — food someone else made and handed over (a takeaway, a chippy tea, street food, a picnic); a meal eaten out, plated by the restaurant's own kitchen; something good bought ready to eat (a pie from the butcher, bread and cheese from the baker, a deli counter, a good thing out of a packet); something assembled at home with no real cooking (a sandwich, cheese and crackers, beans on toast); or a dish the household cooks so often it was never written down (a Sunday roast, a fry-up, a weeknight standby) — and what cuisine it is, then let that reading drive how the food is served, the setting, the surface, the props, the colour palette and the quality of light: a curry delivered home calls for a cosy indoor evening — warm lamplight, a kitchen table, cartons opened out; a picnic calls for bright outdoor daylight — a rug on the grass, a spread of wrapped and tubbed things; a meal out calls for the restaurant itself — low warm light, a laid table, the dish as the kitchen sent it; a baker's or butcher's haul calls for a board and a bread knife on a worktop in honest daylight; a sandwich made standing up calls for a plate, a kitchen counter and no ceremony at all; a dish cooked by heart calls for the household's own kitchen — hot from the oven, carved or spooned onto their own plates, generous and unfussy. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each one feels like it lives in its own moment.";
 
 // ─── The COCKTAIL anchors + fallback (issue #637) ───────────────────────────
 // A cocktail IS a recipe — it has ingredients and a method, and it keeps the full
@@ -213,7 +225,12 @@ export const PLACEHOLDER_SCENE_FALLBACK = `First read the MOOD this picture is f
 // zod instance, and a schema built from plain `zod` is not interchangeable with it.
 // The drift between the two lists is closed by a test that pins this array against
 // `RecipeKindSchema.options`, not by an import.
-export const GENERATE_RECIPE_IMAGE_KINDS = ['recipe', 'outing', 'cocktail', 'placeholder'] as const;
+export const GENERATE_RECIPE_IMAGE_KINDS = [
+  'recipe',
+  'special',
+  'cocktail',
+  'placeholder',
+] as const;
 
 type ImageKind = (typeof GENERATE_RECIPE_IMAGE_KINDS)[number];
 
@@ -222,8 +239,8 @@ type ImageKind = (typeof GENERATE_RECIPE_IMAGE_KINDS)[number];
 // direction for render exactly today's prompt rather than nothing.
 function anchorsFor(kind: ImageKind | undefined): string {
   switch (kind) {
-    case 'outing':
-      return OUTING_IMAGE_STYLE_ANCHORS;
+    case 'special':
+      return SPECIAL_IMAGE_STYLE_ANCHORS;
     case 'cocktail':
       return COCKTAIL_IMAGE_STYLE_ANCHORS;
     case 'placeholder':
@@ -235,8 +252,8 @@ function anchorsFor(kind: ImageKind | undefined): string {
 
 function fallbackFor(kind: ImageKind | undefined): string {
   switch (kind) {
-    case 'outing':
-      return OUTING_SCENE_FALLBACK;
+    case 'special':
+      return SPECIAL_SCENE_FALLBACK;
     case 'cocktail':
       return COCKTAIL_SCENE_FALLBACK;
     case 'placeholder':
@@ -254,11 +271,11 @@ function openerFor(
   const lead = (() => {
     switch (kind) {
       // Deliberately says nothing about HOW this one turns up (issue #671). The
-      // opener names the subject; which of the four kinds of night off it is —
-      // handed over, eaten out, bought ready, or thrown together here — is read
-      // per doc from the title and description by the brief.
-      case 'outing':
-        return `A beautiful, appetising photograph of "${title}" — a night off from cooking, shown exactly as it really turns up.`;
+      // opener names the subject; which kind of chef's special it is — handed
+      // over, eaten out, bought ready, thrown together here, or cooked by heart
+      // (#1322) — is read per doc from the title and description by the brief.
+      case 'special':
+        return `A beautiful, appetising photograph of "${title}" — a chef's special: a meal that needs no recipe card, shown exactly as it really turns up.`;
       case 'cocktail':
         return `A beautiful, tempting photograph of the cocktail "${title}" — the finished drink in its glass, on the bar.`;
       // The one opener that does NOT make the title the subject. A placeholder's
@@ -368,7 +385,7 @@ export function buildRecipePrompt(
   // Anchors last, always — see RECIPE_IMAGE_STYLE_ANCHORS. Nothing goes after this,
   // for any kind: the anchors being the final word is the only thing stopping a
   // user-edited brief from talking the model out of "no people, no logos", and that
-  // matters MORE for an outing, where editing the brief is the primary path.
+  // matters MORE for a special, where editing the brief is the primary path.
   return `${prompt} ${anchorsFor(kind)}`;
 }
 

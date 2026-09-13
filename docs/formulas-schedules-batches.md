@@ -374,7 +374,7 @@ from what it _has_.
 | Coppa            | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Salami           | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Negroni          | `cocktail` |  free   |    —    |    —    |    —    |
-| Friday takeaway  | `outing`   |    —    |    —    |    —    |    —    |
+| Friday takeaway  | `special`  |    —    |    —    |    —    |    —    |
 
 A loaf **is** a recipe: cooked, plannable, wants a hero image, ingredients on the
 shopping list. A `bread` kind would fork all of that for nothing. `ferment` and

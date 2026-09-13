@@ -13,8 +13,11 @@
 // `../src/lib/recipeService.js` listing every export the page imports, so a new
 // lib-level import would silently break suites this phase must leave unedited.
 //
-// The UI label for `outing` is "When you CBA"; the enum value stays neutral so
-// the copy can be reworded later without touching a single stored document.
+// The UI label for `special` is "Chef's Specials". Issue #1322 retired the label
+// it wore before, and that reword landed here exactly as this comment promised —
+// but only half of it was free: the stored value moved from `outing` to `special` in
+// the same issue, because the word was also the name of a domain concept and the
+// selector for an AI prompt. Copy still moves freely; the enum does not.
 import {
   hasComponents,
   takesIngredients,
@@ -73,7 +76,7 @@ interface KindCopy extends SectionCopy {
   // New-menu entry icon.
   readonly menuIcon: IconProps['name'];
   // Help text under the tags field. OPTIONAL, and present on exactly one kind:
-  // for a recipe, an outing or a cocktail, tags are free-form search keywords and
+  // for a recipe, a special or a cocktail, tags are free-form search keywords and
   // need no explanation. For a placeholder they are load-bearing — `pickPlaceholder`
   // FILTERS on the mood and WEIGHTS on the conditions, so which evenings a picture
   // turns up on is decided entirely by what is typed here, and a typo silently
@@ -100,12 +103,16 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     thumbIcon: 'CookingPot',
     menuIcon: 'Pencil',
   },
-  outing: {
-    label: 'When you CBA',
-    one: 'idea',
-    many: 'ideas',
+  // Issue #1322. The shelf collects two things at once: the nights nobody cooked
+  // (a takeaway, a pub meal, a picnic) and the dishes the chef knows well enough
+  // not to write down (the Sunday roast, the all-day breakfast, the cheese
+  // sandwich). "Chef's Specials" is true of both and is a joke about the second.
+  special: {
+    label: "Chef's Specials",
+    one: "chef's special",
+    many: "chef's specials",
     createdToast: 'Saved',
-    emptyText: 'Nothing here yet — a takeaway, a picnic, or a night off.',
+    emptyText: 'Nothing here yet — a takeaway, a picnic, or the one you know by heart.',
     noMatchText: 'Nothing here matches your filters.',
     thumbIcon: 'HandPlatter',
     menuIcon: 'HandPlatter',
@@ -189,7 +196,12 @@ export function sectionOf(recipe: Recipe): ListSection {
 //
 // This is deliberately NOT the list page's sections either (see LIST_SECTIONS
 // below), which add Meals as a fifth shelf.
-export const KIND_SECTIONS: readonly RecipeKind[] = ['recipe', 'outing', 'cocktail', 'placeholder'];
+export const KIND_SECTIONS: readonly RecipeKind[] = [
+  'recipe',
+  'special',
+  'cocktail',
+  'placeholder',
+];
 
 // The creatable kinds whose chips are shown before you ask for the rest. Kept as
 // the kind-level list it always was; the list page reads PRIMARY_LIST_SECTIONS.
@@ -208,7 +220,7 @@ export const PRIMARY_KIND_SECTIONS: readonly RecipeKind[] = ['recipe', 'cocktail
 // write it without. So `sectionOf` still derives Meals from `hasComponents` and no
 // empty meal can be minted — which is how this honours #752's objection rather
 // than overruling it.
-export type NewEntryMode = 'outing' | 'meal' | 'placeholder';
+export type NewEntryMode = 'special' | 'meal' | 'placeholder';
 
 interface NewEntryCopy {
   // The kind STORED on the document the sheet writes.
@@ -236,14 +248,14 @@ interface NewEntryCopy {
 // returns `undefined` for a mode the union already rules out, which is a branch no
 // test can reach. The menu's order is the separate list below.
 export const NEW_ENTRY_COPY: Record<NewEntryMode, NewEntryCopy> = {
-  outing: {
-    kind: 'outing',
+  special: {
+    kind: 'special',
     // Both labels come from `KIND_COPY` rather than being retyped: the menu and
     // the section must not be able to disagree about what this shelf is called.
-    menuLabel: KIND_COPY.outing.label,
-    sheetTitle: KIND_COPY.outing.label,
+    menuLabel: KIND_COPY.special.label,
+    sheetTitle: KIND_COPY.special.label,
     namePlaceholder: 'e.g. Curry from the place on the corner',
-    menuIcon: KIND_COPY.outing.menuIcon,
+    menuIcon: KIND_COPY.special.menuIcon,
   },
   meal: {
     // The one entry whose words are its own. `SECTION_COPY[MEAL_SECTION].label`
@@ -264,10 +276,10 @@ export const NEW_ENTRY_COPY: Record<NewEntryMode, NewEntryCopy> = {
   },
 };
 
-// New-menu order, after the three import entries. "When you CBA" leads because it
+// New-menu order, after the three import entries. Chef's Specials leads because it
 // is the one with real production use (eight entries, the newest made on
 // 4 September); a placeholder is normally written by the planner rather than here.
-export const NEW_ENTRY_ORDER: readonly NewEntryMode[] = ['outing', 'meal', 'placeholder'];
+export const NEW_ENTRY_ORDER: readonly NewEntryMode[] = ['special', 'meal', 'placeholder'];
 
 // The shelves the list page offers, in chip order. Meals sits second, straight
 // after Recipes, because it is a way of browsing dinner rather than an aside.
@@ -278,7 +290,7 @@ export const NEW_ENTRY_ORDER: readonly NewEntryMode[] = ['outing', 'meal', 'plac
 export const LIST_SECTIONS: readonly ListSection[] = [
   'recipe',
   MEAL_SECTION,
-  'outing',
+  'special',
   'cocktail',
   'placeholder',
 ];
@@ -288,7 +300,7 @@ export const LIST_SECTIONS: readonly ListSection[] = [
 // with the sections you actually browse (you cook dinner, you build a roast, you
 // make a drink) and folds the rest behind a "+N more" chip, exactly as the tag row
 // does. The two it hides are both places you WRITE to more than you read from:
-// "When you CBA" is a handful of standing answers, and a placeholder is picked for
+// Chef's Specials is a handful of standing answers, and a placeholder is picked for
 // you by the planner rather than browsed. Membership here is a presentation
 // choice, so it lives beside the copy; it never decides whether a section exists.
 export const PRIMARY_LIST_SECTIONS: readonly ListSection[] = ['recipe', MEAL_SECTION, 'cocktail'];

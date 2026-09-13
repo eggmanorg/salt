@@ -217,7 +217,7 @@ describe('RecipeIdentityCard — read mode', () => {
     // that gate instead of the `showCooking` one it claims to pin (issue #1324
     // review, should-fix 2).
     show(
-      entry({ kind: 'outing', createdBy: 'Ada Lovelace', metadata: { servings: 4, tags: [] } }),
+      entry({ kind: 'special', createdBy: 'Ada Lovelace', metadata: { servings: 4, tags: [] } }),
       false,
       { base: 4, active: 4 },
     );
@@ -428,7 +428,7 @@ describe('RecipeIdentityCard — edit mode', () => {
     for (const condition of PLACEHOLDER_CONDITION_TAGS) expect(hint).toContain(condition);
   });
 
-  it.each(['recipe', 'outing', 'cocktail'] as const)(
+  it.each(['recipe', 'special', 'cocktail'] as const)(
     'says nothing about vocabulary while tagging a %s, whose tags are free-form',
     async (kind) => {
       show(entry({ kind, metadata: { servings: null, tags: [] } }), true);
@@ -823,7 +823,7 @@ describe('RecipeIdentityCard — the Serves pill', () => {
   });
 
   it('offers no servings control at all on an entry that is not cooked', () => {
-    show(entry({ kind: 'outing', metadata: { servings: 4, tags: [] } }), true, {
+    show(entry({ kind: 'special', metadata: { servings: 4, tags: [] } }), true, {
       base: 4,
       active: 4,
     });

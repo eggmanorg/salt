@@ -228,7 +228,7 @@ export function searchRecipes<T extends RecipeSearchCandidate>(
  * list never mixes them in either — placeholders stand on their own shelf.
  *
  * A caller that passes `kind: 'placeholder'` has asked for exactly them and gets
- * them. `outing` and `cocktail` are real entries and stay: an outing is a
+ * them. `special` and `cocktail` are real entries and stay: a special is a
  * legitimate answer to "what is for dinner", which the tool description says.
  */
 function isHiddenFromSearch(kind: RecipeKind): boolean {

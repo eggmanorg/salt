@@ -102,7 +102,7 @@ test.describe('recipes — authorship filters', () => {
       await gotoAndSignIn(pageA, emailA, '/', { admin: true });
       await waitForMember(pageA, emailA);
       await seedRecipe(pageA, buildRecipe('e2e-author-a-recipe', 'Their Ragu'));
-      await seedRecipe(pageA, buildRecipe('e2e-author-a-outing', 'Their Curry House', 'outing'));
+      await seedRecipe(pageA, buildRecipe('e2e-author-a-special', 'Their Curry House', 'special'));
 
       // ── I write mine, in a session of my own ───────────────────────────────
       // Signing in AFTER A's writes means my tab's listeners deliver them in
@@ -111,7 +111,7 @@ test.describe('recipes — authorship filters', () => {
       await gotoAndSignIn(pageB, emailB, '/', { admin: true });
       await waitForMember(pageB, emailB);
       await seedRecipe(pageB, buildRecipe('e2e-author-b-recipe', 'My Ragu'));
-      await seedRecipe(pageB, buildRecipe('e2e-author-b-outing', 'My Curry House', 'outing'));
+      await seedRecipe(pageB, buildRecipe('e2e-author-b-special', 'My Curry House', 'special'));
 
       // ── The list, unfiltered: both partners' recipes ───────────────────────
       await pageB.goto('/#/recipes');
@@ -137,11 +137,11 @@ test.describe('recipes — authorship filters', () => {
       // ── A section switch keeps it on ───────────────────────────────────────
       // "Mine" is not per-section vocabulary the way tags are: it means the same
       // thing on every shelf, so walking to the next one must not drop it.
-      // The outings shelf sits behind the row's "+N more" expander.
+      // The specials shelf sits behind the row's "+N more" expander.
       await pageB.getByTestId('recipe-kind-show-all').click();
       await pageB
         .getByTestId('recipe-kind-filters')
-        .getByRole('button', { name: 'When you CBA' })
+        .getByRole('button', { name: "Chef\'s Specials" })
         .click();
       await expect(addedByMe).toHaveAttribute('aria-pressed', 'true');
       await expect(card(pageB, 'My Curry House')).toBeVisible();
@@ -159,7 +159,7 @@ test.describe('recipes — authorship filters', () => {
       await expect(editedByMe).toHaveAttribute('aria-pressed', 'false');
       await expect(card(pageB, 'Their Curry House')).toBeVisible();
       await expect(card(pageB, 'My Curry House')).toBeVisible();
-      // Still on the outings shelf — clearing a filter is not a teleport home.
+      // Still on the specials shelf — clearing a filter is not a teleport home.
       await expect(card(pageB, 'My Ragu')).toBeHidden();
     } finally {
       await ctxA.close();

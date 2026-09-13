@@ -177,7 +177,7 @@ describe('MealDayEditor — the recipe picker inside the day sheet (#640)', () =
     await filterPicker('zzz');
 
     // "Nothing found", not "No recipes found": since #637 the picker offers
-    // "When you CBA" entries alongside recipes, so the empty state cannot name
+    // "Chef's Specials" entries alongside recipes, so the empty state cannot name
     // only recipes.
     expect(await screen.findByText('Nothing found')).toBeInTheDocument();
     expect(screen.queryAllByRole('option')).toHaveLength(0);

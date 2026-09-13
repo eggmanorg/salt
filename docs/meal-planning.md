@@ -28,7 +28,7 @@ the same shape:
 Day {
   note: string                       // free-text meal description (v1)
   recipeIds: string[]                // attached `recipes/{id}` entries (#17). An entry may be a
-                                     // non-cookable "When you CBA" outing (#637) — same collection,
+                                     // non-cookable chef's special (#637, #1322) — same collection,
                                      // same reference; nothing here changes shape for it
   chefs: memberId[]                  // zero or more; a chef need NOT be an attendee
   attendees: Attendee[]
@@ -203,13 +203,13 @@ field's shape never changed to get here — adding use of an existing field is
 free, which is why no migration was ever needed.
 
 `MealPlanDaySchema` is likewise **unchanged** by the kind discriminator (#637):
-an outing lands in `day.recipeIds` like anything else, because it lives in the
+a special lands in `day.recipeIds` like anything else, because it lives in the
 same `recipes` collection. What the picker filters on is
 `isPlannable(kind)` — a cocktail is not dinner and never appears — and what the
 per-recipe **Add to shop** action is gated on is `takesIngredients(kind)`, since
 a takeaway has nothing to buy. Both are the pure domain predicates: the planner
 never compares a kind to decide behaviour. The one place it names a kind at all
-is copy — a non-`recipe` picker row wears a small label ("When you CBA") so the
+is copy — a non-`recipe` picker row wears a small label ("Chef's Specials") so the
 option can be told apart in a list of dinners.
 
 ### Attaching from the recipe page

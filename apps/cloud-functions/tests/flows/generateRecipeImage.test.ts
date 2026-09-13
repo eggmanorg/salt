@@ -23,8 +23,8 @@ const {
   generateRecipeImageFlow,
   RECIPE_IMAGE_STYLE_ANCHORS,
   RECIPE_IMAGE_DISH_READING_FALLBACK,
-  OUTING_IMAGE_STYLE_ANCHORS,
-  OUTING_SCENE_FALLBACK,
+  SPECIAL_IMAGE_STYLE_ANCHORS,
+  SPECIAL_SCENE_FALLBACK,
   COCKTAIL_IMAGE_STYLE_ANCHORS,
   COCKTAIL_SCENE_FALLBACK,
   PLACEHOLDER_IMAGE_STYLE_ANCHORS,
@@ -302,7 +302,7 @@ describe('generateRecipeImage flow', () => {
 });
 
 // ─── Entry kinds (issues #637, #671) ─────────────────────────────────────────
-// The `recipes` collection also holds outings — a night off from cooking, which is
+// The `recipes` collection also holds specials — a night off from cooking, which is
 // a takeaway OR a meal out OR something bought ready to eat OR a sandwich made at
 // home. Painting one with the recipe anchors produces a home-plated dish that never
 // existed, so `kind` selects a sibling opener, fallback and anchor set. 'recipe' is
@@ -342,29 +342,29 @@ describe('generateRecipeImage flow — entry kinds', () => {
     expect(explicit).toBe(absent);
   });
 
-  it('paints an outing as food that REALLY TURNS UP — outing anchors, never the recipe ones', async () => {
+  it('paints a special as food that REALLY TURNS UP — special anchors, never the recipe ones', async () => {
     const prompt = await promptFor({
       title: 'Friday night curry',
       description: null,
-      kind: 'outing',
+      kind: 'special',
     });
 
-    expect(prompt).toContain(OUTING_IMAGE_STYLE_ANCHORS);
-    expect(prompt).toContain(OUTING_SCENE_FALLBACK);
+    expect(prompt).toContain(SPECIAL_IMAGE_STYLE_ANCHORS);
+    expect(prompt).toContain(SPECIAL_SCENE_FALLBACK);
     // The recipe house style must not leak in — a plated-dish anchor set is exactly
-    // the picture an outing is not.
+    // the picture a special is not.
     expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
     expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
     // …nor the "finished dish" opener.
     expect(prompt).not.toContain('the finished dish');
-    expect(prompt).toContain('a night off from cooking');
+    expect(prompt).toContain("a chef's special: a meal that needs no recipe card");
   });
 
-  it('keeps the outing anchors LAST on the brief path', async () => {
+  it('keeps the special anchors LAST on the brief path', async () => {
     const prompt = await promptFor({
       title: 'Friday night curry',
       description: 'From the place on the corner.',
-      kind: 'outing',
+      kind: 'special',
       sceneBrief: 'Foil trays opened out on a coffee table, naan torn in half.',
       tags: ['takeaway'],
       hint: 'lots of little tubs',
@@ -372,76 +372,85 @@ describe('generateRecipeImage flow — entry kinds', () => {
 
     // The brief REPLACES the fallback, exactly as on the recipe path…
     expect(prompt).toContain('Foil trays opened out on a coffee table');
-    expect(prompt).not.toContain(OUTING_SCENE_FALLBACK);
+    expect(prompt).not.toContain(SPECIAL_SCENE_FALLBACK);
     // …and everything authored still sits before the anchors, which end the prompt.
     // This ordering matters MORE here: with no method to read, a hand-edited brief
-    // is the primary path for an outing, so it is the likeliest thing to try to
+    // is the primary path for a special, so it is the likeliest thing to try to
     // talk the model out of "no people, no logos".
     expect(prompt.indexOf('Foil trays opened out')).toBeLessThan(
-      prompt.indexOf(OUTING_IMAGE_STYLE_ANCHORS),
+      prompt.indexOf(SPECIAL_IMAGE_STYLE_ANCHORS),
     );
     expect(prompt.indexOf('This recipe is tagged')).toBeLessThan(
-      prompt.indexOf(OUTING_IMAGE_STYLE_ANCHORS),
+      prompt.indexOf(SPECIAL_IMAGE_STYLE_ANCHORS),
     );
     expect(prompt.indexOf('Additional guidance for this photo')).toBeLessThan(
-      prompt.indexOf(OUTING_IMAGE_STYLE_ANCHORS),
+      prompt.indexOf(SPECIAL_IMAGE_STYLE_ANCHORS),
     );
-    expect(prompt.endsWith(OUTING_IMAGE_STYLE_ANCHORS)).toBe(true);
+    expect(prompt.endsWith(SPECIAL_IMAGE_STYLE_ANCHORS)).toBe(true);
   });
 
-  it('keeps the outing anchors LAST on the fallback path too (no brief)', async () => {
+  it('keeps the special anchors LAST on the fallback path too (no brief)', async () => {
     const prompt = await promptFor({
       title: 'Friday night curry',
       description: null,
-      kind: 'outing',
+      kind: 'special',
       hint: 'lots of little tubs',
     });
-    expect(prompt.endsWith(OUTING_IMAGE_STYLE_ANCHORS)).toBe(true);
+    expect(prompt.endsWith(SPECIAL_IMAGE_STYLE_ANCHORS)).toBe(true);
   });
 
-  it('keeps the outing anchor wording verbatim', () => {
-    // Canary, mirroring the recipe anchors': these are the outing house style and
+  it('keeps the special anchor wording verbatim', () => {
+    // Canary, mirroring the recipe anchors': these are the special house style and
     // the prohibitions. Reword deliberately, then update this test.
-    expect(OUTING_IMAGE_STYLE_ANCHORS).toContain('NOBODY COOKED A RECIPE HERE');
-    expect(OUTING_IMAGE_STYLE_ANCHORS).toContain('Do NOT stage it as a dish cooked from scratch');
-    expect(OUTING_IMAGE_STYLE_ANCHORS).toContain('photorealistic photograph');
-    expect(OUTING_IMAGE_STYLE_ANCHORS).toContain('shallow depth of field');
-    expect(OUTING_IMAGE_STYLE_ANCHORS).toContain(
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain('NO RECIPE WAS FOLLOWED HERE');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain('Do NOT stage it as a restaurant would');
+    // #1322. The anchors are appended LAST, so an unconditional "nobody cooked"
+    // would outrank a brief that correctly describes a Sunday roast. The
+    // prohibition is now bounded to restaurant plating, and the carve-out for a
+    // dish the household cooks by heart is asserted rather than assumed.
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).not.toContain('NOBODY COOKED A RECIPE HERE');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain(
+      'if the direction above says this is a dish the household cooks by heart, then it WAS cooked here',
+    );
+    expect(SPECIAL_SCENE_FALLBACK).toContain('cooks so often it was never written down');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain('photorealistic photograph');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain('shallow depth of field');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).toContain(
       'Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people.',
     );
     // The fallback owns the occasion-reading guess and must not smuggle anchors in.
-    expect(OUTING_SCENE_FALLBACK).not.toContain('no hands, no people');
+    expect(SPECIAL_SCENE_FALLBACK).not.toContain('no hands, no people');
   });
 
-  // Issue #671. "When you CBA" is not a synonym for takeaway — it is equally a meal
+  // Issue #671. "Chef's Specials" is not a synonym for takeaway — it is equally a meal
   // out, a pie from the butcher, or a sandwich made standing up. The anchors are
   // appended LAST, after the brief, the description, the tags and the hint, so any
   // vessel named in them outranks everything a user can type: naming "the open foil
-  // tray" there put a disposable takeaway box in every outing hero regardless of
-  // what the outing was. A vessel is a SUBJECT decision and belongs to the per-doc
+  // tray" there put a disposable takeaway box in every special hero regardless of
+  // what the special was. A vessel is a SUBJECT decision and belongs to the per-doc
   // brief; the anchors reference how the direction above serves the food instead.
   //
   // This is the same rule #652 established for the placeholder anchors, and it is
   // asserted the same way: no concrete vessel noun in the invariant text.
-  it('names no vessel and assumes no takeaway in the outing anchors', () => {
+  it('names no vessel and assumes no takeaway in the special anchors', () => {
     for (const vessel of ['foil', 'carton', 'pizza box', 'styrofoam', 'bamboo', 'paper wrapping']) {
-      expect(OUTING_IMAGE_STYLE_ANCHORS.toLowerCase()).not.toContain(vessel);
+      expect(SPECIAL_IMAGE_STYLE_ANCHORS.toLowerCase()).not.toContain(vessel);
     }
     // Nor the takeaway PREMISE, which was false for three of the four cases — and
     // whose crockery prohibition was actively wrong for the sandwich, which is made
     // on a plate at home.
-    expect(OUTING_IMAGE_STYLE_ANCHORS).not.toContain('home crockery');
-    expect(OUTING_IMAGE_STYLE_ANCHORS).not.toContain('someone else made and handed over');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).not.toContain('home crockery');
+    expect(SPECIAL_IMAGE_STYLE_ANCHORS).not.toContain('someone else made and handed over');
     // The fallback is the no-brief path, so it MAY name things — but it has to span
     // all four kinds of night off, not five wordings of takeaway.
-    expect(OUTING_SCENE_FALLBACK).toContain('bought ready to eat');
-    expect(OUTING_SCENE_FALLBACK).toContain('sandwich');
-    expect(OUTING_SCENE_FALLBACK).toContain('restaurant');
-    expect(OUTING_SCENE_FALLBACK).toContain('takeaway');
+    expect(SPECIAL_SCENE_FALLBACK).toContain('bought ready to eat');
+    expect(SPECIAL_SCENE_FALLBACK).toContain('sandwich');
+    expect(SPECIAL_SCENE_FALLBACK).toContain('restaurant');
+    expect(SPECIAL_SCENE_FALLBACK).toContain('takeaway');
   });
 
   // ─── Cocktails (Phase 5) ───────────────────────────────────────────────────
-  // A cocktail keeps the ingredients and the method, so unlike an outing it is a
+  // A cocktail keeps the ingredients and the method, so unlike a special it is a
   // recipe in every way the editor cares about. What it has no version of is a
   // PLATE — so the recipe anchors, which put food "generously plated on rustic
   // ceramic", paint a drink that was served as dinner.
@@ -459,9 +468,9 @@ describe('generateRecipeImage flow — entry kinds', () => {
     // exactly the picture this kind exists to avoid.
     expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
     expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
-    // …nor the "finished dish" opener, nor the outing's arrives-in-a-box direction.
+    // …nor the "finished dish" opener, nor the special's arrives-in-a-box direction.
     expect(prompt).not.toContain('the finished dish');
-    expect(prompt).not.toContain(OUTING_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(SPECIAL_IMAGE_STYLE_ANCHORS);
     expect(prompt).toContain('the finished drink in its glass');
   });
 
@@ -518,7 +527,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
   });
 
   // ─── Placeholders (issue #652) ─────────────────────────────────────────────
-  // A placeholder goes further than an outing did. An outing lost the method but
+  // A placeholder goes further than a special did. A special lost the method but
   // kept a subject; a placeholder has none — it stands in for dinner on many
   // different evenings, so the one thing it must never do is name a dish. That
   // rule lives in the anchors rather than in a brief precisely because the
@@ -538,7 +547,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
     // subject the star, which is exactly what would paint a nameable dish.
     expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
     expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
-    expect(prompt).not.toContain(OUTING_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(SPECIAL_IMAGE_STYLE_ANCHORS);
     expect(prompt).not.toContain(COCKTAIL_IMAGE_STYLE_ANCHORS);
     expect(prompt).not.toContain('the finished dish');
     expect(prompt).toContain('with no particular dish in it');
@@ -665,7 +674,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
 
   it('leaves the tags clause byte-for-byte unchanged for the other three kinds', async () => {
     // Only `placeholder` diverges. Everything else keeps the issue #148 clause.
-    for (const kind of ['recipe', 'outing', 'cocktail'] as const) {
+    for (const kind of ['recipe', 'special', 'cocktail'] as const) {
       const prompt = await promptFor({
         title: 'Something',
         description: null,
@@ -834,7 +843,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
   it('gives each kind its own anchors — no two share a set', () => {
     const sets = [
       RECIPE_IMAGE_STYLE_ANCHORS,
-      OUTING_IMAGE_STYLE_ANCHORS,
+      SPECIAL_IMAGE_STYLE_ANCHORS,
       COCKTAIL_IMAGE_STYLE_ANCHORS,
       PLACEHOLDER_IMAGE_STYLE_ANCHORS,
     ];

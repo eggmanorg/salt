@@ -8,7 +8,7 @@
  * that objection's answer in a browser: the sheet will not write anything until the
  * meal has a dish, so the document IS a meal the instant it exists.
  *
- * The "When you CBA" half of the sheet is driven end to end by
+ * The "Chef's Specials" half of the sheet is driven end to end by
  * `recipe-alternatives.spec.ts`, which owns the section assertions that go with it.
  * What needs its own journey here is the PART THAT IS NEW: the at-least-one-dish
  * rule, and landing on the meal's own page already editing it.

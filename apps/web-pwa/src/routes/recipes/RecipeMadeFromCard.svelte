@@ -96,7 +96,7 @@
    * the sentence above an unqualified absolute that the very next paragraph
    * contradicts (PR #1345 review round 1, should-fix 1):
    *
-   * MOUNT — a kind that takes no components but already carries ids (an outing
+   * MOUNT — a kind that takes no components but already carries ids (a special
    * seeded before this campaign, say) still shows its card in BOTH modes, because
    * `hasComponents` is the first clause and a document with dishes on it is a meal
    * whatever kind it declares. `RecipeMadeFromCard.test.ts` pins that reading.
@@ -110,7 +110,7 @@
    * `duplicateRecipe` copies kind and components together — so it can PROPAGATE
    * such a pairing but never originate one. This card's picker never offers a kind
    * that takes no components either. No reachable path therefore both gives an
-   * outing or a placeholder its first dish AND lets someone take it off here. A
+   * special or a placeholder its first dish AND lets someone take it off here. A
    * "was mounted" latch would be real machinery bought for a state nothing
    * produces; the day some path does, this is the paragraph to come back to.
    */
@@ -163,7 +163,7 @@
   // Candidates: anything that is not this meal (`canBeComponentOf` — a dish
   // inside itself is meaningless), is not already attached, and is something you
   // actually make. The last is a capability predicate, never a comparison against
-  // the kind: an outing has no dish to compose and a placeholder is a photograph
+  // the kind: a special has no dish to compose and a placeholder is a photograph
   // and a title.
   const pickerItems: ComboboxItemType[] = $derived(
     $recipes

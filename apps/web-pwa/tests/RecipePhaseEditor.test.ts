@@ -166,13 +166,13 @@ describe('RecipePhaseEditor — edit mode', () => {
   });
 
   it('offers an entry that is never cooked no timing at all', () => {
-    show(loaf([], { kind: 'outing' }), true);
+    show(loaf([], { kind: 'special' }), true);
 
     expect(screen.queryByTestId('recipe-edit-phases')).toBeNull();
   });
 
   it('still reads a stored strip on an entry that is never cooked', () => {
-    show(loaf([BAKE], { kind: 'outing' }), true);
+    show(loaf([BAKE], { kind: 'special' }), true);
 
     expect(screen.getByTestId('recipe-phases')).toBeTruthy();
     expect(screen.queryByTestId('recipe-edit-phases')).toBeNull();

@@ -181,8 +181,8 @@ describe('onRecipeWritten — time branch early returns are silent, so they are 
 
   it('does not estimate for an entry that is not cookable', async () => {
     // Asked through the pure capability predicate, exactly as the branch does —
-    // an outing is a restaurant, and a restaurant has no prep time.
-    const after = focaccia({ ...requested, kind: 'outing' } as Partial<RecipeDoc>);
+    // a special is a restaurant, and a restaurant has no prep time.
+    const after = focaccia({ ...requested, kind: 'special' } as Partial<RecipeDoc>);
     await (onRecipeWritten as unknown as (e: unknown) => Promise<void>)(
       makeEvent(after, { timesRequestedAt: undefined }),
     );

@@ -31,7 +31,7 @@ describe('recipe kind capabilities', () => {
       takesComponents: true,
     },
     {
-      kind: 'outing',
+      kind: 'special',
       takesIngredients: false,
       isCookable: false,
       isPlannable: true,
@@ -66,12 +66,12 @@ describe('recipe kind capabilities', () => {
     });
   }
 
-  it('an outing is the only kind that is eaten rather than made', () => {
+  it('a special is the only kind that is eaten rather than made', () => {
     // Named separately from the table because it is the distinction the whole
-    // feature exists for: an outing fills a planner slot with nothing to buy or do.
-    expect(isPlannable('outing')).toBe(true);
-    expect(takesIngredients('outing')).toBe(false);
-    expect(isCookable('outing')).toBe(false);
+    // feature exists for: a special fills a planner slot with nothing to buy or do.
+    expect(isPlannable('special')).toBe(true);
+    expect(takesIngredients('special')).toBe(false);
+    expect(isCookable('special')).toBe(false);
   });
 
   it('the librarian can author a recipe and a cocktail, and nothing else (issue #765)', () => {
@@ -82,10 +82,10 @@ describe('recipe kind capabilities', () => {
     // no edit of its own (⋮ → Make a variation, ⋮ → Refresh, both imports, chat).
     expect(isAuthorable('recipe')).toBe(true);
     expect(isAuthorable('cocktail')).toBe(true);
-    // These two are false on their own merits and stay false: an outing is a
+    // These two are false on their own merits and stay false: a special is a
     // hand-written night off with nothing to author, a placeholder is a
     // photograph and a title.
-    expect(isAuthorable('outing')).toBe(false);
+    expect(isAuthorable('special')).toBe(false);
     expect(isAuthorable('placeholder')).toBe(false);
   });
 
@@ -106,10 +106,10 @@ describe('recipe kind capabilities', () => {
       expect(isAuthorable(kind)).toBe(isCookable(kind));
     }
     // The pair that has NOT collapsed, and the reason the table has five columns:
-    // an outing is planned and never cooked, a cocktail is cooked and never
+    // a special is planned and never cooked, a cocktail is cooked and never
     // planned. No single predicate expresses that.
-    expect(isPlannable('outing')).toBe(true);
-    expect(isCookable('outing')).toBe(false);
+    expect(isPlannable('special')).toBe(true);
+    expect(isCookable('special')).toBe(false);
     expect(isPlannable('cocktail')).toBe(false);
     expect(isCookable('cocktail')).toBe(true);
   });
@@ -129,14 +129,14 @@ describe('recipe kind capabilities', () => {
       expect([...AUTHORABLE_RECIPE_KINDS].sort()).toEqual([...fromTable].sort());
     });
 
-    it('offers the model neither an outing nor a placeholder', () => {
+    it('offers the model neither a special nor a placeholder', () => {
       // The concrete harm the bound exists to prevent: an entry whose
       // `takesIngredients` is false, carrying an ingredient list and a method the
       // editor and the view page then hide.
       const members: readonly string[] = AUTHORABLE_RECIPE_KINDS;
-      expect(members).not.toContain('outing');
+      expect(members).not.toContain('special');
       expect(members).not.toContain('placeholder');
-      expect(takesIngredients('outing')).toBe(false);
+      expect(takesIngredients('special')).toBe(false);
       expect(takesIngredients('placeholder')).toBe(false);
     });
   });
@@ -166,7 +166,7 @@ describe('recipe kind capabilities', () => {
     // aggregated from its components.
     expect(takesComponents('recipe')).toBe(true);
     expect(takesComponents('cocktail')).toBe(true);
-    expect(takesComponents('outing')).toBe(false);
+    expect(takesComponents('special')).toBe(false);
     expect(takesComponents('placeholder')).toBe(false);
     for (const kind of ['recipe', 'cocktail'] as const) {
       expect(takesIngredients(kind)).toBe(true);

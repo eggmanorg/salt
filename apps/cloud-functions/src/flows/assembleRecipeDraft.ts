@@ -44,7 +44,7 @@ export interface AssembleRecipeDraftOptions {
    *  sitting right there rather than something to infer from a transcript about
    *  gin. Ignored in edit mode, where the base recipe's own kind wins outright.
    *
-   *  Typed as `AuthorableRecipeKind`, so a caller cannot hand this an `outing` or
+   *  Typed as `AuthorableRecipeKind`, so a caller cannot hand this a `special` or
    *  a `placeholder` and mint an entry carrying a method it is not allowed to
    *  have. Callers narrow with `isAuthorable`. */
   kindHint?: AuthorableRecipeKind | null;

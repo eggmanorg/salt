@@ -220,11 +220,13 @@ export const RecipeImageSchema = z.object({
 });
 
 // What kind of entry this is (issue #637). The `recipes` collection holds more
-// than recipes: an `outing` is a takeaway / picnic / meal out — it fills a
-// planner slot but has no ingredients and no method; a `cocktail` has both but
-// is never a dinner; a `placeholder` (issue #652) is neither — it is a stock
-// photograph of "a good dinner, no particular dish", attached to a planner day
-// that was planned in a sentence so that night gets a card like any other.
+// than recipes: a `special` — "Chef's Specials" on screen (issue #1322) — is an
+// entry that needs no card. A takeaway, a picnic, a meal out, or a Sunday roast
+// the chef knows by heart: it fills a planner slot but has no ingredients and no
+// method. A `cocktail` has both but is never a dinner; a `placeholder` (issue
+// #652) is neither — it is a stock photograph of "a good dinner, no particular
+// dish", attached to a planner day that was planned in a sentence so that night
+// gets a card like any other.
 // NOTHING outside packages/domain branches on this value — behaviour comes from
 // the pure capability predicates in `recipe/queries/capabilities.ts`, so the
 // fourth kind was, as promised, a one-file change there.
@@ -232,7 +234,7 @@ export const RecipeImageSchema = z.object({
 // Adding a member here is back-compatible on read by construction: `kind` carries
 // `.default('recipe')` below, so every document already in production parses
 // unchanged (salt-architecture.md §1.1 — no migration).
-export const RecipeKindSchema = z.enum(['recipe', 'outing', 'cocktail', 'placeholder']);
+export const RecipeKindSchema = z.enum(['recipe', 'special', 'cocktail', 'placeholder']);
 
 // One piece of kit a recipe calls for (issue #882). A free-text LABEL and the
 // steps that use it — never a `kitchenTools` id, and that is the load-bearing
@@ -265,7 +267,25 @@ export const RecipeSchema = z.object({
   // realtime subscription skips documents that fail validation, so a required
   // `kind` would make every recipe already in production (#240) silently vanish
   // from the list. Defaulted, they read back as exactly what they are — recipes.
-  kind: RecipeKindSchema.default('recipe'),
+  //
+  // TEMPORARY (issue #1322, Phase 1 — REMOVED BY PHASE 2). `special` was stored
+  // as `outing` until this rename, and the eight live entries still carry that
+  // spelling. The `z.preprocess` reads the old value as the new one so those
+  // documents keep parsing — same hazard as the `.default` above: without it they
+  // would fail validation and vanish from the list, from the planner picker and
+  // from every planner day already pointing at them.
+  //
+  // It lives HERE, on the document field, and deliberately not inside
+  // `RecipeKindSchema`. The enum is also the wire contract for the `/recipes/new/
+  // :kind` URL, the `findRecipes` tool input and `AUTHORABLE_RECIPE_KINDS`, so
+  // keeping it clean is what makes it impossible for the app to be persuaded to
+  // write `'outing'` back. Every save writes `'special'`, so editing an old entry
+  // migrates it on its own.
+  //
+  // Phase 2 rewrites the eight documents and deletes this wrapper; the test in
+  // `recipe.schema.test.ts` flips from "reads `outing` as `special`" to "rejects
+  // `outing`", so the compatibility cannot be left behind by accident.
+  kind: z.preprocess((v) => (v === 'outing' ? 'special' : v), RecipeKindSchema).default('recipe'),
   title: z.string(),
   description: z.string().nullable(),
   ingredients: z.array(IngredientGroupSchema),

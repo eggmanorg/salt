@@ -402,7 +402,7 @@ describe('RecipeListPage', () => {
 
 const TAKEAWAY = makeRecipe({
   id: 'takeaway',
-  kind: 'outing',
+  kind: 'special',
   title: 'Takeaway — Indian',
   tags: ['friday', 'quick'],
   servings: null,
@@ -412,7 +412,7 @@ const TAKEAWAY = makeRecipe({
 });
 const PICNIC = makeRecipe({
   id: 'picnic',
-  kind: 'outing',
+  kind: 'special',
   title: 'Picnic food',
   tags: ['summer'],
   servings: null,
@@ -493,7 +493,7 @@ describe('RecipeListPage — sections', () => {
     expect(kindChip('cocktail')).toHaveAttribute('aria-pressed', 'false');
     // The other two are not gone, just folded away — the row leads with the
     // sections you browse and counts the rest, exactly as the tag row does.
-    expect(queryKindChip('outing')).toBeUndefined();
+    expect(queryKindChip('special')).toBeUndefined();
     expect(queryKindChip('placeholder')).toBeUndefined();
     expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(3);
     expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+2 more');
@@ -512,7 +512,7 @@ describe('RecipeListPage — sections', () => {
     // that is the view page you reach from this grid. The fifth is Meals (#752),
     // which is a section and NOT a kind — you cannot create one.
     expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(5);
-    expect(kindChip('outing')).toHaveAttribute('aria-pressed', 'false');
+    expect(kindChip('special')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('placeholder')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByTestId('recipe-kind-show-all')).toBeNull();
 
@@ -525,12 +525,12 @@ describe('RecipeListPage — sections', () => {
     seed([APPLE, TAKEAWAY, PICNIC]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
     await user.click(screen.getByTestId('recipe-kind-show-less'));
 
     // Collapsing must never hide the chip that says where you are — otherwise
-    // the row claims you are in Recipes while the grid shows outings.
-    expect(kindChip('outing')).toHaveAttribute('aria-pressed', 'true');
+    // the row claims you are in Recipes while the grid shows specials.
+    expect(kindChip('special')).toHaveAttribute('aria-pressed', 'true');
     expect(cardTitles()).toEqual(['Picnic food', 'Takeaway — Indian']);
     expect(queryKindChip('placeholder')).toBeUndefined();
   });
@@ -540,29 +540,29 @@ describe('RecipeListPage — sections', () => {
     seed([APPLE, BANANA, TAKEAWAY, PICNIC]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
 
     expect(cardTitles()).toEqual(['Picnic food', 'Takeaway — Indian']);
-    expect(kindChip('outing')).toHaveAttribute('aria-pressed', 'true');
+    expect(kindChip('special')).toHaveAttribute('aria-pressed', 'true');
     expect(kindChip('recipe')).toHaveAttribute('aria-pressed', 'false');
-    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('2 ideas');
+    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain("2 chef's specials");
   });
 
   it('offers an empty section rather than hiding it', async () => {
     const user = userEvent.setup();
-    // Recipes exist, outings do not — the section must still be reachable so you
+    // Recipes exist, specials do not — the section must still be reachable so you
     // can see for yourself that there is nothing in it.
     seed([APPLE, BANANA]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
 
     expect(screen.queryByTestId('recipe-list')).toBeNull();
     expect(screen.getByTestId('recipe-kind-empty')).toBeInTheDocument();
     // Nothing to clear: this is an empty section, not a failed filter.
     expect(screen.queryByTestId('recipe-no-matches')).toBeNull();
     expect(screen.queryByTestId('recipe-clear-filters')).toBeNull();
-    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('0 ideas');
+    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain("0 chef's specials");
   });
 
   it('re-facets the tag chips to the section you are standing in', async () => {
@@ -577,8 +577,8 @@ describe('RecipeListPage — sections', () => {
 
     expect(filterTags()).toEqual(['baking', 'dessert', 'quick']);
 
-    await pickKind(user, 'outing');
-    // Only the outings' own tags — "baking" and "dessert" are recipe vocabulary.
+    await pickKind(user, 'special');
+    // Only the specials' own tags — "baking" and "dessert" are recipe vocabulary.
     expect(filterTags()).toEqual(['friday', 'quick', 'summer']);
   });
 
@@ -597,9 +597,9 @@ describe('RecipeListPage — sections', () => {
     const search = screen.getByTestId('recipe-search-input');
     await user.type(search, 'a');
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
 
-    // Tag dropped: both outings show, not just the one tagged "quick".
+    // Tag dropped: both specials show, not just the one tagged "quick".
     expect(
       within(screen.getByTestId('recipe-tag-filters'))
         .getAllByTestId('recipe-tag-filter')
@@ -615,13 +615,13 @@ describe('RecipeListPage — sections', () => {
     seed([APPLE, TAKEAWAY, PICNIC]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
     await user.type(screen.getByTestId('recipe-search-input'), 'picnic');
     expect(cardTitles()).toEqual(['Picnic food']);
 
     await user.click(screen.getByTestId('recipe-clear-filters'));
 
-    expect(kindChip('outing')).toHaveAttribute('aria-pressed', 'true');
+    expect(kindChip('special')).toHaveAttribute('aria-pressed', 'true');
     expect(cardTitles()).toEqual(['Picnic food', 'Takeaway — Indian']);
   });
 
@@ -630,7 +630,7 @@ describe('RecipeListPage — sections', () => {
     seed([APPLE, TAKEAWAY, PICNIC]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
     expect(normalized(screen.getByTestId('recipe-result-count'))).not.toContain('filtered');
 
     await user.type(screen.getByTestId('recipe-search-input'), 'picnic');
@@ -645,7 +645,7 @@ describe('RecipeListPage — sections', () => {
     // A recipe card carries three meta chips (time, servings, ingredients).
     expect(screen.getByTestId('recipe-list-item').textContent).toContain('5');
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
     // No "0 ingredients" chip on a takeaway — the concept does not apply.
     const card = screen.getByTestId('recipe-list-item');
     expect(card.textContent).not.toContain('0');
@@ -655,17 +655,17 @@ describe('RecipeListPage — sections', () => {
   // editor page: the entry is written from the sheet and you land on its own page
   // already editing it. The fields and the write are `RecipeNewSheet.test.ts`'s;
   // what belongs here is that the menu item reaches the sheet at all.
-  it('opens the New sheet for an outing rather than routing to an editor', async () => {
+  it('opens the New sheet for a special rather than routing to an editor', async () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     seed([APPLE]);
     render(RecipeListPage);
 
     await user.click(screen.getByTestId('recipe-new-btn'));
-    await user.click(screen.getByTestId('recipe-new-outing'));
+    await user.click(screen.getByTestId('recipe-new-special'));
 
     expect(await screen.findByTestId('recipe-new-name')).toBeInTheDocument();
-    expect(screen.getByText('When you CBA')).toBeInTheDocument();
+    expect(screen.getByText("Chef's Specials")).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -704,7 +704,7 @@ describe('RecipeListPage — sections', () => {
 
     await pickKind(user, 'cocktail');
 
-    // `takesIngredients('cocktail')` is true, so unlike an outing the count stays.
+    // `takesIngredients('cocktail')` is true, so unlike a special the count stays.
     expect(screen.getByTestId('recipe-list-item').textContent).toContain('3');
   });
 
@@ -812,7 +812,7 @@ describe('RecipeListPage — sections', () => {
       'recipe-new-import',
       'recipe-new-import-photo',
       'recipe-new-chat',
-      'recipe-new-outing',
+      'recipe-new-special',
       'recipe-new-meal',
       'recipe-new-placeholder',
     ]) {
@@ -869,7 +869,7 @@ const THEIR_SOUP = makeRecipe({
 });
 const MY_TAKEAWAY = makeRecipe({
   id: 'my-takeaway',
-  kind: 'outing',
+  kind: 'special',
   title: 'My Takeaway',
   tags: ['friday'],
   servings: null,
@@ -881,7 +881,7 @@ const MY_TAKEAWAY = makeRecipe({
 });
 const THEIR_TAKEAWAY = makeRecipe({
   id: 'their-takeaway',
-  kind: 'outing',
+  kind: 'special',
   title: 'Their Takeaway',
   tags: ['friday'],
   servings: null,
@@ -1032,7 +1032,7 @@ describe('RecipeListPage — authorship filters', () => {
     );
     expect(cardTitles()).toEqual(['My Pie']);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
 
     // "Mine" means the same thing on every shelf, so it carries across — unlike
     // the tag vocabulary, which is per-section and is dropped.
@@ -1051,7 +1051,7 @@ describe('RecipeListPage — authorship filters', () => {
     seed([MY_PIE, THEIR_BREAD, MY_TAKEAWAY, THEIR_TAKEAWAY]);
     render(RecipeListPage);
 
-    await pickKind(user, 'outing');
+    await pickKind(user, 'special');
     await user.click(authorChip('added'));
     expect(cardTitles()).toEqual(['My Takeaway']);
 
@@ -1060,7 +1060,7 @@ describe('RecipeListPage — authorship filters', () => {
     expect(authorChip('added')).toHaveAttribute('aria-pressed', 'false');
     expect(cardTitles()).toEqual(['My Takeaway', 'Their Takeaway']);
     // Clearing a filter is not a teleport back to Recipes.
-    expect(kindChip('outing')).toHaveAttribute('aria-pressed', 'true');
+    expect(kindChip('special')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('offers the same clear from the no-matches state', async () => {

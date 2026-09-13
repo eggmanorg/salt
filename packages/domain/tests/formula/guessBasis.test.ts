@@ -132,7 +132,7 @@ describe('looksScalable', () => {
   });
 
   it('says no to an entry with no ingredients at all', () => {
-    // An outing and a placeholder both flatten to nothing, and neither is
+    // A special and a placeholder both flatten to nothing, and neither is
     // scalable. Totality here is what keeps the caller free of its own guard.
     expect(looksScalable([])).toBe(false);
   });

@@ -142,7 +142,7 @@ export const authorRecipeFlow = ai.defineFlow(
     // no reason to make the model infer it from a conversation about gin. Passed
     // as a hint rather than as `baseRecipe` so nothing else about the original's
     // identity comes with it. `isAuthorable` narrows the type as well as gating
-    // it — a base the librarian may not write (an outing, a placeholder) is not
+    // it — a base the librarian may not write (a special, a placeholder) is not
     // reachable from the variation menu, which is gated on the same predicate, and
     // if one ever were, the model's own answer is used rather than minting an
     // entry with a method its kind is not allowed to have.

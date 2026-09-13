@@ -404,7 +404,7 @@ function sceneInputFor(recipe: Recipe): DescribeRecipeSceneInput {
     title: recipe.title.trim(),
     description: recipe.description,
     // The kind selects the art director's brief entirely (issue #637): without
-    // it a hand-revised outing brief would be revised with the RECIPE revision
+    // it a hand-revised special brief would be revised with the RECIPE revision
     // prompt — asked for the blistered top and the torn basil of a dish that has
     // no method and no ingredients. Carried on both brief actions, so the
     // Regenerate dialog and the write trigger reason about the same entry.

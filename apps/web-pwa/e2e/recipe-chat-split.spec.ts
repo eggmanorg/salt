@@ -136,7 +136,7 @@ test.describe('recipes — the dish and its chef, side by side', () => {
 const SEED_TIME = '2026-01-01T00:00:00.000Z';
 
 /**
- * A recipe long enough that its column genuinely overflows, or an `outing` — which by
+ * A recipe long enough that its column genuinely overflows, or a `special` — which by
  * definition has no ingredients and no method, and is therefore the case with nothing
  * to scroll at all. Both exist to prove the composer's reachability does not depend on
  * the recipe's length, which under the old `sticky` + `calc()` pairing it did.
@@ -144,7 +144,7 @@ const SEED_TIME = '2026-01-01T00:00:00.000Z';
  * Also the fixture the FIRST describe seeds, since issue #1319 Phase 8 left no
  * by-hand way to author a dish: one builder for every recipe this file needs.
  */
-function buildRecipe(id: string, title: string, kind: 'recipe' | 'outing'): Recipe {
+function buildRecipe(id: string, title: string, kind: 'recipe' | 'special'): Recipe {
   const long = kind === 'recipe';
   return {
     id,
@@ -273,14 +273,14 @@ test.describe('recipes — the dish and its chef scroll separately', () => {
     expect(cookBox.y + cookBox.height).toBeLessThanOrEqual(VIEWPORT.height);
   });
 
-  test('a short outing — nothing to scroll, and the message box is still there', async ({
+  test('a short special — nothing to scroll, and the message box is still there', async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
-    // "When you CBA": no ingredients, no method. Under the old layout there was no
+    // "Chef's Specials": no ingredients, no method. Under the old layout there was no
     // scroll range with which to bring the composer up, so it was unreachable.
-    const outing = buildRecipe('e2e-737-outing', 'Split Scroll Chippy', 'outing');
-    await openSeeded(page, outing, uniqueEmail(testInfo.testId));
+    const special = buildRecipe('e2e-737-special', 'Split Scroll Chippy', 'special');
+    await openSeeded(page, special, uniqueEmail(testInfo.testId));
 
     await expectComposerUsable(page);
     expect(await mainScrollRange(page)).toBeLessThanOrEqual(EPSILON);

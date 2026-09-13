@@ -601,7 +601,7 @@ describe('needsReviewRecipes', () => {
     mockRecipes._set([
       unreviewed('c1', 'Negroni', { kind: 'cocktail' } as Partial<Recipe>),
       recipe('p1', 'Generic Comfort', { kind: 'placeholder' } as Partial<Recipe>),
-      recipe('o1', 'Takeaway', { kind: 'outing' } as Partial<Recipe>),
+      recipe('o1', 'Takeaway', { kind: 'special' } as Partial<Recipe>),
     ]);
     expect(get(needsReviewRecipes).map((r) => r.id)).toEqual(['c1']);
   });

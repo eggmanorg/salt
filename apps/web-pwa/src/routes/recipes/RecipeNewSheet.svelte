@@ -38,8 +38,9 @@
    *
    * A recipe arrives by URL, by photo or by chat; nobody has ever typed one into
    * Salt and the editor that let them is being retired. Three things cannot arrive
-   * any of those ways, so they get this sheet instead of a page: a "When you CBA"
-   * entry (a takeaway, a picnic, a night off), a meal, and a placeholder.
+   * any of those ways, so they get this sheet instead of a page: a "Chef's Specials"
+   * entry (a takeaway, a picnic, the roast you know by heart), a meal, and a
+   * placeholder.
    *
    * A SHEET AND NOT A PAGE, and it asks only for what the entry CANNOT EXIST
    * WITHOUT. Everything else — tags, a source, the timing, the notes — is done on
@@ -55,12 +56,12 @@
    * THE FIELD SET IS DERIVED FROM ONE PREDICATE, and its boundary is worth stating
    * (CLAUDE.md Rule 12): `takesComponents(kind)` partitions THESE THREE ENTRIES
    * exactly — only the meal's kind takes dishes, and the other two are nothing but
-   * a name and a description, which is what all eight production "When you CBA"
+   * a name and a description, which is what all eight production "Chef's Specials"
    * entries actually are. That is a property of which three entries the sheet
    * offers, not a law about kinds: add a fourth entry whose kind takes components
    * and it needs its own answer for the description rather than inheriting this
    * one. It is still the capability predicate and never a comparison against
-   * `'outing'` (CLAUDE.md -> Data model conventions).
+   * `'special'` (CLAUDE.md -> Data model conventions).
    */
   interface Props {
     mode: NewEntryMode;
@@ -119,7 +120,7 @@
 
   // Candidates: anything not already chosen that is something you actually make.
   // The second is a capability predicate, never a comparison against the kind — an
-  // outing has no dish to compose and a placeholder is a photograph and a title.
+  // special has no dish to compose and a placeholder is a photograph and a title.
   //
   // `canBeComponentOf(pendingId, r.id)` IS needed, and the sheet used to record the
   // opposite (CLAUDE.md Rule 12 — corrected, not merely restored, per PR #1340

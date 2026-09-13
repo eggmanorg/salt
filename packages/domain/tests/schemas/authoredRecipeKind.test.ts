@@ -11,7 +11,7 @@ import { AUTHORABLE_RECIPE_KINDS, isAuthorable } from '@salt/domain';
 // Two properties are being pinned here, and only one of them is about the happy
 // path:
 //
-//  1. The BOUND — `outing` and `placeholder` are not on the wire at all, so no
+//  1. The BOUND — `special` and `placeholder` are not on the wire at all, so no
 //     model answer can mint an entry whose `takesIngredients` is false and then
 //     write an ingredient list onto it.
 //  2. The FLOOR — a missing, null, mis-cased or invented kind degrades to
@@ -63,7 +63,7 @@ describe.each(SHAPES)('%s — the authored kind', (_name, schema, base) => {
     ['the field is missing entirely', {}],
     ['the field is null', { kind: null }],
     ['the field is undefined', { kind: undefined }],
-    ['the model answered a kind it was never offered', { kind: 'outing' }],
+    ['the model answered a kind it was never offered', { kind: 'special' }],
     ['the model answered the other one it was never offered', { kind: 'placeholder' }],
     ['the model got the case wrong', { kind: 'Cocktail' }],
     ['the model answered something invented', { kind: 'drink' }],

@@ -15,7 +15,7 @@ export const DescribeRecipeSceneInputSchema = z.object({
   description: z.string().nullable(),
   // What kind of entry this is (issue #637). It selects the art director's brief
   // entirely: a recipe brief is written from the METHOD and the INGREDIENTS ("the
-  // blistered top, the torn basil"), and an outing has neither — so an outing
+  // blistered top, the torn basil"), and a special has neither — so a special
   // brief describes the food as it ARRIVES instead (vessel, packaging, spread,
   // setting). OPTIONAL and defaulted downstream to `'recipe'`, so a caller that
   // omits it (and every request already in flight) gets exactly today's prompt.

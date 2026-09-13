@@ -78,14 +78,14 @@ export const ExtractedStepSchema = z.object({
 // chat librarian all answer one question against one definition, and
 // `assembleRecipeDraft` can read `raw.kind` off either of them.
 //
-// BOUNDED to `AUTHORABLE_RECIPE_KINDS`, not to `RecipeKindSchema`: `outing` and
+// BOUNDED to `AUTHORABLE_RECIPE_KINDS`, not to `RecipeKindSchema`: `special` and
 // `placeholder` are never even offered to the model, so it cannot mint an entry
 // whose `takesIngredients` is `false` and then write an ingredient list onto it.
 // The set is read off the capability table, so this bound moves only when that
 // table's `isAuthorable` column does.
 //
 // `.catch('recipe')` is the FLOOR, and it is the schema's job rather than the
-// prompt's. A missing field, a null, a typo, `"Cocktail"`, `"outing"` — every one
+// prompt's. A missing field, a null, a typo, `"Cocktail"`, `"special"` — every one
 // of them degrades to `'recipe'` and NONE of them fails the parse. That matters
 // because a failed parse here is a failed import: on the extractor paths it costs
 // the user their retry, and on the librarian path (which has no retry at all) it

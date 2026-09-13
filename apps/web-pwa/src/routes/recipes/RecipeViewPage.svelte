@@ -191,7 +191,7 @@
   // The two halves of the recipe body are tabs (issue #878). They are always
   // both-or-neither: in the capability table `takesIngredients` and `isCookable`
   // agree for all four kinds, so there is no one-tab state to design for — a
-  // recipe and a cocktail get the strip, an outing and a placeholder get no body
+  // recipe and a cocktail get the strip, a special and a placeholder get no body
   // at all (and, per `e2e/recipe-alternatives`, neither word anywhere on the page).
   const showBodyTabs = $derived(showIngredients && showCooking);
   // Ingredients is the landing tab, and deliberately NOT the first one in the
@@ -2036,7 +2036,7 @@
                    pair: Optimise asks whether any of it is better on the household's
                    kit, Refresh asks for the whole thing to be written out again.
                    Gated on `isAuthorable` rather than `isCookable` — the question is
-                   whether the librarian can write this kind, which is why an outing
+                   whether the librarian can write this kind, which is why a special
                    and a placeholder never offer it. No equipment gate, unlike
                    Optimise: the repairs this makes do not depend on owning any. -->
               <PopoverMenuItem

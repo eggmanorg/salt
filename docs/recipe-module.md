@@ -39,11 +39,11 @@ newest local edit).
 Recipe {
   id: string
   schemaVersion: 1
-  kind: 'recipe' | 'outing' | 'cocktail' | 'placeholder'  // .default('recipe') — see "Schema extensions (kind)"
+  kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'  // .default('recipe') — see "Schema extensions (kind)"
   title: string
   description: string | null
-  ingredients: IngredientGroup[]   // required array; [] for an outing (NOT a discriminated union)
-  steps: Step[]                    // required array; [] for an outing
+  ingredients: IngredientGroup[]   // required array; [] for a special (NOT a discriminated union)
+  steps: Step[]                    // required array; [] for a special
   metadata: RecipeMetadata
   source: RecipeSource | null      // populated by URL import; manual/book entries too
   notes: string | null             // user-authored, never parsed
@@ -183,7 +183,7 @@ Quickest sort, the recipe's own "Made from" rows (one page now, since #1319 Phas
 through it, so a recipe cannot read 45 min on one screen and 13 hr on another. Issue #1213 removed the old-field fallback along with
 the feature key and the `phasesEnabled` argument that threaded it: `phaseMinutes`
 now takes only the recipe, and returns `null` for a recipe with no strip. Through
-the normal authoring paths only placeholders and outings reach that state — neither
+the normal authoring paths only placeholders and specials reach that state — neither
 ever showed a timing — but that is the claim's boundary, not a property of the
 type: a recipe starts life with an empty strip, and a cook can remove its last
 phase by hand (#1232). Issue
@@ -362,7 +362,7 @@ deploy → dry-run → apply → verify procedure.
   step, so `rawText`, steps, timers, tags, images and `lastEditedBy` are
   unreachable rather than merely spared, and `updatedAt` is deliberately not
   touched.
-- **`isCookable(recipe.kind)` gates the call**, same as the kit branch — an outing
+- **`isCookable(recipe.kind)` gates the call**, same as the kit branch — a special
   or a placeholder has nothing to time.
 - **It shares the field DEFINITIONS, not the estimation policy.** The flow
   interpolates `PHASE_RULES` from `recipeFieldRules.ts` — the same text quoted
@@ -403,11 +403,14 @@ and both have since been filled in — `image` by the Tier-2 hero pipeline,
 ### Schema extensions (kind discriminator, issues #637, #652)
 
 The `recipes` collection holds more than recipes. One additive field,
-`kind: 'recipe' | 'outing' | 'cocktail' | 'placeholder'`, says which:
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'`, says which:
 
-- an **`outing`** (UI label **"When you CBA"**) is a takeaway, picnic, meal out
-  or fend-for-yourself night — it fills a planner slot but has no ingredients and
-  no method;
+- a **`special`** (UI label **"Chef's Specials"**) is a meal that needs no recipe
+  card — either because nobody cooked (a takeaway, a picnic, a meal out, a
+  fend-for-yourself night) or because the cook knows it by heart (the Sunday
+  roast, the all-day breakfast, the cheese sandwich). It fills a planner slot but
+  has no ingredients and no method. Stored as `outing` until issue #1322; see
+  **The `outing` → `special` rename** below;
 - a **`cocktail`** is a real recipe, ingredients and method intact, that simply
   is not dinner;
 - a **`placeholder`** is neither: a stock photograph of "a good dinner, no
@@ -421,7 +424,7 @@ recipe already in production (#240) silently vanish from the list. Defaulted,
 they read back as exactly what they are. This is the shape every post-#240
 additive field on this collection has to take.
 
-**`ingredients` and `steps` stay required arrays** — `[]` for an outing —
+**`ingredients` and `steps` stay required arrays** — `[]` for a special —
 deliberately **not** a `z.discriminatedUnion` on `kind`. Around fifteen call
 sites consume both unconditionally, and a union turns every one of them into a
 narrowing site for no gain: the emptiness is already representable.
@@ -438,7 +441,7 @@ art-direction prompt the hero pipeline reaches for.
 | kind          | `takesIngredients` | `isCookable` | `isPlannable` | `takesComponents` | `isAuthorable` |
 | ------------- | ------------------ | ------------ | ------------- | ----------------- | -------------- |
 | `recipe`      | ✓                  | ✓            | ✓             | ✓                 | ✓              |
-| `outing`      | ✗                  | ✗            | ✓             | ✗                 | ✗              |
+| `special`     | ✗                  | ✗            | ✓             | ✗                 | ✗              |
 | `cocktail`    | ✓                  | ✓            | ✗             | ✓                 | ✓              |
 | `placeholder` | ✗                  | ✗            | ✗             | ✗                 | ✗              |
 
@@ -457,45 +460,49 @@ list. #652 weighed a fourth predicate for this and rejected it: see below.
 Decisions worth not relitigating:
 
 - **`kind` is immutable.** It is set at create — by which New-sheet entry was
-  opened for an outing, a meal or a placeholder (issue #1319 Phase 6,
+  opened for a special, a meal or a placeholder (issue #1319 Phase 6,
   `RecipeNewSheet` calls `emptyRecipe` directly), and by the import or the chef
   for a recipe or a cocktail, neither of which can be started by hand at all
   since Phase 8 — and there is no selector anywhere that changes it afterwards.
   The `/recipes/new/:kind` route that used to carry it died with the editor.
-  Flipping a 20-ingredient recipe to `outing` would
+  Flipping a 20-ingredient recipe to `special` would
   hide its ingredients behind a render branch — still on the document, invisible
   and unreachable, with no undo. Immutability is also what lets `diffRecipe` stay
   untouched (pinned by a test).
-- **Reuse this collection; do not add an `outings` one.** The whole point is that
-  an outing occupies a planner slot _in place of_ a recipe. A second collection
+- **Reuse this collection; do not add a `specials` one.** The whole point is that
+  a special occupies a planner slot _in place of_ a recipe. A second collection
   makes `day.recipeIds` a polymorphic reference, forcing every consumer that
   resolves against the recipes store to resolve against two — `MealDayEditor`,
   `AdminMealPlanPage`, `personalViewService`, `MinePage`, plus the e2e seeds —
   for a library of maybe eight documents.
-- **If outings ever need their own fields, climb a ladder rather than splitting.**
+- **If specials ever need their own fields, climb a ladder rather than splitting.**
   Rung 1: optional nullable fields on the recipe document (Firestore is
   schemaless; sparse documents are free — almost certainly enough for a booking
-  link or a phone number). Rung 2: a satellite `outingDetails/{recipeId}` keyed by
+  link or a phone number). Rung 2: a satellite `specialDetails/{recipeId}` keyed by
   deterministic id, following the `canonEmbeddings`-off-`canonItems` precedent
   (#410) — but only when the data is _bulky, server-only, per-user, or
-  differently access-scoped_, not merely outing-specific; its real costs are
+  differently access-scoped_, not merely special-specific; its real costs are
   orphaned satellites on delete (the repo already lives with this — `cookSessions`
   orphan cleanup is client-side only, and `sweepOrphanedStorage` exists because
   the same problem bit for Storage) and a second app-wide subscription **if** the
   extra data must appear on planner or list cards. Rung 3: a separate collection,
-  only once outings develop their own _lifecycle_ (different rules, triggers,
+  only once specials develop their own _lifecycle_ (different rules, triggers,
   delete semantics). Different fields alone never justify rung 3.
 - **No `where('kind', '==', …)` on `subscribeRecipes`.** It would need an index
   and would fracture the single in-memory `recipes` store every consumer shares.
   All kind filtering is client-side; `firestore.indexes.json` and
   `firestore.rules` are both untouched (`match /recipes/{recipeId}` was already
   auth-only).
-- **The UI label is copy, the enum value is data.** "When you CBA" can be
-  reworded without touching a stored document or writing a migration.
-- **Outings auto-generate a hero like recipes.** `imageNeedsGeneration` learns
-  nothing about `kind`: a kind branch would leave an outing with no hero _and_ no
+- **The UI label is copy, the enum value is data — but only half of that held.**
+  Issue #1322 reworded the label to "Chef's Specials" with no migration, exactly
+  as claimed. The stored value moved too, and that _did_ need
+  one: `outing` was also the name of the domain concept, the subject of some forty
+  comments, and the selector for an AI prompt opening "You are given one NIGHT OFF
+  FROM COOKING", which was wrong for three of the eight live entries. See below.
+- **Specials auto-generate a hero like recipes.** `imageNeedsGeneration` learns
+  nothing about `kind`: a kind branch would leave a special with no hero _and_ no
   `imageBrief`, so the regenerate dialog would open **empty** — and editing that
-  brief is the primary way a user gets an outing's image right, there being no
+  brief is the primary way a user gets a special's image right, there being no
   method for the AI to read. The `describeRecipeScene` brief step is likewise kept
   for every kind, with kind-specific system prompts. Placeholders inherit this for
   the same reason, twice over: the brief is the _only_ way to tune them.
@@ -565,10 +572,47 @@ Decisions worth not relitigating:
   to grow casually — a generation that quietly fails costs you one picture, not a
   blank card on a planner day.
 
-Open question, recorded not resolved: whether "When you CBA" entries should
+Open question, recorded not resolved: whether "Chef's Specials" entries should
 eventually be excluded from Chef Chat's recipe context. Not blocking — Ask/amend
 is hidden on the view page for non-cookable kinds, so the librarian is
 unreachable for them today.
+
+#### The `outing` → `special` rename (issue #1322)
+
+The enum member was `outing` from #637 until #1322 renamed it to `special`. The
+rename is done in **two deploys**, and the order is not negotiable: `RecipeKindSchema`
+is a closed `z.enum` and the realtime subscription **skips any document that fails
+validation**, so renaming the stored value without first accepting the old one
+would make the eight live entries vanish from the list, from the planner picker,
+and from every planner day already pointing at them.
+
+- **Phase 1 (this deploy).** Everything is renamed and nothing in production is
+  written. The `kind` field on `RecipeSchema` carries a **temporary**
+  `z.preprocess((v) => (v === 'outing' ? 'special' : v), RecipeKindSchema)` so a
+  stored `outing` reads back as `special`. The coercion is on the **document field
+  only** — `RecipeKindSchema` itself never accepts `outing`, which is what keeps
+  the legacy spelling out of the three places that are wire contracts rather than
+  storage: the `findRecipes` tool input, `AUTHORABLE_RECIPE_KINDS`, and the New
+  sheet's `kind`. The app therefore cannot be persuaded to write `outing` back,
+  and because a save is a whole-document `setDoc`, simply editing an old entry
+  migrates it.
+- **Phase 2.** `scripts/migrate-recipe-kind-outing-to-special.mjs` rewrites the
+  eight documents (a field `.update()`, never a full `setDoc` — a whole-document
+  write would clobber a `thumbnail` or `embedding` a trigger holds), then the
+  `z.preprocess` and its test are removed and replaced by one asserting `outing`
+  is now rejected.
+
+Pinned rather than asserted (CLAUDE.md rule 12): `recipe.schema.test.ts` parses a
+document literal carrying `kind: 'outing'` and asserts it reads back as `special`,
+and separately asserts `RecipeKindSchema.safeParse('outing')` fails. Phase 2 flips
+the first of those. `capabilities.test.ts` walks `RecipeKindSchema.options` against
+the capability table, so the enum rename cannot half-land.
+
+One knock-on outside the app: `snapshotVolumetrics` derives its PostHog property
+names from the kind values, so the daily count moves from `recipes_outing` to
+`recipes_special`. Between the two phases the eight legacy documents match neither
+`where('kind','==','special')` nor an explicit query, so they fall into the derived
+`recipes_recipe` remainder. Phase 2 restores the count.
 
 ### Schema extensions (meals, issue #752 — Phase 1)
 
@@ -606,7 +650,7 @@ Decisions worth not relitigating:
 
 - **A fifth capability column, not a kind branch.** `takesComponents` is `true`
   for `recipe` and `cocktail` (a cocktail can point at its own syrup recipe),
-  `false` for `outing` and `placeholder`. The picker's candidate list is gated on
+  `false` for `special` and `placeholder`. The picker's candidate list is gated on
   `isCookable` instead — a component is a dish you MAKE, which is the same two
   kinds read from the other side.
 - **Attach order is elapsed time, longest first** (`insertComponentByElapsedTime`)
@@ -731,8 +775,8 @@ a required field would empty the list of recipes written before this shipped.
   applies the same exclusion so the curation queue does not offer a machine
   `equipmentIcons` already draws. Full reasoning: `docs/canon-icons.md`
   § "The fourth family".
-- **`isCookable(recipe.kind)` gates the call**, not `kind === 'outing'` — see
-  "Schema extensions (kind discriminator)" above. An outing or a placeholder
+- **`isCookable(recipe.kind)` gates the call**, not `kind === 'special'` — see
+  "Schema extensions (kind discriminator)" above. A special or a placeholder
   has nothing to get out and must never cost an AI call.
 - **The flow is handed the equipment manifest, and that is what makes a label
   useful (issue #954).** The original prompt ended its naming rules with "no
@@ -989,7 +1033,7 @@ vanishes without the shopper's say-so.
 Everything below is a **content** question — _these_ ingredient lines, what they
 resolve to, what lands on the list. Whether the flow is **offered at all** is a
 different, earlier question, and a capability one: `takesIngredients(kind)`, not
-`ingredients.length > 0`. An outing is never offered an Add-to-list button (there
+`ingredients.length > 0`. A special is never offered an Add-to-list button (there
 is no such concept for a takeaway); a half-written recipe with zero ingredients
 still is, because the concept applies and the answer is simply "nothing yet" —
 the sheet says so and its confirm button is disabled at a count of zero.
@@ -1040,7 +1084,7 @@ Decisions:
   (`recipeId` + `servings` + `label`); extraction populates it and scales by the
   chosen servings (see above).
 - **Meal plan** — `Day.recipeIds: string[]` is live: the planner attaches recipe
-  ids from this collection, and (since #637) outings alongside them. Anything a
+  ids from this collection, and (since #637) specials alongside them. Anything a
   planner consumer does with an attached entry has to hold for a non-cookable
   one. Since #652 the planner also attaches placeholders _on its own_, on the
   dinner field's blur — the one caller of `pickPlaceholder`. See

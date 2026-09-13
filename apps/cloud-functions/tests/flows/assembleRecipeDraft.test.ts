@@ -922,11 +922,11 @@ describe('assembleRecipeDraft — what kind of entry it is', () => {
     expect(doc.kind).toBe('cocktail');
   });
 
-  // EVERY kind, including the two the librarian may not author: an outing or a
-  // placeholder amended by chat must come back an outing or a placeholder. This
+  // EVERY kind, including the two the librarian may not author: a special or a
+  // placeholder amended by chat must come back a special or a placeholder. This
   // is the assertion that would go red if the operands were ever reordered, or if
   // the base branch gained a condition.
-  it.each(['recipe', 'outing', 'cocktail', 'placeholder'] as const)(
+  it.each(['recipe', 'special', 'cocktail', 'placeholder'] as const)(
     'lets an edit-mode %s override the model, unconditionally',
     async (kind) => {
       const doc = await assembleRecipeDraft(

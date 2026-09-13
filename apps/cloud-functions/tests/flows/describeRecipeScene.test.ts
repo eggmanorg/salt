@@ -202,11 +202,11 @@ describe('describeRecipeScene flow — revision mode', () => {
   });
 });
 
-// ─── Outings (issues #637, #671) ──────────────────────────────────────────────
-// An outing — a night off from cooking — has no method and no ingredients, so the
+// ─── Specials (issues #637, #671) ──────────────────────────────────────────────
+// A special — a night off from cooking — has no method and no ingredients, so the
 // recipe prompt's premise ("read the whole recipe, especially the METHOD") is one
 // it cannot satisfy. Asked that question it invents a plated, cooked dish: exactly
-// the picture an outing is not. `kind` selects a prompt that asks what the food
+// the picture a special is not. `kind` selects a prompt that asks what the food
 // looks like when it really turns up instead.
 //
 // #671: "when it really turns up" is FOUR pictures, not one. This prompt used to
@@ -215,8 +215,8 @@ describe('describeRecipeScene flow — revision mode', () => {
 // back describing takeaway packaging — including for a meal out, a butcher's pie
 // and a sandwich, none of which have any. It now makes deciding WHICH of the four
 // the model's first job, and names no vessel for it to default to.
-describe('describeRecipeScene flow — outings', () => {
-  const OUTING = {
+describe('describeRecipeScene flow — specials', () => {
+  const SPECIAL = {
     title: 'Friday night curry',
     description: 'From the place on the corner. Always the same order.',
     ingredients: [],
@@ -234,9 +234,9 @@ describe('describeRecipeScene flow — outings', () => {
   }
 
   it('asks what the food looks like when it TURNS UP, not how it is cooked and plated', async () => {
-    const system = await systemFor({ ...OUTING, kind: 'outing' });
+    const system = await systemFor({ ...SPECIAL, kind: 'special' });
 
-    expect(system).toContain('NIGHT OFF FROM COOKING');
+    expect(system).toContain("CHEF'S SPECIAL");
     expect(system).toContain('how it is served and what it is served in or on');
     expect(system).toContain('mood, occasion and cuisine');
     // The recipe premise — a method and an ingredient list to read — is absent, and
@@ -246,43 +246,75 @@ describe('describeRecipeScene flow — outings', () => {
     expect(system).toContain('ONE paragraph');
   });
 
-  // Issue #671. Deciding which of the four kinds of night off this is comes FIRST,
-  // because the vessel, the setting and the light are all downstream of it — and
-  // three of the four have no packaging at all.
-  it('makes the model choose which kind of night off it is, and names no default vessel', async () => {
-    const system = await systemFor({ ...OUTING, kind: 'outing' });
+  // Issue #671. Deciding which kind of chef's special this is comes FIRST, because
+  // the vessel, the setting and the light are all downstream of it — and most of
+  // them have no packaging at all.
+  //
+  // Issue #1322 added the fifth branch, and it is the one this prompt used to rule
+  // out: a dish the household cooks so often it was never written down. Three of
+  // the eight live entries are that, so the branch is asserted here rather than
+  // left to the prose — without it, pressing regenerate on Roast Chicken is a coin
+  // flip between a Sunday roast and a takeaway carton.
+  it("makes the model choose which kind of chef's special it is, and names no default vessel", async () => {
+    const system = await systemFor({ ...SPECIAL, kind: 'special' });
 
     expect(system).toContain('Your FIRST job');
     expect(system).toContain('Do NOT assume a takeaway');
-    for (const branch of ['handed over', 'eaten OUT', 'bought ready to eat', 'no real cooking']) {
+    for (const branch of [
+      'handed over',
+      'eaten OUT',
+      'bought ready to eat',
+      'no real cooking',
+      'cooks so often it was never written down',
+    ]) {
       expect(system).toContain(branch);
     }
     // The old vessel list — whose first noun every brief then reached for.
     expect(system).not.toContain('the foil tray, the carton, the pizza box');
   });
 
-  it('revises an outing brief with the outing revision prompt', async () => {
+  // Issue #1322, and the whole of the art-direction defect this rename carried.
+  // The prohibition on a cooked-from-scratch plated dish is RIGHT for a takeaway
+  // and WRONG for a Sunday roast, so it survives only in its conditional form. An
+  // unconditional "do not turn it into a dish cooked from scratch" going back in
+  // is exactly the regression this asserts against.
+  it('lets a dish the household cooks by heart actually be cooked', async () => {
+    const system = await systemFor({ ...SPECIAL, kind: 'special' });
+
+    expect(system).toContain('Unless you decided this is a dish the household cooks by heart');
+    expect(system).not.toContain('Nobody cooked a recipe here');
+    // Cooked at home is not cooked in a restaurant: the plating carve-out is
+    // bounded, not an invitation to a chef's composition.
+    expect(system).toContain("never a restaurant's plating");
+  });
+
+  it('revises a special brief with the special revision prompt', async () => {
     const system = await systemFor({
-      ...OUTING,
-      kind: 'outing',
+      ...SPECIAL,
+      kind: 'special',
       currentBrief: 'Foil trays on a coffee table under warm lamplight.',
       hint: 'make it a picnic',
     });
 
     expect(system).toContain('Fold the change THROUGH the whole brief');
-    expect(system).toContain('NIGHT OFF FROM COOKING');
+    expect(system).toContain("CHEF'S SPECIAL");
+    // #1322: the revising prompt carries the same fifth flavour and the same
+    // conditional prohibition as the authoring one, or a steer could quietly
+    // un-cook a roast the author correctly cooked.
+    expect(system).toContain('cooks so often it was never written down');
+    expect(system).toContain('Unless this is a dish the household cooks by heart');
     // The recipe revision prompt must not be the one that ran.
     expect(system).not.toContain('The finished dish');
   });
 
   // Issue #671. "Keep everything the requested change does not touch" is correct and
   // load-bearing, but it is also why a foil tray survived every attempt to steer an
-  // outing away from being a takeaway: the packaging counted as untouched. Packaging
+  // special away from being a takeaway: the packaging counted as untouched. Packaging
   // is a consequence of the occasion, so it has to move when the occasion does.
   it('moves the packaging when the occasion moves', async () => {
     const system = await systemFor({
-      ...OUTING,
-      kind: 'outing',
+      ...SPECIAL,
+      kind: 'special',
       currentBrief: 'Foil trays on a coffee table under warm lamplight.',
       hint: 'actually we went out for this one',
     });
@@ -293,15 +325,15 @@ describe('describeRecipeScene flow — outings', () => {
     );
   });
 
-  it('inherits the shared scope rule verbatim on both outing variants', async () => {
-    // The subject half ONLY. This matters more for an outing than for a recipe:
+  it('inherits the shared scope rule verbatim on both special variants', async () => {
+    // The subject half ONLY. This matters more for a special than for a recipe:
     // with no method for the model to read, a hand-edited brief is the primary path,
     // so the brief is user text far more often — and a paraphrased scope rule is a
     // per-kind loophole in the locked anchors.
-    const authoring = await systemFor({ ...OUTING, kind: 'outing' });
+    const authoring = await systemFor({ ...SPECIAL, kind: 'special' });
     const revising = await systemFor({
-      ...OUTING,
-      kind: 'outing',
+      ...SPECIAL,
+      kind: 'special',
       currentBrief: 'Foil trays on a coffee table.',
       hint: 'make it a picnic',
     });
@@ -323,7 +355,7 @@ describe('describeRecipeScene flow — outings', () => {
 });
 
 // ─── Cocktails (issue #637, Phase 5) ─────────────────────────────────────────
-// A cocktail sits on the far side of the outing from a recipe. The outing had to
+// A cocktail sits on the far side of the special from a recipe. The special had to
 // LOSE the "read the method" premise; a cocktail keeps it in full — 50ml gin, 25ml
 // Campari, stir, strain, orange twist is an ingredient list and a method, and it is
 // where every visual fact about the drink lives. What changes is the SUBJECT: there
@@ -354,7 +386,7 @@ describe('describeRecipeScene flow — cocktails', () => {
   it('asks what is in the GLASS, and still asks the model to read the method', async () => {
     const system = await systemFor({ ...COCKTAIL, kind: 'cocktail' });
 
-    // Unlike an outing, the method premise SURVIVES — it is the only thing that
+    // Unlike a special, the method premise SURVIVES — it is the only thing that
     // knows the colour, the clarity and the serve.
     expect(system).toContain('especially the METHOD and the INGREDIENTS');
     expect(system).toContain('glassware the serve implies');
@@ -398,13 +430,13 @@ describe('describeRecipeScene flow — cocktails', () => {
     }
   });
 
-  it('does not paint a cocktail with the recipe or outing prompt', async () => {
+  it('does not paint a cocktail with the recipe or special prompt', async () => {
     const cocktail = await systemFor({ ...COCKTAIL, kind: 'cocktail' });
     const recipe = await systemFor(RECIPE);
-    const outing = await systemFor({ ...COCKTAIL, kind: 'outing' });
+    const special = await systemFor({ ...COCKTAIL, kind: 'special' });
 
     expect(cocktail).not.toBe(recipe);
-    expect(cocktail).not.toBe(outing);
+    expect(cocktail).not.toBe(special);
   });
 });
 
@@ -520,12 +552,12 @@ describe('describeRecipeScene flow — meals', () => {
     expect(system).toContain('glassware the serve implies');
   });
 
-  it('leaves an outing and a placeholder untouched even when handed dishes', async () => {
+  it('leaves a special and a placeholder untouched even when handed dishes', async () => {
     // Neither kind can HAVE components (`takesComponents` is false for both), so
     // this is a belt to that braces: the arms ignore the flag rather than trusting
-    // no caller ever passes one. An outing has no table to widen to and a
+    // no caller ever passes one. A special has no table to widen to and a
     // placeholder must never be given a dish at all.
-    for (const kind of ['outing', 'placeholder']) {
+    for (const kind of ['special', 'placeholder']) {
       const withDishes = await callFlow({ ...MEAL, kind, components: MEAL.components });
       const without = await callFlow({ ...MEAL, kind, components: [] });
 
@@ -554,7 +586,7 @@ describe('describeRecipeScene flow — meals', () => {
 });
 
 // ─── Placeholders (issue #652) ───────────────────────────────────────────────
-// An outing lost the "read the method" premise but kept a SUBJECT — a curry, a
+// A special lost the "read the method" premise but kept a SUBJECT — a curry, a
 // chippy tea, something the model can picture. A placeholder has neither: it
 // stands in for dinner on an evening someone planned in a sentence, and it is
 // attached to many different evenings, so naming a dish is the one thing it must
@@ -704,11 +736,11 @@ describe('describeRecipeScene flow — placeholders', () => {
   it('does not paint a placeholder with any of the other three prompts', async () => {
     const placeholder = await systemFor({ ...PLACEHOLDER, kind: 'placeholder' });
     const recipe = await systemFor(RECIPE);
-    const outing = await systemFor({ ...PLACEHOLDER, kind: 'outing' });
+    const special = await systemFor({ ...PLACEHOLDER, kind: 'special' });
     const cocktail = await systemFor({ ...PLACEHOLDER, kind: 'cocktail' });
 
     expect(placeholder).not.toBe(recipe);
-    expect(placeholder).not.toBe(outing);
+    expect(placeholder).not.toBe(special);
     expect(placeholder).not.toBe(cocktail);
   });
 });

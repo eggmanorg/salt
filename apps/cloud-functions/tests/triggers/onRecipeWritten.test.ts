@@ -417,31 +417,31 @@ describe('onRecipeWritten — scene brief', () => {
 });
 
 // ─── Entry kinds (issue #637) ────────────────────────────────────────────────
-// The trigger runs the SAME two-step pipeline for every kind — an outing gets a
+// The trigger runs the SAME two-step pipeline for every kind — a special gets a
 // brief and a hero exactly as a recipe does, because the regenerate dialog seeds
 // its textarea from `imageBrief` and skipping the brief step would leave it empty.
 // The only thing that changes is which prompts the flows pick, so the trigger's
 // whole job here is to forward the kind.
 describe('onRecipeWritten — entry kinds', () => {
-  it('forwards the kind to BOTH flows so an outing is painted as an outing', async () => {
+  it('forwards the kind to BOTH flows so a special is painted as a special', async () => {
     await (onRecipeWritten as Function)(
       makeEvent(
         'r-out',
         makeRecipe('r-out', {
-          kind: 'outing',
+          kind: 'special',
           title: 'Friday night curry',
           description: 'From the place on the corner.',
         }),
       ),
     );
 
-    expect(mockDescribeScene).toHaveBeenCalledWith(expect.objectContaining({ kind: 'outing' }));
-    expect(mockGenerateImage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'outing' }));
+    expect(mockDescribeScene).toHaveBeenCalledWith(expect.objectContaining({ kind: 'special' }));
+    expect(mockGenerateImage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'special' }));
   });
 
-  it('still generates a hero for an outing — no ingredients, no method, same pipeline', async () => {
+  it('still generates a hero for a special — no ingredients, no method, same pipeline', async () => {
     await (onRecipeWritten as Function)(
-      makeEvent('r-out', makeRecipe('r-out', { kind: 'outing', ingredients: [], steps: [] })),
+      makeEvent('r-out', makeRecipe('r-out', { kind: 'special', ingredients: [], steps: [] })),
     );
 
     expect(mockGenerateImage).toHaveBeenCalledOnce();
