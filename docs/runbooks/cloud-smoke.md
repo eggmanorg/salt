@@ -233,10 +233,18 @@ worth making deliberately rather than in passing.
 
 ## Cost and side effects
 
-- The default sweep spends a handful of embedding and text calls. It is cheap
-  enough to run on demand, repeatedly.
-- `canon-icon` generates one pictogram per run, `recipe-import` one recipe hero,
-  and `cook-timer` sends one real push. All three are opt-in for that reason.
+**The automatic spend is a number, not a caution.** One opt-in run generates
+**one canon pictogram, one recipe hero, and sends one real push notification**.
+That happens **once a week** (Thursday morning) **plus once per published
+release** — so roughly one or two such runs a week, bounded and predictable.
+The push lands on the registered devices of the probe identity only
+(`PROBE_UID` / `PROBE_EMAIL` in `probes/harness/auth.ts`), never on a family
+member's phone.
+
+The free sweep — the other four journeys — spends a handful of embedding and
+text calls and runs after every staging deploy. It is cheap enough to run on
+demand, repeatedly.
+
 - **`recipe-import` cannot be made cheaper without changing product code, and
   must not be.** Every import path lands the recipe with `image: null`, and
   `onRecipeWritten` generates a hero on create with a null image. There is no
@@ -249,15 +257,16 @@ worth making deliberately rather than in passing.
   import returns, so tearing down early would leak the object and write to a
   document that no longer exists.
 - No journey mutates existing data. A probe that needed to would have to
-  read-then-restore, or not ship.
-
----
+  read-then-restore, or not ship. (`refreshWeatherForecast` is the standing
+  example of one that would, and therefore has no journey.)
 
 ## What runs automatically (issue #1356)
 
-| When                                     | Where                                   | What runs                         |
-| ---------------------------------------- | --------------------------------------- | --------------------------------- |
-| Every merge to main that deploys staging | the `probe` job in `deploy-staging.yml` | `pnpm probe all --target staging` |
+| When                                     | Where                                              | What runs                                          |
+| ---------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
+| Every merge to main that deploys staging | the `probe` job in `deploy-staging.yml`            | `pnpm probe all --target staging`                  |
+| Thursday 06:00 UTC, and on demand        | `probe-staging-weekly.yml`                         | the same, plus `--include-opt-in`                  |
+| A GitHub Release is published            | the `probe-staging` job in `deploy-production.yml` | the same, plus `--include-opt-in`, before approval |
 
 The probe job `needs: deploy` and skips on the same `should_deploy` guard, so a
 docs-only merge shows it **skipped**, not failed — probing an environment
@@ -275,16 +284,49 @@ decides to promote. Whether it should ever become a hard block on that promotion
 is deliberately undecided, and is not to be introduced quietly as an
 implementation detail.
 
-The report JSON is uploaded as the `probe-staging-report` run artifact on both
-green and red, so a failure is triaged from the run without probing the
-environment a second time.
+Every one of the three uploads its report JSON as a run artifact
+(`probe-staging-report`, `probe-staging-weekly-report`,
+`probe-staging-release-report`) on green and red alike, so a failure is triaged
+from the run without probing the environment a second time.
 
-**`--include-opt-in` does not appear in this job, and must not** — it runs
-because a pull request merged, many times a day, and the opt-in journeys
-generate a real image and send a real push each time. Today that is a
-convention held by this paragraph and the comment above the job; Phase 4 of
-#1356 makes it mechanical, with a test that scans `.github/workflows/` and
-fails if the flag appears under a merge trigger.
+### The costly journeys, and the one rule that money depends on
+
+**`--include-opt-in` never appears in a merge-triggered workflow.** Not a
+severity or a speed tier: the failure mode being guarded is a sweep that bills
+for generated images and buzzes a phone _because someone merged a pull request_
+— unbounded, unpredictable, many times a day. A run on a weekly schedule or on
+a published release is bounded, predictable and chosen, and it is the only way
+those three journeys get exercised at all.
+
+`apps/cloud-functions/tests/optInProbeTriggerGuard.test.ts` makes that
+mechanical: it reads every file in `.github/workflows/` and fails if the flag
+appears in one whose own triggers include `push`, `pull_request`, `merge_group`
+or a `workflow_run` of CI. It has one stated boundary — it reads a workflow's
+own `on:` block, so a reusable `workflow_call` workflow invoked from a
+merge-triggered one would slip past. None exists in this repo; the test's header
+says what to do if one is ever added.
+
+**Thursday is not a detail to tidy.** Daniel works on this repo Friday to
+Sunday; Monday to Thursday is a limited-work window. A Thursday-morning run
+surfaces whatever broke during the quiet week while there is still a quiet day
+to fix it, and each Friday starts clean. A Monday run would report into the
+window where least can be done about it. GitHub cron is UTC, so `0 6 * * 4` is
+07:00 BST and 06:00 GMT — it drifts by an hour twice a year, which is accepted,
+and GitHub runs scheduled workflows late under load.
+
+**The release-time run is the gate, and it blocks nothing.** The
+`probe-staging` job sits inside `deploy-production.yml` so its result lands in
+the same Actions run as the production approval prompt, above it: GitHub
+requests deployment review when a job becomes ready, so the "Review deployments"
+prompt appears after the probe finishes. The `deploy` job takes
+`needs: probe-staging` with `if: always()`, so it waits for the answer and is
+never blocked by it — a red probe still lets Daniel approve, and nothing is
+reverted. The job declares `environment: staging`, not `production`: that is
+where the WIF variables live, and staging has no protection rules, so it does
+not wait for the very approval it informs.
+
+`workflow_dispatch` on `probe-staging-weekly.yml` runs the same thing on demand,
+so the schedule never has to be waited for to test it.
 
 ## Out of scope
 
