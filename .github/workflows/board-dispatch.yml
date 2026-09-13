@@ -19,11 +19,20 @@ name: Board dispatch
 # expired.
 #
 # THIS IS NOT A SECOND AUTOMATED WRITER. `board-status.yml` remains the sole
-# event-driven path for In review / Merged / Released, keyed on `pull_request`
-# and `workflow_run` payloads. Nothing here fires on an event — every run is a
-# human clicking Run workflow or an agent dispatching it. The concurrency group
-# below is keyed by issue and that one by PR, so the two can never share a key
-# and can never race on the same item.
+# event-driven path for In progress / In review / Merged / Released, keyed on
+# `issues`, `pull_request` and `workflow_run` payloads. Nothing here fires on an
+# event — every run is a human clicking Run workflow or an agent dispatching it.
+#
+# THE TWO ARE NOT MUTUALLY EXCLUSIVE, and saying so is the honest form of what
+# this comment used to claim. It read "keyed by issue and that one by PR, so the
+# two can never share a key" — true until board-status.yml gained an
+# issue-keyed job, and a group name is per-workflow anyway. What actually holds
+# is a bound on the damage: the only status that job writes is `In progress`,
+# and it writes it ONLY over an unset, `Triage` or `Todo` item
+# (`scripts/lib/boardProgress.mjs`). So the worst an overlap can do is put an
+# item you were dispatching to `Todo` into `In progress`, or lose that
+# promotion — never overwrite a status a PR event established, and never a
+# field this workflow set.
 #
 # `check` IS DELIBERATELY ABSENT from the command list. The four commands here
 # are writes whose success is visible on the board, so a lost one is a nuisance.
@@ -103,8 +112,10 @@ on:
         required: false
         default: ''
 
-# Never let two board writers race on the same item. Keyed by issue, where
-# board-status.yml is keyed by PR — deliberately disjoint, see the header.
+# Never let two board writers race on the same item — two dispatches for one
+# issue, that is. It does not serialise against board-status.yml's issue-keyed
+# job, which is a different workflow with its own group; see the header for why
+# that overlap is bounded rather than prevented.
 concurrency:
   group: board-dispatch-${{ inputs.issue || inputs.sha || 'manual' }}
   cancel-in-progress: false
