@@ -36,6 +36,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export const cookTimer: Journey = {
   name: 'cook-timer',
   description: 'A cook-session timer dispatches once, through the exactly-once ledger.',
+  domain: 'cooking',
   optIn: 'sends a real push notification to the owner’s registered devices',
 
   async run(ctx) {

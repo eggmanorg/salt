@@ -39,6 +39,7 @@ function addDays(date: string, days: number): string {
 export const mealplanShopday: Journey = {
   name: 'mealplan-shopday',
   description: 'A planner week and its shop day round-trip and stay schema-valid.',
+  domain: 'planner',
 
   async run(ctx) {
     const weekStart = farFutureWeekStart(ctx);

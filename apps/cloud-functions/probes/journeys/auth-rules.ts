@@ -54,6 +54,7 @@ async function assertWriteDenied(
 export const authRules: Journey = {
   name: 'auth-rules',
   description: 'Probe user signs in, reads what it may, is denied what it may not.',
+  domain: 'auth',
 
   async run(ctx) {
     const absent = ctx.id('absent');

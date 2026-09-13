@@ -18,6 +18,7 @@ pnpm probe all                       # the default sweep, against dev
 pnpm probe auth-rules                # one journey
 pnpm probe all --target staging      # pre-release gate (see Preconditions)
 pnpm probe all --include-opt-in      # including the journeys that cost or notify
+pnpm probe --domain planner          # every journey labelled `planner`
 pnpm probe                           # usage, and the list of journeys
 ```
 
@@ -43,11 +44,18 @@ gcloud iam service-accounts add-iam-policy-binding \
   --project <project>
 ```
 
-| Project          | Granted?                                              |
-| ---------------- | ----------------------------------------------------- |
-| `s2-dev-eggman`  | ✅ granted 2026-08-07                                 |
-| `s2-stage-ccb22` | ❌ **not yet** — `--target staging` fails until it is |
-| `s2-prod-e46bd`  | not a target, deliberately                            |
+| Project          | Granted?                   |
+| ---------------- | -------------------------- |
+| `s2-dev-eggman`  | ✅ granted 2026-08-07      |
+| `s2-stage-ccb22` | ✅ granted 2026-09-13      |
+| `s2-prod-e46bd`  | not a target, deliberately |
+
+The grant is per **principal**, not per person: CI needs its own. The staging
+deploy's Workload Identity principal (`vars.WIF_SERVICE_ACCOUNT` on the
+`staging` GitHub Environment) needs the same `tokenCreator` role on
+`firebase-adminsdk-fbsvc@s2-stage-ccb22.iam.gserviceaccount.com`, with
+`--member="serviceAccount:<that account>"`. No key file and no repository
+secret: in CI, ADC _is_ the deploy credential.
 
 IAM takes up to ~60 s to propagate. A grant that "did not work" usually just
 needs another minute.
@@ -114,17 +122,32 @@ repeatedly against a **prod-restored** environment.
 
 ## What each journey covers
 
-| Journey                 | Covers                                                                                                                 | Notes                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `auth-rules`            | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                          | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
-| `mealplan-shopday`      | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned | Free. Writes a far-future week.                                                         |
-| `recipe-canon-shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`             | Real Gemini (embeddings, sometimes arbitration).                                        |
-| `chef-chat`             | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                 | Real Gemini, text only.                                                                 |
-| `canon-icon`            | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`             | **Opt-in** — generates a pictogram with a real image model.                             |
-| `cook-timer`            | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger   | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
+| Journey                 | Domain     | Covers                                                                                                                 | Notes                                                                                   |
+| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `auth-rules`            | `auth`     | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                          | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
+| `mealplan-shopday`      | `planner`  | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned | Free. Writes a far-future week.                                                         |
+| `recipe-canon-shopping` | `shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`             | Real Gemini (embeddings, sometimes arbitration).                                        |
+| `chef-chat`             | `chat`     | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                 | Real Gemini, text only.                                                                 |
+| `canon-icon`            | `canon`    | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`             | **Opt-in** — generates a pictogram with a real image model.                             |
+| `cook-timer`            | `cooking`  | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger   | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
 
 An opt-in journey is excluded from `all` unless `--include-opt-in`, and always
 runs when named explicitly. Naming it _is_ the opt-in.
+
+### Domains are a convenience, not a router
+
+`--domain <x>` runs the journeys carrying that label and nothing else, so
+someone working on the planner can exercise the planner without waiting for the
+sweep. That is the whole of it. **Nothing selects journeys automatically** — the
+full sweep runs every time, because at ~60 s for the lot selection buys nothing,
+and a source-path → journey mapping fails in the dangerous direction: it goes
+stale, the sweep quietly skips the journey that would have caught the
+regression, and nothing reports that it did.
+
+One word per journey; the vocabulary is the `PROBE_DOMAINS` list in
+`probes/harness/journey.ts`, and the field is required, so an unlabelled journey
+does not compile. `--domain` narrows a sweep, it does not name a journey: it
+cannot pull an opt-in journey into a run that did not ask for one.
 
 ---
 
