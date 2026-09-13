@@ -290,9 +290,16 @@
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
   //
-  // NOTHING ON THIS PAGE WAITS FOR A WRITE. There is no lock, no `disabled` gate
-  // and no in-flight flag anywhere in this section, and that is the whole of the
-  // rule (issue #1365, fault 4).
+  // NOTHING IN THIS SECTION WAITS FOR A WRITE. There is no lock, no `disabled`
+  // gate and no in-flight flag anywhere in the command functions below, and that
+  // is the whole of the rule for the page's own controls (issue #1365, fault 4).
+  // It does not extend to `BatchObservationSheet` (mounted at `:1212`, opened
+  // from the deck's own `batch-cook-log` pencil): its `handleSave` sets `busy`
+  // before awaiting `addBatchObservation`'s `setDoc` and clears it with no
+  // `finally`, so offline that `busy` never clears, latching Skip and both photo
+  // controls dead for the rest of the visit. That is the same construct this
+  // section removes, left standing in the one control this section does not own;
+  // fixing it is out of scope here (issue #1365).
   //
   // WHY A LOCK CANNOT WORK HERE. Firestore's `setDoc` does not resolve while
   // offline: the write is durably queued by `persistentLocalCache` and lands when
@@ -322,14 +329,17 @@
   // promise that never settles.
   //
   // WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md rule 12). It guarantees
-  // that no control here is ever disabled by a write in flight, and that every write
-  // a gesture implies is DISPATCHED before that gesture returns rather than
-  // sequenced behind a network promise — both pinned by the stuck-write tests in
-  // `BatchCookPage.test.ts`. It does NOT guarantee the write reaches Firestore, that
-  // a failure is reported promptly (offline, the toast arrives whenever the promise
-  // finally settles, and may not arrive at all this visit), or that two phones
-  // tapping one stage produce a single write. Those are `persistentLocalCache`'s
-  // job, unknowable offline, and document-level LWW as designed, respectively.
+  // that no control driven by THIS section is ever disabled by a write in flight,
+  // and that every write a gesture implies is DISPATCHED before that gesture
+  // returns rather than sequenced behind a network promise — both pinned by the
+  // stuck-write tests in `BatchCookPage.test.ts`. It does NOT guarantee the write
+  // reaches Firestore, that a failure is reported promptly (offline, the toast
+  // arrives whenever the promise finally settles, and may not arrive at all this
+  // visit), that two phones tapping one stage produce a single write, or that
+  // every control on this page is free of the hazard — `BatchObservationSheet`,
+  // above, still has it. The first three are `persistentLocalCache`'s job,
+  // unknowable offline, and document-level LWW as designed, respectively; the
+  // fourth is that sheet's own bug, not this section's claim.
 
   async function markStep(stepId: string, done: boolean): Promise<void> {
     const current = getBatchSnapshot() ?? run;

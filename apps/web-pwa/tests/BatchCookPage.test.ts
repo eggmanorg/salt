@@ -718,7 +718,7 @@ describe('no control waits for a write', () => {
     return { release: (batch: BatchDoc) => release(batch) };
   }
 
-  it('both stage controls stay live while a stage write is stuck in flight', async () => {
+  it('the stage card’s Done control stays live while a stage write is stuck in flight', async () => {
     // THE FAULT ITSELF. `writing` was set true, the `setDoc` never resolved, and
     // both controls gated on it greyed out for the rest of the visit — a screen
     // that reads as broken rather than merely slow, in the one room where signal
@@ -730,13 +730,16 @@ describe('no control waits for a write', () => {
     await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
     await waitFor(() => expect(advanceMock).toHaveBeenCalled());
 
-    // The footer Done moves on to the next incomplete step; the card's Done is for
-    // the step-less stage, which nothing in this gesture touched.
+    // The card's Done is for the step-less stage, which nothing in this gesture
+    // touched, and stays live. The fixture's three steps are all complete after
+    // this tick, so the footer has already moved on to `batch-cook-to-batch` —
+    // there is no footer stage control left to assert live here; the next test
+    // covers a second stage control staying live and actually writing while this
+    // one is stuck.
     expect(screen.getByTestId('batch-cook-stage-done')).not.toBeDisabled();
     await fireEvent.click(screen.getByTestId('batch-cook-stage-back'));
     await fireEvent.click(screen.getByTestId('batch-cook-stage-toggle'));
-    const footer = screen.queryByTestId('batch-cook-step-done');
-    if (footer !== null) expect(footer).not.toBeDisabled();
+    expect(screen.queryByTestId('batch-cook-step-done')).toBeNull();
 
     stuck.release(mockBatch._get()!);
   });
