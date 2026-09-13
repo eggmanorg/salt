@@ -442,6 +442,7 @@ What `closedItemVerdict` decides, and why each way:
 | -------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- |
 | at `Merged`                                  | nothing      | it shipped and must stay — `board.mjs release` walks exactly this set                       |
 | at `Released`                                | a note       | live; safe to take off the board whenever you like                                          |
+| item added **after** the issue closed        | a note       | a parent link auto-added it; it was never in the pipeline, so no PR could have moved it     |
 | closed as **not planned**                    | a note       | won't-fix or superseded; nothing will ever ship it, so leaving the board is the only remedy |
 | `campaign:` ledger, not at a shipping status | **fails**    | it has no PR but it _does_ ship; set it from its run-set, or `release` promotes it          |
 | `epic:`, `campaign follow-ups:`, `question(` | a note       | these close by hand — children done, boxes ticked, question answered. No PR was ever coming |
@@ -469,6 +470,43 @@ advice, because telling an abandoned campaign to set itself `Merged` would be a 
 
 A failure here always means code or automation has to change. Anything a person
 could simply tidy up is a note — that is what keeps the exit code worth reading.
+
+### Attaching a closed issue puts it on the board, with nothing filled in
+
+The project has two of GitHub's built-in workflows enabled — **Auto-add to project**
+and **Auto-add sub-issues to project**. The second one matters here and is easy to
+miss: the moment anything links an issue as a sub-issue of another, GitHub adds it
+to the board with no `Status`, no `Queue`, no `Class` and no `Size`. It does that
+whether the issue is open or was closed months ago.
+
+Since #1346 made attaching a parent the routine gesture for everything an agent
+files, that happens often, and each long-closed issue it caught used to become a
+permanent `check` failure demanding it reach `Merged` — incoherent, because the item
+did not exist when its PR merged. #1123's PR merged **13 days** before its board item
+was created, and `board.mjs pr` was right to do nothing at the time.
+
+So the rule compares the board item's `createdAt` with the issue's `closedAt`.
+Created strictly later means auto-added, and that is a note. **Equal or earlier is
+not exempt** — the item was there while the issue was live, so the pipeline really
+should have moved it, and the ambiguous case falls toward the rule firing.
+
+### `board.mjs pr` no longer skips an absent issue in silence
+
+The same investigation turned up the mirror-image hole. `pr` writes `Status` for
+whatever the PR body's `Closes #N` names, and an issue that is not on the board used
+to print one line and exit 0. That reads as a clean run, and it was covering two
+opposite situations:
+
+- the issue **closed before the PR was raised** — a back-reference to finished work,
+  which many `campaign follow-ups:` bodies carry. There is genuinely nothing to
+  move. Still a note, still exit 0.
+- **anything else** — the issue is live, this PR is shipping it, and nothing ever
+  triaged it onto the board. `board-status.yml` reported success having moved
+  nothing. That now prints what is wrong and **exits 1**, after making every move it
+  could still make.
+
+A board job that is quietly out of date is worse than one that is visibly broken —
+the same reasoning that makes a missing `PROJECT_TOKEN` fail loudly rather than skip.
 
 ---
 

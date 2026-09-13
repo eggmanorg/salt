@@ -64,7 +64,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { closedItemVerdict } from './lib/boardClosedState.mjs';
+import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -146,8 +146,8 @@ function loadItems(project) {
     const page = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
       items(first:100, after:${after}){
         pageInfo{ hasNextPage endCursor }
-        nodes{ id
-          content{ ... on Issue { number title state stateReason } }
+        nodes{ id createdAt
+          content{ ... on Issue { number title state stateReason closedAt } }
           queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
@@ -162,6 +162,12 @@ function loadItems(project) {
         // `COMPLETED` | `NOT_PLANNED` | null. The check needs it to tell a
         // won't-fix close from one that shipped — see `closedItemVerdict`.
         stateReason: n.content.stateReason ?? null,
+        // WHEN THE BOARD ITEM APPEARED, against when the issue closed. An item
+        // created AFTER its issue closed was never in the pipeline at all —
+        // GitHub's "Auto-add sub-issues to project" workflow put it there when
+        // something linked it to a parent. See `closedItemVerdict`.
+        createdAt: n.createdAt ?? null,
+        closedAt: n.content.closedAt ?? null,
         queue: n.queue?.name ?? null,
         status: n.status?.name ?? null,
         blockedBy: n.blockedBy?.text ?? '',
@@ -256,7 +262,7 @@ function cmdPr(project, [num, ...rest]) {
   if (!flags.status) die('board.mjs pr needs --status');
 
   const pr = gql(
-    `{ repository(owner:"${OWNER}",name:"${REPO}"){ pullRequest(number:${number}){ body } } }`,
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ pullRequest(number:${number}){ body createdAt } } }`,
   ).repository?.pullRequest;
   if (!pr) die(`PR #${number} not found`);
 
@@ -270,15 +276,55 @@ function cmdPr(project, [num, ...rest]) {
   }
 
   const items = loadItems(project);
+  const absent = targets.filter((issue) => !items.some((i) => i.number === issue));
+  // Only asked for when something IS absent, which is the rare case — and it is
+  // asked once for all of them rather than per target.
+  const closedAt = absent.length === 0 ? new Map() : fetchClosedAt(absent);
+
+  let missed = 0;
   for (const issue of targets) {
     const item = items.find((i) => i.number === issue);
     if (!item) {
-      console.log(`#${issue} is not on the board — skipped`);
+      // An absent target is not automatically a miss, and not automatically
+      // fine either. `absentTargetVerdict` holds which is which and why.
+      const verdict = absentTargetVerdict({
+        number: issue,
+        closedAt: closedAt.get(issue) ?? null,
+        prNumber: number,
+        prCreatedAt: pr.createdAt,
+      });
+      if (verdict.level === 'failure') {
+        console.error(verdict.message);
+        missed += 1;
+      } else {
+        console.log(verdict.message);
+      }
       continue;
     }
     setSelect(project, item.id, 'Status', flags.status);
     console.log(`#${issue} → Status=${flags.status}  (PR #${number})`);
   }
+
+  // EXIT NON-ZERO ON A REAL MISS. The moves that could be made have already been
+  // made — this fails at the end, not instead. A board job that reports success
+  // having moved nothing is worse than one that is visibly broken, which is the
+  // same reasoning that made PROJECT_TOKEN fail loudly rather than skip.
+  if (missed > 0) process.exitCode = 1;
+}
+
+/** `issue number → closedAt | null`, batched the way `fetchParents` is. */
+function fetchClosedAt(numbers) {
+  const out = new Map();
+  for (let i = 0; i < numbers.length; i += 50) {
+    const batch = numbers.slice(i, i + 50);
+    const data = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${batch
+        .map((n) => `i${n}: issue(number:${n}){ closedAt }`)
+        .join(' ')} } }`,
+    ).repository;
+    for (const n of batch) out.set(n, data[`i${n}`]?.closedAt ?? null);
+  }
+  return out;
 }
 
 /**

@@ -40,6 +40,28 @@ export function closedItemVerdict(item) {
   }
   if (status === 'Merged') return { level: 'ok', message: null };
 
+  // THE ITEM ARRIVED AFTER THE ISSUE HAD ALREADY CLOSED, so nothing the board
+  // automates could ever have moved it. Attaching a closed issue as a sub-issue
+  // makes GitHub's "Auto-add sub-issues to project" workflow add it with every
+  // field empty, and the rule then demanded it reach `Merged` — for #1123 that
+  // was flatly wrong: its PR merged 13 days before its board item existed, and
+  // `board.mjs pr` correctly did nothing because there was nothing to move.
+  //
+  // This branch comes FIRST among the exemptions because it is the only correct
+  // explanation for an item like that, whatever its title or close reason says.
+  //
+  // STRICTLY AFTER, and the boundary matters (CLAUDE.md rule 12). An item
+  // created in the same second as the close — or before it — is NOT exempt and
+  // still goes through the rules below. Equality is the ambiguous case, and it
+  // falls toward the rule firing, which is the visible direction. A missing
+  // timestamp on either side is likewise not exempt.
+  if (item.closedAt && item.createdAt && item.createdAt > item.closedAt) {
+    return {
+      level: 'note',
+      message: `#${item.number} was added to the board after it had already closed (item ${item.createdAt}, closed ${item.closedAt}) — a parent link auto-added it, so no PR could ever have moved it; take it off the board or set its Status by hand`,
+    };
+  }
+
   // A NOT_PLANNED close — won't-fix, superseded, duplicate — is a different
   // thing, and for weeks the rule could not say so: it told you the issue's PR
   // was missing a `Closes #N` when there was never going to be a PR at all.
@@ -85,5 +107,45 @@ export function closedItemVerdict(item) {
   return {
     level: 'failure',
     message: `#${item.number} is closed at Status="${status ?? 'unset'}" — it never reached Merged, so either it was closed without shipping (remove it) or its PR had no "Closes #${item.number}"`,
+  };
+}
+
+/**
+ * What `board.mjs pr` should say about a `Closes #N` target that is NOT on the
+ * board — the other half of Cause D, and a hole that looked exactly like a
+ * green run.
+ *
+ * `cmdPr` used to print `#N is not on the board — skipped` and exit 0 for every
+ * absent target. That is right for one case and silently wrong for the other,
+ * and the two were indistinguishable:
+ *
+ * - the issue had ALREADY CLOSED before this PR existed — a back-reference to
+ *   finished work, of the kind `campaign follow-ups:` bodies are full of. There
+ *   is genuinely nothing to move, and saying so is correct.
+ * - anything else — the issue is live work, its PR is shipping it, and the board
+ *   has never heard of it. `board-status.yml` then reported success having moved
+ *   nothing, which is how #1123 shipped without the board ever knowing.
+ *
+ * THE TEST IS THE PR'S OWN CREATION TIME, not the merge. A PR that closes an
+ * issue necessarily opens before that issue closes, so `closedAt < prCreatedAt`
+ * can only mean the close came from somewhere else — which is exactly the
+ * back-reference case. An issue with no `closedAt` is open, and an open issue
+ * whose PR is in flight belongs on the board, so it fails.
+ *
+ * WHAT THIS DOES NOT CATCH: an issue closed by hand a minute before its own PR
+ * was raised reads as a back-reference and is let through. Nobody works that
+ * way, but the claim is "closed before the PR existed", never "closed by someone
+ * else".
+ */
+export function absentTargetVerdict({ number, closedAt, prNumber, prCreatedAt }) {
+  if (closedAt && prCreatedAt && closedAt < prCreatedAt) {
+    return {
+      level: 'note',
+      message: `#${number} is not on the board, and closed before PR #${prNumber} was raised — a back-reference to finished work, nothing to move`,
+    };
+  }
+  return {
+    level: 'failure',
+    message: `#${number} is live and NOT on the board, so PR #${prNumber} is shipping work nothing triaged — add it with \`board.mjs add ${number} --queue <band>\``,
   };
 }
