@@ -888,9 +888,12 @@
                      :726-757's pairing for the stage in hand, which on this screen is
                      every stage card there is. The batch page reads a whole list at
                      once and can tell the stage in hand from one further down the
-                     queue (`isCurrent`); the deck pages through the method one card
-                     at a time, so the card under the thumb IS the one in hand and
-                     there is no second case to distinguish. That is the boundary of
+                     queue (`isCurrent`); the deck shows the method one card at a time
+                     under the thumb, and offers the pair on whichever card you reach,
+                     so it has no "further down the queue" case to style differently.
+                     It is a rendering choice, not a claim that only one card exists —
+                     they all do, and a later stage can be marked done while an earlier
+                     one is in hand (`BatchCookPage.test.ts` pins that). That is the boundary of
                      the mirroring, stated rather than implied: this renders the
                      sibling's current-stage shape on every card, and deliberately
                      does not import its `isCurrent` split.
@@ -937,8 +940,11 @@
                      meaningless, so they are not rendered. This branch leads, so it
                      also takes the observational stage below it and the wait-stage
                      countdown out: there is nothing to count down to for a stage that
-                     will never run. `stageFacts` renders on both the stage card and
-                     the step band, so one guard covers both surfaces. -->
+                     will never run. It does NOT take the logged reading out — that is
+                     a record of what happened, which is the one thing a skipped stage
+                     still has to show, so the reading renders after this chain rather
+                     than inside it (issue #1370). `stageFacts` renders on both the
+                     stage card and the step band, so one guard covers both surfaces. -->
                   <span class="text-muted-foreground" data-testid="batch-cook-stage-skipped">
                     Skipped {formatWhen(skip.at)}
                   </span>
@@ -949,15 +955,6 @@
                   <span class="text-muted-foreground" data-testid="batch-cook-stage-observational">
                     No fixed time — mark it done when it's ready.
                   </span>
-                  {#if latestReading(stageDoc.id)}
-                    {@const reading = latestReading(stageDoc.id)!}
-                    <div
-                      class="rounded border border-border p-2"
-                      data-testid="batch-cook-stage-reading"
-                    >
-                      <BatchReadingRow run={run!} entry={reading} when={formatWhen(reading.at)} />
-                    </div>
-                  {/if}
                 {:else}
                   <span
                     class="tabular-nums text-muted-foreground"
@@ -975,6 +972,20 @@
                       {countdown(stageDoc.plannedEndAt)}
                     </span>
                   {/if}
+                {/if}
+                <!-- OUTSIDE THE CHAIN ABOVE, and the skipped branch is why: a reading
+                   is what the cook observed, so skipping the stage afterwards does not
+                   unobserve it (issue #1370). Still only on an observational stage —
+                   the deck has never shown a reading beside a timed one, and this
+                   restores what the skip branch took, it does not widen it. -->
+                {#if isObservational(stageDoc) && latestReading(stageDoc.id)}
+                  {@const reading = latestReading(stageDoc.id)!}
+                  <div
+                    class="rounded border border-border p-2"
+                    data-testid="batch-cook-stage-reading"
+                  >
+                    <BatchReadingRow run={run!} entry={reading} when={formatWhen(reading.at)} />
+                  </div>
                 {/if}
                 <div
                   class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"

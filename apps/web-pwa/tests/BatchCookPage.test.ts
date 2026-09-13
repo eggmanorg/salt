@@ -1076,6 +1076,53 @@ describe('an observational stage', () => {
     const card = screen.getByTestId('batch-cook-stage-card');
     expect(card.querySelector('[data-testid="batch-cook-stage-countdown"]')).toBeNull();
   });
+
+  // SKIPPING THE STAGE DOES NOT UNOBSERVE THE READING (issue #1370). The skipped
+  // branch leads `stageFacts` and deliberately suppresses the window, the countdown
+  // and the "no fixed time" line — all statements about a plan that will not happen.
+  // A reading is not one of those: it is what the cook actually saw, and the deck is
+  // the only surface that shows it ON its stage.
+  it('still shows the reading once the stage has been skipped', async () => {
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          stage(),
+          stage({
+            id: 'stage-cool',
+            stepId: null,
+            duration: null,
+            skipped: { at: '2026-09-11T09:30:00.000Z', note: 'pulled it early' },
+          }),
+        ],
+      }),
+    );
+    mockObservations._set([
+      {
+        id: 'obs-1',
+        schemaVersion: 1,
+        at: '2026-09-11T09:10:00.000Z',
+        stageId: 'stage-cool',
+        weightGrams: 108,
+        ph: null,
+        temperatureC: null,
+        relativeHumidityPercent: null,
+        note: 'good crumb',
+        image: null,
+      },
+    ]);
+    renderPage();
+    await goToSteps();
+
+    const card = screen.getByTestId('batch-cook-stage-card');
+    expect(card.getAttribute('data-status')).toBe('skipped');
+    expect(screen.getByTestId('batch-cook-stage-skipped').textContent).toContain('Skipped');
+    expect(screen.getByTestId('batch-cook-stage-reading').textContent).toContain('108 g');
+    // The plan-shaped lines are still gone: this restores the reading, it does not
+    // reopen the branch. Scoped to the card — the bulk stage above it is unskipped
+    // and still prints its window, correctly.
+    expect(screen.queryByTestId('batch-cook-stage-observational')).toBeNull();
+    expect(card.querySelector('[data-testid="batch-cook-stage-window"]')).toBeNull();
+  });
 });
 
 // ─── Timers (issue #1327, Phase 2) ───────────────────────────────────────────
