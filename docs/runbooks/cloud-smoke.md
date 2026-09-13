@@ -218,9 +218,47 @@ leftover is not prefixed is the far-future `mealPlans` / `shoppingDays` pair —
 - No journey mutates existing data. A probe that needed to would have to
   read-then-restore, or not ship.
 
-## Out of scope (issue #722)
+---
 
-Scheduling this (cron/CI) and emitting results to PostHog are both deliberately
-deferred — get it green on demand first. The service account is already
-reachable from CI via the existing deploy WIF, so scheduling later introduces no
-new secrets, but it will need the same tokenCreator grant on the CI principal.
+## What runs automatically (issue #1356)
+
+| When                                     | Where                                   | What runs                         |
+| ---------------------------------------- | --------------------------------------- | --------------------------------- |
+| Every merge to main that deploys staging | the `probe` job in `deploy-staging.yml` | `pnpm probe all --target staging` |
+
+The probe job `needs: deploy` and skips on the same `should_deploy` guard, so a
+docs-only merge shows it **skipped**, not failed — probing an environment
+nothing changed in proves nothing. It declares `environment: staging` because
+that is where `WIF_PROVIDER` / `WIF_SERVICE_ACCOUNT` live; staging carries no
+protection rules, so it never waits for a reviewer. A side effect worth knowing:
+the job records a GitHub deployment, so probe runs appear in the staging
+Environment's deployment history beside real deploys.
+
+**A red run is a signal, not a rollback.** Nothing is reverted, no workflow is
+blocked, and staging stays as deployed. Production is a deliberate promotion —
+publishing a GitHub Release, behind the `production` Environment's
+required-reviewer rule — so a red staging sweep is what Daniel sees _before_ he
+decides to promote. Whether it should ever become a hard block on that promotion
+is deliberately undecided, and is not to be introduced quietly as an
+implementation detail.
+
+The report JSON is uploaded as the `probe-staging-report` run artifact on both
+green and red, so a failure is triaged from the run without probing the
+environment a second time.
+
+**`--include-opt-in` does not appear in this job, and must not** — it runs
+because a pull request merged, many times a day, and the opt-in journeys
+generate a real image and send a real push each time. Today that is a
+convention held by this paragraph and the comment above the job; Phase 4 of
+#1356 makes it mechanical, with a test that scans `.github/workflows/` and
+fails if the flag appears under a merge trigger.
+
+## Out of scope
+
+Emitting probe results to PostHog stays deferred (it was deferred in #722 and
+again in #1356). The GitHub run is already the signal, and it is one green/red
+per deploy — not the high-volume data that earned the e2e flake telemetry in
+#669. **Revisit when:** the gate starts going red in ways nobody can
+characterise from the run log — an intermittent journey, a slow drift in settle
+times. That is the question telemetry would answer, and it earns its own issue
+then.

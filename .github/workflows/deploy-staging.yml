@@ -37,6 +37,12 @@ jobs:
     # Scopes WIF_PROVIDER / WIF_SERVICE_ACCOUNT to the staging GitHub Environment.
     environment: staging
 
+    # Promoted so the `probe` job below can skip itself on the same decision.
+    # A docs-only merge deploys nothing, so probing staging would exercise an
+    # environment nothing changed in.
+    outputs:
+      should_deploy: ${{ steps.guard.outputs.should_deploy }}
+
     steps:
       - uses: actions/checkout@v7
         with:
@@ -162,3 +168,81 @@ jobs:
       - name: Grant public invoker on client callables
         if: ${{ steps.guard.outputs.should_deploy == 'true' }}
         run: ./scripts/grant-callable-invokers.sh s2-stage-ccb22
+
+  # Exercise the environment the job above just deployed (issue #1356).
+  #
+  # This is the only thing anywhere that runs against a real deployed Salt:
+  # real Gemini, the deployed ruleset, real App Check, the bundle that actually
+  # shipped. It signs in as the stable probe identity, walks the free journeys
+  # and cleans up after itself.
+  #
+  # It is a SIGNAL, not a gate. A red run reverts nothing and blocks nothing —
+  # production is a deliberate promotion behind the `production` Environment's
+  # required reviewer, and this result is evidence put in front of that person.
+  #
+  # `--include-opt-in` must NEVER appear here. This job runs because someone
+  # merged a pull request, many times a day; the opt-in journeys generate real
+  # images and send real push notifications. They run on a chosen rhythm only
+  # (`probe-staging-weekly.yml`, and on a published release), and a guard test
+  # fails the build if that flag is ever added to a merge-triggered workflow.
+  probe:
+    name: Probe staging
+    needs: deploy
+    if: ${{ needs.deploy.outputs.should_deploy == 'true' }}
+    runs-on: ubuntu-latest
+    # Not decoration: WIF_PROVIDER / WIF_SERVICE_ACCOUNT are variables scoped to
+    # the staging Environment, so a job without this line cannot authenticate.
+    # staging carries no protection rules, so this never waits for a reviewer.
+    environment: staging
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The same commit the deploy built, so the probes match what is live.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          version: '10.33.0'
+
+      # Node 20 for the same reason the deploy job pins it, one level down:
+      # firebase-admin performs the same sts.googleapis.com WIF token exchange
+      # through google-auth-library, which throws "Premature close" under Node
+      # 22.23.0. See the setup-node comment in the deploy job above.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No new secret. ADC here IS the deploy credential — the probes sign both
+      # the user token and the App Check token through IAM on the project's
+      # Firebase Admin service account, so this principal needs
+      # roles/iam.serviceAccountTokenCreator on it (docs/runbooks/cloud-smoke.md
+      # → Preconditions). A missing grant fails with `signBlob denied`.
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: s2-stage-ccb22
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      # --silent keeps pnpm's own banner off stdout, so the redirect captures
+      # only the report JSON. Human-readable progress is on stderr and lands in
+      # the step log; the exit code is non-zero if any journey failed.
+      - name: Probe staging
+        run: pnpm --silent probe all --target staging > probe-staging.json
+
+      # Uploaded even on failure — the JSON names the failing step, its error
+      # and any teardown that leaked, so a red run is triaged without re-running
+      # it against the environment.
+      - name: Upload probe report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-staging-report
+          path: probe-staging.json
+          if-no-files-found: warn
