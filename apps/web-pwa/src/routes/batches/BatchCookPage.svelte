@@ -967,18 +967,23 @@
                     {/if}
 
                     {#if step.timer}
+                      <!-- Bound to a const so the two closures below carry the
+                         NARROWED timer. Svelte's `{#if}` narrowing does not reach
+                         inside a callback, and `step.timer` read in one is
+                         `StepTimerDoc | null` again (svelte-check, not tsc). -->
+                      {@const stepTimer = step.timer}
                       {#if stepTakesTimer(step.id)}
                         <!-- No stage on this step, so nothing else is timing it: the
                            recipe's own duration, one tap to start (issue #1327,
                            Phase 2). The pencil beside it is the other case — change
                            the name or the length first. -->
                         <CookStepTimer
-                          timer={step.timer}
+                          timer={stepTimer}
                           entry={timers.timerByStep.get(step.id)}
                           now={timers.now}
                           progressFor={timers.timerProgressFor}
-                          onStart={() => timers.startStepTimer(step, step.timer, i)}
-                          onAdjust={() => timers.openStepTimerSheet(step, step.timer, i)}
+                          onStart={() => timers.startStepTimer(step, stepTimer, i)}
+                          onAdjust={() => timers.openStepTimerSheet(step, stepTimer, i)}
                           onDismiss={timers.dismissTimer}
                         />
                       {:else}
@@ -989,7 +994,7 @@
                           class="text-sm text-muted-foreground"
                           data-testid="batch-cook-step-timer"
                         >
-                          The recipe says {step.timer.durationMinutes} min for this step.
+                          The recipe says {stepTimer.durationMinutes} min for this step.
                         </p>
                       {/if}
                     {/if}
