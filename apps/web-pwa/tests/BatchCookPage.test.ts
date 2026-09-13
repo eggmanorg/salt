@@ -37,6 +37,7 @@ const {
   mockBatch,
   mockObservations,
   mockRecipes,
+  mockIsLoadingRecipes,
   mockBreadGate,
   mockWakeLock,
   mockKitchenTimers,
@@ -48,6 +49,10 @@ const {
     mockBatch: makeStore<BatchDoc | null | undefined>(undefined),
     mockObservations: makeStore<BatchObservationDoc[] | undefined>([]),
     mockRecipes: makeStore<RecipeDoc[]>([]),
+    // A real store, not the constant `false` this file used to pass: the deck's
+    // deleted-versus-loading split (issue #1365) is read off this flag, so a test
+    // that cannot move it cannot tell the two apart either.
+    mockIsLoadingRecipes: makeStore<boolean>(false),
     mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
       enabled: true,
       settled: true,
@@ -70,7 +75,7 @@ vi.mock('../src/lib/productFormService.js', () => ({
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
   recipes: mockRecipes,
-  isLoadingRecipes: { subscribe: (f: (v: boolean) => void) => (f(false), () => {}) },
+  isLoadingRecipes: mockIsLoadingRecipes,
 }));
 vi.mock('../src/lib/wakeLock.js', () => ({
   isWakeLockSupported: vi.fn(() => true),
@@ -89,6 +94,7 @@ vi.mock('../src/lib/batchService.js', () => ({
   // `mockBatch._set` call left behind, concurrent writes included.
   getBatchSnapshot: vi.fn(() => mockBatch._get()),
   advanceStage: vi.fn(async (current: BatchDoc) => ({ kind: 'ok' as const, value: current })),
+  startStage: vi.fn(async (current: BatchDoc) => ({ kind: 'ok' as const, value: current })),
   setIngredientChecked: vi.fn(async (current: BatchDoc, id: string, checked: boolean) => {
     const ids = checked
       ? [...current.checkedIngredientIds, id]
@@ -129,9 +135,11 @@ vi.mock('../src/lib/featureGate.js', () => ({
   isFeatureEnabled: () => true,
 }));
 
+import { push } from 'svelte-spa-router';
 import BatchCookPage from '../src/routes/batches/BatchCookPage.svelte';
 import {
   advanceStage,
+  startStage,
   getBatchSnapshot,
   setIngredientChecked,
   setStepDone,
@@ -139,10 +147,12 @@ import {
 import { addToast } from '../src/lib/toastStore.js';
 
 const advanceMock = vi.mocked(advanceStage);
+const startMock = vi.mocked(startStage);
 const checkMock = vi.mocked(setIngredientChecked);
 const stepMock = vi.mocked(setStepDone);
 const snapshotMock = vi.mocked(getBatchSnapshot);
 const toastMock = vi.mocked(addToast);
+const pushMock = vi.mocked(push);
 
 const BATCH_ID = 'batch-1';
 const RECIPE_ID = 'recipe-1';
@@ -272,6 +282,7 @@ beforeEach(() => {
   mockBatch._set(makeBatch());
   mockObservations._set([]);
   mockRecipes._set([recipeWith()]);
+  mockIsLoadingRecipes._set(false);
   mockBreadGate._set({ enabled: true, settled: true });
   mockKitchenTimers._set(null);
   advanceMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
@@ -726,6 +737,130 @@ describe('a stage that cites no step', () => {
 
     expect(screen.getByTestId('batch-cook-stage-card').getAttribute('data-status')).toBe('skipped');
     expect(screen.queryByTestId('batch-cook-stage-done')).toBeNull();
+  });
+});
+
+describe('a skipped stage, on both surfaces', () => {
+  // Issue #1365, fault 1. `stageFacts` renders from two places — the step-less
+  // stage's own card and the band on the step a stage cites — so the window was
+  // stale on both. One guard covers both, and this test is the thing that says so:
+  // it skips one stage of each shape in a single run.
+  it('shows when it was skipped and why, never the window it was planned for', async () => {
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          // On step 3, so it renders as a BAND.
+          stage({ skipped: { at: '2026-09-11T07:05:00.000Z', note: 'proved overnight instead' } }),
+          // No step, so it renders as a CARD — and it keeps a duration, so it would
+          // print a window rather than falling into the observational branch.
+          stage({
+            id: 'stage-cool',
+            label: 'Cool the cobs',
+            stepId: null,
+            skipped: { at: '2026-09-11T09:05:00.000Z', note: '' },
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('batch-cook-stage-band').getAttribute('data-status')).toBe('skipped');
+    expect(screen.getByTestId('batch-cook-stage-card').getAttribute('data-status')).toBe('skipped');
+    expect(screen.queryAllByTestId('batch-cook-stage-window')).toHaveLength(0);
+    // And no countdown either: there is no end to count to for a stage that will
+    // never run, which is the same fact the window was asserting.
+    expect(screen.queryAllByTestId('batch-cook-stage-countdown')).toHaveLength(0);
+
+    const skipped = screen.getAllByTestId('batch-cook-stage-skipped');
+    expect(skipped).toHaveLength(2);
+    for (const line of skipped) expect(line.textContent).toContain('Skipped');
+    // The reason, where one was given — and nothing at all where it was not.
+    const notes = screen.getAllByTestId('batch-cook-stage-skipped-note');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.textContent).toContain('proved overnight instead');
+  });
+});
+
+describe('when the recipe behind the run has gone', () => {
+  // Issue #1365, fault 2. `recipe` is `null` both while the library loads and once
+  // the dish is deleted, and the deck used to say "Loading the method…" for both —
+  // forever, in the second case, because there is nothing left to load.
+  it('says the recipe was deleted, in the run’s words, with the way back to the batch', async () => {
+    mockRecipes._set([]);
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByText(/Loading/)).toBeNull();
+    const orphan = screen.getByTestId('cook-mode-orphan');
+    expect(orphan.textContent).toContain('This recipe was deleted');
+    // NOT the recipe-cook copy. There is no cook session on this page to close, and
+    // saying there is would contradict the feature's own design.
+    expect(orphan.textContent).not.toContain('cook session');
+
+    await fireEvent.click(screen.getByTestId('cook-mode-orphan-back'));
+    expect(pushMock).toHaveBeenCalledWith(`/batches/${BATCH_ID}`);
+  });
+
+  it('shows the spinner instead while the library is genuinely still loading', async () => {
+    mockRecipes._set([]);
+    mockIsLoadingRecipes._set(true);
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByTestId('cook-mode-orphan')).toBeNull();
+    expect(screen.getByText('Loading…')).toBeTruthy();
+  });
+});
+
+describe('a stage you have begun', () => {
+  // Issue #1365, fault 3. Started-without-done is a first-class state
+  // (`docs/formulas-schedules-batches.md`:237-239), and the deck could only say
+  // "finished" about a stage you had merely begun.
+  it('can be recorded as begun from the deck, on the same producer the batch page uses', async () => {
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-mark-started'));
+
+    await waitFor(() => expect(startMock).toHaveBeenCalledWith(expect.anything(), 'stage-cool'));
+    // Start is not a quiet Done: nothing is advanced and nothing is re-timed.
+    expect(advanceMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no Start once the stage is already under way — only the end is left to record', async () => {
+    mockBatch._set(
+      makeBatch({
+        stages: [
+          stage(),
+          stage({
+            id: 'stage-cool',
+            stepId: null,
+            duration: null,
+            actualStartAt: '2026-09-11T09:00:00.000Z',
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('batch-cook-stage-card').getAttribute('data-status')).toBe(
+      'inProgress',
+    );
+    expect(screen.queryByTestId('batch-cook-stage-mark-started')).toBeNull();
+    expect(screen.getByTestId('batch-cook-stage-done')).toBeTruthy();
+  });
+
+  it('says so when the start does not land, and leaves the cook where they were', async () => {
+    startMock.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-mark-started'));
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.any(String), 'destructive'));
   });
 });
 

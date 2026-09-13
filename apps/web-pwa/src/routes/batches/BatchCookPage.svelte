@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { onDestroy } from 'svelte';
+  import { push } from 'svelte-spa-router';
   import { flattenIngredients, progressOver, recipeChangedSince, stageStatus } from '@salt/domain';
   import type { BatchStageDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
@@ -10,6 +11,7 @@
     initBatchSync,
     getBatchSnapshot,
     advanceStage,
+    startStage,
     setIngredientChecked,
     setStepDone,
   } from '../../lib/batchService.js';
@@ -30,6 +32,7 @@
   import CookStepKit from '../recipes/CookStepKit.svelte';
   import CookStepDoneControls from '../recipes/CookStepDoneControls.svelte';
   import CookRecipeChangedBanner from '../recipes/CookRecipeChangedBanner.svelte';
+  import CookLoadingOrphan from '../recipes/CookLoadingOrphan.svelte';
   // The timer parts, reused exactly as the deck parts above are (issue #1327,
   // Phase 2). `createBatchTimers` widens each kitchen timer into the shape these
   // three already take — see its header for why that is a widening and not a cast.
@@ -377,6 +380,25 @@
     const result = await advanceStage(current, stageId);
     writing = false;
     if (result.kind !== 'ok') addToast("Couldn't mark that stage done. Try again.", 'destructive');
+  }
+
+  // STARTING a stage from the deck — the batch page's own Start, on the same
+  // producer, reached from here (issue #1365). Started-without-done is a first-class
+  // state, not a lesser Done: `docs/formulas-schedules-batches.md` :237-239 has it
+  // recording overlap without planning it, and until now the deck could only say
+  // "finished" about a stage you had merely begun.
+  //
+  // It does NOT take the `writing` lock, and that is deliberate rather than an
+  // omission. `withStageStarted` re-times nothing, so this is one whole-document
+  // write built from the freshest local snapshot — exactly the argument the note on
+  // `writing` above already makes for the weigh-out ticks. Putting it on the lock
+  // would have handed a third control to the offline hazard that same note
+  // describes. The two controls still on the lock are issue #1365's Phase 2.
+  async function markStageStarted(stageId: string): Promise<void> {
+    const current = run;
+    if (!current) return;
+    const result = await startStage(current, stageId);
+    if (result.kind !== 'ok') addToast("Couldn't start that stage. Try again.", 'destructive');
   }
 
   // ─── The clock ────────────────────────────────────────────────────────────────
@@ -750,10 +772,29 @@
           onwheel={deck.handleWheel}
           onkeydown={deck.handleKeyDown}
         >
-          {#if steps.length === 0}
+          {#if recipe === null}
+            <!-- STILL LOADING, OR GONE — and they are not the same sentence (issue
+               #1365). `recipe` is `null` for both, so this used to read "Loading the
+               method…" forever for a run whose dish had been deleted. The split is
+               the recipe store's own loading flag, which `CookLoadingOrphan` already
+               owns for the two recipe cook screens; what is batch-specific is only
+               the words and the way out, which it now takes as props.
+
+               The copy says NOTHING about a session being closed: there is no cook
+               session here (see the header), the run is untouched by the deletion,
+               and the way out is the run itself. -->
+            <div class="flex h-full flex-col">
+              <CookLoadingOrphan
+                deletedTitle="This recipe was deleted"
+                deletedDescription="The method lived on the recipe, which no longer exists. The run itself is fine — its grams, stages and readings are all on the batch."
+                backLabel="Back to the batch"
+                onBack={() => push(`/batches/${batchId}`)}
+              />
+            </div>
+          {:else if steps.length === 0}
             <div class="flex h-full flex-col items-center justify-center p-6">
               <EmptyState
-                title={recipe === null ? 'Loading the method…' : 'This recipe has no steps'}
+                title="This recipe has no steps"
                 description="The stages are still on the batch page."
               />
             </div>
@@ -784,7 +825,20 @@
                 </div>
                 {@render stageFacts(stageDoc)}
                 {#if status === 'notStarted' || status === 'inProgress'}
-                  <div>
+                  <!-- MARK DONE LEADS, START FOLLOWS — `BatchDetailPage.svelte`
+                     :726-757's pairing for the stage in hand, which on this screen is
+                     every stage card there is. The batch page reads a whole list at
+                     once and can tell the stage in hand from one further down the
+                     queue (`isCurrent`); the deck pages through the method one card
+                     at a time, so the card under the thumb IS the one in hand and
+                     there is no second case to distinguish. That is the boundary of
+                     the mirroring, stated rather than implied: this renders the
+                     sibling's current-stage shape on every card, and deliberately
+                     does not import its `isCurrent` split.
+
+                     Start appears only while the stage has not begun — once it has,
+                     there is nothing left to record but the end. -->
+                  <div class="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       onclick={() => void markStageDone(stageDoc.id)}
@@ -794,6 +848,17 @@
                       {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
                       Mark done
                     </Button>
+                    {#if status === 'notStarted'}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onclick={() => void markStageStarted(stageDoc.id)}
+                        data-testid="batch-cook-stage-mark-started"
+                      >
+                        {#snippet leading()}<Icon name="Play" size={16} />{/snippet}
+                        Start
+                      </Button>
+                    {/if}
                   </div>
                 {/if}
               </section>
@@ -803,7 +868,26 @@
               {@const status = stageStatus(stageDoc)}
               {@const stated = formatStatedDuration(stageDoc.duration)}
               <div class="flex flex-col gap-1 text-sm">
-                {#if isObservational(stageDoc)}
+                {#if stageDoc.skipped !== null}
+                  {@const skip = stageDoc.skipped}
+                  <!-- A SKIPPED STAGE SHOWS WHAT HAPPENED, NOT WHAT WAS PLANNED —
+                     `BatchDetailPage.svelte:602-615` word for word, because the deck
+                     and the batch page must not tell two stories about one bake
+                     (issue #1365). Its `plannedStartAt`/`plannedEndAt` are still on
+                     the document deliberately (`docs/formulas-schedules-batches.md`
+                     :236-238 — a skip leaves them alone), and they are now
+                     meaningless, so they are not rendered. This branch leads, so it
+                     also takes the observational stage below it and the wait-stage
+                     countdown out: there is nothing to count down to for a stage that
+                     will never run. `stageFacts` renders on both the stage card and
+                     the step band, so one guard covers both surfaces. -->
+                  <span class="text-muted-foreground" data-testid="batch-cook-stage-skipped">
+                    Skipped {formatWhen(skip.at)}
+                  </span>
+                  {#if skip.note !== ''}
+                    <span data-testid="batch-cook-stage-skipped-note">{skip.note}</span>
+                  {/if}
+                {:else if isObservational(stageDoc)}
                   <span class="text-muted-foreground" data-testid="batch-cook-stage-observational">
                     No fixed time — mark it done when it's ready.
                   </span>

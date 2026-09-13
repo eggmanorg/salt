@@ -9,12 +9,33 @@
   // `cook-mode-orphan` and `cook-mode-orphan-back` are the SAME ids in both pages,
   // which is what the e2e orphan journey selects on.
   //
-  // No props. The distinction it draws is the recipe store's own loading flag, and
-  // the way out is the recipe list — neither is a per-mode fact, so neither is
-  // something a caller could pass differently. The caller owns only the decision to
-  // render it at all (`recipe === null`), which is where the two pages diverge:
-  // plain cook mode falls straight through to the cook, guided has its plan states
-  // to consider first.
+  // THE REUSABLE PART IS THE SPLIT, NOT THE WORDS (issue #1365). The distinction it
+  // draws — still loading versus genuinely gone — is the recipe store's own loading
+  // flag, and is the same question on every screen that reads a recipe live. The
+  // sentence it says once that settles is not: `/batches/:id/cook` reads the method
+  // live too, but it has no cook session to close (its header says so outright) and
+  // the way out of a run is the run, not the recipe list.
+  //
+  // So the deleted state's title, description and way back are props, DEFAULTING to
+  // the recipe-cook copy the two original callers already shipped. Those two pass
+  // nothing, which is why their output is unchanged and the e2e orphan journey keeps
+  // selecting `cook-mode-orphan` / `cook-mode-orphan-back` — the same ids on every
+  // caller, deliberately, because it is the same screen.
+  //
+  // The caller still owns the decision to render it at all (`recipe === null`),
+  // which is where the pages diverge: plain cook mode falls straight through to the
+  // cook, guided has its plan states to consider first.
+  let {
+    deletedTitle = 'This recipe was deleted',
+    deletedDescription = 'The recipe you were cooking no longer exists, so this cook session has been closed.',
+    backLabel = 'Back to recipes',
+    onBack = () => push('/recipes'),
+  }: {
+    deletedTitle?: string;
+    deletedDescription?: string;
+    backLabel?: string;
+    onBack?: () => void;
+  } = $props();
 </script>
 
 <div class="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
@@ -28,18 +49,14 @@
          `cook-mode-orphan` rides the primitive's `...rest` onto the panel, so it
          now wraps the icon and the button as well as the words. -->
     <ErrorState
-      title="This recipe was deleted"
-      description="The recipe you were cooking no longer exists, so this cook session has been closed."
+      title={deletedTitle}
+      description={deletedDescription}
       data-testid="cook-mode-orphan"
     >
       {#snippet actions()}
-        <Button
-          variant="outline"
-          onclick={() => push('/recipes')}
-          data-testid="cook-mode-orphan-back"
-        >
+        <Button variant="outline" onclick={onBack} data-testid="cook-mode-orphan-back">
           {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
-          Back to recipes
+          {backLabel}
         </Button>
       {/snippet}
     </ErrorState>
