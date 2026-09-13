@@ -163,11 +163,20 @@
     // `rounding.ts` is emphatic that the exact float travels beside every rounded
     // gram, and this is that rule applied to a box: `solveFormula` hands back both,
     // the box shows `grams` because that is what a scale can weigh, and the maths
-    // keeps reading `exactGrams`. Carrying it is what makes the restate EXACT
-    // rather than merely close — the percentages come back identical instead of
-    // drifting by the per-row rounding, so a repeated commit cannot creep and a
-    // stored formula re-saves byte-identical. Cleared the moment the box is typed
-    // into, because then the text is the truth again.
+    // keeps reading `exactGrams`. Carrying it is what keeps the per-row GRAM
+    // rounding out of the restate, so the percentages come back identical instead
+    // of drifting by half a gram's worth on each pass. Cleared the moment the box
+    // is typed into, because then the text is the truth again.
+    //
+    // IT IS HALF OF WHAT MAKES A REPEATED COMMIT IDEMPOTENT, not all of it. The
+    // other half is in `deriveFormula`: a basis whose members' percentages are
+    // merely rounded sums to 99.9999, and carrying gram precision does nothing
+    // about that — every non-basis percentage still crept a ten-thousandth of a
+    // point per commit until #1364 reconciled the basis to 100. The claim is
+    // pinned over a multi-member basis in
+    // `packages/domain/tests/formula/basisRoundTrip.test.ts`; the single-flour
+    // cases in `FormulaPage.yieldWins.test.ts` cannot see it, which is why that
+    // file gained a three-flour one.
     exactGrams: number | null;
     included: boolean;
     inBasis: boolean;

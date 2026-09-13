@@ -16,12 +16,20 @@ import type { Formula } from '@salt/domain/schemas';
 //      rounded total) and it is invisible rather than fixed: the card prints the
 //      declaration and no box sum, so there are never two totals to disagree.
 //   2. PROPORTIONS. A restate does not move the percentages. Exactly, not merely
-//      within rounding — `Row.exactGrams` carries `solveFormula`'s unrounded
-//      figure beside the rounded one the box shows, so the next derive sees what
-//      the solve produced rather than what a scale could read off it.
+//      within rounding, and it takes TWO things rather than one. `Row.exactGrams`
+//      carries `solveFormula`'s unrounded figure beside the rounded one the box
+//      shows, so the next derive sees what the solve produced rather than what a
+//      scale could read off it — and `deriveFormula` reconciles the basis to 100
+//      instead of letting it round to 99.9999, so the basis the percentages are
+//      measured against is the same size on every pass (issue #1364).
 //   3. IDEMPOTENCE. Committing again at an unchanged declaration moves nothing,
 //      which is what stops repeated commits creeping the figures. It follows from
 //      (2): identical percentages at an identical yield solve to identical grams.
+//      NOTE WHICH FIXTURE PROVES WHAT. `LOAF` has one basis member, so its basis
+//      is 100% exactly and creep is arithmetically impossible on it — the cases
+//      below using it are true, and were true even while the code was broken.
+//      Only the three-flour case can fail, and it did — #1325 shipped the creep
+//      behind a green pin that could not see it.
 //   4. ONE TOTAL. No box sum renders beside a declaration, and the re-anchoring
 //      note is gone from the screen.
 //   5. ONE NUMBER. What the card prints, what the weights are solved at and what
@@ -111,6 +119,33 @@ function overnightTin(): Recipe {
   };
 }
 
+// The same loaf with the flour split three ways — 200 g each, 420 g water — which
+// is the shape the single-flour `LOAF` above cannot test (issue #1364). Each
+// flour rounds to 33.3333% of a basis that used to sum to 99.9999, and everything
+// measured against that basis crept upward on every commit. All three lines say
+// "flour", so `guessBasisIngredientIds` puts all three in the basis with no taps.
+const THREE_FLOUR_LOAF: IngredientSpec[] = [
+  { id: 'ing-white', rawText: '200 g strong white flour', canonId: 'canon-flour', grams: 200 },
+  {
+    id: 'ing-wholemeal',
+    rawText: '200 g wholemeal flour',
+    canonId: 'canon-wholemeal',
+    grams: 200,
+  },
+  { id: 'ing-rye-flour', rawText: '200 g rye flour', canonId: 'canon-rye', grams: 200 },
+  { id: 'ing-water', rawText: '420 g water', canonId: 'canon-water', grams: 420 },
+];
+
+function threeFlourLoaf(): Recipe {
+  return {
+    ...emptyRecipe(RECIPE_ID, WRITTEN_AT),
+    title: 'Three-flour tin',
+    ingredients: [{ ...emptyIngredientGroup('grp-1'), items: THREE_FLOUR_LOAF.map(weighed) }],
+    steps: [newStep('step-1', 'Mix.')],
+    updatedAt: WRITTEN_AT,
+  };
+}
+
 function canon(id: string, name: string): CanonItem {
   return {
     embedding: null,
@@ -128,6 +163,8 @@ function canon(id: string, name: string): CanonItem {
 
 const CANON = [
   canon('canon-flour', 'strong white flour'),
+  canon('canon-wholemeal', 'wholemeal flour'),
+  canon('canon-rye', 'rye flour'),
   canon('canon-water', 'water'),
   canon('canon-salt', 'salt'),
   canon('canon-yeast', 'instant yeast'),
@@ -356,6 +393,57 @@ describe('FormulaPage — the declared yield wins', () => {
 
     expect(weights(container)).toEqual(settled);
     expect(percents(container)).toEqual(['100%', '70%', '2%', '1.4%']);
+  });
+
+  // ─── Claim 3, on a basis the arithmetic can actually break (issue #1364) ────
+  //
+  // The case above is the one this page shipped with, and it cannot fail. `LOAF`
+  // has a single basis member, so the basis is 100% exactly, the divisor every
+  // other percentage is measured against is exactly 1, and creep is arithmetically
+  // impossible. Three flours are not exotic — they are an ordinary loaf — and
+  // there each member rounds to 33.3333, the basis summed to 99.9999, and every
+  // percentage outside it grew by a ten-thousandth of a point on every commit,
+  // stored and cumulative across sessions.
+  //
+  // The domain-level pin is `packages/domain/tests/formula/basisRoundTrip.test.ts`.
+  // This is the same claim asserted through the page, because it is the page that
+  // performs the round trip.
+  it('moves nothing on a three-flour basis either, where the arithmetic can drift', async () => {
+    mockRecipes._set([threeFlourLoaf()]);
+    const { getByTestId, container } = renderPage();
+    await ready(getByTestId);
+
+    // All three flours guessed into the basis, water out of it.
+    expect(basisBoxes(container).map((box) => box.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'true',
+      'true',
+      'false',
+    ]);
+
+    await declareTin(container, 900);
+    await waitFor(() => expect(weights(container)[0]).toBe('176'));
+    const settled = weights(container);
+
+    // The same three commit routes as the single-flour case.
+    await declareTin(container, 900);
+    await fireEvent.blur(getByTestId('formula-grams-each'));
+    await fireEvent.blur(getByTestId('formula-count'));
+
+    expect(weights(container)).toEqual(settled);
+
+    // And in the document, at the four decimals it is stored at — the screen's one
+    // decimal is two orders too coarse to see this drift, so asserting the printed
+    // figure would pass either way. The residual ten-thousandth sits on the first
+    // flour; the water is 70 on the fourth commit exactly as on the first.
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveFormula).mock.calls[0]![0].components).toEqual([
+      { ingredientId: 'ing-white', percent: 33.3334, inBasis: true },
+      { ingredientId: 'ing-wholemeal', percent: 33.3333, inBasis: true },
+      { ingredientId: 'ing-rye-flour', percent: 33.3333, inBasis: true },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false },
+    ]);
   });
 
   // ─── Claim 4: one total on screen ───────────────────────────────────────────

@@ -66,6 +66,18 @@ The basis is itself a small formula (70% strong white / 30% wholemeal;
 80% cabbage / 15% carrot / 5% fennel), and that second tier is what lets one
 model cover all three. A cure is the degenerate case: one basis member at 100%.
 
+**A derived basis is reconciled to 100, not merely rounded** (issue #1364). Three
+equal flours round to 33.3333% apiece and sum to 99.9999, so everything measured
+against that basis is measured against slightly less than the 100% it is meant to
+be — and because the formula screen re-derives and re-solves on every commit, the
+error compounds without bound. `deriveFormula` therefore hands the rounding
+residual to one basis member by largest remainder, which makes the round trip a
+fixed point. The cost is that one member's stored figure depends on its
+neighbours, which `rounding.ts` refuses to do for **grams**; the argument there is
+about a number someone weighs, and this is a ten-thousandth of a percentage point
+nobody does. `solveFormula` keeps forgiving an unnormalised basis regardless — a
+formula stored before this, or edited by hand, must still resolve.
+
 Yield solving hangs off it, and **must be bidirectional from the start**:
 
 - **Target-driven** (bread): "12 × 120 g" → 1 440 g dough →
