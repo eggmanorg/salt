@@ -1,5 +1,5 @@
 ---
-description: Adversarially review one green PR for the defects CI structurally cannot see, rank them by impact and size, and post them as a single PR comment. Fixes them before merge by default; files a follow-up only when fixing would bloat the PR.
+description: Adversarially review one green PR for the defects CI structurally cannot see, rank them by impact and size, and post them as a single PR review. Fixes them before merge by default; files a follow-up only when fixing would bloat the PR.
 argument-hint: <pr number | url | branch>
 disable-model-invocation: true
 model: opus
@@ -18,10 +18,10 @@ This runs **once**. There is no second pass over your own fixes: a reviewer aske
 ## Standing rules
 
 - **CLAUDE.md is binding** — layer map, hard rules, data model, Zod and observability conventions. It is also the standard you review against.
-- **Read-only until the findings are posted.** Do not edit, do not run a formatter, do not "just fix that while I'm here". A reviewer holding a pencil stops reviewing and starts tidying, and the tidying is what buries the one real finding. Fixing is step 8, after the comment exists.
+- **Read-only until the findings are posted.** Do not edit, do not run a formatter, do not "just fix that while I'm here". A reviewer holding a pencil stops reviewing and starts tidying, and the tidying is what buries the one real finding. Fixing is step 8, after the review exists.
 - **`gh` traps.** Every `gh` call needs the sandbox disabled. Plain `gh pr view` / `gh issue view` exit 0 with **empty stdout** in this harness — use the `--json` forms or `gh api`, and treat empty output as a failed fetch, never as "no comments" or "no checks".
 - **Never open a shell command with `cd`, or with a variable assignment.** Use `git -C <path>` and absolute paths. The permission allowlist matches whole command strings, so `cd x && cat y` matches none of the entries that would have let each part through.
-- **Report to Daniel in the shape CLAUDE.md sets** — his decision first, in bold; two or three plain sentences; nothing else. The findings live in the PR comment. The chat reply links it and moves on.
+- **Report to Daniel in the shape CLAUDE.md sets** — his decision first, in bold; two or three plain sentences; nothing else. The findings live in the PR review. The chat reply links it and moves on.
 
 ---
 
@@ -45,7 +45,7 @@ Three required contexts, all from `ci.yml`: `Lint, typecheck, test, boundary`, `
   gh run view <run-id> --json jobs --jq '.jobs[] | select(.name | test("E2E|integration")) | "\(.name): \(.conclusion)"'
   ```
 
-  `skipped` with every changed file under `docs/`, `*.md`, `LICENSE`, `.github/`, `.claude/`, `.vscode/` or the meta dotfiles → correct, and this PR simply has no runtime signal. Carry on, and say so in the comment. `skipped` with app code in the diff → the branch is behind `origin/main` (`mergeStateStatus: BEHIND` confirms it in one read). Stop: **"the heavy suites did not run — update the branch and re-run `/salt-review`."** That is a state report, not an investigation; do not go further.
+  `skipped` with every changed file under `docs/`, `*.md`, `LICENSE`, `.github/`, `.claude/`, `.vscode/` or the meta dotfiles → correct, and this PR simply has no runtime signal. Carry on, and say so in the review. `skipped` with app code in the diff → the branch is behind `origin/main` (`mergeStateStatus: BEHIND` confirms it in one read). Stop: **"the heavy suites did not run — update the branch and re-run `/salt-review`."** That is a state report, not an investigation; do not go further.
 
 Then take the head SHA. Before you post at step 7, read it again — if it moved, a push landed mid-review and your findings are against a diff that no longer exists. Say so and stop rather than posting them.
 
@@ -90,13 +90,13 @@ In this order. The first two are where real defects live and where nearly all yo
 
 ## 5. The bar a finding has to clear
 
-**Write the failure scenario before you write the finding.** One sentence, concrete: _given this input or state, this code does this wrong thing, and here is who notices._ If you cannot write that sentence, you do not have a finding — you have a preference, and it does not go in the comment. This is the whole anti-nitpick mechanism, and it works because it is a test you either pass or fail rather than an instruction to be tasteful.
+**Write the failure scenario before you write the finding.** One sentence, concrete: _given this input or state, this code does this wrong thing, and here is who notices._ If you cannot write that sentence, you do not have a finding — you have a preference, and it does not go in the review. This is the whole anti-nitpick mechanism, and it works because it is a test you either pass or fail rather than an instruction to be tasteful.
 
 Never a finding, whatever the reasoning around it: naming, file layout, comment wording, a suggested extraction or helper, "consider", "might be worth", "for consistency", "could be simplified", a defensive check for a state the types exclude, an alternative you would have written instead, or a risk you can only describe as theoretical.
 
 **Calibrate.** These PRs arrive green, scoped by an issue, and usually built by `/salt-run` against a spec. **Zero findings is the common case and the correct output.** One or two is normal. Six means your bar slipped, not that the PR is bad — go back and delete every line that cannot carry a failure scenario. The pull toward writing _something_ because you were asked to review is the failure mode this command exists to resist, and it is strongest exactly when the PR is clean.
 
-If the honest answer is that you found nothing, the comment is three lines saying so. That is a good review, not a failed one.
+If the honest answer is that you found nothing, the review is the empty-section form at step 7. That is a good review, not a failed one.
 
 ## 6. Rank: impact × size
 
@@ -115,21 +115,32 @@ Then the disposition falls out, and there are only three:
 
 **Fix before merge is the preference, and the bar for departing from it is real bloat**, not mere size: the fix pulls in files outside this PR's footprint, or it needs a design decision that would turn a reviewed PR into an unreviewed one. Sizing the diff back is Daniel's call, not yours to take by filing. Every finding is ranked most-severe first: material before immaterial, and within each, blocking failure modes before latent ones.
 
-## 7. Post exactly one comment
+## 7. Post exactly one review
 
 ```
-gh pr comment <pr> --body-file <file>
+gh pr review <pr> --comment --body-file <file>
 ```
 
-Findings ranked, most severe first, each one: the failure scenario, then the file and line, then the fix in a sentence. Mark each `Fix before merge` or `Proposed follow-up`. Note a heavy-suite skip if step 1 found a legitimate one, so the record says what was and was not exercised.
+**A review, not a comment, and the two are not interchangeable here.** The merge gate — `scripts/lib/prEligibility.mjs`, behind `node scripts/campaign-land.mjs <pr> --check` and the `gh pr merge` PreToolUse hook — reads `gh pr view --json reviews` and denies a PR with none. A `gh pr comment` body is an _issue_ comment: it never appears there, so a PR reviewed that way reads as unreviewed and cannot be merged. #1351 is the symptom to recognise — the findings had to be reposted by hand as a review before the branch would land.
+
+The same gate parses the body, so the two headings below are literal and always both present, even when a section is empty. `## Blocking` naming nothing is what tells the gate this PR is clear; omit the heading and the verdict is `ask`, which stops the merge on a prompt just as a denial would.
+
+- **`## Blocking`** — everything dispositioned `Fix before merge` at step 6. Step 8 fixes them and pushes, and the later commit is what clears them.
+- **`## Should-fix`** — everything dispositioned `Proposed follow-up`.
+
+Findings ranked within each section, most severe first, each one: the failure scenario, then the file and line, then the fix in a sentence. Note a heavy-suite skip if step 1 found a legitimate one, so the record says what was and was not exercised.
 
 Write **only findings**. No summary of what the PR does, no restatement of the phases, no "what I verified and found sound" section — Daniel and the author both already know, and a verification list is the most common disguise a nitpick wears. Nothing found is:
 
 ```
-## Review — no findings
+## Blocking
 
-Read for correctness, architectural intent, semantic duplication and test gaps.
-Nothing found that CI does not already cover.
+None. Read for correctness, architectural intent, semantic duplication and test
+gaps; nothing found that CI does not already cover.
+
+## Should-fix
+
+None.
 ```
 
 ## 8. Fix, then report
@@ -146,6 +157,6 @@ then, on the report `test:coverage` just wrote: `pnpm coverage:files:check` · `
 
 Then report, in CLAUDE.md's shape:
 
-- **Nothing found** → "**Nothing needed from you** — nothing found beyond what CI covers." and the comment link. That is the whole reply.
+- **Nothing found** → "**Nothing needed from you** — nothing found beyond what CI covers." and the review link. That is the whole reply.
 - **Fixed** → what the defect would have done to someone using the app, in one or two plain sentences, then the link. Not a list of the fixes.
 - **A follow-up proposed** → the question is the whole reply: what the finding costs if left, and what fixing it now would cost the PR.
