@@ -428,6 +428,40 @@ approval-gated deploy finishing, more can land on main; marking those live would
 be a lie the board tells about production. Hence the per-issue ancestry test, and
 hence `fetch-depth: 0` on that job.
 
+### Which closes go through a PR, and which do not
+
+`check` fails a closed issue that never reached `Merged`, because either it shipped
+without the `Closes #N` that moves it or it has no business on the board any more.
+Several kinds of issue legitimately never go near a PR, though, and for weeks the
+rule could not tell them apart — eleven of its twelve failures were that one blind
+spot, which is the same as having no check at all.
+
+What `closedItemVerdict` decides, and why each way:
+
+| Closed issue                                 | `check` says | Because                                                                                     |
+| -------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- |
+| at `Merged`                                  | nothing      | it shipped and must stay — `board.mjs release` walks exactly this set                       |
+| at `Released`                                | a note       | live; safe to take off the board whenever you like                                          |
+| `campaign:` ledger, not at a shipping status | **fails**    | it has no PR but it _does_ ship; set it from its run-set, or `release` promotes it          |
+| `epic:`, `campaign follow-ups:`, `question(` | a note       | these close by hand — children done, boxes ticked, question answered. No PR was ever coming |
+| anything else, not at a shipping status      | **fails**    | a mechanism is broken: an automated move was missed, or the issue should be off the board   |
+
+The three hand-closed kinds are a **title** test — `isHandClosed` in
+`scripts/lib/boardTitles.mjs`, beside `isEpicTitle` and deliberately separate from
+`isLedger`. Two things about that separation are load-bearing and neither is
+optional:
+
+- **`isLedger` must not widen to reach `campaign follow-ups:`.** It also gates the
+  untriaged-`Queue` rule, so the day it matches is the day the kind of issue agents
+  file most often stops being triaged. A unit test asserts it still does not match.
+- **A note, not silence.** An exemption that printed nothing would recreate the
+  problem the ledger correction fixed in the other direction: closed items piling
+  up at no `Status`, filling the Workflow view with cards nobody can account for.
+  The note says what to set and how.
+
+A failure here always means code or automation has to change. Anything a person
+could simply tidy up is a note — that is what keeps the exit code worth reading.
+
 ---
 
 ## Writing the board from somewhere without `gh`

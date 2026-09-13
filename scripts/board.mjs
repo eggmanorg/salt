@@ -64,6 +64,7 @@
 
 import { execFileSync } from 'node:child_process';
 
+import { closedItemVerdict } from './lib/boardClosedState.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -505,36 +506,16 @@ function cmdCheck(project) {
     }
   }
 
-  // A closed issue is NOT by itself stale. An issue closes the moment its PR
-  // merges, and it then has to STAY on the board at `Merged` — that is exactly
-  // the set `board.mjs release` walks to find what a production deploy made
-  // live. What is wrong is a closed issue that never reached the merge states:
-  // either it was closed without shipping (won't-fix, duplicate) and belongs
-  // off the board, or a PR closed it without the `Closes #N` that moves it, and
-  // the automation is quietly missing work.
-  //
-  // A LEDGER IS IN THIS RULE, and used to be out of it (2026-09-12). The exemption a
-  // ledger carries is QUEUE AND CLASS — it is not work and must not sit in a
-  // work queue — and extending that to Status bought nothing while costing the
-  // only check that could see the problem: 19 closed ledgers accumulated at no
-  // Status, one per campaign ever run, showing up on the Workflow board as a
-  // column of cards nobody could account for. A ledger closes when its campaign
-  // finishes, and what a finished campaign means is that its work merged.
-  const SHIPPING = new Set(['Merged', 'Released']);
+  // The closed-at-a-shipping-status rule lives in `closedItemVerdict` — read its
+  // header for what each outcome means and why the note/failure line is drawn
+  // where it is. It is a pure function of the item so that every branch is
+  // covered by a test rather than by whatever the live board happens to hold
+  // today.
   for (const item of items) {
     if (item.state !== 'CLOSED') continue;
-    if (item.status === 'Released') {
-      console.log(`  note: #${item.number} is Released — safe to remove from the board`);
-    } else if (!SHIPPING.has(item.status)) {
-      // The remedy differs for a ledger: it has no PR, so nothing automated
-      // will ever move it. Its Status comes from the work its title names, and
-      // `release` promotes it once all of that work is live.
-      failures.push(
-        isLedger(item.title)
-          ? `#${item.number} is a closed campaign ledger at Status="${item.status ?? 'unset'}" — a ledger has no PR, so set it by hand from its run-set: \`board.mjs set ${item.number} --status Merged\` (or Released if every issue its title names is already Released)`
-          : `#${item.number} is closed at Status="${item.status ?? 'unset'}" — it never reached Merged, so either it was closed without shipping (remove it) or its PR had no "Closes #${item.number}"`,
-      );
-    }
+    const verdict = closedItemVerdict(item);
+    if (verdict.level === 'failure') failures.push(verdict.message);
+    else if (verdict.level === 'note') console.log(`  note: ${verdict.message}`);
   }
 
   // An epic is a container, not a work unit: it sits in the `Epic` band so it
