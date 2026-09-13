@@ -108,8 +108,11 @@ and "what this makes" says _how much of it there is_ — so committing either on
 re-solves the whole list through `solveFormula` at the declared yield, and the
 screen can never state two totals that disagree. Declaring a 900 g tin on a recipe
 whose ingredients come to 867 g moves 500 g of flour to 519 g; the percentages do
-not move at all, because the unrounded solved figure is carried beside the rounded
-one the box shows. The commit is a blur, a chip or a mode change and never a
+not move at all — not for one reason but two: the unrounded solved figure is
+carried beside the rounded one the box shows, and `deriveFormula` reconciles the
+basis to 100 instead of letting it round to 99.9999, so the basis the percentages
+are measured against is the same size on every pass (issue #1364). The commit is a
+blur, a chip or a mode change and never a
 reactive edge — every yield box fires per keystroke, and "100" passes through 1
 and 10 on the way in. Each weight that no longer matches the recipe carries a
 muted line saying what the recipe itself said; there is no confirmation and no

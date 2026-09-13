@@ -136,7 +136,7 @@ function componentsAgainst(
 /**
  * Derive a formula from grams. Pure; no clock, no I/O, no throw.
  *
- * The basis members' percentages are reconciled to 100 (see `reconciledToHundred`
+ * The basis members' percentages are reconciled to 100 (see `reconciledBasisPercents`
  * above) rather than left to round where they fall, so a derived formula is
  * always solvable by `solveFormula`. It only becomes unnormalised once a human
  * edits it, which is the case `BASIS_PERCENT_TOLERANCE` exists to forgive.
