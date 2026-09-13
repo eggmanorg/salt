@@ -122,14 +122,15 @@ repeatedly against a **prod-restored** environment.
 
 ## What each journey covers
 
-| Journey                 | Domain     | Covers                                                                                                                 | Notes                                                                                   |
-| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `auth-rules`            | `auth`     | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                          | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
-| `mealplan-shopday`      | `planner`  | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned | Free. Writes a far-future week.                                                         |
-| `recipe-canon-shopping` | `shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`             | Real Gemini (embeddings, sometimes arbitration).                                        |
-| `chef-chat`             | `chat`     | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                 | Real Gemini, text only.                                                                 |
-| `canon-icon`            | `canon`    | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`             | **Opt-in** — generates a pictogram with a real image model.                             |
-| `cook-timer`            | `cooking`  | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger   | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
+| Journey                 | Domain     | Covers                                                                                                                   | Notes                                                                                   |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `auth-rules`            | `auth`     | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                            | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
+| `mealplan-shopday`      | `planner`  | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned   | Free. Writes a far-future week.                                                         |
+| `recipe-canon-shopping` | `shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`               | Real Gemini (embeddings, sometimes arbitration).                                        |
+| `chef-chat`             | `chat`     | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                   | Real Gemini, text only.                                                                 |
+| `canon-icon`            | `canon`    | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`               | **Opt-in** — generates a pictogram with a real image model.                             |
+| `cook-timer`            | `cooking`  | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger     | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
+| `recipe-import`         | `recipes`  | `extractRecipeFromPhoto` with a real page image → server-side persist into `recipes/{serverId}` → `onRecipeWritten` hero | **Opt-in** — the imported recipe costs one generated hero image.                        |
 
 An opt-in journey is excluded from `all` unless `--include-opt-in`, and always
 runs when named explicitly. Naming it _is_ the opt-in.
@@ -207,14 +208,46 @@ leftover is not prefixed is the far-future `mealPlans` / `shoppingDays` pair —
 
 **Never delete anything untagged.** Dev and staging hold prod-restored data.
 
+The other unprefixed case is `recipe-import`: `extractRecipeFromPhoto` persists
+under a **server-generated** id, so the recipe and its hero object are removed
+via `ctx.trackCreated` / `ctx.trackStorageObject` and named in `adoptedDocs`.
+
+### The `recipe-import` fixture
+
+`probes/assets/recipe-page.webp` is a page **we wrote** — an invented recipe in
+an invented book — rendered from `probes/assets/recipe-page.html`, which is
+committed beside it so the provenance is checkable rather than asserted. It is
+not a photograph of a published cookbook, and a replacement must not be either.
+Regenerate the image from the HTML at 1240×1754 if the fixture ever needs to
+change.
+
+URL import (`extractRecipeFromUrl`) is deliberately **not** covered. It would
+need a stable recipe page on a site we do not control — exactly the hardcoded
+external expectation that rotted
+[product-forms-staging-validation.md](product-forms-staging-validation.md). The
+option, if it is ever wanted: serve a fixture page from the environment's own
+Hosting origin, which means shipping a fixture into the deployed app — a trade
+worth making deliberately rather than in passing.
+
 ---
 
 ## Cost and side effects
 
 - The default sweep spends a handful of embedding and text calls. It is cheap
   enough to run on demand, repeatedly.
-- `canon-icon` generates one image per run. `cook-timer` sends one real push.
-  Both are opt-in for that reason.
+- `canon-icon` generates one pictogram per run, `recipe-import` one recipe hero,
+  and `cook-timer` sends one real push. All three are opt-in for that reason.
+- **`recipe-import` cannot be made cheaper without changing product code, and
+  must not be.** Every import path lands the recipe with `image: null`, and
+  `onRecipeWritten` generates a hero on create with a null image. There is no
+  per-document opt-out; the only switch is the per-environment
+  `devSettings/singleton.recipeImageGenerationEnabled`, which does not exist in
+  staging. Adding a suppression field to product code to make a probe cheaper
+  would be the tail wagging the dog.
+- `recipe-import` waits for that hero before it finishes, and the wait is not
+  decoration: the trigger writes a Storage object and a doc field long after the
+  import returns, so tearing down early would leak the object and write to a
+  document that no longer exists.
 - No journey mutates existing data. A probe that needed to would have to
   read-then-restore, or not ship.
 

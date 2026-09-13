@@ -6,6 +6,7 @@ import { chefChat } from './chef-chat.js';
 import { cookTimer } from './cook-timer.js';
 import { mealplanShopday } from './mealplan-shopday.js';
 import { recipeCanonShopping } from './recipe-canon-shopping.js';
+import { recipeImport } from './recipe-import.js';
 
 /**
  * Every journey the runner can dispatch. Order is the `all` run order, cheapest
@@ -19,6 +20,7 @@ export const JOURNEYS: readonly Journey[] = [
   chefChat,
   canonIcon,
   cookTimer,
+  recipeImport,
 ];
 
 export function findJourney(name: string): Journey | undefined {

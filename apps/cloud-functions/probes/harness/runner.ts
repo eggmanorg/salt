@@ -38,7 +38,11 @@ export interface ProbeReport {
   readonly steps: ProbeStep[];
   readonly warnings: string[];
   readonly teardownErrors: string[];
-  /** Documents the probe did not name but did cause to exist, and removed. */
+  /**
+   * Documents and Storage objects the probe did not name but did cause to
+   * exist, and removed — each with the reason it was adopted. The `probe-`
+   * guard cannot apply to these, so the audit trail is what stands in for it.
+   */
   readonly adoptedDocs: string[];
   readonly failure: string | null;
 }
@@ -82,6 +86,13 @@ export interface ProbeContext {
   /** Register a Storage object a trigger wrote for the probe's document. */
   trackStorageObject(objectPath: string): void;
   /**
+   * The `trackCreated` of Storage: an object whose name the probe did not
+   * choose, because it is keyed by a server-generated document id (an imported
+   * recipe's hero). The `probe-` guard cannot apply, so a reason is mandatory
+   * and the deletion is recorded in `report.adoptedDocs`.
+   */
+  trackCreatedStorageObject(objectPath: string, reason: string): void;
+  /**
    * Layer 2 — poll until `probe` returns a non-null value, or fail on the
    * deadline. Never a fixed sleep.
    */
@@ -120,6 +131,13 @@ export async function runProbe(args: RunProbeArgs): Promise<ProbeReport> {
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
+
+  const deleteStorageObject = (objectPath: string): { name: string; fn: () => Promise<void> } => ({
+    name: `delete gs://${env.storageBucket}/${objectPath}`,
+    fn: async () => {
+      await getStorage(admin.app).bucket().file(objectPath).delete({ ignoreNotFound: true });
+    },
+  });
 
   const ctx: ProbeContext = {
     env,
@@ -189,12 +207,12 @@ export async function runProbe(args: RunProbeArgs): Promise<ProbeReport> {
           `refusing to track storage object "${objectPath}" for deletion — not a ${PROBE_PREFIX}* object`,
         );
       }
-      teardown.push({
-        name: `delete gs://${env.storageBucket}/${objectPath}`,
-        fn: async () => {
-          await getStorage(admin.app).bucket().file(objectPath).delete({ ignoreNotFound: true });
-        },
-      });
+      teardown.push(deleteStorageObject(objectPath));
+    },
+
+    trackCreatedStorageObject(objectPath, reason) {
+      adoptedDocs.push(`gs://${env.storageBucket}/${objectPath} (${reason})`);
+      teardown.push(deleteStorageObject(objectPath));
     },
 
     async settle(settleName, probeFn, options = {}) {

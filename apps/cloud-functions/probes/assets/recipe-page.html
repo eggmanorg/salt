@@ -1,0 +1,182 @@
+<!doctype html>
+<!--
+  Source for `recipe-page.webp`, the fixture the `recipe-import` probe sends to
+  extractRecipeFromPhoto (issue #1356, Phase 3).
+
+  It is a page WE WROTE — an invented recipe in an invented book — not a
+  photograph of a published cookbook, so the repo can hold it without any
+  question about whose words they are. It is committed beside the image so the
+  fixture is regenerable and its provenance is checkable rather than asserted.
+
+  Regenerate with `pnpm --filter @salt/cloud-functions exec playwright screenshot`
+  or the equivalent; the image is 1240x1754 (A4 at 150dpi), quality 88.
+-->
+<meta charset="utf-8" />
+<style>
+  @page {
+    margin: 0;
+  }
+  body {
+    margin: 0;
+    width: 1240px;
+    height: 1754px;
+    background: #f7f3ea;
+    color: #1d1a15;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    padding: 96px 104px 180px;
+    box-sizing: border-box;
+  }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 21px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #6d6455;
+    border-bottom: 1px solid #cdc3ae;
+    padding-bottom: 18px;
+  }
+  h1 {
+    font-size: 66px;
+    line-height: 1.08;
+    margin: 64px 0 10px;
+    font-weight: normal;
+  }
+  .serves {
+    font-size: 24px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #7a4a22;
+    margin-bottom: 34px;
+  }
+  .headnote {
+    font-size: 27px;
+    line-height: 1.55;
+    font-style: italic;
+    color: #3a352c;
+    margin: 0 0 52px;
+    max-width: 26em;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: 0.82fr 1.18fr;
+    gap: 64px;
+  }
+  h2 {
+    font-size: 22px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #7a4a22;
+    margin: 0 0 20px;
+    font-weight: normal;
+  }
+  h3 {
+    font-size: 25px;
+    margin: 30px 0 12px;
+    font-weight: normal;
+    font-style: italic;
+  }
+  h3:first-of-type {
+    margin-top: 0;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 26px;
+    line-height: 1.72;
+  }
+  ol {
+    margin: 0;
+    padding-left: 30px;
+    font-size: 26px;
+    line-height: 1.66;
+  }
+  li {
+    margin-bottom: 16px;
+  }
+  .foot {
+    position: absolute;
+    bottom: 72px;
+    left: 104px;
+    right: 104px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 21px;
+    color: #6d6455;
+  }
+</style>
+<div class="head">
+  <span>Buttered Leeks with Thyme</span>
+  <span>The Slow Kitchen</span>
+</div>
+
+<h1>Buttered Leeks<br />with Thyme</h1>
+<div class="serves">
+  Serves 4 &nbsp;·&nbsp; 10 minutes preparation &nbsp;·&nbsp; 25 minutes cooking
+</div>
+
+<p class="headnote">
+  Leeks cooked slowly in butter until they collapse into something closer to a sauce than a
+  vegetable. They will take any amount of patience you give them, and they reheat better than almost
+  anything else on this page.
+</p>
+
+<div class="cols">
+  <div>
+    <h2>Ingredients</h2>
+
+    <h3>For the leeks</h3>
+    <ul>
+      <li>6 medium leeks, about 900 g</li>
+      <li>80 g unsalted butter</li>
+      <li>2 tbsp olive oil</li>
+      <li>4 sprigs thyme</li>
+      <li>1 bay leaf</li>
+      <li>150 ml dry white wine</li>
+      <li>½ tsp fine sea salt</li>
+      <li>Black pepper</li>
+    </ul>
+
+    <h3>To finish</h3>
+    <ul>
+      <li>2 tbsp double cream</li>
+      <li>1 tbsp lemon juice</li>
+      <li>30 g Parmesan, finely grated</li>
+    </ul>
+  </div>
+
+  <div>
+    <h2>Method</h2>
+    <ol>
+      <li>
+        Trim the leeks, keeping the pale green. Split them lengthways, rinse thoroughly under cold
+        water, and cut into 2 cm half-moons.
+      </li>
+      <li>
+        Melt the butter with the olive oil in a wide, heavy pan over a low heat. Add the thyme and
+        the bay leaf and let them sizzle for a minute.
+      </li>
+      <li>
+        Add the leeks and the salt. Stir to coat, then cover and cook gently for 15 minutes,
+        stirring every few minutes. They should soften without colouring.
+      </li>
+      <li>
+        Pour in the wine, raise the heat and let it bubble away almost completely, about 5 minutes.
+      </li>
+      <li>
+        Stir in the cream and cook for a further 3 minutes, until the leeks are glossy and thick.
+      </li>
+      <li>
+        Take off the heat. Remove the thyme and bay. Add the lemon juice, most of the Parmesan and a
+        good grind of pepper. Taste, and add more salt if it needs it.
+      </li>
+      <li>Serve warm, with the last of the Parmesan scattered over.</li>
+    </ol>
+  </div>
+</div>
+
+<div class="foot">
+  <span>142</span>
+  <span>The Slow Kitchen &nbsp;·&nbsp; Marlow Fenn</span>
+</div>

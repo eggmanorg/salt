@@ -14,7 +14,15 @@ import type { ProbeContext } from './runner.js';
  * word here is cheap; giving one journey two words is not — a list of domains
  * per journey is the routing table creeping back in.
  */
-export const PROBE_DOMAINS = ['auth', 'planner', 'shopping', 'chat', 'canon', 'cooking'] as const;
+export const PROBE_DOMAINS = [
+  'auth',
+  'planner',
+  'shopping',
+  'chat',
+  'canon',
+  'cooking',
+  'recipes',
+] as const;
 export type ProbeDomain = (typeof PROBE_DOMAINS)[number];
 
 export function isProbeDomain(value: string): value is ProbeDomain {
