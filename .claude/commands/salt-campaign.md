@@ -260,6 +260,7 @@ Brief each worker with:
 > - Do run `gh pr ready` at the final phase, as salt-run.md says. It is what triggers `pr-doc-review.yml`, and that review is an input to the code review that follows.
 > - Do not merge, and do not touch any branch but your own.
 > - Diff ceiling: `--max-diff <n>` changed lines, excluding the lockfile. This is salt-run.md's own flag and its step 9 already implements the rule — pass the number, do not re-derive the behaviour. Its three outcomes reach me as three different returns: over the ceiling **with phases still unbuilt**, you finish the current phase, turn the PR into an intermediate one (`Refs #N`, title suffixed ` (#N)`), `gh pr ready` it, and return `SPLIT: YES` with the unbuilt phases named; over the ceiling with **nothing left to build**, there is no split — ship it as one PR and conclude normally; a **single phase** that alone exceeds the ceiling is a pause condition and returns `BLOCKED: oversized`.
+> - **Never end your turn with a backgrounded command still running.** Nothing wakes me for a worker that has gone quiet with work in flight — no agent return, no watchdog exit — so the slot stalls until the budget fires. If you background anything (`run_in_background`), wait for it and read its output inside the same turn before you return. Two workers in campaign #1328 did this; one cost a full 90-minute watchdog cycle.
 > - salt-run.md's pause conditions are yours, with one change: you cannot wait for a human. On a pause condition, stop, commit what you have, leave the branch as it is, and return BLOCKED with the reason.
 >
 > Return, and nothing else:
@@ -354,7 +355,7 @@ So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFil
 
 Do not re-dispatch /salt-run for this. salt-run.md is a phase loop keyed to an issue whose phases have all landed; pointed at a finished branch it either no-ops or restarts work. Spawn a plain `Agent(…, model: "sonnet")` instead — the findings arrive enumerated and the scope is closed, so there is no design judgement left in this step:
 
-> In worktree `<path>` on branch `<branch>`, address these review findings — every blocking one, plus any marked `[trivial]`: [list]. Do not rebase, do not merge, do not touch another branch, and do not take work beyond the findings — the issue's Out of scope list still binds. Run the safe gate set, commit, push.
+> In worktree `<path>` on branch `<branch>`, address these review findings — every blocking one, plus any marked `[trivial]`: [list]. Do not rebase, do not merge, do not touch another branch, and do not take work beyond the findings — the issue's Out of scope list still binds. Run the safe gate set, commit, push. Never end your turn with a backgrounded command still running: if you background anything, wait for it and read its output inside the same turn before you return — nothing wakes me for a fix agent that went quiet mid-command, and the round stalls until the watchdog fires.
 >
 > Return:
 >
