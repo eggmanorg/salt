@@ -27,6 +27,7 @@
     type Recipe,
     type TimerHeat,
   } from '@salt/domain';
+  import type { KitchenTimerOrigin } from '@salt/domain/schemas';
   import { kitchenLabel } from '../../lib/membersService.js';
   import {
     liveCooks,
@@ -224,6 +225,19 @@
     label: string;
     durationMinutes: number;
     running: boolean;
+    /**
+     * Where the timer being re-timed was armed from, carried through untouched.
+     *
+     * Mine lists EVERY kitchen timer the member owns, a batch cook page's included,
+     * and a re-time replaces the entry whole rather than merging onto it
+     * (`withKitchenTimerStarted`). So a nudge from here that handed over a null
+     * would unhook the timer from its step and send its finished-timer push back to
+     * Mine — the deep link #1327 exists to add, lost by the one gesture most likely
+     * to be made while the chef is away from the page.
+     *
+     * Null is what a timer STARTED here carries, and that is this page's own fact.
+     */
+    origin: KitchenTimerOrigin | null;
   }
   let timerSheetOpen = $state(false);
   let timerSheetTarget = $state<TimerSheetTarget | null>(null);
@@ -240,6 +254,8 @@
       label: AD_HOC_TIMER_LABEL,
       durationMinutes: AD_HOC_TIMER_MINUTES,
       running: false,
+      // Started here, so it came from nowhere but the kitchen.
+      origin: null,
     };
     timerSheetOpen = true;
   }
@@ -265,6 +281,9 @@
       label: t.timer.label,
       durationMinutes: remaining > 0 ? Math.ceil(remaining / 60_000) : t.timer.durationMinutes,
       running: true,
+      // Untouched, never re-derived: this page has no idea what armed the timer and
+      // has no business deciding.
+      origin: t.timer.origin,
     };
     timerSheetOpen = true;
   }
@@ -273,8 +292,12 @@
   // live in `startKitchenTimer` now (#1327, Phase 2), because the batch cook page
   // starts the same kind of timer and the two must not drift into two meanings of
   // "start". What stays here is the only thing that is this page's: a timer
-  // started from My Kitchen came from nowhere but the kitchen, so its origin is
+  // STARTED from My Kitchen came from nowhere but the kitchen, so its origin is
   // null and the finished-timer push lands back on Mine.
+  //
+  // A timer merely RE-TIMED from here is a different matter — the target carries
+  // whatever it was armed with, because Mine lists every kitchen timer the member
+  // owns and the entry is replaced whole. See `TimerSheetTarget.origin`.
   function confirmTimerSheet(next: { label: string; durationMinutes: number }): void {
     const target = timerSheetTarget;
     if (!target) return;
@@ -285,7 +308,7 @@
       // first place.
       label: next.label === '' ? AD_HOC_TIMER_LABEL : next.label,
       durationMinutes: next.durationMinutes,
-      origin: null,
+      origin: target.origin,
     });
   }
 

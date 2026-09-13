@@ -887,6 +887,7 @@ describe('MinePage — a timer of your own', () => {
     endsAt: new Date(NOW + 6 * 60_000).toISOString(),
     durationMinutes: 10,
     notify: true,
+    origin: null,
   });
 
   const kitchenTimer = (over: Record<string, unknown> = {}) => ({
@@ -1052,6 +1053,24 @@ describe('MinePage — a timer of your own', () => {
     // The SAME id is what makes this a re-time rather than a second timer —
     // `withKitchenTimerStarted` replaces by id, pinned in the producers' suite.
     expect(lastStart()).toMatchObject({ id: 'k1', label: 'Eggs, soft', durationMinutes: 7 });
+  });
+
+  // Mine lists EVERY kitchen timer the member owns, a batch cook page's included,
+  // and `withKitchenTimerStarted` replaces the entry WHOLE rather than merging onto
+  // it. So a nudge from here that handed over a null would unhook the timer from its
+  // step and send its finished-timer push back to Mine — losing the deep link #1327
+  // exists to add, by the one gesture most likely to be made away from the page.
+  it('carries a batch timer’s origin through a re-time rather than dropping it', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    const origin = { batchId: 'batch-9', stepId: 'step-2' };
+    mockMyTimers._set([kitchenTimer({ timer: { ...kitchenTimerDoc(), origin } })]);
+    const { getByTestId } = render(MinePage);
+    await fireEvent.click(getByTestId('mine-timer-edit'));
+    await tick();
+    await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
+    await tick();
+
+    expect(lastStart().origin).toEqual(origin);
   });
 
   it('falls back to the same default when the name is emptied', async () => {

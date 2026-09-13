@@ -1067,6 +1067,48 @@ describe('timers on the steps the schedule does not cover', () => {
     expect(screen.getByTestId('batch-cook-step-timer').textContent).toContain('60 min');
     expect(screen.getByTestId('batch-cook-stage-countdown').textContent).toContain('30 min left');
   });
+
+  // ─── …and a band is NOT a clock ─────────────────────────────────────────────
+  //
+  // The rule is "a wait stage is counting this step down", never "this step wears a
+  // band". THE BAKE IS `active` (`STAGE_KIND_RULES`, pinned verbatim), an active
+  // stage draws its planned window and no countdown, and `remindableStages` fires at
+  // a stage's START. So a rule that read "any stage" would leave the one step where
+  // burning is the failure mode with no clock and no alarm at all.
+  it.each([
+    [
+      'an active stage — the bake',
+      { id: 'stage-bake', label: 'Bake the cobs', kind: 'active' as const },
+    ],
+    [
+      'an observational stage, which has no end to count to',
+      { id: 'stage-cool-here', label: 'Cool the cobs', kind: 'wait' as const, duration: null },
+    ],
+  ])('offers a timer on a step carrying %s', async (_case, over) => {
+    mockBatch._set(makeBatch({ stages: [stage({ ...over, until: null, stepId: 'step-3' })] }));
+    mockRecipes._set([
+      recipeWith({
+        steps: [
+          { id: 'step-1', text: 'Mix the dough.', timer: null, note: null },
+          { id: 'step-2', text: 'Knead for ten minutes.', timer: null, note: null },
+          {
+            id: 'step-3',
+            text: 'Bake until deep golden.',
+            timer: { durationMinutes: 20, description: null },
+            note: null,
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+    await goToSteps();
+
+    // The band is there and says its piece; what it does not do is tick.
+    expect(screen.queryByTestId('batch-cook-stage-countdown')).toBeNull();
+    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain(
+      'Start 20 minute timer',
+    );
+  });
 });
 
 describe('what this page does not do', () => {

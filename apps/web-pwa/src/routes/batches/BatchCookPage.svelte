@@ -84,15 +84,23 @@
   //
   // ─── WHY THE SCHEDULE OWNS THE CLOCK ──────────────────────────────────────────
   //
-  // A step with a stage on it counts down to that stage's `plannedEndAt` and offers
-  // no timer — the batch's push reminder already exists for that moment
-  // (`onBatchWritten`), and a second clock beside it would be two alarms for one
-  // prove. The recipe's own timer for such a step is shown as TEXT: it is the
-  // recipe's opinion, and the run's plan is what is actually being waited on.
-  // Marking the step done marks the stage done, which re-times the tail through
+  // A step cited by a WAIT stage with a duration counts down to that stage's
+  // `plannedEndAt` and offers no timer — the batch's push reminder already exists
+  // for that moment (`onBatchWritten`), and a second clock beside it would be two
+  // alarms for one prove. The recipe's own timer for such a step is shown as TEXT:
+  // it is the recipe's opinion, and the run's plan is what is actually being waited
+  // on. Marking the step done marks the stage done, which re-times the tail through
   // `withStageAdvanced` and lets the existing reminder path re-enqueue.
   //
-  // ─── AND WHY THE STEPS WITHOUT A STAGE GET A TIMER ────────────────────────────
+  // THAT IS A NARROWER SENTENCE THAN "a step with a stage on it", and the narrowness
+  // is the point. An `active` stage draws its planned window and NO countdown, and
+  // `remindableStages` fires at a stage's `plannedStartAt` — "put them in", never
+  // "take them out". THE BAKE IS `active` (pinned verbatim in `STAGE_KIND_RULES`),
+  // so a rule that read "any stage" would leave the one step where burning is the
+  // failure mode with no clock and no alarm at all. An observational stage
+  // (`duration: null`) has nothing to count down either, by definition.
+  //
+  // ─── AND WHY THE OTHER STEPS GET A TIMER ──────────────────────────────────────
   //
   // The other four steps of a bread — mix, knead, shape, vent — have no stage and
   // so no clock at all, which is what Phase 1 shipped and lived with. They take an
@@ -261,12 +269,20 @@
     showSheet: () => (timerSheetOpen = true),
   });
 
-  // WHICH STEPS OFFER ONE, in one place so the page cannot answer it two ways. A
-  // step wearing a stage band is the schedule's, and the schedule owns its clock
-  // (see the header); every other step with a recipe timer gets a button. Both
-  // halves of that sentence are pinned in `BatchCookPage.test.ts`.
+  // WHICH STEPS OFFER ONE, in one place so the page cannot answer it two ways.
+  //
+  // The test is "is a clock already ticking on this step", not "does it wear a
+  // band" — and those are different questions. The countdown below renders for a
+  // `wait` stage only, and an observational stage has no end to count to, so a step
+  // carrying an `active` or an observational stage has a planned window and nothing
+  // else. Those steps take a timer exactly as a stage-less step does; only a step a
+  // wait stage is genuinely counting down is refused one, because that is the only
+  // case where a second alarm would be two for one prove. Every branch of that
+  // sentence is pinned in `BatchCookPage.test.ts`.
   function stepTakesTimer(stepId: string): boolean {
-    return !layout.onStep.has(stepId);
+    const placement = layout.onStep.get(stepId);
+    if (placement === undefined) return true;
+    return placement.stage.kind !== 'wait' || isObservational(placement.stage);
   }
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
