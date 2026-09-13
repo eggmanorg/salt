@@ -65,9 +65,19 @@ const workflows: Workflow[] = readdirSync(workflowsDir, { withFileTypes: true })
   }));
 
 /**
- * The `on:` block, as raw text: everything from the `on:` line to the next
- * top-level key. Comments are stripped first, so prose about a trigger never
- * counts as one — this file's own header would otherwise match every word.
+ * The `on:` block, NORMALISED: everything from the `on:` line to the next
+ * top-level key, with the two inline spellings rewritten into the block form so
+ * one matcher covers all three. Comments are stripped first, so prose about a
+ * trigger never counts as one — this file's own header would otherwise match
+ * every word.
+ *
+ * The rewrite is not tidying. YAML lets `on:` take its value on the same line,
+ * as a scalar (`on: pull_request`) or a flow sequence (`on: [push,
+ * pull_request]`), and neither leaves a colon after the trigger name for the key
+ * matcher below to find. `dependabot-auto-merge.yml` is written the first way,
+ * so the shorthand is precedent already sitting in this directory, not a
+ * hypothetical — without this, a probe sweep added to a workflow in that shape
+ * would bill for images and buzz a phone on every merge with the guard green.
  */
 function triggerBlock(text: string): string {
   const withoutComments = text
@@ -78,7 +88,17 @@ function triggerBlock(text: string): string {
   if (start === -1) return '';
   const rest = withoutComments.slice(start + 3);
   const end = rest.search(/^[A-Za-z_]/m);
-  return end === -1 ? rest : rest.slice(0, end);
+  const block = end === -1 ? rest : rest.slice(0, end);
+
+  // The `on:` line's own remainder: empty in the block form, the whole trigger
+  // list in either inline one.
+  const [inline = '', ...lines] = block.split('\n');
+  const names = inline
+    .replace(/[[\]]/g, ' ')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+  return [...names.map((name) => `${name}:`), ...lines].join('\n');
 }
 
 function isMergeTriggered(text: string): boolean {
@@ -105,6 +125,18 @@ describe('probes: --include-opt-in never runs because a pull request merged', ()
       workflows.filter((w) => isMergeTriggered(w.text)).map((w) => w.file).length,
       'no workflow looks merge-triggered — the trigger matcher has stopped matching',
     ).toBeGreaterThan(0);
+  });
+
+  it('reads a trigger in every spelling YAML allows', () => {
+    // The floors above are satisfied by the block form alone, so they cannot see
+    // a matcher blind to the other two. `on: pull_request` is how
+    // dependabot-auto-merge.yml is written today.
+    expect(isMergeTriggered('on: pull_request\n\njobs: {}\n')).toBe(true);
+    expect(isMergeTriggered('on: [workflow_dispatch, push]\n\njobs: {}\n')).toBe(true);
+    expect(isMergeTriggered('on:\n  pull_request:\n\njobs: {}\n')).toBe(true);
+    // And still says no to a workflow nobody merges into.
+    expect(isMergeTriggered('on: workflow_dispatch\n\njobs: {}\n')).toBe(false);
+    expect(isMergeTriggered("on:\n  schedule:\n    - cron: '0 6 * * 4'\n\njobs: {}\n")).toBe(false);
   });
 
   it('finds the flag in the workflows that are allowed to use it', () => {
