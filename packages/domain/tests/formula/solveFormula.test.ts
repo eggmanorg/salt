@@ -106,6 +106,29 @@ describe('a solve that cannot be satisfied', () => {
   });
 
   it('tolerates the rounding noise of a three-way basis split', () => {
+    // 33.3333 × 3 = 99.9999, which is a basis and must not be refused. Written by
+    // hand since #1364: `deriveFormula` now reconciles its basis to 100, so it can
+    // no longer produce this shape — but a formula stored before that change, or
+    // typed by a person editing percentages, still can, and the tolerance is the
+    // only thing standing between it and an unsolvable document.
+    const unnormalised: Formula = {
+      recipeId: 'three-flours',
+      components: [
+        { ingredientId: 'ing-a', percent: 33.3333, inBasis: true },
+        { ingredientId: 'ing-b', percent: 33.3333, inBasis: true },
+        { ingredientId: 'ing-c', percent: 33.3333, inBasis: true },
+        { ingredientId: 'ing-water', percent: 70, inBasis: false },
+      ],
+      referenceYield: basisYield(300),
+      schemaVersion: 1,
+    };
+    expect(
+      unnormalised.components.filter((c) => c.inBasis).reduce((sum, c) => sum + c.percent, 0),
+    ).toBe(99.9999);
+    expect(solveFormula(unnormalised).ok).toBe(true);
+  });
+
+  it('reconciles a derived three-way basis to 100 rather than leaning on the tolerance', () => {
     const derived = deriveFormula({
       recipeId: 'three-flours',
       components: [
@@ -116,9 +139,10 @@ describe('a solve that cannot be satisfied', () => {
       ],
     });
     if (!derived.ok) throw new Error(derived.reason.kind);
-    // 33.3333 × 3 = 99.9999, which is a basis and must not be refused.
+    // The residual goes to the first member (issue #1364). Why it must go
+    // somewhere rather than be left off the basis: `basisRoundTrip.test.ts`.
     expect(derived.formula.components.slice(0, 3).map((c) => c.percent)).toEqual([
-      33.3333, 33.3333, 33.3333,
+      33.3334, 33.3333, 33.3333,
     ]);
     expect(solveFormula(derived.formula).ok).toBe(true);
   });

@@ -6,11 +6,23 @@
 // from them, so a screen rounding independently would give three surfaces three
 // answers.
 //
-// Rounded parts are deliberately NOT reconciled to sum to the rounded total: the
-// total is solved, not summed, and largest-remainder would make one component's
-// figure depend on the others — surprising when you edit a single percentage. The
-// worked example shows the consequence honestly (parts 1 484 g, solved total
-// 1 483 g) and the test suite asserts that 1 g rather than papering over it.
+// Rounded GRAM parts are deliberately NOT reconciled to sum to the rounded total:
+// the total is solved, not summed, and largest-remainder would make one
+// component's figure depend on the others — surprising when you edit a single
+// percentage. The worked example shows the consequence honestly (parts 1 484 g,
+// solved total 1 483 g) and the test suite asserts that 1 g rather than papering
+// over it.
+//
+// THAT ARGUMENT IS ABOUT GRAMS, AND ONLY ABOUT GRAMS. Derived BASIS PERCENTAGES
+// are deliberately reconciled, by exactly the largest-remainder adjustment
+// rejected above (`deriveFormula`, issue #1364) — a different call knowingly made
+// on a different quantity. The coupling costs the same thing in both places: one
+// member's figure depends on its neighbours (33.3334 against their 33.3333). What
+// differs is what it buys and what it costs. A gram is weighed, and the residual
+// is half a gram on a scale. A basis percentage is weighed by nobody, the residual
+// is a ten-thousandth of a point two orders below anything displayed, and leaving
+// it unreconciled means the basis sums to 99.9999 — so every percentage measured
+// against it creeps upward on every commit of the formula screen, without bound.
 
 // At or above this, whole grams; below it, one decimal. Matches what a 1 g
 // domestic scale can actually weigh while still giving a 2.5 g cure-salt figure
