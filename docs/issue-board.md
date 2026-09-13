@@ -412,7 +412,7 @@ can be in progress _and_ blocked, and the old board could not say so.
 
 | To          | Set by                                                                                                                            |                                                                                         |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Triage      | GitHub's built-in "item added to project" project workflow                                                                        |                                                                                         |
+| Triage      | GitHub's built-in "Item added to project" project workflow — a **UI setting**, and `check` now asserts it is on                   |                                                                                         |
 | Todo        | a person, or `/triage`                                                                                                            | the one real decision; no event can observe it                                          |
 | In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session | a branch push is too noisy to key on                                                    |
 | In review   | `board-status.yml`                                                                                                                | `pull_request` opened / ready_for_review                                                |
@@ -421,6 +421,30 @@ can be in progress _and_ blocked, and the old board could not say so.
 
 The issue↔PR link is the `Closes #N` that `/salt-run` writes into every PR body —
 the same text GitHub derives its own linked-issue relation from.
+
+**The first rung is not code, and was silently missing.** `Triage` is set by one of
+GitHub's built-in project workflows, which lives in the project's UI and can be
+switched on and off there. It was **off** for weeks. New issues arrived with no
+`Status` at all, four of them sat unset for their whole life, and this table plus
+[`board-status.yml`](../.github/workflows/board-status.yml)'s header both went on
+asserting it worked — a mechanism stated in two documents and guaranteed by
+nothing, which is precisely what CLAUDE.md rule 12 is about.
+
+It is enabled again, and `check` now asserts it rather than trusting it. Two
+built-ins are pinned, because two are what these docs claim:
+
+| Built-in workflow                | Why it is pinned                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `Item added to project`          | the `Triage` rung in the table above                                                             |
+| `Auto-add sub-issues to project` | how a parent link puts an issue on the board, which is what keeps a campaign's filings reachable |
+
+The project's other five built-ins are deliberately off and stay passable — pinning
+the whole set would fail the next time somebody enabled one for a good reason. A
+required workflow that is **missing** from the list fails too: GitHub renaming one
+is indistinguishable from switching it off, and means the same thing.
+
+To change either, open the project on github.com → **⋯** → **Workflows**. There is
+no API for it, which is why this is a check rather than a fix.
 
 **`Released` is not "everything Merged".** Production deploys a _tag_, and
 `Merged` only means "on `main`". Between a release tag being cut and its

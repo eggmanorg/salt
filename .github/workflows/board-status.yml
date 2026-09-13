@@ -4,7 +4,11 @@ name: Board status
 # whenever an EVENT already proves the move. Three of the six transitions are
 # observable; the other three are not, and are set by the agent commands instead:
 #
-#   Triage      — GitHub's own "item added to project" project workflow.
+#   Triage      — GitHub's own "Item added to project" project workflow. That is a
+#                 UI SETTING on the project, not code, and it was switched OFF for
+#                 weeks while this comment claimed otherwise — new issues arrived
+#                 with no Status at all. `board.mjs check` now asserts it is on
+#                 rather than trusting this sentence; see docs/issue-board.md.
 #   Todo        — a decision. /triage or Daniel. No event exists for "I have decided".
 #   In progress — /salt-run and /salt-campaign, when the worktree is cut. A branch push is
 #                 far too noisy to key on, and a draft PR is raised much later.

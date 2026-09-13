@@ -73,6 +73,7 @@ import {
   ledgerShouldAttachTo,
 } from './lib/boardTitles.mjs';
 import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
+import { disabledWorkflowFailures } from './lib/boardWorkflows.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -679,6 +680,12 @@ function cmdCheck(project) {
       verticalGroupByFields(first:5){ nodes{ ... on ProjectV2FieldCommon { name } } }
       sortByFields(first:5){ nodes{ direction field{ ... on ProjectV2FieldCommon { name } } } } } } } } }`)
     .node.views.nodes;
+
+  // The pipeline's first rung is a GitHub built-in, not code — see
+  // `disabledWorkflowFailures` for which are pinned and why only those.
+  const workflows = gql(`{ organization(login:"${OWNER}"){ projectV2(number:${PROJECT_NUMBER}){
+    workflows(first:20){ nodes{ name enabled } } } } }`).organization?.projectV2?.workflows?.nodes;
+  for (const f of disabledWorkflowFailures(workflows)) failures.push(f);
 
   for (const v of views) {
     const sortFailure = forbiddenSortMessage(v);
