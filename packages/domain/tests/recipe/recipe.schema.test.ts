@@ -380,7 +380,7 @@ describe('RecipeSchema', () => {
   });
 
   it('round-trips each of the three kinds', () => {
-    for (const kind of ['recipe', 'outing', 'cocktail'] as const) {
+    for (const kind of ['recipe', 'special', 'cocktail'] as const) {
       const result = RecipeSchema.safeParse({ ...messyRecipe(), kind });
       expect(result.success).toBe(true);
       if (result.success) expect(result.data.kind).toBe(kind);
@@ -390,17 +390,43 @@ describe('RecipeSchema', () => {
   it('rejects an unknown kind', () => {
     expect(RecipeSchema.safeParse({ ...messyRecipe(), kind: 'pudding' }).success).toBe(false);
     expect(RecipeKindSchema.safeParse('pudding').success).toBe(false);
-    expect(RecipeKindSchema.safeParse('outing').success).toBe(true);
+    expect(RecipeKindSchema.safeParse('special').success).toBe(true);
+  });
+
+  // ── The #1322 rename's safety net (CLAUDE.md rule 12) ──────────────────────
+  // "No production entry can disappear during this rename" is guaranteed by this
+  // test and by nothing else. `special` was stored as `outing` until #1322, the
+  // realtime subscription SKIPS any document that fails validation, and the eight
+  // live entries still carry the old spelling — so a document literal spelling it
+  // the old way must parse, and must read back as the new value.
+  //
+  // Its boundary, stated rather than left absolute: the coercion is on the
+  // DOCUMENT field only. `RecipeKindSchema` itself never accepts `'outing'`, which
+  // is what stops the legacy spelling reaching the `findRecipes` tool input or
+  // `AUTHORABLE_RECIPE_KINDS` — both asserted below.
+  //
+  // Phase 2 rewrites those eight documents and deletes the coercion; this test is
+  // then REPLACED by one asserting the document is rejected, so the compatibility
+  // cannot survive by accident.
+  it('reads a stored legacy `outing` document as `special` (#1322 Phase 1)', () => {
+    const result = RecipeSchema.safeParse({ ...messyRecipe(), kind: 'outing' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.kind).toBe('special');
+  });
+
+  it('never lets the legacy spelling through `RecipeKindSchema` itself (#1322)', () => {
+    expect(RecipeKindSchema.safeParse('outing').success).toBe(false);
+    expect(RecipeKindSchema.options).toEqual(['recipe', 'special', 'cocktail', 'placeholder']);
   });
 
   it('emptyRecipe builds a recipe by default and the asked-for kind otherwise', () => {
     expect(emptyRecipe('r1', '2026-06-11T00:00:00.000Z').kind).toBe('recipe');
-    expect(emptyRecipe('r2', '2026-06-11T00:00:00.000Z', 'outing').kind).toBe('outing');
+    expect(emptyRecipe('r2', '2026-06-11T00:00:00.000Z', 'special').kind).toBe('special');
   });
 
   it('type-level: Recipe kind is the closed union', () => {
     expectTypeOf<Recipe['kind']>().toEqualTypeOf<
-      'recipe' | 'outing' | 'cocktail' | 'placeholder'
+      'recipe' | 'special' | 'cocktail' | 'placeholder'
     >();
   });
 

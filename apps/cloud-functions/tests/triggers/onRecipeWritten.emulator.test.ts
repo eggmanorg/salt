@@ -289,35 +289,35 @@ describe('onRecipeWritten — Firestore emulator', () => {
     expect(mockGenerateImage).toHaveBeenCalledOnce();
   });
 
-  // Issue #637: an outing — a takeaway, a picnic, a meal out — is a `recipes` doc
+  // Issue #637: a special — a takeaway, a picnic, a meal out — is a `recipes` doc
   // with no ingredients and no method. It goes through the SAME hero pipeline (the
   // regenerate dialog seeds its textarea from `imageBrief`, so skipping the brief
   // step would leave it empty); only the prompts differ, selected by `kind`. This
   // pins the end-to-end path against the real Firestore round-trip: the kind
   // survives write → schema parse → flow input, and the hero still lands.
-  it('generates a hero for an outing and forwards its kind to the image flow', async () => {
+  it('generates a hero for a special and forwards its kind to the image flow', async () => {
     const db = getFirestore(adminApp);
-    const outing = makeRecipe('r-outing', {
-      kind: 'outing',
+    const special = makeRecipe('r-special', {
+      kind: 'special',
       title: 'Friday night curry',
       description: 'From the place on the corner. Always the same order.',
       ingredients: [],
       steps: [],
       image: null,
     });
-    await db.collection('recipes').doc('r-outing').set(outing);
+    await db.collection('recipes').doc('r-special').set(special);
 
-    await (onRecipeWritten as Function)(makeEvent('r-outing', outing));
+    await (onRecipeWritten as Function)(makeEvent('r-special', special));
 
     expect(mockGenerateImage).toHaveBeenCalledOnce();
     expect(mockGenerateImage.mock.calls[0]![0]).toMatchObject({
       title: 'Friday night curry',
-      kind: 'outing',
+      kind: 'special',
     });
 
-    const snap = await db.collection('recipes').doc('r-outing').get();
+    const snap = await db.collection('recipes').doc('r-special').get();
     expect(snap.data()!['image']).toEqual({
-      url: 'https://firebasestorage.googleapis.com/v0/b/demo-salt.appspot.com/o/recipe-images%2Fr-outing.webp?alt=media',
+      url: 'https://firebasestorage.googleapis.com/v0/b/demo-salt.appspot.com/o/recipe-images%2Fr-special.webp?alt=media',
       source: 'ai',
     });
   });

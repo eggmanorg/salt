@@ -56,7 +56,7 @@ const LIBRARY: RecipeSearchCandidate[] = [
     tags: ['quick'],
   }),
   dish('r-negroni', 'Negroni', { kind: 'cocktail', tags: ['bitter'] }),
-  dish('r-curryhouse', 'The curry house on the high street', { kind: 'outing' }),
+  dish('r-curryhouse', 'The curry house on the high street', { kind: 'special' }),
 ];
 
 const ids = (results: readonly RecipeSearchCandidate[]) => results.map((r) => r.id);
@@ -147,7 +147,7 @@ describe('searchRecipes — ranking', () => {
 
 describe('searchRecipes — filters', () => {
   it('restricts to one kind', () => {
-    expect(ids(searchRecipes(LIBRARY, { query: 'curry', kind: 'outing' }))).toEqual([
+    expect(ids(searchRecipes(LIBRARY, { query: 'curry', kind: 'special' }))).toEqual([
       'r-curryhouse',
     ]);
     expect(searchRecipes(LIBRARY, { query: 'lamb', kind: 'cocktail' })).toEqual([]);
@@ -246,7 +246,7 @@ describe('searchRecipes — pure and stable', () => {
   });
 
   it('accepts every kind a household could eat as a candidate', () => {
-    const kinds: RecipeKind[] = ['recipe', 'outing', 'cocktail'];
+    const kinds: RecipeKind[] = ['recipe', 'special', 'cocktail'];
     const all = kinds.map((kind, i) => dish(`r-${i}`, `Thing ${i}`, { kind }));
     expect(searchRecipes(all)).toHaveLength(kinds.length);
   });

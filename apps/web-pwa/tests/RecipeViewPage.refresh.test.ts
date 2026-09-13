@@ -536,7 +536,7 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
 
 // Refresh is gated on `isAuthorable` — "can the librarian WRITE this kind?" —
 // the same predicate "Make a variation" uses, and never on the kind directly. An
-// outing has no ingredients and no method to write out; a placeholder is a
+// special has no ingredients and no method to write out; a placeholder is a
 // photograph of a good dinner and not a dish at all. Cocktails joined the
 // authorable set in #765 and turned up here with no edit to this page, which is
 // what a predicate gate buys over a hand-written list of the obvious kinds.
@@ -561,7 +561,7 @@ describe('RecipeViewPage — Refresh is offered only where the librarian can wri
   it.each([
     ['recipe', true],
     ['cocktail', true],
-    ['outing', false],
+    ['special', false],
     ['placeholder', false],
   ] as const)('is offered for a %s: %s', async (kind, offered) => {
     mockRecipes._set([makeRecipe({ kind })]);

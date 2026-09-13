@@ -51,7 +51,7 @@
   // component rows and the cook plan (`recipeTiming.ts`), so a recipe cannot read
   // 45 min here and 2 hr there. Issue #1213 removed the stored-total fallback
   // that used to sit under it; a recipe with no strip now carries no
-  // chip, which in practice is only the placeholders and outings that never had
+  // chip, which in practice is only the placeholders and specials that never had
   // one.
   //
   // The chip and the sort go through the SAME function on purpose: a list sorted
@@ -254,7 +254,7 @@
 
   // The section is NOT part of this. Clearing filters must not teleport you back
   // to Recipes, and "· filtered" must not appear merely because you are looking
-  // at When you CBA.
+  // at Chef's Specials.
   const hasFilters = $derived(query !== '' || activeTags.length > 0 || addedByMe || editedByMe);
 
   // Ingredients are a capability, so this asks the domain rather than the kind.
@@ -356,7 +356,7 @@
   // two import dialogs above. `newEntryMode` is never null — the sheet always has
   // an entry to describe — so opening it is two assignments and no loading state.
   let showNewEntry = $state(false);
-  let newEntryMode = $state<NewEntryMode>('outing');
+  let newEntryMode = $state<NewEntryMode>('special');
 
   function openNewEntry(mode: NewEntryMode): void {
     newMenuOpen = false;
@@ -499,7 +499,7 @@
 
   {#snippet children()}
     <!-- Section chips (issues #637, #752). Every section is always offered,
-         including an empty one: you have to be able to walk into "When you CBA"
+         including an empty one: you have to be able to walk into "Chef's Specials"
          and SEE that there is nothing there yet, otherwise the only signal that
          the section exists is a New-menu entry — and Meals has no New-menu entry
          at all, so its chip is the only thing that says the shelf is there.

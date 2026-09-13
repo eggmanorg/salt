@@ -455,14 +455,14 @@
               {#snippet children({ filteredItems })}
                 {#each filteredItems as item, i (item.value)}
                   {@const kind = kindById.get(item.value) ?? 'recipe'}
-                  <!-- A "When you CBA" option sits in the same list as the
+                  <!-- A "Chef's Specials" option sits in the same list as the
                        recipes and is told apart by a small quiet chip. The
                        badge is COPY: `KIND_COPY[kind].label` names it, and
                        `recipe` — the norm — wears nothing, so the picker
                        looks exactly as it does today for anyone who never
                        adds an alternative. The chip is inside the option, so
                        it is part of the option's accessible name too and a
-                       screen reader hears "Takeaway — Indian, When you CBA".
+                       screen reader hears "Takeaway — Indian, Chef's Specials".
                        `ComboboxItem`'s `children` snippet takes no arguments,
                        so this closes over the loop's own `item`. -->
                   <ComboboxItem {item} index={i} class="gap-2">

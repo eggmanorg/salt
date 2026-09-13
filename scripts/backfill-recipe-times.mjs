@@ -158,7 +158,7 @@ const ENVIRONMENTS = {
 };
 
 // Only `recipe` and `cocktail` are cookable (packages/domain → capabilities.ts).
-// An outing is a restaurant and a placeholder is a photograph and a title, so
+// A special is a restaurant and a placeholder is a photograph and a title, so
 // neither has a prep time to re-estimate and the trigger's branch skips them —
 // asking here would be a write that produces nothing. Kept as a literal list
 // rather than an import because a repo-root script cannot resolve `@salt/domain`;
@@ -392,7 +392,7 @@ const { alreadyDone, toAsk } = selectRecipesToAsk(cookable, {
 });
 
 console.log(`Recipes found     : ${recipes.length}`);
-console.log(`Not cookable      : ${notCookable.length} (skipped — an outing has no prep time)`);
+console.log(`Not cookable      : ${notCookable.length} (skipped — a special has no prep time)`);
 console.log(
   args.missingPhases
     ? `Already has strip : ${alreadyDone.length} (skipped — never re-asked, so a hand-edited strip stands)`

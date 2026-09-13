@@ -104,12 +104,12 @@ The seeding script writes each document with its `thumbnail` ALREADY set. That i
 load-bearing rather than incidental: the trigger's edge guard skips any document
 whose thumbnail is non-null, so seeding never pays for the same drawing twice.
 
-**Tier 2 is no longer only dishes.** The `recipes` collection also holds "When you
-CBA" outings and cocktails (#637) and placeholders (#652), so the hero pipeline
-carries four art directions — a plated dish, food on a night off from cooking as
-it really turns up (handed over, eaten out, bought ready to eat, or thrown
-together at home — #671), a drink in glassware, and an evening in which **nothing
-may be nameable** — selected by the entry's `kind`. Tier 1 is unaffected: canon items
+**Tier 2 is no longer only dishes.** The `recipes` collection also holds "Chef's Specials" and cocktails (#637) and placeholders (#652), so the hero pipeline
+carries four art directions — a plated dish, a chef's special shown exactly as it
+really turns up (handed over, eaten out, bought ready to eat, thrown together at
+home — #671 — or cooked by heart in the household's own kitchen, #1322), a drink
+in glassware, and an evening in which **nothing may be nameable** — selected by
+the entry's `kind`. Tier 1 is unaffected: canon items
 are groceries, one style, and nothing about a hero's art direction reaches down
 here.
 

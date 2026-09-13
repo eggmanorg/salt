@@ -29,7 +29,7 @@ import { PLACEHOLDER_TAG_VOCABULARY } from './placeholderVocabulary.js';
 // out of "no people").
 //
 // The scope rule itself is hoisted into ONE constant because every system prompt
-// here — recipe, outing, cocktail and placeholder, authoring and revising — must
+// here — recipe, special, cocktail and placeholder, authoring and revising — must
 // say it identically. It
 // is the sentence that keeps the brief on the dish-specific half; a per-kind
 // paraphrase of it is a per-kind loophole in the house style.
@@ -96,64 +96,78 @@ change asks for it.
 
 Write ONE paragraph of plain prose, at most about 80 words. Return only the revised brief.`;
 
-// ─── OUTINGS (issues #637, #671) ─────────────────────────────────────────────
-// An outing — "When you CBA" on screen — is a night off from cooking. The recipe
-// prompt above is built on a premise it cannot satisfy — "read the whole recipe,
-// especially the METHOD and the INGREDIENTS" — because it has neither. All the
-// model gets is a title and a hand-written description, and asked the recipe
-// question it invents a plated, cooked-from-scratch dish: exactly the picture an
-// outing is not.
+// ─── CHEF'S SPECIALS (issues #637, #671, #1322) ──────────────────────────────
+// A special — "Chef's Specials" on screen — is an entry that needs no card. The
+// recipe prompt above is built on a premise it cannot satisfy — "read the whole
+// recipe, especially the METHOD and the INGREDIENTS" — because it has neither. All
+// the model gets is a title and a hand-written description, and asked the recipe
+// question it invents a plated, cooked-from-scratch dish out of nothing.
 //
 // So the question changes. Not "what does this look like once it is cooked and
 // plated" but "what does this look like when it really turns up".
 //
-// The answer to THAT is four different pictures, which is what #671 fixed. This
+// The answer to THAT is several different pictures, which is what #671 fixed. This
 // prompt used to say "a takeaway, a picnic, a chippy tea, a street-food stop or a
 // meal out" and then hand over a vessel list beginning "the foil tray" — five
 // wordings of one idea, and a first concrete noun that every brief then reached
 // for. Food bought ready to eat from a baker or a butcher, and food thrown
-// together at home with no cooking, are equally "when you CBA" and neither has
-// packaging that arrives. So the model's FIRST job is now to decide which of the
-// four it is holding; everything else is downstream of that.
+// together at home with no cooking, are equally chef's specials and neither has
+// packaging that arrives. So the model's FIRST job is now to decide which one it
+// is holding; everything else is downstream of that.
+//
+// #1322 added the FIFTH flavour, and it is the one this prompt used to actively
+// forbid: a dish the household cooks often enough not to write down. Three of the
+// eight live entries are that — a Sunday roast, an all-day breakfast, a cheese
+// sandwich — and the old wording ("Nobody cooked a recipe here… do not turn it
+// into a dish cooked from scratch and carefully plated") was simply wrong about
+// them. Their pictures look right today only because the model ignored it. The
+// prohibition survives, narrowed to what it was always for: the model must not
+// invent a plated restaurant dish for food that arrives in a bag.
 //
 // The vessel list is gone with it. This prompt is per-doc and CAN legitimately name
 // a vessel — that is exactly what a brief is for — but it must name the one THIS
-// outing has, read off the title and description, rather than the one at the head
+// special has, read off the title and description, rather than the one at the head
 // of a fixed list.
 //
 // SCOPE is identical to the recipe prompts and inherits the same rule verbatim:
 // the subject half ONLY. The anchors stay locked in generateRecipeImage.ts and are
 // appended after the brief. This matters MORE here than for recipes: with no
 // method for the model to read, editing the brief by hand is the stated primary way
-// a user gets an outing's hero right, so the brief is user text far more often.
-const DESCRIBE_OUTING_SCENE_SYSTEM = `You are a food photographer's art director. You are given one NIGHT OFF FROM \
-COOKING — with its title, description and tags. Write a short art-direction brief for a photograph of that food.
+// a user gets a special's hero right, so the brief is user text far more often.
+const DESCRIBE_SPECIAL_SCENE_SYSTEM = `You are a food photographer's art director. You are given one CHEF'S SPECIAL \
+— a meal that needs no recipe card, with its title, description and tags. Write a short art-direction brief for a \
+photograph of that food.
 
-Nobody cooked a recipe here. There is no method and no ingredient list. Your FIRST job is to read the title and \
-description and decide which kind of night off this is, because everything else follows from it:
+There is no method and no ingredient list here. Your FIRST job is to read the title and description and decide which \
+kind of chef's special this is, because everything else follows from it:
 - food someone else made and handed over — a takeaway, a chippy tea, street food, a picnic
 - a meal eaten OUT — the dish as the restaurant's own kitchen sent it, at their table
 - something good bought ready to eat — a pie from the butcher, bread and cheese from the baker, a deli counter, a \
 good thing out of a packet
 - something assembled at home with no real cooking — a sandwich, cheese and crackers, beans on toast
+- a dish the household cooks so often it was never written down — a Sunday roast, a fry-up, a weeknight standby. \
+This one IS cooked, at home, and it is served the way that household serves it: on their own plates, at their own \
+table, generous rather than dainty.
 
 Do NOT assume a takeaway, and do not give this food packaging it does not have: a meal out arrives on the \
-restaurant's plate, a baker's or butcher's haul is unwrapped onto a board, and a sandwich is made on a plate at \
-home. Read what kind of outing it is and what cuisine it is, and let that decide everything else.
+restaurant's plate, a baker's or butcher's haul is unwrapped onto a board, a sandwich is made on a plate at home, \
+and a dish the household cooks by heart never arrives in a container at all. Read which kind of chef's special it \
+is and what cuisine it is, and let that decide everything else.
 
 Cover only what is specific to THIS one:
 - what the food itself looks like — colour, texture, char, glaze, sauce, steam, how it is piled, laid out or stacked
 - how it is served and what it is served in or on, and whether it is opened out, unwrapped, spread or simply set down
 - where it is eaten and what it is set down on, and the mood, occasion and cuisine it reads as
 
-${SCENE_SCOPE_RULE} Do not describe cooking it, do not invent a method or an ingredient list, and do not turn it into \
-a dish cooked from scratch and carefully plated.
+${SCENE_SCOPE_RULE} This is a brief for a photograph, not a recipe: do not invent a method or an ingredient \
+list. Unless you decided this is a dish the household cooks by heart, do not turn it into a dish cooked from scratch and carefully plated — and even then it is a home \
+kitchen's cooking on the household's own plates, never a restaurant's plating.
 
 Write ONE paragraph of plain prose, at most about 80 words. A brief, not an essay. Return only the brief.`;
 
-// The outing counterpart to REVISE_SCENE_SYSTEM. Same failure it exists to prevent
+// The special counterpart to REVISE_SCENE_SYSTEM. Same failure it exists to prevent
 // (a steer stapled on the end, contradicting the paragraph it was added to), same
-// "keep what the change does not touch" rule — but anchored to the outing rather
+// "keep what the change does not touch" rule — but anchored to the special rather
 // than to a recipe the model could otherwise drift into inventing.
 //
 // The "keep what the change does not touch" rule is load-bearing and correct, and
@@ -162,10 +176,11 @@ Write ONE paragraph of plain prose, at most about 80 words. A brief, not an essa
 // survived every revision. Hence the explicit carve-out below — a change of
 // occasion moves the packaging with it, because the packaging is a CONSEQUENCE of
 // the occasion rather than an independent fact about the food.
-const REVISE_OUTING_SCENE_SYSTEM = `You are a food photographer's art director. You are given one NIGHT OFF FROM \
-COOKING — a takeaway, a meal out, something good bought ready to eat, or something thrown together at home — an \
-existing art-direction brief for a photograph of that food, and a requested change from the person who will use it. \
-Rewrite the brief so it incorporates the requested change.
+const REVISE_SPECIAL_SCENE_SYSTEM = `You are a food photographer's art director. You are given one CHEF'S SPECIAL \
+— a meal that needs no recipe card: a takeaway, a meal out, something good bought ready to eat, something thrown \
+together at home, or a dish the household cooks so often it was never written down — an existing art-direction \
+brief for a photograph of that food, and a requested change from the person who will use it. Rewrite the brief so \
+it incorporates the requested change.
 
 Fold the change THROUGH the whole brief. If the change is "make it a picnic", then the vessel, the setting, the \
 surface, the light and the mood all move together — do NOT keep an indoor-takeaway brief and staple "make it a \
@@ -174,21 +189,23 @@ with a contradiction left in it.
 
 Keep everything the requested change does not touch. Anything the brief already says that still holds should survive \
 the rewrite — this is a revision, not a fresh start. But how the food is packaged, served and set down is NEVER \
-independent of the occasion: if the change moves this to a restaurant, a shop-bought spread or a sandwich at home, \
-the packaging in the old brief goes with it. Do not leave a takeaway container in a brief that is no longer a \
-takeaway.
+independent of the occasion: if the change moves this to a restaurant, a shop-bought spread, a sandwich at home or a \
+roast out of the household's own oven, the packaging in the old brief goes with it. Do not leave a takeaway \
+container in a brief that is no longer a takeaway.
 
-Stay true to the outing. The change re-directs how the food is SHOT and styled; it must not turn it into food this \
-outing does not serve, and it must never turn it into a dish cooked from scratch here and carefully plated.
+Stay true to the chef's special. The change re-directs how the food is SHOT and styled; it must not turn it into \
+food this special does not serve. Unless this is a dish the household cooks by heart, it must never turn it into a \
+dish cooked from scratch here and carefully plated — and where it IS one, it is cooked at home and served on the \
+household's own plates, never plated as a restaurant would.
 
-Cover only what is specific to THIS outing: the food's appearance, how it is served and what it is served in or on, \
+Cover only what is specific to THIS special: the food's appearance, how it is served and what it is served in or on, \
 where it is eaten, and the mood, occasion and cuisine it reads as. ${SCENE_SCOPE_RULE} That holds even if the \
 requested change asks for it.
 
 Write ONE paragraph of plain prose, at most about 80 words. Return only the revised brief.`;
 
 // ─── COCKTAILS (issue #637) ──────────────────────────────────────────────────
-// A cocktail sits on the opposite side of the outing from a recipe. An outing had
+// A cocktail sits on the opposite side of the special from a recipe. A special had
 // to lose the "read the method" premise because it has no method; a cocktail keeps
 // it in full — 50ml gin, 25ml Campari, stir over ice, strain, orange twist is an
 // ingredient list and a method, and it is where every visual fact about the drink
@@ -250,7 +267,7 @@ hour and mood it reads as. ${SCENE_SCOPE_RULE} That holds even if the requested 
 Write ONE paragraph of plain prose, at most about 80 words. Return only the revised brief.`;
 
 // ─── PLACEHOLDERS (issue #652) ───────────────────────────────────────────────
-// A placeholder goes further than an outing did. An outing lost the method and
+// A placeholder goes further than a special did. A special lost the method and
 // the ingredients but kept a subject — a curry, a chippy tea, something the model
 // can picture. A placeholder has no subject at all: it is the picture a night
 // gets when the plan was a sentence, and it is attached to many different
@@ -346,7 +363,7 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 // covering both would have to be vague enough to direct neither.
 //
 // Both are APPENDED ONLY when dishes are actually listed, so a recipe that is not
-// a meal gets byte-for-byte the system prompt it got before. Outings and
+// a meal gets byte-for-byte the system prompt it got before. Specials and
 // placeholders never receive either (`takesComponents` is false for both), which
 // is structural here rather than a promise: their arms below simply ignore it.
 const MEAL_SCENE_RULE = `This recipe is a MEAL. The dishes listed above are separate recipes served together as \
@@ -377,8 +394,8 @@ function systemFor(
   const withRule = (system: string, rule: string): string =>
     hasComponents ? `${system}\n\n${rule}` : system;
   switch (kind) {
-    case 'outing':
-      return revising ? REVISE_OUTING_SCENE_SYSTEM : DESCRIBE_OUTING_SCENE_SYSTEM;
+    case 'special':
+      return revising ? REVISE_SPECIAL_SCENE_SYSTEM : DESCRIBE_SPECIAL_SCENE_SYSTEM;
     case 'cocktail':
       return withRule(
         revising ? REVISE_COCKTAIL_SCENE_SYSTEM : DESCRIBE_COCKTAIL_SCENE_SYSTEM,

@@ -232,13 +232,13 @@ describe('recipeFieldRules — is it a drink you mix, or something you eat (#765
     }
   });
 
-  it('never offers the model an outing or a placeholder', () => {
+  it('never offers the model a special or a placeholder', () => {
     // The prompt must not name a kind the schema will not accept: a model told it
-    // may answer "outing" is a model whose answer is silently rewritten, and the
+    // may answer "special" is a model whose answer is silently rewritten, and the
     // two kinds it would name are exactly the ones with no ingredients and no
     // method. Bounded by AUTHORABLE_RECIPE_KINDS on the wire; not mentioned here.
     for (const rules of [PRESERVE, METRICATE]) {
-      expect(rules).not.toContain('outing');
+      expect(rules).not.toContain('special');
       expect(rules).not.toContain('placeholder');
     }
   });

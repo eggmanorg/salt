@@ -24,7 +24,7 @@ import { formatMinutes } from '../../lib/durationDisplay.js';
  * `null` is a real answer and every caller must draw something for it: after
  * issue #1213 there is no old field to fall back to, so a recipe with no strip has
  * no stated timing at all. Through the normal authoring paths only placeholders
- * and outings reach that state — neither is cookable, and neither ever showed a
+ * and specials reach that state — neither is cookable, and neither ever showed a
  * timing — but that is the claim's boundary, not a property of the type: a recipe
  * starts life with an empty strip, and the editor can remove its last phase.
  *

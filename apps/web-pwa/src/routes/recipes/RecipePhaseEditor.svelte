@@ -98,7 +98,7 @@
   const canAddPhase = $derived(phasesDraft.length < MAX_RECIPE_PHASES);
 
   // What this entry can do (issue #637) — the predicate, never a comparison
-  // against the kind. An outing has no timing to plan, so it is offered no slot
+  // against the kind. A special has no timing to plan, so it is offered no slot
   // and grows no pencil; a stored strip on one still READS, because the zone falls
   // back to its view whenever it is not being edited. The same shape the Added-by
   // zone in the identity card uses for an empty roster.

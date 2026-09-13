@@ -116,7 +116,7 @@ describe('pickPlaceholder — the empty set', () => {
   it('ignores every other kind of entry, however it is tagged', () => {
     const decoys = [
       entry('r-1', 'recipe', ['bright']),
-      entry('o-1', 'outing', ['bright']),
+      entry('o-1', 'special', ['bright']),
       entry('c-1', 'cocktail', ['bright']),
     ];
     expect(pickPlaceholder(decoys, '2026-06-15')).toBeNull();

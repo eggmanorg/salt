@@ -66,7 +66,7 @@ beforeEach(() => {
   mockCountQueries.length = 0;
   mockCounts = {
     recipes: 40,
-    'recipes.kind=outing': 3,
+    'recipes.kind=special': 3,
     'recipes.kind=cocktail': 2,
     'recipes.kind=placeholder': 21,
     canonItems: 150,
@@ -83,7 +83,7 @@ describe('snapshotVolumetrics', () => {
     expect(mockCapture).toHaveBeenCalledTimes(1);
     expect(mockCapture).toHaveBeenCalledWith(VOLUMETRICS_SNAPSHOT_EVENT, {
       recipes_total: 40,
-      recipes_outing: 3,
+      recipes_special: 3,
       recipes_cocktail: 2,
       recipes_placeholder: 21,
       // 40 − 3 − 2 − 21: pre-#637 docs carry no `kind` field, so this can only

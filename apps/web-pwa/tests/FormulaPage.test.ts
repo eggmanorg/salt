@@ -570,7 +570,7 @@ describe('FormulaPage — the weight answer', () => {
 
 describe('FormulaPage — what it refuses', () => {
   it('offers nothing to weigh on an entry that takes no ingredients', async () => {
-    mockRecipes._set([makeRecipe([], { kind: 'outing', title: 'Friday takeaway' })]);
+    mockRecipes._set([makeRecipe([], { kind: 'special', title: 'Friday takeaway' })]);
     const { queryByTestId, getByText } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByText('Nothing to weigh here')).toBeTruthy());

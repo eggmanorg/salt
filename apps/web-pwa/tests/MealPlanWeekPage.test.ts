@@ -44,7 +44,7 @@ const RECIPE = entry('r1', 'Spaghetti Bolognese', 2);
 // and the subscription parses every document before the planner sees it — a
 // `kind`-less doc never reaches this page. The default itself is pinned where it
 // belongs, in `packages/domain/tests/recipe/recipe.schema.test.ts`.
-const OUTING = entry('o1', 'Takeaway — Indian', 2, 'outing');
+const SPECIAL = entry('o1', 'Takeaway — Indian', 2, 'special');
 const COCKTAIL = entry('c1', 'Negroni', 1, 'cocktail');
 
 // ─── Hoisted reactive stubs ────────────────────────────────────────────────
@@ -499,7 +499,7 @@ beforeEach(() => {
 
 // Attach a recipe through the day's real recipe-picker Combobox: open the
 // listbox from the input, then pick the option by its title. `title` accepts a
-// RegExp because a "When you CBA" option carries its kind badge INSIDE the
+// RegExp because a "Chef's Specials" option carries its kind badge INSIDE the
 // option, so its accessible name is the title plus the badge (#637).
 //
 // Both taps are dispatched with `fireEvent` rather than `userEvent` on purpose.
@@ -1665,15 +1665,15 @@ describe('MealPlanWeekPage — next week appears from Tuesday (#639, Phase 6)', 
   });
 });
 
-// ─── "When you CBA" in the planner (#637, Phase 4) ─────────────────────────
-// An outing fills a dinner slot like any other entry — same picker, same note
+// ─── "Chef's Specials" in the planner (#637, Phase 4) ─────────────────────────
+// A special fills a dinner slot like any other entry — same picker, same note
 // auto-fill, same hero thumbnail — and offers nothing that does not apply to it.
 // A cocktail is not dinner and is never offered at all. Every one of these is a
 // consequence of the DOMAIN predicates (`isPlannable`, `takesIngredients`), so
 // the assertions are about what the screen offers, not about the kind string.
-describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
-  it('offers CBA options alongside recipes, and never a cocktail', async () => {
-    mockRecipes._set([RECIPE, OUTING, COCKTAIL]);
+describe("MealPlanWeekPage — chef's specials (#637, Phase 4)", () => {
+  it("offers chef's special options alongside recipes, and never a cocktail", async () => {
+    mockRecipes._set([RECIPE, SPECIAL, COCKTAIL]);
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
     await openPicker('2026-06-08');
@@ -1684,8 +1684,8 @@ describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
     expect(screen.queryByRole('option', { name: /Negroni/ })).not.toBeInTheDocument();
   });
 
-  it('drops an already-attached CBA option from the picker', async () => {
-    mockRecipes._set([RECIPE, OUTING]);
+  it("drops an already-attached chef's special option from the picker", async () => {
+    mockRecipes._set([RECIPE, SPECIAL]);
     mockWeek._set(weekWith('2026-06-08', ['o1']));
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
@@ -1696,14 +1696,14 @@ describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
     expect(screen.getByRole('option', { name: 'Spaghetti Bolognese' })).toBeInTheDocument();
   });
 
-  it('badges a CBA option and leaves a recipe unmarked', async () => {
-    mockRecipes._set([RECIPE, OUTING]);
+  it("badges a chef's special option and leaves a recipe unmarked", async () => {
+    mockRecipes._set([RECIPE, SPECIAL]);
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
     await openPicker('2026-06-08');
 
-    const outing = screen.getByRole('option', { name: /Takeaway — Indian/ });
-    expect(within(outing).getByText('When you CBA')).toBeInTheDocument();
+    const special = screen.getByRole('option', { name: /Takeaway — Indian/ });
+    expect(within(special).getByText("Chef's Specials")).toBeInTheDocument();
 
     // The default kind wears nothing: the picker looks exactly as it does today
     // for anyone who never adds an alternative.
@@ -1711,8 +1711,8 @@ describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
     expect(recipe.textContent?.trim()).toBe('Spaghetti Bolognese');
   });
 
-  it('auto-fills an empty meal with a CBA title exactly as with a recipe', async () => {
-    mockRecipes._set([RECIPE, OUTING]);
+  it("auto-fills an empty meal with a chef's special title exactly as with a recipe", async () => {
+    mockRecipes._set([RECIPE, SPECIAL]);
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
     await attachRecipe('2026-06-08', /Takeaway — Indian/);
@@ -1725,24 +1725,24 @@ describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
     );
   });
 
-  it('offers no "Add to shop" on an attached CBA night, but still does on a recipe', async () => {
-    mockRecipes._set([RECIPE, OUTING]);
+  it('offers no "Add to shop" on an attached chef\'s special night, but still does on a recipe', async () => {
+    mockRecipes._set([RECIPE, SPECIAL]);
     mockWeek._set(weekWith('2026-06-08', ['r1', 'o1']));
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
 
-    // Both rows render — the outing is a first-class night, not a lesser one…
+    // Both rows render — the special is a first-class night, not a lesser one…
     expect(screen.getByTestId('day-2026-06-08-recipe-row-o1')).toBeInTheDocument();
     expect(screen.getByTestId('day-2026-06-08-recipe-row-r1')).toBeInTheDocument();
     // …but a takeaway has nothing to buy, so the action simply isn't there.
     expect(screen.queryByTestId('day-2026-06-08-recipe-addshop-o1')).not.toBeInTheDocument();
     expect(screen.getByTestId('day-2026-06-08-recipe-addshop-r1')).toBeInTheDocument();
-    // Removing works on either, so a wrongly-attached outing is not stuck.
+    // Removing works on either, so a wrongly-attached special is not stuck.
     expect(screen.getByTestId('day-2026-06-08-recipe-remove-o1')).toBeInTheDocument();
   });
 
-  it('wears the kind pictogram when a CBA option has no hero image', async () => {
-    mockRecipes._set([RECIPE, OUTING]);
+  it("wears the kind pictogram when a chef's special option has no hero image", async () => {
+    mockRecipes._set([RECIPE, SPECIAL]);
     mockWeek._set(weekWith('2026-06-08', ['o1']));
     render(MealPlanWeekPage);
     await openDay('2026-06-08');
@@ -1759,7 +1759,7 @@ describe('MealPlanWeekPage — when you CBA (#637, Phase 4)', () => {
     // the recipe list and view pages.
     mockRecipes._set([
       {
-        ...OUTING,
+        ...SPECIAL,
         image: { url: 'https://example.test/curry.webp', source: 'ai' },
         imageHidden: true,
         updatedAt: '2026-06-01T00:00:00.000Z',
@@ -1837,7 +1837,7 @@ describe('MealPlanWeekPage — shop the week (#724, Phase 1)', () => {
 
   it('leaves out a takeaway, a note-only placeholder and a night already behind us', async () => {
     const PLACEHOLDER = entry('p1', 'A good dinner', null, 'placeholder');
-    mockRecipes._set([RECIPE, OUTING, PLACEHOLDER]);
+    mockRecipes._set([RECIPE, SPECIAL, PLACEHOLDER]);
     const start = weekAroundToday(2);
     mockWeek._set(
       planned(start, {
@@ -1850,7 +1850,7 @@ describe('MealPlanWeekPage — shop the week (#724, Phase 1)', () => {
     await openShopWeek();
 
     // `takesIngredients` is the gate, never a `kind ===` comparison: neither an
-    // outing nor a placeholder has anything to buy.
+    // special nor a placeholder has anything to buy.
     expect(screen.getByTestId(`shop-week-row-${TODAY}-r1`)).toBeInTheDocument();
     expect(screen.queryByTestId(`shop-week-row-${TODAY}-o1`)).not.toBeInTheDocument();
     expect(screen.queryByTestId(`shop-week-row-${TODAY}-p1`)).not.toBeInTheDocument();

@@ -144,7 +144,7 @@ async function maybeGenerateImage(
       title,
       description: recipe.description,
       // Selects the opener, the scene fallback and the style anchors (issue
-      // #637): an outing is photographed as food that ARRIVES, not as a plated
+      // #637): a special is photographed as food that ARRIVES, not as a plated
       // dish. Always parsed (RecipeSchema defaults it), so pre-#637 docs read
       // back as 'recipe' and their prompt is byte-for-byte unchanged.
       kind: recipe.kind,
@@ -252,9 +252,9 @@ async function maybeInferKit(
 ): Promise<void> {
   if (!kitNeedsInference(before, recipe)) return;
 
-  // An outing has no method and a placeholder is a photograph and a title — neither
+  // A special has no method and a placeholder is a photograph and a title — neither
   // has anything to get out, so neither may ever cost an AI call. Asked through the
-  // pure capability predicate, never `kind === 'outing'`: what a kind can do is
+  // pure capability predicate, never `kind === 'special'`: what a kind can do is
   // answered in one place (packages/domain/src/recipe/queries/capabilities.ts) and
   // nowhere else.
   if (!isCookable(recipe.kind)) return;
@@ -391,9 +391,9 @@ async function maybeEstimateTimes(
 ): Promise<void> {
   if (!timesNeedEstimate(before, recipe)) return;
 
-  // An outing is a restaurant and a placeholder is a photograph and a title —
+  // A special is a restaurant and a placeholder is a photograph and a title —
   // neither is cooked, so neither has times worth an AI call. Asked through the
-  // pure capability predicate, never `kind === 'outing'`: what a kind can do is
+  // pure capability predicate, never `kind === 'special'`: what a kind can do is
   // answered in one place (packages/domain/src/recipe/queries/capabilities.ts).
   if (!isCookable(recipe.kind)) return;
 
@@ -487,7 +487,7 @@ async function describeSceneOrNothing(recipe: RecipeDoc): Promise<string | undef
       // and no ingredients, and its mood lives in `tags`, so the prompt's "read
       // the MOOD, which the tags carry" was reading a field nobody sent.
       tags: recipe.metadata.tags,
-      // An outing has no method and no ingredients for the art director to read,
+      // A special has no method and no ingredients for the art director to read,
       // so it gets a prompt that asks what the food looks like as it ARRIVES
       // (issue #637) rather than what it looks like once cooked and plated.
       kind: recipe.kind,

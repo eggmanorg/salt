@@ -68,7 +68,7 @@ export const routes: RouteDefinition = new Map<
   // There is no `/recipes/new`, no `/recipes/new/:kind` and no `/recipes/:id/edit`
   // (issue #1319 Phase 8): the separate editor page is gone. A recipe is read and
   // written in the same place — `/recipes/:id` turns editable in place — and the
-  // three things that cannot be imported (an outing, a meal, a placeholder) are
+  // three things that cannot be imported (a special, a meal, a placeholder) are
   // minted by `RecipeNewSheet`, which writes the document and lands on its page.
   // The `kind` is still set once and immutable; the sheet sets it where the route
   // segment used to. A stale bookmark to any of the three now falls through to

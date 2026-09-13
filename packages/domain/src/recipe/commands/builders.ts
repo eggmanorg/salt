@@ -8,7 +8,7 @@ import type { Step } from '../entities/Step.js';
 // a partial entity. `updatedAt` is left blank until the service stamps it on save.
 
 // A blank recipe: no ingredients, no steps, empty metadata. `kind` defaults to
-// 'recipe' (issue #637) so every existing caller is untouched; an outing or a
+// 'recipe' (issue #637) so every existing caller is untouched; a special or a
 // cocktail is built by passing it.
 export function emptyRecipe(id: string, now: string, kind: RecipeKind = 'recipe'): Recipe {
   return {

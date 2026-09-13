@@ -6,7 +6,7 @@
     ariaLabel,
   }: { mode?: 'single' | 'multi' | 'truncated'; ariaLabel?: string | undefined } = $props();
 
-  const SECTIONS = ['Recipes', 'Meals', 'Cocktails', 'When you CBA'];
+  const SECTIONS = ['Recipes', 'Meals', 'Cocktails', "Chef's Specials"];
   const TAGS = ['weeknight', 'vegetarian', 'one-pot', 'freezes well'];
 
   let section = $state('Recipes');

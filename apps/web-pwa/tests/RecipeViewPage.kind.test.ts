@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { Recipe } from '@salt/domain';
 
-// What an outing's page does NOT offer (issue #637). "Things that don't apply
+// What a special's page does NOT offer (issue #637). "Things that don't apply
 // simply aren't offered": no Cook, no Shop, no Ingredients card, no Method card,
 // no Serves/Prep/Cook/Total.
 //
@@ -13,7 +13,7 @@ import type { Recipe } from '@salt/domain';
 // second markup site would be visible to these assertions — which is what makes
 // "the demoted five have no inline site" a real assertion rather than a hopeful one.
 //
-// The hero and the regenerate dialog are deliberately NOT gated: an outing's
+// The hero and the regenerate dialog are deliberately NOT gated: a special's
 // picture is the whole point of the entry, so this file also pins that they
 // survive.
 
@@ -200,12 +200,12 @@ function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   };
 }
 
-// An outing carries no ingredients, no steps and no timings — but the metadata
+// A special carries no ingredients, no steps and no timings — but the metadata
 // fields are set here anyway, so an assertion that the chips are absent proves
 // the CAPABILITY gate rather than merely an empty document.
-function makeOuting(): Recipe {
+function makeSpecial(): Recipe {
   return makeEntry({
-    kind: 'outing',
+    kind: 'special',
     title: 'Takeaway — Indian',
     description: 'Curry from the place on the corner.',
     ingredients: [],
@@ -443,9 +443,9 @@ describe('RecipeViewPage — a recipe keeps everything', () => {
   });
 });
 
-describe('RecipeViewPage — an outing offers only what applies', () => {
+describe('RecipeViewPage — a special offers only what applies', () => {
   beforeEach(() => {
-    mockRecipes._set([makeOuting()]);
+    mockRecipes._set([makeSpecial()]);
   });
 
   it('offers no Cook and no Shop', () => {
@@ -456,7 +456,7 @@ describe('RecipeViewPage — an outing offers only what applies', () => {
   });
 
   it('offers no guided cook even if a plan somehow exists — capability wins', () => {
-    // A plan for an outing should never be written, but the gate must not depend
+    // A plan for a special should never be written, but the gate must not depend
     // on that: guided cook rides on `isCookable`, exactly as Cook does.
     mockGuidedPlan._set(makePlan());
     renderPage();
@@ -503,7 +503,7 @@ describe('RecipeViewPage — an outing offers only what applies', () => {
     expect(screen.getByTestId('recipe-delete-menu-item')).toBeInTheDocument();
   });
 
-  // An outing empties the ⋮ menu's whole first group, so the divider that would
+  // A special empties the ⋮ menu's whole first group, so the divider that would
   // have followed it must go too — otherwise the menu opens with a rule across
   // the top, separating nothing from everything (#784).
   it('opens with an item, not a divider, when the first group is empty', async () => {
@@ -528,7 +528,7 @@ describe('RecipeViewPage — an outing offers only what applies', () => {
   it('keeps Plan — a night off is still a night that gets planned', () => {
     renderPage();
 
-    // The outing's only key action, and it is inline: a phone showing a takeaway
+    // The special's only key action, and it is inline: a phone showing a takeaway
     // gets one button and the ⋮, not an empty row.
     expect(screen.getByTestId('recipe-add-to-planner-button')).toBeInTheDocument();
     expect(screen.getByTestId('recipe-add-to-planner-button').className).not.toContain('hidden');
@@ -663,7 +663,7 @@ describe('RecipeViewPage — duplicate', () => {
     expect(push).not.toHaveBeenCalledWith(expect.stringMatching(/^\/recipes\/(?!recipe-1$)/));
   });
 
-  it.each(['recipe', 'outing', 'cocktail', 'placeholder'] as const)(
+  it.each(['recipe', 'special', 'cocktail', 'placeholder'] as const)(
     'is offered for a %s, and the copy is the same kind',
     async (kind) => {
       mockRecipes._set([makeEntry({ kind })]);
@@ -711,7 +711,7 @@ describe('RecipeViewPage — make a variation', () => {
   it.each([
     ['recipe', true],
     ['cocktail', true],
-    ['outing', false],
+    ['special', false],
     ['placeholder', false],
   ] as const)('is offered for a %s: %s', async (kind, offered) => {
     mockRecipes._set([makeEntry({ kind })]);
@@ -816,14 +816,14 @@ describe('RecipeViewPage — bread scaling is gated on the formula, never the ki
   });
 
   it('offers them on an entry no capability would allow, and keeps the divider honest', async () => {
-    // An outing is neither cookable nor authorable, so group one is empty on one
+    // A special is neither cookable nor authorable, so group one is empty on one
     // today — and a divider with nothing above it is a rule across the top of the
     // menu. A formula is presence rather than a capability, so it can fill that
     // group on its own, which is exactly why the divider's gate had to learn about
     // it. (Nobody will write a formula for a takeaway; the point is that the gate
-    // asks about the DOCUMENT, and the outing is the cleanest way to prove it.)
+    // asks about the DOCUMENT, and the special is the cleanest way to prove it.)
     mockFormula._set(makeFormula());
-    mockRecipes._set([makeOuting()]);
+    mockRecipes._set([makeSpecial()]);
     renderPage();
 
     await openOverflowMenu();

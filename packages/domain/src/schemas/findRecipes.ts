@@ -27,7 +27,7 @@ export const FindRecipesInputSchema = z.object({
     ),
   kind: RecipeKindSchema.optional().describe(
     'Restrict to one kind of entry. "recipe" is a dish to cook, "cocktail" a drink, ' +
-      '"outing" a takeaway or a night out (a legitimate answer to "what is for dinner"). ' +
+      '"special" a takeaway or a night out (a legitimate answer to "what is for dinner"). ' +
       'Leave out to search everything the household could actually eat — "placeholder" is a ' +
       'stock photograph for a night planned in a sentence, never a dish, and is only ever ' +
       'returned if you ask for it by name here.',

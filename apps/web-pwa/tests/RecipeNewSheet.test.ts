@@ -8,7 +8,7 @@ import type { Recipe } from '@salt/domain';
 //
 // What this suite is built to catch, rather than what the component happens to do:
 //
-//   IT ASKS ONLY FOR WHAT THE ENTRY CANNOT EXIST WITHOUT. A "When you CBA" entry
+//   IT ASKS ONLY FOR WHAT THE ENTRY CANNOT EXIST WITHOUT. A "Chef's Specials" entry
 //   and a placeholder are a name and a description; a meal is a name and at least
 //   one dish. The field SETS are asserted per mode, both what is there and what is
 //   not, because the whole point of retiring the editor is that there is no second
@@ -66,7 +66,7 @@ function dish(id: string, title: string, elapsed: number | null = null): Recipe 
 const CHICKEN = dish('chicken', 'Roast chicken', 90);
 const POTATOES = dish('potatoes', 'Roast potatoes', 45);
 const GRAVY = dish('gravy', 'Onion gravy', 20);
-const TAKEAWAY: Recipe = { ...emptyRecipe('takeaway', NOW, 'outing'), title: 'Takeaway — Indian' };
+const TAKEAWAY: Recipe = { ...emptyRecipe('takeaway', NOW, 'special'), title: 'Takeaway — Indian' };
 const PLACEHOLDER: Recipe = {
   ...emptyRecipe('stock-photo', NOW, 'placeholder'),
   title: 'A good dinner',
@@ -89,7 +89,7 @@ afterEach(() => {
   mockRecipes._set([]);
 });
 
-function show(mode: 'outing' | 'meal' | 'placeholder', open = true) {
+function show(mode: 'special' | 'meal' | 'placeholder', open = true) {
   return render(RecipeNewSheet, { props: { mode, open } });
 }
 
@@ -129,12 +129,12 @@ function dishRowTitles(): string[] {
 }
 
 describe('RecipeNewSheet — what each entry is asked for', () => {
-  it('asks a "When you CBA" entry for a name and a description, and nothing else', async () => {
-    show('outing');
+  it('asks a "Chef\'s Specials" entry for a name and a description, and nothing else', async () => {
+    show('special');
 
     await waitFor(() => expect(nameBox()).toBeInTheDocument());
     expect(screen.getByTestId('recipe-new-description')).toBeInTheDocument();
-    // No dish picker: an outing has no dish to compose.
+    // No dish picker: a special has no dish to compose.
     expect(screen.queryByTestId('recipe-new-dish-picker')).toBeNull();
   });
 
@@ -157,8 +157,8 @@ describe('RecipeNewSheet — what each entry is asked for', () => {
   });
 
   it('names the entry it is creating', async () => {
-    show('outing');
-    await waitFor(() => expect(screen.getByText('When you CBA')).toBeInTheDocument());
+    show('special');
+    await waitFor(() => expect(screen.getByText("Chef's Specials")).toBeInTheDocument());
 
     cleanup();
     show('meal');
@@ -172,7 +172,7 @@ describe('RecipeNewSheet — nothing is written until it is real', () => {
   // clicking it writes nothing. That is what makes removing the handler's own
   // unreachable `canCreate` re-check safe rather than a quiet loss.
   it('refuses Create with no name, and clicking it anyway writes nothing', async () => {
-    show('outing');
+    show('special');
 
     await waitFor(() => expect(createButton()).toBeDisabled());
     await fireEvent.click(createButton());
@@ -180,7 +180,7 @@ describe('RecipeNewSheet — nothing is written until it is real', () => {
   });
 
   it('refuses Create on whitespace alone', async () => {
-    show('outing');
+    show('special');
     await typeName('   ');
 
     await waitFor(() => expect(createButton()).toBeDisabled());
@@ -213,8 +213,8 @@ describe('RecipeNewSheet — nothing is written until it is real', () => {
 });
 
 describe('RecipeNewSheet — what it writes', () => {
-  it('writes an outing with its name and description, trimmed', async () => {
-    show('outing');
+  it('writes a special with its name and description, trimmed', async () => {
+    show('special');
     await typeName('  Curry from the corner  ');
     await fireEvent.input(screen.getByTestId('recipe-new-description'), {
       target: { value: '  Ask for it extra hot.  ' },
@@ -224,14 +224,14 @@ describe('RecipeNewSheet — what it writes', () => {
 
     await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
     const doc = written();
-    expect(doc.kind).toBe('outing');
+    expect(doc.kind).toBe('special');
     expect(doc.title).toBe('Curry from the corner');
     expect(doc.description).toBe('Ask for it extra hot.');
     expect(doc.componentRecipeIds).toEqual([]);
   });
 
   it('leaves an empty description null rather than storing a blank string', async () => {
-    show('outing');
+    show('special');
     await typeName('A night off');
 
     await fireEvent.click(createButton());
@@ -273,7 +273,7 @@ describe('RecipeNewSheet — what it writes', () => {
 
 describe('RecipeNewSheet — where it leaves you', () => {
   it('closes, asks for edit mode and navigates to the entry — in that order', async () => {
-    show('outing');
+    show('special');
     await typeName('A night off');
 
     await fireEvent.click(createButton());
@@ -306,7 +306,7 @@ describe('RecipeNewSheet — where it leaves you', () => {
       kind: 'err',
       error: { kind: 'StorageError', reason: 'unavailable' },
     });
-    show('outing');
+    show('special');
     await typeName('A night off');
 
     await fireEvent.click(createButton());
@@ -321,7 +321,7 @@ describe('RecipeNewSheet — where it leaves you', () => {
 });
 
 describe('RecipeNewSheet — the dish picker', () => {
-  it('offers only dishes you make — never an outing or a placeholder', async () => {
+  it('offers only dishes you make — never a special or a placeholder', async () => {
     show('meal');
     await openPicker();
 
@@ -393,12 +393,12 @@ describe('RecipeNewSheet — the dish picker', () => {
 
 describe('RecipeNewSheet — a reopened sheet starts clean', () => {
   it('forgets the name somebody typed and backed out of', async () => {
-    const { rerender } = show('outing');
+    const { rerender } = show('special');
     await typeName('Abandoned');
     expect(nameBox()).toHaveValue('Abandoned');
 
-    await rerender({ mode: 'outing', open: false });
-    await rerender({ mode: 'outing', open: true });
+    await rerender({ mode: 'special', open: false });
+    await rerender({ mode: 'special', open: true });
 
     await waitFor(() => expect(nameBox()).toHaveValue(''));
   });
@@ -415,14 +415,14 @@ describe('RecipeNewSheet — a reopened sheet starts clean', () => {
   });
 
   it('mints a new id per opening, so two entries are never written over one another', async () => {
-    const { rerender } = show('outing');
+    const { rerender } = show('special');
     await typeName('First');
     await fireEvent.click(createButton());
     await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
     const firstId = written().id;
 
-    await rerender({ mode: 'outing', open: false });
-    await rerender({ mode: 'outing', open: true });
+    await rerender({ mode: 'special', open: false });
+    await rerender({ mode: 'special', open: true });
     await waitFor(() => expect(nameBox()).toHaveValue(''));
     await typeName('Second');
     await fireEvent.click(createButton());
@@ -436,13 +436,13 @@ describe('RecipeNewSheet — a reopened sheet starts clean', () => {
     // behind. Reset on the way IN rather than in a close handler, so it holds
     // however the sheet was dismissed.
     vi.mocked(persistRecipe).mockReturnValueOnce(new Promise(() => {}));
-    const { rerender } = show('outing');
+    const { rerender } = show('special');
     await typeName('Interrupted');
     await fireEvent.click(createButton());
     await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
 
-    await rerender({ mode: 'outing', open: false });
-    await rerender({ mode: 'outing', open: true });
+    await rerender({ mode: 'special', open: false });
+    await rerender({ mode: 'special', open: true });
     await waitFor(() => expect(nameBox()).toHaveValue(''));
     await typeName('Second go');
 

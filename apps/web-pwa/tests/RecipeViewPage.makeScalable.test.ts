@@ -312,9 +312,9 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
   });
 
   it('never offers it on an entry with no ingredients', async () => {
-    // An outing has none by definition, so the guess is empty and the gate is shut
+    // A special has none by definition, so the guess is empty and the gate is shut
     // without anything here asking what `kind` it is.
-    mockRecipes._set([makeEntry({ kind: 'outing', title: 'Chippy', steps: [] })]);
+    mockRecipes._set([makeEntry({ kind: 'special', title: 'Chippy', steps: [] })]);
     await openOverflow();
 
     expect(screen.queryByTestId('recipe-make-scalable-menu-item')).toBeNull();

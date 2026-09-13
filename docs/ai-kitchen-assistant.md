@@ -258,8 +258,8 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
 - Canon: the draft's ingredients are run through the existing
   `canonicaliseRecipeIngredients` path to fill `canonId` / `matchState`. The client
   assembles the final `RecipeDoc` and persists with the existing `saveRecipe`.
-- **The librarian only ever authors cookable kinds** (#637). A "When you CBA"
-  outing is hand-written and has nothing to author, and a placeholder is a
+- **The librarian only ever authors cookable kinds** (#637). A "Chef's Specials"
+  special is hand-written and has nothing to author, and a placeholder is a
   photograph and a title; the Ask / amend affordance is capability-gated off both
   view pages, so the librarian is simply unreachable for either.
 - **Which kinds it may author is a named predicate** — `isAuthorable` in
@@ -278,7 +278,7 @@ raw.kind`:
     deterministic answer that beats inferring one from the transcript;
   - otherwise the model's own classification, asked for by the `kind` bullet in
     `recipeFieldRules` (one text, all four prompts) and bounded on the wire to
-    `AUTHORABLE_RECIPE_KINDS`, so `outing` and `placeholder` are never offered.
+    `AUTHORABLE_RECIPE_KINDS`, so `special` and `placeholder` are never offered.
     The floor is the schema's, not the prompt's: `AuthoredRecipeKindSchema` uses
     `.catch('recipe')`, so a missing or invented kind degrades rather than failing an
     import — load-bearing on the librarian path, which has no retry. The tie-break

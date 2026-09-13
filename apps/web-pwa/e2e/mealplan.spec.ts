@@ -384,10 +384,10 @@ function shoppableRecipe(id: string, title: string, item: string): Recipe {
 }
 
 /** A takeaway: a planner slot with nothing to buy. */
-function outingRecipe(id: string, title: string): Recipe {
+function specialRecipe(id: string, title: string): Recipe {
   return {
     ...shoppableRecipe(id, title, ''),
-    kind: 'outing',
+    kind: 'special',
     ingredients: [],
   } as unknown as Recipe;
 }
@@ -455,7 +455,7 @@ test.describe('meal planner — shop the week (#724)', () => {
     // ── A night with two dinners and a takeaway ──────────────────────────────
     await seedRecipe(page, shoppableRecipe('e2e-shop-a', 'Aubergine bake', '1 aubergine'));
     await seedRecipe(page, shoppableRecipe('e2e-shop-b', 'Chorizo stew', '200g chorizo'));
-    await seedRecipe(page, outingRecipe('e2e-shop-out', 'Takeaway — Thai'));
+    await seedRecipe(page, specialRecipe('e2e-shop-out', 'Takeaway — Thai'));
 
     const startDate = await readStartDate(page);
     const dayKey = await readAnchorDayKey(page);

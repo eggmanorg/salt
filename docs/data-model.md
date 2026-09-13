@@ -104,10 +104,12 @@ LWW-clobbering — the dish, and a recipe with no plan carries no empty scaffold
 
 ## `recipes` holds four kinds
 
-`kind: 'recipe' | 'outing' | 'cocktail' | 'placeholder'` (issues #637, #652).
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'` (issues #637, #652).
 
-- an **outing** (UI label "When you CBA") is a takeaway / night off, with no
-  ingredients and no method;
+- a **special** (UI label "Chef's Specials") is a meal that needs no recipe card — a
+  takeaway, a night off, or the roast the cook knows by heart — with no ingredients
+  and no method. Stored as `outing` until issue #1322, which renamed it in two
+  deploys behind a temporary read-side coercion (see `docs/recipe-module.md`);
 - a **cocktail** is a full recipe that is not dinner;
 - a **placeholder** is neither — a stock photograph of "a good dinner, no particular
   dish", attached to a planner day that was planned in a sentence, so that night gets
@@ -120,13 +122,13 @@ Schema constraints, each load-bearing:
   that fail validation, so a required field would hide every production recipe.
 - `ingredients` / `steps` stay required arrays (`[]` when empty) — never a
   discriminated union.
-- `kind` is **immutable**: set at create — by the New sheet for an outing, a meal
+- `kind` is **immutable**: set at create — by the New sheet for a special, a meal
   or a placeholder, by the import or the chef for a recipe or a cocktail — and
   never editable. There is no route or control that changes it (the
   `/recipes/new/:kind` segment that used to set it went with the editor, #1319
   Phase 8).
 
-Outings and placeholders are **not** separate collections — they occupy a planner
+Specials and placeholders are **not** separate collections — they occupy a planner
 slot in place of a recipe. If they ever need their own fields, add optional nullable
 fields to the recipe document first.
 

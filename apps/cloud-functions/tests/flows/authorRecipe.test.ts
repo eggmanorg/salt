@@ -470,10 +470,10 @@ describe('authorRecipe — the kind it writes', () => {
   });
 
   // AMENDING NEVER RE-TYPES. All four kinds, with the model deliberately
-  // disagreeing each time — an outing or a placeholder is not reachable from the
+  // disagreeing each time — a special or a placeholder is not reachable from the
   // chat amend UI today, and is asserted anyway because `kind` being immutable is
   // a property of the document, not of which buttons currently exist.
-  it.each(['recipe', 'outing', 'cocktail', 'placeholder'] as const)(
+  it.each(['recipe', 'special', 'cocktail', 'placeholder'] as const)(
     'leaves an existing %s exactly that kind when the chat amends it',
     async (kind) => {
       mockGet.mockResolvedValue({ exists: true, data: () => ({ ...baseRecipeDoc(), kind }) });
@@ -514,7 +514,7 @@ describe('authorRecipe — the kind it writes', () => {
     expect(draft.producesCanonId).toBe(null);
   });
 
-  it.each(['outing', 'placeholder'] as const)(
+  it.each(['special', 'placeholder'] as const)(
     'ignores a %s base as a variation hint and uses the model answer instead',
     async (kind) => {
       // Neither is reachable from ⋮ → Make a variation, which is gated on the same

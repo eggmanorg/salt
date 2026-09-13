@@ -117,7 +117,7 @@ const ENVIRONMENTS = {
 };
 
 // Only `recipe` and `cocktail` are cookable (packages/domain → capabilities.ts).
-// An outing has no method and a placeholder is a photograph and a title, so the
+// A special has no method and a placeholder is a photograph and a title, so the
 // trigger's kit branch skips them — asking here would be a write that produces
 // nothing. Kept as a literal list rather than an import because a repo-root script
 // cannot resolve `@salt/domain`; the trigger is the enforcer either way, so the

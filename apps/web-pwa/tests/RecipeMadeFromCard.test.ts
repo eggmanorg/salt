@@ -96,7 +96,7 @@ function dish(id: string, title: string, elapsed: number | null = null): Recipe 
 const CHICKEN = dish('chicken', 'Roast chicken', 90);
 const POTATOES = dish('potatoes', 'Roast potatoes', 45);
 const GRAVY = dish('gravy', 'Onion gravy', 20);
-const TAKEAWAY: Recipe = { ...emptyRecipe('takeaway', NOW, 'outing'), title: 'Takeaway — Indian' };
+const TAKEAWAY: Recipe = { ...emptyRecipe('takeaway', NOW, 'special'), title: 'Takeaway — Indian' };
 const PLACEHOLDER: Recipe = {
   ...emptyRecipe('stock-photo', NOW, 'placeholder'),
   title: 'A good dinner',
@@ -109,7 +109,7 @@ function meal(componentRecipeIds: string[]): Recipe {
 }
 
 /** The same entry under another kind — what `takesComponents` is asked about. */
-function ofKind(kind: 'cocktail' | 'outing' | 'placeholder', ids: string[] = []): Recipe {
+function ofKind(kind: 'cocktail' | 'special' | 'placeholder', ids: string[] = []): Recipe {
   return { ...emptyRecipe(MEAL_ID, NOW, kind), title: 'Sunday roast', componentRecipeIds: ids };
 }
 
@@ -286,7 +286,7 @@ describe('RecipeMadeFromCard — editing the dishes', () => {
 });
 
 describe('RecipeMadeFromCard — adding a dish', () => {
-  it('offers only dishes you make — never itself, an outing or a placeholder', async () => {
+  it('offers only dishes you make — never itself, a special or a placeholder', async () => {
     show(meal([]), true);
     await openRows();
     await openPicker();
@@ -423,8 +423,8 @@ describe('RecipeMadeFromCard — who gets the card at all', () => {
     expect(screen.getByTestId('recipe-edit-components')).toHaveTextContent('+ Dishes');
   });
 
-  it('never offers it on an outing or a placeholder, in either mode', () => {
-    for (const kind of ['outing', 'placeholder'] as const) {
+  it('never offers it on a special or a placeholder, in either mode', () => {
+    for (const kind of ['special', 'placeholder'] as const) {
       for (const editing of [false, true]) {
         show(ofKind(kind), editing);
         expect(cardIsThere()).toBe(false);
@@ -438,11 +438,11 @@ describe('RecipeMadeFromCard — who gets the card at all', () => {
     // the FIRST clause, so a document with dishes on it reads as a meal whatever
     // kind it declares — which is the only way such an entry stays editable at
     // all.
-    show(ofKind('outing', ['chicken']), false);
+    show(ofKind('special', ['chicken']), false);
     expect(readTitles()).toEqual(['Roast chicken']);
 
     cleanup();
-    show(ofKind('outing', ['chicken']), true);
+    show(ofKind('special', ['chicken']), true);
     await openRows();
     expect(rowTitles()).toEqual(['Roast chicken']);
   });

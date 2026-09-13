@@ -714,7 +714,7 @@ describe('GuidedPlanPage — drift and save', () => {
 describe('GuidedPlanPage — capability gate', () => {
   it('has nothing to plan for an entry with no method', async () => {
     // Gated on the capability predicate, never on `kind`.
-    mockRecipes._set([makeRecipe({ kind: 'outing', ingredients: [], steps: [] })]);
+    mockRecipes._set([makeRecipe({ kind: 'special', ingredients: [], steps: [] })]);
     mockPlan._set(null);
     const { queryByTestId, getByText } = renderPage();
 

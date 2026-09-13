@@ -119,7 +119,7 @@ describe('duplicateRecipe', () => {
   });
 
   describe('carries', () => {
-    it.each(['recipe', 'outing', 'cocktail', 'placeholder'] as const)(
+    it.each(['recipe', 'special', 'cocktail', 'placeholder'] as const)(
       'inherits kind %s — copying never changes what an entry is',
       (kind) => {
         expect(duplicateRecipe(fullRecipe({ kind }), 'new-id', NOW).kind).toBe(kind);
@@ -248,9 +248,9 @@ describe('duplicateRecipe', () => {
     expect(copy.kitRequestedAt).toBeUndefined();
   });
 
-  it('copies an entry with no ingredients, steps, source or image (an outing)', () => {
-    const outing = fullRecipe({
-      kind: 'outing',
+  it('copies an entry with no ingredients, steps, source or image (a special)', () => {
+    const special = fullRecipe({
+      kind: 'special',
       ingredients: [],
       steps: [],
       source: null,
@@ -258,8 +258,8 @@ describe('duplicateRecipe', () => {
       description: null,
       notes: null,
     });
-    const copy = duplicateRecipe(outing, 'new-id', NOW);
-    expect(copy.kind).toBe('outing');
+    const copy = duplicateRecipe(special, 'new-id', NOW);
+    expect(copy.kind).toBe('special');
     expect(copy.ingredients).toEqual([]);
     expect(copy.steps).toEqual([]);
     expect(copy.source).toBeNull();
