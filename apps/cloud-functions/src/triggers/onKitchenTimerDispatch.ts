@@ -49,13 +49,25 @@ const posthogApiKey = defineSecret('POSTHOG_API_KEY');
 // belt-and-braces default rather than an expected path.
 const FALLBACK_TITLE = 'Timer finished';
 
-// Where the notification lands. My Kitchen is a standalone timer's only surface —
-// there is no cook page to open — and the timer will be sitting there in its fired
-// state when they arrive. EXPLICIT and server-chosen, never reconstructed in the
-// service worker: push-sw.js's `sessionId` slice is a cook-timer-only licence
-// granted by that collection's composite document id, and this route has no id in
-// it at all.
+// Where the notification lands. My Kitchen is the surface for a timer that came
+// from nowhere in particular — the timer will be sitting there in its fired state
+// when they arrive. EXPLICIT and server-chosen, never reconstructed in the service
+// worker: push-sw.js's `sessionId` slice is a cook-timer-only licence granted by
+// that collection's composite document id, and this route has no id in it at all.
 const KITCHEN_URL = '/#/mine';
+
+// A timer armed from a batch's cook page goes BACK to that page (issue #1327,
+// Phase 2), which draws it in the same bar it was started from. This is the whole
+// user-visible point of `origin`: a notification that lands on Mine while the chef
+// is stood at the oven is the cost option (a) would have shipped.
+//
+// Taken from the LIVE document re-read below, not from the task — which is why the
+// payload could stay ids-only and why no user content rides the queue. A timer
+// whose origin was dropped by a re-time simply lands on Mine, the same as any
+// kitchen timer.
+function timerUrl(batchId: string | null): string {
+  return batchId === null ? KITCHEN_URL : `/#/batches/${batchId}/cook`;
+}
 
 // Absolute, because Pushover's link is opened by a native app rather than a page,
 // so there is no origin to resolve a path against. Hosting is `<projectId>.web.app`
@@ -63,10 +75,10 @@ const KITCHEN_URL = '/#/mine';
 // this needs no new configuration — the same derivation the cook timer uses.
 // Undefined when there is no project id (local unit runs): the notification still
 // sends, just unlinked.
-function kitchenDeepLink(): string | undefined {
+function absoluteDeepLink(path: string): string | undefined {
   const projectId = process.env['GCLOUD_PROJECT'] ?? process.env['GCP_PROJECT'] ?? '';
   if (!projectId) return undefined;
-  return `https://${projectId}.web.app${KITCHEN_URL}`;
+  return `https://${projectId}.web.app${path}`;
 }
 
 export const onKitchenTimerDispatch = onTaskDispatched<KitchenTimerTaskPayload>(
@@ -160,12 +172,15 @@ export const onKitchenTimerDispatch = onTaskDispatched<KitchenTimerTaskPayload>(
       // name the chef will be looking for. The timer's own name leads, exactly as
       // a cook timer's label does; the second line says what kind of thing just
       // happened, since there is no dish to name.
+      // One path, chosen once, used by both sinks — so the lock screen and the
+      // Pushover notification can never disagree about where this timer lives.
+      const url = timerUrl(timer.origin?.batchId ?? null);
       const payload = {
         type: 'kitchen-timer' as const,
         // Per TIMER. A kitchen-wide tag would let a second timer silently replace
         // the first one's notification while it was still unread.
         tag: `kitchen::${timerId}`,
-        url: KITCHEN_URL,
+        url,
         title: timer.label.trim() || FALLBACK_TITLE,
         body: 'Your kitchen timer just finished.',
         // Re-buzzes, like the cook timer and the batch stage: a timed call to act,
@@ -181,8 +196,8 @@ export const onKitchenTimerDispatch = onTaskDispatched<KitchenTimerTaskPayload>(
         user: pushoverUserKey.value(),
         ownerUid: uid,
         context: { timerId },
-        link: kitchenDeepLink(),
-        linkTitle: 'Go to the kitchen',
+        link: absoluteDeepLink(url),
+        linkTitle: timer.origin?.batchId ? 'Back to the cook' : 'Go to the kitchen',
         payload,
       });
       const pushoverDelivered = pushoverOutcome === 'delivered';

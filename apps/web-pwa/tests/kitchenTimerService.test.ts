@@ -16,7 +16,7 @@
  * "fixed" corruption by breaking the empty-account path would be worse than the
  * defect.
  */
-import { describe, it, expect, beforeEach, vi, type Mocked } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mocked } from 'vitest';
 import { get } from 'svelte/store';
 import type { KitchenTimersDoc } from '@salt/domain/schemas';
 import type { DomainError } from '@salt/shared-types';
@@ -41,6 +41,12 @@ vi.mock('@salt/observability', async () => {
   };
 });
 
+// Unlocking the audio context is a real side effect of the start gesture and
+// there is no AudioContext in jsdom. It lives in the START COMMAND rather than at
+// either call site, so this is where the assertion that it happens belongs.
+const { primeChimeSpy } = vi.hoisted(() => ({ primeChimeSpy: vi.fn() }));
+vi.mock('../src/lib/chime.js', () => ({ primeChime: primeChimeSpy }));
+
 // The SDK boundary this service sits behind (UT-B3). `isAuthTransitioning` is
 // pulled in by src/lib/errorReporting.ts, not by the service itself.
 vi.mock('@salt/firebase-sync', () => ({
@@ -54,6 +60,8 @@ import {
   kitchenTimers,
   getKitchenTimersSnapshot,
   initKitchenTimerSync,
+  startKitchenTimer,
+  dismissKitchenTimer,
 } from '../src/lib/kitchenTimerService.js';
 
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
@@ -137,5 +145,129 @@ describe('kitchenTimerService — a document the schema refused', () => {
     expect(getKitchenTimersSnapshot()).toEqual({ ownerUid: UID, timers: [] });
     expect(reportSpy).not.toHaveBeenCalled();
     dispose();
+  });
+});
+
+// ─── The two commands (issues #842, #1327 Phase 2) ───────────────────────────
+//
+// Starting a timer was composed at the call site until the batch cook page needed
+// to start the same kind — the clock, the chime priming, the `notify` floor and the
+// producer call all live here now, so both surfaces arm identical timers. These
+// cases are what My Kitchen's own suite used to assert about the written document,
+// moved to where the composition moved, plus the origin the batch page adds.
+describe('kitchenTimerService — starting and dismissing', () => {
+  const NOW = Date.parse('2026-08-16T18:00:00.000Z');
+
+  /** The document handed to the adapter's save, which is what actually gets written. */
+  function lastSaved(): KitchenTimersDoc {
+    const calls = fs.saveKitchenTimers.mock.calls;
+    return calls[calls.length - 1]?.[0] as KitchenTimersDoc;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('writes an ABSOLUTE end-time, so the countdown survives a reload', async () => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+
+    await startKitchenTimer({ id: 't1', label: 'Eggs', durationMinutes: 10, origin: null });
+
+    expect(lastSaved().timers[0]).toMatchObject({
+      id: 't1',
+      label: 'Eggs',
+      durationMinutes: 10,
+      endsAt: new Date(NOW + 10 * 60_000).toISOString(),
+    });
+    dispose();
+  });
+
+  // Re-derived on EVERY start, which is what makes a timer stretched over the
+  // floor gain its push backstop and one cut under it lose it.
+  it.each([
+    ['arms the push backstop above the delivery floor', 10, true],
+    ['leaves it off below the floor, where a late push would be wrong', 1, false],
+  ])('%s', async (_case, durationMinutes, notify) => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+
+    await startKitchenTimer({ id: 't1', label: 'Eggs', durationMinutes, origin: null });
+
+    expect(lastSaved().timers[0]).toMatchObject({ notify });
+    dispose();
+  });
+
+  // Load-bearing on iOS, where audio not tied to a gesture is blocked and the
+  // chime that fires minutes later is not one.
+  it('unlocks the audio context on the start gesture', async () => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+
+    await startKitchenTimer({ id: 't1', label: 'Eggs', durationMinutes: 10, origin: null });
+
+    expect(primeChimeSpy).toHaveBeenCalled();
+    dispose();
+  });
+
+  it('carries the origin a batch cook page armed it from', async () => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+
+    await startKitchenTimer({
+      id: 'b1::s2',
+      label: 'Knead',
+      durationMinutes: 10,
+      origin: { batchId: 'b1', stepId: 's2' },
+    });
+
+    expect(lastSaved().timers[0]).toMatchObject({ origin: { batchId: 'b1', stepId: 's2' } });
+    dispose();
+  });
+
+  it('re-times through the same id rather than doubling the timer up', async () => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+
+    await startKitchenTimer({ id: 't1', label: 'Eggs', durationMinutes: 10, origin: null });
+    await startKitchenTimer({ id: 't1', label: 'Eggs, soft', durationMinutes: 7, origin: null });
+
+    expect(lastSaved().timers).toHaveLength(1);
+    expect(lastSaved().timers[0]).toMatchObject({ label: 'Eggs, soft', durationMinutes: 7 });
+    dispose();
+  });
+
+  it('takes a dismissed timer out of the array with no tombstone behind it', async () => {
+    const { emit } = wireSubscription();
+    const dispose = initKitchenTimerSync(UID);
+    emit({ ownerUid: UID, timers: [] });
+    await startKitchenTimer({ id: 't1', label: 'Eggs', durationMinutes: 10, origin: null });
+    emit(lastSaved());
+
+    await dismissKitchenTimer('t1');
+
+    expect(lastSaved().timers).toEqual([]);
+    dispose();
+  });
+
+  // Signed out mid-gesture: there is no kitchen to write to, and that is not a
+  // failure the caller should toast about.
+  it.each([
+    ['start', () => startKitchenTimer({ id: 't1', label: 'E', durationMinutes: 5, origin: null })],
+    ['dismiss', () => dismissKitchenTimer('t1')],
+  ])('resolves ok and writes nothing when nobody is signed in (%s)', async (_case, run) => {
+    const result = await run();
+
+    expect(result.kind).toBe('ok');
+    expect(fs.saveKitchenTimers).not.toHaveBeenCalled();
   });
 });

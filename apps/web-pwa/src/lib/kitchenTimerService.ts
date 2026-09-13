@@ -1,7 +1,10 @@
 import { subscribeKitchenTimers, saveKitchenTimers } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
-import type { KitchenTimersDoc } from '@salt/domain/schemas';
+import { withKitchenTimerStarted, withKitchenTimerDismissed } from '@salt/domain';
+import type { KitchenTimerOrigin, KitchenTimersDoc } from '@salt/domain/schemas';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
+import { primeChime } from './chime.js';
+import { shouldNotifyFor } from './timerDefaults.js';
 import { type DomainError, type ReadResult } from '@salt/shared-types';
 import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
@@ -94,4 +97,83 @@ export async function persistKitchenTimers(
 ): Promise<ReadResult<void, DomainError>> {
   _kitchenTimers.set(timers);
   return reportIfFailed(getErrorReporter(), await saveKitchenTimers(timers));
+}
+
+// ─── Starting and stopping ──────────────────────────────────────────────────────
+//
+// TWO SURFACES START THE SAME KIND OF TIMER: My Kitchen (#842) and the batch cook
+// page (#1327, Phase 2). Both need the identical five-step composition — read the
+// snapshot, prime the audio context, read the clock, re-derive `notify`, write the
+// whole document through the producer — and every one of those steps has a reason
+// that is easy to get subtly wrong in a second copy. They live here rather than at
+// either call site for the reason `createCookTimers.startTimerEntry` is one
+// function for cook mode's four entry points: a timer a chef set by hand must be
+// indistinguishable from one a recipe described, the moment it is running.
+
+/** What either surface hands over; everything else about the entry is derived. */
+export interface KitchenTimerStart {
+  /**
+   * Identity, minted by the caller. A step timer on the batch cook page uses a
+   * deterministic id so re-starting the same step re-times the one timer rather
+   * than stacking a second (see `batchStepTimerId`); an ad-hoc timer mints a uuid.
+   */
+  id: string;
+  label: string;
+  durationMinutes: number;
+  /** Where it was armed from, or `null` for a timer that came from the kitchen. */
+  origin: KitchenTimerOrigin | null;
+}
+
+/**
+ * Start — or re-time — one of this member's kitchen timers.
+ *
+ * Re-timing is the SAME call: one id, a fresh duration, through the same producer.
+ * The entry is replaced whole, so `origin` must be supplied every time — a re-time
+ * that omitted it would quietly unhook the timer from the step it is sitting on.
+ *
+ * Resolves `ok` with nothing written when nobody is signed in, which is the one
+ * state with no honest kitchen to write to and is not a failure worth a toast.
+ */
+export async function startKitchenTimer(
+  entry: KitchenTimerStart,
+): Promise<ReadResult<void, DomainError>> {
+  const doc = getKitchenTimersSnapshot();
+  if (!doc) return { kind: 'ok', value: undefined };
+  // Unlock the audio context on THIS user gesture, so the app-level watcher can
+  // chime when the timer ends even on iOS Safari, which blocks audio not tied to
+  // one. Starting a timer is the only gesture guaranteed to precede a chime — and
+  // it sits in the shared start for the same reason cook mode's does: a surface
+  // that forgot it would fail silently, months later, on one device.
+  primeChime();
+  // The clock is read HERE and never in the domain producer (CLAUDE.md Rule 1).
+  // `notify` re-derives from the duration actually being started, so a timer
+  // stretched over the push floor gains its backstop and one cut under it loses it.
+  const now = Date.now();
+  return persistKitchenTimers(
+    withKitchenTimerStarted(
+      doc,
+      {
+        id: entry.id,
+        label: entry.label,
+        endsAt: new Date(now + entry.durationMinutes * 60_000).toISOString(),
+        durationMinutes: entry.durationMinutes,
+        notify: shouldNotifyFor(entry.durationMinutes),
+        origin: entry.origin,
+      },
+      now,
+    ),
+  );
+}
+
+/**
+ * Cancel or dismiss — the same write either way, since the producer drops the
+ * entry unconditionally and the two words are one operation seen from either side
+ * of `endsAt`.
+ *
+ * Signed out mid-gesture resolves `ok` for the same reason as above.
+ */
+export async function dismissKitchenTimer(timerId: string): Promise<ReadResult<void, DomainError>> {
+  const doc = getKitchenTimersSnapshot();
+  if (!doc) return { kind: 'ok', value: undefined };
+  return persistKitchenTimers(withKitchenTimerDismissed(doc, timerId));
 }

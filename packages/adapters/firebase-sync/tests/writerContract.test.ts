@@ -371,7 +371,9 @@ const COOK_SESSION = {
 
 const KITCHEN_TIMERS = {
   ownerUid: 'uid-a',
-  timers: [{ id: 't-1', label: 'Egg', endsAt: NOW, durationMinutes: 6, notify: true }],
+  timers: [
+    { id: 't-1', label: 'Egg', endsAt: NOW, durationMinutes: 6, notify: true, origin: null },
+  ],
 };
 
 const GUIDED_PLAN = {

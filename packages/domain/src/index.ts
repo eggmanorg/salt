@@ -333,7 +333,11 @@ export type { TimerHeat, GuidedPrepTickRow } from './cookSession/index.js';
 // Its own two-line module rather than more surface on the cook-session one:
 // nothing here reads a session, and a standalone timer's whole point is that
 // there is no cook to hang it on.
-export { withKitchenTimerStarted, withKitchenTimerDismissed } from './kitchenTimer/index.js';
+export {
+  withKitchenTimerStarted,
+  withKitchenTimerDismissed,
+  batchStepTimerId,
+} from './kitchenTimer/index.js';
 
 // Push-subscription id (issue #1145) — `${uid}_${deviceHash}`, composed in one
 // place so the enable/disable call sites in web-pwa cannot drift apart.

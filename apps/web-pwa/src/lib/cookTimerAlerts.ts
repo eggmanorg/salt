@@ -52,14 +52,29 @@ function kitchenTimerKey(timerId: string, endsAt: string): string {
   return timerKey('kitchen', timerId, endsAt);
 }
 
-// Where My Kitchen lives, and whether the chef is looking at it. A standalone
-// timer's card flips to "Finished" on that page in front of them, which is the
-// same thing that earns a cook timer's chip its suppression on the cook page.
+// A standalone timer's HOME: the page that draws it, where its card flips to
+// "Finished" in front of the chef — the same visible acknowledgement that earns a
+// cook timer's chip its suppression on the cook page.
+//
+// There are two of them since issue #1327. My Kitchen is where a timer from nowhere
+// in particular lives; a timer armed on a batch cook page lives THERE, and sending
+// the chef to Mine for it — the thing option (a) would have shipped — is exactly
+// what `origin` exists to prevent.
+//
+// Taken from the timer's OWN origin rather than from a route match, so a timer from
+// batch A firing while the chef stands on batch B's cook page still toasts, and
+// still offers the way back to A. `origin` is null for every My Kitchen timer and
+// for every timer written before the field, so both land on the kitchen path
+// exactly as before.
 const KITCHEN_PATH = '/mine';
 
-function viewingKitchen(): boolean {
+function timerHomePath(batchId: string | null): string {
+  return batchId === null ? KITCHEN_PATH : `/batches/${batchId}/cook`;
+}
+
+function viewingPath(path: string): boolean {
   if (typeof window === 'undefined') return false;
-  return window.location.hash === `#${KITCHEN_PATH}`;
+  return window.location.hash === `#${path}`;
 }
 
 function plainCookPath(session: CookSessionDoc): string {
@@ -117,26 +132,29 @@ export function initCookTimerAlerts(): () => void {
     checkKitchenTimers();
   }
 
-  // Standalone timers (issue #842) — no cook, so no session to re-read and
-  // nowhere to send the chef back to except the kitchen they started it from.
-  // A separate pass rather than more branches inside the cook one: the two share
-  // the dedupe sets and the grace window, and nothing else.
+  // Standalone timers (issue #842) — no cook session to re-read, and only the
+  // surface they were armed from to send the chef back to. A separate pass rather
+  // than more branches inside the cook one: the two share the dedupe sets and the
+  // grace window, and nothing else.
   function checkKitchenTimers(): void {
     const doc = get(kitchenTimers);
     if (!doc) return;
     const now = Date.now();
-    const onKitchen = viewingKitchen();
     for (const timer of doc.timers) {
       const key = kitchenTimerKey(timer.id, timer.endsAt);
       if (!claimFire(key, new Date(timer.endsAt).getTime(), now)) continue;
       playChime();
-      // Standing on My Kitchen, the card flips to "Finished" in front of the
-      // chef — the same visible acknowledgement that suppresses a cook timer's
-      // toast on the cook page. Anywhere else the toast carries the way back.
-      if (onKitchen) continue;
+      const batchId = timer.origin?.batchId ?? null;
+      const home = timerHomePath(batchId);
+      // Standing on its home, the card is already saying so. Anywhere else the
+      // toast carries the way back.
+      if (viewingPath(home)) continue;
       addToast(timer.label, 'default', {
         duration: TOAST_MS,
-        action: { label: 'Go to the kitchen', onClick: () => push(KITCHEN_PATH) },
+        action: {
+          label: batchId === null ? 'Go to the kitchen' : 'Back to the cook',
+          onClick: () => push(home),
+        },
       });
     }
   }

@@ -185,8 +185,8 @@ export type { ChatSessionDoc } from './chatSession.js';
 export { CookSessionSchema } from './cookSession.js';
 export type { CookActiveTimerDoc, CookSessionDoc } from './cookSession.js';
 
-export { KitchenTimersSchema } from './kitchenTimer.js';
-export type { KitchenTimerDoc, KitchenTimersDoc } from './kitchenTimer.js';
+export { KitchenTimersSchema, KitchenTimerOriginSchema } from './kitchenTimer.js';
+export type { KitchenTimerDoc, KitchenTimersDoc, KitchenTimerOrigin } from './kitchenTimer.js';
 
 // Guided plan (issue #751) — the per-recipe prep list + step notes, stored in
 // its own family-shared collection and deliberately NOT on RecipeSchema.

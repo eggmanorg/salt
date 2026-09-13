@@ -424,6 +424,75 @@ describe('cookTimerAlerts — standalone kitchen timers (#842)', () => {
     stop();
   });
 
+  // ─── Where a batch timer sends you (issue #1327, Phase 2) ──────────────────
+  //
+  // A standalone timer has had a second home since the batch cook page: the page
+  // it was armed from. Both halves of that — the destination and the suppression —
+  // are read from the timer's OWN origin, never from the route, so a timer from one
+  // batch firing while the chef stands on another still toasts and still offers the
+  // way back to the right one.
+  describe('one armed from a batch cook page', () => {
+    const BATCH_ID = 'batch-9';
+    const batchTimer = (over: Record<string, unknown> = {}) =>
+      kitchenTimer({ origin: { batchId: BATCH_ID, stepId: 'step-2' }, ...over });
+
+    it('offers the way back to the cook, not to the kitchen', () => {
+      mockKitchenTimers._set(kitchenDoc([batchTimer()]));
+      const stop = initCookTimerAlerts();
+
+      clock = START + 60_400;
+      vi.advanceTimersByTime(1_000);
+
+      const options = mockToast.addToast.mock.calls[0]?.[2] as {
+        action: { label: string; onClick: () => void };
+      };
+      expect(options.action.label).toBe('Back to the cook');
+      options.action.onClick();
+      expect(mockRouter.push).toHaveBeenCalledWith(`/batches/${BATCH_ID}/cook`);
+      stop();
+    });
+
+    it('chimes without a toast when the chef is already on that batch’s cook page', () => {
+      window.location.hash = `#/batches/${BATCH_ID}/cook`;
+      mockKitchenTimers._set(kitchenDoc([batchTimer()]));
+      const stop = initCookTimerAlerts();
+
+      clock = START + 60_400;
+      vi.advanceTimersByTime(1_000);
+
+      expect(mockChime.playChime).toHaveBeenCalledTimes(1);
+      expect(mockToast.addToast).not.toHaveBeenCalled();
+      stop();
+    });
+
+    // Standing on the WRONG batch's cook page is standing somewhere else.
+    it('still toasts when the chef is on a different batch’s cook page', () => {
+      window.location.hash = '#/batches/another-batch/cook';
+      mockKitchenTimers._set(kitchenDoc([batchTimer()]));
+      const stop = initCookTimerAlerts();
+
+      clock = START + 60_400;
+      vi.advanceTimersByTime(1_000);
+
+      expect(mockToast.addToast).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    // Suppression on My Kitchen must NOT follow a batch timer there: the card is
+    // not on that page, so there is nothing in front of the chef acknowledging it.
+    it('still toasts when the chef is on My Kitchen', () => {
+      window.location.hash = KITCHEN_HASH;
+      mockKitchenTimers._set(kitchenDoc([batchTimer()]));
+      const stop = initCookTimerAlerts();
+
+      clock = START + 60_400;
+      vi.advanceTimersByTime(1_000);
+
+      expect(mockToast.addToast).toHaveBeenCalledTimes(1);
+      stop();
+    });
+  });
+
   it('does nothing at all for a member who has never started one', () => {
     mockKitchenTimers._set(null);
     const stop = initCookTimerAlerts();

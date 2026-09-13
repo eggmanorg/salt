@@ -3,7 +3,6 @@ import { render, cleanup, fireEvent, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { appendCacheBuster, emptyRecipe } from '@salt/domain';
 import type { Member, Recipe } from '@salt/domain';
-import type { KitchenTimersDoc } from '@salt/domain/schemas';
 
 // "Mine" (issues #634, #682): what of mine is running right now, and what needs a
 // look. The projections are tested in personalViewService.test.ts and the domain
@@ -27,9 +26,8 @@ const {
   mockPersistRecipe,
   mockKitchenTeardown,
   mockSubscribeKitchenWeeks,
-  mockKitchenSnapshot,
-  mockPersistKitchenTimers,
-  mockPrimeChime,
+  mockStartKitchenTimer,
+  mockDismissKitchenTimer,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   const mockKitchenTeardown = vi.fn();
@@ -50,9 +48,8 @@ const {
     mockPersistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
     mockKitchenTeardown,
     mockSubscribeKitchenWeeks: vi.fn(() => mockKitchenTeardown),
-    mockKitchenSnapshot: vi.fn((): KitchenTimersDoc | null => ({ ownerUid: 'uid', timers: [] })),
-    mockPersistKitchenTimers: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
-    mockPrimeChime: vi.fn(),
+    mockStartKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+    mockDismissKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   };
 });
 
@@ -94,13 +91,18 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 // Standalone kitchen timers (issue #842) — the one thing this page writes that
 // is not a projection of a family-shared document.
+//
+// Mocked at the COMMAND seam since #1327 Phase 2, not at the document seam below
+// it. The batch cook page starts the same kind of timer, so the clock, the
+// `notify` re-derivation, the chime priming and the producer call all moved into
+// `kitchenTimerService` and are pinned in `kitchenTimerService.test.ts`. What is
+// still this page's own — and what these cases assert — is WHAT it hands over: the
+// id it re-times through, the sheet's name and length, and a null origin, which is
+// what makes a My Kitchen timer's push land back on Mine.
 vi.mock('../src/lib/kitchenTimerService.js', () => ({
-  getKitchenTimersSnapshot: mockKitchenSnapshot,
-  persistKitchenTimers: mockPersistKitchenTimers,
+  startKitchenTimer: mockStartKitchenTimer,
+  dismissKitchenTimer: mockDismissKitchenTimer,
 }));
-// Unlocking the audio context is a real side effect of the start gesture and
-// there is no AudioContext in jsdom; the assertion that it HAPPENS is below.
-vi.mock('../src/lib/chime.js', () => ({ primeChime: mockPrimeChime }));
 
 import MinePage from '../src/routes/mine/MinePage.svelte';
 import { kitchenPrefs } from '../src/lib/kitchenDashboardPrefs.svelte.js';
@@ -212,8 +214,8 @@ beforeEach(() => {
   mockPersist.mockResolvedValue({ kind: 'ok', value: undefined });
   mockRemove.mockResolvedValue({ kind: 'ok', value: undefined });
   mockPersistRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
-  mockPersistKitchenTimers.mockResolvedValue({ kind: 'ok', value: undefined });
-  mockKitchenSnapshot.mockReturnValue({ ownerUid: 'uid', timers: [] });
+  mockStartKitchenTimer.mockResolvedValue({ kind: 'ok', value: undefined });
+  mockDismissKitchenTimer.mockResolvedValue({ kind: 'ok', value: undefined });
   mockLiveCooks._set([]);
   mockMyTimers._set([]);
   mockNeedsReview._set([]);
@@ -885,6 +887,7 @@ describe('MinePage — a timer of your own', () => {
     endsAt: new Date(NOW + 6 * 60_000).toISOString(),
     durationMinutes: 10,
     notify: true,
+    origin: null,
   });
 
   const kitchenTimer = (over: Record<string, unknown> = {}) => ({
@@ -896,10 +899,15 @@ describe('MinePage — a timer of your own', () => {
     ...over,
   });
 
-  /** The last document handed to the persist seam. */
-  function lastWrite() {
-    const calls = mockPersistKitchenTimers.mock.calls;
-    return calls[calls.length - 1]?.[0] as { ownerUid: string; timers: Record<string, unknown>[] };
+  /** The last entry handed to the start command. */
+  function lastStart() {
+    const calls = mockStartKitchenTimer.mock.calls;
+    return calls[calls.length - 1]?.[0] as {
+      id: string;
+      label: string;
+      durationMinutes: number;
+      origin: unknown;
+    };
   }
 
   it('offers Start a timer on the quiet screen, with nothing cooking at all', () => {
@@ -939,37 +947,32 @@ describe('MinePage — a timer of your own', () => {
     expect(getByTestId('cook-timer-sheet-confirm')).toHaveTextContent('Start timer');
   });
 
-  it('starts one: an absolute end-time, a minted id, and the push backstop armed', async () => {
+  it('starts one: a minted id, the sheet’s name and its length', async () => {
     const { getByTestId } = render(MinePage);
     await fireEvent.click(getByTestId('mine-timer-start'));
     await tick();
     await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
     await tick();
 
-    const doc = lastWrite();
-    expect(doc.ownerUid).toBe('uid');
-    expect(doc.timers).toHaveLength(1);
-    expect(doc.timers[0]).toMatchObject({
-      label: 'Salt Timer',
-      durationMinutes: 10,
-      notify: true,
-    });
-    expect(typeof doc.timers[0]?.['id']).toBe('string');
-    // Absolute, so the countdown survives a reload without drift.
-    expect(Date.parse(String(doc.timers[0]?.['endsAt']))).toBeGreaterThan(Date.now());
+    expect(lastStart()).toMatchObject({ label: 'Salt Timer', durationMinutes: 10 });
+    expect(typeof lastStart().id).toBe('string');
   });
 
-  // Load-bearing on iOS, where audio not tied to a gesture is blocked and the
-  // chime that fires later is not one.
-  it('unlocks the audio context on the start gesture', async () => {
+  // The one fact about a timer that is THIS page's own (#1327 Phase 2). A timer
+  // started here came from nowhere but the kitchen, so it carries no origin and
+  // its finished-timer push lands back on Mine — where a batch's would deep-link
+  // to that batch's cook page instead.
+  it('starts it with no origin, so its notification comes back here', async () => {
     const { getByTestId } = render(MinePage);
     await fireEvent.click(getByTestId('mine-timer-start'));
     await tick();
     await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
-    expect(mockPrimeChime).toHaveBeenCalled();
+    await tick();
+
+    expect(lastStart().origin).toBeNull();
   });
 
-  it('leaves the push backstop off for a timer too short to deliver one on time', async () => {
+  it('hands over the length the chef actually typed', async () => {
     const { getByTestId } = render(MinePage);
     await fireEvent.click(getByTestId('mine-timer-start'));
     await tick();
@@ -977,7 +980,7 @@ describe('MinePage — a timer of your own', () => {
     await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
     await tick();
 
-    expect(lastWrite().timers[0]).toMatchObject({ durationMinutes: 1, notify: false });
+    expect(lastStart()).toMatchObject({ durationMinutes: 1 });
   });
 
   it('renders one beside the cook timers with no cook to go to', () => {
@@ -1035,7 +1038,6 @@ describe('MinePage — a timer of your own', () => {
 
   it('re-times it through the same id, so six minutes becomes "another five"', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
-    mockKitchenSnapshot.mockReturnValue({ ownerUid: 'uid', timers: [kitchenTimerDoc()] });
     mockMyTimers._set([kitchenTimer()]);
     const { getByTestId } = render(MinePage);
     await fireEvent.click(getByTestId('mine-timer-edit'));
@@ -1048,15 +1050,27 @@ describe('MinePage — a timer of your own', () => {
     await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
     await tick();
 
-    const doc = lastWrite();
-    // Replaced, not doubled up — one live timer per id.
-    expect(doc.timers).toHaveLength(1);
-    expect(doc.timers[0]).toMatchObject({
-      id: 'k1',
-      label: 'Eggs, soft',
-      durationMinutes: 7,
-    });
-    expect(doc.timers[0]?.['endsAt']).toBe(new Date(NOW + 7 * 60_000).toISOString());
+    // The SAME id is what makes this a re-time rather than a second timer —
+    // `withKitchenTimerStarted` replaces by id, pinned in the producers' suite.
+    expect(lastStart()).toMatchObject({ id: 'k1', label: 'Eggs, soft', durationMinutes: 7 });
+  });
+
+  // Mine lists EVERY kitchen timer the member owns, a batch cook page's included,
+  // and `withKitchenTimerStarted` replaces the entry WHOLE rather than merging onto
+  // it. So a nudge from here that handed over a null would unhook the timer from its
+  // step and send its finished-timer push back to Mine — losing the deep link #1327
+  // exists to add, by the one gesture most likely to be made away from the page.
+  it('carries a batch timer’s origin through a re-time rather than dropping it', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    const origin = { batchId: 'batch-9', stepId: 'step-2' };
+    mockMyTimers._set([kitchenTimer({ timer: { ...kitchenTimerDoc(), origin } })]);
+    const { getByTestId } = render(MinePage);
+    await fireEvent.click(getByTestId('mine-timer-edit'));
+    await tick();
+    await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
+    await tick();
+
+    expect(lastStart().origin).toEqual(origin);
   });
 
   it('falls back to the same default when the name is emptied', async () => {
@@ -1067,24 +1081,22 @@ describe('MinePage — a timer of your own', () => {
     await fireEvent.click(getByTestId('cook-timer-sheet-confirm'));
     await tick();
 
-    expect(lastWrite().timers[0]).toMatchObject({ label: 'Salt Timer' });
+    expect(lastStart()).toMatchObject({ label: 'Salt Timer' });
   });
 
-  it('dismisses one out of the array — no tombstone left to filter out', async () => {
-    mockKitchenSnapshot.mockReturnValue({ ownerUid: 'uid', timers: [kitchenTimerDoc()] });
+  it('dismisses one through the kitchen, never through a cook session', async () => {
     mockMyTimers._set([kitchenTimer()]);
     const { getByTestId } = render(MinePage);
     await fireEvent.click(getByTestId('mine-timer-dismiss'));
     await tick();
 
-    expect(lastWrite()).toEqual({ ownerUid: 'uid', timers: [] });
+    expect(mockDismissKitchenTimer).toHaveBeenCalledWith('k1');
     // Never through the cook-session seam: a standalone timer has no session.
     expect(mockPersist).not.toHaveBeenCalled();
   });
 
   it('says so when the dismiss write fails rather than pretending it worked', async () => {
-    mockKitchenSnapshot.mockReturnValue({ ownerUid: 'uid', timers: [kitchenTimerDoc()] });
-    mockPersistKitchenTimers.mockResolvedValue({
+    mockDismissKitchenTimer.mockResolvedValue({
       kind: 'error',
       error: { kind: 'StorageError', reason: 'unavailable' },
     });
