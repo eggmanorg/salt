@@ -27,6 +27,7 @@ const TITLE_WORD_CEILING = 8;
 export const chefChat: Journey = {
   name: 'chef-chat',
   description: 'The chef answers, a title is generated, and the session persists owner-scoped.',
+  domain: 'chat',
 
   async run(ctx) {
     const answer = await ctx.step('chefChat returns a non-empty answer', async () => {

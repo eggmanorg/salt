@@ -2,12 +2,14 @@
 //
 //   pnpm probe auth-rules              # one journey against dev
 //   pnpm probe all --target staging    # the whole sweep against staging
+//   pnpm probe --domain planner        # every journey labelled `planner`
 //
 // Structured JSON on stdout, human-readable progress on stderr, non-zero exit
 // on any failure — so an agent can pipe stdout straight into a triage step.
 
 import { initAdmin, signIn } from './harness/auth.js';
 import { isProbeTarget, PROBE_TARGETS, resolveEnv, type ProbeTarget } from './harness/env.js';
+import { isProbeDomain, PROBE_DOMAINS, type ProbeDomain } from './harness/journey.js';
 import { runProbe, type ProbeReport } from './harness/runner.js';
 import { findJourney, JOURNEYS } from './journeys/index.js';
 
@@ -16,21 +18,26 @@ interface Args {
   readonly target: ProbeTarget;
 }
 
+const NAME_WIDTH = 22;
+const DOMAIN_WIDTH = 10;
+
 function usage(): string {
   const names = JOURNEYS.flatMap((journey) => {
-    const line = `  ${journey.name.padEnd(22)} ${journey.description}`;
+    const line = `  ${journey.name.padEnd(NAME_WIDTH)} ${journey.domain.padEnd(DOMAIN_WIDTH)} ${journey.description}`;
     return journey.optIn === undefined
       ? [line]
-      : [line, `  ${' '.repeat(22)} opt-in only — ${journey.optIn}`];
+      : [line, `  ${' '.repeat(NAME_WIDTH + DOMAIN_WIDTH + 1)} opt-in only — ${journey.optIn}`];
   });
   return [
-    'Usage: pnpm probe <journey|all> [--target dev|staging] [--include-opt-in]',
+    'Usage: pnpm probe <journey|all> [--target dev|staging] [--domain <domain>] [--include-opt-in]',
     '',
-    'Journeys:',
+    `  ${'Journey'.padEnd(NAME_WIDTH)} ${'Domain'.padEnd(DOMAIN_WIDTH)} Covers`,
     ...names,
-    `  ${'all'.padEnd(22)} every journey above except the opt-in ones`,
+    `  ${'all'.padEnd(NAME_WIDTH)} ${'—'.padEnd(DOMAIN_WIDTH)} every journey above except the opt-in ones`,
     '',
     `Targets: ${PROBE_TARGETS.join(', ')} (default: dev). Production is not a target.`,
+    `Domains: ${PROBE_DOMAINS.join(', ')}. --domain narrows the run to one of them;`,
+    'it is a convenience for a person, and nothing selects journeys automatically.',
     '',
     'An opt-in journey has a consequence beyond cleaning up after itself — real',
     'money, or a real-world side effect. It is excluded from `all` unless',
@@ -41,6 +48,7 @@ function usage(): string {
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
   let target: ProbeTarget = 'dev';
+  let domain: ProbeDomain | undefined;
   let includeOptIn = false;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -71,21 +79,63 @@ function parseArgs(argv: string[]): Args {
       continue;
     }
 
+    if (arg === '--domain' || arg === '-d') {
+      const value = argv[i + 1];
+      if (value === undefined || !isProbeDomain(value)) {
+        throw new Error(`--domain must be one of ${PROBE_DOMAINS.join(', ')}`);
+      }
+      domain = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--domain=')) {
+      const value = arg.slice('--domain='.length);
+      if (!isProbeDomain(value)) {
+        throw new Error(`--domain must be one of ${PROBE_DOMAINS.join(', ')}`);
+      }
+      domain = value;
+      continue;
+    }
+
     positional.push(arg);
   }
 
-  if (positional.length === 0) throw new Error('no journey named');
+  if (positional.length === 0 && domain === undefined) throw new Error('no journey named');
 
-  // Naming a journey explicitly is itself the opt-in; only the `all` sweep
-  // filters, so a routine run never silently bills for image generation.
-  const journeys = positional.includes('all')
-    ? JOURNEYS.filter((journey) => includeOptIn || journey.optIn === undefined).map(
-        (journey) => journey.name,
-      )
-    : positional;
+  for (const name of positional) {
+    if (name !== 'all' && findJourney(name) === undefined) {
+      throw new Error(`unknown journey "${name}"`);
+    }
+  }
 
-  for (const name of journeys) {
-    if (findJourney(name) === undefined) throw new Error(`unknown journey "${name}"`);
+  // Naming a journey explicitly is itself the opt-in; a sweep filters, so a
+  // routine run never silently bills for image generation. `--domain` on its
+  // own is a sweep, not a naming — it narrows the set the filter already
+  // produced, and so can never smuggle an opt-in journey into an unnamed run.
+  const swept = positional.length === 0 || positional.includes('all');
+  const selected = swept
+    ? // `JOURNEYS` order — cheapest and most diagnostic first — is the sweep order.
+      JOURNEYS.filter((journey) => includeOptIn || journey.optIn === undefined)
+    : // Named journeys keep argv order, as they always have.
+      positional.flatMap((name) => {
+        const journey = findJourney(name);
+        return journey === undefined ? [] : [journey];
+      });
+
+  const journeys = (
+    domain === undefined ? selected : selected.filter((journey) => journey.domain === domain)
+  ).map((journey) => journey.name);
+
+  if (journeys.length === 0) {
+    const suppressed = JOURNEYS.filter(
+      (journey) => journey.domain === domain && journey.optIn !== undefined,
+    ).map((journey) => journey.name);
+    throw new Error(
+      suppressed.length > 0
+        ? `no journey to run: --domain ${String(domain)} matches only opt-in journeys (${suppressed.join(', ')}) — name one, or add --include-opt-in`
+        : `no journey matches --domain ${String(domain)} in this run`,
+    );
   }
 
   return { journeys, target };

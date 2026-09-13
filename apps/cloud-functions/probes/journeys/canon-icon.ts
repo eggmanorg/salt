@@ -29,6 +29,7 @@ const ICON_STORAGE_PREFIX = 'canon-icons';
 export const canonIcon: Journey = {
   name: 'canon-icon',
   description: 'matchOrCreateCanon matches, and a new canon item gets an icon + embedding.',
+  domain: 'canon',
   optIn: 'generates a pictogram with a real image model (real cost)',
 
   async run(ctx) {

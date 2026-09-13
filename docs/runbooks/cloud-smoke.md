@@ -18,6 +18,7 @@ pnpm probe all                       # the default sweep, against dev
 pnpm probe auth-rules                # one journey
 pnpm probe all --target staging      # pre-release gate (see Preconditions)
 pnpm probe all --include-opt-in      # including the journeys that cost or notify
+pnpm probe --domain planner          # every journey labelled `planner`
 pnpm probe                           # usage, and the list of journeys
 ```
 
@@ -43,11 +44,18 @@ gcloud iam service-accounts add-iam-policy-binding \
   --project <project>
 ```
 
-| Project          | Granted?                                              |
-| ---------------- | ----------------------------------------------------- |
-| `s2-dev-eggman`  | ✅ granted 2026-08-07                                 |
-| `s2-stage-ccb22` | ❌ **not yet** — `--target staging` fails until it is |
-| `s2-prod-e46bd`  | not a target, deliberately                            |
+| Project          | Granted?                   |
+| ---------------- | -------------------------- |
+| `s2-dev-eggman`  | ✅ granted 2026-08-07      |
+| `s2-stage-ccb22` | ✅ granted 2026-09-13      |
+| `s2-prod-e46bd`  | not a target, deliberately |
+
+The grant is per **principal**, not per person: CI needs its own. The staging
+deploy's Workload Identity principal (`vars.WIF_SERVICE_ACCOUNT` on the
+`staging` GitHub Environment) needs the same `tokenCreator` role on
+`firebase-adminsdk-fbsvc@s2-stage-ccb22.iam.gserviceaccount.com`, with
+`--member="serviceAccount:<that account>"`. No key file and no repository
+secret: in CI, ADC _is_ the deploy credential.
 
 IAM takes up to ~60 s to propagate. A grant that "did not work" usually just
 needs another minute.
@@ -114,17 +122,33 @@ repeatedly against a **prod-restored** environment.
 
 ## What each journey covers
 
-| Journey                 | Covers                                                                                                                 | Notes                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `auth-rules`            | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                          | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
-| `mealplan-shopday`      | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned | Free. Writes a far-future week.                                                         |
-| `recipe-canon-shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`             | Real Gemini (embeddings, sometimes arbitration).                                        |
-| `chef-chat`             | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                 | Real Gemini, text only.                                                                 |
-| `canon-icon`            | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`             | **Opt-in** — generates a pictogram with a real image model.                             |
-| `cook-timer`            | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger   | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
+| Journey                 | Domain     | Covers                                                                                                                   | Notes                                                                                   |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `auth-rules`            | `auth`     | Sign-in, App Check attestation, the full allow/deny rules matrix, owner-scoped `chatSessions`                            | Free. No AI, no triggers. **The canary — if it fails, no other result means anything.** |
+| `mealplan-shopday`      | `planner`  | `mealPlans/{startDate}` and `shoppingDays/{YYYY-MM-DD}` round-trip; the date-equals-doc-id invariant; `setBy` unpinned   | Free. Writes a far-future week.                                                         |
+| `recipe-canon-shopping` | `shopping` | Recipe create → `canonicaliseRecipeIngredients` → `onShoppingListItemWrite` settles the item off `pending`               | Real Gemini (embeddings, sometimes arbitration).                                        |
+| `chef-chat`             | `chat`     | `chefChat` + `generateChatTitle`, and owner-scoped session persistence                                                   | Real Gemini, text only.                                                                 |
+| `canon-icon`            | `canon`    | `matchOrCreateCanon`; `onCanonItemWritten` writes a thumbnail **and** the companion `canonEmbeddings/{id}`               | **Opt-in** — generates a pictogram with a real image model.                             |
+| `cook-timer`            | `cooking`  | `cookSessions` → `onCookTimerWrite` → Cloud Task → `onCookTimerDispatch` → the `timerDeliveries` exactly-once ledger     | **Opt-in** — sends a **real push notification** to the owner's registered devices.      |
+| `recipe-import`         | `recipes`  | `extractRecipeFromPhoto` with a real page image → server-side persist into `recipes/{serverId}` → `onRecipeWritten` hero | **Opt-in** — the imported recipe costs one generated hero image.                        |
 
 An opt-in journey is excluded from `all` unless `--include-opt-in`, and always
 runs when named explicitly. Naming it _is_ the opt-in.
+
+### Domains are a convenience, not a router
+
+`--domain <x>` runs the journeys carrying that label and nothing else, so
+someone working on the planner can exercise the planner without waiting for the
+sweep. That is the whole of it. **Nothing selects journeys automatically** — the
+full sweep runs every time, because at ~60 s for the lot selection buys nothing,
+and a source-path → journey mapping fails in the dangerous direction: it goes
+stale, the sweep quietly skips the journey that would have caught the
+regression, and nothing reports that it did.
+
+One word per journey; the vocabulary is the `PROBE_DOMAINS` list in
+`probes/harness/journey.ts`, and the field is required, so an unlabelled journey
+does not compile. `--domain` narrows a sweep, it does not name a journey: it
+cannot pull an opt-in journey into a run that did not ask for one.
 
 ---
 
@@ -184,20 +208,134 @@ leftover is not prefixed is the far-future `mealPlans` / `shoppingDays` pair —
 
 **Never delete anything untagged.** Dev and staging hold prod-restored data.
 
+The other unprefixed case is `recipe-import`: `extractRecipeFromPhoto` persists
+under a **server-generated** id, so the recipe and its hero object are removed
+via `ctx.trackCreated` / `ctx.trackCreatedStorageObject` and named in
+`adoptedDocs`.
+
+### The `recipe-import` fixture
+
+`probes/assets/recipe-page.webp` is a page **we wrote** — an invented recipe in
+an invented book — rendered from `probes/assets/recipe-page.html`, which is
+committed beside it so the provenance is checkable rather than asserted. It is
+not a photograph of a published cookbook, and a replacement must not be either.
+Regenerate the image from the HTML at 1240×1754 if the fixture ever needs to
+change.
+
+URL import (`extractRecipeFromUrl`) is deliberately **not** covered. It would
+need a stable recipe page on a site we do not control — exactly the hardcoded
+external expectation that rotted
+[product-forms-staging-validation.md](product-forms-staging-validation.md). The
+option, if it is ever wanted: serve a fixture page from the environment's own
+Hosting origin, which means shipping a fixture into the deployed app — a trade
+worth making deliberately rather than in passing.
+
 ---
 
 ## Cost and side effects
 
-- The default sweep spends a handful of embedding and text calls. It is cheap
-  enough to run on demand, repeatedly.
-- `canon-icon` generates one image per run. `cook-timer` sends one real push.
-  Both are opt-in for that reason.
+**The automatic spend is a number, not a caution.** One opt-in run generates
+**one canon pictogram, one recipe hero, and sends one real push notification**.
+That happens **once a week** (Thursday morning) **plus once per published
+release** — so roughly one or two such runs a week, bounded and predictable.
+The push lands on the registered devices of the probe identity only
+(`PROBE_UID` / `PROBE_EMAIL` in `probes/harness/auth.ts`), never on a family
+member's phone.
+
+The free sweep — the other four journeys — spends a handful of embedding and
+text calls and runs after every staging deploy. It is cheap enough to run on
+demand, repeatedly.
+
+- **`recipe-import` cannot be made cheaper without changing product code, and
+  must not be.** Every import path lands the recipe with `image: null`, and
+  `onRecipeWritten` generates a hero on create with a null image. There is no
+  per-document opt-out; the only switch is the per-environment
+  `devSettings/singleton.recipeImageGenerationEnabled`, which does not exist in
+  staging. Adding a suppression field to product code to make a probe cheaper
+  would be the tail wagging the dog.
+- `recipe-import` waits for that hero before it finishes, and the wait is not
+  decoration: the trigger writes a Storage object and a doc field long after the
+  import returns, so tearing down early would leak the object and write to a
+  document that no longer exists.
 - No journey mutates existing data. A probe that needed to would have to
-  read-then-restore, or not ship.
+  read-then-restore, or not ship. (`refreshWeatherForecast` is the standing
+  example of one that would, and therefore has no journey.)
 
-## Out of scope (issue #722)
+## What runs automatically (issue #1356)
 
-Scheduling this (cron/CI) and emitting results to PostHog are both deliberately
-deferred — get it green on demand first. The service account is already
-reachable from CI via the existing deploy WIF, so scheduling later introduces no
-new secrets, but it will need the same tokenCreator grant on the CI principal.
+| When                                     | Where                                              | What runs                                          |
+| ---------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
+| Every merge to main that deploys staging | the `probe` job in `deploy-staging.yml`            | `pnpm probe all --target staging`                  |
+| Thursday 06:00 UTC, and on demand        | `probe-staging-weekly.yml`                         | the same, plus `--include-opt-in`                  |
+| A GitHub Release is published            | the `probe-staging` job in `deploy-production.yml` | the same, plus `--include-opt-in`, before approval |
+
+The probe job `needs: deploy` and skips on the same `should_deploy` guard, so a
+docs-only merge shows it **skipped**, not failed — probing an environment
+nothing changed in proves nothing. It declares `environment: staging` because
+that is where `WIF_PROVIDER` / `WIF_SERVICE_ACCOUNT` live; staging carries no
+protection rules, so it never waits for a reviewer. A side effect worth knowing:
+the job records a GitHub deployment, so probe runs appear in the staging
+Environment's deployment history beside real deploys.
+
+**A red run is a signal, not a rollback.** Nothing is reverted, no workflow is
+blocked, and staging stays as deployed. Production is a deliberate promotion —
+publishing a GitHub Release, behind the `production` Environment's
+required-reviewer rule — so a red staging sweep is what Daniel sees _before_ he
+decides to promote. Whether it should ever become a hard block on that promotion
+is deliberately undecided, and is not to be introduced quietly as an
+implementation detail.
+
+Every one of the three uploads its report JSON as a run artifact
+(`probe-staging-report`, `probe-staging-weekly-report`,
+`probe-staging-release-report`) on green and red alike, so a failure is triaged
+from the run without probing the environment a second time.
+
+### The costly journeys, and the one rule that money depends on
+
+**`--include-opt-in` never appears in a merge-triggered workflow.** Not a
+severity or a speed tier: the failure mode being guarded is a sweep that bills
+for generated images and buzzes a phone _because someone merged a pull request_
+— unbounded, unpredictable, many times a day. A run on a weekly schedule or on
+a published release is bounded, predictable and chosen, and it is the only way
+those three journeys get exercised at all.
+
+`apps/cloud-functions/tests/optInProbeTriggerGuard.test.ts` makes that
+mechanical: it reads every file in `.github/workflows/` and fails if the flag
+appears in one whose own triggers include `push`, `pull_request`,
+`pull_request_target`, `merge_group` or a `workflow_run` of CI. It has one
+stated boundary — it reads a workflow's
+own `on:` block, so a reusable `workflow_call` workflow invoked from a
+merge-triggered one would slip past. None exists in this repo; the test's header
+says what to do if one is ever added.
+
+**Thursday is not a detail to tidy.** Daniel works on this repo Friday to
+Sunday; Monday to Thursday is a limited-work window. A Thursday-morning run
+surfaces whatever broke during the quiet week while there is still a quiet day
+to fix it, and each Friday starts clean. A Monday run would report into the
+window where least can be done about it. GitHub cron is UTC, so `0 6 * * 4` is
+07:00 BST and 06:00 GMT — it drifts by an hour twice a year, which is accepted,
+and GitHub runs scheduled workflows late under load.
+
+**The release-time run is the gate, and it blocks nothing.** The
+`probe-staging` job sits inside `deploy-production.yml` so its result lands in
+the same Actions run as the production approval prompt, above it: GitHub
+requests deployment review when a job becomes ready, so the "Review deployments"
+prompt appears after the probe finishes. The `deploy` job takes
+`needs: probe-staging` with `if: always()`, so it waits for the answer and is
+never blocked by it — a red probe still lets Daniel approve, and nothing is
+reverted. The job declares `environment: staging`, not `production`: that is
+where the WIF variables live, and staging has no protection rules, so it does
+not wait for the very approval it informs.
+
+`workflow_dispatch` on `probe-staging-weekly.yml` runs the same thing on demand,
+so the schedule never has to be waited for to test it.
+
+## Out of scope
+
+Emitting probe results to PostHog stays deferred (it was deferred in #722 and
+again in #1356). The GitHub run is already the signal, and it is one green/red
+per deploy — not the high-volume data that earned the e2e flake telemetry in
+#669. **Revisit when:** the gate starts going red in ways nobody can
+characterise from the run log — an intermittent journey, a slow drift in settle
+times. That is the question telemetry would answer, and it earns its own issue
+then.

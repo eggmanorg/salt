@@ -34,6 +34,7 @@ const MATCH_TIMEOUT_MS = 180_000;
 export const recipeCanonShopping: Journey = {
   name: 'recipe-canon-shopping',
   description: 'Recipe create → canonicalise ingredients → shopping-list rollup settles.',
+  domain: 'shopping',
 
   async run(ctx) {
     const seeds = await ctx.step('derive ingredient names from existing canon', () =>

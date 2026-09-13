@@ -1,0 +1,87 @@
+name: Probe Staging (weekly)
+
+# The costly half of the cloud probe sweep (issue #1356), on a rhythm a person
+# chose rather than on a merge.
+#
+# `canon-icon`, `cook-timer` and `recipe-import` each cost something real: one
+# generated pictogram, one real push notification to the probe identity's
+# registered devices, one generated recipe hero. `--include-opt-in` therefore
+# never appears in a merge-triggered workflow — the failure mode being guarded
+# is a sweep that bills for images and buzzes a phone *because someone merged a
+# pull request*, unbounded and many times a day.
+# `tests/optInProbeTriggerGuard.test.ts` in apps/cloud-functions fails the build
+# if that ever changes.
+#
+# Thursday morning, and that is not a detail to tidy. Daniel works on this repo
+# Friday to Sunday; Monday to Thursday is a limited-work window. A Thursday run
+# surfaces whatever broke during the quiet week while there is still a quiet day
+# to fix it, and each Friday starts clean. A Monday run would report into the
+# window where least can be done about it.
+#
+# GitHub cron is UTC with no notion of local time, so `0 6 * * 4` is 07:00 BST
+# and 06:00 GMT. It drifts by an hour twice a year; that is accepted, not a bug.
+# GitHub also runs scheduled workflows late under load — a run starting at 06:40
+# is normal.
+on:
+  schedule:
+    - cron: '0 6 * * 4'
+  # So the schedule never has to be waited for to test it.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # WIF OIDC token
+
+# One sweep at a time — a manual dispatch during a scheduled run queues.
+concurrency:
+  group: probe-staging-weekly
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe staging (including opt-in)
+    runs-on: ubuntu-latest
+    # Where WIF_PROVIDER / WIF_SERVICE_ACCOUNT live. staging carries no
+    # protection rules, so this never waits for a reviewer.
+    environment: staging
+    # The opt-in journeys wait on image generation and a Cloud Task round trip.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          version: '10.33.0'
+
+      # Node 20, not 22: firebase-admin makes the same sts.googleapis.com WIF
+      # token exchange that throws "Premature close" under Node 22.23.0. The
+      # reasoning is in deploy-staging.yml's setup-node comment.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No new secret: ADC here is the deploy credential, which holds
+      # tokenCreator on the Firebase Admin service account
+      # (docs/runbooks/cloud-smoke.md → Preconditions).
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: s2-stage-ccb22
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Probe staging (all journeys)
+        run: pnpm --silent probe all --target staging --include-opt-in > probe-staging.json
+
+      - name: Upload probe report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-staging-weekly-report
+          path: probe-staging.json
+          if-no-files-found: warn

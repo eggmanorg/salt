@@ -210,6 +210,11 @@ against dev holds a much wider identity than the same job against the other two.
 | `staging`    | every push to `main` (after CI passes) | `deploy-staging.yml`    |
 | `production` | a **published GitHub Release** (gated) | `deploy-production.yml` |
 
+Both workflows also **probe the deployed staging environment** afterwards —
+`deploy-staging.yml` the free sweep, `deploy-production.yml` the full one before
+the approval prompt. Neither blocks anything; see
+[docs/runbooks/cloud-smoke.md](runbooks/cloud-smoke.md).
+
 **Production is a deliberate promotion, never automatic.** Publishing a GitHub
 Release deploys that release's exact tagged commit — the same commit already
 auto-deployed to and validated on staging. The job runs in the `production`
@@ -221,8 +226,16 @@ sits paused until the maintainer approves it, then deploys.
 1. Confirm the commit you want is live and healthy on staging.
 2. Run **`pnpm release`**. It computes the next tag, prints it, asks for
    confirmation, then creates + publishes the GitHub Release.
-3. `deploy-production.yml` starts and **waits for approval** in the `production`
-   Environment. Approve the run → it deploys that tag's commit to prod.
+3. `deploy-production.yml` starts with a **`probe-staging` job**, which sweeps
+   the deployed staging environment — including the journeys that generate an
+   image and send a push. It blocks nothing (#1356): the `deploy` job takes
+   `needs: probe-staging` with `if: always()`, so GitHub raises the approval
+   prompt only after the probe finishes, with its result above it.
+4. The run then **waits for approval** in the `production` Environment. Approve
+   it → it deploys that tag's commit to prod. **A red probe does not stop you
+   approving**, and nothing is reverted — the result is evidence, not a gate
+   that decides for you. See
+   [docs/runbooks/cloud-smoke.md](runbooks/cloud-smoke.md).
 
 **Release tags use `YYYYMM.X`** — calendar month + a counter that resets each
 month (`202606.1`, `202606.2`, … then `202607.1`). `pnpm release`

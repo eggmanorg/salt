@@ -25,8 +25,75 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Exercise staging — including the journeys that cost something — and put the
+  # answer in front of the person about to approve the promotion (issue #1356).
+  #
+  # This is what "gate" means here, and it blocks nothing. The `deploy` job below
+  # takes `needs: probe-staging` with `if: always()`, so it merely WAITS for the
+  # answer: GitHub requests deployment review when a job becomes ready to run, so
+  # the "Review deployments" prompt appears after this finishes, with the result
+  # above it. A red sweep still lets Daniel approve, and nothing is reverted.
+  #
+  # `environment: staging`, NOT production: that is where WIF_PROVIDER /
+  # WIF_SERVICE_ACCOUNT live, and staging carries no protection rules, so this
+  # job starts immediately rather than waiting for the very approval it informs.
+  # It probes staging and never production — `PROBE_TARGETS` has no production
+  # target, deliberately.
+  probe-staging:
+    name: Probe staging before promotion
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+
+    steps:
+      # The published tag, so the probes match the commit being promoted.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
+
+      - uses: pnpm/action-setup@v6.0.10
+        with:
+          version: '10.33.0'
+
+      # Node 20 for the reason the deploy job below states: firebase-admin makes
+      # the same sts.googleapis.com WIF token exchange.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: s2-stage-ccb22
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      # The costly journeys included: a release is a bounded, chosen event, not
+      # a merge. See probe-staging-weekly.yml for why that distinction is the
+      # whole rule, and the guard test that enforces it.
+      - name: Probe staging (all journeys)
+        run: pnpm --silent probe all --target staging --include-opt-in > probe-staging.json
+
+      - name: Upload probe report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-staging-release-report
+          path: probe-staging.json
+          if-no-files-found: warn
+
   deploy:
     name: Deploy to production
+    # Waits for the probe result, is never blocked by it. `always()` is what
+    # makes the difference: without it a red or cancelled probe would skip the
+    # deploy, which would be an automatic block on promotion — deliberately not
+    # what this is.
+    needs: probe-staging
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     # The approval gate. Also the source of WIF_PROVIDER / WIF_SERVICE_ACCOUNT —
     # the production deployer SA is bound to attribute.environment/production, so
