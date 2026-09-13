@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { withKitchenTimerStarted, withKitchenTimerDismissed } from '../../src/index.js';
+import {
+  withKitchenTimerStarted,
+  withKitchenTimerDismissed,
+  batchStepTimerId,
+  isCheckInTimerId,
+} from '../../src/index.js';
 import { KitchenTimersSchema } from '../../src/schemas/index.js';
 import type { KitchenTimerDoc, KitchenTimersDoc } from '../../src/schemas/index.js';
 
@@ -19,6 +24,7 @@ function timer(id: string, endsInMs: number, over: Partial<KitchenTimerDoc> = {}
     endsAt: new Date(NOW + endsInMs).toISOString(),
     durationMinutes: 10,
     notify: true,
+    origin: null,
     ...over,
   };
 }
@@ -154,5 +160,66 @@ describe('KitchenTimersSchema', () => {
   it('rejects a timer with no label', () => {
     const bad = { ownerUid: 'uid-a', timers: [{ ...timer('t1', MIN), label: null }] };
     expect(KitchenTimersSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+// ─── Where a timer was armed from (issue #1327, Phase 2) ─────────────────────
+//
+// `origin` is a plain field on the entry, so the producers needed no change to
+// carry one — which is exactly why it needs pinning: nothing in
+// `withKitchenTimerStarted` mentions it, so nothing there would go red if a
+// future edit started rebuilding the entry field by field and quietly dropped it.
+describe('a timer that knows where it was armed', () => {
+  const ORIGIN = { batchId: 'batch-1', stepId: 'step-2' } as const;
+
+  it('carries its origin through a start', () => {
+    const next = withKitchenTimerStarted(doc(), timer('t1', 10 * MIN, { origin: ORIGIN }), NOW);
+    expect(next.timers[0]?.origin).toEqual(ORIGIN);
+  });
+
+  // The replacement IS the entry — there is no merge onto the old one. A re-time
+  // that forgets the origin loses it, and the batch deck stops showing the timer
+  // on its step. Both halves are asserted so the sentence in the producer's
+  // header has something that falsifies it.
+  it('takes the re-timed entry whole — an origin passed again survives, one omitted goes', () => {
+    const started = withKitchenTimerStarted(doc(), timer('t1', 10 * MIN, { origin: ORIGIN }), NOW);
+    const kept = withKitchenTimerStarted(started, timer('t1', 25 * MIN, { origin: ORIGIN }), NOW);
+    expect(kept.timers[0]?.origin).toEqual(ORIGIN);
+
+    const dropped = withKitchenTimerStarted(started, timer('t1', 25 * MIN), NOW);
+    expect(dropped.timers[0]?.origin).toBeNull();
+  });
+
+  it('takes a batch timer down with the same unconditional dismiss', () => {
+    const started = withKitchenTimerStarted(doc(), timer('t1', 10 * MIN, { origin: ORIGIN }), NOW);
+    expect(withKitchenTimerDismissed(started, 't1').timers).toEqual([]);
+  });
+});
+
+// ─── The id a batch's step timer is armed under (issue #1327, Phase 2) ───────
+describe('batchStepTimerId', () => {
+  it('re-times the one timer on a step rather than stacking a second', () => {
+    const id = batchStepTimerId('batch-1', 'step-2');
+    const started = withKitchenTimerStarted(doc(), timer(id, 10 * MIN), NOW);
+    const again = withKitchenTimerStarted(started, timer(id, 10 * MIN), NOW);
+    expect(again.timers).toHaveLength(1);
+  });
+
+  // Kitchen timers share ONE array per member, unlike a cook session's per-session
+  // `activeTimers` — so the bare step id cook mode uses would make two runs of the
+  // same recipe fight over one entry.
+  it('keeps two runs of the same recipe on separate timers', () => {
+    expect(batchStepTimerId('batch-1', 'step-2')).not.toBe(batchStepTimerId('batch-2', 'step-2'));
+  });
+
+  // THE COLLISION CLAIM, pinned rather than asserted in a comment. A batch step
+  // timer that read as a guided check-in would be hidden from the bar once fired
+  // and refused a re-time. Both rows go red if `CHECK_IN_SEPARATOR` is ever
+  // shortened to something a pair of ids can contain.
+  it.each([
+    ['real uuids', 'c6777996-1b7d-470a-894b-4fc2f7da1b63', '708b640b-819c-423c-be44-b43d54aa5a90'],
+    ['short ids', 'batch-1', 'step-2'],
+  ])('never reads as a check-in id (%s)', (_case, batchId, stepId) => {
+    expect(isCheckInTimerId(batchStepTimerId(batchId, stepId))).toBe(false);
   });
 });

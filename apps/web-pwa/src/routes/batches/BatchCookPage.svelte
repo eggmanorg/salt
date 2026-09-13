@@ -30,6 +30,13 @@
   import CookStepKit from '../recipes/CookStepKit.svelte';
   import CookStepDoneControls from '../recipes/CookStepDoneControls.svelte';
   import CookRecipeChangedBanner from '../recipes/CookRecipeChangedBanner.svelte';
+  // The timer parts, reused exactly as the deck parts above are (issue #1327,
+  // Phase 2). `createBatchTimers` widens each kitchen timer into the shape these
+  // three already take — see its header for why that is a widening and not a cast.
+  import CookTimersBar from '../recipes/CookTimersBar.svelte';
+  import CookStepTimer from '../recipes/CookStepTimer.svelte';
+  import CookTimerSheet from '../recipes/CookTimerSheet.svelte';
+  import { createBatchTimers } from '../../lib/batchTimers.svelte.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
   import BatchReadingRow from './BatchReadingRow.svelte';
   import {
@@ -77,13 +84,27 @@
   //
   // ─── WHY THE SCHEDULE OWNS THE CLOCK ──────────────────────────────────────────
   //
-  // A step cited by a `wait` stage with a duration counts down to that stage's
-  // `plannedEndAt` and offers no cook timer — the batch's push reminder already
-  // exists for that moment (`onBatchWritten`), and a second clock beside it would be
-  // two alarms for one prove. The recipe's own timer for such a step is shown as
-  // TEXT: it is the recipe's opinion, and the run's plan is what is actually being
-  // waited on. Marking the step done marks the stage done, which re-times the tail
-  // through `withStageAdvanced` and lets the existing reminder path re-enqueue.
+  // A step with a stage on it counts down to that stage's `plannedEndAt` and offers
+  // no timer — the batch's push reminder already exists for that moment
+  // (`onBatchWritten`), and a second clock beside it would be two alarms for one
+  // prove. The recipe's own timer for such a step is shown as TEXT: it is the
+  // recipe's opinion, and the run's plan is what is actually being waited on.
+  // Marking the step done marks the stage done, which re-times the tail through
+  // `withStageAdvanced` and lets the existing reminder path re-enqueue.
+  //
+  // ─── AND WHY THE STEPS WITHOUT A STAGE GET A TIMER ────────────────────────────
+  //
+  // The other four steps of a bread — mix, knead, shape, vent — have no stage and
+  // so no clock at all, which is what Phase 1 shipped and lived with. They take an
+  // ordinary press-to-start timer now (Phase 2, decision 9), on the member's OWN
+  // `kitchenTimers/{uid}` document and never on the batch: two people on one bake
+  // each have their own ten minutes of kneading, and a timer is a personal thing
+  // even when the loaf is not. What is new on that document is `origin` — an
+  // additive, read-defaulted `{ batchId, stepId }` that is a deep link and a display
+  // key and nothing else. It is what lets the deck show a timer ON its step from an
+  // id rather than by matching label text, and the finished-timer push land back
+  // here rather than on Mine. It is NOT scoping: the timer is read and written under
+  // its owner's uid exactly as before.
   //
   // Every number on screen that belongs to the run is the run's own frozen figure;
   // the METHOD is read live from the recipe, which is the one join the batch page
@@ -229,6 +250,25 @@
 
   const firstUse = $derived(recipe ? firstUseByStep(recipe.ingredients) : new Map());
   const kit = $derived(kitByStep(recipe?.kit ?? [], steps));
+
+  // ─── The timers ───────────────────────────────────────────────────────────────
+  //
+  // Mine, armed from this run, on the steps the schedule does not already time. The
+  // sheet's open flag lives here because the markup binds it.
+  let timerSheetOpen = $state(false);
+  const timers = createBatchTimers({
+    batchId: () => batchId,
+    steps: () => steps,
+    showSheet: () => (timerSheetOpen = true),
+  });
+
+  // WHICH STEPS OFFER ONE, in one place so the page cannot answer it two ways. A
+  // step wearing a stage band is the schedule's, and the schedule owns its clock
+  // (see the header); every other step with a recipe timer gets a button. Both
+  // halves of that sentence are pinned in `BatchCookPage.test.ts`.
+  function stepTakesTimer(stepId: string): boolean {
+    return !layout.onStep.has(stepId);
+  }
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
   //
@@ -501,6 +541,23 @@
               class="text-muted-foreground"
             />{/snippet}
         </Button>
+        <!-- A timer for something the recipe never mentioned. Beside the log rather
+           than in the deck, because it belongs to the whole cook and not to
+           whichever step happens to be under the thumb. -->
+        <Button
+          variant="ghost"
+          size="icon"
+          onclick={timers.openAdHocTimerSheet}
+          ariaLabel="Set a timer"
+          title="Set a timer"
+          data-testid="batch-cook-timer-add"
+        >
+          {#snippet leading()}<Icon
+              name="Timer"
+              size={20}
+              class="text-muted-foreground"
+            />{/snippet}
+        </Button>
         {#if wakeLockSupported}
           <Button
             variant="ghost"
@@ -536,6 +593,21 @@
           completedStepIds={completedIds}
           currentStepId={currentStep?.id ?? null}
           onJump={jumpToStep}
+        />
+      {/if}
+
+      {#if timers.barTimers.length > 0}
+        <!-- THE PERSISTENT BAR, cook mode's own component. Every timer armed from
+           this run stays here whatever the deck is showing, so one that fires while
+           the chef is on the weigh-out — or on a step that has since collapsed —
+           is always visible and always dismissable. -->
+        <CookTimersBar
+          timers={timers.barTimers}
+          {steps}
+          now={timers.now}
+          progressFor={timers.timerProgressFor}
+          onEdit={timers.openRunningTimerSheet}
+          onDismiss={timers.dismissTimer}
         />
       {/if}
 
@@ -896,14 +968,31 @@
                     {/if}
 
                     {#if step.timer}
-                      <!-- THE RECIPE'S OPINION, never armed. Where a wait stage times
-                         this step the run's own clock is above; where it does not,
-                         Phase 2 is what gives this a button (issue #1327, decision
-                         9) — and a timer here today would be a second clock for the
-                         same wait. -->
-                      <p class="text-sm text-muted-foreground" data-testid="batch-cook-step-timer">
-                        The recipe says {step.timer.durationMinutes} min for this step.
-                      </p>
+                      {#if stepTakesTimer(step.id)}
+                        <!-- No stage on this step, so nothing else is timing it: the
+                           recipe's own duration, one tap to start (issue #1327,
+                           Phase 2). The pencil beside it is the other case — change
+                           the name or the length first. -->
+                        <CookStepTimer
+                          timer={step.timer}
+                          entry={timers.timerByStep.get(step.id)}
+                          now={timers.now}
+                          progressFor={timers.timerProgressFor}
+                          onStart={() => timers.startStepTimer(step)}
+                          onAdjust={() => timers.openStepTimerSheet(step)}
+                          onDismiss={timers.dismissTimer}
+                        />
+                      {:else}
+                        <!-- THE RECIPE'S OPINION, never armed. This step wears a stage
+                           band, and the run's own clock is in it — a timer here would
+                           be a second alarm for one wait. -->
+                        <p
+                          class="text-sm text-muted-foreground"
+                          data-testid="batch-cook-step-timer"
+                        >
+                          The recipe says {step.timer.durationMinutes} min for this step.
+                        </p>
+                      {/if}
                     {/if}
 
                     {#if done}
@@ -974,5 +1063,15 @@
        its own open/close transition and portals to <body>, so it lands above this
        full-viewport container rather than inside it. -->
     <BatchObservationSheet bind:open={logOpen} {batchId} run={run ?? null} />
+    <!-- Cook mode's own sheet, mounted for the same reason and on the same terms: it
+       takes a name and a number and hands back a name and a number, knowing nothing
+       about ids, batches or steps. Minting the id, reading the clock and writing the
+       document all stay in `createBatchTimers`. -->
+    <CookTimerSheet
+      bind:open={timerSheetOpen}
+      prefill={timers.sheetPrefill}
+      running={timers.sheetTarget?.running ?? false}
+      onConfirm={timers.confirmTimerSheet}
+    />
   </div>
 </FeatureGuard>

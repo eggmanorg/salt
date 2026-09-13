@@ -23,8 +23,6 @@
     isChatReadOnly,
     timerHeat,
     timerProgress,
-    withKitchenTimerDismissed,
-    withKitchenTimerStarted,
     withTimerDismissed,
     type Recipe,
     type TimerHeat,
@@ -45,15 +43,10 @@
   } from '../../lib/personalViewService.js';
   import { subscribeKitchenWeeks } from '../../lib/mealPlanService.js';
   import { persistCookSession, removeCookSession } from '../../lib/cookSessionService.js';
-  import { getKitchenTimersSnapshot, persistKitchenTimers } from '../../lib/kitchenTimerService.js';
+  import { dismissKitchenTimer, startKitchenTimer } from '../../lib/kitchenTimerService.js';
   import { persistRecipe, recipes } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { primeChime } from '../../lib/chime.js';
-  import {
-    AD_HOC_TIMER_LABEL,
-    AD_HOC_TIMER_MINUTES,
-    shouldNotifyFor,
-  } from '../../lib/timerDefaults.js';
+  import { AD_HOC_TIMER_LABEL, AD_HOC_TIMER_MINUTES } from '../../lib/timerDefaults.js';
   import CookTimerSheet from '../recipes/CookTimerSheet.svelte';
   import {
     kitchenPrefs,
@@ -216,14 +209,6 @@
     if (result.kind !== 'ok') addToast("Couldn't update that timer.", 'destructive');
   }
 
-  async function dismissKitchenTimer(timerId: string) {
-    const doc = getKitchenTimersSnapshot();
-    // Signed out mid-gesture. Nothing to write and nothing to say — the page is
-    // about to go with the session.
-    if (!doc) return { kind: 'ok' as const, value: undefined };
-    return persistKitchenTimers(withKitchenTimerDismissed(doc, timerId));
-  }
-
   // ─── Standalone timers (issue #842) ───────────────────────────────────────
   // A timer that belongs to nobody's cook. It renders in the list above beside
   // the cook timers and is not marked out as a different species — the only
@@ -284,38 +269,24 @@
     timerSheetOpen = true;
   }
 
+  // The clock, the chime priming, the `notify` re-derivation and the write all
+  // live in `startKitchenTimer` now (#1327, Phase 2), because the batch cook page
+  // starts the same kind of timer and the two must not drift into two meanings of
+  // "start". What stays here is the only thing that is this page's: a timer
+  // started from My Kitchen came from nowhere but the kitchen, so its origin is
+  // null and the finished-timer push lands back on Mine.
   function confirmTimerSheet(next: { label: string; durationMinutes: number }): void {
     const target = timerSheetTarget;
     if (!target) return;
-    const doc = getKitchenTimersSnapshot();
-    if (!doc) return;
-    // Unlock the audio context on this user gesture so the app-level watcher can
-    // chime when the timer ends, even on iOS Safari (which blocks audio not tied
-    // to a gesture). Starting a timer is the only gesture guaranteed to precede
-    // a chime, which is why this sits here and the chime itself does not.
-    primeChime();
-    const now = Date.now();
-    // `endsAt` is computed HERE, never in the domain producer, which reads no
-    // clock (CLAUDE.md Rule 1). Replacing any entry with the same id is the
-    // producer's job — which is also all "re-time a running timer" is. `notify`
-    // re-derives from the duration actually being started, so one stretched over
-    // the floor gains its push backstop and one cut under it loses it.
-    void persistKitchenTimers(
-      withKitchenTimerStarted(
-        doc,
-        {
-          id: target.id,
-          // An emptied name is no name, and a standalone timer has no step to
-          // fall back to — so it falls back to the same default the sheet
-          // offered in the first place.
-          label: next.label === '' ? AD_HOC_TIMER_LABEL : next.label,
-          endsAt: new Date(now + next.durationMinutes * 60_000).toISOString(),
-          durationMinutes: next.durationMinutes,
-          notify: shouldNotifyFor(next.durationMinutes),
-        },
-        now,
-      ),
-    );
+    void startKitchenTimer({
+      id: target.id,
+      // An emptied name is no name, and a standalone timer has no step to fall
+      // back to — so it falls back to the same default the sheet offered in the
+      // first place.
+      label: next.label === '' ? AD_HOC_TIMER_LABEL : next.label,
+      durationMinutes: next.durationMinutes,
+      origin: null,
+    });
   }
 
   // ─── Cooking now ──────────────────────────────────────────────────────────

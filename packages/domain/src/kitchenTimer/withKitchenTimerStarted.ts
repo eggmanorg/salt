@@ -34,6 +34,13 @@ const PRUNE_AFTER_MS = 24 * 60 * 60_000;
  * is — the same id with a fresh `endsAt`, through this same producer — which is
  * why renaming and stretching a countdown need no second operation.
  *
+ * Which is also why `origin` (issue #1327) needs nothing here: the whole entry is
+ * the caller's, so an origin rides in on it and a re-time carries whatever the
+ * caller hands over. The consequence worth knowing is that a re-time which omits
+ * one DROPS it — the replacement is the entry, not a merge onto the old one — so
+ * every path that re-times a timer armed from a batch must pass its origin again.
+ * Pinned by the origin cases in `kitchenTimerProducers.test.ts`.
+ *
  * Immutable: returns a new document and never mutates the input.
  */
 export function withKitchenTimerStarted(

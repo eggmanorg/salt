@@ -49,6 +49,18 @@ not gain one.** The document id simply _is_ the uid, so ownership is provable fr
 the path and the rule never dereferences `resource.data` at all; the absent-document
 denial that forced the clause onto the other two cannot arise here.
 
+Each timer carries `origin: { batchId, stepId } | null` (issue #1327) — where it was
+armed from. `null` for a timer started on My Kitchen, and for every timer written
+before the field, which is why it is `.nullable().default(null)` and needs no
+migration. **It is not scoping.** The timer is still read and written under its
+owner's uid alone; `origin` is checked by no rule, gates no capability and does not
+make the timer the batch's — `batches` holds no timer, and the per-user exceptions
+above are still four. Exactly two things read it: the finished-timer push, which
+deep-links to `/#/batches/{batchId}/cook` instead of `/#/mine`, and the batch cook
+deck, which shows a timer on its step from `stepId` rather than by matching label
+text. A non-null origin with `stepId: null` is an ad-hoc timer started from a batch's
+cook page — a different fact from `origin: null`.
+
 `ownerUid` is still stored and pinned on write, because `onKitchenTimerDispatch`
 reads it off the parsed document to target `pushSubscriptions`.
 

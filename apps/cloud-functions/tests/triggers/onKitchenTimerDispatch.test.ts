@@ -139,6 +139,7 @@ function timer(overrides: Partial<KitchenTimerDoc> = {}): KitchenTimerDoc {
     endsAt: ENDS_AT,
     durationMinutes: 10,
     notify: true,
+    origin: null,
     ...overrides,
   };
 }
@@ -484,6 +485,58 @@ describe('onKitchenTimerDispatch — Pushover fan-out', () => {
       url: 'https://s2-prod-e46bd.web.app/#/mine',
       urlTitle: 'Go to the kitchen',
     });
+  });
+
+  // ─── Where a finished timer lands (issue #1327, Phase 2) ────────────────────
+  //
+  // BOTH sinks, in one case each, because the two are set from one `url` and the
+  // whole value of `origin` is that a timer armed at the oven does not send the
+  // chef to Mine. The origin is read off the LIVE document here, which is why the
+  // task payload could stay ids-only.
+  it('deep-links a batch timer back to the cook page it was armed from', async () => {
+    mockTimersSnap = {
+      exists: true,
+      data: () => makeDoc([timer({ origin: { batchId: 'batch-9', stepId: 'step-2' } })]),
+    };
+
+    await dispatch(req());
+
+    const [, , message] = mockSendPushover.mock.calls[0]!;
+    expect(message).toMatchObject({
+      url: 'https://s2-prod-e46bd.web.app/#/batches/batch-9/cook',
+      urlTitle: 'Back to the cook',
+    });
+    const payload = mockSendWebPush.mock.calls[0]![2] as Record<string, string>;
+    expect(payload['url']).toBe('/#/batches/batch-9/cook');
+  });
+
+  // An ad-hoc timer started from the batch cook page belongs to the batch and to
+  // no step — a different fact from `origin: null`, and it must still land there.
+  it('deep-links a batch timer with no step of its own to the same page', async () => {
+    mockTimersSnap = {
+      exists: true,
+      data: () => makeDoc([timer({ origin: { batchId: 'batch-9', stepId: null } })]),
+    };
+
+    await dispatch(req());
+
+    const payload = mockSendWebPush.mock.calls[0]![2] as Record<string, string>;
+    expect(payload['url']).toBe('/#/batches/batch-9/cook');
+  });
+
+  // The other half of the sentence, and the one a regression would break silently:
+  // a My Kitchen timer — and every timer written before the field — still lands on
+  // Mine.
+  it('leaves a timer with no origin landing on My Kitchen', async () => {
+    await dispatch(req());
+
+    const [, , message] = mockSendPushover.mock.calls[0]!;
+    expect(message).toMatchObject({
+      url: 'https://s2-prod-e46bd.web.app/#/mine',
+      urlTitle: 'Go to the kitchen',
+    });
+    const payload = mockSendWebPush.mock.calls[0]![2] as Record<string, string>;
+    expect(payload['url']).toBe('/#/mine');
   });
 
   it('never appends an install nudge — the fallback push is unmodified (#988)', async () => {

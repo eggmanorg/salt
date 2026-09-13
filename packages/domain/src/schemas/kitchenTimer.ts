@@ -19,9 +19,33 @@ import { z } from 'zod';
 // moment clobber each other under full-document LWW — precisely the property
 // `cookSessions.activeTimers` already has and accepts.
 
+// WHERE A TIMER WAS ARMED FROM (issue #1327, Phase 2). Null for a timer started
+// on My Kitchen, which came from nowhere but the kitchen itself; a batch id for
+// one armed on `/batches/:id/cook`, with the step it sits on where it sits on
+// one.
+//
+// It is a DEEP LINK AND A DISPLAY KEY, never scoping. The timer is still the
+// owner's and still read and written under `kitchenTimers/{ownerUid}` alone —
+// `origin` gates nothing, is checked by no rule, and does not make the timer the
+// batch's (CLAUDE.md's per-user exceptions are still four, and `batches` still
+// holds no timer). Two things read it: the finished-timer push, which lands the
+// chef back on the page they armed it from instead of on Mine, and the batch cook
+// deck, which shows a timer ON its step from an id rather than by matching label
+// text.
+//
+// `stepId` is nullable INSIDE a non-null origin: an ad-hoc timer started from the
+// batch cook page belongs to the batch and to no step, which is a different fact
+// from belonging to nothing at all.
+export const KitchenTimerOriginSchema = z.object({
+  batchId: z.string(),
+  stepId: z.string().nullable(),
+});
+
 // A single standalone timer. Deliberately `CookActiveTimerSchema` MINUS
 // `stepId`: a timer with no cook is the same object without the one field that
-// ties it to a recipe. Every other difference from that schema is because this
+// ties it to a recipe. That still holds with `origin` below — what came back is
+// an ORIGIN, not a session binding: it says where the timer was armed, never that
+// a cook owns it. Every other difference from that schema is because this
 // collection is greenfield and that one is not —
 //
 //   - no `z.preprocess`. The preprocess on the cook schema exists solely to
@@ -50,6 +74,11 @@ export const KitchenTimerSchema = z.object({
   // duration on every start, so a timer stretched over the floor gains it and
   // one cut under the floor loses it.
   notify: z.boolean(),
+  // `.nullable().default(null)` so every timer written before #1327 — and every
+  // one started from My Kitchen since — reads as a timer from nowhere in
+  // particular, with no migration. See the schema above for what it is and is
+  // not.
+  origin: KitchenTimerOriginSchema.nullable().default(null),
 });
 
 export const KitchenTimersSchema = z.object({
@@ -64,5 +93,6 @@ export const KitchenTimersSchema = z.object({
   timers: z.array(KitchenTimerSchema).default([]),
 });
 
+export type KitchenTimerOrigin = z.infer<typeof KitchenTimerOriginSchema>;
 export type KitchenTimerDoc = z.infer<typeof KitchenTimerSchema>;
 export type KitchenTimersDoc = z.infer<typeof KitchenTimersSchema>;

@@ -15,3 +15,9 @@
 // page, which is where the clock already lives, and `nowMs` is injected.
 export { withKitchenTimerStarted } from './withKitchenTimerStarted.js';
 export { withKitchenTimerDismissed } from './withKitchenTimerDismissed.js';
+// Not a producer — an id scheme, and the only one this collection has. It sits
+// here beside the producers for the reason `checkInTimerId` sits beside the cook
+// session's: the rule it encodes ("one live timer per step of a batch") is
+// enforced entirely by `withKitchenTimerStarted`'s replace-by-id, so the two are
+// one mechanism read from either end (issue #1327).
+export { batchStepTimerId } from './batchStepTimerId.js';

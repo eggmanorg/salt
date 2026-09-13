@@ -6,6 +6,8 @@ import type {
   BatchObservationDoc,
   BatchStageDoc,
   IngredientDoc,
+  KitchenTimerDoc,
+  KitchenTimersDoc,
   RecipeDoc,
 } from '@salt/domain/schemas';
 
@@ -26,23 +28,36 @@ import type {
 //     stage-less step and a step-less stage are both first-class;
 //   • a WAIT stage's step counts down to the schedule's planned end and offers no
 //     timer, and marking it done marks the stage done (two writes, in that order);
+//   • a step with NO stage takes an ordinary press-to-start timer (Phase 2) on the
+//     member's own kitchen-timers document, carrying the origin that sends its
+//     notification back here; a step WITH one still offers none;
 //   • there is NO FINISH, and nothing here ends the run.
 
-const { mockBatch, mockObservations, mockRecipes, mockBreadGate, mockWakeLock } = await vi.hoisted(
-  async () => {
-    const { makeStore } = await import('./support/testStore.js');
-    return {
-      mockBatch: makeStore<BatchDoc | null | undefined>(undefined),
-      mockObservations: makeStore<BatchObservationDoc[] | undefined>([]),
-      mockRecipes: makeStore<RecipeDoc[]>([]),
-      mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
-        enabled: true,
-        settled: true,
-      }),
-      mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
-    };
-  },
-);
+const {
+  mockBatch,
+  mockObservations,
+  mockRecipes,
+  mockBreadGate,
+  mockWakeLock,
+  mockKitchenTimers,
+  mockStartKitchenTimer,
+  mockDismissKitchenTimer,
+} = await vi.hoisted(async () => {
+  const { makeStore } = await import('./support/testStore.js');
+  return {
+    mockBatch: makeStore<BatchDoc | null | undefined>(undefined),
+    mockObservations: makeStore<BatchObservationDoc[] | undefined>([]),
+    mockRecipes: makeStore<RecipeDoc[]>([]),
+    mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
+      enabled: true,
+      settled: true,
+    }),
+    mockWakeLock: { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) },
+    mockKitchenTimers: makeStore<KitchenTimersDoc | null>(null),
+    mockStartKitchenTimer: vi.fn(async () => ({ kind: 'ok' as const, value: undefined })),
+    mockDismissKitchenTimer: vi.fn(async () => ({ kind: 'ok' as const, value: undefined })),
+  };
+});
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), router: { querystring: '' } }));
 vi.mock('../src/lib/nav.js', () => ({ goBack: vi.fn() }));
@@ -98,6 +113,15 @@ vi.mock('../src/lib/batchObservationService.js', () => ({
     kind: 'ok',
     value: { observationId: 'obs-new', photo: { kind: 'none' } },
   })),
+}));
+// The timers (issue #1327, Phase 2). Mocked at the COMMAND seam, where the page's
+// own decisions are: which id it starts under, and what origin it attaches. The
+// composition behind it — the clock, `notify`, the producer — is pinned in
+// `kitchenTimerService.test.ts`.
+vi.mock('../src/lib/kitchenTimerService.js', () => ({
+  kitchenTimers: mockKitchenTimers,
+  startKitchenTimer: mockStartKitchenTimer,
+  dismissKitchenTimer: mockDismissKitchenTimer,
 }));
 vi.mock('../src/lib/featureGate.js', () => ({
   breadGate: mockBreadGate,
@@ -249,6 +273,7 @@ beforeEach(() => {
   mockObservations._set([]);
   mockRecipes._set([recipeWith()]);
   mockBreadGate._set({ enabled: true, settled: true });
+  mockKitchenTimers._set(null);
   advanceMock.mockImplementation(async (current) => ({ kind: 'ok', value: current }));
 });
 
@@ -425,13 +450,17 @@ describe('the deck', () => {
     expect(step2.textContent).toContain('Knead for ten minutes.');
   });
 
-  it('shows the recipe’s own timer as words, and arms nothing', async () => {
-    // Phase 1 ships with the schedule's clock only (decision 9). A press-to-start
-    // control on a non-stage step is Phase 2's, in a home that is not a cook session.
+  it('offers a press-to-start timer on a step the schedule does not time', async () => {
+    // Step 2 (knead, 10 min) wears no stage band, so nothing else is counting it
+    // down — which is exactly when a timer is the right answer (Phase 2).
     renderPage();
     await goToSteps();
-    expect(screen.getByTestId('batch-cook-step-timer').textContent).toContain('10 min');
-    expect(screen.queryByTestId('cook-step-timer')).toBeNull();
+    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain(
+      'Start 10 minute timer',
+    );
+    // And no "the recipe says…" text beside it: the button IS the recipe's
+    // duration, said once.
+    expect(screen.queryByTestId('batch-cook-step-timer')).toBeNull();
   });
 });
 
@@ -810,6 +839,196 @@ describe('an observational stage', () => {
     // the bulk stage above it is still counting down, correctly.
     const card = screen.getByTestId('batch-cook-stage-card');
     expect(card.querySelector('[data-testid="batch-cook-stage-countdown"]')).toBeNull();
+  });
+});
+
+// ─── Timers (issue #1327, Phase 2) ───────────────────────────────────────────
+//
+// The deck's fourth clock question, after "which stage times this step" — what
+// times the steps NO stage covers. They take an ordinary press-to-start timer on
+// the member's OWN `kitchenTimers/{uid}` document (never on the family batch), and
+// the `origin` it carries is what makes the rest of it work: the deck shows a timer
+// on its step from an id rather than by matching label text, and the finished-timer
+// push lands back here instead of on Mine.
+describe('timers on the steps the schedule does not cover', () => {
+  const STEP_2_TIMER_ID = `${BATCH_ID}::step-2`;
+
+  function kitchenTimer(over: Partial<KitchenTimerDoc> = {}): KitchenTimerDoc {
+    return {
+      id: STEP_2_TIMER_ID,
+      label: 'Knead',
+      endsAt: new Date(NOW.getTime() + 6 * 60_000).toISOString(),
+      durationMinutes: 10,
+      notify: true,
+      origin: { batchId: BATCH_ID, stepId: 'step-2' },
+      ...over,
+    };
+  }
+
+  function kitchen(timers: KitchenTimerDoc[]): KitchenTimersDoc {
+    return { ownerUid: 'uid-1', timers };
+  }
+
+  it('starts one under an id derived from the batch AND the step', async () => {
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('cook-step-timer-start'));
+
+    expect(mockStartKitchenTimer).toHaveBeenCalledWith({
+      // Deterministic, so tapping again re-times the one that is running. The
+      // batch id in front is what stops two runs of one recipe sharing a timer —
+      // they share one array, unlike cook mode's per-session `activeTimers`.
+      id: STEP_2_TIMER_ID,
+      // Not `Salt Timer`. A kitchen timer's label is required and has no step to
+      // fall back to at read time, and that default means "from nowhere in
+      // particular" — which is what this is not. It is what the lock screen reads.
+      label: 'Step 2',
+      durationMinutes: 10,
+      origin: { batchId: BATCH_ID, stepId: 'step-2' },
+    });
+  });
+
+  // The point of the origin, stated as a test: without it the deck could only
+  // guess which step a timer belongs to by matching its label text.
+  it('shows a running timer ON its step, from the origin and not from its name', async () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer({ label: 'nothing like the step' })]));
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('cook-step-timer-countdown').textContent).toContain('6:00');
+    expect(screen.queryByTestId('cook-step-timer-start')).toBeNull();
+  });
+
+  it('keeps it out of the step when the origin points at another batch', async () => {
+    mockKitchenTimers._set(
+      kitchen([kitchenTimer({ origin: { batchId: 'another-batch', stepId: 'step-2' } })]),
+    );
+    renderPage();
+    await goToSteps();
+
+    // Still unstarted here, and nowhere in this run's bar: it is the owner's
+    // timer, but it is not this page's business to draw.
+    expect(screen.getByTestId('cook-step-timer-start')).toBeTruthy();
+    expect(screen.queryByTestId('cook-timers-bar')).toBeNull();
+  });
+
+  // A My Kitchen timer has no origin at all. It lists and dismisses on Mine, and
+  // must not turn up here.
+  it('keeps a timer from My Kitchen off the page entirely', async () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer({ origin: null })]));
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByTestId('cook-timers-bar')).toBeNull();
+    expect(screen.getByTestId('cook-step-timer-start')).toBeTruthy();
+  });
+
+  it('keeps every timer of this run in the persistent bar, whatever the deck shows', () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer()]));
+    // Rendered on the WEIGH-OUT, which has no steps on it at all.
+    renderPage();
+
+    expect(screen.getByTestId('cook-timers-bar')).toBeTruthy();
+    expect(screen.getByTestId('cook-timer-chip-label').textContent).toContain('Knead');
+  });
+
+  it('dismisses one from the bar', async () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer()]));
+    renderPage();
+    await fireEvent.click(screen.getByTestId('cook-timer-chip-dismiss'));
+
+    expect(mockDismissKitchenTimer).toHaveBeenCalledWith(STEP_2_TIMER_ID);
+  });
+
+  it('cancels a running one from the step it is sitting on', async () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer()]));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('cook-step-timer-dismiss'));
+
+    expect(mockDismissKitchenTimer).toHaveBeenCalledWith(STEP_2_TIMER_ID);
+  });
+
+  // Tapping a running chip re-times it: the same id, a fresh length, through the
+  // same start — and the origin has to be handed over AGAIN, because the entry is
+  // replaced whole rather than merged (pinned in the producers' suite).
+  it('re-times a running one from the bar, keeping its id and its origin', async () => {
+    mockKitchenTimers._set(kitchen([kitchenTimer()]));
+    renderPage();
+    await fireEvent.click(screen.getByTestId('cook-timer-chip-edit'));
+    await waitFor(() => expect(screen.getByTestId('cook-timer-sheet-confirm')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('cook-timer-sheet-confirm'));
+
+    expect(mockStartKitchenTimer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: STEP_2_TIMER_ID,
+        origin: { batchId: BATCH_ID, stepId: 'step-2' },
+      }),
+    );
+  });
+
+  it('starts an ad-hoc one pinned to the batch and to no step', async () => {
+    renderPage();
+    await fireEvent.click(screen.getByTestId('batch-cook-timer-add'));
+    await waitFor(() => expect(screen.getByTestId('cook-timer-sheet-confirm')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('cook-timer-sheet-confirm'));
+
+    expect(mockStartKitchenTimer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: 'Salt Timer',
+        durationMinutes: 10,
+        // Pinned to the batch so its push comes back here, and to no step so it
+        // stays out of every step's inline slot.
+        origin: { batchId: BATCH_ID, stepId: null },
+      }),
+    );
+  });
+
+  it('adjusts a step timer before starting it, through cook mode’s own sheet', async () => {
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('cook-step-timer-adjust'));
+    await waitFor(() => expect(screen.getByTestId('cook-timer-sheet-minutes')).toBeTruthy());
+
+    // Prefilled from the LIVE step, which is what makes "reset to the recipe's
+    // duration" a thing you already have.
+    expect(screen.getByTestId('cook-timer-sheet-minutes')).toHaveValue('10');
+    await fireEvent.click(screen.getByTestId('cook-timer-sheet-confirm'));
+
+    expect(mockStartKitchenTimer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: STEP_2_TIMER_ID,
+        origin: { batchId: BATCH_ID, stepId: 'step-2' },
+      }),
+    );
+  });
+
+  // The other half of the clock rule, and the one a regression would break
+  // silently: a step the schedule already times must never grow a second alarm.
+  it('still offers NO timer on a step a stage is timing, even when the recipe has one', async () => {
+    mockRecipes._set([
+      recipeWith({
+        steps: [
+          { id: 'step-1', text: 'Mix the dough.', timer: null, note: null },
+          { id: 'step-2', text: 'Knead for ten minutes.', timer: null, note: null },
+          {
+            id: 'step-3',
+            text: 'Leave it somewhere warm.',
+            // The recipe's own hour for the bulk rise — which stage `stage-bulk`
+            // is already counting down to `plannedEndAt` for.
+            timer: { durationMinutes: 60, description: null },
+            note: null,
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+    await goToSteps();
+
+    expect(screen.queryByTestId('cook-step-timer-start')).toBeNull();
+    // Shown as the recipe's opinion instead, never armed.
+    expect(screen.getByTestId('batch-cook-step-timer').textContent).toContain('60 min');
+    expect(screen.getByTestId('batch-cook-stage-countdown').textContent).toContain('30 min left');
   });
 });
 
