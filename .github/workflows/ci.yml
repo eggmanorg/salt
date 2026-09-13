@@ -344,6 +344,118 @@ jobs:
           path: coverage/unit/
           retention-days: 14
 
+  # The SECOND platform, and the only reason it exists (issue #1333).
+  #
+  # `coverage.areas.mjs`' header says its pins carry NO MARGIN, and the
+  # justification it gives is that macOS and ubuntu-latest measure the same tree
+  # identically — "same figure to the last decimal, both metrics". Until this
+  # job, nothing checked that sentence, and it is the premise the whole file's
+  # discipline rests on: a pin set with no margin on one platform is a red build
+  # on the other the moment they disagree by a hundredth, and the recorded fix
+  # for that red has twice been proposed as a lower pin.
+  #
+  # A SEPARATE JOB and not a matrix leg on `unit`, deliberately. A matrix would
+  # make `unit` a pair of contexts, and `unit` is in the `ci` aggregator's
+  # `needs` — so a macOS divergence would start blocking merges, which is the
+  # opposite of what is wanted (see `coverage-platforms` below).
+  #
+  # Runner-minutes are free here: this repo is public, and the `concurrency`
+  # block at the top of this file already cancels superseded PR runs. Nothing
+  # waits on this job, so its wall clock is off the critical path.
+  unit-macos:
+    name: Unit tests + coverage (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/workspace
+
+      # Coverage only — the ratchet and the file-set guard are NOT re-run here.
+      # Both compare one measurement against a pin, so running them on a second
+      # platform answers the same question twice and would red this job for a
+      # coverage regression `unit` has already failed for. The cross-platform
+      # question is asked once, in the job below, and only there.
+      - name: Test with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-unit-macos
+          path: coverage/unit/
+          retention-days: 14
+
+  # Where the two reports finally meet, and the check that makes
+  # `coverage.areas.mjs`' cross-platform sentence a claim something can falsify
+  # rather than a comment (CLAUDE.md Rule 12).
+  #
+  # A THIRD JOB, against this file's own standing preference for folding a step
+  # into the job that already has the data. Neither producer can host this one:
+  # each holds exactly one of the two reports, and the comparison needs both.
+  # Keeping the two suites parallel and paying one ~30 s job for the arithmetic
+  # is strictly cheaper than serialising them.
+  #
+  # NOT IN THE `ci` AGGREGATOR'S `needs`, and that is a decision rather than an
+  # oversight. A divergence here is a real defect — twice now it has been a test
+  # waiting on host timing (#967) or a load left in flight at teardown (#977) —
+  # but it is a defect in the measurement estate, not in whichever PR happened
+  # to be open when it appeared. Blocking that PR's merge on it teaches the one
+  # reflex this guard exists to remove: make the red go away, by whatever is
+  # nearest to hand. It shows red on the PR and in the checks list; fixing it is
+  # its own piece of work.
+  coverage-platforms:
+    name: Coverage measures the same on both platforms
+    runs-on: ubuntu-latest
+    needs: [unit, unit-macos]
+    # `always()` so the comparison still runs when `unit` went red on a
+    # threshold: a failed ratchet still uploads its report (`always()` on both
+    # upload steps above), and a run where coverage moved is exactly the run
+    # where "did both platforms see the same move" is worth knowing.
+    if: always()
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `./.github/actions/workspace`: the comparison imports only
+      # `node:path` and `node:fs`, so it needs Node and the checked-out scripts
+      # and nothing else. Installing the workspace to run 30 s of arithmetic
+      # would cost more than the job.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # `continue-on-error` on the DOWNLOADS only, so a missing report reaches
+      # the comparison step and fails there with a sentence saying which
+      # platform produced nothing — rather than here, as an action-level error
+      # that reads like a broken workflow. It does NOT soften the check: the
+      # script treats a missing report as a failure, deliberately, because a
+      # comparison that cannot run is not a comparison that passed.
+      - name: Download ubuntu-latest coverage
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-unit
+          path: coverage-ubuntu/
+
+      - name: Download macOS coverage
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-unit-macos
+          path: coverage-macos/
+
+      # A missing report fails this LOUDLY rather than passing — the script
+      # treats "nothing to compare" as a broken input, because a green that
+      # means unchecked is the exact defect being fixed here.
+      # `node` and not `pnpm coverage:platforms:check`: this job deliberately
+      # skips the workspace install, and the script needs no package manager to
+      # run. The pnpm script exists for the local invocation, which has one.
+      - name: Compare the two measurements
+        run: >
+          node scripts/check-coverage-platforms.mjs
+          coverage-ubuntu/coverage-final.json
+          coverage-macos/coverage-final.json
+          ubuntu-latest macOS
+
   # The only PRODUCTION BUILD in CI (issue #813). Two things it catches, neither
   # of which anything else here can:
   #

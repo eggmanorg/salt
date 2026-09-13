@@ -415,6 +415,58 @@ run` executes them as ordinary code, where `expectTypeOf` returns a no-op object
   `tsconfig.typetest.json` AND `typecheck: { enabled: true }` in its vitest config. Either alone
   reds.
 
+### The coverage pins carry no margin, and CI is what keeps that safe
+
+Not a `UT-*` rule — it binds nobody writing a test, and the `guarded` marker above means one specific
+thing (a pattern [`scripts/lib/unitTestSpec.mjs`](../scripts/lib/unitTestSpec.mjs) scans test files
+for), which this is not. It is here because it is the invariant every figure in
+[`coverage.areas.mjs`](../coverage.areas.mjs) rests on, and section G is where this spec keeps them.
+
+Every pin in that file is set **at** the measurement, with no margin — deliberately, since a margin
+is only ever room for a real regression to hide in. That is tolerable while both measuring platforms
+agree exactly, and unsafe the moment they do not: a pin with no margin on one platform is a red build
+on the other over a single hundredth, and the fix reached for under that red is always a lower pin,
+which is the one operation the file forbids outright.
+
+**Evidence: #1333.** The claim had sat unguarded since #943. #1328 hit a red no pair of numbers could
+satisfy from both machines, and an agent resolved it by banking the lower of the two measurements —
+manufacturing precisely the margin the file forbids. That was discarded.
+
+**What now checks it.** `ci.yml`'s `coverage-platforms` job runs the suite on `macos-latest` beside
+the `ubuntu-latest` run and compares the two `coverage-final.json` reports file by file on all four
+raw totals, via [`scripts/check-coverage-platforms.mjs`](../scripts/check-coverage-platforms.mjs). It
+is deliberately **not** in the `ci` aggregator's `needs`: a divergence is a defect in the measurement
+estate rather than in whichever PR was open when it appeared, and blocking that merge teaches the
+make-the-red-go-away reflex this guard exists to remove.
+
+**Why not simply run the ratchet on macOS too.** The ratchet compares one measurement against a pin,
+never two against each other, so a platform reading anything from the pinned figure up to a full
+`staleAbovePoints` above it passes as quietly as one reading the pin exactly — and a divergence
+living in that band is invisible to it on both platforms at once. That band is where #1328's reported
+0.02 sat. [`scripts/tests/coveragePlatforms.test.mjs`](../scripts/tests/coveragePlatforms.test.mjs)
+pins the gap with a case the ratchet calls green twice and the comparison calls red.
+
+**When it reds, fix the test, never the pin.** Both historical breaks were tests: #967's two
+host-timing waits (UT-F5 and UT-F2 above) and #977's `import()` still in flight at worker teardown.
+
+**Reproducing it by hand** — the procedure behind #1333's measurement, and the only direct evidence a
+**developer's own machine** agrees, since no CI job can measure a laptop:
+
+```bash
+pnpm test:coverage && cp coverage/unit/coverage-final.json /tmp/local.json
+gh run download <run-id> -n coverage-unit -D /tmp/ci   # same commit, or the answer is meaningless
+pnpm coverage:platforms:check /tmp/ci/coverage-final.json /tmp/local.json ubuntu-latest local
+```
+
+**Limit — two runners, one run each.** The job measures `ubuntu-latest` against `macos-latest`, and a
+developer's machine is not one of them; what it protects is the pair drifting apart, which is the
+leading indicator. Nondeterminism _within_ one platform is a different failure — the one #977
+actually was — and this catches it only on the run where it happens to fall the other way. Node is
+pinned to major 22 and to no patch, so the two may differ in patch release and in architecture; that
+is left alone deliberately, because agreement across a difference is a stronger result than agreement
+enforced by removing it. #1333 measured v22.23.2 on ubuntu x64 against v22.22.3 on arm64 macOS at
+commit `74ecd144`: 920 files, no divergence on any of the four totals.
+
 ---
 
 ## H. Triage — suspect the fixture, not the source

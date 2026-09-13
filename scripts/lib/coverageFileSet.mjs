@@ -116,6 +116,28 @@ const metric = (covered, total) => ({
 });
 
 /**
+ * One file's four raw totals, as the ratchet counts them.
+ *
+ * Extracted so `totalsByArea` and the cross-platform guard cannot disagree
+ * about what a "line" is: both go through this, and the max-over-statements
+ * rule in `lineHits` is stated once. A second copy is the shape
+ * `coverage.areas.mjs`' header forbids for the pins themselves, and it would
+ * fail the same way — silently, by reporting agreement between two counters
+ * that had drifted.
+ */
+export function fileTotals(fileCoverage) {
+  const lines = lineHits(fileCoverage);
+  const arms = Object.values(fileCoverage.b);
+
+  return {
+    lineTotal: lines.length,
+    lineCovered: lines.filter((hits) => hits > 0).length,
+    branchTotal: arms.reduce((total, branch) => total + branch.length, 0),
+    branchCovered: arms.reduce((total, branch) => total + branch.filter((h) => h > 0).length, 0),
+  };
+}
+
+/**
  * The report, with every entry git does not track removed — and the names of
  * the ones removed, so the caller can say so out loud.
  *
@@ -188,14 +210,11 @@ export function totalsByArea(fileCoverages, areas) {
       if (!path.matchesGlob(file, glob)) continue;
       files += 1;
 
-      const lines = lineHits(fileCoverage);
-      lt += lines.length;
-      lc += lines.filter((hits) => hits > 0).length;
-
-      for (const arms of Object.values(fileCoverage.b)) {
-        bt += arms.length;
-        bc += arms.filter((hits) => hits > 0).length;
-      }
+      const totals = fileTotals(fileCoverage);
+      lt += totals.lineTotal;
+      lc += totals.lineCovered;
+      bt += totals.branchTotal;
+      bc += totals.branchCovered;
     }
 
     return { glob, files, lines: metric(lc, lt), branches: metric(bc, bt) };
