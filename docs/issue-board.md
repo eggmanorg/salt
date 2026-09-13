@@ -115,7 +115,7 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   the board grows two identical columns and the items split silently between
   them. `Status` held two `Todo` options until 2026-08-31, and nothing noticed.
   The comparison is case-insensitive, because name resolution is.
-- **No view carries a sort** — the other half of having no rank field.
+- **No view grouped by `Queue` carries a sort** — the other half of having no rank field.
 - **A closed issue is at a shipping status.** Closed is not by itself stale: an
   issue closes the moment its PR merges and must _stay_ on the board at `Merged`,
   because that is the set `board.mjs release` walks. What is wrong is a closed
@@ -357,13 +357,27 @@ mechanism and there is no number for either to keep current.
 
 Two consequences, both load-bearing:
 
-- **No view may carry a sort.** A sort disables dragging in that view and hides
-  the order this writes. If a view ever needs sorting, it needs a different
-  answer, not a `Rank` field.
+- **A view grouped by `Queue` may carry no sort.** That order is the only one
+  anything writes, `check`'s promotion rule reads it, and a sort renders a
+  different one in its place. If such a view ever needs sorting, it needs a
+  different answer, not a `Rank` field.
 - **The order is project-wide**, shared by every unsorted view. Harmless, because
   an issue is in exactly one `Queue` and grouping only slices that one order —
   but do the sequencing in **The queue** and treat **Product** as read-mostly,
   since a drag there moves the same global order.
+
+**Everywhere else a sort is a display choice, and the rule deliberately stops
+short of it.** It was "no view at all" until September 2026, which flagged the
+`Workflow` board every time `check` ran. That was the check being wrong, not the
+board: `Workflow` groups by `Status`, an issue reaches a `Status` column by
+event rather than by placement, and its `Closed DESC, Created ASC` sort is what
+makes Triage read oldest-first and the shipped columns read in the order they
+closed. There is no triage order in that view for a sort to hide.
+
+**What a sort actually costs, stated rather than overclaimed:** it disables
+drag-to-**reorder** inside a group. Dragging a card **between** columns still
+works and still writes the field — measured on the `Workflow` board, against the
+old claim that it did not.
 
 ---
 
@@ -460,19 +474,23 @@ item.
 
 ## The views
 
-| View      | Layout | Filter                                         | Group by |
-| --------- | ------ | ---------------------------------------------- | -------- |
-| The queue | table  | `is:open -queue:Deferred`                      | Queue    |
-| Deferred  | table  | `queue:Deferred`                               | Class    |
-| Product   | table  | `is:open class:"New feature","Feature update"` | Class    |
-| Workflow  | board  | `is:open -queue:Epic`                          | Status   |
+| View         | Layout | Filter                                               | Group by | Sort                       |
+| ------------ | ------ | ---------------------------------------------------- | -------- | -------------------------- |
+| The queue    | table  | `is:open -queue:Epic -queue:Deferred`                | Queue    | —                          |
+| Deferred     | table  | `queue:Deferred`                                     | Class    | —                          |
+| Product      | table  | `is:open class:"New feature","Feature update"`       | Class    | —                          |
+| Workflow     | board  | `-queue:Deferred -queue:epic`                        | Status   | `Closed DESC, Created ASC` |
+| Ready to Run | table  | `is:open -queue:Deferred label:specced no:blocking`  | Queue    | —                          |
+| Epic Status  | table  | `queue:Epic is:open`                                 | —        | —                          |
+| Needs Spec   | table  | `is:open -queue:Deferred -queue:epic -label:specced` | Queue    | —                          |
 
 **Grouping cannot be _set_ through the API, but it can be _read_.**
 `ProjectV2ViewConfigurationInput` exposes only `visibleFieldIds`, so a rebuilt
 view needs its grouping setting by hand; name, layout, filter and columns are all
 scriptable. `ProjectV2View` does expose `groupByFields`, `verticalGroupByFields`
 and `sortByFields` for reading, which is why `board.mjs check` can enforce the
-no-sort rule rather than only asserting it.
+no-sort rule rather than only asserting it — and why it can tell a `Queue`-grouped
+view, where the rule bites, from every other view, where it does not.
 
 Two names for one idea, which is genuinely confusing in the UI: a **table** view
 has **Group by**; a **board** view has no such menu, because its columns _are_

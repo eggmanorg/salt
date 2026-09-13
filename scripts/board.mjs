@@ -44,9 +44,11 @@
 // SEQUENCE IS POSITION, NOT A FIELD. There is deliberately no rank number:
 //   triage is placement, and `updateProjectV2ItemPosition(…, afterId)` places an
 //   item directly after a named one. That is the same order a drag produces, so
-//   a human and an agent triage through one mechanism. The cost is that no view
-//   may carry a sort — a sorted view disables dragging and hides the order this
-//   writes. See docs/issue-board.md.
+//   a human and an agent triage through one mechanism. The cost is that a view
+//   GROUPED BY `Queue` may carry no sort — that order is the only one anything
+//   writes, and a sort renders a different one. Nowhere else: a `Status` board's
+//   columns are filled by events, not by triage, so sorting one hides nothing.
+//   See docs/issue-board.md.
 //
 // Needs a token with the `project` scope: the gh CLI's own login locally, or
 // PROJECT_TOKEN in Actions (the Actions GITHUB_TOKEN cannot write projects).
@@ -69,6 +71,7 @@ import {
   ledgerRunSet,
   ledgerShouldAttachTo,
 } from './lib/boardTitles.mjs';
+import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -636,11 +639,10 @@ function cmdCheck(project) {
     }
   }
 
-  // "No view may carry a sort" is the other half of having no rank field: a
-  // sorted view disables dragging in it and renders a different order from the
-  // one triage wrote. Group-by and sort-by cannot be SET through the API, but
-  // they can be READ — so this is enforceable, and left as prose it would be
-  // exactly the unguarded invariant CLAUDE.md rule 12 is about.
+  // Group-by and sort-by cannot be SET through the API, but they can be READ —
+  // so the no-sort rule is enforceable, and left as prose it would be exactly
+  // the unguarded invariant CLAUDE.md rule 12 is about. What the rule says, how
+  // narrow it is and why: `forbiddenSortMessage` in ./lib/boardViews.mjs.
   const views = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
     views(first:20){ nodes{ number name layout
       groupByFields(first:5){ nodes{ ... on ProjectV2FieldCommon { name } } }
@@ -649,17 +651,9 @@ function cmdCheck(project) {
     .node.views.nodes;
 
   for (const v of views) {
-    const sorts = v.sortByFields.nodes.map((s) => `${s.field.name} ${s.direction}`);
-    if (sorts.length) {
-      failures.push(
-        `view ${v.number} "${v.name}" is sorted by ${sorts.join(', ')} — that hides the triage order and disables dragging`,
-      );
-    }
-    // A board's columns ARE its grouping, which GitHub calls the column field.
-    const group =
-      v.layout === 'BOARD_LAYOUT'
-        ? v.verticalGroupByFields.nodes.map((f) => f.name)
-        : v.groupByFields.nodes.map((f) => f.name);
+    const sortFailure = forbiddenSortMessage(v);
+    if (sortFailure) failures.push(sortFailure);
+    const group = viewGroupFields(v);
     if (group.length === 0) {
       console.log(
         `  note: view ${v.number} "${v.name}" has no grouping set — set it in the UI, the API cannot`,
