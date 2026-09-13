@@ -53,6 +53,41 @@ describe('closedItemVerdict', () => {
     expect(v.message).toContain('Status="Triage"');
   });
 
+  // Cause B. The old message told you a PR was missing its `Closes #N` when
+  // there was never going to be a PR — #1086 and #1191 both read like that.
+  it('notes a not-planned close instead of demanding it reached Merged', () => {
+    const v = closedItemVerdict(item({ number: 1086, stateReason: 'NOT_PLANNED' }));
+    expect(v.level).toBe('note');
+    expect(v.message).toContain('closed as not planned');
+    expect(v.message).toContain('take it off the board');
+    expect(v.message).not.toContain('Closes #');
+  });
+
+  // An abandoned campaign never shipped, so the ledger advice — set it from its
+  // run-set — would be a lie. The not-planned branch wins, deliberately.
+  it('notes a ledger abandoned as not planned rather than telling it to ship', () => {
+    const v = closedItemVerdict(
+      item({ number: 1266, title: 'campaign: abandoned (#1 #2)', stateReason: 'NOT_PLANNED' }),
+    );
+    expect(v.level).toBe('note');
+    expect(v.message).toContain('closed as not planned');
+  });
+
+  // The boundary, asserted: it reads GitHub's field and nothing else, so work
+  // abandoned under "Close as completed" still fails. Fail-visible, not exempt.
+  it('still fails work abandoned but closed as COMPLETED', () => {
+    expect(closedItemVerdict(item({ stateReason: 'COMPLETED' })).level).toBe('failure');
+    expect(closedItemVerdict(item({ stateReason: null })).level).toBe('failure');
+  });
+
+  // Shipping wins over the reason. An issue that reached Merged stays silent
+  // whatever its close was labelled, because `release` still walks that set.
+  it('says nothing about a Merged issue whatever its stateReason says', () => {
+    expect(closedItemVerdict(item({ status: 'Merged', stateReason: 'NOT_PLANNED' })).level).toBe(
+      'ok',
+    );
+  });
+
   // A hand-closed kind that DID reach Merged is silent like anything else — the
   // exemption is from the failure, not from the pipeline.
   it('says nothing about a hand-closed kind that reached Merged', () => {

@@ -442,6 +442,7 @@ What `closedItemVerdict` decides, and why each way:
 | -------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- |
 | at `Merged`                                  | nothing      | it shipped and must stay — `board.mjs release` walks exactly this set                       |
 | at `Released`                                | a note       | live; safe to take off the board whenever you like                                          |
+| closed as **not planned**                    | a note       | won't-fix or superseded; nothing will ever ship it, so leaving the board is the only remedy |
 | `campaign:` ledger, not at a shipping status | **fails**    | it has no PR but it _does_ ship; set it from its run-set, or `release` promotes it          |
 | `epic:`, `campaign follow-ups:`, `question(` | a note       | these close by hand — children done, boxes ticked, question answered. No PR was ever coming |
 | anything else, not at a shipping status      | **fails**    | a mechanism is broken: an automated move was missed, or the issue should be off the board   |
@@ -458,6 +459,13 @@ optional:
   problem the ledger correction fixed in the other direction: closed items piling
   up at no `Status`, filling the Workflow view with cards nobody can account for.
   The note says what to set and how.
+
+**A not-planned close is GitHub's own `stateReason`**, read from the issue alongside
+its state. It is whatever the person closing it picked, which is the rule's real
+boundary: work abandoned under _Close as completed_ reads as completed here and
+still fails. That is the safe direction — the rule fires and says so, rather than a
+mislabelled close buying a permanent exemption. The note also wins over the ledger
+advice, because telling an abandoned campaign to set itself `Merged` would be a lie.
 
 A failure here always means code or automation has to change. Anything a person
 could simply tidy up is a note — that is what keeps the exit code worth reading.

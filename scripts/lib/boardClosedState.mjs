@@ -40,6 +40,30 @@ export function closedItemVerdict(item) {
   }
   if (status === 'Merged') return { level: 'ok', message: null };
 
+  // A NOT_PLANNED close — won't-fix, superseded, duplicate — is a different
+  // thing, and for weeks the rule could not say so: it told you the issue's PR
+  // was missing a `Closes #N` when there was never going to be a PR at all.
+  // Nothing will ever ship it, so reaching `Merged` is not the remedy and
+  // demanding it is incoherent; leaving the board is.
+  //
+  // A NOTE rather than a failure, chosen deliberately (2026-09-13, Daniel). The
+  // alternative — failing with honest wording — keeps `check` red until someone
+  // clears the board by hand, which is the cry-wolf problem this whole change
+  // exists to end, wearing better words. `Released` is handled the same way for
+  // the same reason.
+  //
+  // IT TAKES GITHUB'S WORD FOR IT, which is the claim's real boundary (CLAUDE.md
+  // rule 12). `stateReason` is whatever the person closing the issue picked, so
+  // work abandoned under "Close as completed" reads as `COMPLETED` here and
+  // still fails. That is the safe direction: the rule fires and the output says
+  // so, rather than a mislabelled close buying a permanent exemption.
+  if (item.stateReason === 'NOT_PLANNED') {
+    return {
+      level: 'note',
+      message: `#${item.number} was closed as not planned at Status="${status ?? 'unset'}" — nothing is going to ship it, so take it off the board`,
+    };
+  }
+
   // A ledger has no PR either, but unlike the kinds `isHandClosed` names it is
   // not exempt — it DOES ship, and `ledgerFullyReleased` is how it gets promoted
   // without one. Leaving it out of this rule cost 19 closed ledgers sitting at

@@ -147,7 +147,7 @@ function loadItems(project) {
       items(first:100, after:${after}){
         pageInfo{ hasNextPage endCursor }
         nodes{ id
-          content{ ... on Issue { number title state } }
+          content{ ... on Issue { number title state stateReason } }
           queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
@@ -159,6 +159,9 @@ function loadItems(project) {
         number: n.content.number,
         title: n.content.title,
         state: n.content.state,
+        // `COMPLETED` | `NOT_PLANNED` | null. The check needs it to tell a
+        // won't-fix close from one that shipped — see `closedItemVerdict`.
+        stateReason: n.content.stateReason ?? null,
         queue: n.queue?.name ?? null,
         status: n.status?.name ?? null,
         blockedBy: n.blockedBy?.text ?? '',
