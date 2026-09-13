@@ -1,6 +1,11 @@
 import { fromStore } from 'svelte/store';
 import { batchStepTimerId, timerProgress } from '@salt/domain';
-import type { CookActiveTimerDoc, KitchenTimerDoc, StepDoc } from '@salt/domain/schemas';
+import type {
+  CookActiveTimerDoc,
+  KitchenTimerDoc,
+  StepDoc,
+  StepTimerDoc,
+} from '@salt/domain/schemas';
 import { kitchenTimers, startKitchenTimer, dismissKitchenTimer } from './kitchenTimerService.js';
 import { AD_HOC_TIMER_LABEL, AD_HOC_TIMER_MINUTES } from './timerDefaults.js';
 
@@ -45,8 +50,6 @@ interface BatchTimerSheetTarget {
 export interface BatchTimersOptions {
   /** The run these timers were armed from — half of every step timer's id, and the whole of the filter. */
   batchId: () => string;
-  /** The LIVE recipe's steps, for a countdown's total when the entry cannot supply one. */
-  steps: () => readonly StepDoc[];
   /**
    * Raise the timer sheet. The open flag stays with the page because the markup
    * binds it, and a binding needs a variable it can assign to.
@@ -105,11 +108,6 @@ export function createBatchTimers(options: BatchTimersOptions) {
     return () => clearInterval(handle);
   });
 
-  function stepDurationFor(stepId: string | null): number | undefined {
-    if (stepId === null) return undefined;
-    return options.steps().find((s) => s.id === stepId)?.timer?.durationMinutes;
-  }
-
   /**
    * The one write that starts a timer here. Every entry point funnels through it,
    * so the origin is attached in exactly one place and a re-time can never drop it
@@ -143,21 +141,23 @@ export function createBatchTimers(options: BatchTimersOptions) {
    * nowhere in particular", which is exactly what this is not, and it is what the
    * lock screen will read.
    */
-  function stepTimerLabel(step: StepDoc): string {
-    const description = step.timer?.description;
-    if (description) return description;
-    const index = options.steps().findIndex((s) => s.id === step.id);
-    return index >= 0 ? `Step ${index + 1}` : AD_HOC_TIMER_LABEL;
+  function stepTimerLabel(timer: StepTimerDoc, index: number): string {
+    return timer.description ?? `Step ${index + 1}`;
   }
 
-  /** The recipe's own timer for a step, started in one tap. */
-  function startStepTimer(step: StepDoc): void {
-    const timer = step.timer;
-    if (!timer) return;
+  /**
+   * The recipe's own timer for a step, started in one tap.
+   *
+   * Takes the step's timer and its position rather than fishing both back out of
+   * the step: the caller has already decided this step HAS a timer — which is what
+   * narrows `StepDoc['timer']` — and is already iterating, so it has the index in
+   * hand. `CookStepTimer` takes its props on exactly the same terms.
+   */
+  function startStepTimer(step: StepDoc, timer: StepTimerDoc, index: number): void {
     start({
       id: batchStepTimerId(options.batchId(), step.id),
       stepId: step.id,
-      label: stepTimerLabel(step),
+      label: stepTimerLabel(timer, index),
       durationMinutes: timer.durationMinutes,
     });
   }
@@ -166,14 +166,13 @@ export function createBatchTimers(options: BatchTimersOptions) {
     void dismissKitchenTimer(timerId);
   }
 
-  // The elapsed fraction the progress fill draws. The total is what the timer was
-  // STARTED for; a kitchen timer always carries one, so the step lookup behind it
-  // is only there for the same reason it is in cook mode — a duration the entry
-  // cannot supply leaves `timerProgress` to return null and the chip to render
-  // with no fill rather than a bogus one.
+  // The elapsed fraction the progress fill draws, over the run the timer was
+  // actually STARTED for. No fall back to the recipe step's duration, unlike cook
+  // mode's: that exists there for entries written before `durationMinutes` did, and
+  // `KitchenTimerSchema` has required a positive one since the day it shipped.
   function timerProgressFor(timer: CookActiveTimerDoc): number | null {
-    const durationMinutes = timer.durationMinutes ?? stepDurationFor(timer.stepId);
-    return timerProgress(timer, durationMinutes ? durationMinutes * 60_000 : null, now);
+    const minutes = timer.durationMinutes;
+    return timerProgress(timer, minutes === null ? null : minutes * 60_000, now);
   }
 
   // ─── The sheet ────────────────────────────────────────────────────────────────
@@ -189,13 +188,12 @@ export function createBatchTimers(options: BatchTimersOptions) {
   }
 
   /** A step timer before it starts — re-read from the LIVE step every time. */
-  function openStepTimerSheet(step: StepDoc): void {
-    if (!step.timer) return;
+  function openStepTimerSheet(step: StepDoc, timer: StepTimerDoc, index: number): void {
     openTimerSheet({
       id: batchStepTimerId(options.batchId(), step.id),
       stepId: step.id,
-      label: stepTimerLabel(step),
-      durationMinutes: step.timer.durationMinutes,
+      label: stepTimerLabel(timer, index),
+      durationMinutes: timer.durationMinutes,
       running: false,
     });
   }
@@ -210,9 +208,11 @@ export function createBatchTimers(options: BatchTimersOptions) {
     openTimerSheet({
       id: timer.id,
       stepId: timer.stepId,
-      label: timer.label ?? '',
-      durationMinutes:
-        timer.durationMinutes ?? stepDurationFor(timer.stepId) ?? AD_HOC_TIMER_MINUTES,
+      // Both non-null on every timer this page can be handed — the schema requires
+      // them — so these coalesces only satisfy the widened view type the cook
+      // components take, and never choose a value at runtime.
+      label: timer.label ?? AD_HOC_TIMER_LABEL,
+      durationMinutes: timer.durationMinutes ?? AD_HOC_TIMER_MINUTES,
       running: true,
     });
   }

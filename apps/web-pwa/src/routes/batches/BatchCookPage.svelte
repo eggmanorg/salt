@@ -258,7 +258,6 @@
   let timerSheetOpen = $state(false);
   const timers = createBatchTimers({
     batchId: () => batchId,
-    steps: () => steps,
     showSheet: () => (timerSheetOpen = true),
   });
 
@@ -978,8 +977,8 @@
                           entry={timers.timerByStep.get(step.id)}
                           now={timers.now}
                           progressFor={timers.timerProgressFor}
-                          onStart={() => timers.startStepTimer(step)}
-                          onAdjust={() => timers.openStepTimerSheet(step)}
+                          onStart={() => timers.startStepTimer(step, step.timer, i)}
+                          onAdjust={() => timers.openStepTimerSheet(step, step.timer, i)}
                           onDismiss={timers.dismissTimer}
                         />
                       {:else}

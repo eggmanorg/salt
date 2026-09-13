@@ -546,11 +546,20 @@ export const coverageThresholds = {
   // line side moved the right way in the same edit and is banked: 75.95 → 76.06,
   // uncovered lines 798 → 795. All four measured by `pnpm test:coverage` on this
   // branch and pasted from the ratchet's own block.
+  // RE-PINNED 76.93/68.82 → 77.66/69.84 in #1327 Phase 2. `kitchenTimerService`
+  // gained the two commands both timer surfaces now share (start and dismiss) and
+  // a suite that covers every branch of them — the clock, the push floor either
+  // side of it, the chime priming, replace-by-id and the signed-out no-op — which
+  // is where My Kitchen's page suite used to assert the composed document from
+  // behind a mock. `batchTimers.svelte.ts` arrived alongside it, driven through
+  // the real page in `BatchCookPage.test.ts`. Earned coverage, banked: it moved
+  // more than the staleness tolerance, so the ratchet asked for the pin rather
+  // than letting a later PR delete those tests and land green.
   'apps/web-pwa/src/lib/**': {
-    lines: 76.93,
-    branches: 68.82,
-    uncoveredLines: 773,
-    uncoveredBranches: 596,
+    lines: 77.66,
+    branches: 69.84,
+    uncoveredLines: 772,
+    uncoveredBranches: 595,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,

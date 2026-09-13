@@ -984,6 +984,43 @@ describe('timers on the steps the schedule does not cover', () => {
     );
   });
 
+  // An ad-hoc batch timer — pinned to the run, on no step. It belongs in the bar
+  // and nowhere near a step's inline slot, which is what `stepId: null` inside a
+  // non-null origin buys.
+  it('keeps an ad-hoc batch timer in the bar and out of every step', async () => {
+    mockKitchenTimers._set(
+      kitchen([
+        kitchenTimer({
+          id: 'ad-hoc-1',
+          label: 'Salt Timer',
+          origin: { batchId: BATCH_ID, stepId: null },
+        }),
+      ]),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('cook-timer-chip-label').textContent).toContain('Salt Timer');
+    // Step 2's control is still unstarted: no timer claims it.
+    expect(screen.getByTestId('cook-step-timer-start')).toBeTruthy();
+  });
+
+  it('falls back to the default name when the sheet’s name is emptied', async () => {
+    renderPage();
+    await fireEvent.click(screen.getByTestId('batch-cook-timer-add'));
+    await waitFor(() => expect(screen.getByTestId('cook-timer-sheet-name')).toBeTruthy());
+    await fireEvent.input(screen.getByTestId('cook-timer-sheet-name'), {
+      target: { value: '  ' },
+    });
+    await fireEvent.click(screen.getByTestId('cook-timer-sheet-confirm'));
+
+    // A kitchen timer's label is required and has no step to fall back to, so an
+    // emptied one falls back to what the sheet offered in the first place.
+    expect(mockStartKitchenTimer).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Salt Timer' }),
+    );
+  });
+
   it('adjusts a step timer before starting it, through cook mode’s own sheet', async () => {
     renderPage();
     await goToSteps();
