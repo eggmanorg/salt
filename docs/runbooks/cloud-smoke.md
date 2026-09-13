@@ -210,7 +210,8 @@ leftover is not prefixed is the far-future `mealPlans` / `shoppingDays` pair —
 
 The other unprefixed case is `recipe-import`: `extractRecipeFromPhoto` persists
 under a **server-generated** id, so the recipe and its hero object are removed
-via `ctx.trackCreated` / `ctx.trackStorageObject` and named in `adoptedDocs`.
+via `ctx.trackCreated` / `ctx.trackCreatedStorageObject` and named in
+`adoptedDocs`.
 
 ### The `recipe-import` fixture
 
@@ -300,8 +301,9 @@ those three journeys get exercised at all.
 
 `apps/cloud-functions/tests/optInProbeTriggerGuard.test.ts` makes that
 mechanical: it reads every file in `.github/workflows/` and fails if the flag
-appears in one whose own triggers include `push`, `pull_request`, `merge_group`
-or a `workflow_run` of CI. It has one stated boundary — it reads a workflow's
+appears in one whose own triggers include `push`, `pull_request`,
+`pull_request_target`, `merge_group` or a `workflow_run` of CI. It has one
+stated boundary — it reads a workflow's
 own `on:` block, so a reusable `workflow_call` workflow invoked from a
 merge-triggered one would slip past. None exists in this repo; the test's header
 says what to do if one is ever added.
