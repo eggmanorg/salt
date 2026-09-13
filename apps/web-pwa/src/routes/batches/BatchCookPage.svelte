@@ -290,31 +290,53 @@
 
   // ─── Writing ──────────────────────────────────────────────────────────────────
   //
-  // The lock covers only the STAGE-TRANSITION family — marking a step (or a
-  // step-less stage) done, which can cascade into `advanceStage`. Two of those in
-  // the air at once really would be one whole-document `setDoc` (LWW) silently
-  // overwriting the other, the same reasoning `BatchDetailPage` shares across its
-  // three stage commands (`advancingStageId`).
+  // NOTHING ON THIS PAGE WAITS FOR A WRITE. There is no lock, no `disabled` gate
+  // and no in-flight flag anywhere in this section, and that is the whole of the
+  // rule (issue #1365, fault 4).
   //
-  // The weigh-out ticks and the untick control do NOT share it (PR #1334 review,
-  // BLOCKING #3). Each is a single write built from the freshest local snapshot
-  // the instant it is called — `persist` updates the store before the network
-  // round trip even starts, so a burst of taps composes correctly on its own, the
-  // same guarantee `CookModePage.toggleIngredient` relies on with no lock at all.
-  // Gating them on THIS lock bought nothing and cost two things: a tap on either
-  // could be silently dropped by an unrelated stage write in flight, and — worse
-  // — Firestore's `setDoc` does not resolve while offline, so one stage write
-  // begun offline would have latched every other control on the page dead for the
-  // rest of the session.
-  let writing = $state(false);
+  // WHY A LOCK CANNOT WORK HERE. Firestore's `setDoc` does not resolve while
+  // offline: the write is durably queued by `persistentLocalCache` and lands when
+  // signal returns, but its promise stays pending, possibly for hours. Any UI state
+  // released when that promise settles is therefore unbounded BY CONSTRUCTION, and
+  // `try/finally` does not help — `finally` runs when a promise settles and this one
+  // does not. That is not a hypothesis: `markStep` below already had a `try/finally`
+  // and latched anyway, greying out both controls gated on the old `writing` boolean
+  // for the rest of the visit. The weigh-out ticks were taken off that lock for
+  // exactly this reason (PR #1334 review, BLOCKING #3); the note doing so named the
+  // hazard and then left it standing for the two controls that kept the lock.
+  //
+  // WHAT REPLACES IT. `persist` (`batchService.ts:163-175`) stamps the document,
+  // sets the local store and only THEN starts the round trip. So:
+  //
+  //   • the document this page renders is already the new one the instant a command
+  //     has been CALLED — no resolution required — and `getBatchSnapshot()` answers
+  //     with it synchronously. Every command below builds from that read, so a burst
+  //     of taps composes correctly and in order, on its own;
+  //   • the awaited promise carries exactly ONE extra fact — whether the network
+  //     write failed — which is only ever used for a toast. Nothing the cook can see
+  //     or press is derived from it.
+  //
+  // Re-entrancy is guarded on the DOCUMENT rather than on a flag: a step already
+  // ticked is not re-ticked, a stage already done or skipped is not re-advanced.
+  // A flag would have to be cleared by something, and the only candidate is the
+  // promise that never settles.
+  //
+  // WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md rule 12). It guarantees
+  // that no control here is ever disabled by a write in flight, and that every write
+  // a gesture implies is DISPATCHED before that gesture returns rather than
+  // sequenced behind a network promise — both pinned by the stuck-write tests in
+  // `BatchCookPage.test.ts`. It does NOT guarantee the write reaches Firestore, that
+  // a failure is reported promptly (offline, the toast arrives whenever the promise
+  // finally settles, and may not arrive at all this visit), or that two phones
+  // tapping one stage produce a single write. Those are `persistentLocalCache`'s
+  // job, unknowable offline, and document-level LWW as designed, respectively.
 
   async function markStep(stepId: string, done: boolean): Promise<void> {
-    const current = run;
+    const current = getBatchSnapshot() ?? run;
     if (!current) return;
 
     if (!done) {
-      // UNTICKING IS A SINGLE WRITE, not the two-write advance below, and does not
-      // touch `writing` for the same reason the mise ticks do not (see above).
+      // UNTICKING IS A SINGLE WRITE, not the two-write advance below.
       //
       // UNTICKING DOES NOT UN-MARK THE STAGE. There is no inverse of
       // `withStageAdvanced` and there deliberately is not one: the tail has
@@ -327,36 +349,58 @@
       return;
     }
 
-    if (writing) return;
-    writing = true;
-    try {
-      const ticked = await setStepDone(current, stepId, true);
-      if (ticked.kind !== 'ok') {
-        addToast("Couldn't save that. Try again.", 'destructive');
-        return;
-      }
-      // MARKING THE STEP OF A STAGE MARKS THE STAGE. That write is the one the whole
-      // reminder engine hangs off: `withStageAdvanced` re-times every later stage
-      // from this instant and `onBatchWritten` re-queues the reminders whose key
-      // moved — exactly what Done does on the batch page. Early and late are the
-      // same gesture.
-      const placement = layout.onStep.get(stepId);
-      if (!placement) return;
-      const status = stageStatus(placement.stage);
-      if (status === 'done' || status === 'skipped') return;
-      // Re-read the FRESHEST copy before this second write. `ticked.value` is the
-      // document as it stood when the write above STARTED; the round trip between
-      // that write and this one is exactly the window a concurrent write from
-      // another phone on the same run can land in, and handing the advance a
-      // stale document would silently overwrite it (PR #1334 review, BLOCKING #1).
-      const freshest = getBatchSnapshot() ?? ticked.value;
-      const advanced = await advanceStage(freshest, placement.stage.id);
+    // THE TICK. Dispatched, not awaited — see the note above. Already ticked means a
+    // double tap or the other phone got there first, and a second whole-document
+    // write saying the same thing is worth nothing.
+    if (!current.completedStepIds.includes(stepId)) {
+      void setStepDone(current, stepId, true).then((ticked) => {
+        if (ticked.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
+      });
+    }
+
+    // MARKING THE STEP OF A STAGE MARKS THE STAGE. That write is the one the whole
+    // reminder engine hangs off: `withStageAdvanced` re-times every later stage
+    // from this instant and `onBatchWritten` re-queues the reminders whose key
+    // moved — exactly what Done does on the batch page. Early and late are the
+    // same gesture.
+    const placement = layout.onStep.get(stepId);
+    if (!placement) return;
+
+    // Re-read the FRESHEST copy before this second write. Two things ride on this
+    // one read:
+    //
+    //   • CORRECTNESS. The round trip is exactly the window a concurrent write from
+    //     another phone on the same run lands in, and handing the advance a stale
+    //     document would silently overwrite it (PR #1334 review, BLOCKING #1).
+    //   • LIVENESS. It is also what makes the advance independent of the tick's
+    //     NETWORK promise rather than sequenced behind it. `persist` has already put
+    //     the ticked document in the store, so there is nothing left to wait for.
+    //     This used to be `await setStepDone(...)`, and offline that await never
+    //     returned — so the second write never went out AT ALL. The step was ticked
+    //     locally and its stage silently left open, with no `actualEndAt` and no
+    //     re-timed tail, which no reload could recover.
+    const freshest = getBatchSnapshot() ?? current;
+
+    // THE TICK HAS TO HAVE LANDED LOCALLY. This is the guard that used to be
+    // "the tick's promise resolved ok", which offline is a promise that never
+    // resolves. The local document is this page's truth, so the question the advance
+    // actually needs answered is whether that document now says the step is done —
+    // and `persist` answers it synchronously, offline included. A tick that never
+    // reached the store (`withBatchStepDone` returned the same document, or the
+    // write refused before persisting) does not get a stage advance on top of it.
+    if (!freshest.completedStepIds.includes(stepId)) return;
+
+    // Read the stage off the freshest document too, not off `layout` — the same
+    // concurrent write could have marked or skipped it in the meantime.
+    const stageDoc = freshest.stages.find((s) => s.id === placement.stage.id) ?? placement.stage;
+    const status = stageStatus(stageDoc);
+    if (status === 'done' || status === 'skipped') return;
+
+    void advanceStage(freshest, placement.stage.id).then((advanced) => {
       if (advanced.kind !== 'ok') {
         addToast("Couldn't mark that stage done. Try again.", 'destructive');
       }
-    } finally {
-      writing = false;
-    }
+    });
   }
 
   async function toggleIngredient(id: string): Promise<void> {
@@ -364,21 +408,27 @@
     if (!current) return;
     const next = !checkedIds.has(id);
     if (next) hapticTick();
-    // Fire-and-forget, like `CookModePage.toggleIngredient` — see the note on
-    // `writing` above for why this does not take the lock.
+    // Fire-and-forget, like `CookModePage.toggleIngredient` — see the note above
+    // `markStep` for why nothing here waits on a write.
     const result = await setIngredientChecked(current, id, next);
     if (result.kind !== 'ok') addToast("Couldn't save that. Try again.", 'destructive');
   }
 
   // Marking a STAGE-ONLY card done — it has no step to tick, so this is the batch
-  // page's own Done, on the same producer, reached from here. Same family as
-  // `markStep`'s advance, so it shares the same lock.
+  // page's own Done, on the same producer, reached from here. One write, where
+  // `markStep` is two.
   async function markStageDone(stageId: string): Promise<void> {
-    const current = run;
-    if (!current || writing) return;
-    writing = true;
+    const current = getBatchSnapshot() ?? run;
+    if (!current) return;
+    // Re-entrancy on the document, not on a flag: the second tap of a double tap
+    // reads a stage this page has already advanced locally.
+    const stageDoc = current.stages.find((s) => s.id === stageId);
+    if (!stageDoc) return;
+    const status = stageStatus(stageDoc);
+    if (status === 'done' || status === 'skipped') return;
+    // Awaited only to say whether it failed. Nothing on the page is gated on it, so
+    // an await that never returns costs a toast that never arrives and nothing else.
     const result = await advanceStage(current, stageId);
-    writing = false;
     if (result.kind !== 'ok') addToast("Couldn't mark that stage done. Try again.", 'destructive');
   }
 
@@ -388,15 +438,14 @@
   // recording overlap without planning it, and until now the deck could only say
   // "finished" about a stage you had merely begun.
   //
-  // It does NOT take the `writing` lock, and that is deliberate rather than an
-  // omission. `withStageStarted` re-times nothing, so this is one whole-document
-  // write built from the freshest local snapshot — exactly the argument the note on
-  // `writing` above already makes for the weigh-out ticks. Putting it on the lock
-  // would have handed a third control to the offline hazard that same note
-  // describes. The two controls still on the lock are issue #1365's Phase 2.
+  // Like every other command in this section it holds nothing across its write; see
+  // the note above `markStep`. `withStageStarted` re-times nothing, so this is one
+  // whole-document write built from the freshest local snapshot.
   async function markStageStarted(stageId: string): Promise<void> {
-    const current = run;
+    const current = getBatchSnapshot() ?? run;
     if (!current) return;
+    const stageDoc = current.stages.find((s) => s.id === stageId);
+    if (!stageDoc || stageStatus(stageDoc) !== 'notStarted') return;
     const result = await startStage(current, stageId);
     if (result.kind !== 'ok') addToast("Couldn't start that stage. Try again.", 'destructive');
   }
@@ -842,7 +891,6 @@
                     <Button
                       size="sm"
                       onclick={() => void markStageDone(stageDoc.id)}
-                      disabled={writing}
                       data-testid="batch-cook-stage-done"
                     >
                       {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
@@ -1136,12 +1184,7 @@
             Weigh out
           </Button>
           {#if currentStep && !currentStepDone}
-            <Button
-              size="lg"
-              onclick={handleStepDone}
-              disabled={writing}
-              data-testid="batch-cook-step-done"
-            >
+            <Button size="lg" onclick={handleStepDone} data-testid="batch-cook-step-done">
               {#snippet leading()}<Icon name="Check" size={18} />{/snippet}
               {nextIncompleteStep ? 'Done · next' : 'Done'}
             </Button>

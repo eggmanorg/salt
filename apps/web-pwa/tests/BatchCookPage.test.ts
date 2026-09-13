@@ -633,7 +633,12 @@ describe('the schedule owns the clock', () => {
   });
 });
 
-describe('the writing lock covers only the stage-transition family', () => {
+describe('no control waits for a write', () => {
+  // Renamed from "the writing lock covers only the stage-transition family"
+  // (issue #1365, fault 4): there is no lock left to scope. The three tests below
+  // it are untouched — what changed is that the claim in the name is now the one
+  // the whole block actually pins.
+  //
   // BLOCKING #3 (PR #1334 review): the lock used to be one boolean shared by
   // every write on the page, so it silently dropped taps on the weigh-out rows
   // and the untick control (neither was even visually disabled), and — because
@@ -684,6 +689,91 @@ describe('the writing lock covers only the stage-transition family', () => {
     await fireEvent.click(await screen.findByTestId('cook-step-untick'));
 
     expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-1', false);
+    stuck.release(mockBatch._get()!);
+  });
+
+  // ─── Issue #1365, fault 4 ───────────────────────────────────────────────────
+  //
+  // The two tests above only ever asserted that the controls TAKEN OFF the lock
+  // survived a write that never comes back. The two that kept it did not, and the
+  // comment in the page asserting the hazard had been dealt with was half true.
+  // These pin the other half.
+  //
+  // `stuckAdvance` above is `setDoc` offline exactly: durably queued, never
+  // resolving. `stuckStepDone` below is the same for the tick, and echoes into the
+  // store first — which is what the REAL `persist` does (`batchService.ts:163-175`
+  // sets the store before it awaits) and the whole reason the page can carry on
+  // without the promise.
+  function stuckStepDone(): { release: (batch: BatchDoc) => void } {
+    let release!: (batch: BatchDoc) => void;
+    stepMock.mockImplementationOnce((current: BatchDoc, id: string, done: boolean) => {
+      const ids = done
+        ? [...current.completedStepIds, id]
+        : current.completedStepIds.filter((existing) => existing !== id);
+      mockBatch._set({ ...current, completedStepIds: ids });
+      return new Promise((resolve) => {
+        release = (batch: BatchDoc) => resolve({ kind: 'ok', value: batch });
+      });
+    });
+    return { release: (batch: BatchDoc) => release(batch) };
+  }
+
+  it('both stage controls stay live while a stage write is stuck in flight', async () => {
+    // THE FAULT ITSELF. `writing` was set true, the `setDoc` never resolved, and
+    // both controls gated on it greyed out for the rest of the visit — a screen
+    // that reads as broken rather than merely slow, in the one room where signal
+    // drops.
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalled());
+
+    // The footer Done moves on to the next incomplete step; the card's Done is for
+    // the step-less stage, which nothing in this gesture touched.
+    expect(screen.getByTestId('batch-cook-stage-done')).not.toBeDisabled();
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-back'));
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-toggle'));
+    const footer = screen.queryByTestId('batch-cook-step-done');
+    if (footer !== null) expect(footer).not.toBeDisabled();
+
+    stuck.release(mockBatch._get()!);
+  });
+
+  it('another stage can still be marked done while one write is stuck in flight', async () => {
+    // Not merely "the button is pressable" — the write it dispatches actually goes
+    // out. A lock that only LOOKED released would pass the assertion above.
+    const stuck = stuckAdvance();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    // The step-less stage first, which is the one that gets stuck.
+    await fireEvent.click(screen.getByTestId('batch-cook-stage-done'));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-cool'));
+
+    // Now the OTHER stage, through its step, with the first write still pending.
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(stepMock).toHaveBeenCalledWith(expect.anything(), 'step-3', true));
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-bulk'));
+    stuck.release(mockBatch._get()!);
+  });
+
+  it('a step ticked with no signal still marks its stage done', async () => {
+    // THE WORSE HALF of fault 4, and the one a reload could not recover. `markStep`
+    // is two writes; the advance used to hang off the tick's network promise, so
+    // offline the second write never went out AT ALL — the step was ticked locally
+    // and its stage silently left open, with no `actualEndAt` and no re-timed tail.
+    const stuck = stuckStepDone();
+    mockBatch._set(makeBatch({ completedStepIds: ['step-1', 'step-2'] }));
+    renderPage();
+    await goToSteps();
+    await fireEvent.click(screen.getByTestId('batch-cook-step-done'));
+
+    await waitFor(() => expect(advanceMock).toHaveBeenCalledWith(expect.anything(), 'stage-bulk'));
+    // And on the ticked document, not the one from before the tick.
+    expect(advanceMock.mock.calls.at(-1)![0].completedStepIds).toContain('step-3');
     stuck.release(mockBatch._get()!);
   });
 });
@@ -881,6 +971,14 @@ describe('when a write fails', () => {
   });
 
   it('says so when the step tick does not land, and never advances the stage on top', async () => {
+    // WHAT MAKES THIS TRUE, stated because issue #1365 changed the mechanism: the
+    // advance is no longer gated on the tick's promise resolving ok (offline it
+    // never resolves at all), it is gated on the LOCAL DOCUMENT saying the step is
+    // now done. This mock replaces the implementation outright and so never echoes
+    // into the store — which is the same thing a tick that refused before
+    // persisting does. That is the boundary of the claim: a tick that DID reach the
+    // store and only then failed its network write will advance, and the advance's
+    // own whole-document write carries the tick with it.
     stepMock.mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
