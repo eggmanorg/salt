@@ -76,25 +76,28 @@ export function judgePr(pr, { adjudicated = null } = {}) {
     return { verdict: 'deny', reason: `has failing checks: ${failing.join(', ')}` };
   }
 
-  const reviews = pr.reviews ?? [];
+  // Blank-bodied reviews are not reviews and are skipped before the latest is
+  // taken. GitHub's own code scanning files a COMMENTED review with an empty
+  // body whenever CodeQL finishes, and it finishes on its own schedule - so
+  // reading `reviews` blindly from the end meant a bot could land after the
+  // adversarial review and hide it, stopping the merge on a human for a reason
+  // no one could act on. Skipping only *blank* bodies is the whole loosening:
+  // a review with text the section parser cannot read still reaches the `ask`
+  // below, because a person saying something unreadable is exactly the
+  // ambiguity this gate refuses to resolve on its own.
+  const reviews = (pr.reviews ?? []).filter((r) => (r.body ?? '').trim());
   if (!reviews.length) {
+    const blank = (pr.reviews ?? []).length;
     return {
       verdict: 'deny',
-      reason:
-        'has no review; salt-campaign.md requires an adversarial review before a branch is queue-eligible',
+      reason: blank
+        ? `has ${blank} review(s) but none with a body; salt-campaign.md requires an adversarial review, and a blank-bodied review (GitHub code scanning files one) states no findings`
+        : 'has no review; salt-campaign.md requires an adversarial review before a branch is queue-eligible',
     };
   }
 
   const latest = reviews[reviews.length - 1];
-  const body = latest?.body ?? '';
-  if (!body.trim()) {
-    return {
-      verdict: 'ask',
-      reason: 'the latest review has an empty body, so its findings cannot be read',
-    };
-  }
-
-  const sections = reviewSections(body);
+  const sections = reviewSections(latest.body);
   if (!sections.length) {
     return {
       verdict: 'ask',

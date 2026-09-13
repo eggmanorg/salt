@@ -120,7 +120,6 @@ describe('judgePr', () => {
 
   it.each([
     ['a closed PR', { state: 'MERGED' }],
-    ['an empty review body', { reviews: [{ submittedAt: REVIEWED, body: '   ' }] }],
     ['a review with no headings', { reviews: [{ submittedAt: REVIEWED, body: 'lgtm' }] }],
     [
       'unreadable timestamps',
@@ -133,6 +132,35 @@ describe('judgePr', () => {
     ],
   ])('asks rather than guessing for %s', (_label, over) => {
     expect(judgePr(green(over)).verdict).toBe('ask');
+  });
+
+  describe('a blank-bodied review is not a review', () => {
+    // GitHub code scanning files a COMMENTED review with an empty body when
+    // CodeQL finishes, on its own schedule. Before this, a bot landing after
+    // the adversarial review hid it and stopped the merge on a human.
+    const bot = { submittedAt: AFTER, body: '' };
+
+    it('is skipped, so an earlier real review is still the one judged', () => {
+      const v = judgePr(green({ reviews: [{ submittedAt: REVIEWED, body: body('None.') }, bot] }));
+      expect(v.verdict).toBe('allow');
+      expect(v.hasBlocking).toBe(false);
+    });
+
+    it('does not let a bot bury blocking findings either', () => {
+      const v = judgePr(
+        green({
+          reviews: [{ submittedAt: REVIEWED, body: body('- it crashes on an empty list') }, bot],
+          commits: [{ committedDate: BEFORE }],
+        }),
+      );
+      expect(v.verdict).toBe('deny');
+    });
+
+    it('denies when it is the only review there is', () => {
+      const v = judgePr(green({ reviews: [bot, { submittedAt: AFTER, body: '   ' }] }));
+      expect(v.verdict).toBe('deny');
+      expect(v.reason).toMatch(/none with a body/);
+    });
   });
 
   it('reads a finding shorter than the 20-character floor as no finding', () => {

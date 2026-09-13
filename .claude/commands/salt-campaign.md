@@ -346,7 +346,7 @@ So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFil
 >
 > **Write only findings.** No "what I verified and found sound" section, no summary of what the PR does, no restatement of the phases — the coordinator and the author both already know. If the honest answer is that you found nothing, the review is three lines saying so, and that is a good review rather than a failed one.
 >
-> Post one review: `gh pr review <pr> --comment --body-file <file>` (every `gh` call needs the sandbox disabled), findings grouped by severity, most severe first. Then return only the counts, the blocking findings' one-line summaries, and the should-fix findings' one-line summaries.
+> Post one review: `gh pr review <pr> --comment --body-file <file>` (every `gh` call needs the sandbox disabled), findings grouped by severity, most severe first, under the literal headings `## Blocking`, `## Should-fix` and `## Notes`. **All three appear even when a section is empty** — the merge gate (`scripts/lib/prEligibility.mjs`) parses those headings, and a body with none of them, or with `## Blocking` missing, is unreadable to it and stops the merge on a prompt. A review, never `gh pr comment`: an issue comment does not appear in `gh pr view --json reviews`, so the PR reads as unreviewed. Then return only the counts, the blocking findings' one-line summaries, and the should-fix findings' one-line summaries.
 
 ### Fixing findings
 
