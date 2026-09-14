@@ -478,6 +478,19 @@ one. The feature it serves — the household's standing notes for the chef,
 `kitchenMemories/{id}` — is documented in
 [ai-kitchen-assistant.md](ai-kitchen-assistant.md) (issue #816).
 
+The `library` module (epic #1372, issue #1377) is a lightweight variant — the pure
+half of the chef's kitchen-notes tools: `libraryPageSummary` (a page's opening
+prose, derived at call time and never stored, so there is no second source of
+truth for it alongside the document body) and `searchLibraryPages` (a keyword
+filter, not a ranking — a library is tens of pages, not the hundreds `searchRecipes`
+scores). No `entities/`, `ports/`, `commands/` or `queries/` subfolders, matching
+the `weather` pattern; the page schema, the revision cap and `pushRevision` live in
+`schemas/libraryPage.ts` with the document they describe, because this module
+reads a page rather than shaping one. The feature it serves — the chef reading and
+writing the household's own reference notes — is documented in
+[ai-kitchen-assistant.md](ai-kitchen-assistant.md) (design principle #1 and
+Components §2).
+
 The general rule this illustrates: a domain module earns its place by holding a
 _decision_. When the decision collapses into reading a field that is already on
 the document, the module is indirection, and the honest move is to delete it
