@@ -259,3 +259,43 @@ describe('specLabelVerdict', () => {
     expect(verdict.problems).toContain('Phase 1: missing **Scope:**');
   });
 });
+
+// `/salt-epic` posts a CONTAINER, and the property that makes it safe is that
+// its template is unclassifiable: no spec signature heading, no `## Phases`. If
+// anyone ever adds one, an epic body starts earning a verdict it must never
+// earn, and this goes red.
+describe('/salt-epic template', () => {
+  const body = template('.claude/commands/salt-epic.md');
+
+  it('is not a spec of any kind, so no /salt-run can consume it', () => {
+    expect(classifySpecIssue(body)).toEqual({ variant: null, ok: false, problems: [] });
+  });
+
+  it('carries no ## Phases section', () => {
+    expect(headingsOf(body)).not.toContain('Phases');
+  });
+
+  it('carries no variant signature heading', () => {
+    const headings = headingsOf(body);
+    for (const variant of SPEC_VARIANTS) expect(headings).not.toContain(variant.signature);
+  });
+
+  it('is refused the label under the epic: title its own command mandates', () => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(true);
+  });
+
+  // The floor, as the command states it: a container with one child is worse
+  // than a root. `## Children` is where that list lives, so losing the heading
+  // loses the rule.
+  it('still declares the container sections the command describes', () => {
+    expect(headingsOf(body)).toEqual([
+      'Goal',
+      'Scope boundary',
+      'Children',
+      'Open Questions / Decisions',
+      'Definition of Done',
+    ]);
+  });
+});

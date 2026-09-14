@@ -67,7 +67,8 @@ _by construction_ — #1372 was stamped `specced` eleven seconds after filing an
 well as the body: a title opening `epic` is refused the label, the workflow's
 step summary says the issue is a category error rather than a near-miss spec, and
 the fix is to file the children as separate issues, leaving the epic itself with
-no `## Phases` section at all.
+no `## Phases` section at all. [`/salt-epic`](../.claude/commands/salt-epic.md) is
+how one is filed in a shape that was never runnable to begin with.
 
 The predicate there is the wide `^epic`, not the band rule's `^epic:`, because
 the two have opposite cost asymmetries — see **Where that rule stops** below.
@@ -169,6 +170,27 @@ written anywhere. As a `Class` it would still hold a band, still sit inside
 The consequence to accept: an epic has no priority. If that ever feels wrong,
 the thing that wants a band is a child issue, not the epic.
 
+**How one is filed.** [`/salt-epic`](../.claude/commands/salt-epic.md) — the fourth
+issue-filing command, and the only one whose output is not a work unit. It posts a
+container: a goal, a scope boundary, the ordered list of children and why that
+order, the decision audit trail, and what closing it means. Three properties are
+not stylistic:
+
+- **The title must open `epic:`.** Both mechanical rules key off it — the band
+  rule above, and the `specced` guard. A container that forgets the prefix is
+  invisible to both.
+- **No `--size`.** `board.mjs add <issue> --class "New feature" --queue Epic`, and
+  nothing more. An epic cannot be sized honestly, which is the whole reason it is
+  not work.
+- **No `## Phases`, and none of the three spec signature headings.** That is what
+  makes the body unclassifiable rather than merely unlabelled, and
+  `scripts/tests/specIssueShape.test.mjs` pins it against the command's own
+  template. The command's final step is the inverse of `/salt-spec`'s: it confirms
+  the posted body **fails** `check-spec-shape.mjs` with exit 2.
+
+It does not file the children. Each is filed by its own command — `/salt-spec`,
+`/salt-defect` or `/salt-refactor` — and attached with `board.mjs parent`.
+
 **One view needs the exclusion typed in by hand** — the `Workflow` board groups
 by `Status`, so epics would otherwise appear there as cards among the work; its
 filter carries `-queue:Epic`. `The queue` needs nothing, because grouping by
@@ -265,6 +287,13 @@ that can be a parent.** An ordinary work issue holds sub-issues perfectly well �
 `campaign:` ledger holds everything its campaign throws off. So a filing with no
 place to go is never a reason to create an epic: a container with one child is
 worse than a root.
+
+**`/salt-epic` existing is not a way around that.** The command states the floor
+itself — two phases of one job is a work issue, and a container with one child is
+worse than a root — and it asks the epic-vs-work-issue question of Daniel in one
+line before it posts anything. It exists because an agent asked for an epic had
+nothing correct to reach for and reached for `/salt-spec` instead (#1378), not
+because containers became cheaper.
 
 **It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
 and this never passes it. An agent cannot tell "unattached" from "attached to
