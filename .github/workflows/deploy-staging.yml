@@ -95,7 +95,7 @@ jobs:
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: pnpm/action-setup@v6.0.10
+      - uses: pnpm/action-setup@v6.1.0
         if: ${{ steps.guard.outputs.should_deploy == 'true' }}
         with:
           version: '10.33.0'
@@ -202,7 +202,7 @@ jobs:
           # The same commit the deploy built, so the probes match what is live.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - uses: pnpm/action-setup@v6.0.10
+      - uses: pnpm/action-setup@v6.1.0
         with:
           version: '10.33.0'
 
