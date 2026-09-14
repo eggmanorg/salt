@@ -68,7 +68,12 @@ export type DomainError =
         // A product-form record (issue #892). Added when the image-prompt
         // callable gained a not-found arm and a form was the one family with no
         // honest resource name to report itself as.
-        | 'productForm';
+        | 'productForm'
+        // A library page (issue #1375). Restoring a revision names both the page
+        // and the version inside it, and a page the store no longer holds — it
+        // was deleted on another device while the history sheet was open — is a
+        // not-found rather than a failed write.
+        | 'libraryPage';
       readonly id: string;
     }
   | {
@@ -173,6 +178,14 @@ export const ErrorCode = {
   // because the write path now has more than one caller. Bad input, not a defect, so
   // it crosses as a ValidationError and is deliberately not reported.
   INVALID_OBSERVATION_TIME: 'INVALID_OBSERVATION_TIME',
+  // Imported content that would carry a library page past `LIBRARY_PAGE_BODY_MAX`
+  // (issue #1375). The import sheet measures the same sum and refuses first, so
+  // this is the rail behind the screen rather than the everyday path — but it has
+  // to exist and has to refuse, because the body max is also a Zod `.max()`: a
+  // body written past it would be a page that FAILS TO PARSE on the next read,
+  // which is the page disappearing rather than an over-long one. Bad input, not a
+  // defect, so it crosses as a ValidationError and is deliberately not reported.
+  LIBRARY_PAGE_TOO_LONG: 'LIBRARY_PAGE_TOO_LONG',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

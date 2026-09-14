@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { success, failure } from '@salt/shared-types';
-import type { LibraryPageDoc } from '@salt/domain/schemas';
+import { LIBRARY_PAGE_BODY_MAX, type LibraryPageDoc } from '@salt/domain/schemas';
 
 // One library page (epic #1372, Phase 1) — `/library/:id`.
 //
@@ -19,6 +19,8 @@ const {
   mockBegin,
   mockEnd,
   mockRemove,
+  mockRestore,
+  mockAppend,
   mockGate,
   mockToast,
 } = await vi.hoisted(async () => {
@@ -31,6 +33,8 @@ const {
     mockBegin: vi.fn(),
     mockEnd: vi.fn(),
     mockRemove: vi.fn(),
+    mockRestore: vi.fn(),
+    mockAppend: vi.fn(),
     mockGate: makeStore<{ enabled: boolean; settled: boolean }>({ enabled: true, settled: true }),
     mockToast: vi.fn(),
   };
@@ -45,6 +49,8 @@ vi.mock('../src/lib/libraryService.js', () => ({
   beginLibraryEdit: mockBegin,
   endLibraryEdit: mockEnd,
   removeLibraryPage: mockRemove,
+  restoreLibraryRevision: mockRestore,
+  appendToLibraryPage: mockAppend,
 }));
 vi.mock('../src/lib/featureGate.js', () => ({
   libraryGate: mockGate,
@@ -92,7 +98,24 @@ beforeEach(() => {
   mockQueue.mockResolvedValue(success(undefined));
   mockFlush.mockResolvedValue(undefined);
   mockRemove.mockResolvedValue(success(undefined));
+  mockRestore.mockResolvedValue(success(undefined));
+  mockAppend.mockResolvedValue(success(undefined));
 });
+
+/** A paste carrying both flavours, as a real clipboard does. */
+function clipboard(html: string, text = ''): DataTransfer {
+  return { getData: (type: string) => (type === 'text/html' ? html : text) } as DataTransfer;
+}
+
+function revision(over: Partial<LibraryPageDoc['revisions'][number]> = {}) {
+  return {
+    title: 'Weck jars',
+    body: '## Jars\n\nThe 742 holds 580 g.',
+    savedAt: '2026-09-14T09:00:00.000Z',
+    savedBy: 'Daniel',
+    ...over,
+  };
+}
 
 describe('LibraryPageView — what it shows', () => {
   it('waits for the first snapshot rather than claiming the page is gone', () => {
@@ -125,9 +148,11 @@ describe('LibraryPageView — what it shows', () => {
   });
 
   // No `rehype-raw` anywhere in the repo, so raw HTML in a body is INERT rather
-  // than sanitised — it is not rendered at all. Phase 3 is what opens that,
+  // than sanitised — it never becomes a live element. Not invisible either:
+  // `svelte-exmarkdown` renders it as its own escaped text, so what this asserts
+  // is the absent ELEMENT, not absent text. Phase 3 is what opens raw HTML up,
   // deliberately and behind an allowlist; this pins today's answer.
-  it('does not render raw HTML in a body', async () => {
+  it('does not render raw HTML in a body as an element', async () => {
     mount(page({ body: '<div data-testid="smuggled">hello</div>' }));
     await screen.findByTestId('library-body');
     expect(screen.queryByTestId('smuggled')).toBeNull();
@@ -322,5 +347,229 @@ describe('LibraryPageView — the feature gate', () => {
     mockGate.set({ enabled: false, settled: true });
     mount();
     await waitFor(() => expect(screen.queryByTestId('library-page-view')).toBeNull());
+  });
+});
+
+// The history surface (issue #1375, Phase 1). The service-level proof that a
+// restore keeps the version it replaced lives in `libraryHistory.test.ts`; what
+// is asserted here is the screen — that the control is always there, that a
+// version can be read before anything changes, and that the page lands a
+// half-typed edit BEFORE opening the sheet, which is what makes the version a
+// restore then replaces the one actually on screen.
+describe('LibraryPageView — history', () => {
+  it('offers History even on a page nobody has edited, and says it is empty', async () => {
+    mount(page({ revisions: [] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    expect(await screen.findByTestId('library-history-empty')).toBeTruthy();
+    expect(screen.queryByTestId('library-history-list')).toBeNull();
+  });
+
+  it('lists the versions newest first, each with when and by whom', async () => {
+    mount(
+      page({
+        revisions: [
+          revision({ title: 'Newest', savedBy: 'Daniel' }),
+          revision({ title: 'Older', savedBy: 'Amy' }),
+        ],
+      }),
+    );
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    const rows = await screen.findAllByTestId('library-history-row');
+    expect(rows.map((r) => r.querySelector('span')?.textContent?.trim())).toEqual([
+      'Newest',
+      'Older',
+    ]);
+    expect(rows[1]?.textContent).toMatch(/replaced by Amy/);
+  });
+
+  it('shows a version rendered, and changes nothing until Restore is pressed', async () => {
+    mount(page({ revisions: [revision({ body: '## Jars\n\n| Model |\n| --- |\n| 742 |' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    const preview = await screen.findByTestId('library-history-preview');
+    expect(preview.querySelector('h2')?.textContent).toBe('Jars');
+    expect(preview.querySelector('table')).toBeTruthy();
+    expect(mockRestore).not.toHaveBeenCalled();
+  });
+
+  // A title can be cleared in place, so a version can carry an empty one — and a
+  // blank row would be unclickable-looking rather than merely untitled.
+  it('names an untitled version rather than showing a blank row', async () => {
+    mount(page({ revisions: [revision({ title: '  ' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    const row = await screen.findByTestId('library-history-row');
+    expect(row.querySelector('span')?.textContent?.trim()).toBe('Untitled');
+  });
+
+  it('says so when the version being previewed was empty', async () => {
+    mount(page({ revisions: [revision({ body: '   ' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    const preview = await screen.findByTestId('library-history-preview');
+    expect(preview.textContent).toMatch(/nothing written/i);
+  });
+
+  it('goes back to the list from a preview without restoring anything', async () => {
+    mount(page({ revisions: [revision()] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    await fireEvent.click(await screen.findByText('Back'));
+    expect(await screen.findByTestId('library-history-list')).toBeTruthy();
+    expect(mockRestore).not.toHaveBeenCalled();
+  });
+
+  // Restoring hands the service the REVISION that was previewed, not its
+  // position in the list — a concurrent write from another device can shift
+  // every index between the preview and the tap, and the sheet has the value in
+  // hand either way.
+  it('restores the version being previewed and closes', async () => {
+    const older = revision({ title: 'Older' });
+    mount(page({ revisions: [revision(), older] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click((await screen.findAllByTestId('library-history-row'))[1]!);
+    await fireEvent.click(await screen.findByTestId('library-history-restore'));
+    await waitFor(() => expect(mockRestore).toHaveBeenCalledWith('page-1', older));
+    await waitFor(() => expect(screen.queryByTestId('library-history-preview')).toBeNull());
+  });
+
+  it('lands a half-typed edit before the sheet opens', async () => {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-body'));
+    await fireEvent.input(await screen.findByTestId('library-body-input'), {
+      target: { value: 'half typed' },
+    });
+    mockFlush.mockClear();
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    expect(mockEnd).toHaveBeenCalledWith('page-1');
+    expect(mockFlush).toHaveBeenCalled();
+    await screen.findByTestId('library-history-empty');
+  });
+
+  it('says so when the restore fails', async () => {
+    mockRestore.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    mount(page({ revisions: [revision()] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    await fireEvent.click(await screen.findByTestId('library-history-restore'));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+  });
+});
+
+// Pasting content into a page that is already open (issue #1375, Phase 2).
+//
+// The conversion itself is proved in `libraryImport.test.ts`; what is asserted
+// here is the screen — that the paste is read as HTML rather than as text, that
+// the preview shows what saving will produce, and that the page lands a half-typed
+// edit before the sheet opens.
+describe('LibraryPageView — pasting content in', () => {
+  const TABLE =
+    '<table><thead><tr><th>Cut</th></tr></thead><tbody><tr><td>Ribeye</td></tr></tbody></table>';
+
+  async function openImport() {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    return (await screen.findByTestId('library-import-input')) as HTMLTextAreaElement;
+  }
+
+  it('reads the clipboard HTML and converts it, not the plain text', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard(TABLE, 'Cut Ribeye') });
+    await waitFor(() => expect(box.value).toContain('| Cut |'));
+    expect(box.value).not.toBe('Cut Ribeye');
+  });
+
+  it('previews the converted markdown as it will look — a table as a table', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard(TABLE) });
+    const preview = await screen.findByTestId('library-import-preview');
+    await waitFor(() => expect(preview.querySelector('table')).toBeTruthy());
+    expect(preview.querySelector('th')?.textContent).toBe('Cut');
+  });
+
+  // No HTML on the clipboard is not a failure: nothing is intercepted and the
+  // browser's own paste lands the text verbatim.
+  it('leaves a plain-text paste to the browser', async () => {
+    const box = await openImport();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: clipboard('', 'just words') });
+    box.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('appends what was pasted to the page being read', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>Sous vide</h2>') });
+    await waitFor(() => expect(box.value).toContain('## Sous vide'));
+    await fireEvent.click(await screen.findByTestId('library-import-confirm'));
+    await waitFor(() => expect(mockAppend).toHaveBeenCalledWith('page-1', '## Sous vide'));
+  });
+
+  it('lands a half-typed edit before the paste box opens', async () => {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-body'));
+    await fireEvent.input(await screen.findByTestId('library-body-input'), {
+      target: { value: 'half typed' },
+    });
+    mockFlush.mockClear();
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    expect(mockEnd).toHaveBeenCalledWith('page-1');
+    expect(mockFlush).toHaveBeenCalled();
+    await screen.findByTestId('library-import-input');
+  });
+
+  it('offers nothing to save until something has been pasted', async () => {
+    await openImport();
+    const confirm = await screen.findByTestId('library-import-confirm');
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('library-import-preview')).toBeNull();
+  });
+
+  // Refused with a message, never truncated: the body maximum is a Zod `.max()`,
+  // so an over-long body is a page that fails to parse on the next read.
+  it('refuses content that would not fit, rather than cutting it off', async () => {
+    mount(page({ body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX - 5) }));
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    const box = (await screen.findByTestId('library-import-input')) as HTMLTextAreaElement;
+    await fireEvent.input(box, { target: { value: 'y'.repeat(50) } });
+    expect(await screen.findByText(/too long/i)).toBeTruthy();
+    expect((await screen.findByTestId('library-import-confirm')).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(box.value).toHaveLength(50);
+  });
+
+  it('adds a second paste to the first rather than replacing it', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>One</h2>') });
+    await waitFor(() => expect(box.value).toContain('## One'));
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>Two</h2>') });
+    await waitFor(() => expect(box.value).toBe('## One\n\n## Two'));
+  });
+
+  // `clipboardData` is nullable in the DOM. Nothing to read is the same answer as
+  // nothing HTML: leave it to the browser.
+  it('leaves a paste carrying no clipboard data at all to the browser', async () => {
+    const box = await openImport();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: null });
+    box.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(box.value).toBe('');
+  });
+
+  it('closes on Cancel without writing anything', async () => {
+    const box = await openImport();
+    await fireEvent.input(box, { target: { value: 'pasted' } });
+    await fireEvent.click(await screen.findByTestId('library-import-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('library-import-input')).toBeNull());
+    expect(mockAppend).not.toHaveBeenCalled();
+  });
+
+  it('says so when the append fails', async () => {
+    mockAppend.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    const box = await openImport();
+    await fireEvent.input(box, { target: { value: 'pasted' } });
+    await fireEvent.click(await screen.findByTestId('library-import-confirm'));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
   });
 });

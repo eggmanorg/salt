@@ -215,3 +215,45 @@ describe('LibraryListPage — the feature gate', () => {
     expect(screen.queryByText(/library/i)).toBeNull();
   });
 });
+
+// Pasting a website into a brand-new page (issue #1375, Phase 2).
+//
+// The conversion is proved in `libraryImport.test.ts`. What matters here is that
+// the list's import lands as a NEW page carrying the converted markdown, and that
+// it is minted with the same placeholder title a hand-written page gets — the
+// title is editable in place, so a dialog asking for one would be a second way to
+// do a thing this feature already does.
+describe('LibraryListPage — pasting content in', () => {
+  const TABLE =
+    '<table><thead><tr><th>Cut</th></tr></thead><tbody><tr><td>Ribeye</td></tr></tbody></table>';
+
+  async function openImport() {
+    render(LibraryListPage);
+    mockPages.set([]);
+    await fireEvent.click(await screen.findByTestId('library-import-page'));
+    return (await screen.findByTestId('library-import-input')) as HTMLTextAreaElement;
+  }
+
+  it('creates a page carrying the converted markdown and opens it', async () => {
+    mockCreate.mockResolvedValue(success({ ...page(), id: 'page-9' }));
+    const box = await openImport();
+    await fireEvent.paste(box, {
+      clipboardData: { getData: (t: string) => (t === 'text/html' ? TABLE : '') },
+    });
+    await waitFor(() => expect(box.value).toContain('| Cut |'));
+    await fireEvent.click(await screen.findByTestId('library-import-confirm'));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const [title, body] = mockCreate.mock.calls.at(-1) as [string, string];
+    expect(title).toBe('Untitled page');
+    expect(body).toContain('| Cut |');
+    expect(push).toHaveBeenCalledWith('/library/page-9');
+  });
+
+  it('still mints an empty page from New page', async () => {
+    mockCreate.mockResolvedValue(success(page()));
+    render(LibraryListPage);
+    mockPages.set([]);
+    await fireEvent.click(await screen.findByTestId('library-new-page'));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledWith('Untitled page', ''));
+  });
+});

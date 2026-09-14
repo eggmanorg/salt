@@ -14,15 +14,19 @@
     Textarea,
   } from '@salt/ui-components';
   import { LIBRARY_PAGE_BODY_MAX, LIBRARY_PAGE_TITLE_MAX } from '@salt/domain/schemas';
-  import type { LibraryPageDoc } from '@salt/domain/schemas';
+  import type { LibraryPageDoc, LibraryPageRevisionDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
   import { addToast } from '../../lib/toastStore.js';
   import {
+    appendToLibraryPage,
     beginLibraryEdit,
     endLibraryEdit,
     flushLibraryWrites,
     queueLibraryEdit,
+    restoreLibraryRevision,
   } from '../../lib/libraryService.js';
+  import LibraryHistorySheet from './LibraryHistorySheet.svelte';
+  import LibraryImportSheet from './LibraryImportSheet.svelte';
   import { parseTagLine } from './libraryTags.js';
 
   /**
@@ -53,9 +57,12 @@
    * `Markdown` renders through an AST → Svelte pipeline with `gfmPlugin()`, so
    * tables — the point of this feature — render as tables. There is no `rehype-raw`
    * anywhere in the repo, so raw HTML inside a body is INERT rather than sanitised:
-   * it is not rendered at all. That is the safe default while Salt serves no
-   * Content-Security-Policy, and Phase 3 is what opens it deliberately, behind an
-   * allowlist with its own tests.
+   * it never executes and never becomes a live element. It is not invisible either
+   * — `svelte-exmarkdown` renders a `raw` hast node as its own escaped text, so
+   * HTML that reached a body would show up as visible markup source, not vanish.
+   * That is the safe-but-ugly default while Salt serves no Content-Security-Policy,
+   * and Phase 3 is what opens it deliberately, behind an allowlist with its own
+   * tests.
    *
    * The document-scale type at the foot is a page-local override of `.salt-md`,
    * whose own sizes are tuned for a two-line note inside a card (h1 at 1.125rem,
@@ -80,6 +87,8 @@
 
   let deleteOpen = $state(false);
   let deleting = $state(false);
+  let historyOpen = $state(false);
+  let importOpen = $state(false);
 
   function open(field: Field): void {
     beginLibraryEdit(page.id);
@@ -117,6 +126,43 @@
     const next = event.relatedTarget;
     if (next instanceof Node && editorEl?.contains(next)) return;
     void close();
+  }
+
+  /**
+   * Open a modal surface over the page, having first LANDED whatever is half-typed.
+   *
+   * `close()` is what ends the editing session and flushes it, so what History and
+   * Paste-in then act on is the text actually on screen. Skip it before a restore
+   * and an open editor's pending snapshot would still be waiting when
+   * `restoreLibraryRevision` calls `beginLibraryEdit` — which is idempotent, keeps
+   * the older snapshot, and would quietly drop the text the restore overwrote.
+   */
+  async function openOver(which: 'history' | 'import'): Promise<void> {
+    await close();
+    if (which === 'history') historyOpen = true;
+    else importOpen = true;
+  }
+
+  /**
+   * Put a version back. The write is the page's, not the sheet's — one write path
+   * for this document, and it is this file.
+   */
+  async function handleRestore(revision: LibraryPageRevisionDoc): Promise<void> {
+    const write = restoreLibraryRevision(page.id, revision);
+    // A restore is a deliberate act, not a keystroke: it has no burst to wait for
+    // and no reason to sit out the debounce window.
+    await flushLibraryWrites();
+    if ((await write).kind === 'err') addToast("Couldn't restore that version.", 'destructive');
+  }
+
+  /**
+   * Add pasted content to the end of this page. `appendToLibraryPage` owns the
+   * flush-then-append ordering, so this is the toast and nothing else.
+   */
+  async function handleImport(markdown: string): Promise<void> {
+    const result = await appendToLibraryPage(page.id, markdown);
+    await flushLibraryWrites();
+    if (result.kind === 'err') addToast("Couldn't add that to the page.", 'destructive');
   }
 
   async function handleDelete(): Promise<void> {
@@ -232,6 +278,17 @@
   {/snippet}
 </DetailPage>
 
+<!-- Outside the DetailPage for the same reason the delete dialog is: a restore
+     re-renders the page underneath it. -->
+<LibraryHistorySheet bind:open={historyOpen} revisions={page.revisions} onRestore={handleRestore} />
+
+<LibraryImportSheet
+  bind:open={importOpen}
+  confirmLabel="Add to this page"
+  existingBody={page.body}
+  onConfirm={handleImport}
+/>
+
 <!-- Outside the DetailPage so the dialog is not torn out from under itself when
      the delete lands before the animation finishes. -->
 <Dialog bind:open={deleteOpen}>
@@ -286,6 +343,25 @@
 {/snippet}
 
 {#snippet actions()}
+  <!-- Always offered, including on a page nobody has edited yet: the sheet says
+       the history is empty, which is a fact about the page. A control that came
+       and went would read as one that had broken. -->
+  <Button
+    variant="ghost"
+    size="sm"
+    onclick={() => void openOver('import')}
+    data-testid="library-page-import"
+  >
+    Paste in
+  </Button>
+  <Button
+    variant="ghost"
+    size="sm"
+    onclick={() => void openOver('history')}
+    data-testid="library-page-history"
+  >
+    History
+  </Button>
   <Button
     variant="ghost"
     size="sm"

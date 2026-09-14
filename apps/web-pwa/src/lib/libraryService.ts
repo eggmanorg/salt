@@ -1,12 +1,14 @@
 import { subscribeLibraryPages, saveLibraryPage, deleteLibraryPage } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
 import {
+  LIBRARY_PAGE_BODY_MAX,
   LIBRARY_PAGE_REVISION_CAP,
   pushRevision,
   type LibraryPageDoc,
   type LibraryPageRevisionDoc,
 } from '@salt/domain/schemas';
-import { success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { appendedBody } from './libraryImport.js';
 import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
@@ -189,7 +191,24 @@ export function flushLibraryWrites(): Promise<void> {
  */
 export async function createLibraryPage(
   title: string,
+  /** Starting text, for a page minted from an import. Blank for a hand-written one. */
+  body = '',
 ): Promise<ReadResult<LibraryPageDoc, DomainError>> {
+  // THE SAME RAIL `appendToLibraryPage` STANDS ON, and the same arithmetic: an
+  // import can mint a page from a body of any length, and a body past
+  // `LIBRARY_PAGE_BODY_MAX` is a Zod `.max()` violation, so a page written past it
+  // fails to parse on the next read and disappears from the list — the exact
+  // failure `LIBRARY_PAGE_TOO_LONG` exists for. `appendedBody('', body)` against
+  // an empty existing body is just `body`, but going through it rather than
+  // checking `body.length` directly is what keeps `appendedBody` the ONE place
+  // this arithmetic lives, the way the import sheet's own refusal already does.
+  if (appendedBody('', body).length > LIBRARY_PAGE_BODY_MAX) {
+    return failure({
+      kind: 'ValidationError',
+      code: ErrorCode.LIBRARY_PAGE_TOO_LONG,
+      message: 'That would make the page too long.',
+    });
+  }
   const now = new Date().toISOString();
   const author = authorName();
   const page: LibraryPageDoc = {
@@ -197,7 +216,7 @@ export async function createLibraryPage(
     schemaVersion: 1,
     kind: 'note',
     title: title.trim(),
-    body: '',
+    body,
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -210,6 +229,108 @@ export async function createLibraryPage(
   _pages.update((current) => [...(current ?? []), page]);
   const result = reportIfFailed(getErrorReporter(), await saveLibraryPage(page));
   return result.kind === 'ok' ? success(page) : result;
+}
+
+/**
+ * Put `revision` of page `id` back — its title and its body — as an ordinary
+ * edit.
+ *
+ * KEYED ON THE REVISION ITSELF, not its position in the array. The sheet that
+ * calls this previews a revision by VALUE (`page.revisions`, read once when the
+ * preview opened) and used to hand back the INDEX it was previewed at, re-read
+ * against a live array at write time — so a concurrent write from another
+ * device, landing between the preview and the tap, shifts every index by one and
+ * silently restores a different version than the one shown, while still
+ * reporting success. Family-shared data has no "nobody else is editing this"
+ * guarantee, so that window is not an edge case. Matching on the whole snapshot
+ * finds the SAME entry regardless of where it now sits — or reports `NotFound`
+ * if that concurrent write was the one that evicted it past the cap, rather than
+ * restoring whatever happens to be sitting at the old index.
+ *
+ * ROUTED THROUGH THE SESSION MACHINERY, not around it. `beginLibraryEdit` first,
+ * so the version being replaced is snapshotted and rides into `revisions` on the
+ * write `queueLibraryEdit` makes. Calling `saveLibraryPage` (or `queueLibraryEdit`
+ * alone) would discard the text the restore is overwriting — the one thing a
+ * history feature must never do — and a restore made by mistake would be final.
+ *
+ * Which is also why a restore is undoable by restoring again: what was showing
+ * becomes revision 0, so restoring that puts it back.
+ *
+ * A RESTORE THAT CHANGES NOTHING WRITES NOTHING — the guard below, and not
+ * `pushRevision`'s dedup, is what makes that true. The dedup compares the incoming
+ * snapshot against `revisions[0]`, so restoring version 3 while version 3's text
+ * is already on screen would snapshot that same text, find `revisions[0]`
+ * different, and record an eleventh copy of what is showing. Short-circuiting here
+ * is the only place that can see the comparison that actually matters.
+ *
+ * The cap stays enforced in `pushRevision` and only there.
+ *
+ * `NotFound` rather than a thrown error for a page the store does not hold, or a
+ * revision no longer in it — deleted, or restored past, on another device while
+ * the sheet was open (Rule 10).
+ */
+export function restoreLibraryRevision(
+  id: string,
+  revision: LibraryPageRevisionDoc,
+): Promise<ReadResult<void, DomainError>> {
+  const page = libraryPageById(id);
+  const stillThere = page?.revisions.some(
+    (r) =>
+      r.title === revision.title &&
+      r.body === revision.body &&
+      r.savedAt === revision.savedAt &&
+      r.savedBy === revision.savedBy,
+  );
+  if (page === undefined || !stillThere) {
+    return Promise.resolve(failure({ kind: 'NotFound', resource: 'libraryPage', id }));
+  }
+  if (revision.title === page.title && revision.body === page.body) {
+    return Promise.resolve(success(undefined));
+  }
+  beginLibraryEdit(id);
+  return queueLibraryEdit({ ...page, title: revision.title, body: revision.body });
+}
+
+/**
+ * Add `markdown` to the end of page `id`'s body, as an ordinary edit.
+ *
+ * FLUSHES FIRST, and the flush belongs to the command rather than to its caller.
+ * The page may have a body open in a `Textarea` when the import sheet is used, and
+ * the safe order is "land what is typed, then append to it". The optimistic apply
+ * is synchronous, so the store already holds the typed text either way — what the
+ * flush buys is that the caller cannot get the order wrong. ONE caller today
+ * (`LibraryPageDocument.handleImport` — the list page mints a new page instead,
+ * through `createLibraryPage`), but the ordering belongs to the command rather
+ * than to it: a second caller that forgot to flush first would append onto stale
+ * text, silently.
+ *
+ * REFUSES rather than truncates when the result would pass `LIBRARY_PAGE_BODY_MAX`
+ * — and the refusal is not cosmetic: that maximum is a Zod `.max()` on the body, so
+ * a document written past it fails to parse on the next read and the page vanishes
+ * from the list. The import sheet measures the same sum through `appendedBody` and
+ * refuses first, so this is the rail behind the screen — and `createLibraryPage`
+ * stands on the same rail, through the same function, for the path that mints a
+ * page rather than appending to one.
+ */
+export async function appendToLibraryPage(
+  id: string,
+  markdown: string,
+): Promise<ReadResult<void, DomainError>> {
+  await flushLibraryWrites();
+  const page = libraryPageById(id);
+  if (page === undefined) {
+    return failure({ kind: 'NotFound', resource: 'libraryPage', id });
+  }
+  const body = appendedBody(page.body, markdown);
+  if (body.length > LIBRARY_PAGE_BODY_MAX) {
+    return failure({
+      kind: 'ValidationError',
+      code: ErrorCode.LIBRARY_PAGE_TOO_LONG,
+      message: 'That would make the page too long.',
+    });
+  }
+  beginLibraryEdit(id);
+  return queueLibraryEdit({ ...page, body });
 }
 
 /**
