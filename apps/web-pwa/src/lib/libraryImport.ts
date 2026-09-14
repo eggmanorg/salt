@@ -3,17 +3,15 @@ import { gfm } from '@joplin/turndown-plugin-gfm';
 
 // Turning a chunk of somebody else's web page into a library page (issue #1375).
 //
-// THE OUTPUT IS MARKDOWN AND ONLY MARKDOWN. The renderer has no `rehype-raw`, so
-// HTML in a page body is inert rather than dangerous — but inert does not mean
-// invisible: `svelte-exmarkdown` emits a `raw` hast node as its own escaped text
-// (`Renderer.svelte`'s `raw` arm), so a pasted `<table>` that survived conversion
-// would show up on the page as visible markup, not vanish. Everything below
-// exists so the conversion either produces markdown or produces text, never a
-// lump of markup that renders as its own source.
-//
-// It also keeps the epic's Phase 3 decision — whether to render raw HTML behind an
-// allowlist — independent of this one: no import can put raw HTML into a body, so
-// that decision is about what a person types, not about what a paste smuggled in.
+// THE OUTPUT IS MARKDOWN AND ONLY MARKDOWN. Everything below exists so the
+// conversion either produces markdown or produces text, never a lump of markup —
+// and that requirement did not soften when #1376 landed. Since then the library
+// page passes `sanitizedHtml`, so raw HTML in a body IS parsed and put through
+// `svgSanitizeSchema`'s allowlist rather than shown as its own escaped source: a
+// `<table>` that survived conversion would now render as a table, and a
+// `<script>` would be stripped. Neither is a reason to relax here. What a person
+// deliberately types is theirs; what a paste smuggled in is markup they never saw
+// and cannot edit out of the markdown they are looking at.
 //
 // DOM work lives here in web-pwa, never in `@salt/domain` (Rule 1): the conversion
 // parses with the browser's own parser.
@@ -49,9 +47,10 @@ const DROP_WITH_CONTENTS = new Set([
 // A markdown pipe table's cell is a single line of inline content: it cannot hold
 // a list, a heading, a rule or a code block. The GFM plugin's answer to a table
 // that does is to emit the table's `outerHTML` inside a `joplin-table-wrapper`
-// div — raw HTML, which this app renders as its own visible markup rather than
-// dropping it, on exactly the time-and-temperature tables this feature exists
-// for.
+// div — raw HTML, on exactly the time-and-temperature tables this feature exists
+// for. The page body would now render that wrapper (#1376), so what reaches the
+// textarea and what the reader sees would silently disagree: markup the person
+// never typed, invisible in the source they are editing.
 //
 // So the block content is flattened out of the cells BEFORE turndown sees them,
 // which is the only faithful thing available: markdown has no cell that could hold
@@ -128,8 +127,10 @@ function flattenTableCells(doc: Document): void {
 // same "drop the tag, keep the contents" default `DROP_WITH_CONTENTS` above
 // exists to override — which here is exactly right: the link's TEXT survives with
 // no way to click it anywhere. This is a URL-scheme check on the HTML→Markdown
-// conversion, not the rendering-side sanitiser or `rehype-raw` the issue rules
-// out.
+// conversion. It is not the rendering-side sanitiser (#1376's
+// `svgSanitizeSchema`, which refuses `javascript:` and `data:` in its own right)
+// and it does not depend on one: a link this rejects never becomes a link in the
+// markdown at all.
 const SAFE_LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
 
 function hasSafeScheme(href: string): boolean {

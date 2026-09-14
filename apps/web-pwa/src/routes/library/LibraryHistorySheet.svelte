@@ -159,7 +159,7 @@
         {#if chosen.revision.body.trim() === ''}
           <p class="text-sm text-muted-foreground">This version had nothing written in it.</p>
         {:else}
-          <Markdown text={chosen.revision.body} />
+          <Markdown text={chosen.revision.body} sanitizedHtml />
         {/if}
       </div>
       <SheetFooter>

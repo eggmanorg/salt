@@ -43,6 +43,7 @@ const meta = {
   },
   argTypes: {
     text: { control: 'text' },
+    sanitizedHtml: { control: 'boolean' },
     class: { control: 'text' },
   },
 } satisfies Meta<typeof Markdown>;
@@ -60,4 +61,25 @@ export const RichContent: Story = { args: { text: RICH } };
 // A short, single-paragraph fragment.
 export const Simple: Story = {
   args: { text: 'Just a **short** paragraph with a bit of `code` and _emphasis_.' },
+};
+
+// A jar profile with its dimensions labelled — the drawing the library was given
+// this capability for (#1376). `sanitizedHtml` is what makes the inline SVG an
+// element instead of visible markup source; turn it off in the Controls panel
+// and the same input reverts to the escaped text every other caller gets.
+const DIAGRAM = [
+  'A 1-litre Kilner, measured cold.',
+  '',
+  '<svg viewBox="0 0 120 90" width="240">',
+  '  <rect x="30" y="20" width="60" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="2" />',
+  '  <line x1="30" y1="35" x2="90" y2="35" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" />',
+  '  <text x="60" y="14" text-anchor="middle" font-size="9">95 mm</text>',
+  '  <text x="60" y="55" text-anchor="middle" font-size="9">fill line</text>',
+  '</svg>',
+  '',
+  'Headroom above the fill line is **two fingers**.',
+].join('\n');
+
+export const SanitizedDiagram: Story = {
+  args: { text: DIAGRAM, sanitizedHtml: true },
 };

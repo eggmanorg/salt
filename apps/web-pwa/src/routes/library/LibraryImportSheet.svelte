@@ -122,7 +122,7 @@
           class="salt-md-doc rounded border border-border p-3"
           data-testid="library-import-preview"
         >
-          <Markdown text={markdown} />
+          <Markdown text={markdown} sanitizedHtml />
         </div>
       {/if}
     </div>
