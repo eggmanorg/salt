@@ -139,6 +139,20 @@ export type { ShoppingSlot, ShoppingDayDoc } from './shoppingDay.js';
 export { KitchenMemorySchema, KITCHEN_MEMORY_COLLECTION } from './kitchenMemory.js';
 export type { KitchenMemoryDoc } from './kitchenMemory.js';
 
+// The library (epic #1372) — the kitchen facts that are not recipes. A SIBLING of
+// kitchen memories above, not a widening of them: a memory is one line injected
+// into every chef turn, a page is a reference document read on demand.
+export {
+  LibraryPageSchema,
+  LibraryPageRevisionSchema,
+  LIBRARY_PAGE_COLLECTION,
+  LIBRARY_PAGE_BODY_MAX,
+  LIBRARY_PAGE_TITLE_MAX,
+  LIBRARY_PAGE_REVISION_CAP,
+  pushRevision,
+} from './libraryPage.js';
+export type { LibraryPageDoc, LibraryPageRevisionDoc } from './libraryPage.js';
+
 // Generic kitchen tools (issue #882) — the curated pictogram vocabulary that a
 // recipe's or a plan's WORDS are resolved against at display time. Nothing stores
 // one of these ids, which is what makes the list free to grow.

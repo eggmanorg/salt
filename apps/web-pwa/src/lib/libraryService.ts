@@ -1,0 +1,236 @@
+import { subscribeLibraryPages, saveLibraryPage, deleteLibraryPage } from '@salt/firebase-sync';
+import { createObservabilityErrorReportingAdapter } from '@salt/observability';
+import {
+  LIBRARY_PAGE_REVISION_CAP,
+  pushRevision,
+  type LibraryPageDoc,
+  type LibraryPageRevisionDoc,
+} from '@salt/domain/schemas';
+import { success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { writable, get } from 'svelte/store';
+import type { Readable } from 'svelte/store';
+import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
+import { currentMember } from './membersService.js';
+import { createWriteCoalescer } from './writeCoalescer.js';
+
+// The library service (epic #1372, Phase 1) — the store over `libraryPages` and the
+// ONE WRITE PATH for it.
+//
+// It is also where the two things the adapter cannot supply are minted: a page's id
+// (`crypto.randomUUID()`, as batchService and kitchenMemoryService mint theirs) and
+// the clock. Nothing below this line reads a clock and nothing above it invents an
+// id.
+//
+// The subscription is NOT started at app boot. The pages that show the library own
+// its lifecycle (`$effect(() => initLibrarySync())`), which is the house pattern —
+// see BatchListPage. Nothing else in the app reads these documents, so paying for a
+// collection listener on every session to serve one screen would be the wrong
+// default.
+//
+// NO AI ANYWHERE in Phase 1. Writing a page is a `setDoc`; there is no flow and no
+// callable, which is what lets an edit land instantly and offline.
+
+// ─── Reactive stores ─────────────────────────────────────────────────────────
+
+// `undefined` is the NOT-LOADED state; an empty array is loaded-and-empty, which is
+// a different sentence and gets the empty state rather than the spinner.
+const _pages = writable<readonly LibraryPageDoc[] | undefined>(undefined);
+export const libraryPages: Readable<readonly LibraryPageDoc[] | undefined> = _pages;
+
+// ─── Error reporting ─────────────────────────────────────────────────────────
+
+let _errorReporter: ReturnType<typeof createObservabilityErrorReportingAdapter> | null = null;
+function getErrorReporter() {
+  if (!_errorReporter) _errorReporter = createObservabilityErrorReportingAdapter();
+  return _errorReporter;
+}
+
+// ─── Init / cleanup ──────────────────────────────────────────────────────────
+
+/** Subscribe to every library page, for as long as the caller keeps the unsub. */
+export function initLibrarySync(): () => void {
+  return subscribeLibraryPages(
+    (incoming) => _pages.set(incoming),
+    (err, rawError) => {
+      // A stream-level error leaves the list empty rather than absent, so the page
+      // settles on its empty state instead of hanging on a loader forever.
+      reportSubscriptionError(getErrorReporter(), err, rawError);
+      _pages.set([]);
+    },
+  );
+}
+
+// ─── Writes ──────────────────────────────────────────────────────────────────
+
+// Same debounce the recipe page's in-place editing uses, and for the same reason:
+// a body typed a character at a time would otherwise issue one full-document
+// `setDoc` per keystroke, each fanned out to every family device's listener.
+//
+// The optimistic store apply stays SYNCHRONOUS and only the `setDoc` is deferred —
+// every mutation below rebuilds the whole document from the store, so a deferred
+// apply would let two edits build on the same stale page and the second silently
+// discard the first.
+const pageWrites = createWriteCoalescer<LibraryPageDoc>(saveLibraryPage);
+
+/**
+ * Who is editing, in the words a screen can show: the signed-in member's display
+ * name, denormalised onto the page at write time.
+ *
+ * NEVER a uid — uids appear nowhere in the family-shared data model, and one would
+ * be unreadable in the single place this field exists to be read.
+ */
+function authorName(): string {
+  return get(currentMember)?.name ?? 'Someone';
+}
+
+/** The page as the store currently holds it, or `undefined` if it is not there. */
+export function libraryPageById(id: string): LibraryPageDoc | undefined {
+  return get(_pages)?.find((p) => p.id === id);
+}
+
+function applyOptimistically(page: LibraryPageDoc): LibraryPageDoc {
+  const stamped: LibraryPageDoc = {
+    ...page,
+    updatedAt: new Date().toISOString(),
+    lastEditedBy: authorName(),
+  };
+  _pages.update((current) =>
+    (current ?? []).some((p) => p.id === stamped.id)
+      ? (current ?? []).map((p) => (p.id === stamped.id ? stamped : p))
+      : [...(current ?? []), stamped],
+  );
+  return stamped;
+}
+
+// ─── Revision capture ────────────────────────────────────────────────────────
+
+// A revision is captured ONCE PER EDITING SESSION, not once per write. Writes are
+// debounced, so snapshotting inside `queueLibraryEdit` would push a revision per
+// keystroke burst and a ten-deep history would hold ten versions of the same
+// paragraph — a history that can restore nothing.
+//
+// So the pre-edit state is held HERE, in memory, from the moment an editor opens
+// until the first edit of that session actually queues, and rides into the document
+// on that write rather than costing a write of its own. In memory and not in
+// browser storage: Rule 3, and the loss if the tab dies mid-edit is one undo step
+// on a page whose own text was never changed.
+const pendingSnapshots = new Map<string, LibraryPageRevisionDoc>();
+
+/**
+ * Mark the start of an editing session on `id`, capturing what the page says NOW
+ * as the version a later restore would return to.
+ *
+ * Idempotent within a session: a second call while a snapshot is still pending
+ * keeps the FIRST one, so opening the title editor, then the body editor, then the
+ * title again is one version and not three.
+ */
+export function beginLibraryEdit(id: string): void {
+  if (pendingSnapshots.has(id)) return;
+  const page = libraryPageById(id);
+  if (page === undefined) return;
+  pendingSnapshots.set(id, {
+    title: page.title,
+    body: page.body,
+    savedAt: new Date().toISOString(),
+    savedBy: authorName(),
+  });
+}
+
+/**
+ * Abandon a pending snapshot without recording it — for an editing session that
+ * ended having changed nothing.
+ *
+ * `pushRevision` would drop such a snapshot anyway (it deduplicates against the
+ * newest revision), so this is not what makes the history honest; it is what stops
+ * a stale snapshot from an abandoned session attaching itself to an unrelated edit
+ * made minutes later.
+ */
+export function endLibraryEdit(id: string): void {
+  pendingSnapshots.delete(id);
+}
+
+/**
+ * Queue an in-place edit to a page. The store is updated synchronously; the write
+ * lands at the end of the debounce window, or sooner if something flushes it.
+ *
+ * The returned promise is the write that will carry this edit, so a caller keeps
+ * the `ReadResult` its failure toast needs (Rule 10) — and every edit in one window
+ * shares one promise, so a burst can raise at most one toast.
+ */
+export function queueLibraryEdit(page: LibraryPageDoc): Promise<ReadResult<void, DomainError>> {
+  const snapshot = pendingSnapshots.get(page.id);
+  const withHistory: LibraryPageDoc =
+    snapshot === undefined ? page : { ...page, revisions: pushRevision(page.revisions, snapshot) };
+  pendingSnapshots.delete(page.id);
+  const stamped = applyOptimistically(withHistory);
+  return pageWrites.queue(stamped.id, stamped);
+}
+
+/**
+ * Write out every pending library edit now.
+ *
+ * Called when a field is left and when a page is navigated away from: the debounce
+ * alone would lose the last edit made inside its window, and blur alone never fires
+ * for `page.fill()` in the e2e. Both, not either. The tab going away is covered by
+ * `writeCoalescer`'s own `pagehide`/`visibilitychange` handlers.
+ */
+export function flushLibraryWrites(): Promise<void> {
+  return pageWrites.flushAll();
+}
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+/**
+ * Mint a new page and write it immediately — not through the coalescer, because
+ * the caller navigates to it and the page has to exist by the time it lands.
+ *
+ * Returns the document rather than just the id: the caller needs the id to
+ * navigate, and the store has it either way.
+ */
+export async function createLibraryPage(
+  title: string,
+): Promise<ReadResult<LibraryPageDoc, DomainError>> {
+  const now = new Date().toISOString();
+  const author = authorName();
+  const page: LibraryPageDoc = {
+    id: crypto.randomUUID(),
+    schemaVersion: 1,
+    kind: 'note',
+    title: title.trim(),
+    body: '',
+    tags: [],
+    createdAt: now,
+    updatedAt: now,
+    createdBy: author,
+    lastEditedBy: author,
+    revisions: [],
+  };
+  // Optimistic first, so the list and the page itself have the document before the
+  // write comes back — offline, it may not come back for a while.
+  _pages.update((current) => [...(current ?? []), page]);
+  const result = reportIfFailed(getErrorReporter(), await saveLibraryPage(page));
+  return result.kind === 'ok' ? success(page) : result;
+}
+
+/**
+ * Delete a page, and its history with it. A real delete — Salt has no soft-delete
+ * and no tombstones.
+ *
+ * A pending edit to that page is FLUSHED FIRST rather than discarded, and the
+ * ordering is what matters rather than the write: the coalescer holds a whole
+ * document captured before the delete, so an entry left on its own timer would
+ * issue that `setDoc` afterwards and silently resurrect the page. Flushing puts it
+ * into Firestore's mutation queue ahead of the `deleteDoc` below, which is the
+ * order that leaves the page deleted. Discarding it instead would be wrong for a
+ * different reason — `discardAll()` is coalescer-wide, so deleting one page would
+ * drop an unrelated edit to another.
+ */
+export async function removeLibraryPage(id: string): Promise<ReadResult<void, DomainError>> {
+  pendingSnapshots.delete(id);
+  await pageWrites.flush(id);
+  _pages.update((current) => (current ?? []).filter((p) => p.id !== id));
+  return reportIfFailed(getErrorReporter(), await deleteLibraryPage(id));
+}
+
+/** How many previous versions a page keeps. Re-exported for the surfaces to say so. */
+export { LIBRARY_PAGE_REVISION_CAP };

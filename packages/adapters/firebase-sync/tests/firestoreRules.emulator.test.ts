@@ -1290,6 +1290,79 @@ describe.skipIf(!reachable)('firestore.rules — kitchenMemories (issue #816)', 
   });
 });
 
+describe.skipIf(!reachable)('firestore.rules — libraryPages (epic #1372)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  const PAGE_ID = 'page-1';
+  const page = (author = 'Daniel') => ({
+    id: PAGE_ID,
+    schemaVersion: 1,
+    kind: 'note',
+    title: 'Weck jars',
+    body: '| Model | Brim |\n| --- | --- |\n| 742 | 580 g |',
+    tags: ['Fermentation'],
+    createdAt: '2026-09-14T09:00:00.000Z',
+    updatedAt: '2026-09-14T09:00:00.000Z',
+    createdBy: author,
+    lastEditedBy: author,
+    revisions: [],
+  });
+
+  function userCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { email: `${uid}@e.org` }).firestore();
+  }
+
+  it('lets any signed-in user write, read and delete a page', async () => {
+    const db = userCtx('uid-a');
+    await assertSucceeds(setDoc(doc(db, 'libraryPages', PAGE_ID), page()));
+    await assertSucceeds(getDoc(doc(db, 'libraryPages', PAGE_ID)));
+    await assertSucceeds(getDocs(collection(db, 'libraryPages')));
+    await assertSucceeds(deleteDoc(doc(db, 'libraryPages', PAGE_ID)));
+  });
+
+  // THE load-bearing property, and the one the browser-side feature key must not
+  // be mistaken for: the library is family-shared and carries no ownerUid, so
+  // either member may edit or delete the other's page. The key hides a SURFACE
+  // while it is being built; it is not a permission boundary and nothing here
+  // knows it exists (see apps/web-pwa/src/lib/featureGate.ts).
+  it('lets another member overwrite and delete a page someone else wrote', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'libraryPages', PAGE_ID), page('Daniel'));
+    });
+    const db = userCtx('uid-b');
+    await assertSucceeds(getDoc(doc(db, 'libraryPages', PAGE_ID)));
+    await assertSucceeds(setDoc(doc(db, 'libraryPages', PAGE_ID), page('Ana')));
+    await assertSucceeds(deleteDoc(doc(db, 'libraryPages', PAGE_ID)));
+  });
+
+  it('denies an unauthenticated caller entirely', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'libraryPages', PAGE_ID)));
+    await assertFails(getDocs(collection(db, 'libraryPages')));
+    await assertFails(setDoc(doc(db, 'libraryPages', PAGE_ID), page()));
+    await assertFails(deleteDoc(doc(db, 'libraryPages', PAGE_ID)));
+  });
+});
+
 // kitchenTimers is the FOURTH owner-scoped collection (issue #842), and its rule
 // is the only owner-scoped one that keys on the PATH SEGMENT rather than on a
 // stored field — the document id simply is the uid. These cover both halves of
