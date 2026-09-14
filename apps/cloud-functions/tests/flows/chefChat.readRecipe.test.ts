@@ -259,6 +259,7 @@ describe('the chef’s tool surface', () => {
       'readEquipmentDetail',
       'findKitchenNotes',
       'readKitchenNote',
+      'writeKitchenNote',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
     expect(readRecipeTool).toMatchObject({ __tool: 'readRecipe' });

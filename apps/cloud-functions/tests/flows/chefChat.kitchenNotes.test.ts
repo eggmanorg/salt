@@ -68,6 +68,7 @@ const {
   readKitchenNoteForChef,
   findKitchenNotesTool,
   readKitchenNoteTool,
+  writeKitchenNoteTool,
   findRecipesTool,
   readRecipeTool,
   verifiedCaller,
@@ -347,7 +348,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
     expect(mockFlagEnabled).toHaveBeenCalledWith(LIBRARY_FLAG_KEY, 'u-2', undefined);
   });
 
-  it('gives a caller inside the flag all four tools and the notes section', async () => {
+  it('gives a caller inside the flag all five tools and the notes section', async () => {
     const { tools, system } = await runTurn(signedIn);
 
     expect(tools).toEqual([
@@ -355,6 +356,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
       readRecipeTool,
       findKitchenNotesTool,
       readKitchenNoteTool,
+      writeKitchenNoteTool,
     ]);
     expect(system).toContain('## Their own kitchen notes');
   });
@@ -369,6 +371,9 @@ describe('chefChat — whose chat gets the notes tools', () => {
     expect(tools).toEqual([findRecipesTool, readRecipeTool]);
     expect(system).not.toContain('## Their own kitchen notes');
     expect(system).not.toMatch(/findKitchenNotes/);
+    // And so cannot cause a note to be WRITTEN either — the write tool rides the
+    // same gate rather than carrying one of its own.
+    expect(tools).not.toContain(writeKitchenNoteTool);
   });
 
   it('fails CLOSED, and asks PostHog nothing, when no verified caller reached the flow', async () => {

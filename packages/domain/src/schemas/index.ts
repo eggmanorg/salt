@@ -269,6 +269,13 @@ export type { FindKitchenNotesInput, FindKitchenNotesOutput } from './findKitche
 export { ReadKitchenNoteInputSchema, ReadKitchenNoteOutputSchema } from './readKitchenNote.js';
 export type { ReadKitchenNoteInput, ReadKitchenNoteOutput } from './readKitchenNote.js';
 
+// writeKitchenNote (issue #1377, phase 2) — the one tool that WRITES a household
+// document on the model's say-so. Permitted here and refused for equipment in
+// #1373 for a reason the tool's own declaration records: a page has a visible
+// revision history, so a wrong write is noticeable and reversible.
+export { WriteKitchenNoteInputSchema, WriteKitchenNoteOutputSchema } from './writeKitchenNote.js';
+export type { WriteKitchenNoteInput, WriteKitchenNoteOutput } from './writeKitchenNote.js';
+
 // identifyRecipeKit (issue #882) — "what do I need to get out?", inferred from the
 // whole stored recipe. Labels are FREE TEXT on purpose; read the header before
 // reaching for an enum over the drawn vocabulary.

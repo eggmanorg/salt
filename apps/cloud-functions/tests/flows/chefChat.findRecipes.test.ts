@@ -324,6 +324,7 @@ describe('findRecipes — the tool the model is shown', () => {
       'readEquipmentDetail',
       'findKitchenNotes',
       'readKitchenNote',
+      'writeKitchenNote',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
   });

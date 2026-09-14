@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z, type ActionContext } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
@@ -18,8 +19,13 @@ import {
   FindKitchenNotesOutputSchema,
   ReadKitchenNoteInputSchema,
   ReadKitchenNoteOutputSchema,
+  WriteKitchenNoteInputSchema,
+  WriteKitchenNoteOutputSchema,
   LibraryPageSchema,
   LIBRARY_PAGE_COLLECTION,
+  LIBRARY_PAGE_BODY_MAX,
+  LIBRARY_PAGE_TITLE_MAX,
+  pushRevision,
 } from '@salt/domain/schemas';
 import type {
   FindRecipesInput,
@@ -32,6 +38,9 @@ import type {
   FindKitchenNotesOutput,
   ReadKitchenNoteInput,
   ReadKitchenNoteOutput,
+  WriteKitchenNoteInput,
+  WriteKitchenNoteOutput,
+  LibraryPageDoc,
 } from '@salt/domain/schemas';
 import {
   libraryPageSummary,
@@ -629,6 +638,175 @@ export const readKitchenNoteTool = ai.defineTool(
   (input) => readKitchenNoteForChef(getFirestore(), input),
 );
 
+/**
+ * The display name a page the chef wrote is attributed to.
+ *
+ * A NAME, never a uid — `createdBy`/`lastEditedBy` are denormalised display names
+ * for audit only (`libraryPage.ts`), and no uid appears anywhere in the
+ * family-shared data model. The chef's own name rather than the person who asked
+ * for it, and that is the useful answer: the revision history then shows at a
+ * glance which version was written by the chat and which by hand, which is what
+ * makes a bad write easy to spot and undo.
+ */
+const CHEF_AUTHOR_NAME = 'The chef';
+
+const refused = (problem: string): WriteKitchenNoteOutput => ({
+  saved: false,
+  id: null,
+  created: false,
+  problem,
+});
+
+/**
+ * Writes one note for the chef — a new one, or a replacement for an existing one.
+ *
+ * WHY WRITING IS PERMITTED HERE WHEN #1373 REFUSED IT FOR EQUIPMENT. That issue
+ * settled "the chat may read kit detail and may never write it", and its reason
+ * was specific: an equipment list that is quietly wrong is worse than one that is
+ * out of date, and there is no review surface where a bad write would be noticed.
+ * Neither half holds for a note. A note is a document somebody opens and reads,
+ * and #1375 gave it a visible revision history with restore — so a wrong write is
+ * both noticeable and reversible, which is exactly the property equipment lacks.
+ * Do not read #1373's rule as universal; read its reason.
+ *
+ * WHAT IS MECHANICAL HERE, AND WHAT IS NOT (CLAUDE.md Rule 12). "The chef writes
+ * only when it is told to" is enforced by the tool description's DO NOT CALL IT
+ * half, and prompt text is not a mechanism — that limit is stated, not dressed
+ * up. What IS mechanical, and pinned by `chefChat.writeKitchenNote.test.ts`:
+ *
+ *   - this tool CANNOT DELETE. There is no delete path in it, and no other tool
+ *     has one either; the suite scans this whole module for one;
+ *   - every replacement goes through `pushRevision`, so the version it replaced is
+ *     recoverable — and the cap still holds, because `pushRevision` is the only
+ *     thing that ever grows the array;
+ *   - it writes to `libraryPages` and to no other collection.
+ *
+ * It also never THROWS (Rule 10): a refusal comes back as `saved: false` with a
+ * sentence the chef can say out loud, which is what a model can actually act on
+ * inside its own tool loop.
+ */
+export async function writeKitchenNoteForChef(
+  db: ReturnType<typeof getFirestore>,
+  input: WriteKitchenNoteInput,
+): Promise<WriteKitchenNoteOutput> {
+  const title = input.title.trim();
+  if (title === '') return refused('a note needs a title, and that one was blank');
+  if (title.length > LIBRARY_PAGE_TITLE_MAX) {
+    return refused(
+      `that title is too long — a note's title holds ${LIBRARY_PAGE_TITLE_MAX} characters`,
+    );
+  }
+  // The number comes from the schema's own constant, so there is one source for
+  // it. This is NOT a second copy of the browser's append arithmetic
+  // (`appendedBody` in `libraryImport.ts`, which measures what APPENDING would
+  // produce and belongs to the import sheet and `appendToLibraryPage`): a tool
+  // write replaces the whole body, so there is nothing to append to and nothing
+  // to compute. `apps/cloud-functions` could not import that function in any case
+  // — nothing imports an app (Rule 6).
+  if (input.body.length > LIBRARY_PAGE_BODY_MAX) {
+    return refused(
+      `that note is too long — a note holds ${LIBRARY_PAGE_BODY_MAX} characters, and that was ${input.body.length}`,
+    );
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const pages = db.collection(LIBRARY_PAGE_COLLECTION);
+
+    if (input.id === undefined) {
+      const page: LibraryPageDoc = {
+        id: randomUUID(),
+        schemaVersion: 1,
+        kind: 'note',
+        title,
+        body: input.body,
+        // Untagged. Filing is the household's call and a tag the chef invented
+        // would sit in the library's filter list for ever.
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
+        createdBy: CHEF_AUTHOR_NAME,
+        lastEditedBy: CHEF_AUTHOR_NAME,
+        revisions: [],
+      };
+      await pages.doc(page.id).set(page);
+      return { saved: true, id: page.id, created: true, problem: null };
+    }
+
+    // A replacement is only ever built on a note that was READ back first. An id
+    // the model invented, or a document that no longer parses, leaves the
+    // collection untouched — writing over something we could not read is how a
+    // page gets silently destroyed, and the revision history cannot restore what
+    // was never captured.
+    const ref = pages.doc(input.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return refused(
+        'there is no note with that id — search for it, or leave the id out to start a new one',
+      );
+    }
+    const parsed = LibraryPageSchema.safeParse({ ...snap.data(), id: snap.id });
+    if (!parsed.success) {
+      logger.warn('chefChat: writeKitchenNote left an unreadable note alone', { id: input.id });
+      return refused('that note could not be read, so it was left exactly as it was');
+    }
+
+    const current = parsed.data;
+    const page: LibraryPageDoc = {
+      ...current,
+      title,
+      body: input.body,
+      updatedAt: now,
+      lastEditedBy: CHEF_AUTHOR_NAME,
+      // `savedBy` is whoever REPLACED the version being filed, matching the
+      // browser's own snapshot at `beginLibraryEdit`.
+      revisions: pushRevision(current.revisions, {
+        title: current.title,
+        body: current.body,
+        savedAt: now,
+        savedBy: CHEF_AUTHOR_NAME,
+      }),
+    };
+    await ref.set(page);
+    return { saved: true, id: page.id, created: false, problem: null };
+  } catch (err) {
+    logger.warn('chefChat: writeKitchenNote failed', { id: input.id, err });
+    return refused('that could not be saved just now');
+  }
+}
+
+const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a note into the household's notes, or replace one that is already there. Use it to put something \
+down where they will find it again: a table you worked out together, the settings for a piece of kit, a list of \
+what they own.
+
+CALL THIS ONLY WHEN THEY HAVE ASKED YOU TO WRITE ONE. "Write that up", "make me a note of this", "add it to my \
+jar note", "save this somewhere" — an instruction, in their words, in this conversation.
+
+DO NOT CALL IT for anything else, ever. Not because a conversation covered ground worth keeping, not to tidy a \
+note you have just read, not to record what you have decided, and not to save your own answer. A long chat about \
+jars is not permission to rewrite the jar note. If you think something is worth writing down, SAY SO and let them \
+ask.
+
+To ADD to an existing note, read it first with readKitchenNote, then send its whole text back with your addition \
+in it and its id here. The body you send REPLACES everything the note held — sending only the new part throws \
+the rest away.
+
+You cannot delete a note and you cannot empty one. If they ask you to, say plainly that deleting is theirs to do, \
+on the note's own page.
+
+Check saved before you say anything. When it is false, problem says why in plain words: repeat it and do not \
+claim the note was written.`;
+
+export const writeKitchenNoteTool = ai.defineTool(
+  {
+    name: 'writeKitchenNote',
+    description: WRITE_KITCHEN_NOTE_DESCRIPTION,
+    inputSchema: WriteKitchenNoteInputSchema,
+    outputSchema: WriteKitchenNoteOutputSchema,
+  },
+  (input) => writeKitchenNoteForChef(getFirestore(), input),
+);
+
 // How the chef is told to USE the notes, beside LIBRARY_FRAMING and in the same
 // shape: the tool descriptions govern when to call, this governs what to do with
 // the answer. Its own section rather than a paragraph bolted onto LIBRARY_FRAMING
@@ -644,6 +822,12 @@ Open a note in full only when the detail you need is deeper in it.
 SAY WHICH NOTE YOU USED, by its title, in your own words — "your sous vide table has chuck at 65 °C for 24 \
 hours". Never read a note back as a wall of text, and never present something you worked out yourself as \
 something they had written down.
+
+WRITING ONE IS SOMETHING THEY ASK FOR. writeKitchenNote puts a note into their notes, and you reach for it when \
+they tell you to and at no other time. A conversation that covered good ground is not an instruction, and \
+neither is a note you have just read being out of date. If something is worth writing down, say so and let them \
+ask. To add to a note, read it first and send its whole text back with your addition in it — the body you send \
+replaces what was there. You cannot delete a note; that is theirs to do on the note's own page.
 
 THESE ARE NOT THEIR RECIPES. Their saved dishes are a different thing with a different pair of tools, described \
 above. A note is a reference page: a table, a list of kit, a set of numbers.
@@ -956,18 +1140,19 @@ export const chefChatFlow = ai.defineFlow(
         // The chef's tools. Three for everyone (issues #840, #1373) — findRecipes,
         // readRecipe and readEquipmentDetail, the last of which is READ-ONLY,
         // permanently ("No, and not ever": see the comment at
-        // `readEquipmentDetailTool`) — plus the kitchen-notes pair for a caller
-        // inside the `library` flag (issue #1377). That is what this array varying
-        // per request is for, and it is the whole of the gate: the tools
+        // `readEquipmentDetailTool`) — plus the three kitchen-notes tools for a
+        // caller inside the `library` flag (issue #1377). That is what this array
+        // varying per request is for, and it is the whole of the gate: the tools
         // themselves are defined at module load, as Genkit requires, and what
         // changes is the array passed BY VALUE here.
         //
         // Genkit runs the tool loop inside this call and keeps streaming across
         // it, so the reply still arrives in fragments; the gaps while tools run are
         // silence, which is what the idle timer below bounds. A turn may search,
-        // read a dish, look a piece of kit up AND read on the notes pair, so that
-        // is up to five round-trips inside one stream — each is a Firestore read
-        // measured in milliseconds, nowhere near the 55 s idle budget.
+        // read a dish, look a piece of kit up, read a note AND write one, so that
+        // is up to six round-trips inside one stream — each is a Firestore read
+        // (or, for writeKitchenNote, a single write) measured in milliseconds,
+        // nowhere near the 55 s idle budget.
         //
         // Note what is still absent: no `output` option, and none is coming. Half
         // of design principle #1 survives intact — the chef returns prose, and
@@ -979,6 +1164,7 @@ export const chefChatFlow = ai.defineFlow(
               readEquipmentDetailTool,
               findKitchenNotesTool,
               readKitchenNoteTool,
+              writeKitchenNoteTool,
             ]
           : [findRecipesTool, readRecipeTool, readEquipmentDetailTool],
       });
