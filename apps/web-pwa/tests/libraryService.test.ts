@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { success, failure } from '@salt/shared-types';
-import { LIBRARY_PAGE_REVISION_CAP, type LibraryPageDoc } from '@salt/domain/schemas';
+import {
+  LIBRARY_PAGE_BODY_MAX,
+  LIBRARY_PAGE_REVISION_CAP,
+  type LibraryPageDoc,
+} from '@salt/domain/schemas';
 
 // The library service (epic #1372, Phase 1) — the store over `libraryPages` and the
 // one write path for it.
@@ -33,6 +37,7 @@ vi.mock('../src/lib/membersService.js', () => ({ currentMember: mockMember }));
 
 import { get } from 'svelte/store';
 import {
+  appendToLibraryPage,
   beginLibraryEdit,
   createLibraryPage,
   endLibraryEdit,
@@ -303,5 +308,85 @@ describe('removeLibraryPage', () => {
   it('surfaces a failed delete rather than throwing', async () => {
     mockDelete.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
     expect((await removeLibraryPage('page-1')).kind).toBe('err');
+  });
+});
+
+// Adding pasted content to the end of a page (issue #1375, Phase 2).
+//
+// The command owns two things its callers must not be trusted with: the
+// flush-then-append ordering, and the refusal when the result would not fit. The
+// body maximum is a Zod `.max()`, so a body written past it is a page that fails
+// to parse on the NEXT read — the page disappearing, not merely an over-long one.
+describe('appendToLibraryPage', () => {
+  beforeEach(() => deliver([page({ body: 'The 742 holds 580 g.' })]));
+
+  it('adds the markdown to the end, a blank line apart', async () => {
+    await appendToLibraryPage('page-1', '## Sous vide\n\n| A |\n| --- |');
+    await flushLibraryWrites();
+    expect(lastSaved().body).toBe('The 742 holds 580 g.\n\n## Sous vide\n\n| A |\n| --- |');
+  });
+
+  it('records the pre-append body as a revision, like any other edit', async () => {
+    await appendToLibraryPage('page-1', 'more');
+    await flushLibraryWrites();
+    expect(lastSaved().revisions[0]).toMatchObject({ body: 'The 742 holds 580 g.' });
+  });
+
+  // THE ordering the issue left open, answered here rather than in the one caller
+  // that happened to remember: a body half-typed in place is landed first, so the
+  // append goes onto the text that is actually on screen.
+  it('lands a half-typed in-place edit before appending to it', async () => {
+    beginLibraryEdit('page-1');
+    void queueLibraryEdit({ ...page(), body: 'half typed' });
+    // No flush here: the append is what must do it.
+    await appendToLibraryPage('page-1', 'pasted');
+    await flushLibraryWrites();
+    expect(lastSaved().body).toBe('half typed\n\npasted');
+    // The typed edit went out as its own write rather than being swallowed.
+    expect(mockSave.mock.calls.length).toBeGreaterThan(1);
+    expect(mockSave.mock.calls[0]?.[0]).toMatchObject({ body: 'half typed' });
+  });
+
+  it('starts the body from the import on a page with nothing written in it', async () => {
+    deliver([page({ body: '' })]);
+    await appendToLibraryPage('page-1', '## Sous vide');
+    await flushLibraryWrites();
+    expect(lastSaved().body).toBe('## Sous vide');
+  });
+
+  // Refused, never truncated — and refused BEFORE the write, so nothing lands.
+  it('refuses content that would carry the body past its maximum', async () => {
+    deliver([page({ body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX - 5) })]);
+    const result = await appendToLibraryPage('page-1', 'y'.repeat(50));
+    expect(result).toMatchObject({
+      kind: 'err',
+      error: { kind: 'ValidationError', code: 'LIBRARY_PAGE_TOO_LONG' },
+    });
+    await flushLibraryWrites();
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('accepts content that exactly fits', async () => {
+    deliver([page({ body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX - 5) })]);
+    // 'x'*(max-5) + '\n\n' + 'yyy' === max
+    const result = await appendToLibraryPage('page-1', 'yyy');
+    await flushLibraryWrites();
+    expect(result.kind).toBe('ok');
+    expect(lastSaved().body).toHaveLength(LIBRARY_PAGE_BODY_MAX);
+  });
+
+  it('reports NotFound rather than throwing when the page is gone', async () => {
+    deliver([]);
+    const result = await appendToLibraryPage('page-1', 'more');
+    expect(result).toMatchObject({ kind: 'err', error: { kind: 'NotFound' } });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+});
+
+describe('createLibraryPage — from an import', () => {
+  it('mints the page with the imported body already in it', async () => {
+    const result = await createLibraryPage('Untitled page', '## Sous vide\n\n| A |');
+    expect(result.kind).toBe('ok');
+    expect(lastSaved().body).toBe('## Sous vide\n\n| A |');
   });
 });

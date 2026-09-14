@@ -178,6 +178,14 @@ export const ErrorCode = {
   // because the write path now has more than one caller. Bad input, not a defect, so
   // it crosses as a ValidationError and is deliberately not reported.
   INVALID_OBSERVATION_TIME: 'INVALID_OBSERVATION_TIME',
+  // Imported content that would carry a library page past `LIBRARY_PAGE_BODY_MAX`
+  // (issue #1375). The import sheet measures the same sum and refuses first, so
+  // this is the rail behind the screen rather than the everyday path — but it has
+  // to exist and has to refuse, because the body max is also a Zod `.max()`: a
+  // body written past it would be a page that FAILS TO PARSE on the next read,
+  // which is the page disappearing rather than an over-long one. Bad input, not a
+  // defect, so it crosses as a ValidationError and is deliberately not reported.
+  LIBRARY_PAGE_TOO_LONG: 'LIBRARY_PAGE_TOO_LONG',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

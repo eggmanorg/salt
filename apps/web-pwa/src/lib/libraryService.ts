@@ -1,12 +1,14 @@
 import { subscribeLibraryPages, saveLibraryPage, deleteLibraryPage } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
 import {
+  LIBRARY_PAGE_BODY_MAX,
   LIBRARY_PAGE_REVISION_CAP,
   pushRevision,
   type LibraryPageDoc,
   type LibraryPageRevisionDoc,
 } from '@salt/domain/schemas';
-import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { appendedBody } from './libraryImport.js';
 import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
@@ -189,6 +191,8 @@ export function flushLibraryWrites(): Promise<void> {
  */
 export async function createLibraryPage(
   title: string,
+  /** Starting text, for a page minted from an import. Blank for a hand-written one. */
+  body = '',
 ): Promise<ReadResult<LibraryPageDoc, DomainError>> {
   const now = new Date().toISOString();
   const author = authorName();
@@ -197,7 +201,7 @@ export async function createLibraryPage(
     schemaVersion: 1,
     kind: 'note',
     title: title.trim(),
-    body: '',
+    body,
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -251,6 +255,44 @@ export function restoreLibraryRevision(
   }
   beginLibraryEdit(id);
   return queueLibraryEdit({ ...page, title: revision.title, body: revision.body });
+}
+
+/**
+ * Add `markdown` to the end of page `id`'s body, as an ordinary edit.
+ *
+ * FLUSHES FIRST, and the flush belongs to the command rather than to its caller.
+ * The page may have a body open in a `Textarea` when the import sheet is used, and
+ * the safe order is "land what is typed, then append to it". The optimistic apply
+ * is synchronous, so the store already holds the typed text either way — what the
+ * flush buys is that the caller cannot get the order wrong. Two entry points call
+ * this (the list and the page); an ordering held by one of them is an ordering the
+ * second forgets.
+ *
+ * REFUSES rather than truncates when the result would pass `LIBRARY_PAGE_BODY_MAX`
+ * — and the refusal is not cosmetic: that maximum is a Zod `.max()` on the body, so
+ * a document written past it fails to parse on the next read and the page vanishes
+ * from the list. The import sheet measures the same sum through `appendedBody` and
+ * refuses first, so this is the rail behind the screen.
+ */
+export async function appendToLibraryPage(
+  id: string,
+  markdown: string,
+): Promise<ReadResult<void, DomainError>> {
+  await flushLibraryWrites();
+  const page = libraryPageById(id);
+  if (page === undefined) {
+    return failure({ kind: 'NotFound', resource: 'libraryPage', id });
+  }
+  const body = appendedBody(page.body, markdown);
+  if (body.length > LIBRARY_PAGE_BODY_MAX) {
+    return failure({
+      kind: 'ValidationError',
+      code: ErrorCode.LIBRARY_PAGE_TOO_LONG,
+      message: 'That would make the page too long.',
+    });
+  }
+  beginLibraryEdit(id);
+  return queueLibraryEdit({ ...page, body });
 }
 
 /**

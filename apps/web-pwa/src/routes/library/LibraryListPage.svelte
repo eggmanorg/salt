@@ -4,6 +4,7 @@
   import FeatureGuard from '../../components/FeatureGuard.svelte';
   import { addToast } from '../../lib/toastStore.js';
   import { createLibraryPage, initLibrarySync, libraryPages } from '../../lib/libraryService.js';
+  import LibraryImportSheet from './LibraryImportSheet.svelte';
 
   // The library (epic #1372, Phase 1) — `/library`.
   //
@@ -29,6 +30,7 @@
   let searchText = $state('');
   let activeTags = $state<string[]>([]);
   let creating = $state(false);
+  let importOpen = $state(false);
 
   const pages = $derived($libraryPages ?? []);
 
@@ -67,9 +69,9 @@
   // than asking for a title in a dialog first. The page's own title is editable in
   // place, so a dialog would be a second way to do a thing this feature already
   // does — and an empty page is the cheapest thing in the library to throw away.
-  async function handleCreate(): Promise<void> {
+  async function handleCreate(body = ''): Promise<void> {
     creating = true;
-    const result = await createLibraryPage('Untitled page');
+    const result = await createLibraryPage('Untitled page', body);
     creating = false;
     if (result.kind === 'err') {
       addToast("Couldn't create that page.", 'destructive');
@@ -96,6 +98,19 @@
     data-testid="library-list-page"
   >
     {#snippet actions()}
+      <!-- An imported page is minted with the same placeholder title a
+           hand-written one gets, and opened straight away: the title is editable
+           in place, so asking for one here would be a second way to do a thing
+           this feature already does. -->
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => (importOpen = true)}
+        disabled={creating}
+        data-testid="library-import-page"
+      >
+        Paste in
+      </Button>
       <Button
         size="sm"
         onclick={() => void handleCreate()}
@@ -185,4 +200,10 @@
       {/if}
     {/snippet}
   </ListPage>
+
+  <LibraryImportSheet
+    bind:open={importOpen}
+    confirmLabel="Save as a new page"
+    onConfirm={(markdown) => handleCreate(markdown)}
+  />
 </FeatureGuard>

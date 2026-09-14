@@ -18,6 +18,7 @@
   import { goBack } from '../../lib/nav.js';
   import { addToast } from '../../lib/toastStore.js';
   import {
+    appendToLibraryPage,
     beginLibraryEdit,
     endLibraryEdit,
     flushLibraryWrites,
@@ -25,6 +26,7 @@
     restoreLibraryRevision,
   } from '../../lib/libraryService.js';
   import LibraryHistorySheet from './LibraryHistorySheet.svelte';
+  import LibraryImportSheet from './LibraryImportSheet.svelte';
   import { parseTagLine } from './libraryTags.js';
 
   /**
@@ -83,6 +85,7 @@
   let deleteOpen = $state(false);
   let deleting = $state(false);
   let historyOpen = $state(false);
+  let importOpen = $state(false);
 
   function open(field: Field): void {
     beginLibraryEdit(page.id);
@@ -123,17 +126,18 @@
   }
 
   /**
-   * Open the history, having first LANDED whatever is half-typed.
+   * Open a modal surface over the page, having first LANDED whatever is half-typed.
    *
-   * `close()` is what ends the editing session and flushes it, so the version a
-   * restore then replaces is the one actually on screen. Skip this and an open
-   * editor's pending snapshot would still be waiting when `restoreLibraryRevision`
-   * calls `beginLibraryEdit` — which is idempotent, keeps the older snapshot, and
-   * would quietly drop the text the restore overwrote.
+   * `close()` is what ends the editing session and flushes it, so what History and
+   * Paste-in then act on is the text actually on screen. Skip it before a restore
+   * and an open editor's pending snapshot would still be waiting when
+   * `restoreLibraryRevision` calls `beginLibraryEdit` — which is idempotent, keeps
+   * the older snapshot, and would quietly drop the text the restore overwrote.
    */
-  async function openHistory(): Promise<void> {
+  async function openOver(which: 'history' | 'import'): Promise<void> {
     await close();
-    historyOpen = true;
+    if (which === 'history') historyOpen = true;
+    else importOpen = true;
   }
 
   /**
@@ -146,6 +150,16 @@
     // and no reason to sit out the debounce window.
     await flushLibraryWrites();
     if ((await write).kind === 'err') addToast("Couldn't restore that version.", 'destructive');
+  }
+
+  /**
+   * Add pasted content to the end of this page. `appendToLibraryPage` owns the
+   * flush-then-append ordering, so this is the toast and nothing else.
+   */
+  async function handleImport(markdown: string): Promise<void> {
+    const result = await appendToLibraryPage(page.id, markdown);
+    await flushLibraryWrites();
+    if (result.kind === 'err') addToast("Couldn't add that to the page.", 'destructive');
   }
 
   async function handleDelete(): Promise<void> {
@@ -265,6 +279,13 @@
      re-renders the page underneath it. -->
 <LibraryHistorySheet bind:open={historyOpen} revisions={page.revisions} onRestore={handleRestore} />
 
+<LibraryImportSheet
+  bind:open={importOpen}
+  confirmLabel="Add to this page"
+  existingBody={page.body}
+  onConfirm={handleImport}
+/>
+
 <!-- Outside the DetailPage so the dialog is not torn out from under itself when
      the delete lands before the animation finishes. -->
 <Dialog bind:open={deleteOpen}>
@@ -325,7 +346,15 @@
   <Button
     variant="ghost"
     size="sm"
-    onclick={() => void openHistory()}
+    onclick={() => void openOver('import')}
+    data-testid="library-page-import"
+  >
+    Paste in
+  </Button>
+  <Button
+    variant="ghost"
+    size="sm"
+    onclick={() => void openOver('history')}
     data-testid="library-page-history"
   >
     History

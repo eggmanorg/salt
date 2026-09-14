@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { success, failure } from '@salt/shared-types';
-import type { LibraryPageDoc } from '@salt/domain/schemas';
+import { LIBRARY_PAGE_BODY_MAX, type LibraryPageDoc } from '@salt/domain/schemas';
 
 // One library page (epic #1372, Phase 1) — `/library/:id`.
 //
@@ -20,6 +20,7 @@ const {
   mockEnd,
   mockRemove,
   mockRestore,
+  mockAppend,
   mockGate,
   mockToast,
 } = await vi.hoisted(async () => {
@@ -33,6 +34,7 @@ const {
     mockEnd: vi.fn(),
     mockRemove: vi.fn(),
     mockRestore: vi.fn(),
+    mockAppend: vi.fn(),
     mockGate: makeStore<{ enabled: boolean; settled: boolean }>({ enabled: true, settled: true }),
     mockToast: vi.fn(),
   };
@@ -48,6 +50,7 @@ vi.mock('../src/lib/libraryService.js', () => ({
   endLibraryEdit: mockEnd,
   removeLibraryPage: mockRemove,
   restoreLibraryRevision: mockRestore,
+  appendToLibraryPage: mockAppend,
 }));
 vi.mock('../src/lib/featureGate.js', () => ({
   libraryGate: mockGate,
@@ -96,7 +99,13 @@ beforeEach(() => {
   mockFlush.mockResolvedValue(undefined);
   mockRemove.mockResolvedValue(success(undefined));
   mockRestore.mockResolvedValue(success(undefined));
+  mockAppend.mockResolvedValue(success(undefined));
 });
+
+/** A paste carrying both flavours, as a real clipboard does. */
+function clipboard(html: string, text = ''): DataTransfer {
+  return { getData: (type: string) => (type === 'text/html' ? html : text) } as DataTransfer;
+}
 
 function revision(over: Partial<LibraryPageDoc['revisions'][number]> = {}) {
   return {
@@ -435,6 +444,125 @@ describe('LibraryPageView — history', () => {
     await fireEvent.click(await screen.findByTestId('library-page-history'));
     await fireEvent.click(await screen.findByTestId('library-history-row'));
     await fireEvent.click(await screen.findByTestId('library-history-restore'));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+  });
+});
+
+// Pasting content into a page that is already open (issue #1375, Phase 2).
+//
+// The conversion itself is proved in `libraryImport.test.ts`; what is asserted
+// here is the screen — that the paste is read as HTML rather than as text, that
+// the preview shows what saving will produce, and that the page lands a half-typed
+// edit before the sheet opens.
+describe('LibraryPageView — pasting content in', () => {
+  const TABLE =
+    '<table><thead><tr><th>Cut</th></tr></thead><tbody><tr><td>Ribeye</td></tr></tbody></table>';
+
+  async function openImport() {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    return (await screen.findByTestId('library-import-input')) as HTMLTextAreaElement;
+  }
+
+  it('reads the clipboard HTML and converts it, not the plain text', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard(TABLE, 'Cut Ribeye') });
+    await waitFor(() => expect(box.value).toContain('| Cut |'));
+    expect(box.value).not.toBe('Cut Ribeye');
+  });
+
+  it('previews the converted markdown as it will look — a table as a table', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard(TABLE) });
+    const preview = await screen.findByTestId('library-import-preview');
+    await waitFor(() => expect(preview.querySelector('table')).toBeTruthy());
+    expect(preview.querySelector('th')?.textContent).toBe('Cut');
+  });
+
+  // No HTML on the clipboard is not a failure: nothing is intercepted and the
+  // browser's own paste lands the text verbatim.
+  it('leaves a plain-text paste to the browser', async () => {
+    const box = await openImport();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: clipboard('', 'just words') });
+    box.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('appends what was pasted to the page being read', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>Sous vide</h2>') });
+    await waitFor(() => expect(box.value).toContain('## Sous vide'));
+    await fireEvent.click(await screen.findByTestId('library-import-confirm'));
+    await waitFor(() => expect(mockAppend).toHaveBeenCalledWith('page-1', '## Sous vide'));
+  });
+
+  it('lands a half-typed edit before the paste box opens', async () => {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-body'));
+    await fireEvent.input(await screen.findByTestId('library-body-input'), {
+      target: { value: 'half typed' },
+    });
+    mockFlush.mockClear();
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    expect(mockEnd).toHaveBeenCalledWith('page-1');
+    expect(mockFlush).toHaveBeenCalled();
+    await screen.findByTestId('library-import-input');
+  });
+
+  it('offers nothing to save until something has been pasted', async () => {
+    await openImport();
+    const confirm = await screen.findByTestId('library-import-confirm');
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('library-import-preview')).toBeNull();
+  });
+
+  // Refused with a message, never truncated: the body maximum is a Zod `.max()`,
+  // so an over-long body is a page that fails to parse on the next read.
+  it('refuses content that would not fit, rather than cutting it off', async () => {
+    mount(page({ body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX - 5) }));
+    await fireEvent.click(await screen.findByTestId('library-page-import'));
+    const box = (await screen.findByTestId('library-import-input')) as HTMLTextAreaElement;
+    await fireEvent.input(box, { target: { value: 'y'.repeat(50) } });
+    expect(await screen.findByText(/too long/i)).toBeTruthy();
+    expect((await screen.findByTestId('library-import-confirm')).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(box.value).toHaveLength(50);
+  });
+
+  it('adds a second paste to the first rather than replacing it', async () => {
+    const box = await openImport();
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>One</h2>') });
+    await waitFor(() => expect(box.value).toContain('## One'));
+    await fireEvent.paste(box, { clipboardData: clipboard('<h2>Two</h2>') });
+    await waitFor(() => expect(box.value).toBe('## One\n\n## Two'));
+  });
+
+  // `clipboardData` is nullable in the DOM. Nothing to read is the same answer as
+  // nothing HTML: leave it to the browser.
+  it('leaves a paste carrying no clipboard data at all to the browser', async () => {
+    const box = await openImport();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: null });
+    box.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(box.value).toBe('');
+  });
+
+  it('closes on Cancel without writing anything', async () => {
+    const box = await openImport();
+    await fireEvent.input(box, { target: { value: 'pasted' } });
+    await fireEvent.click(await screen.findByTestId('library-import-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('library-import-input')).toBeNull());
+    expect(mockAppend).not.toHaveBeenCalled();
+  });
+
+  it('says so when the append fails', async () => {
+    mockAppend.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    const box = await openImport();
+    await fireEvent.input(box, { target: { value: 'pasted' } });
+    await fireEvent.click(await screen.findByTestId('library-import-confirm'));
     await waitFor(() => expect(mockToast).toHaveBeenCalled());
   });
 });
