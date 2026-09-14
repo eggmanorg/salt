@@ -120,6 +120,15 @@ export const routes: RouteDefinition = new Map<
   // clock instead of a cook timer.
   ['/batches/:id/cook', lazy(() => import('./batches/BatchCookPage.svelte'))],
   ['/batches/:id', lazy(() => import('./batches/BatchDetailPage.svelte'))],
+  // The library (epic #1372) — the household's reference pages. Static before
+  // parameterised, as everything above. ORDINARY shell routes, so no entry in
+  // ./fullViewport.ts: a page is something you read with the nav still under it.
+  // Lazy-loaded (#411) on the same argument as the recipe module — a
+  // module-specific screen most sessions never open. Both pages sit behind
+  // `<FeatureGuard feature="library">`, which is where the gate lives; the route
+  // table deliberately knows nothing about it (see lib/featureGate.ts).
+  ['/library', lazy(() => import('./library/LibraryListPage.svelte'))],
+  ['/library/:id', lazy(() => import('./library/LibraryPageView.svelte'))],
   ['/settings', SettingsPage],
   // Operator area (issues #155, #157). All routes are guarded client-side by
   // AdminGuard; the real boundary is server-side (rules + CF admin checks).

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChefHat,
   Hourglass,
+  Library,
   Settings,
   Shield,
   ShoppingCart,
@@ -49,9 +50,15 @@ export const navItems: NavItem[] = [
 // NOT part of "Kitchen": that is a per-user projection, and a batch is family-shared.
 // The hourglass is the noun, not the food: phases 03 and 04 put ferments and cures
 // on this same surface, so a loaf would have been the wrong picture.
+//
+// "Library" (epic #1372) is the same kind of destination and sits here for the same
+// reason: the primary four are full, and a reference page is something you go
+// looking for once in a while rather than a place you live. It is family-shared, so
+// like Batches it is NOT part of "Kitchen".
 export const overflowNavItems: NavItem[] = [
   { id: 'batches', label: 'Batches', icon: Hourglass, href: '#/batches' },
   { id: 'equipment', label: 'Equipment', icon: Blender, href: '#/equipment' },
+  { id: 'library', label: 'Library', icon: Library, href: '#/library' },
   { id: 'settings', label: 'Settings', icon: Settings, href: '#/settings' },
 ];
 
@@ -64,8 +71,12 @@ export const overflowNavItems: NavItem[] = [
  * pure function of its argument so the filtering itself is testable without a
  * PostHog stand-in.
  */
-export function overflowNavItemsFor(features: { bread: boolean }): NavItem[] {
-  return overflowNavItems.filter((item) => item.id !== 'batches' || features.bread);
+export function overflowNavItemsFor(features: { bread: boolean; library: boolean }): NavItem[] {
+  return overflowNavItems.filter((item) => {
+    if (item.id === 'batches') return features.bread;
+    if (item.id === 'library') return features.library;
+    return true;
+  });
 }
 
 // Operator-area entry (issues #155, #157). Appended to the nav only for admins —

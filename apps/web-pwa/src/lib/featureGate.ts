@@ -32,7 +32,7 @@ import {
  * a typo is a compile error instead of a feature that silently stays hidden
  * forever (a misspelled flag reads as "off" and looks exactly like a working gate).
  */
-export type FeatureKey = 'bread';
+export type FeatureKey = 'bread' | 'library';
 
 // Feature key → PostHog flag key. Separate from the union so the flag can be
 // renamed in PostHog without touching every call site, and so the app's word for
@@ -49,6 +49,13 @@ export type FeatureKey = 'bread';
 // until issue #1213 retired it along with everything it was hiding.
 const FLAG_KEY: Record<FeatureKey, string> = {
   bread: BREAD_FLAG_KEY,
+  // BROWSER-ONLY for as long as the library is browser-only, so the literal lives
+  // here rather than in @salt/observability. Epic #1372's Phase 4 gives the chef a
+  // tool that reads these pages from a Cloud Function, and THAT is when the key
+  // has to move next to `BREAD_FLAG_KEY` — a page written under the flag would
+  // otherwise reach a household member the feature is hidden from, through an
+  // answer no browser gate can reach.
+  library: 'library',
 };
 
 export interface FeatureGate {
@@ -103,3 +110,6 @@ export function featureGate(feature: FeatureKey): Readable<FeatureGate> {
 
 /** Bread — formulas, batches and everything epic #778 is still building. */
 export const breadGate = featureGate('bread');
+
+/** The library — the kitchen facts that are not recipes (epic #1372). */
+export const libraryGate = featureGate('library');

@@ -48,39 +48,66 @@ describe('navItems', () => {
     });
     expect(navItems.map((i) => i.id)).not.toContain('batches');
   });
+
+  it('puts the library in the overflow, not in the primary four', () => {
+    // Epic #1372, and the same argument as Batches above: the primary four are
+    // full, a reference page is something you go looking for rather than live in,
+    // and the library is family-shared so it is not part of "Kitchen" either.
+    expect(overflowNavItems.find((i) => i.id === 'library')).toMatchObject({
+      label: 'Library',
+      href: '#/library',
+    });
+    expect(navItems.map((i) => i.id)).not.toContain('library');
+  });
 });
 
 describe('overflowNavItemsFor', () => {
   // Issue #831. Bread is being built in the open, so the household must not see a
-  // door to it. What matters here is that the entry is ABSENT rather than present
+  // door to it; epic #1372's library is the second feature behind the same
+  // mechanism. What matters here is that the entry is ABSENT rather than present
   // and disabled — nothing may hint that a feature is being withheld.
 
-  it('keeps Batches when bread is on for this person', () => {
-    expect(overflowNavItemsFor({ bread: true }).map((i) => i.id)).toEqual(
-      overflowNavItems.map((i) => i.id),
-    );
+  const ALL_ON = { bread: true, library: true };
+  const ALL_OFF = { bread: false, library: false };
+  const GATED = { batches: 'bread', library: 'library' } as const;
+
+  it('keeps every destination when both features are on for this person', () => {
+    expect(overflowNavItemsFor(ALL_ON).map((i) => i.id)).toEqual(overflowNavItems.map((i) => i.id));
   });
 
-  it('removes Batches entirely when bread is gated', () => {
-    const ids = overflowNavItemsFor({ bread: false }).map((i) => i.id);
+  it.each(Object.entries(GATED))('removes %s entirely when its feature is gated', (id, feature) => {
+    const ids = overflowNavItemsFor({ ...ALL_ON, [feature]: false }).map((i) => i.id);
 
-    expect(ids).not.toContain('batches');
+    expect(ids).not.toContain(id);
   });
 
-  it('leaves every other destination alone either way', () => {
+  // The two gates are independent, which is the property a single shared boolean
+  // would silently lose: gating one feature must not take the other's door with it.
+  it.each(Object.entries(GATED))(
+    'leaves the other gated entry alone when %s is off',
+    (_id, feature) => {
+      const ids = overflowNavItemsFor({ ...ALL_ON, [feature]: false }).map((i) => i.id);
+      const other = Object.entries(GATED).find(([, f]) => f !== feature)?.[0];
+
+      expect(ids).toContain(other);
+    },
+  );
+
+  it('leaves every ungated destination alone either way', () => {
     // The filter is narrow on purpose: an unfinished feature disappears, the
     // set-up-and-forget destinations do not move.
-    const untouched = overflowNavItems.filter((i) => i.id !== 'batches');
+    const gatedIds = Object.keys(GATED);
+    const untouched = overflowNavItems.filter((i) => !gatedIds.includes(i.id));
 
-    expect(overflowNavItemsFor({ bread: false })).toEqual(untouched);
-    expect(overflowNavItemsFor({ bread: true })).toEqual(overflowNavItems);
+    expect(overflowNavItemsFor(ALL_OFF)).toEqual(untouched);
+    expect(overflowNavItemsFor(ALL_ON)).toEqual(overflowNavItems);
   });
 
   it('never mutates the list it filters', () => {
     // App.svelte spreads the result into a fresh array every time the flag or the
     // admin badge changes; a filter that edited the source would empty the nav.
-    overflowNavItemsFor({ bread: false });
+    overflowNavItemsFor(ALL_OFF);
 
-    expect(overflowNavItems.map((i) => i.id)).toContain('batches');
+    expect(overflowNavItems.map((i) => i.id)).toEqual(expect.arrayContaining(Object.keys(GATED)));
   });
 });

@@ -232,6 +232,26 @@ service cloud.firestore {
     match /kitchenMemories/{memoryId} {
       allow read, write: if request.auth != null;
     }
+    // The library (epic #1372) — the household's reference pages: the jar table,
+    // the proven temperatures, the sous vide chart. FAMILY-SHARED for exactly the
+    // reason the notes above are: a page about how this kitchen works belongs to
+    // whoever is standing in it, not to whoever typed it.
+    //
+    // So: NO ownerUid, and this is not a fifth per-user collection.
+    // `createdBy`/`lastEditedBy` are display NAMES denormalised at write time,
+    // audit only — never read to decide anything, and deliberately not uids,
+    // keeping the invariant recorded above.
+    //
+    // The browser-side feature key that hides this surface while it is being built
+    // is COSMETIC and lives in the app (apps/web-pwa/src/lib/featureGate.ts); it
+    // deliberately does not appear here. What is withheld is an unfinished screen,
+    // not somebody else's data.
+    //
+    // Mirrors the kitchenMemories block above, including its lack of a
+    // `resource == null` clause: this rule never dereferences `resource.data`.
+    match /libraryPages/{pageId} {
+      allow read, write: if request.auth != null;
+    }
     // Development settings (issue #238) — per-environment operator switches
     // (e.g. the canon-icon generation kill-switch). Any signed-in user may read
     // (the CF trigger uses the Admin SDK and bypasses rules anyway); only admins

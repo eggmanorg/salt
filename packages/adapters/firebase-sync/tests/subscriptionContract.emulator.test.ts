@@ -17,9 +17,9 @@
  * the consolidation changes which module calls it, which is precisely the noise
  * that stalls a refactor.
  *
- * ─── Why a table and not 28 describe blocks ──────────────────────────────────
+ * ─── Why a table and not 29 describe blocks ──────────────────────────────────
  * #928's finding is that these modules are one file copied 13 times. A test
- * suite that copies its body 28 times would be the same defect, one level up —
+ * suite that copies its body 29 times would be the same defect, one level up —
  * and would leave the next subscription uncovered by default. The table inverts
  * that: a new subscription is a row, and `covers every exported subscribe*`
  * below FAILS until the row exists. That guard is derived from the barrel, never
@@ -33,7 +33,7 @@
  *   • DOCUMENT   — one `T | null`. An absent document delivers `null`; a corrupt
  *     one is a `StorageError`/`corruption` on `onError`.
  * Those two rules are the CLAUDE.md adapter contract, and the table asserts them
- * uniformly rather than trusting 28 files to have implemented them the same way.
+ * uniformly rather than trusting 29 files to have implemented them the same way.
  *
  * ─── What pins #939 (query narrowing) ────────────────────────────────────────
  * EVERY row seeds a fixed, complete world and asserts EXACTLY what comes out of
@@ -43,7 +43,7 @@
  * more document in the answer satisfies just as happily. The world always has
  * two halves: the documents the subscription must return (`seed` plus, where a
  * second in-bounds document is possible, `alsoDelivers`) and at least one decoy
- * it must not (`excluded`, required on all 28 rows).
+ * it must not (`excluded`, required on all 29 rows).
  *
  * That is the whole mechanism. Adding ANY narrowing to ANY subscription — a
  * `where`, a `limit`, a tighter path, a different document key — changes the
@@ -136,7 +136,7 @@
  * (`allow write: if false` — the Admin SDK writes them), gates `appSettings`,
  * `devSettings` and `members` behind `isAdmin()`, and requires the writer to BE
  * the owner for `chatSessions`, `cookSessions` and `kitchenTimers`. Eight of the
- * 28 could therefore never be seeded client-side, and a table with eight
+ * 29 could therefore never be seeded client-side, and a table with eight
  * exceptions is not a table.
  *
  * The important part is that this costs the suite nothing it needs. Reads are
@@ -169,6 +169,7 @@ import { subscribeEquipmentManifest } from '../src/equipmentManifestSubscription
 import { subscribeFormula } from '../src/formulaSubscription.js';
 import { subscribeGuidedPlan } from '../src/guidedPlanSubscription.js';
 import { subscribeKitchenMemories } from '../src/kitchenMemorySubscription.js';
+import { subscribeLibraryPages } from '../src/libraryPageSubscription.js';
 import { subscribeKitchenTimers } from '../src/kitchenTimerSubscription.js';
 import { subscribeKitchenTools } from '../src/kitchenToolSubscription.js';
 import {
@@ -342,7 +343,7 @@ function toRestFields(data: Record<string, unknown>): Record<string, unknown> {
 
 /**
  * Seed one document through the emulator's REST API, bypassing security rules.
- * See the header: eight of the 28 collections are closed to client writes, so
+ * See the header: eight of the 29 collections are closed to client writes, so
  * this is the only door that seeds all of them the same way.
  */
 async function writeAs(path: string[], data: Record<string, unknown>): Promise<void> {
@@ -541,6 +542,19 @@ const fx = {
     createdAt: NOW,
   }),
   kitchenTimers: (uid: string) => ({ ownerUid: uid, timers: [] }),
+  libraryPage: (id: string) => ({
+    id,
+    schemaVersion: 1,
+    kind: 'note',
+    title: 'Weck jars',
+    body: '| Model | Brim |\n| --- | --- |\n| 742 | 580 g |',
+    tags: ['Fermentation'],
+    createdAt: NOW,
+    updatedAt: NOW,
+    createdBy: 'D',
+    lastEditedBy: 'D',
+    revisions: [],
+  }),
   kitchenTool: (id: string) => ({
     id,
     schemaVersion: 1,
@@ -955,6 +969,22 @@ const collectionCases: CollectionCase[] = [
     },
   },
   {
+    name: 'subscribeLibraryPages',
+    subscribe: (on, err) => subscribeLibraryPages((pages) => on(pages.map((p) => p.id)), err),
+    id: 'page-1',
+    seed: () => writeAs(['libraryPages', 'page-1'], fx.libraryPage('page-1')),
+    alsoDelivers: {
+      ids: ['page-2'],
+      seed: () => writeAs(['libraryPages', 'page-2'], fx.libraryPage('page-2')),
+    },
+    corrupt: { id: 'bad', seed: () => writeAs(['libraryPages', 'bad'], CORRUPT) },
+    excluded: {
+      ids: [NESTED_DECOY_ID],
+      what: NESTED_DECOY_WHAT,
+      seed: () => writeAs(nestedPath('libraryPages'), fx.libraryPage(NESTED_DECOY_ID)),
+    },
+  },
+  {
     name: 'subscribeMembers',
     subscribe: (on, err) => subscribeMembers((members) => on(members.map((m) => m.id)), err),
     id: 'a@b.test',
@@ -1312,7 +1342,7 @@ describe('subscription contract — table coverage', () => {
     // #928 asks for: the shape only exists once to copy from, and the table is
     // what notices when someone copies it anyway.
     expect(tabled).toEqual(exported);
-    expect(exported).toHaveLength(28);
+    expect(exported).toHaveLength(29);
   });
 
   it('every row is uniquely named', () => {
@@ -1457,7 +1487,7 @@ describe.each(collectionCases)('$name (collection)', (c) => {
     // client: once the control has the document, the unsubscribed listener would
     // have had it too. Sleeping a fixed interval instead would be an arbitrary
     // sleep (docs/unit-test-spec.md UT-F3) — on a slow run it proves nothing,
-    // and on a fast one it is dead time in 28 rows. The control settles its own
+    // and on a fast one it is dead time in 29 rows. The control settles its own
     // initial snapshot before the write, so this row still issues exactly one
     // write under an attached listener (see the corrupt row's note).
     const control: string[][] = [];
@@ -1704,7 +1734,7 @@ describe.each(documentCases)('$name (document)', (c) => {
     // client: once the control has the document, the unsubscribed listener would
     // have had it too. Sleeping a fixed interval instead would be an arbitrary
     // sleep (docs/unit-test-spec.md UT-F3) — on a slow run it proves nothing,
-    // and on a fast one it is dead time in 28 rows. The control settles its own
+    // and on a fast one it is dead time in 29 rows. The control settles its own
     // initial snapshot before the write, so this row still issues exactly one
     // write under an attached listener (see the corrupt row's note).
     const control: unknown[] = [];

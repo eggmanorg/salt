@@ -129,6 +129,16 @@ export {
   saveKitchenMemory,
   deleteKitchenMemory,
 } from './kitchenMemorySubscription.js';
+// The library (epic #1372): the household's reference pages — jar tables, proven
+// temperatures, a sous vide chart. Family-shared, one document per page, and read
+// UNFILTERED: tens of documents, with search and tag filtering done client-side,
+// so there is no query and no composite index. Same list-read contract as the
+// notes above — a corrupt page is skipped, never allowed to empty the library.
+export {
+  subscribeLibraryPages,
+  saveLibraryPage,
+  deleteLibraryPage,
+} from './libraryPageSubscription.js';
 export { savePushSubscription, deletePushSubscription } from './pushSubscriptionSync.js';
 export { streamChefChat, callGenerateChatTitle } from './chatCallables.js';
 export { callAuthorRecipe } from './authorRecipeCallable.js';
