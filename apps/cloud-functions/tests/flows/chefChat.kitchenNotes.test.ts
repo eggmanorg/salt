@@ -138,6 +138,7 @@ describe('findKitchenNotes — what comes back', () => {
     const result = await findKitchenNotesForChef(dbWith([{ id: 'p-1', data: pageDoc() }]), {});
 
     expect(result).toEqual({
+      ok: true,
       matches: [
         {
           id: 'p-1',
@@ -191,10 +192,37 @@ describe('findKitchenNotes — what comes back', () => {
     const db = { collection: () => ({ get: () => Promise.reject(new Error('boom')) }) } as never;
 
     await expect(findKitchenNotesForChef(db, {})).resolves.toEqual({
+      ok: false,
       matches: [],
       totalNotes: 0,
     });
     expect(mockWarn).toHaveBeenCalled();
+  });
+
+  it('reports a failed search as a failure, never as an empty library', async () => {
+    // The finding this pins: `{ matches: [], totalNotes: 0 }` alone is
+    // byte-identical to a household that has genuinely written nothing, and
+    // KITCHEN_NOTES_FRAMING tells the chef to say so plainly. `ok` is the only
+    // thing that tells the two apart, so a failed read must set it false.
+    const db = { collection: () => ({ get: () => Promise.reject(new Error('boom')) }) } as never;
+
+    const result = await findKitchenNotesForChef(db, {});
+    expect(result.ok).toBe(false);
+    // And a genuinely empty library — the case this must not be confused with —
+    // still reports ok: true.
+    expect(await findKitchenNotesForChef(dbWith([]), {})).toMatchObject({
+      ok: true,
+      totalNotes: 0,
+    });
+  });
+
+  it('browses newest edit first when no query narrows it', async () => {
+    const library = [
+      { id: 'p-older', data: pageDoc({ id: 'p-older', updatedAt: '2026-01-01T00:00:00.000Z' }) },
+      { id: 'p-newer', data: pageDoc({ id: 'p-newer', updatedAt: '2026-03-01T00:00:00.000Z' }) },
+    ];
+    const result = await findKitchenNotesForChef(dbWith(library), {});
+    expect(result.matches.map((m) => m.id)).toEqual(['p-newer', 'p-older']);
   });
 });
 
@@ -282,6 +310,11 @@ describe('the kitchen-notes tools the model is shown', () => {
   it('tells the model that found:false is not "deleted"', () => {
     expect(read?.description).toMatch(/never state that it has been deleted/i);
     expect(read?.description).toMatch(/never invent its contents/i);
+  });
+
+  it('tells the model that ok:false means the search failed, not that nothing was found', () => {
+    expect(find?.description).toMatch(/ok comes back false/i);
+    expect(find?.description).toMatch(/never say they have written nothing/i);
   });
 });
 

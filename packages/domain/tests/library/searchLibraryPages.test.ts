@@ -20,6 +20,7 @@ const page = (over: Partial<LibraryPageCandidate> = {}): LibraryPageCandidate =>
   title: 'Sous vide times',
   tags: ['sous-vide'],
   body: 'Chuck at 65 °C for 24 hours.',
+  updatedAt: '2026-01-01T00:00:00.000Z',
   ...over,
 });
 
@@ -39,6 +40,18 @@ const kraut = page({
 describe('searchLibraryPages — the filter', () => {
   it('browses the whole library when no query is given', () => {
     expect(searchLibraryPages([jars, kraut]).map((p) => p.id)).toEqual(['p-jars', 'p-kraut']);
+  });
+
+  it('browses newest edit first, as the header claims', () => {
+    // The claim under test: `searchLibraryPages.ts`'s own header says a blank
+    // query browses "the whole library, newest edit first". Equal `updatedAt`
+    // above (both default) leaves insertion order as the only visible ordering,
+    // which proves nothing about sorting — this pins the sort itself.
+    const older = page({ id: 'p-older', updatedAt: '2026-01-01T00:00:00.000Z' });
+    const newer = page({ id: 'p-newer', updatedAt: '2026-06-01T00:00:00.000Z' });
+    expect(searchLibraryPages([older, newer]).map((p) => p.id)).toEqual(['p-newer', 'p-older']);
+    // Order of the input must not matter — only updatedAt does.
+    expect(searchLibraryPages([newer, older]).map((p) => p.id)).toEqual(['p-newer', 'p-older']);
   });
 
   it('requires EVERY word of the query to appear somewhere in the page', () => {

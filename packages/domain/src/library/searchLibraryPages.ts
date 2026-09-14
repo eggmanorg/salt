@@ -8,6 +8,8 @@ export interface LibraryPageCandidate {
   readonly title: string;
   readonly tags: readonly string[];
   readonly body: string;
+  /** ISO. What a blank query sorts on — see the "browses" note below. */
+  readonly updatedAt: string;
 }
 
 export interface LibraryPageSearchFilters {
@@ -55,7 +57,13 @@ export function searchLibraryPages<T extends LibraryPageCandidate>(
     LIBRARY_PAGE_SEARCH_CEILING,
   );
   const tokens = tokenise(filters.query ?? '');
-  if (tokens.length === 0) return pages.slice(0, limit);
+  if (tokens.length === 0) {
+    // Newest edit first, as the header above promises. ISO strings compare
+    // correctly as plain strings, so no Date parsing is needed.
+    return [...pages]
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+      .slice(0, limit);
+  }
 
   const named: T[] = [];
   const mentioned: T[] = [];

@@ -109,6 +109,10 @@ function dbWith(stored: Record<string, Record<string, unknown>>): {
             }),
           set: (doc: Record<string, unknown>) => {
             writes.push({ id, doc });
+            // A real `set` replaces what is stored, so the next `get` on this db
+            // sees it too — needed for the consecutive-write tests below, where
+            // each write has to read back what the previous one just wrote.
+            stored[id] = doc;
             return Promise.resolve();
           },
         }),
@@ -234,6 +238,106 @@ describe('writeKitchenNote — replacing a note', () => {
   });
 });
 
+// ─── Coalescing: a chatty run of chef writes must not evict a human's version ─
+//
+// The browser captures one revision per EDITING SESSION; a naive per-write
+// capture here is one revision per TOOL CALL, and ten of those in one
+// conversation evicts the human-authored version sitting at `revisions[9]` —
+// permanently, since `pushRevision` is the only thing that grows the array and
+// it has no memory of which entries matter more. This is the property the
+// write tool's whole permission rests on (#1375's restorable history is what
+// makes a bad chef write "noticeable and reversible"), so it gets its own test
+// rather than riding along with the cap test above.
+
+describe('writeKitchenNote — coalescing consecutive chef writes', () => {
+  it('keeps a preceding human-authored revision through many consecutive chef writes', async () => {
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() }); // authored & last-edited by 'Daniel'
+
+    // More than LIBRARY_PAGE_REVISION_CAP consecutive chef writes, each reading
+    // back what the previous one just wrote (the `set` above now persists into
+    // `stored`) — exactly a chatty session, "write it up", "put it in a table",
+    // "add the tulips", and so on.
+    for (let i = 0; i < LIBRARY_PAGE_REVISION_CAP + 5; i++) {
+      // Deliberately serial: each write has to read back what the previous one
+      // left in `stored` before it can decide whether to coalesce.
+      await writeKitchenNoteForChef(db, {
+        id: 'p-jars',
+        title: 'The Weck jars',
+        body: `chef draft ${i}`,
+      });
+    }
+
+    const last = writes.at(-1)!.doc as {
+      revisions: { title: string; body: string; savedBy: string }[];
+    };
+    // Exactly one revision — Daniel's original CONTENT, filed the moment the
+    // first chef write replaced it (`savedBy` names whoever did the replacing,
+    // same as every other revision in this file, so it reads 'The chef' even
+    // though the archived title and body are Daniel's). Without the coalescing
+    // guard this goes red: a fresh revision per call would fill the ten-deep
+    // history and push Daniel's version out entirely.
+    expect(last.revisions).toHaveLength(1);
+    expect(last.revisions[0]).toMatchObject({
+      title: 'The Weck jars',
+      body: 'A tapered 1 L jar.',
+      savedBy: 'The chef',
+    });
+  });
+
+  it('still captures a revision on the FIRST chef write that replaces a human version', async () => {
+    // The property above must not come from "the chef never pushes a
+    // revision" — it comes from "not on top of its own run". The very first
+    // chef write in a session still has to capture whatever a human left.
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() });
+
+    await writeKitchenNoteForChef(db, {
+      id: 'p-jars',
+      title: 'The Weck jars',
+      body: 'chef draft 1',
+    });
+
+    expect(writes[0]!.doc).toMatchObject({
+      revisions: [{ title: 'The Weck jars', body: 'A tapered 1 L jar.', savedBy: 'The chef' }],
+    });
+  });
+
+  it('resumes capturing once a human write follows a run of chef writes', async () => {
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() });
+
+    await writeKitchenNoteForChef(db, { id: 'p-jars', title: 'The Weck jars', body: 'chef draft' });
+
+    // A human save landing in between — same shape the browser's own write path
+    // produces: `lastEditedBy` is no longer 'The chef'. Written straight into the
+    // stub's store rather than through the tool, since nothing in this tool can
+    // produce a human-authored write.
+    const dbUntyped = db as unknown as {
+      collection: (name: string) => {
+        doc: (id: string) => { set: (doc: unknown) => Promise<void> };
+      };
+    };
+    await dbUntyped
+      .collection('libraryPages')
+      .doc('p-jars')
+      .set({
+        ...pageDoc(),
+        title: 'The Weck jars',
+        body: 'a human edit, by hand',
+        lastEditedBy: 'Daniel',
+        revisions: [],
+      });
+
+    await writeKitchenNoteForChef(db, {
+      id: 'p-jars',
+      title: 'The Weck jars',
+      body: 'chef draft after the human edit',
+    });
+
+    const revisions = (writes.at(-1)!.doc as { revisions: { body: string; savedBy: string }[] })
+      .revisions;
+    expect(revisions[0]).toMatchObject({ body: 'a human edit, by hand', savedBy: 'The chef' });
+  });
+});
+
 // ─── Refusing, without ever throwing ─────────────────────────────────────────
 
 describe('writeKitchenNote — what it refuses', () => {
@@ -259,6 +363,36 @@ describe('writeKitchenNote — what it refuses', () => {
     expect(longTitle.problem).toMatch(new RegExp(String(LIBRARY_PAGE_TITLE_MAX)));
     expect(huge).toMatchObject({ saved: false, id: null });
     expect(huge.problem).toMatch(new RegExp(String(LIBRARY_PAGE_BODY_MAX)));
+    expect(writes).toEqual([]);
+  });
+
+  it('refuses a blank or whitespace-only body, so a note cannot be emptied', async () => {
+    // WRITE_KITCHEN_NOTE_DESCRIPTION tells the model plainly: "You cannot delete
+    // a note and you cannot empty one." A blank body is a `set`, not a delete, so
+    // the no-delete-path scan below cannot see this failure mode — this is the
+    // test that actually exercises it, against both a fresh note and a
+    // replacement of one that already has content.
+    const { db: freshDb, writes: freshWrites } = dbWith({});
+    const blankNew = await writeKitchenNoteForChef(freshDb, { title: 'Empty', body: '' });
+    const whitespaceNew = await writeKitchenNoteForChef(freshDb, {
+      title: 'Empty',
+      body: '   \n\t  ',
+    });
+    expect(blankNew).toMatchObject({ saved: false, id: null });
+    expect(blankNew.problem).toMatch(/body/i);
+    expect(whitespaceNew).toMatchObject({ saved: false, id: null });
+    expect(freshWrites).toEqual([]);
+
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() });
+    const blankReplace = await writeKitchenNoteForChef(db, {
+      id: 'p-jars',
+      title: 'The Weck jars',
+      body: '',
+    });
+    expect(blankReplace).toMatchObject({ saved: false, id: null });
+    expect(blankReplace.problem).toMatch(/body/i);
+    // Refused, not emptied: the existing note is left exactly as it was, and no
+    // write ever reaches Firestore.
     expect(writes).toEqual([]);
   });
 
@@ -318,6 +452,10 @@ describe('the write tool the model is shown', () => {
   });
 
   it('tells the model that the body REPLACES the note, and that it cannot delete', () => {
+    // A description assertion, kept because it is still a true, useful claim —
+    // but it is prompt text, not a behaviour guarantee, and the blank-body test
+    // above is what actually pins "cannot empty one" rather than merely the
+    // sentence asserting it.
     expect(tool?.description).toMatch(/REPLACES everything the note held/);
     expect(tool?.description).toMatch(/cannot delete a note/i);
   });

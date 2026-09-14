@@ -98,8 +98,19 @@ const LEAFLET_MARKER = 'leaflet-container';
 // `web-pwa` started reaching a cloud-functions-only schema; either way the
 // whole ~70-schema barrel is likely being retained again, the way it was
 // before this guard existed.
-const CF_ONLY_SCHEMA_MARKER =
-  'How many notes to return. Leave it out: the default is 10, and 25 is the most.';
+// KEYED ON A SCHEMA FIELD NAME, NOT A `.describe()` SENTENCE. findKitchenNotes.ts's
+// own header tells readers to edit every `.describe()` string "as prompt work, not
+// as comments" — so a marker built from that prose would silently stop guarding the
+// next time someone did exactly that, with nothing here to notice. `totalNotes` is
+// a Zod object-literal property key (`FindKitchenNotesOutputSchema.totalNotes`),
+// not prompt text: a minifier does not rename object property keys (Zod reads
+// `.shape` off them by name at runtime, so doing so would break the schema), and
+// renaming the field itself is a structural change that already breaks the
+// handler, the exported type and every test touching it — far too loud to happen
+// as an incidental prompt edit. Confirmed nowhere else in the repo (`grep -rn
+// totalNotes`) so a hit here cannot be some unrelated feature's field of the same
+// name.
+const CF_ONLY_SCHEMA_MARKER = 'totalNotes';
 
 function fail(message) {
   console.error(`\n✖ ${message}\n`);
@@ -169,7 +180,7 @@ for (const { href, bytes } of boot) {
   if (text.includes(CF_ONLY_SCHEMA_MARKER)) {
     fail(
       `A cloud-functions-only @salt/domain schema is in the boot graph (${href}).\n` +
-        `  FindKitchenNotesInputSchema is named only by apps/cloud-functions' chefChat flow, so\n` +
+        `  The findKitchenNotes schemas are named only by apps/cloud-functions' chefChat flow, so\n` +
         `  this means packages/domain/package.json lost its "sideEffects": false (or stopped\n` +
         `  being true of the code) and Rollup is retaining the whole ~70-schema barrel again.`,
     );

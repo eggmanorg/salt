@@ -517,6 +517,13 @@ export const readEquipmentDetailTool = ai.defineTool(
  * A corrupt document is SKIPPED rather than thrown on (Rule 10, and the Zod
  * failure table in docs/data-model.md): one unparseable page must not cost the
  * household every other one, and a tool never throws out of the model's loop.
+ *
+ * ON FAILURE this still returns Rule-10-shaped `{ matches: [], totalNotes: 0 }`
+ * — indistinguishable on those two fields alone from a genuinely empty library —
+ * but `ok: false` rides alongside it precisely so the two are NOT indistinguishable
+ * to the model. `KITCHEN_NOTES_FRAMING` tells the chef to say plainly when a
+ * household has written nothing; without `ok` a transient Firestore error would
+ * make that the same confident, wrong sentence.
  */
 export async function findKitchenNotesForChef(
   db: ReturnType<typeof getFirestore>,
@@ -535,13 +542,20 @@ export async function findKitchenNotesForChef(
         continue;
       }
       const page = parsed.data;
-      pages.push({ id: page.id, title: page.title, tags: page.tags, body: page.body });
+      pages.push({
+        id: page.id,
+        title: page.title,
+        tags: page.tags,
+        body: page.body,
+        updatedAt: page.updatedAt,
+      });
     }
     if (skipped > 0) {
       logger.warn('chefChat: findKitchenNotes skipped notes that failed validation', { skipped });
     }
 
     return {
+      ok: true,
       matches: searchLibraryPages(pages, input).map((page) => ({
         id: page.id,
         title: page.title,
@@ -552,7 +566,11 @@ export async function findKitchenNotesForChef(
     };
   } catch (err) {
     logger.warn('chefChat: findKitchenNotes failed', { err });
-    return { matches: [], totalNotes: 0 };
+    // `ok: false` is load-bearing: without it this is byte-for-byte the answer a
+    // household with zero notes gets, and KITCHEN_NOTES_FRAMING tells the chef to
+    // say plainly they have written nothing — which would be a confident, wrong
+    // thing to tell a household with forty notes over a transient read failure.
+    return { ok: false, matches: [], totalNotes: 0 };
   }
 }
 
@@ -572,7 +590,11 @@ helping. Do not search to check an answer you are already sure of, and when in d
 
 What comes back is SHALLOW — a title, its tags and the opening of the note. That is very often the whole answer: \
 if the summary already gives the number they asked for, use it and say which note it came from. Open a note with \
-readKitchenNote only when the detail you need is further in.`;
+readKitchenNote only when the detail you need is further in.
+
+If ok comes back false, the search itself could not run — a lookup problem, not an empty set of notes. Say \
+plainly that you could not check their notes just now; never say they have written nothing about it, and never \
+answer as though totalNotes were the true count.`;
 
 export const findKitchenNotesTool = ai.defineTool(
   {
@@ -676,9 +698,15 @@ const refused = (problem: string): WriteKitchenNoteOutput => ({
  *
  *   - this tool CANNOT DELETE. There is no delete path in it, and no other tool
  *     has one either; the suite scans this whole module for one;
+ *   - this tool CANNOT EMPTY A NOTE either — a blank or whitespace-only body is
+ *     refused before any write, the same shape as the blank-title guard;
  *   - every replacement goes through `pushRevision`, so the version it replaced is
  *     recoverable — and the cap still holds, because `pushRevision` is the only
  *     thing that ever grows the array;
+ *   - CONSECUTIVE CHEF WRITES COALESCE: a replacement only pushes a new revision
+ *     when the version it replaces was NOT itself written by the chef, so a
+ *     chatty run of chef writes cannot evict the human-authored version beneath
+ *     them the way one revision per tool call otherwise would;
  *   - it writes to `libraryPages` and to no other collection.
  *
  * It also never THROWS (Rule 10): a refusal comes back as `saved: false` with a
@@ -695,6 +723,17 @@ export async function writeKitchenNoteForChef(
     return refused(
       `that title is too long — a note's title holds ${LIBRARY_PAGE_TITLE_MAX} characters`,
     );
+  }
+  // A blank or whitespace-only body would `set` a page with nothing left in it —
+  // a REPLACEMENT write, structurally nothing like a removal, so it is invisible
+  // to the no-removal-path scan at the bottom of this module's test file. It is
+  // exactly the move the tool's own description tells the model it does not have:
+  // "You cannot delete a note and you cannot empty one." Refused here, the same
+  // shape as the blank-title guard three lines up, rather than left to the schema
+  // (Rule 10 — a refusal the chef can read out, not a validation error inside its
+  // own tool loop).
+  if (input.body.trim() === '') {
+    return refused('a note needs some body text, and that one was blank');
   }
   // The number comes from the schema's own constant, so there is one source for
   // it. This is NOT a second copy of the browser's append arithmetic
@@ -752,6 +791,26 @@ export async function writeKitchenNoteForChef(
     }
 
     const current = parsed.data;
+    // COALESCE CONSECUTIVE CHEF WRITES. The browser captures one revision per
+    // EDITING SESSION (`beginLibraryEdit`'s in-memory snapshot), never one per
+    // keystroke; the chef has no such session, and a write per TOOL CALL is the
+    // literal equivalent of pushing a revision per keystroke — "write it up",
+    // "put it in a table", "add the tulips", "sort them by capacity" is four
+    // writes for one piece of work, and a chatty back-and-forth easily reaches
+    // `LIBRARY_PAGE_REVISION_CAP` calls, evicting the one human-authored version
+    // the whole history exists to protect (the property #1377 relies on to permit
+    // writing here when #1373 refused it for equipment).
+    //
+    // The fix reuses `lastEditedBy` as the session boundary rather than inventing
+    // one: if the version being replaced was ITSELF the chef's own last write,
+    // this call is a continuation of the same run, not a new edit displacing a
+    // human's, so no revision is pushed and the array is carried over untouched.
+    // The moment a human saves in between — `lastEditedBy` becomes their name —
+    // the next chef write sees that and captures it, exactly as today. A human's
+    // version therefore survives any number of consecutive chef writes that
+    // follow it, however many, and `pushRevision`'s cap is never the thing that
+    // has to hold that promise.
+    const chefIsContinuingItsOwnRun = current.lastEditedBy === CHEF_AUTHOR_NAME;
     const page: LibraryPageDoc = {
       ...current,
       title,
@@ -760,12 +819,14 @@ export async function writeKitchenNoteForChef(
       lastEditedBy: CHEF_AUTHOR_NAME,
       // `savedBy` is whoever REPLACED the version being filed, matching the
       // browser's own snapshot at `beginLibraryEdit`.
-      revisions: pushRevision(current.revisions, {
-        title: current.title,
-        body: current.body,
-        savedAt: now,
-        savedBy: CHEF_AUTHOR_NAME,
-      }),
+      revisions: chefIsContinuingItsOwnRun
+        ? current.revisions
+        : pushRevision(current.revisions, {
+            title: current.title,
+            body: current.body,
+            savedAt: now,
+            savedBy: CHEF_AUTHOR_NAME,
+          }),
     };
     await ref.set(page);
     return { saved: true, id: page.id, created: false, problem: null };
@@ -832,7 +893,8 @@ replaces what was there. You cannot delete a note; that is theirs to do on the n
 THESE ARE NOT THEIR RECIPES. Their saved dishes are a different thing with a different pair of tools, described \
 above. A note is a reference page: a table, a list of kit, a set of numbers.
 
-Say plainly when they have written nothing about it, then answer as you normally would. Their notes are one more \
+Say plainly when they have written nothing about it, then answer as you normally would. That is different from \
+findKitchenNotes failing to run at all — see its own description for what to say then. Their notes are one more \
 thing you can reach, not a place you have to go first.`;
 
 /**

@@ -58,6 +58,23 @@ export const KitchenNoteMatchSchema = z.object({
 });
 
 export const FindKitchenNotesOutputSchema = z.object({
+  /**
+   * False only when the SEARCH ITSELF failed — a Firestore error, not an empty
+   * library. `readKitchenNoteForChef` already faces this shape of problem: three
+   * different causes (gone, corrupt, read threw) all have to collapse into one
+   * signal the chef can act on, and there it is `found: false`. Here the
+   * equivalent collapse — a catch returning empty matches — is indistinguishable
+   * from a household that has genuinely written nothing, and `ok` is what keeps
+   * the two apart so the chef is never handed a failure dressed as an empty
+   * library.
+   */
+  ok: z
+    .boolean()
+    .describe(
+      'False when the search itself could not run. matches and totalNotes are both empty either ' +
+        'way, so this is the only field that tells "the lookup failed" apart from "they have ' +
+        'written nothing" — two very different things to say out loud.',
+    ),
   matches: z.array(KitchenNoteMatchSchema),
   /**
    * How many notes the household has written in total, before the query narrowed
