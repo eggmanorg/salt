@@ -10,6 +10,9 @@ import {
   addRule,
   removeRule,
   editRule,
+  editAccessoryNote,
+  editEquipmentNote,
+  setEquipmentKind,
 } from '@salt/domain';
 import type { EquipmentManifest } from '@salt/domain';
 import type { IdGenerator } from '../../src/equipment/ports/IdGenerator.js';
@@ -43,8 +46,10 @@ function makeItem(
     id,
     schemaVersion: 1 as const,
     name: 'Stand Mixer',
+    kind: 'equipment' as const,
     accessories: [],
     rules: [],
+    note: '',
     environment: null,
     updatedAt: NOW,
     ...overrides,
@@ -53,9 +58,9 @@ function makeItem(
 
 function makeAccessory(
   id: string,
-  overrides: Partial<{ name: string; owned: boolean; included: boolean }> = {},
+  overrides: Partial<{ name: string; owned: boolean; included: boolean; note: string }> = {},
 ) {
-  return { id, name: 'Dough Hook', owned: true, included: true, ...overrides };
+  return { id, name: 'Dough Hook', owned: true, included: true, note: '', ...overrides };
 }
 
 // ── addEquipment ─────────────────────────────────────────────────────────────
@@ -444,6 +449,187 @@ describe('editRule', () => {
       equipmentId: 'no-such',
       ruleIndex: 0,
       rule: 'rule',
+      now: NOW,
+    });
+    expect(result.kind).toBe('err');
+    if (result.kind !== 'err') return;
+    expect(result.error).toEqual({ kind: 'NotFound', resource: 'equipment', id: 'no-such' });
+  });
+});
+
+// ── editAccessoryNote (issue #1373) ──────────────────────────────────────────
+
+describe('editAccessoryNote', () => {
+  it('sets the note on one entry and leaves its siblings alone', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', {
+        accessories: [makeAccessory('acc-1'), makeAccessory('acc-2', { note: 'untouched' })],
+      }),
+    ]);
+    const result = editAccessoryNote(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: 'acc-1',
+      note: '  the only one that goes in the oven  ',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.accessories[0]!.note).toBe('the only one that goes in the oven');
+    expect(result.value.items[0]!.accessories[1]!.note).toBe('untouched');
+    expect(result.value.items[0]!.updatedAt).toBe(NOW2);
+  });
+
+  it('clears a note, because an empty note is a valid note', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', { accessories: [makeAccessory('acc-1', { note: 'something' })] }),
+    ]);
+    const result = editAccessoryNote(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: 'acc-1',
+      note: '   ',
+      now: NOW2,
+    });
+    expect(result.kind === 'ok' && result.value.items[0]!.accessories[0]!.note).toBe('');
+  });
+
+  it('never touches owned or included', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', {
+        accessories: [makeAccessory('acc-1', { owned: false, included: true })],
+      }),
+    ]);
+    const result = editAccessoryNote(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: 'acc-1',
+      note: 'a note',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.accessories[0]!.owned).toBe(false);
+    expect(result.value.items[0]!.accessories[0]!.included).toBe(true);
+  });
+
+  it('returns NotFound when equipmentId does not exist', () => {
+    const result = editAccessoryNote(emptyManifest(), {
+      equipmentId: 'no-such',
+      accessoryId: 'acc-1',
+      note: 'x',
+      now: NOW,
+    });
+    expect(result.kind).toBe('err');
+    if (result.kind !== 'err') return;
+    expect(result.error).toEqual({ kind: 'NotFound', resource: 'equipment', id: 'no-such' });
+  });
+
+  it('returns EQUIPMENT_ACCESSORY_NOT_FOUND when accessoryId does not exist', () => {
+    const manifest = manifestWith([makeItem('eq-1')]);
+    const result = editAccessoryNote(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: 'no-such',
+      note: 'x',
+      now: NOW,
+    });
+    expect(result.kind).toBe('err');
+    if (result.kind !== 'err') return;
+    expect(result.error).toEqual({
+      kind: 'ValidationError',
+      code: ErrorCode.EQUIPMENT_ACCESSORY_NOT_FOUND,
+    });
+  });
+});
+
+// ── editEquipmentNote (issue #1373) ───────────────────────────────────────────────
+
+describe('editEquipmentNote', () => {
+  it('sets the record note, trimmed, and stamps updatedAt', () => {
+    const manifest = manifestWith([makeItem('eq-1')]);
+    const result = editEquipmentNote(manifest, {
+      equipmentId: 'eq-1',
+      note: '  on a high shelf  ',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.note).toBe('on a high shelf');
+    expect(result.value.items[0]!.updatedAt).toBe(NOW2);
+  });
+
+  it('clears the note', () => {
+    const manifest = manifestWith([makeItem('eq-1', { note: 'something' })]);
+    const result = editEquipmentNote(manifest, { equipmentId: 'eq-1', note: '', now: NOW2 });
+    expect(result.kind === 'ok' && result.value.items[0]!.note).toBe('');
+  });
+
+  it('leaves rules alone — a note is not a rule', () => {
+    const manifest = manifestWith([makeItem('eq-1', { rules: ['Never process liquids'] })]);
+    const result = editEquipmentNote(manifest, { equipmentId: 'eq-1', note: 'a note', now: NOW2 });
+    expect(result.kind === 'ok' && result.value.items[0]!.rules).toEqual(['Never process liquids']);
+  });
+
+  it('returns NotFound when equipmentId does not exist', () => {
+    const result = editEquipmentNote(emptyManifest(), {
+      equipmentId: 'no-such',
+      note: 'x',
+      now: NOW,
+    });
+    expect(result.kind).toBe('err');
+    if (result.kind !== 'err') return;
+    expect(result.error).toEqual({ kind: 'NotFound', resource: 'equipment', id: 'no-such' });
+  });
+});
+
+// ── setEquipmentKind (issue #1373) ───────────────────────────────────────────
+
+describe('setEquipmentKind', () => {
+  it('flips the flag and stamps updatedAt', () => {
+    const manifest = manifestWith([makeItem('eq-1')]);
+    const result = setEquipmentKind(manifest, {
+      equipmentId: 'eq-1',
+      kind: 'family',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.kind).toBe('family');
+    expect(result.value.items[0]!.updatedAt).toBe(NOW2);
+  });
+
+  // THE PIN on "it moves nothing": the flag is words, so a round trip through
+  // `family` and back must leave the record byte-identical apart from the
+  // timestamp. If a future change ever makes `kind` drop an entry, clear a tick
+  // or rewrite a note, this goes red.
+  it('is words only — a round trip through family restores the record exactly', () => {
+    const original = makeItem('eq-1', {
+      accessories: [
+        makeAccessory('acc-1', { owned: false, included: true, note: 'not owned' }),
+        makeAccessory('acc-2', { owned: true, included: false, note: '' }),
+      ],
+      rules: ['Never sear in the non-stick'],
+      note: 'a record note',
+    });
+    const manifest = manifestWith([original]);
+    const toFamily = setEquipmentKind(manifest, {
+      equipmentId: 'eq-1',
+      kind: 'family',
+      now: NOW2,
+    });
+    expect(toFamily.kind).toBe('ok');
+    if (toFamily.kind !== 'ok') return;
+    const back = setEquipmentKind(toFamily.value, {
+      equipmentId: 'eq-1',
+      kind: 'equipment',
+      now: NOW,
+    });
+    expect(back.kind).toBe('ok');
+    if (back.kind !== 'ok') return;
+    expect(back.value.items[0]).toEqual(original);
+  });
+
+  it('returns NotFound when equipmentId does not exist', () => {
+    const result = setEquipmentKind(emptyManifest(), {
+      equipmentId: 'no-such',
+      kind: 'family',
       now: NOW,
     });
     expect(result.kind).toBe('err');

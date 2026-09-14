@@ -21,8 +21,8 @@ beforeEach(() => {
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
-function accessory(name: string, owned: boolean) {
-  return { id: `acc-${name}`, name, owned, included: false };
+function accessory(name: string, owned: boolean, note = '') {
+  return { id: `acc-${name}`, name, owned, included: false, note };
 }
 
 function item(
@@ -31,14 +31,20 @@ function item(
     accessories?: ReturnType<typeof accessory>[];
     rules?: string[];
     environment?: EquipmentEnvironmentDoc | null;
+    // Issue #1373. Default `'equipment'` and `''` so every test written before
+    // families existed still describes what it meant to describe.
+    kind?: 'equipment' | 'family';
+    note?: string;
   } = {},
 ) {
   return {
     id: `eq-${name}`,
     schemaVersion: 1 as const,
     name,
+    kind: opts.kind ?? ('equipment' as const),
     accessories: opts.accessories ?? [],
     rules: opts.rules ?? [],
+    note: opts.note ?? '',
     environment: opts.environment ?? null,
     updatedAt: '2026-07-01T00:00:00.000Z',
   };
@@ -342,5 +348,55 @@ describe('renderEquipmentManifest — environment', () => {
     expect(section).toContain('HOLDS A TEMPERATURE');
     expect(section).toContain('the listed figures are the truth about them');
     expect(section).toContain('kitchen counter is a perfectly good answer');
+  });
+});
+
+// ─── Phase 1 of issue #1373 is inert ─────────────────────────────────────────
+//
+// THE CLAIM, from the issue's Definition of Done: "at the end of Phase 1, all
+// five AI flows produce byte-identical prompt text to before the change." The
+// schema gained `kind` on an item and `note` on both an item and its entries,
+// and the renderer was not touched — so a record carrying all three must render
+// exactly as the same record without them.
+//
+// THIS TEST IS PHASE-SCOPED AND MEANT TO CHANGE. Phase 2 deliberately teaches
+// this renderer to label its row from `kind` and to drop the not-owned line; at
+// that point the first two expectations below stop being true and must be
+// rewritten, not deleted. What must survive Phase 2 unchanged is the third:
+// no note of any kind ever reaches a prompt.
+
+describe('renderEquipmentManifest — issue #1373 additive fields are inert in Phase 1', () => {
+  it('renders a family byte-identically to the same record as equipment', () => {
+    const entries = [accessory('28cm cast iron', true), accessory('20cm non-stick', true)];
+    const asEquipment = renderEquipmentManifest([item('Frying pans', { accessories: entries })]);
+    const asFamily = renderEquipmentManifest([
+      item('Frying pans', { accessories: entries, kind: 'family' }),
+    ]);
+    expect(asFamily).toBe(asEquipment);
+  });
+
+  it('renders a record with notes byte-identically to the same record without them', () => {
+    const bare = item('Magimix Cook Expert', {
+      accessories: [accessory('Thermo Bowl', true), accessory('XL Steamer Attachment', false)],
+      rules: ['has the upgraded firmware'],
+    });
+    const noted = {
+      ...bare,
+      note: 'on a high shelf and takes ages to wash; only for large volumes',
+      accessories: bare.accessories.map((a) => ({ ...a, note: `everything about ${a.name}` })),
+    };
+    expect(renderEquipmentManifest([noted])).toBe(renderEquipmentManifest([bare]));
+  });
+
+  it('puts no note text into the prompt, from an item or from an entry', () => {
+    const out = renderEquipmentManifest([
+      item('Magimix Cook Expert', {
+        accessories: [accessory('Thermo Bowl', true, 'ENTRY_NOTE_SENTINEL')],
+        rules: ['has the upgraded firmware'],
+        note: 'ITEM_NOTE_SENTINEL',
+      }),
+    ]);
+    expect(out).not.toContain('ITEM_NOTE_SENTINEL');
+    expect(out).not.toContain('ENTRY_NOTE_SENTINEL');
   });
 });

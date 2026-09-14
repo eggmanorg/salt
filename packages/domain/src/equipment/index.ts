@@ -23,6 +23,12 @@ export type { AddRuleInput } from './commands/addRule.js';
 export { removeRule } from './commands/removeRule.js';
 export type { RemoveRuleInput } from './commands/removeRule.js';
 export { editRule } from './commands/editRule.js';
+export { editAccessoryNote } from './commands/editAccessoryNote.js';
+export type { EditAccessoryNoteInput } from './commands/editAccessoryNote.js';
+export { editEquipmentNote } from './commands/editEquipmentNote.js';
+export type { EditEquipmentNoteInput } from './commands/editEquipmentNote.js';
+export { setEquipmentKind } from './commands/setEquipmentKind.js';
+export type { SetEquipmentKindInput } from './commands/setEquipmentKind.js';
 export { setEquipmentEnvironment } from './commands/setEquipmentEnvironment.js';
 export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnvironment.js';
 

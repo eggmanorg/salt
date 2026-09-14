@@ -128,8 +128,10 @@ describe('unresolvedKitLabels — equipment the household owns (issue #954)', ()
     id: 'eq-1',
     schemaVersion: 1 as const,
     name: 'Magimix Cook Expert',
+    kind: 'equipment' as const,
     accessories: [],
     rules: [],
+    note: '',
     environment: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };

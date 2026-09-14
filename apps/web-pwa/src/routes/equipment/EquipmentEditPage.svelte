@@ -11,6 +11,10 @@
     DialogHeader,
     DialogTitle,
     Icon,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
     Textarea,
     TextField,
   } from '@salt/ui-components';
@@ -54,11 +58,14 @@
     addEquipmentRule,
     removeEquipmentRule,
     editEquipmentRule,
+    editEquipmentAccessoryNote,
+    editEquipmentItemNote,
+    setEquipmentItemKind,
   } from '../../lib/equipmentService.js';
   import { addToast } from '../../lib/toastStore.js';
   import EquipmentEnvironmentSection from './EquipmentEnvironmentSection.svelte';
   import type { DomainError, ReadResult } from '@salt/shared-types';
-  import type { EquipmentReferencePhoto } from '@salt/domain/schemas';
+  import type { EquipmentKind, EquipmentReferencePhoto } from '@salt/domain/schemas';
 
   interface Props {
     params: { id: string };
@@ -281,6 +288,44 @@
     push('/equipment');
   }
 
+  // ─── Equipment or family of kit (issue #1373) ─────────────────────────────
+  // ONE flag, and it buys words only. The list below is the same list either
+  // way — same field, same commands, same rows — so flipping this moves no
+  // entry and clears no tick. What it changes: the heading and add-button
+  // wording here, whether the owned tick is shown, and (Phase 2) the row label
+  // the chef's prompt uses.
+  const isFamily = $derived(item?.kind === 'family');
+  const entryNoun = $derived(isFamily ? 'item' : 'accessory');
+  let kindBusy = $state(false);
+
+  async function handleKindChange(kind: EquipmentKind): Promise<void> {
+    if (!item || item.kind === kind) return;
+    kindBusy = true;
+    const result = await setEquipmentItemKind(item.id, kind);
+    kindBusy = false;
+    if (result.kind !== 'ok') addToast('Failed to update this record.', 'destructive');
+  }
+
+  // ─── Notes (issue #1373) ──────────────────────────────────────────────────
+  // Free text, committed on BLUR rather than per keystroke: every save is a
+  // whole-document `setDoc` under LWW, so a write per letter typed would be
+  // both wasteful and a way to lose a concurrent edit from another device. The
+  // fields are seeded from the document and left uncontrolled while focused,
+  // which is the same treatment the name field above gets.
+  async function commitAccessoryNote(accessoryId: string, note: string): Promise<void> {
+    if (!item) return;
+    const existing = item.accessories.find((a) => a.id === accessoryId);
+    if (!existing || existing.note === note.trim()) return;
+    const result = await editEquipmentAccessoryNote(item.id, accessoryId, note);
+    if (result.kind !== 'ok') addToast('Failed to save note.', 'destructive');
+  }
+
+  async function commitItemNote(note: string): Promise<void> {
+    if (!item || item.note === note.trim()) return;
+    const result = await editEquipmentItemNote(item.id, note);
+    if (result.kind !== 'ok') addToast('Failed to save note.', 'destructive');
+  }
+
   // ─── Accessories ──────────────────────────────────────────────────────────
   let newAccessoryName = $state('');
   let accessoryBusy = $state(false);
@@ -292,7 +337,10 @@
   async function handleAddAccessory(): Promise<void> {
     if (!newAccessoryName.trim() || !item) return;
     accessoryBusy = true;
-    const result = await addEquipmentAccessory(item.id, newAccessoryName, false, false);
+    // A family is a list of what the household HAS, so its entries go in owned
+    // and the tick is never shown for them. The field is not overloaded — it is
+    // simply always true where it has no meaning.
+    const result = await addEquipmentAccessory(item.id, newAccessoryName, isFamily, false);
     accessoryBusy = false;
     if (result.kind !== 'ok') {
       addToast('Failed to add accessory.', 'destructive');
@@ -591,10 +639,28 @@
         {/if}
       </section>
 
-      <!-- Accessories section -->
+      <!-- Equipment or family of kit (issue #1373) -->
+      <section class="flex flex-col gap-1.5">
+        <span class="text-sm font-medium">What this record is</span>
+        <Select
+          value={item.kind}
+          disabled={kindBusy}
+          onValueChange={(v) => void handleKindChange(v as EquipmentKind)}
+        >
+          <SelectTrigger data-testid="equipment-kind-select">
+            {isFamily ? 'A family of kit — several similar things' : 'A piece of equipment'}
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="equipment">A piece of equipment</SelectItem>
+            <SelectItem value="family">A family of kit — several similar things</SelectItem>
+          </SelectContent>
+        </Select>
+      </section>
+
+      <!-- Accessories, or what a family contains — one list either way -->
       <section class="flex flex-col gap-3">
         <p class="text-sm font-medium">
-          Accessories
+          {isFamily ? 'Contains' : 'Accessories'}
           {#if item.accessories.length > 0}
             <span class="font-normal text-muted-foreground">({item.accessories.length})</span>
           {/if}
@@ -604,41 +670,60 @@
           <ul class="flex flex-col gap-1" data-testid="equipment-accessories">
             {#each item.accessories as acc (acc.id)}
               <li
-                class="flex items-center gap-3 rounded border border-border bg-card px-3 py-2 text-sm"
+                class="flex flex-col gap-2 rounded border border-border bg-card px-3 py-2 text-sm"
                 data-testid="equipment-accessory-row"
                 data-accessory-id={acc.id}
               >
-                <Checkbox
-                  checked={acc.owned}
-                  onCheckedChange={() => void handleToggleOwned(acc.id, acc.owned)}
-                  label=""
-                  aria-label="Owned"
-                />
-                <span class="flex-1">
-                  {acc.name}
-                  {#if acc.included}
-                    <span class="ml-1 text-xs text-muted-foreground">(included)</span>
+                <div class="flex items-center gap-3">
+                  <!-- The tick is a real fact about an APPLIANCE'S accessory —
+                       the Kenwood's Frozen Dessert Maker is something this
+                       household does not have. A family is a list of what it
+                       does have, so the control has nothing to say there and is
+                       not shown. The stored flag is untouched either way. -->
+                  {#if !isFamily}
+                    <Checkbox
+                      checked={acc.owned}
+                      onCheckedChange={() => void handleToggleOwned(acc.id, acc.owned)}
+                      label=""
+                      aria-label="Owned"
+                    />
                   {/if}
-                </span>
-                <Button
-                  variant="ghost"
+                  <span class="flex-1">
+                    {acc.name}
+                    {#if acc.included}
+                      <span class="ml-1 text-xs text-muted-foreground">(included)</span>
+                    {/if}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => (pendingAccessoryRemoval = { id: acc.id, name: acc.name })}
+                    aria-label="Remove {acc.name}"
+                  >
+                    Remove
+                  </Button>
+                </div>
+                <TextField
+                  value={acc.note}
                   size="sm"
-                  onclick={() => (pendingAccessoryRemoval = { id: acc.id, name: acc.name })}
-                  aria-label="Remove {acc.name}"
-                >
-                  Remove
-                </Button>
+                  placeholder="Note for the chef (optional)"
+                  aria-label="Note for {acc.name}"
+                  data-testid="equipment-accessory-note-input"
+                  onblur={(e) => void commitAccessoryNote(acc.id, e.currentTarget.value)}
+                />
               </li>
             {/each}
           </ul>
         {:else}
-          <p class="text-sm text-muted-foreground">No accessories yet.</p>
+          <p class="text-sm text-muted-foreground">
+            {isFamily ? 'Nothing in this family yet.' : 'No accessories yet.'}
+          </p>
         {/if}
 
         <div class="flex gap-2">
           <TextField
             bind:value={newAccessoryName}
-            placeholder="Add accessory…"
+            placeholder={isFamily ? 'Add item…' : 'Add accessory…'}
             disabled={accessoryBusy}
             class="flex-1"
             data-testid="equipment-add-accessory-input"
@@ -661,6 +746,26 @@
         </div>
       </section>
 
+      <!-- The record's own note (issue #1373) -->
+      <section class="flex flex-col gap-2">
+        <p class="text-sm font-medium">Note</p>
+        <p class="text-xs text-muted-foreground">
+          What the chef should read while it is deciding whether to use this — "on a high shelf and
+          takes ages to wash; only for genuinely large volumes". Read only when the chef looks this
+          record up, never sent with every message. Anything that must never be missed is a rule,
+          below.
+        </p>
+        <Textarea
+          value={item.note}
+          rows={3}
+          autoresize
+          placeholder="Optional"
+          aria-label="Note about {item.name}"
+          data-testid="equipment-item-note-input"
+          onblur={(e) => void commitItemNote(e.currentTarget.value)}
+        />
+      </section>
+
       <!-- Temperature and humidity (issue #1281) -->
       <EquipmentEnvironmentSection {item} />
 
@@ -673,7 +778,8 @@
           {/if}
         </p>
         <p class="text-xs text-muted-foreground">
-          Plain-English instructions that correct how AI uses this equipment in recipes.
+          Plain-English instructions that correct how AI uses this equipment in recipes. The chef is
+          always told these, whether or not it looks this record up.
         </p>
 
         {#if item.rules.length > 0}
@@ -849,7 +955,7 @@
     <div class="flex flex-col gap-4" data-testid="equipment-detail-remove-accessory-dialog">
       <DialogHeader>
         <DialogTitle>Remove "{pendingAccessoryRemoval?.name ?? ''}"?</DialogTitle>
-        <DialogDescription>This accessory will be removed from this equipment.</DialogDescription>
+        <DialogDescription>This {entryNoun} will be removed from this record.</DialogDescription>
       </DialogHeader>
       <DialogFooter>
         <Button

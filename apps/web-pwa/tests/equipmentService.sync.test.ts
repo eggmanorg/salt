@@ -31,6 +31,9 @@ import {
   addEquipmentRule,
   removeEquipmentRule,
   editEquipmentRule,
+  editEquipmentAccessoryNote,
+  editEquipmentItemNote,
+  setEquipmentItemKind,
   setEquipmentEnvironmentFor,
   memEquipmentManifestStore,
   __resetEquipmentServiceForTest,
@@ -220,8 +223,10 @@ describe('equipmentService — mutations after hydration', () => {
       id: 'pre-existing-id',
       schemaVersion: 1,
       name: 'Stand Mixer',
+      kind: 'equipment',
       accessories: [],
       rules: [],
+      note: '',
       environment: null,
       updatedAt: '2026-05-12T00:00:00.000Z',
     };
@@ -325,5 +330,105 @@ describe('memEquipmentManifestStore', () => {
     expect(getWritten()).toEqual(next);
     const loaded = await store.load();
     expect(loaded).toEqual({ kind: 'ok', value: next });
+  });
+});
+
+// ─── Notes and kind (issue #1373) ────────────────────────────────────────────
+
+describe('equipmentService — notes and kind', () => {
+  beforeEach(() => {
+    __resetEquipmentServiceForTest();
+    vi.clearAllMocks();
+    fs.saveEquipmentManifest.mockResolvedValue({ kind: 'ok' as const, value: undefined });
+  });
+
+  afterEach(() => {
+    __resetEquipmentServiceForTest();
+  });
+
+  async function hydrateWithItem(): Promise<{ cleanup: () => void; itemId: string }> {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(makeManifest());
+    const added = await addEquipmentItem('Magimix Cook Expert');
+    if (added.kind !== 'ok') throw new Error('fixture must add');
+    const itemId = added.value.items[0]!.id;
+    await addEquipmentAccessory(itemId, 'Thermo Bowl', true, true);
+    vi.clearAllMocks();
+    fs.saveEquipmentManifest.mockResolvedValue({ kind: 'ok' as const, value: undefined });
+    return { cleanup, itemId };
+  }
+
+  it('a new item is equipment with no note until said otherwise', async () => {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(makeManifest());
+    await addEquipmentItem('Stand Mixer');
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.kind).toBe('equipment');
+    expect(saved.items[0]!.note).toBe('');
+    cleanup();
+  });
+
+  it('captureEquipmentItem writes the kind it was given', async () => {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(makeManifest());
+    await captureEquipmentItem(
+      'Frying pans',
+      [{ name: '28cm cast iron', owned: true, included: false }],
+      'family',
+    );
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.kind).toBe('family');
+    expect(saved.items[0]!.accessories[0]!.owned).toBe(true);
+    cleanup();
+  });
+
+  it('editEquipmentAccessoryNote writes the note and saves once', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const accessoryId = get(equipment)!.items[0]!.accessories[0]!.id;
+    const result = await editEquipmentAccessoryNote(itemId, accessoryId, '  the seal is perished ');
+    expect(result.kind).toBe('ok');
+    expect(fs.saveEquipmentManifest).toHaveBeenCalledTimes(1);
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.accessories[0]!.note).toBe('the seal is perished');
+    expect(saved.items[0]!.accessories[0]!.owned).toBe(true);
+    cleanup();
+  });
+
+  it('editEquipmentItemNote writes the record note and leaves rules alone', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    await addEquipmentRule(itemId, 'Never process liquids');
+    vi.clearAllMocks();
+    fs.saveEquipmentManifest.mockResolvedValue({ kind: 'ok' as const, value: undefined });
+
+    const result = await editEquipmentItemNote(itemId, 'on a high shelf');
+    expect(result.kind).toBe('ok');
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.note).toBe('on a high shelf');
+    expect(saved.items[0]!.rules).toEqual(['Never process liquids']);
+    cleanup();
+  });
+
+  it('setEquipmentItemKind flips the flag and moves nothing else', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const before = get(equipment)!.items[0]!;
+    const result = await setEquipmentItemKind(itemId, 'family');
+    expect(result.kind).toBe('ok');
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.kind).toBe('family');
+    expect(saved.items[0]!.accessories).toEqual(before.accessories);
+    cleanup();
+  });
+
+  it('every one of the three refuses before the manifest has hydrated', async () => {
+    wireSubscription();
+    const cleanup = initEquipmentSync();
+    expect((await editEquipmentAccessoryNote('eq', 'acc', 'x')).kind).toBe('err');
+    expect((await editEquipmentItemNote('eq', 'x')).kind).toBe('err');
+    expect((await setEquipmentItemKind('eq', 'family')).kind).toBe('err');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    cleanup();
   });
 });

@@ -11,6 +11,7 @@ import type { IdentifyEquipmentResult, PopulateEquipmentEntryResult } from '@sal
 import type {
   EquipmentEnvironmentDoc,
   EquipmentIconDoc,
+  EquipmentKind,
   EquipmentReferencePhoto,
 } from '@salt/domain/schemas';
 import {
@@ -23,6 +24,9 @@ import {
   addRule,
   removeRule,
   editRule,
+  editAccessoryNote,
+  editEquipmentNote,
+  setEquipmentKind,
   setEquipmentEnvironment,
 } from '@salt/domain';
 import type { EquipmentManifest, EquipmentManifestPort } from '@salt/domain';
@@ -208,12 +212,13 @@ export interface CaptureResult {
 export async function captureEquipmentItem(
   name: string,
   accessories: readonly CaptureAccessoryInput[],
+  kind: EquipmentKind = 'equipment',
 ): Promise<ReadResult<CaptureResult, DomainError>> {
   const base = currentManifest();
   if (!base) return failure({ kind: 'NetworkError', reason: 'transient' });
 
   const now = new Date().toISOString();
-  const addResult = addEquipment(base, { name, now }, ids);
+  const addResult = addEquipment(base, { name, now, kind }, ids);
   if (addResult.kind !== 'ok') return addResult;
 
   // addEquipment appends; the new item is the last entry.
@@ -326,6 +331,58 @@ export async function editEquipmentRule(
     equipmentId,
     ruleIndex,
     rule,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
+// ─── Note and kind commands (issue #1373) ────────────────────────────────────
+// Notes are free text, so the caller commits on blur rather than per keystroke:
+// every save here is a whole-document `setDoc` under LWW, and one write per
+// letter typed would be both wasteful and a way to lose a concurrent edit.
+
+/** Set (or clear) the note on one entry under a record. */
+export async function editEquipmentAccessoryNote(
+  equipmentId: string,
+  accessoryId: string,
+  note: string,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = editAccessoryNote(manifest, {
+    equipmentId,
+    accessoryId,
+    note,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
+/** Set (or clear) the record's own note — distinct from its household rules. */
+export async function editEquipmentItemNote(
+  equipmentId: string,
+  note: string,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = editEquipmentNote(manifest, {
+    equipmentId,
+    note,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
+/** Say whether this record is a piece of equipment or a family of kit. */
+export async function setEquipmentItemKind(
+  equipmentId: string,
+  kind: EquipmentKind,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = setEquipmentKind(manifest, {
+    equipmentId,
+    kind,
     now: new Date().toISOString(),
   });
   return applyAndSave(result);

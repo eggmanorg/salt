@@ -298,8 +298,10 @@ describe('realtimeSubscriptions — Firestore emulator', () => {
         id: 'mixer-1',
         schemaVersion: 1,
         name: 'Stand Mixer',
-        accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
+        kind: 'equipment',
+        accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true, note: '' }],
         rules: ['Use speed 2 for bread'],
+        note: '',
         environment: null,
         updatedAt: new Date().toISOString(),
       };
