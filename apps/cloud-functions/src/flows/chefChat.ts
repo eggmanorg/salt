@@ -1,4 +1,5 @@
-import { z } from 'genkit';
+import { randomUUID } from 'node:crypto';
+import { z, type ActionContext } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { ChefChatInputSchema, ChefChatOutputSchema } from '@salt/domain/schemas';
@@ -14,6 +15,17 @@ import { ReadRecipeInputSchema, ReadRecipeOutputSchema } from '@salt/domain/sche
 import {
   ReadEquipmentDetailInputSchema,
   ReadEquipmentDetailOutputSchema,
+  FindKitchenNotesInputSchema,
+  FindKitchenNotesOutputSchema,
+  ReadKitchenNoteInputSchema,
+  ReadKitchenNoteOutputSchema,
+  WriteKitchenNoteInputSchema,
+  WriteKitchenNoteOutputSchema,
+  LibraryPageSchema,
+  LIBRARY_PAGE_COLLECTION,
+  LIBRARY_PAGE_BODY_MAX,
+  LIBRARY_PAGE_TITLE_MAX,
+  pushRevision,
 } from '@salt/domain/schemas';
 import type {
   FindRecipesInput,
@@ -22,9 +34,25 @@ import type {
   ReadRecipeOutput,
   ReadEquipmentDetailInput,
   ReadEquipmentDetailOutput,
+  FindKitchenNotesInput,
+  FindKitchenNotesOutput,
+  ReadKitchenNoteInput,
+  ReadKitchenNoteOutput,
+  WriteKitchenNoteInput,
+  WriteKitchenNoteOutput,
+  LibraryPageDoc,
 } from '@salt/domain/schemas';
-import { recipePhaseTotals, resolveEquipmentItem, searchRecipes } from '@salt/domain';
-import type { RecipeSearchCandidate } from '@salt/domain';
+import {
+  libraryPageSummary,
+  recipePhaseTotals,
+  resolveEquipmentItem,
+  searchLibraryPages,
+  searchRecipes,
+} from '@salt/domain';
+import type { LibraryPageCandidate, RecipeSearchCandidate } from '@salt/domain';
+// The SERVER subpath, never the default one: the default wraps posthog-js and
+// cannot run in Node (CLAUDE.md Rule 5).
+import { LIBRARY_FLAG_KEY, isServerFeatureEnabled } from '@salt/observability/server';
 import {
   AI_TEXT_FLOW_TIMEOUT,
   withAiStreamTimeout,
@@ -452,6 +480,483 @@ export const readEquipmentDetailTool = ai.defineTool(
   (input) => readEquipmentDetailForChef(getFirestore(), input),
 );
 
+// ─── The household's own kitchen notes (epic #1372, issue #1377) ─────────────
+//
+// The THIRD and FOURTH tools, and the point at which the standing two-tool limit
+// recorded above was deliberately lifted — Daniel's call on 2026-09-14, made with
+// the cost in front of him: the library is where his proven answers live and the
+// chat is where he asks the questions, so a chef that cannot reach it answers from
+// generic advice while the right answer sits two taps away. The mitigation is the
+// SHAPE, and it is the one findRecipes/readRecipe already use — a cheap search
+// returning a summary per match, and a full read only when the detail matters.
+//
+// WHAT THESE PAGES ARE CALLED, everywhere the model can see: notes. Tool names,
+// tool descriptions, framing section. `LIBRARY_FRAMING` above already spends the
+// word "library" on the household's saved RECIPES, and two things under one name
+// in one system prompt is a collision for the model and for the next reader. The
+// collection, the schema and the app's own routes keep the `library` names they
+// have; only the words the model reads change.
+//
+// GATED SERVER-SIDE, per caller — see `kitchenNotesEnabled`. The moment the chef
+// can read a page, content written under the `library` flag reaches a household
+// member the feature is hidden from, through an answer no browser gate can reach.
+// That is issue #831 exactly.
+
+/**
+ * Searches the household's notes for the chef.
+ *
+ * The I/O half of `findKitchenNotes`, and deliberately nothing more: read,
+ * validate, hand the rows to the pure `searchLibraryPages` and render each match
+ * through the pure `libraryPageSummary`. No ranking and no string shaping here.
+ *
+ * READS WHOLE DOCUMENTS, unlike `findRecipesInLibrary`'s projection, and that is
+ * not an oversight: the summary is derived FROM THE BODY, so there is no cheaper
+ * read that could produce one. What keeps it small is the collection itself — a
+ * library is tens of pages — and `LIBRARY_PAGE_SEARCH_CEILING` on what comes back.
+ *
+ * A corrupt document is SKIPPED rather than thrown on (Rule 10, and the Zod
+ * failure table in docs/data-model.md): one unparseable page must not cost the
+ * household every other one, and a tool never throws out of the model's loop.
+ *
+ * ON FAILURE this still returns Rule-10-shaped `{ matches: [], totalNotes: 0 }`
+ * — indistinguishable on those two fields alone from a genuinely empty library —
+ * but `ok: false` rides alongside it precisely so the two are NOT indistinguishable
+ * to the model. `KITCHEN_NOTES_FRAMING` tells the chef to say plainly when a
+ * household has written nothing; without `ok` a transient Firestore error would
+ * make that the same confident, wrong sentence.
+ */
+export async function findKitchenNotesForChef(
+  db: ReturnType<typeof getFirestore>,
+  input: FindKitchenNotesInput,
+): Promise<FindKitchenNotesOutput> {
+  try {
+    const snapshot = await db.collection(LIBRARY_PAGE_COLLECTION).get();
+    const pages: LibraryPageCandidate[] = [];
+    let skipped = 0;
+    for (const doc of snapshot.docs) {
+      // The id is the DOCUMENT's, never the field inside it: a page carrying a
+      // stale `id` would otherwise hand the chef an id that opens nothing.
+      const parsed = LibraryPageSchema.safeParse({ ...doc.data(), id: doc.id });
+      if (!parsed.success) {
+        skipped += 1;
+        continue;
+      }
+      const page = parsed.data;
+      pages.push({
+        id: page.id,
+        title: page.title,
+        tags: page.tags,
+        body: page.body,
+        updatedAt: page.updatedAt,
+      });
+    }
+    if (skipped > 0) {
+      logger.warn('chefChat: findKitchenNotes skipped notes that failed validation', { skipped });
+    }
+
+    return {
+      ok: true,
+      matches: searchLibraryPages(pages, input).map((page) => ({
+        id: page.id,
+        title: page.title,
+        tags: [...page.tags],
+        summary: libraryPageSummary(page),
+      })),
+      totalNotes: pages.length,
+    };
+  } catch (err) {
+    logger.warn('chefChat: findKitchenNotes failed', { err });
+    // `ok: false` is load-bearing: without it this is byte-for-byte the answer a
+    // household with zero notes gets, and KITCHEN_NOTES_FRAMING tells the chef to
+    // say plainly they have written nothing — which would be a confident, wrong
+    // thing to tell a household with forty notes over a transient read failure.
+    return { ok: false, matches: [], totalNotes: 0 };
+  }
+}
+
+const FIND_KITCHEN_NOTES_DESCRIPTION = `Search the notes this household has written down for itself — the kitchen facts that are NOT recipes. \
+Their own proven numbers: sous vide times and temperatures they have tested, the jars and tins in the cupboard \
+and what each one holds, settings that work in THIS kitchen, a table lifted off a website and kept.
+
+CALL THIS when their own answer would beat a general one, or when they ask for theirs:
+- a time, a temperature or a setting they are likely to have proven for themselves
+- "how long do I…", "what do we normally do for…", "what did we write down about…"
+- kit they own and the numbers that go with it — capacities, sizes, what fits what
+- anything they say is written down somewhere
+
+DO NOT CALL IT for ordinary cooking knowledge you already have. A technique, a substitution, a conversion, why a \
+sauce split, how long to rest a joint — none of that lives in their notes, and looking spends the turn without \
+helping. Do not search to check an answer you are already sure of, and when in doubt, just answer.
+
+What comes back is SHALLOW — a title, its tags and the opening of the note. That is very often the whole answer: \
+if the summary already gives the number they asked for, use it and say which note it came from. Open a note with \
+readKitchenNote only when the detail you need is further in.
+
+If ok comes back false, the search itself could not run — a lookup problem, not an empty set of notes. Say \
+plainly that you could not check their notes just now; never say they have written nothing about it, and never \
+answer as though totalNotes were the true count.`;
+
+export const findKitchenNotesTool = ai.defineTool(
+  {
+    name: 'findKitchenNotes',
+    description: FIND_KITCHEN_NOTES_DESCRIPTION,
+    inputSchema: FindKitchenNotesInputSchema,
+    outputSchema: FindKitchenNotesOutputSchema,
+  },
+  (input) => findKitchenNotesForChef(getFirestore(), input),
+);
+
+/**
+ * Reads one note in full for the chef.
+ *
+ * `found: false` covers THREE causes — the note is gone, the document is corrupt,
+ * and a Firestore read that threw — so it is not "this note has been deleted", and
+ * the tool description must not tell the model it is. The same distinction
+ * `readRecipeForChef` carries, for the same reason: one transient read failure
+ * would otherwise have the chef announce that a note the household is looking at
+ * on screen no longer exists.
+ */
+export async function readKitchenNoteForChef(
+  db: ReturnType<typeof getFirestore>,
+  input: ReadKitchenNoteInput,
+): Promise<ReadKitchenNoteOutput> {
+  const unreadable = { found: false, title: null, body: null } as const;
+  try {
+    const snap = await db.collection(LIBRARY_PAGE_COLLECTION).doc(input.id).get();
+    if (!snap.exists) return unreadable;
+    const parsed = LibraryPageSchema.safeParse({ ...snap.data(), id: snap.id });
+    if (!parsed.success) {
+      logger.warn('chefChat: readKitchenNote note failed validation', { id: input.id });
+      return unreadable;
+    }
+    return { found: true, title: parsed.data.title, body: parsed.data.body };
+  } catch (err) {
+    logger.warn('chefChat: readKitchenNote failed', { id: input.id, err });
+    return unreadable;
+  }
+}
+
+const READ_KITCHEN_NOTE_DESCRIPTION = `Read ONE note in full, exactly as the household wrote it. Takes the id findKitchenNotes returned.
+
+CALL THIS when the summary is not enough and being wrong would matter:
+- a table you need one specific row out of
+- a method you are going to follow or adapt step by step
+- anything where the number matters and the summary only hints at it
+
+DO NOT CALL IT when the line from findKitchenNotes already answers the question, and never open several notes to \
+write one paragraph. Reading three notes to quote one line is a turn spent reading instead of cooking.
+
+If found comes back false you could not open that note — it may have been deleted, or the read may simply have \
+failed. Say plainly that you cannot open it and carry on; never state that it has been deleted, and never invent \
+its contents.`;
+
+export const readKitchenNoteTool = ai.defineTool(
+  {
+    name: 'readKitchenNote',
+    description: READ_KITCHEN_NOTE_DESCRIPTION,
+    inputSchema: ReadKitchenNoteInputSchema,
+    outputSchema: ReadKitchenNoteOutputSchema,
+  },
+  (input) => readKitchenNoteForChef(getFirestore(), input),
+);
+
+/**
+ * The display name a page the chef wrote is attributed to.
+ *
+ * A NAME, never a uid — `createdBy`/`lastEditedBy` are denormalised display names
+ * for audit only (`libraryPage.ts`), and no uid appears anywhere in the
+ * family-shared data model. The chef's own name rather than the person who asked
+ * for it, and that is the useful answer: the revision history then shows at a
+ * glance which version was written by the chat and which by hand, which is what
+ * makes a bad write easy to spot and undo.
+ */
+const CHEF_AUTHOR_NAME = 'The chef';
+
+const refused = (problem: string): WriteKitchenNoteOutput => ({
+  saved: false,
+  id: null,
+  created: false,
+  problem,
+});
+
+/**
+ * Writes one note for the chef — a new one, or a replacement for an existing one.
+ *
+ * WHY WRITING IS PERMITTED HERE WHEN #1373 REFUSED IT FOR EQUIPMENT. That issue
+ * settled "the chat may read kit detail and may never write it", and its reason
+ * was specific: an equipment list that is quietly wrong is worse than one that is
+ * out of date, and there is no review surface where a bad write would be noticed.
+ * Neither half holds for a note. A note is a document somebody opens and reads,
+ * and #1375 gave it a visible revision history with restore — so a wrong write is
+ * both noticeable and reversible, which is exactly the property equipment lacks.
+ * Do not read #1373's rule as universal; read its reason.
+ *
+ * WHAT IS MECHANICAL HERE, AND WHAT IS NOT (CLAUDE.md Rule 12). "The chef writes
+ * only when it is told to" is enforced by the tool description's DO NOT CALL IT
+ * half, and prompt text is not a mechanism — that limit is stated, not dressed
+ * up. What IS mechanical, and pinned by `chefChat.writeKitchenNote.test.ts`:
+ *
+ *   - this tool CANNOT DELETE. There is no delete path in it, and no other tool
+ *     has one either; the suite scans this whole module for one;
+ *   - this tool CANNOT EMPTY A NOTE either — a blank or whitespace-only body is
+ *     refused before any write, the same shape as the blank-title guard;
+ *   - every replacement goes through `pushRevision`, so the version it replaced is
+ *     recoverable — and the cap still holds, because `pushRevision` is the only
+ *     thing that ever grows the array;
+ *   - CONSECUTIVE CHEF WRITES COALESCE: a replacement only pushes a new revision
+ *     when the version it replaces was NOT itself written by the chef, so a
+ *     chatty run of chef writes cannot evict the human-authored version beneath
+ *     them the way one revision per tool call otherwise would;
+ *   - it writes to `libraryPages` and to no other collection.
+ *
+ * It also never THROWS (Rule 10): a refusal comes back as `saved: false` with a
+ * sentence the chef can say out loud, which is what a model can actually act on
+ * inside its own tool loop.
+ */
+export async function writeKitchenNoteForChef(
+  db: ReturnType<typeof getFirestore>,
+  input: WriteKitchenNoteInput,
+): Promise<WriteKitchenNoteOutput> {
+  const title = input.title.trim();
+  if (title === '') return refused('a note needs a title, and that one was blank');
+  if (title.length > LIBRARY_PAGE_TITLE_MAX) {
+    return refused(
+      `that title is too long — a note's title holds ${LIBRARY_PAGE_TITLE_MAX} characters`,
+    );
+  }
+  // A blank or whitespace-only body would `set` a page with nothing left in it —
+  // a REPLACEMENT write, structurally nothing like a removal, so it is invisible
+  // to the no-removal-path scan at the bottom of this module's test file. It is
+  // exactly the move the tool's own description tells the model it does not have:
+  // "You cannot delete a note and you cannot empty one." Refused here, the same
+  // shape as the blank-title guard three lines up, rather than left to the schema
+  // (Rule 10 — a refusal the chef can read out, not a validation error inside its
+  // own tool loop).
+  if (input.body.trim() === '') {
+    return refused('a note needs some body text, and that one was blank');
+  }
+  // The number comes from the schema's own constant, so there is one source for
+  // it. This is NOT a second copy of the browser's append arithmetic
+  // (`appendedBody` in `libraryImport.ts`, which measures what APPENDING would
+  // produce and belongs to the import sheet and `appendToLibraryPage`): a tool
+  // write replaces the whole body, so there is nothing to append to and nothing
+  // to compute. `apps/cloud-functions` could not import that function in any case
+  // — nothing imports an app (Rule 6).
+  if (input.body.length > LIBRARY_PAGE_BODY_MAX) {
+    return refused(
+      `that note is too long — a note holds ${LIBRARY_PAGE_BODY_MAX} characters, and that was ${input.body.length}`,
+    );
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const pages = db.collection(LIBRARY_PAGE_COLLECTION);
+
+    if (input.id === undefined) {
+      const page: LibraryPageDoc = {
+        id: randomUUID(),
+        schemaVersion: 1,
+        kind: 'note',
+        title,
+        body: input.body,
+        // Untagged. Filing is the household's call and a tag the chef invented
+        // would sit in the library's filter list for ever.
+        tags: [],
+        createdAt: now,
+        updatedAt: now,
+        createdBy: CHEF_AUTHOR_NAME,
+        lastEditedBy: CHEF_AUTHOR_NAME,
+        revisions: [],
+      };
+      await pages.doc(page.id).set(page);
+      return { saved: true, id: page.id, created: true, problem: null };
+    }
+
+    // A replacement is only ever built on a note that was READ back first. An id
+    // the model invented, or a document that no longer parses, leaves the
+    // collection untouched — writing over something we could not read is how a
+    // page gets silently destroyed, and the revision history cannot restore what
+    // was never captured.
+    const ref = pages.doc(input.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return refused(
+        'there is no note with that id — search for it, or leave the id out to start a new one',
+      );
+    }
+    const parsed = LibraryPageSchema.safeParse({ ...snap.data(), id: snap.id });
+    if (!parsed.success) {
+      logger.warn('chefChat: writeKitchenNote left an unreadable note alone', { id: input.id });
+      return refused('that note could not be read, so it was left exactly as it was');
+    }
+
+    const current = parsed.data;
+    // COALESCE CONSECUTIVE CHEF WRITES. The browser captures one revision per
+    // EDITING SESSION (`beginLibraryEdit`'s in-memory snapshot), never one per
+    // keystroke; the chef has no such session, and a write per TOOL CALL is the
+    // literal equivalent of pushing a revision per keystroke — "write it up",
+    // "put it in a table", "add the tulips", "sort them by capacity" is four
+    // writes for one piece of work, and a chatty back-and-forth easily reaches
+    // `LIBRARY_PAGE_REVISION_CAP` calls, evicting the one human-authored version
+    // the whole history exists to protect (the property #1377 relies on to permit
+    // writing here when #1373 refused it for equipment).
+    //
+    // The fix reuses `lastEditedBy` as the session boundary rather than inventing
+    // one: if the version being replaced was ITSELF the chef's own last write,
+    // this call is a continuation of the same run, not a new edit displacing a
+    // human's, so no revision is pushed and the array is carried over untouched.
+    // The moment a human saves in between — `lastEditedBy` becomes their name —
+    // the next chef write sees that and captures it, exactly as today. A human's
+    // version therefore survives any number of consecutive chef writes that
+    // follow it, however many, and `pushRevision`'s cap is never the thing that
+    // has to hold that promise.
+    const chefIsContinuingItsOwnRun = current.lastEditedBy === CHEF_AUTHOR_NAME;
+    const page: LibraryPageDoc = {
+      ...current,
+      title,
+      body: input.body,
+      updatedAt: now,
+      lastEditedBy: CHEF_AUTHOR_NAME,
+      // `savedBy` is whoever REPLACED the version being filed, matching the
+      // browser's own snapshot at `beginLibraryEdit`.
+      revisions: chefIsContinuingItsOwnRun
+        ? current.revisions
+        : pushRevision(current.revisions, {
+            title: current.title,
+            body: current.body,
+            savedAt: now,
+            savedBy: CHEF_AUTHOR_NAME,
+          }),
+    };
+    await ref.set(page);
+    return { saved: true, id: page.id, created: false, problem: null };
+  } catch (err) {
+    logger.warn('chefChat: writeKitchenNote failed', { id: input.id, err });
+    return refused('that could not be saved just now');
+  }
+}
+
+const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a note into the household's notes, or replace one that is already there. Use it to put something \
+down where they will find it again: a table you worked out together, the settings for a piece of kit, a list of \
+what they own.
+
+CALL THIS ONLY WHEN THEY HAVE ASKED YOU TO WRITE ONE. "Write that up", "make me a note of this", "add it to my \
+jar note", "save this somewhere" — an instruction, in their words, in this conversation.
+
+DO NOT CALL IT for anything else, ever. Not because a conversation covered ground worth keeping, not to tidy a \
+note you have just read, not to record what you have decided, and not to save your own answer. A long chat about \
+jars is not permission to rewrite the jar note. If you think something is worth writing down, SAY SO and let them \
+ask.
+
+To ADD to an existing note, read it first with readKitchenNote, then send its whole text back with your addition \
+in it and its id here. The body you send REPLACES everything the note held — sending only the new part throws \
+the rest away.
+
+You cannot delete a note and you cannot empty one. If they ask you to, say plainly that deleting is theirs to do, \
+on the note's own page.
+
+Check saved before you say anything. When it is false, problem says why in plain words: repeat it and do not \
+claim the note was written.`;
+
+export const writeKitchenNoteTool = ai.defineTool(
+  {
+    name: 'writeKitchenNote',
+    description: WRITE_KITCHEN_NOTE_DESCRIPTION,
+    inputSchema: WriteKitchenNoteInputSchema,
+    outputSchema: WriteKitchenNoteOutputSchema,
+  },
+  (input) => writeKitchenNoteForChef(getFirestore(), input),
+);
+
+// How the chef is told to USE the notes, beside LIBRARY_FRAMING and in the same
+// shape: the tool descriptions govern when to call, this governs what to do with
+// the answer. Its own section rather than a paragraph bolted onto LIBRARY_FRAMING
+// precisely because the two must not blur — see the heading's last rule.
+const KITCHEN_NOTES_FRAMING = `## Their own kitchen notes
+This household writes things down — the kitchen facts that are not recipes. findKitchenNotes searches those \
+notes and readKitchenNote opens one in full. They are what this kitchen has actually proven, so where a note \
+answers the question it beats anything you would say from general knowledge.
+
+LOOK FIRST, READ SECOND. A search gives you the opening of each note, and that is usually the whole answer. \
+Open a note in full only when the detail you need is deeper in it.
+
+SAY WHICH NOTE YOU USED, by its title, in your own words — "your sous vide table has chuck at 65 °C for 24 \
+hours". Never read a note back as a wall of text, and never present something you worked out yourself as \
+something they had written down.
+
+WRITING ONE IS SOMETHING THEY ASK FOR. writeKitchenNote puts a note into their notes, and you reach for it when \
+they tell you to and at no other time. A conversation that covered good ground is not an instruction, and \
+neither is a note you have just read being out of date. If something is worth writing down, say so and let them \
+ask. To add to a note, read it first and send its whole text back with your addition in it — the body you send \
+replaces what was there. You cannot delete a note; that is theirs to do on the note's own page.
+
+THESE ARE NOT THEIR RECIPES. Their saved dishes are a different thing with a different pair of tools, described \
+above. A note is a reference page: a table, a list of kit, a set of numbers.
+
+Say plainly when they have written nothing about it, then answer as you normally would. That is different from \
+findKitchenNotes failing to run at all — see its own description for what to say then. Their notes are one more \
+thing you can reach, not a place you have to go first.`;
+
+/**
+ * The verified caller of this turn.
+ *
+ * `onCallGenkit` copies the callable's own `req.auth` — the DECODED, VERIFIED
+ * Firebase ID token — into the Genkit action context as `context.auth`
+ * (firebase-functions 7.3.2, `lib/v2/providers/https.js`), and `chefChat` runs
+ * under `authPolicy: isSignedIn()` (`index.ts`), so behind that policy the object
+ * is present and its uid is the signed-in person.
+ *
+ * THIS IS THE ONLY ROUTE THE UID TAKES. Nothing is read off the request body, and
+ * `ChefChatInputSchema` has no uid field for a client to put one in — a
+ * client-supplied uid is not a gate. `input.speaker` is a display NAME and is not
+ * an identity: it is never consulted here.
+ *
+ * Null means the context carried no verified uid, which cannot happen behind the
+ * auth policy and is therefore not a case to be generous about — `kitchenNotesEnabled`
+ * fails closed on it.
+ */
+interface VerifiedCaller {
+  readonly uid: string;
+  readonly email?: string;
+}
+
+export function verifiedCaller(context: ActionContext | undefined): VerifiedCaller | null {
+  const auth: Record<string, unknown> | undefined = context?.auth;
+  if (auth === undefined) return null;
+  const uid = auth['uid'];
+  if (typeof uid !== 'string' || uid === '') return null;
+  // The email is a person property PostHog may target a release condition on, the
+  // same way the browser identifies people. Absent is fine; wrong is not, so it is
+  // only taken when the verified token actually carries a non-empty string there.
+  const token = auth['token'];
+  const claim =
+    typeof token === 'object' && token !== null ? Reflect.get(token, 'email') : undefined;
+  return typeof claim === 'string' && claim !== '' ? { uid, email: claim } : { uid };
+}
+
+/**
+ * Whether this caller's chat gets the kitchen-notes tools at all (issue #831).
+ *
+ * The gate decides WHICH TOOLS GO INTO THE `tools:` ARRAY for this request, not
+ * what a tool does once called — the tools themselves are defined at module load,
+ * as Genkit requires, and the array is passed by value.
+ *
+ * FAILS CLOSED on a missing uid, where `isServerFeatureEnabled` would fail OPEN on
+ * a deployment with no PostHog key ("unconfigured means ungated"). The two
+ * asymmetries are deliberate and different: no PostHog at all means nothing is
+ * being gated anywhere, while no verified caller behind `isSignedIn()` means
+ * something is wrong, and a gate that opens when it cannot identify anybody is not
+ * a gate.
+ */
+async function kitchenNotesEnabled(caller: VerifiedCaller | null): Promise<boolean> {
+  if (caller === null) return false;
+  return isServerFeatureEnabled(
+    LIBRARY_FLAG_KEY,
+    caller.uid,
+    caller.email === undefined ? undefined : { email: caller.email },
+  );
+}
+
 // ─── Household favourites (issue #726) ───────────────────────────────────────
 //
 // What the household actually buys, counted from shopping-list tick-offs. Read
@@ -570,6 +1075,7 @@ function buildSystemPrompt(
   variationContext: string,
   memoryContext: string,
   speaker: string | undefined,
+  kitchenNotesFraming: string,
 ): string {
   // FIRST after the base, and unconditional. It is a capability statement — how
   // this chef answers at all — not a piece of context about tonight, so it sits
@@ -578,6 +1084,12 @@ function buildSystemPrompt(
   // tool has been called, and a read to find out would cost every turn the very
   // thing the tool exists to avoid paying.
   const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING];
+
+  // Beside LIBRARY_FRAMING, and ONLY when this caller actually has the tools
+  // (issue #1377). A chef told about notes it cannot reach would offer to look
+  // them up and then be unable to — worse than never mentioning them. Empty for
+  // everyone outside the flag, so their prompt is byte for byte today's.
+  if (kitchenNotesFraming) sections.push(kitchenNotesFraming);
 
   const equipmentSection = equipmentSectionForChef(equipmentContext);
   // Both or neither, and in this order: the kit list first, then what to do when
@@ -629,24 +1141,36 @@ export const chefChatFlow = ai.defineFlow(
     let streamedText = '';
     try {
       const db = getFirestore();
-      const [equipmentContext, recipeContext, favouritesContext, variationContext, memoryContext] =
-        await Promise.all([
-          readEquipmentContext(db, 'chefChat'),
-          input.recipeId ? readRecipeContext(db, input.recipeId) : Promise.resolve(''),
-          // Joins the existing Promise.all rather than adding a serial round-trip.
-          readFavouritesContext(db),
-          // The base recipe of a variation chat (issue #763). Reuses the same
-          // reader, which returns '' for a deleted or corrupt doc — so a variation
-          // whose base disappears mid-conversation quietly becomes an ordinary
-          // chat instead of failing the turn (Rule 10).
-          input.basedOnRecipeId
-            ? readRecipeContext(db, input.basedOnRecipeId)
-            : Promise.resolve(''),
-          // The household's notes (issue #816). Joins the existing Promise.all
-          // rather than adding a serial round-trip — it is one small collection
-          // read, and it costs the turn nothing it was not already waiting on.
-          readKitchenMemoryContext(db, 'chefChat'),
-        ]);
+      // The verified caller, from the Genkit action context and from nowhere else
+      // (issue #1377). Never the request body.
+      const caller = verifiedCaller(streamingCallback.context);
+      const [
+        equipmentContext,
+        recipeContext,
+        favouritesContext,
+        variationContext,
+        memoryContext,
+        notesEnabled,
+      ] = await Promise.all([
+        readEquipmentContext(db, 'chefChat'),
+        input.recipeId ? readRecipeContext(db, input.recipeId) : Promise.resolve(''),
+        // Joins the existing Promise.all rather than adding a serial round-trip.
+        readFavouritesContext(db),
+        // The base recipe of a variation chat (issue #763). Reuses the same
+        // reader, which returns '' for a deleted or corrupt doc — so a variation
+        // whose base disappears mid-conversation quietly becomes an ordinary
+        // chat instead of failing the turn (Rule 10).
+        input.basedOnRecipeId ? readRecipeContext(db, input.basedOnRecipeId) : Promise.resolve(''),
+        // The household's notes (issue #816). Joins the existing Promise.all
+        // rather than adding a serial round-trip — it is one small collection
+        // read, and it costs the turn nothing it was not already waiting on.
+        readKitchenMemoryContext(db, 'chefChat'),
+        // Whose chat gets the kitchen-notes tools (issue #1377). A PostHog
+        // round-trip, so it joins the existing Promise.all rather than adding a
+        // serial one — and it resolves false without any network call at all for
+        // a request that carried no verified uid.
+        kitchenNotesEnabled(caller),
+      ]);
 
       const systemPrompt = buildSystemPrompt(
         equipmentContext,
@@ -655,6 +1179,7 @@ export const chefChatFlow = ai.defineFlow(
         variationContext,
         memoryContext,
         input.speaker,
+        notesEnabled ? KITCHEN_NOTES_FRAMING : '',
       );
 
       // Convert Message[] history to Genkit MessageData format. Our domain role is
@@ -674,22 +1199,36 @@ export const chefChatFlow = ai.defineFlow(
         system: systemPrompt,
         messages: history,
         prompt: input.newMessage,
-        // The chef's THREE tools, and the whole surface (issues #840, #1373) — a
-        // fourth is a new issue with its own justification, and a WRITE tool is
-        // not on the table at all ("No, and not ever": see the comment at
-        // `readEquipmentDetailTool`). Genkit runs the tool loop inside this call
-        // and keeps streaming across it, so the reply still arrives in fragments;
-        // the gaps while tools run are silence, which is what the idle timer
-        // below bounds. A turn may search, read a dish AND look a piece of kit
-        // up, so that is three round-trips inside one stream — each is a
-        // Firestore read measured in milliseconds, nowhere near the 55 s idle
-        // budget. Passed BY VALUE rather than by name so the flow and the tools
-        // cannot get out of step.
+        // The chef's tools. Three for everyone (issues #840, #1373) — findRecipes,
+        // readRecipe and readEquipmentDetail, the last of which is READ-ONLY,
+        // permanently ("No, and not ever": see the comment at
+        // `readEquipmentDetailTool`) — plus the three kitchen-notes tools for a
+        // caller inside the `library` flag (issue #1377). That is what this array
+        // varying per request is for, and it is the whole of the gate: the tools
+        // themselves are defined at module load, as Genkit requires, and what
+        // changes is the array passed BY VALUE here.
+        //
+        // Genkit runs the tool loop inside this call and keeps streaming across
+        // it, so the reply still arrives in fragments; the gaps while tools run are
+        // silence, which is what the idle timer below bounds. A turn may search,
+        // read a dish, look a piece of kit up, read a note AND write one, so that
+        // is up to six round-trips inside one stream — each is a Firestore read
+        // (or, for writeKitchenNote, a single write) measured in milliseconds,
+        // nowhere near the 55 s idle budget.
         //
         // Note what is still absent: no `output` option, and none is coming. Half
         // of design principle #1 survives intact — the chef returns prose, and
         // structure stays the librarian's job at save time.
-        tools: [findRecipesTool, readRecipeTool, readEquipmentDetailTool],
+        tools: notesEnabled
+          ? [
+              findRecipesTool,
+              readRecipeTool,
+              readEquipmentDetailTool,
+              findKitchenNotesTool,
+              readKitchenNoteTool,
+              writeKitchenNoteTool,
+            ]
+          : [findRecipesTool, readRecipeTool, readEquipmentDetailTool],
       });
 
       // The DRAIN is what needs the deadline, not what follows it (issue #915).

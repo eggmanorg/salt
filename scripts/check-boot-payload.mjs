@@ -81,6 +81,37 @@ const APP_SETTINGS_RAW_CEILING_KB = 60;
 const OTEL_MARKER = 'opentelemetry.js.api';
 const LEAFLET_MARKER = 'leaflet-container';
 
+// `@salt/domain`'s `package.json` declares `"sideEffects": false` — CLAUDE.md
+// Hard Rule 1 ("Domain is pure… No side effects") written where Rollup can act
+// on it. That declaration is what lets Rollup drop a `z.object(...)` schema
+// export it cannot otherwise prove is side-effect-free, so only the ~34 schemas
+// `web-pwa` actually names survive into the boot graph instead of all ~70 in
+// the barrel. The claim behind it — CLAUDE.md Rule 12 — has no test that can
+// see it: `sideEffects` is bundler-only metadata, invisible to vitest and to
+// `tsc`. This is that claim's mechanical pin. `FindKitchenNotesInputSchema`
+// (`packages/domain/src/schemas/findKitchenNotes.ts`) is named only by the
+// chef-tool flow in `apps/cloud-functions/src/flows/chefChat.ts` — never by
+// any `apps/web-pwa` module — so its prose has no legitimate way into a
+// browser bundle. If it turns up here, either the `sideEffects` declaration
+// was removed/weakened (a real module-level side effect forcing that is a
+// correctness fix, not a reason to drop the guard silently) or something in
+// `web-pwa` started reaching a cloud-functions-only schema; either way the
+// whole ~70-schema barrel is likely being retained again, the way it was
+// before this guard existed.
+// KEYED ON A SCHEMA FIELD NAME, NOT A `.describe()` SENTENCE. findKitchenNotes.ts's
+// own header tells readers to edit every `.describe()` string "as prompt work, not
+// as comments" — so a marker built from that prose would silently stop guarding the
+// next time someone did exactly that, with nothing here to notice. `totalNotes` is
+// a Zod object-literal property key (`FindKitchenNotesOutputSchema.totalNotes`),
+// not prompt text: a minifier does not rename object property keys (Zod reads
+// `.shape` off them by name at runtime, so doing so would break the schema), and
+// renaming the field itself is a structural change that already breaks the
+// handler, the exported type and every test touching it — far too loud to happen
+// as an incidental prompt edit. Confirmed nowhere else in the repo (`grep -rn
+// totalNotes`) so a hit here cannot be some unrelated feature's field of the same
+// name.
+const CF_ONLY_SCHEMA_MARKER = 'totalNotes';
+
 function fail(message) {
   console.error(`\n✖ ${message}\n`);
   process.exitCode = 1;
@@ -144,6 +175,14 @@ for (const { href, bytes } of boot) {
     fail(
       `Leaflet is in the boot graph (${href}).\n` +
         `  It belongs in an on-demand chunk, loaded by LocationMapField.svelte's onMount.`,
+    );
+  }
+  if (text.includes(CF_ONLY_SCHEMA_MARKER)) {
+    fail(
+      `A cloud-functions-only @salt/domain schema is in the boot graph (${href}).\n` +
+        `  The findKitchenNotes schemas are named only by apps/cloud-functions' chefChat flow, so\n` +
+        `  this means packages/domain/package.json lost its "sideEffects": false (or stopped\n` +
+        `  being true of the code) and Rollup is retaining the whole ~70-schema barrel again.`,
     );
   }
 }

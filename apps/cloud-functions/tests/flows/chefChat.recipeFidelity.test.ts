@@ -136,11 +136,18 @@ beforeEach(() => {
 });
 
 async function systemPromptFor(recipeId: string): Promise<string> {
-  await (chefChatFlow as unknown as (i: unknown) => Promise<string>)({
-    messages: [],
-    newMessage: 'write this out again',
-    recipeId,
-  });
+  // The second argument is Genkit's flow side channel — the streaming callback,
+  // which also carries the verified caller's auth context (issue #1377). Genkit
+  // always supplies it, so the fixture does too; a turn with no side channel at
+  // all is not a shape the runtime produces.
+  await (chefChatFlow as unknown as (i: unknown, cb: unknown) => Promise<string>)(
+    {
+      messages: [],
+      newMessage: 'write this out again',
+      recipeId,
+    },
+    () => undefined,
+  );
   return (mockGenerateStream.mock.calls[0]![0] as { system: string }).system;
 }
 

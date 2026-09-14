@@ -309,16 +309,22 @@ describe('findRecipes — degrading', () => {
 describe('findRecipes — the tool the model is shown', () => {
   const tool = defineToolCalls.find((c) => c.config.name === 'findRecipes');
 
-  it('is registered, alongside the two other tools the chef has', () => {
-    // Exact, and it stays exact: three is the whole surface (issues #840, #1373),
-    // and a fourth arriving without its own issue should turn this red. It has
-    // already done its job once — `readEquipmentDetail` turned it red, and #1373
-    // is the issue that justified it. The same list is asserted from the
-    // readRecipe and readEquipmentDetail sides in their own suites.
+  it('is registered, alongside the other tools the chef has', () => {
+    // Exact, and it stays exact: a tool arriving without its own issue should turn
+    // this red. Issue #840 set the surface at two, #1373 added readEquipmentDetail
+    // (read-only, permanently — see the comment at its declaration), and #1377
+    // added the kitchen-notes pair with its own justification — the notes pair is
+    // GATED into the request's `tools:` array (see `chefChat.kitchenNotes.test.ts`),
+    // but every tool is DEFINED at module load, so all five are registered here.
+    // The same list is asserted from the readRecipe and readEquipmentDetail sides
+    // in their own suites.
     expect(defineToolCalls.map((c) => c.config.name)).toEqual([
       'findRecipes',
       'readRecipe',
       'readEquipmentDetail',
+      'findKitchenNotes',
+      'readKitchenNote',
+      'writeKitchenNote',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
   });
@@ -366,7 +372,11 @@ describe('chefChat — the tool in the flow', () => {
     return mockGenerateStream.mock.calls[0]?.[0] as Record<string, unknown>;
   }
 
-  it('passes all three of the chef’s tools to the model', async () => {
+  it('passes the chef’s ungated tools to the model', async () => {
+    // This turn carries no verified caller — `runTurn` passes a bare streaming
+    // callback with no Genkit context — so the kitchen-notes pair is gated out and
+    // the array is the pre-#1377 one. That the gate fails closed on a missing uid
+    // is asserted where it belongs, in `chefChat.kitchenNotes.test.ts`.
     const options = await runTurn();
     expect(options['tools']).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
   });

@@ -162,6 +162,11 @@ const GUARDED: readonly { readonly name: string; readonly owner: string; readonl
       owner: '@salt/observability',
       rule: 'the PostHog bread flag key',
     },
+    {
+      name: 'LIBRARY_FLAG_KEY',
+      owner: '@salt/observability',
+      rule: 'the PostHog library flag key',
+    },
   ];
 
 const barrels: Record<string, Record<string, unknown>> = {

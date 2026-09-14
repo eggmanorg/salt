@@ -18,10 +18,12 @@ foundation (#179).
    one of the household's own fifty-nine recipes is not a kitchen assistant. What the
    original principle was protecting is real and survives as a constraint rather than
    a prohibition: a model with tools reaches for them, and every turn spent searching
-   is a turn not spent being a chef. So — **three tools, no more** (`findRecipes`,
+   is a turn not spent being a chef. So — **three tools for everyone** (`findRecipes`,
    `readRecipe`, `readEquipmentDetail`), every tool description carries an explicit
-   _when not to call_ clause, and the chef still **writes nothing**. Saving, planning
-   and shopping-list adds stay manual.
+   _when not to call_ clause, and the chef **writes nothing** through any of them.
+   Saving, planning and shopping-list adds stay manual. "No more" held until #1377
+   gave a fourth caller-gated pair and a write tool — see below; it still governs
+   what every OTHER tool may become.
 
    **`readEquipmentDetail` is the third (#1373), and it arrived the way the rule
    says one must** — a new issue with its own justification, which was that one
@@ -31,8 +33,31 @@ foundation (#179).
    able to edit equipment, Daniel's answer was "No, and not ever", because a kit
    list that is quietly wrong is worse than one that is out of date and there is no
    surface where a bad write would be noticed. A fourth tool still needs its own
-   issue; a WRITE tool is refused outright, and
+   issue; a WRITE tool over EQUIPMENT is refused outright, and
    `chefChat.readEquipmentDetail.test.ts` pins that the tool list holds none.
+
+   **The limit was lifted again by #1377, for a caller behind the `library`
+   flag.** `findKitchenNotes` / `readKitchenNote` give the chef the same two-step
+   shape over the household's own written-down notes — the kitchen facts that are
+   not recipes (proven numbers, jar and tin capacities, settings that work in this
+   kitchen) — and `writeKitchenNote` is the one tool that **writes**. It is
+   permitted where #1373 refused writing for equipment because neither of that
+   refusal's reasons holds here: a note is a document somebody opens and reads, and
+   it carries a visible revision history with restore (#1375), so a wrong write is
+   noticeable and reversible rather than silently wrong. It cannot delete, every
+   replacement folds the version it replaced into that history via `pushRevision`,
+   and "only when told to" is enforced by the tool description — prompt text, not a
+   mechanism (CLAUDE.md Rule 12); `chefChat.writeKitchenNote.test.ts` pins what
+   actually is mechanical. These three tools are **gated server-side, per caller**,
+   on the same `library` PostHog flag the browser already gates on (`LIBRARY_FLAG_KEY`,
+   shared via `@salt/observability`) — a page written under the flag must not reach a
+   household member the feature is hidden from through an answer no browser gate can
+   reach (#831). The prompt calls these pages **notes**, never "library": that word
+   is already spent above on the household's saved recipes, and a collision there is
+   a collision for the model. Do not confuse this with Kitchen memory (§4 below) —
+   different collection (`libraryPages`, not `kitchenMemories`), different shape
+   (fetched on demand through a tool, not ambient), and a different feature (epic
+   #1372) entirely; they only rhyme in name.
 
 2. **Small and fixed stays ambient; large and growing gets a tool.** Household
    favourites and kitchen memory go straight into the chef's system prompt. Equipment
@@ -263,6 +288,28 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   a guess. The fetched detail carries what the prompt deliberately does not: every
   entry's note, the record's own note, and the **not-owned entries, marked**. A
   Firestore failure degrades to `{ found: false }` and never fails the turn.
+- **For a caller behind the `library` flag** (issue #1377), three more tools reach
+  the `libraryPages` collection — the household's own reference notes, not their
+  recipes (see design principle #1 above for why the naming is kept apart). The
+  gate (`kitchenNotesEnabled` in `chefChat.ts`) is evaluated from the verified
+  caller's uid off the Genkit action context, never off the request body, and
+  **fails closed** on a missing uid — the opposite of `isServerFeatureEnabled`'s own
+  fail-open on an unconfigured deployment (see
+  [error-reporting-calibration.md](error-reporting-calibration.md) for that
+  asymmetry's general shape). `findKitchenNotes` reads WHOLE documents, unlike
+  `findRecipes`'s projection — the summary comes from the body, so there is no
+  cheaper read that could produce one — and renders each match through the pure
+  `libraryPageSummary` (`@salt/domain`), capped by `LIBRARY_PAGE_SEARCH_CEILING`.
+  `readKitchenNote` opens one in full, `{ found: false }` for gone, corrupt or a
+  failed read alike, same as `readRecipe`. `writeKitchenNote` creates a note or
+  replaces one wholesale — there is no append, and the tool description tells the
+  model to read a note first and resend its whole text to add to it — folding the
+  replaced version into `LibraryPageDoc.revisions` via `pushRevision`
+  (`@salt/domain/schemas/libraryPage.ts`) so a bad write is recoverable; it cannot
+  delete, and writes only to `libraryPages`. A caller outside the flag gets a chef
+  with no such tools and no mention of notes — the framing section is omitted
+  entirely rather than sent empty, so today's prompt is byte for byte unchanged for
+  everyone else.
 - **What the reader watched is what gets stored.** The flow returns the text it
   accumulated while streaming, not `response.text` — which is the LAST model message
   alone, and a turn that reaches for `findRecipes` or `readRecipe` makes a second
