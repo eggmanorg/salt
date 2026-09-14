@@ -20,7 +20,7 @@
     "@storybook/svelte-vite": "^10.6.0",
     "@sveltejs/vite-plugin-svelte": "^7",
     "@tailwindcss/vite": "^4",
-    "chromatic": "^18.7.2",
+    "chromatic": "^18.8.1",
     "storybook": "^10.6.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4",
