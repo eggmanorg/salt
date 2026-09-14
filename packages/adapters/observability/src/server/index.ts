@@ -61,4 +61,4 @@ export type { CanonMatchEventProps, CanonMatchPath } from '../shared/matchOutcom
 export { isReportableCategory } from '../shared/reportableCategory.js';
 // Same PostHog feature-flag keys the browser barrel exports (issue #1054) — the
 // browser half of a gate and the server half must ask about the same flag.
-export { BREAD_FLAG_KEY } from '../shared/featureFlagKeys.js';
+export { BREAD_FLAG_KEY, LIBRARY_FLAG_KEY } from '../shared/featureFlagKeys.js';

@@ -256,6 +256,19 @@ export {
 } from './readEquipmentDetail.js';
 export type { ReadEquipmentDetailInput, ReadEquipmentDetailOutput } from './readEquipmentDetail.js';
 
+// findKitchenNotes / readKitchenNote (issue #1377) — the chef's two-step read over
+// the household's own written-down notes. The word in every `.describe()` is
+// "note", never "library": the chef is already taught that "their library" means
+// their saved RECIPES, and one word for two things is a collision for the model.
+export {
+  FindKitchenNotesInputSchema,
+  KitchenNoteMatchSchema,
+  FindKitchenNotesOutputSchema,
+} from './findKitchenNotes.js';
+export type { FindKitchenNotesInput, FindKitchenNotesOutput } from './findKitchenNotes.js';
+export { ReadKitchenNoteInputSchema, ReadKitchenNoteOutputSchema } from './readKitchenNote.js';
+export type { ReadKitchenNoteInput, ReadKitchenNoteOutput } from './readKitchenNote.js';
+
 // identifyRecipeKit (issue #882) — "what do I need to get out?", inferred from the
 // whole stored recipe. Labels are FREE TEXT on purpose; read the header before
 // reaching for an enum over the drawn vocabulary.

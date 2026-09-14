@@ -29,6 +29,7 @@ vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
 vi.mock('@salt/observability', () => ({
   trackUsageEvent: vi.fn(),
   BREAD_FLAG_KEY: 'bread',
+  LIBRARY_FLAG_KEY: 'library',
   isObservabilityFeatureEnabled: () => false,
   areObservabilityFeatureFlagsSettled: () => true,
   onObservabilityFeatureFlags: () => () => {},

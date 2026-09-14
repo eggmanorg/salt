@@ -243,19 +243,22 @@ describe('readRecipe — degrading', () => {
   });
 });
 
-// ─── 4. Two tools, both saying when not to call ──────────────────────────────
+// ─── 4. The tool surface, every description saying when not to call ─────────
 
 describe('the chef’s tool surface', () => {
-  it('is exactly three tools, and no more', () => {
-    // The constraint the rewritten design principle #1 states, and this is what
-    // notices a tool arriving without its own issue. It has fired once and worked:
-    // `readEquipmentDetail` is the third, and issue #1373 is its justification. A
-    // FOURTH still needs one — and a WRITE tool is refused outright, which
+  it('is exactly these tools, and no more', () => {
+    // The constraint the rewritten design principle #1 states. A new tool is a new
+    // issue with its own justification, and this is what notices one arriving
+    // without it — #840 justified the recipe pair, #1373 justified
+    // readEquipmentDetail (read-only, permanently), and #1377 the kitchen-notes
+    // pair. A WRITE tool for equipment is refused outright, which
     // `chefChat.readEquipmentDetail.test.ts` pins separately.
     expect(defineToolCalls.map((c) => c.name)).toEqual([
       'findRecipes',
       'readRecipe',
       'readEquipmentDetail',
+      'findKitchenNotes',
+      'readKitchenNote',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
     expect(readRecipeTool).toMatchObject({ __tool: 'readRecipe' });

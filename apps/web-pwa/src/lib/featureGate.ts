@@ -4,6 +4,7 @@ import {
   isObservabilityFeatureEnabled,
   onObservabilityFeatureFlags,
   BREAD_FLAG_KEY,
+  LIBRARY_FLAG_KEY,
 } from '@salt/observability';
 
 // The one place in the app that knows how to ask "is this feature on for me?"
@@ -42,20 +43,20 @@ export type FeatureKey = 'bread' | 'library';
 // `@salt/observability` (issue #1054) because the server half of the same gate
 // asks about the same flag from an app this one cannot import.
 //
-// `BREAD_FLAG_KEY` lives in @salt/observability because the bread gate has a
-// SERVER half — `onBatchWritten` asks about the same flag from an app web-pwa
-// cannot import — and a shared key is what stops the two spellings drifting. A
-// browser-only gate may keep its literal here instead; `recipePhases` was one,
-// until issue #1213 retired it along with everything it was hiding.
+// Both keys live in @salt/observability because both gates have a SERVER half —
+// `onBatchWritten` for bread, `chefChat`'s kitchen-notes tools for the library —
+// asking about the same flag from an app web-pwa cannot import, and a shared key
+// is what stops the two spellings drifting. A browser-only gate may keep its
+// literal here instead; `recipePhases` was one, until issue #1213 retired it along
+// with everything it was hiding.
 const FLAG_KEY: Record<FeatureKey, string> = {
   bread: BREAD_FLAG_KEY,
-  // BROWSER-ONLY for as long as the library is browser-only, so the literal lives
-  // here rather than in @salt/observability. Epic #1372's Phase 4 gives the chef a
-  // tool that reads these pages from a Cloud Function, and THAT is when the key
-  // has to move next to `BREAD_FLAG_KEY` — a page written under the flag would
-  // otherwise reach a household member the feature is hidden from, through an
-  // answer no browser gate can reach.
-  library: 'library',
+  // MOVED to @salt/observability by #1377, epic #1372's Phase 4, exactly as the
+  // comment that stood here said it would have to be: the chef's kitchen-notes
+  // tools read these pages from a Cloud Function and answer out of them, so the
+  // gate now has a server half (`chefChat.ts`) and a literal in each place would
+  // be a rename waiting to go half-done.
+  library: LIBRARY_FLAG_KEY,
 };
 
 export interface FeatureGate {

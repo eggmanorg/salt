@@ -406,6 +406,18 @@ export { upcomingChefDays, dayForDate } from './personalView/index.js';
 // Kitchen-memory module (issue #816) — reading a composer line as the one chat
 // command the app has. Pure string work by design: capture involves no AI at all.
 export { parseChatCommand } from './memory/index.js';
+
+// Library module (epic #1372) — the pure half of the household's kitchen notes:
+// the summary a search line carries, DERIVED at call time and never stored, and
+// the keyword filter the chef's findKitchenNotes tool narrows with (issue #1377).
+export {
+  libraryPageSummary,
+  LIBRARY_PAGE_SUMMARY_CHARS,
+  searchLibraryPages,
+  LIBRARY_PAGE_SEARCH_DEFAULT_MAX,
+  LIBRARY_PAGE_SEARCH_CEILING,
+} from './library/index.js';
+export type { LibraryPageCandidate, LibraryPageSearchFilters } from './library/index.js';
 // Chat module (issue #1270) — the one place a chat's read-only state is decided.
 export { isChatReadOnly, CHAT_READ_ONLY_AFTER_MS } from './chat/index.js';
 // Formula module (issue #782, epic #778) — composition as ratios against a

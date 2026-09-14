@@ -24,6 +24,7 @@ vi.mock('@salt/observability', () => ({
   // below check which key the adapter was asked about — a stub value here would
   // make them agree with themselves and prove nothing.
   BREAD_FLAG_KEY: 'bread',
+  LIBRARY_FLAG_KEY: 'library',
 }));
 
 // Module state (the memoised store map, the shared revision store) is per-import,

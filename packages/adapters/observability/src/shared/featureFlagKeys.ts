@@ -21,3 +21,19 @@
  * string here changes who sees the feature — it is not a local rename.
  */
 export const BREAD_FLAG_KEY = 'bread' as const;
+
+/**
+ * The PostHog flag gating the library — the kitchen facts that are not recipes
+ * (epic #1372).
+ *
+ * MOVED HERE BY #1377, the phase that gave the chef tools over those pages. Until
+ * then the library was browser-only and the key was a literal in `featureGate.ts`;
+ * the moment a Cloud Function can read a page and answer out of it the gate has a
+ * server half, and a page written under the flag would otherwise reach a household
+ * member the feature is hidden from, through an answer no browser gate can reach
+ * (issue #831). Same reasoning, same file, same shape as `BREAD_FLAG_KEY`.
+ *
+ * The VALUE is what PostHog knows — changing the string here changes who sees the
+ * feature, in the browser and in the chef's tool surface at once.
+ */
+export const LIBRARY_FLAG_KEY = 'library' as const;
