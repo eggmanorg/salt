@@ -1,16 +1,43 @@
 <!-- spec: ai-kitchen-assistant.md §Surfaces v1.0 -->
 <script lang="ts">
-  import { Markdown as ExMarkdown } from 'svelte-exmarkdown';
+  import { Markdown as ExMarkdown, type Plugin } from 'svelte-exmarkdown';
   import { gfmPlugin } from 'svelte-exmarkdown/gfm';
+  import rehypeRaw from 'rehype-raw';
+  import rehypeSanitize from 'rehype-sanitize';
   import { cn } from '../../lib/cn';
+  import { rehypeSvgAttributeCase, svgSanitizeSchema } from './svgSanitizeSchema';
 
   let {
     text,
     breaks = false,
+    sanitizedHtml = false,
     class: className,
-  }: { text: string; breaks?: boolean; class?: string } = $props();
+  }: { text: string; breaks?: boolean; sanitizedHtml?: boolean; class?: string } = $props();
 
-  const plugins = [gfmPlugin()];
+  // Raw HTML in a body is INERT by default and stays that way unless a caller
+  // asks otherwise. `remark-rehype` keeps it as a `raw` node and the renderer
+  // prints a `raw` node as its own escaped text, so `<svg>` typed into a recipe
+  // note or arriving in a chef's reply shows up as visible markup source — never
+  // as an element, and never as nothing. `sanitizedHtml` is what turns those raw
+  // nodes into real elements, and it is opt-in precisely because the chat renders
+  // model output: see `svgSanitizeSchema.ts` for what survives, what does not,
+  // and why no CSP sits underneath it.
+  //
+  // ORDER IS LOAD-BEARING: `rehype-raw` parses the raw HTML, THEN
+  // `rehype-sanitize` applies the allowlist to what it produced. Reversed, the
+  // sanitiser discards the `raw` nodes it has no rule for and no drawing ever
+  // renders — `MarkdownSanitize.test.ts` goes red in seven places.
+  // `rehypeSvgAttributeCase` runs last and is presentation only.
+  const plugins: Plugin[] = $derived(
+    sanitizedHtml
+      ? [
+          gfmPlugin(),
+          { rehypePlugin: rehypeRaw },
+          { rehypePlugin: [rehypeSanitize, svgSanitizeSchema] },
+          { rehypePlugin: rehypeSvgAttributeCase },
+        ]
+      : [gfmPlugin()],
+  );
 
   // CommonMark folds a lone newline into a space, so line-per-thought prose
   // (recipe notes) would run together the first time it were rendered as
