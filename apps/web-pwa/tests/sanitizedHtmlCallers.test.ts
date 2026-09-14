@@ -46,12 +46,27 @@ function walk(dir: string): string[] {
  * Strip HTML and JS comments, so a component that merely DISCUSSES the prop —
  * `LibraryPageDocument.svelte` has a paragraph about it — is not counted as one
  * that passes it.
+ *
+ * THE LOOP IS NOT DECORATION, and a "simplification" back to a single pass turns
+ * CI red: CodeQL's `js/incomplete-multi-character-sanitization` rejects a
+ * one-shot multi-character strip, because removing the inner comment of
+ * `<!--<!-- -->-->` re-forms an outer one out of the surrounding text. Repeating
+ * to a fixed point is the documented remedy. The consequence here would be a
+ * missed opt-in rather than an injection — this reads source, it does not render
+ * it — but a scan that can be talked out of seeing a caller is worth no more than
+ * the prose comments it replaced.
  */
 function stripComments(src: string): string {
-  return src
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
+  let out = src;
+  let previous: string;
+  do {
+    previous = out;
+    out = out
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+  } while (out !== previous);
+  return out;
 }
 
 // The prop as it is actually passed: shorthand (`<Markdown … sanitizedHtml />`),
