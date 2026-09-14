@@ -732,3 +732,33 @@ describe('ChatSessionPage — a chat that has gone quiet', () => {
     expect(queryByTestId('chat-readonly-notice')).toBeNull();
   });
 });
+
+// The chef's reply is the one string in this app an outside system writes, and
+// it is the reason `Markdown`'s `sanitizedHtml` prop (#1376) defaults off and is
+// passed by the library page alone. The same drawing renders as a drawing in
+// `LibraryPageView.test.ts`; here it must stay visible source. Not merely absent
+// — `svelte-exmarkdown` prints a `raw` node as its own escaped text.
+describe('ChatSessionPage — a model reply is never markup', () => {
+  const DIAGRAM =
+    '<svg viewBox="0 0 40 20"><rect x="1" y="1" width="38" height="18" fill="none" stroke="black" stroke-width="2" /></svg>';
+
+  it('renders a drawing in a reply as text, never as an element', async () => {
+    mockSessions._set([
+      makeSession({
+        messages: [
+          { id: 'm1', role: 'user', text: 'draw me a jar', createdAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'm2', role: 'assistant', text: DIAGRAM, createdAt: '2026-01-01T00:00:01.000Z' },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    // Filtered by `viewBox` rather than a bare `svg` query: the page is full of
+    // Lucide icons, which are `<svg>` too.
+    const drawings = [...document.body.querySelectorAll('svg')].filter(
+      (el) => el.getAttribute('viewBox') === '0 0 40 20',
+    );
+    expect(drawings).toHaveLength(0);
+    expect(document.body.textContent).toContain('<svg viewBox="0 0 40 20">');
+  });
+});

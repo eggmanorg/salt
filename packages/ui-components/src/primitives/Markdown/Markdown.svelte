@@ -150,6 +150,15 @@
     opacity: 0.2;
     margin: 0.5rem 0;
   }
+  /* A drawing only exists when a caller passed `sanitizedHtml`, and it arrives
+     with whatever `width` its author typed. Cap it at the column it is in and let
+     the `viewBox` keep the proportions — here rather than in each consuming
+     surface, because "do not overflow your container" is the renderer's job and
+     the library already has three of those surfaces. */
+  .salt-md :global(svg) {
+    max-width: 100%;
+    height: auto;
+  }
   .salt-md :global(table) {
     border-collapse: collapse;
     margin: 0.5rem 0;

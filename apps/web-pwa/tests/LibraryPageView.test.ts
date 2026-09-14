@@ -79,6 +79,14 @@ function page(over: Partial<LibraryPageDoc> = {}): LibraryPageDoc {
   };
 }
 
+/**
+ * A benign drawing (#1376). The same string appears in `RecipeNotesCard.test.ts`,
+ * where it must NOT become an element — the pair is what makes "only the library
+ * opted in" mechanical rather than asserted.
+ */
+const DIAGRAM =
+  '<svg viewBox="0 0 40 20"><rect x="1" y="1" width="38" height="18" fill="none" stroke="black" stroke-width="2" /></svg>';
+
 function mount(doc: LibraryPageDoc | null = page()) {
   const result = render(LibraryPageView, { props: { params: { id: 'page-1' } } });
   mockPages.set(doc === null ? [] : [doc]);
@@ -147,15 +155,57 @@ describe('LibraryPageView — what it shows', () => {
     expect(body.querySelectorAll('td')[1]?.textContent).toBe('580 g');
   });
 
-  // No `rehype-raw` anywhere in the repo, so raw HTML in a body is INERT rather
-  // than sanitised — it never becomes a live element. Not invisible either:
-  // `svelte-exmarkdown` renders it as its own escaped text, so what this asserts
-  // is the absent ELEMENT, not absent text. Phase 3 is what opens raw HTML up,
-  // deliberately and behind an allowlist; this pins today's answer.
-  it('does not render raw HTML in a body as an element', async () => {
-    mount(page({ body: '<div data-testid="smuggled">hello</div>' }));
-    await screen.findByTestId('library-body');
-    expect(screen.queryByTestId('smuggled')).toBeNull();
+  // ─── Diagrams (#1376) ───────────────────────────────────────────────────
+  //
+  // The library page is the ONE surface in the app that passes `sanitizedHtml`,
+  // so raw HTML in a body is no longer inert here: it is parsed and then put
+  // through `svgSanitizeSchema`'s allowlist. The counterpart — the SAME input
+  // staying inert in a recipe note — is asserted in `RecipeNotesCard.test.ts`,
+  // and the allowlist itself has its own hostile-input suite in
+  // `packages/ui-components/tests/MarkdownSanitize.test.ts`. What is pinned here
+  // is that this page, and only this page, opted in.
+  it('renders a diagram drawn in SVG as a drawing, sized by its own viewBox', async () => {
+    mount(page({ body: `## Jars\n\n${DIAGRAM}` }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 40 20');
+    expect(body.querySelector('rect')?.getAttribute('stroke-width')).toBe('2');
+    expect(body.querySelector('h2')?.textContent).toBe('Jars');
+  });
+
+  it('renders an allowed HTML tag in a body as an element, not as its own source', async () => {
+    mount(page({ body: '<div><b>smuggled</b></div>' }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('b')?.textContent).toBe('smuggled');
+  });
+
+  it('lets nothing executable through into a body', async () => {
+    mount(
+      page({
+        body: [
+          '<script>window.pwned = 1;<\/script>',
+          '',
+          '<svg viewBox="0 0 1 1" onload="window.pwned = 1"><rect width="1" height="1" onclick="window.pwned = 1" /></svg>',
+          '',
+          '<iframe src="https://evil.example"></iframe>',
+        ].join('\n'),
+      }),
+    );
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('script')).toBeNull();
+    expect(body.querySelector('iframe')).toBeNull();
+    expect(body.textContent).not.toContain('window.pwned');
+    const attributes = [...body.querySelectorAll('*')].flatMap((el) =>
+      [...el.attributes].map((attr) => attr.name),
+    );
+    expect(attributes.filter((name) => /^on/i.test(name))).toEqual([]);
+  });
+
+  // A drawing is still just text in the body, so editing it is editing markdown.
+  it('shows the SVG source in the text box when the body is tapped', async () => {
+    mount(page({ body: DIAGRAM }));
+    await fireEvent.click(await screen.findByTestId('library-body'));
+    const input = await screen.findByTestId('library-body-input');
+    expect((input as HTMLTextAreaElement).value).toBe(DIAGRAM);
   });
 
   it('invites the first words when the page is blank', async () => {

@@ -55,14 +55,19 @@
    * ─── WHAT THE RENDERER DOES AND DOES NOT DO ─────────────────────────────────
    *
    * `Markdown` renders through an AST → Svelte pipeline with `gfmPlugin()`, so
-   * tables — the point of this feature — render as tables. There is no `rehype-raw`
-   * anywhere in the repo, so raw HTML inside a body is INERT rather than sanitised:
-   * it never executes and never becomes a live element. It is not invisible either
-   * — `svelte-exmarkdown` renders a `raw` hast node as its own escaped text, so
-   * HTML that reached a body would show up as visible markup source, not vanish.
-   * That is the safe-but-ugly default while Salt serves no Content-Security-Policy,
-   * and Phase 3 is what opens it deliberately, behind an allowlist with its own
-   * tests.
+   * tables — the point of this feature — render as tables. `sanitizedHtml` is the
+   * library's own opt-in on top of that (#1376): raw HTML in a body is parsed and
+   * then passed through the SVG allowlist in
+   * `ui-components/src/primitives/Markdown/svgSanitizeSchema.ts`, so a drawing
+   * renders and a `<script>`, an `<iframe>` or an `on*` handler does not survive.
+   * Salt serves no Content-Security-Policy, so that allowlist is the entire
+   * defence and its test suite is the only thing checking it — read the module
+   * header before widening anything.
+   *
+   * The prop is deliberately NOT on anywhere else. A `<svg>` typed into a recipe
+   * note or arriving in a chef's reply still renders as visible markup source, and
+   * the chat is the reason: its text is written by a model, which is the one place
+   * in this app markup should not be accepted from.
    *
    * The document-scale type at the foot is a page-local override of `.salt-md`,
    * whose own sizes are tuned for a two-line note inside a card (h1 at 1.125rem,
@@ -256,7 +261,7 @@
               Nothing written yet. Tap to start — markdown, including tables.
             </p>
           {:else}
-            <Markdown text={page.body} />
+            <Markdown text={page.body} sanitizedHtml />
           {/if}
         </div>
         <!-- The keyboard route in. The body region above is a mouse/touch
