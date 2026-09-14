@@ -595,14 +595,16 @@ describe('setEquipmentKind', () => {
     expect(result.value.items[0]!.updatedAt).toBe(NOW2);
   });
 
-  // THE PIN on "it moves nothing": the flag is words, so a round trip through
-  // `family` and back must leave the record byte-identical apart from the
-  // timestamp. If a future change ever makes `kind` drop an entry, clear a tick
-  // or rewrite a note, this goes red.
+  // THE PIN on "it moves nothing EXCEPT the ticks a family renders
+  // meaningless", with the exception stated rather than the absolute. A round
+  // trip through `family` and back must leave the record byte-identical apart
+  // from the timestamp — for a record whose entries were already owned, which
+  // every entry added to a family is. If a future change ever makes `kind` drop
+  // an entry, rewrite a note or touch `included`, this goes red.
   it('is words only — a round trip through family restores the record exactly', () => {
     const original = makeItem('eq-1', {
       accessories: [
-        makeAccessory('acc-1', { owned: false, included: true, note: 'not owned' }),
+        makeAccessory('acc-1', { owned: true, included: true, note: 'lives in the drawer' }),
         makeAccessory('acc-2', { owned: true, included: false, note: '' }),
       ],
       rules: ['Never sear in the non-stick'],
@@ -624,6 +626,61 @@ describe('setEquipmentKind', () => {
     expect(back.kind).toBe('ok');
     if (back.kind !== 'ok') return;
     expect(back.value.items[0]).toEqual(original);
+  });
+
+  // THE PIN on the one thing the flag does move, and on why it has to. Entries
+  // typed while the record was still `'equipment'` are stored `owned: false`,
+  // and once it is a family the owned checkbox is no longer rendered — so
+  // nothing on screen can set them again. `renderEquipmentManifest` renders only
+  // owned entries and `renderEquipmentDetail` marks unowned ones "they do not
+  // have this one", so leaving them false would render a family of pans he owns
+  // as a bare name in every AI prompt and report it to the chef as kit he does
+  // not have. Decision 2's "always true where it has no meaning", enforced at
+  // the one write path that can violate it.
+  it('marks every entry owned when the record becomes a family', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', {
+        accessories: [
+          makeAccessory('acc-1', { owned: false, included: false, note: '28cm cast iron' }),
+          makeAccessory('acc-2', { owned: true, included: false, note: '' }),
+        ],
+      }),
+    ]);
+    const result = setEquipmentKind(manifest, {
+      equipmentId: 'eq-1',
+      kind: 'family',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.accessories.map((a) => a.owned)).toEqual([true, true]);
+    // Nothing else about the entries moved.
+    expect(result.value.items[0]!.accessories.map((a) => [a.id, a.note, a.included])).toEqual([
+      ['acc-1', '28cm cast iron', false],
+      ['acc-2', '', false],
+    ]);
+  });
+
+  // The other direction touches nothing: a tick means something again on an
+  // appliance's accessory, and the household is the one who sets it.
+  it('leaves every tick alone when the record becomes equipment again', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', {
+        kind: 'family',
+        accessories: [
+          makeAccessory('acc-1', { owned: false, included: false, note: '' }),
+          makeAccessory('acc-2', { owned: true, included: false, note: '' }),
+        ],
+      }),
+    ]);
+    const result = setEquipmentKind(manifest, {
+      equipmentId: 'eq-1',
+      kind: 'equipment',
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.accessories.map((a) => a.owned)).toEqual([false, true]);
   });
 
   it('returns NotFound when equipmentId does not exist', () => {
