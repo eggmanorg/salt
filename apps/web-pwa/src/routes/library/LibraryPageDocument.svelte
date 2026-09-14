@@ -14,7 +14,7 @@
     Textarea,
   } from '@salt/ui-components';
   import { LIBRARY_PAGE_BODY_MAX, LIBRARY_PAGE_TITLE_MAX } from '@salt/domain/schemas';
-  import type { LibraryPageDoc } from '@salt/domain/schemas';
+  import type { LibraryPageDoc, LibraryPageRevisionDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
   import { addToast } from '../../lib/toastStore.js';
   import {
@@ -57,9 +57,12 @@
    * `Markdown` renders through an AST → Svelte pipeline with `gfmPlugin()`, so
    * tables — the point of this feature — render as tables. There is no `rehype-raw`
    * anywhere in the repo, so raw HTML inside a body is INERT rather than sanitised:
-   * it is not rendered at all. That is the safe default while Salt serves no
-   * Content-Security-Policy, and Phase 3 is what opens it deliberately, behind an
-   * allowlist with its own tests.
+   * it never executes and never becomes a live element. It is not invisible either
+   * — `svelte-exmarkdown` renders a `raw` hast node as its own escaped text, so
+   * HTML that reached a body would show up as visible markup source, not vanish.
+   * That is the safe-but-ugly default while Salt serves no Content-Security-Policy,
+   * and Phase 3 is what opens it deliberately, behind an allowlist with its own
+   * tests.
    *
    * The document-scale type at the foot is a page-local override of `.salt-md`,
    * whose own sizes are tuned for a two-line note inside a card (h1 at 1.125rem,
@@ -144,8 +147,8 @@
    * Put a version back. The write is the page's, not the sheet's — one write path
    * for this document, and it is this file.
    */
-  async function handleRestore(index: number): Promise<void> {
-    const write = restoreLibraryRevision(page.id, index);
+  async function handleRestore(revision: LibraryPageRevisionDoc): Promise<void> {
+    const write = restoreLibraryRevision(page.id, revision);
     // A restore is a deliberate act, not a keystroke: it has no burst to wait for
     // and no reason to sit out the debounce window.
     await flushLibraryWrites();

@@ -48,8 +48,17 @@
     open: boolean;
     /** Newest first, as the document stores them. */
     revisions: readonly LibraryPageRevisionDoc[];
-    /** Put revision `index` back. Resolves when the restore has been issued. */
-    onRestore: (index: number) => Promise<void>;
+    /**
+     * Put this revision back. Resolves when the restore has been issued.
+     *
+     * The revision itself, not its position: this sheet's `revisions` is a
+     * snapshot taken when it opened, and by the time Restore is tapped a
+     * concurrent write from another device may have already changed what sits
+     * at any given index. Handing back the value the preview actually showed is
+     * what lets the caller restore THAT version rather than whatever the index
+     * now points at.
+     */
+    onRestore: (revision: LibraryPageRevisionDoc) => Promise<void>;
   }
   let { open = $bindable(), revisions, onRestore }: Props = $props();
 
@@ -94,9 +103,9 @@
       : `The last ${LIBRARY_PAGE_REVISION_CAP} versions, newest first.`,
   );
 
-  async function restore(index: number): Promise<void> {
+  async function restore(revision: LibraryPageRevisionDoc): Promise<void> {
     restoring = true;
-    await onRestore(index);
+    await onRestore(revision);
     restoring = false;
     open = false;
   }
@@ -158,7 +167,7 @@
           Back
         </Button>
         <Button
-          onclick={() => void restore(chosen.index)}
+          onclick={() => void restore(chosen.revision)}
           loading={restoring}
           disabled={restoring}
           data-testid="library-history-restore"

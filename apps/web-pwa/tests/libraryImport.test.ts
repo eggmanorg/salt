@@ -14,11 +14,14 @@ import { appendedBody, htmlToMarkdown } from '../src/lib/libraryImport.js';
 //     dropped them would be pointless and would still look like it worked on the
 //     prose either side.
 //  2. NO MARKUP SURVIVES. The renderer has no `rehype-raw`, so HTML in a body is
-//     not dangerous — it is INVISIBLE, which is worse to diagnose. Two ways it
-//     could get in: turndown keeping the text of an element it has no rule for
-//     (`<script>`), and the GFM plugin bailing out to `outerHTML` for a table it
-//     cannot express as pipes. Both are covered below, and both were observed
-//     failing before the code that stops them was written.
+//     not dangerous — but it is not invisible either: `svelte-exmarkdown` emits a
+//     `raw` hast node as its own escaped text, so anything that got through would
+//     show up on the page as literal markup source. Two ways it could get in:
+//     turndown keeping the text of an element it has no rule for (`<script>`),
+//     and the GFM plugin bailing out to `outerHTML` — either the whole table, or
+//     a `<br>`/extra block child inside one cell forcing a re-escaped `<br>` back
+//     in. Both are covered below, and both were observed failing before the code
+//     that stops them was written.
 
 /** Every HTML tag left in a converted body. Empty is the only acceptable answer. */
 function residualTags(markdown: string): string[] {
@@ -77,6 +80,51 @@ describe('htmlToMarkdown — headings, lists and links', () => {
   });
 });
 
+// A `javascript:` href survives the ordinary conversion and renders as a LIVE,
+// clickable link — measured end to end against this PR's own code, and the repo
+// carries no Content-Security-Policy anywhere to fall back on. Pasting from an
+// untrusted page is precisely what this feature is for, so this is not a
+// hypothetical: an allowlist on the converted link's scheme, applied to the DOM
+// before turndown sees it — not a sanitiser and not `rehype-raw`.
+describe('htmlToMarkdown — link schemes', () => {
+  it('drops the href but keeps the text for a javascript: link', () => {
+    const md = htmlToMarkdown('<a href="javascript:alert(document.cookie)">Click me</a>');
+    expect(md).toBe('Click me');
+    expect(md).not.toContain('javascript');
+    expect(residualTags(md)).toEqual([]);
+  });
+
+  it('drops the href for a data: link too', () => {
+    const md = htmlToMarkdown('<a href="data:text/html,hi">Open</a>');
+    expect(md).toBe('Open');
+    expect(md).not.toContain('data:');
+  });
+
+  it('keeps an ordinary http(s) link as a link', () => {
+    const md = htmlToMarkdown('<a href="https://example.test/jars">Source</a>');
+    expect(md).toBe('[Source](https://example.test/jars)');
+  });
+
+  it('keeps a mailto: link as a link', () => {
+    const md = htmlToMarkdown('<a href="mailto:kitchen@example.test">Email</a>');
+    expect(md).toBe('[Email](mailto:kitchen@example.test)');
+  });
+
+  it('keeps a relative link as a link', () => {
+    const md = htmlToMarkdown('<a href="/recipes/sous-vide">Recipe</a>');
+    expect(md).toBe('[Recipe](/recipes/sous-vide)');
+  });
+
+  // Fails CLOSED: an href the URL parser itself rejects (an empty host is one —
+  // `new URL('http://', base)` throws) is treated as unsafe rather than let
+  // through on a parse failure, the same "deny by default" the scheme allowlist
+  // above is built on.
+  it('drops a href the URL parser itself cannot make sense of', () => {
+    const md = htmlToMarkdown('<a href="http://">Broken</a>');
+    expect(md).toBe('Broken');
+  });
+});
+
 describe('htmlToMarkdown — what must not survive', () => {
   // Turndown's default for an element it has no rule for is to keep the CONTENTS
   // and drop the tag, so without an explicit `remove` the script body arrives as
@@ -102,11 +150,13 @@ describe('htmlToMarkdown — what must not survive', () => {
     expect(md).toBe('kept');
   });
 
-  // THE second raw-HTML route, and the one that is invisible rather than merely
-  // wrong. `@joplin/turndown-plugin-gfm` emits the table's `outerHTML` inside a
-  // `joplin-table-wrapper` div whenever a cell holds a list, a heading, a rule, a
-  // blockquote or code — and this app renders that as nothing at all. Remove the
-  // cell flattening in `libraryImport.ts` and every assertion below goes red.
+  // THE second raw-HTML route, and the one that shows up as visible markup rather
+  // than a plausible-looking wrong result. `@joplin/turndown-plugin-gfm` emits
+  // the table's `outerHTML` inside a `joplin-table-wrapper` div whenever a cell
+  // holds a list, a heading, a rule, a blockquote or code (or a `<br>`, or more
+  // than one block child — see `flattenLineBreaks` below) — and this app renders
+  // that HTML as its own escaped source text, not as nothing. Remove the cell
+  // flattening in `libraryImport.ts` and every assertion below goes red.
   it('still produces a TABLE when a cell holds a list', () => {
     const md = htmlToMarkdown(
       '<table><thead><tr><th>Stage</th><th>Notes</th></tr></thead>' +
@@ -132,6 +182,46 @@ describe('htmlToMarkdown — what must not survive', () => {
       '<table><tr><td><table><tr><td>inner</td></tr></table></td><td>outer</td></tr></table>',
     );
     expect(residualTags(md)).toEqual([]);
+  });
+
+  // THE fix for the finding measured against this PR's own code: a cell holding a
+  // `<br>`, or more than one block child, converts to a literal `<br>` in the
+  // pipe cell rather than a table bail-out — `flattenTableCells` never touched
+  // this route, because the newline does not come from a list, a heading, a rule
+  // or a blockquote, it comes from the `<br>`/block itself. Div-wrapped and
+  // `<br>`-separated cells are the ordinary shape of a copied
+  // time-and-temperature table, not the edge case.
+  it('flattens a <br> inside a cell instead of leaving a literal one', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td>Medium rare<br>Pink throughout</td><td>54 °C</td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toContain('Medium rare; Pink throughout');
+  });
+
+  it('flattens a cell with two <p> children instead of leaving embedded <br>s', () => {
+    const md = htmlToMarkdown('<table><tr><td><p>one</p><p>two</p></td><td>x</td></tr></table>');
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toContain('one; two');
+  });
+
+  it('flattens a cell with two <div> children the same way', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><div>one</div><div>two</div></td><td>x</td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toContain('one; two');
+  });
+
+  // A single <p> wrapping a whole cell — the ordinary shape of a Google Docs
+  // table — must not grow a stray leading separator, and inline formatting inside
+  // it must survive (unlike the heading/list flattening above, which reduces to
+  // bare text).
+  it('keeps a single wrapping <p> plain, formatting and all', () => {
+    const md = htmlToMarkdown('<table><tr><td><p><strong>Ribeye</strong></td></tr></table>');
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toContain('**Ribeye**');
+    expect(md).not.toMatch(/^;/);
   });
 
   // Total over strings: `text/html` parsing recovers from anything, which is what

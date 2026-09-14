@@ -15,6 +15,12 @@ import {
 // text it overwrote, so a mistaken restore would be final. That is the one thing
 // a history feature must never do, and it is what `records the version it
 // replaced` and `can itself be undone` are here to keep true.
+//
+// RESTORE IS KEYED ON THE REVISION ITSELF, not a position in the array — a sheet
+// previews a revision by value and only later acts, and a concurrent write from
+// another device between those two moments shifts every index. The "concurrent
+// write" describe block below is what that failure mode looks like and why
+// matching on the whole snapshot rather than an index closes it.
 
 const { mockSubscribe, mockSave, mockDelete, mockMember } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
@@ -81,9 +87,9 @@ function lastSaved(): LibraryPageDoc {
   return mockSave.mock.calls.at(-1)?.[0] as LibraryPageDoc;
 }
 
-/** Restore, let the write land, and echo it back as Firestore would. */
-async function restoreAndSettle(index: number): Promise<LibraryPageDoc> {
-  const write = restoreLibraryRevision('page-1', index);
+/** Restore `rev`, let the write land, and echo it back as Firestore would. */
+async function restoreAndSettle(rev: LibraryPageRevisionDoc): Promise<LibraryPageDoc> {
+  const write = restoreLibraryRevision('page-1', rev);
   await flushLibraryWrites();
   await write;
   const saved = lastSaved();
@@ -103,28 +109,18 @@ beforeEach(() => {
 
 describe('restoreLibraryRevision', () => {
   it('puts the chosen version’s title and body back on the page', async () => {
-    deliver([
-      page({
-        title: 'Rewritten',
-        body: 'rewritten',
-        revisions: [revision({ title: 'Weck jars', body: 'original' })],
-      }),
-    ]);
-    const saved = await restoreAndSettle(0);
+    const original = revision({ title: 'Weck jars', body: 'original' });
+    deliver([page({ title: 'Rewritten', body: 'rewritten', revisions: [original] })]);
+    const saved = await restoreAndSettle(original);
     expect(saved).toMatchObject({ title: 'Weck jars', body: 'original' });
   });
 
   // The whole point. A restore goes through `beginLibraryEdit` first, so the text
   // it overwrites is snapshotted and rides into `revisions` on the same write.
   it('records the version it replaced as the newest history entry', async () => {
-    deliver([
-      page({
-        title: 'Rewritten',
-        body: 'rewritten',
-        revisions: [revision({ title: 'Weck jars', body: 'original' })],
-      }),
-    ]);
-    const saved = await restoreAndSettle(0);
+    const original = revision({ title: 'Weck jars', body: 'original' });
+    deliver([page({ title: 'Rewritten', body: 'rewritten', revisions: [original] })]);
+    const saved = await restoreAndSettle(original);
     expect(saved.revisions[0]).toMatchObject({ title: 'Rewritten', body: 'rewritten' });
     expect(saved.revisions).toHaveLength(2);
   });
@@ -132,30 +128,22 @@ describe('restoreLibraryRevision', () => {
   // Which is what makes a restore undoable without any undo machinery: the
   // version that was showing is now at the front of the list.
   it('can itself be undone by restoring again', async () => {
-    deliver([
-      page({
-        title: 'Rewritten',
-        body: 'rewritten',
-        revisions: [revision({ title: 'Weck jars', body: 'original' })],
-      }),
-    ]);
-    await restoreAndSettle(0);
-    const back = await restoreAndSettle(0);
+    const original = revision({ title: 'Weck jars', body: 'original' });
+    deliver([page({ title: 'Rewritten', body: 'rewritten', revisions: [original] })]);
+    const afterFirst = await restoreAndSettle(original);
+    const back = await restoreAndSettle(afterFirst.revisions[0]!);
     expect(back).toMatchObject({ title: 'Rewritten', body: 'rewritten' });
   });
 
   it('restores a version from further down the list, not just the newest', async () => {
+    const target = revision({ body: 'three ago' });
     deliver([
       page({
         body: 'current',
-        revisions: [
-          revision({ body: 'one ago' }),
-          revision({ body: 'two ago' }),
-          revision({ body: 'three ago' }),
-        ],
+        revisions: [revision({ body: 'one ago' }), revision({ body: 'two ago' }), target],
       }),
     ]);
-    expect((await restoreAndSettle(2)).body).toBe('three ago');
+    expect((await restoreAndSettle(target)).body).toBe('three ago');
   });
 
   // The DoD line "a restore that changes nothing records nothing", pinned.
@@ -167,13 +155,9 @@ describe('restoreLibraryRevision', () => {
   // of what is showing. The guard in `restoreLibraryRevision` is what makes the
   // sentence true. Break it — drop the short-circuit — and this goes red.
   it('writes nothing at all when the chosen version is what is already showing', async () => {
-    deliver([
-      page({
-        body: 'current',
-        revisions: [revision({ body: 'one ago' }), revision({ body: 'current' })],
-      }),
-    ]);
-    const result = await restoreLibraryRevision('page-1', 1);
+    const current = revision({ body: 'current' });
+    deliver([page({ body: 'current', revisions: [revision({ body: 'one ago' }), current] })]);
+    const result = await restoreLibraryRevision('page-1', current);
     await flushLibraryWrites();
     expect(result.kind).toBe('ok');
     expect(mockSave).not.toHaveBeenCalled();
@@ -181,12 +165,13 @@ describe('restoreLibraryRevision', () => {
 
   // …including the ordinary case of restoring the newest version twice over.
   it('records nothing the second time the same version is restored', async () => {
-    deliver([page({ body: 'current', revisions: [revision({ body: 'original' })] })]);
-    const first = await restoreAndSettle(0);
+    const original = revision({ body: 'original' });
+    deliver([page({ body: 'current', revisions: [original] })]);
+    const first = await restoreAndSettle(original);
     expect(first.body).toBe('original');
 
     mockSave.mockClear();
-    await restoreLibraryRevision('page-1', 1);
+    await restoreLibraryRevision('page-1', original);
     await flushLibraryWrites();
     expect(mockSave).not.toHaveBeenCalled();
   });
@@ -203,7 +188,8 @@ describe('restoreLibraryRevision', () => {
       deliver([current]);
     }
     for (let i = 0; i < LIBRARY_PAGE_REVISION_CAP + 3; i += 1) {
-      current = await restoreAndSettle(LIBRARY_PAGE_REVISION_CAP - 1);
+      const target = current.revisions[LIBRARY_PAGE_REVISION_CAP - 1]!;
+      current = await restoreAndSettle(target);
     }
     expect(current.revisions).toHaveLength(LIBRARY_PAGE_REVISION_CAP);
   });
@@ -212,8 +198,9 @@ describe('restoreLibraryRevision', () => {
   // snapshot, so the next ordinary edit starts its own session rather than
   // inheriting this one's and losing its own pre-edit text.
   it('leaves no pending snapshot for the next edit to inherit', async () => {
-    deliver([page({ body: 'current', revisions: [revision({ body: 'original' })] })]);
-    const restored = await restoreAndSettle(0);
+    const original = revision({ body: 'original' });
+    deliver([page({ body: 'current', revisions: [original] })]);
+    const restored = await restoreAndSettle(original);
 
     beginLibraryEdit('page-1');
     void queueLibraryEdit({ ...restored, body: 'typed after' });
@@ -223,7 +210,7 @@ describe('restoreLibraryRevision', () => {
 
   it('reports NotFound rather than throwing when the page is gone', async () => {
     deliver([]);
-    const result = await restoreLibraryRevision('page-1', 0);
+    const result = await restoreLibraryRevision('page-1', revision());
     expect(result).toMatchObject({
       kind: 'err',
       error: { kind: 'NotFound', resource: 'libraryPage' },
@@ -231,10 +218,54 @@ describe('restoreLibraryRevision', () => {
     expect(mockSave).not.toHaveBeenCalled();
   });
 
-  it('reports NotFound rather than throwing for an index the page does not have', async () => {
+  it('reports NotFound rather than throwing for a revision the page no longer has', async () => {
     deliver([page({ revisions: [revision()] })]);
-    const result = await restoreLibraryRevision('page-1', 4);
+    const result = await restoreLibraryRevision('page-1', revision({ body: 'never on the page' }));
     expect(result.kind).toBe('err');
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+});
+
+// THE race the index-keyed version of this command had: a preview holds a
+// revision by VALUE, taken from `page.revisions` when the sheet opened. Restoring
+// used to hand back the INDEX it was previewed at, re-read against a live array —
+// so a write from another device landing in between shifts every index, and the
+// restore silently puts back a different version than the one shown, while still
+// reporting success. Family-shared data has no "nobody else is editing this"
+// window, so this is the ordinary case, not a corner one.
+describe('restoreLibraryRevision — a concurrent write shifts the array', () => {
+  it('restores the previewed version, not whatever now sits at its old position', async () => {
+    const wanted = revision({ title: 'Weck jars', body: 'the one being previewed' });
+    const initial = page({
+      title: 'Someone else edited',
+      body: 'concurrent body',
+      revisions: [revision({ body: 'newer than the preview' }), wanted],
+    });
+    deliver([initial]);
+
+    // A concurrent write lands while the preview is open — an ordinary edit from
+    // another device, pushing a new revision to the front and shifting `wanted`
+    // from index 1 to index 2.
+    beginLibraryEdit('page-1');
+    void queueLibraryEdit({ ...initial, body: 'yet another device wrote this' });
+    await flushLibraryWrites();
+    deliver([lastSaved()]);
+
+    // The stale index (1) would now land on the WRONG revision. Restoring the
+    // value itself still finds the right one.
+    const result = await restoreAndSettle(wanted);
+    expect(result).toMatchObject({ title: 'Weck jars', body: 'the one being previewed' });
+  });
+
+  it('reports NotFound rather than silently restoring a different version when the previewed one is gone', async () => {
+    const evicted = revision({ body: 'no longer on the page' });
+    deliver([page({ body: 'current', revisions: [evicted] })]);
+    // Simulates the concurrent write that evicted it — the cap enforcement
+    // itself (`pushRevision`) is proved in `libraryPage.schema.test.ts`.
+    deliver([page({ body: 'current', revisions: [] })]);
+
+    const result = await restoreLibraryRevision('page-1', evicted);
+    expect(result).toMatchObject({ kind: 'err', error: { kind: 'NotFound' } });
     expect(mockSave).not.toHaveBeenCalled();
   });
 });

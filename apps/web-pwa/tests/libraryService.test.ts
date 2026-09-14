@@ -389,4 +389,31 @@ describe('createLibraryPage — from an import', () => {
     expect(result.kind).toBe('ok');
     expect(lastSaved().body).toBe('## Sous vide\n\n| A |');
   });
+
+  // THE body-length rail existed only on `appendToLibraryPage` — an import that
+  // MINTS a page took an arbitrary body and checked nothing, so the same import
+  // path that appends to an existing page could write a brand new one past
+  // `LIBRARY_PAGE_BODY_MAX`. That is not cosmetic: the maximum is a Zod
+  // `.max()`, so a page written past it fails to parse on the very next read and
+  // silently disappears from the list — the exact failure `LIBRARY_PAGE_TOO_LONG`
+  // exists to report instead. Routed through `appendedBody('', body)` — the same
+  // single arithmetic `appendToLibraryPage` refuses against — so there are not
+  // two copies of this rule to drift apart.
+  it('refuses to mint a page whose body is already past the maximum', async () => {
+    const result = await createLibraryPage('Untitled page', 'y'.repeat(LIBRARY_PAGE_BODY_MAX + 1));
+    expect(result).toMatchObject({
+      kind: 'err',
+      error: { kind: 'ValidationError', code: 'LIBRARY_PAGE_TOO_LONG' },
+    });
+    expect(mockSave).not.toHaveBeenCalled();
+    // Refused before the optimistic store apply too — no half-created page left
+    // behind for the refusal to contradict.
+    expect(get(libraryPages)).toEqual([]);
+  });
+
+  it('accepts a body that exactly fits', async () => {
+    const result = await createLibraryPage('Untitled page', 'y'.repeat(LIBRARY_PAGE_BODY_MAX));
+    expect(result.kind).toBe('ok');
+    expect(lastSaved().body).toHaveLength(LIBRARY_PAGE_BODY_MAX);
+  });
 });

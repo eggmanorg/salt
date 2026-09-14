@@ -148,9 +148,11 @@ describe('LibraryPageView — what it shows', () => {
   });
 
   // No `rehype-raw` anywhere in the repo, so raw HTML in a body is INERT rather
-  // than sanitised — it is not rendered at all. Phase 3 is what opens that,
+  // than sanitised — it never becomes a live element. Not invisible either:
+  // `svelte-exmarkdown` renders it as its own escaped text, so what this asserts
+  // is the absent ELEMENT, not absent text. Phase 3 is what opens raw HTML up,
   // deliberately and behind an allowlist; this pins today's answer.
-  it('does not render raw HTML in a body', async () => {
+  it('does not render raw HTML in a body as an element', async () => {
     mount(page({ body: '<div data-testid="smuggled">hello</div>' }));
     await screen.findByTestId('library-body');
     expect(screen.queryByTestId('smuggled')).toBeNull();
@@ -416,12 +418,17 @@ describe('LibraryPageView — history', () => {
     expect(mockRestore).not.toHaveBeenCalled();
   });
 
+  // Restoring hands the service the REVISION that was previewed, not its
+  // position in the list — a concurrent write from another device can shift
+  // every index between the preview and the tap, and the sheet has the value in
+  // hand either way.
   it('restores the version being previewed and closes', async () => {
-    mount(page({ revisions: [revision(), revision({ title: 'Older' })] }));
+    const older = revision({ title: 'Older' });
+    mount(page({ revisions: [revision(), older] }));
     await fireEvent.click(await screen.findByTestId('library-page-history'));
     await fireEvent.click((await screen.findAllByTestId('library-history-row'))[1]!);
     await fireEvent.click(await screen.findByTestId('library-history-restore'));
-    await waitFor(() => expect(mockRestore).toHaveBeenCalledWith('page-1', 1));
+    await waitFor(() => expect(mockRestore).toHaveBeenCalledWith('page-1', older));
     await waitFor(() => expect(screen.queryByTestId('library-history-preview')).toBeNull());
   });
 
