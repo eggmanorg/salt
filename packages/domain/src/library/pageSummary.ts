@@ -30,17 +30,29 @@ const HAS_WORD = /[\p{L}\p{N}]/u;
 function asProse(line: string): string {
   return (
     line
-      // Images before links: `![alt](src)` keeps the alt text, if any.
-      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      // Links and images alike — `[text](href)` and `![alt](src)` — keep their
+      // words and lose their target.
+      //
+      // BOUNDED REPETITIONS, and that is not cosmetic: the unbounded `[^\]]*`
+      // this started as is a polynomial ReDoS on a body the household can paste
+      // anything into (CodeQL `js/polynomial-redos`, caught on PR #1389). A run of
+      // `![` makes the engine rescan from every position, which is quadratic in
+      // the length of the line. With a ceiling the work at each start position is
+      // capped, so the whole pass is linear. The numbers are generous — a link
+      // whose text runs past 256 characters or whose href passes 2048 simply
+      // keeps its raw markdown in the summary, which is the shallow strip's
+      // stated failure mode already.
+      .replace(/!?\[([^\][\n]{0,256})\]\([^()\n]{0,2048}\)/g, '$1')
       // Whatever opens the line: heading hashes, blockquote arrows, bullet and
       // ordered-list markers, in any combination and any order.
       .replace(/^\s*(?:[>#]+\s*|[-*+]\s+|\d+[.)]\s+)+/, '')
       .replace(/\|/g, ' ')
       .replace(/[*_`~]/g, '')
-      // Closing hashes of a `## Heading ##`.
-      .replace(/\s+#+\s*$/, '')
       .replace(/\s+/g, ' ')
+      // Closing hashes of a `## Heading ##`. AFTER the whitespace collapse above,
+      // so there is no run of spaces left for it to backtrack across — the same
+      // quadratic shape the link rule above avoids.
+      .replace(/ ?#+$/, '')
       .trim()
   );
 }

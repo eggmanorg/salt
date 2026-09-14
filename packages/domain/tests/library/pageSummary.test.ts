@@ -33,6 +33,22 @@ describe('libraryPageSummary — the opening of a note', () => {
     ).toBe('Lifted from Serious Eats.');
   });
 
+  it('keeps an image’s alt text and drops its source', () => {
+    expect(libraryPageSummary({ body: '![The 1 L jar](jar.png) is the tapered one.' })).toBe(
+      'The 1 L jar is the tapered one.',
+    );
+  });
+
+  it('leaves a link with an enormous target alone rather than scanning past the bound', () => {
+    // The ceiling that keeps the strip linear rather than quadratic — see
+    // `asProse`. Past it the raw markdown survives into the summary, which is the
+    // shallow strip's stated failure mode and is far better than a body somebody
+    // pasted in being able to make a chat turn crawl.
+    const href = `https://example.com/${'a'.repeat(2100)}`;
+
+    expect(libraryPageSummary({ body: `See [the table](${href}).` })).toContain('[the table](');
+  });
+
   it('skips a horizontal rule and a table separator rather than printing dashes', () => {
     expect(
       libraryPageSummary({ body: '---\n\n| Cut | Temp |\n| --- | --- |\n| Chuck | 65 °C |\n' }),
