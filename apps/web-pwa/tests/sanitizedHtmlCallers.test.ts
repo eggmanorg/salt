@@ -17,10 +17,24 @@
  * that claim made mechanical, in one place, and the three comments now point here
  * instead of restating it.
  *
- * A genuine source scan: it reads `.svelte` bytes off disk and imports nothing,
- * so no stub or test-only render can make it vacuously green. It is also the
- * reason `grep` and not Serena — `sanitizedHtml` is a Svelte prop, and Serena is
- * TypeScript-only here by decision (CLAUDE.md → Code search).
+ * ── Why it PARSES rather than greps ──────────────────────────────────────────
+ *
+ * The scan has to ignore a component that merely DISCUSSES the prop —
+ * `LibraryPageDocument.svelte` has a paragraph about it — and stripping comments
+ * with a regex first is a trap twice over. It is wrong (removing the inner
+ * comment of `<!--<!-- -->-->` re-forms an outer one from the surrounding text),
+ * and CodeQL rejects the shape outright as `js/incomplete-multi-character-
+ * sanitization` — including the repeat-to-a-fixed-point version, which was tried
+ * and still failed CI. Svelte's own parser has no such problem: a `Comment` is
+ * its own AST node and is never walked as an element, so prose is excluded BY
+ * CONSTRUCTION rather than by a pattern that has to be got right.
+ *
+ * It also makes the guard stricter than a grep could be — it demands the prop on
+ * a `<Markdown>` specifically, not the identifier appearing somewhere in a file.
+ *
+ * A genuine source scan either way: it reads `.svelte` bytes off disk and imports
+ * none of the components, so no stub or test-only render can make it vacuously
+ * green.
  *
  * WHEN THIS GOES RED: a surface opted in or out. That is a decision about where
  * raw HTML renders, so make it deliberately — update the list below, and say in
@@ -30,49 +44,45 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';
+import { parse } from 'svelte/compiler';
 
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '../src');
 
 /** Every `.svelte` file under `src`, found by walking — never a hand-kept list. */
-function walk(dir: string): string[] {
+function walkFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full);
+    if (entry.isDirectory()) return walkFiles(full);
     return entry.isFile() && entry.name.endsWith('.svelte') ? [full] : [];
   });
 }
 
 /**
- * Strip HTML and JS comments, so a component that merely DISCUSSES the prop —
- * `LibraryPageDocument.svelte` has a paragraph about it — is not counted as one
- * that passes it.
+ * Does this component's markup render a `<Markdown>` that passes `sanitizedHtml`?
  *
- * THE LOOP IS NOT DECORATION, and a "simplification" back to a single pass turns
- * CI red: CodeQL's `js/incomplete-multi-character-sanitization` rejects a
- * one-shot multi-character strip, because removing the inner comment of
- * `<!--<!-- -->-->` re-forms an outer one out of the surrounding text. Repeating
- * to a fixed point is the documented remedy. The consequence here would be a
- * missed opt-in rather than an injection — this reads source, it does not render
- * it — but a scan that can be talked out of seeing a caller is worth no more than
- * the prose comments it replaced.
+ * Walks the template AST. `parent` is skipped because the modern AST's nodes link
+ * back to it and the walk would not terminate.
  */
-function stripComments(src: string): string {
-  let out = src;
-  let previous: string;
-  do {
-    previous = out;
-    out = out
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/[^\n]*/g, '');
-  } while (out !== previous);
-  return out;
+function passesSanitizedHtml(source: string): boolean {
+  let found = false;
+  const visit = (node: unknown): void => {
+    if (found || node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    const record = node as Record<string, unknown>;
+    if (record.type === 'Component' && record.name === 'Markdown') {
+      const attributes = (record.attributes ?? []) as { type?: string; name?: string }[];
+      if (attributes.some((a) => a.type === 'Attribute' && a.name === 'sanitizedHtml')) {
+        found = true;
+        return;
+      }
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (key !== 'parent') visit(value);
+    }
+  };
+  visit(parse(source, { modern: true }).fragment);
+  return found;
 }
-
-// The prop as it is actually passed: shorthand (`<Markdown … sanitizedHtml />`),
-// or bound to an expression. A component that only names it in a type or a
-// destructure is `Markdown` itself, which does not live under this app.
-const PASSES_PROP = /\bsanitizedHtml\b(?!\s*[?:])/;
 
 /**
  * The surfaces that render raw HTML, relative to `src`. All three are the
@@ -87,8 +97,9 @@ const OPTED_IN = [
 ];
 
 describe('sanitizedHtml — which surfaces render raw HTML', () => {
-  const callers = walk(srcDir)
-    .filter((file) => PASSES_PROP.test(stripComments(readFileSync(file, 'utf8'))))
+  const files = walkFiles(srcDir);
+  const callers = files
+    .filter((file) => passesSanitizedHtml(readFileSync(file, 'utf8')))
     .map((file) => relative(srcDir, file).split(sep).join('/'))
     .sort();
 
@@ -96,10 +107,19 @@ describe('sanitizedHtml — which surfaces render raw HTML', () => {
     expect(callers).toEqual(OPTED_IN);
   });
 
-  // Guards the guard: a scan that found nothing would pass the assertion above
-  // only if the list were empty too, but a scan pointed at the wrong directory
-  // would fail confusingly rather than tell you why.
+  // Guards the guard: a scan pointed at the wrong directory, or one whose parse
+  // silently returned nothing, would satisfy the assertion above only by accident
+  // of the list being short — and would fail confusingly rather than say why.
   it('scanned a tree that actually has components in it', () => {
-    expect(walk(srcDir).length).toBeGreaterThan(20);
+    expect(files.length).toBeGreaterThan(20);
+  });
+
+  // The prose-versus-markup distinction this file turns on, asserted rather than
+  // assumed: a comment that shows the prop is not a caller, and `LibraryPageDocument`
+  // really does contain such a comment as well as a real call.
+  it('does not count a component that only mentions the prop in a comment', () => {
+    expect(passesSanitizedHtml('<!-- <Markdown text={x} sanitizedHtml /> -->')).toBe(false);
+    expect(passesSanitizedHtml('<Markdown text={x} sanitizedHtml />')).toBe(true);
+    expect(passesSanitizedHtml('<Markdown text={x} />')).toBe(false);
   });
 });
