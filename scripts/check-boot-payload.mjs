@@ -81,6 +81,26 @@ const APP_SETTINGS_RAW_CEILING_KB = 60;
 const OTEL_MARKER = 'opentelemetry.js.api';
 const LEAFLET_MARKER = 'leaflet-container';
 
+// `@salt/domain`'s `package.json` declares `"sideEffects": false` — CLAUDE.md
+// Hard Rule 1 ("Domain is pure… No side effects") written where Rollup can act
+// on it. That declaration is what lets Rollup drop a `z.object(...)` schema
+// export it cannot otherwise prove is side-effect-free, so only the ~34 schemas
+// `web-pwa` actually names survive into the boot graph instead of all ~70 in
+// the barrel. The claim behind it — CLAUDE.md Rule 12 — has no test that can
+// see it: `sideEffects` is bundler-only metadata, invisible to vitest and to
+// `tsc`. This is that claim's mechanical pin. `FindKitchenNotesInputSchema`
+// (`packages/domain/src/schemas/findKitchenNotes.ts`) is named only by the
+// chef-tool flow in `apps/cloud-functions/src/flows/chefChat.ts` — never by
+// any `apps/web-pwa` module — so its prose has no legitimate way into a
+// browser bundle. If it turns up here, either the `sideEffects` declaration
+// was removed/weakened (a real module-level side effect forcing that is a
+// correctness fix, not a reason to drop the guard silently) or something in
+// `web-pwa` started reaching a cloud-functions-only schema; either way the
+// whole ~70-schema barrel is likely being retained again, the way it was
+// before this guard existed.
+const CF_ONLY_SCHEMA_MARKER =
+  'How many notes to return. Leave it out: the default is 10, and 25 is the most.';
+
 function fail(message) {
   console.error(`\n✖ ${message}\n`);
   process.exitCode = 1;
@@ -144,6 +164,14 @@ for (const { href, bytes } of boot) {
     fail(
       `Leaflet is in the boot graph (${href}).\n` +
         `  It belongs in an on-demand chunk, loaded by LocationMapField.svelte's onMount.`,
+    );
+  }
+  if (text.includes(CF_ONLY_SCHEMA_MARKER)) {
+    fail(
+      `A cloud-functions-only @salt/domain schema is in the boot graph (${href}).\n` +
+        `  FindKitchenNotesInputSchema is named only by apps/cloud-functions' chefChat flow, so\n` +
+        `  this means packages/domain/package.json lost its "sideEffects": false (or stopped\n` +
+        `  being true of the code) and Rollup is retaining the whole ~70-schema barrel again.`,
     );
   }
 }
