@@ -200,6 +200,42 @@ describe('Markdown sanitizedHtml — on, hostile input', () => {
     expect(container.querySelector('image')).toBeNull();
     expect(container.querySelector('animate')).toBeNull();
   });
+
+  // `a` stays in `tagNames`/`attributes` (inherited from `defaultSchema`) so
+  // ordinary Markdown links keep working — both are namespace-blind, so
+  // without `stripSvgAnchors` this survives sanitising with its `href` intact
+  // and turns the whole drawing into an off-site link with no CSP under it.
+  it('unwraps a bare <a href> inside <svg>, dropping the element and its href', () => {
+    const container = rendered(
+      '<svg viewBox="0 0 100 100"><a href="https://evil.example/phish"><rect width="100" height="100" fill="none" /></a></svg>',
+    );
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.innerHTML).not.toContain('evil.example');
+    // The wrapped content survives — only the anchor and its href are gone.
+    expect(container.querySelector('rect')).not.toBeNull();
+  });
+
+  // The second route to the same place: `schema.strip` holds only `script`,
+  // so `foreignObject` is unwrapped rather than dropped and promotes its
+  // children — including an `<a>` — into the `<svg>` before `stripSvgAnchors`
+  // ever runs. A walk of the tree AFTER sanitising catches it regardless.
+  it('unwraps an <a> promoted into <svg> by a stripped <foreignObject>', () => {
+    const container = rendered(
+      '<svg viewBox="0 0 1 1"><foreignObject><a href="https://evil.example">x</a><b>bold</b></foreignObject></svg>',
+    );
+    expect(container.querySelector('foreignObject')).toBeNull();
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.innerHTML).not.toContain('evil.example');
+    // The rest of what foreignObject wrapped is unaffected — only the anchor goes.
+    expect(container.querySelector('b')?.textContent).toBe('bold');
+  });
+
+  // Regression guard: the fix above must not touch an ordinary link outside
+  // any <svg> — that is every Markdown link on a surface that opts in.
+  it('leaves an ordinary <a href> outside <svg> untouched', () => {
+    const container = rendered('<a href="https://example.com">tap</a>');
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+  });
 });
 
 describe('Markdown sanitizedHtml — the stated limits', () => {

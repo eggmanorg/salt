@@ -5,7 +5,7 @@
   import rehypeRaw from 'rehype-raw';
   import rehypeSanitize from 'rehype-sanitize';
   import { cn } from '../../lib/cn';
-  import { rehypeSvgAttributeCase, svgSanitizeSchema } from './svgSanitizeSchema';
+  import { rehypeSvgAttributeCase, stripSvgAnchors, svgSanitizeSchema } from './svgSanitizeSchema';
 
   let {
     text,
@@ -27,13 +27,17 @@
   // `rehype-sanitize` applies the allowlist to what it produced. Reversed, the
   // sanitiser discards the `raw` nodes it has no rule for and no drawing ever
   // renders — `MarkdownSanitize.test.ts` goes red in seven places.
-  // `rehypeSvgAttributeCase` runs last and is presentation only.
+  // `stripSvgAnchors` runs right after sanitising: it is the control that
+  // keeps a URL-bearing `<a>` out of a drawing (`tagNames`/`attributes` can't,
+  // being namespace-blind — see `svgSanitizeSchema.ts`). `rehypeSvgAttributeCase`
+  // runs last and is presentation only.
   const plugins: Plugin[] = $derived(
     sanitizedHtml
       ? [
           gfmPlugin(),
           { rehypePlugin: rehypeRaw },
           { rehypePlugin: [rehypeSanitize, svgSanitizeSchema] },
+          { rehypePlugin: stripSvgAnchors },
           { rehypePlugin: rehypeSvgAttributeCase },
         ]
       : [gfmPlugin()],

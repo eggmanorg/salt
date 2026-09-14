@@ -55,8 +55,13 @@ import { defaultSchema, type Schema } from 'hast-util-sanitize';
  *
  * Split from the hyphenated ones below because those two sets need different
  * handling, and the split is what keeps the allowlist and the rename in step:
- * both are built from these constants, so an attribute cannot be allowed and
- * then left un-renamed.
+ * an attribute built from `PAINT_HYPHENATED` or `TYPE_HYPHENATED` cannot be
+ * allowed and then left un-renamed. That guarantee stops at those two sets —
+ * it does not reach `defaultSchema.attributes['*']`, which every SVG tag also
+ * inherits and which is DOM-IDL-cased too. `tabindex` is the example: it
+ * reaches the DOM as `tabIndex`, is not in `KEBAB_ATTRIBUTES`, and SVG ignores
+ * an attribute by that name — a drawing that should be focusable silently
+ * isn't. Cosmetic, not a security hole, but stated here rather than implied.
  */
 const PAINT_PLAIN = ['fill', 'stroke', 'opacity', 'transform'] as const;
 
@@ -91,11 +96,25 @@ const PRESENTATION = [...PAINT_PLAIN, ...Object.keys(PAINT_HYPHENATED)];
 const TYPE_SETTING = Object.keys(TYPE_HYPHENATED);
 
 /**
- * The drawing elements. Deliberately absent, and to stay absent: `script`,
- * `iframe`, `object`, `embed`, `foreignObject`, `use`, `image`, `animate` and
- * `<a>` inside SVG — `use` and `image` because both take a URL, and
+ * The drawing elements. Deliberately absent from this list, and to stay
+ * absent: `script`, `iframe`, `object`, `embed`, `foreignObject`, `use`,
+ * `image` and `animate` — `use` and `image` because both take a URL, and
  * `foreignObject` because it reopens the whole of HTML inside a subtree the
  * schema was narrowed for.
+ *
+ * `<a>` cannot be handled the same way. `tagNames` and `attributes` are
+ * namespace-blind, so the `a` this schema inherits from `defaultSchema` —
+ * needed for every ordinary Markdown link on a surface that opts in — is
+ * exactly as reachable inside an `<svg>` subtree as outside one: leaving it
+ * off this list buys nothing, and dropping it from `defaultSchema.tagNames`
+ * would kill ordinary links too, not just the SVG case. `stripSvgAnchors`,
+ * below, is the actual control: it runs AFTER sanitising and unwraps any `<a>`
+ * found inside an `<svg>` subtree, keeping its children and discarding the
+ * element and its `href` — however the `<a>` got there. That "however"
+ * matters: `schema.strip` holds only `script`, so `foreignObject` is unwrapped
+ * rather than dropped and promotes its children into the `<svg>` before this
+ * ever runs, and a walk of the FINAL tree catches an `<a>` that arrived that
+ * way exactly as it catches one written directly inside an `<svg>`.
  */
 const SVG_TAGS = [
   'svg',
@@ -190,5 +209,40 @@ export function rehypeSvgAttributeCase() {
       }
     };
     visit(tree as MaybeElement);
+  };
+}
+
+/**
+ * Unwrap any `<a>` found inside an `<svg>` subtree — the security control
+ * that `tagNames`/`attributes` cannot provide, because both are
+ * namespace-blind and `a` has to stay allowed globally for ordinary Markdown
+ * links (see the comment on `SVG_TAGS`). Keeps the anchor's children, drops
+ * the element and its `href` — the same "children survive, the wrapper does
+ * not" shape `hast-util-sanitize` already applies to every disallowed element
+ * but `script`.
+ *
+ * Runs AFTER `rehype-sanitize`, on the tree sanitising already produced, so it
+ * catches an `<a>` regardless of how it ended up inside the `<svg>`: written
+ * there directly, or promoted when a `foreignObject` wrapping it was unwrapped
+ * out from under it.
+ */
+export function stripSvgAnchors() {
+  return (tree: unknown): void => {
+    const visit = (node: MaybeElement, insideSvg: boolean): void => {
+      if (!Array.isArray(node.children)) return;
+      const children = node.children as MaybeElement[];
+      const kept: MaybeElement[] = [];
+      for (const child of children) {
+        const childInsideSvg = insideSvg || child.tagName === 'svg';
+        visit(child, childInsideSvg);
+        if (childInsideSvg && child.tagName === 'a') {
+          kept.push(...(child.children as MaybeElement[]));
+        } else {
+          kept.push(child);
+        }
+      }
+      node.children = kept;
+    };
+    visit(tree as MaybeElement, false);
   };
 }
