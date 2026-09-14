@@ -26,7 +26,9 @@ export function addAccessory(
       ...item,
       accessories: [
         ...item.accessories,
-        { id: ids.newAccessoryId(), name, owned: input.owned, included: input.included },
+        // Nothing is said about an entry until someone says it (#1373) —
+        // `editAccessoryNote` is the only thing that writes here.
+        { id: ids.newAccessoryId(), name, owned: input.owned, included: input.included, note: '' },
       ],
     });
   });

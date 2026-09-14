@@ -26,13 +26,16 @@ function item(id: string, name: string, accessories: readonly string[] = []): Eq
     id,
     schemaVersion: 1,
     name,
+    kind: 'equipment',
     accessories: accessories.map((accName, i) => ({
       id: `${id}-acc-${i}`,
       name: accName,
       owned: true,
       included: true,
+      note: '',
     })),
     rules: [],
+    note: '',
     environment: null,
     updatedAt: '2026-01-01T00:00:00.000Z',
   };

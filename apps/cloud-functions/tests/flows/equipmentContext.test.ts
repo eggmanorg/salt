@@ -7,6 +7,7 @@ vi.mock('firebase-functions', () => ({
 
 const {
   renderEquipmentManifest,
+  renderEquipmentDetail,
   readEquipmentContext,
   equipmentSectionForChef,
   equipmentSectionForLibrarian,
@@ -21,8 +22,8 @@ beforeEach(() => {
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
-function accessory(name: string, owned: boolean) {
-  return { id: `acc-${name}`, name, owned, included: false };
+function accessory(name: string, owned: boolean, note = '') {
+  return { id: `acc-${name}`, name, owned, included: false, note };
 }
 
 function item(
@@ -31,14 +32,20 @@ function item(
     accessories?: ReturnType<typeof accessory>[];
     rules?: string[];
     environment?: EquipmentEnvironmentDoc | null;
+    // Issue #1373. Default `'equipment'` and `''` so every test written before
+    // families existed still describes what it meant to describe.
+    kind?: 'equipment' | 'family';
+    note?: string;
   } = {},
 ) {
   return {
     id: `eq-${name}`,
     schemaVersion: 1 as const,
     name,
+    kind: opts.kind ?? ('equipment' as const),
     accessories: opts.accessories ?? [],
     rules: opts.rules ?? [],
+    note: opts.note ?? '',
     environment: opts.environment ?? null,
     updatedAt: '2026-07-01T00:00:00.000Z',
   };
@@ -65,17 +72,20 @@ describe('renderEquipmentManifest', () => {
     expect(out).toContain('- Anova Precision Oven');
   });
 
-  it('renders owned accessories as owned', () => {
+  it('renders owned accessories as one row of names', () => {
     const out = renderEquipmentManifest([
       item('Magimix Cook Expert', {
         accessories: [accessory('4 mm slicing disc', true), accessory('Steam basket', true)],
       }),
     ]);
-    expect(out).toContain('accessories owned: 4 mm slicing disc, Steam basket');
-    expect(out).not.toContain('NOT owned');
+    expect(out).toContain('accessories: 4 mm slicing disc, Steam basket');
   });
 
-  it('renders unowned accessories as explicitly unavailable rather than dropping them', () => {
+  // Issue #1373, decision 8. This REVERSES #954's prompt behaviour and not its
+  // data: the 28 not-owned entries in the live manifest stay stored, stay on
+  // screen, and come back from `renderEquipmentDetail` marked — they simply stop
+  // riding along on every call to five AI flows.
+  it('renders neither the unowned entries nor any warning about them', () => {
     const out = renderEquipmentManifest([
       item('Magimix Cook Expert', {
         accessories: [
@@ -84,13 +94,42 @@ describe('renderEquipmentManifest', () => {
         ],
       }),
     ]);
-    // The unowned one must survive into the prompt — the whole point is that the
-    // chef can say "you don't have that" instead of suggesting it blindly.
-    expect(out).toContain('XL Steamer Attachment');
-    expect(out).toContain('accessories NOT owned');
-    // …and it must not be confused with the owned list.
-    expect(out).toContain('accessories owned: 4 mm slicing disc');
-    expect(out).not.toContain('accessories owned: 4 mm slicing disc, XL Steamer Attachment');
+    expect(out).not.toContain('XL Steamer Attachment');
+    expect(out).not.toContain('NOT owned');
+    expect(out).not.toContain('unavailable');
+    expect(out).toContain('accessories: 4 mm slicing disc');
+  });
+
+  it('labels a family\'s row "contains" and an appliance\'s "accessories"', () => {
+    const entries = [accessory('28cm cast iron', true), accessory('20cm non-stick', true)];
+    const family = renderEquipmentManifest([
+      item('Frying pans', { accessories: entries, kind: 'family' }),
+    ]);
+    expect(family).toContain('  contains: 28cm cast iron, 20cm non-stick');
+    expect(family).not.toContain('accessories:');
+
+    const appliance = renderEquipmentManifest([item('Frying pans', { accessories: entries })]);
+    expect(appliance).toContain('  accessories: 28cm cast iron, 20cm non-stick');
+    expect(appliance).not.toContain('contains:');
+  });
+
+  // The row is a CONCATENATION, never a parse (#1281's rule, restated by #1373).
+  // Nothing derives "from 20cm to 32cm", nothing groups by material, nothing
+  // reads a number out of a name — so a name with a size in it survives verbatim.
+  it('joins entry names verbatim and derives nothing from them', () => {
+    const out = renderEquipmentManifest([
+      item('Frying pans', {
+        kind: 'family',
+        accessories: [
+          accessory('20cm non-stick', true),
+          accessory('28cm carbon steel', true),
+          accessory('32cm stainless', true),
+        ],
+      }),
+    ]);
+    expect(out).toContain('  contains: 20cm non-stick, 28cm carbon steel, 32cm stainless');
+    expect(out).not.toMatch(/20\s*(cm)?\s*(to|–|-)\s*32/);
+    expect(out).not.toContain('3 ');
   });
 
   it('surfaces the household rules override', () => {
@@ -132,10 +171,12 @@ describe('readEquipmentContext', () => {
 
     const out = await readEquipmentContext(db, 'chefChat');
     expect(out).toContain('- Sage the Smart Oven Pizzaiolo SPZ820');
-    expect(out).toContain('accessories owned: Pizza stone');
-    expect(out).toContain('accessories NOT owned');
-    expect(out).toContain('Crisper plate');
+    expect(out).toContain('accessories: Pizza stone');
     expect(out).toContain('Preheat for a full 20 minutes');
+    // The unowned one is read from the document and deliberately not rendered
+    // (issue #1373, decision 8) — the stored tick is untouched, and the chef sees
+    // it again the moment it looks this item up.
+    expect(out).not.toContain('Crisper plate');
     expect(mockWarn).not.toHaveBeenCalled();
   });
 
@@ -179,8 +220,15 @@ describe('equipment prompt framings', () => {
     expect(section).toContain('PROPORTIONALITY IS A RULE');
     expect(section).toContain('MOST VIABLE');
     expect(section).toContain('washing-up');
-    expect(section).toContain('NOT owned are unavailable');
     expect(section).toContain('OVERRIDE your general product knowledge');
+    // Issue #1373, decision 8: the roll-call of what they do NOT own is gone, and
+    // what replaces it is the simpler instruction. If the old paragraph ever
+    // comes back, it comes back with its 28 entries in every prompt.
+    expect(section).toContain('WHAT IS LISTED IS WHAT THEY HAVE');
+    expect(section).not.toContain('NOT owned are unavailable');
+    expect(section).not.toContain('XL Steamer Attachment');
+    // A family's row needs explaining where it is rendered.
+    expect(section).toContain('FAMILY of similar things');
     // Still free to answer without any appliance at all.
     expect(section).toContain('need no special kit');
     // The old opt-out must not come back.
@@ -342,5 +390,139 @@ describe('renderEquipmentManifest — environment', () => {
     expect(section).toContain('HOLDS A TEMPERATURE');
     expect(section).toContain('the listed figures are the truth about them');
     expect(section).toContain('kitchen counter is a perfectly good answer');
+  });
+});
+
+// ─── The uniform-notes claim, pinned (issue #1373) ───────────────────────────
+//
+// THE CLAIM: "no note is ever rendered ambiently — not on an entry in the list,
+// not on the record itself. Every note reaches the chef only through the tool."
+// It is the load-bearing half of the whole issue: the reason one record can hold
+// twelve pans without the prompt growing twelvefold is that what is written about
+// each of them is not sent. A note leaking into this renderer would restore
+// exactly the cost the feature exists to remove, silently and in every flow.
+//
+// This expectation must survive every future change to this renderer.
+
+describe('renderEquipmentManifest — no note is ever ambient', () => {
+  it('puts no note text into the prompt, from an item or from an entry', () => {
+    const out = renderEquipmentManifest([
+      item('Magimix Cook Expert', {
+        accessories: [
+          accessory('Thermo Bowl', true, 'ENTRY_NOTE_SENTINEL'),
+          accessory('XL Steamer Attachment', false, 'UNOWNED_NOTE_SENTINEL'),
+        ],
+        rules: ['has the upgraded firmware'],
+        note: 'ITEM_NOTE_SENTINEL',
+      }),
+      item('Frying pans', {
+        kind: 'family',
+        accessories: [accessory('28cm cast iron', true, 'FAMILY_NOTE_SENTINEL')],
+        note: 'FAMILY_ITEM_NOTE_SENTINEL',
+      }),
+    ]);
+    expect(out).not.toContain('ENTRY_NOTE_SENTINEL');
+    expect(out).not.toContain('UNOWNED_NOTE_SENTINEL');
+    expect(out).not.toContain('ITEM_NOTE_SENTINEL');
+    expect(out).not.toContain('FAMILY_NOTE_SENTINEL');
+    expect(out).not.toContain('FAMILY_ITEM_NOTE_SENTINEL');
+  });
+
+  it('renders a record carrying notes identically to the same record without them', () => {
+    const bare = item('Magimix Cook Expert', {
+      accessories: [accessory('Thermo Bowl', true)],
+      rules: ['has the upgraded firmware'],
+    });
+    const noted = item('Magimix Cook Expert', {
+      accessories: [accessory('Thermo Bowl', true, 'everything about the Thermo Bowl')],
+      rules: ['has the upgraded firmware'],
+      note: 'on a high shelf and takes ages to wash',
+    });
+    expect(renderEquipmentManifest([noted])).toBe(renderEquipmentManifest([bare]));
+  });
+
+  it('still renders rules in full and verbatim — a rule is not a note', () => {
+    const out = renderEquipmentManifest([
+      item('Magimix Cook Expert', {
+        rules: ['the bowl seal is perished, do not process liquids'],
+        note: 'ITEM_NOTE_SENTINEL',
+      }),
+    ]);
+    expect(out).toContain('the bowl seal is perished, do not process liquids');
+    expect(out).not.toContain('ITEM_NOTE_SENTINEL');
+  });
+});
+
+// ─── The fetched half: renderEquipmentDetail (issue #1373) ───────────────────
+
+describe('renderEquipmentDetail', () => {
+  it("gives back an appliance's accessory notes and its own note", () => {
+    const out = renderEquipmentDetail(
+      item('Magimix Cook Expert', {
+        accessories: [accessory('Thermo Bowl', true, 'the seal is perished')],
+        rules: ['has the upgraded firmware'],
+        note: 'on a high shelf and takes ages to wash',
+      }),
+    );
+    expect(out).toContain('Magimix Cook Expert');
+    expect(out).toContain('on a high shelf and takes ages to wash');
+    expect(out).toContain('the seal is perished');
+    expect(out).toContain('has the upgraded firmware');
+  });
+
+  it("gives back a family's entry notes, and says it is a family", () => {
+    const out = renderEquipmentDetail(
+      item('Frying pans', {
+        kind: 'family',
+        accessories: [
+          accessory('28cm cast iron', true, 'the only one that goes in the oven'),
+          accessory('20cm non-stick', true, 'never sear in this'),
+        ],
+        note: 'the cast iron lives in the bottom drawer',
+      }),
+    );
+    expect(out).toContain('family of kit');
+    expect(out).toContain('contains:');
+    expect(out).toContain('the only one that goes in the oven');
+    expect(out).toContain('never sear in this');
+    expect(out).toContain('the cast iron lives in the bottom drawer');
+  });
+
+  // DECISION 8's other half, and the reason dropping the ambient roll-call is not
+  // a loss: "the warning is not lost, it moves". If this goes red, the chef can
+  // no longer tell the household what it does not own at the one moment the
+  // answer turns on it.
+  it('marks an unowned accessory as unowned rather than hiding it', () => {
+    const out = renderEquipmentDetail(
+      item('Magimix Cook Expert', {
+        accessories: [accessory('Thermo Bowl', true), accessory('XL Steamer Attachment', false)],
+      }),
+    );
+    expect(out).toContain('XL Steamer Attachment');
+    expect(out).toContain('NOT OWNED');
+    expect(out).not.toMatch(/Thermo Bowl.*NOT OWNED/);
+  });
+
+  it('carries the place figures through, unchanged from #1281', () => {
+    const out = renderEquipmentDetail(
+      item('Curing chamber', {
+        environment: {
+          control: 'shared',
+          minCelsius: 10,
+          maxCelsius: 18,
+          humidity: { precision: 'controlled', minPercent: 70, maxPercent: 80 },
+          standing: { celsius: 13, relativeHumidityPercent: 75 },
+        },
+      }),
+    );
+    expect(out).toContain('holds a temperature: 10–18 °C');
+    expect(out).toContain('13 °C');
+    expect(out).toContain('shared');
+  });
+
+  it('says only what there is to say about a bare record', () => {
+    expect(renderEquipmentDetail(item('Cast iron skillet'))).toBe(
+      'Cast iron skillet — a piece of kit',
+    );
   });
 });

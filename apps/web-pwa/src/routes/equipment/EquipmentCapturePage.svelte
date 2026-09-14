@@ -1,6 +1,16 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { Button, Checkbox, FormPage, Spinner, TextField } from '@salt/ui-components';
+  import {
+    Button,
+    Checkbox,
+    FormPage,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    Spinner,
+    TextField,
+  } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
   import { goBack } from '../../lib/nav.js';
   import { startUserActionSpan } from '@salt/observability';
@@ -12,6 +22,7 @@
   } from '../../lib/equipmentService.js';
   import { addToast } from '../../lib/toastStore.js';
   import type { IdentifyEquipmentCandidate } from '@salt/firebase-sync';
+  import type { EquipmentKind } from '@salt/domain/schemas';
 
   // ─── One browser-rooted trace across the whole add-equipment action (#361) ──
   // The action fires two AI callables — identify → populate — with human
@@ -43,9 +54,24 @@
   let identifyBusy = $state(false);
   let candidates = $state<readonly IdentifyEquipmentCandidate[]>([]);
 
+  // Equipment or a family of kit (issue #1373). Asked here rather than only on
+  // the record afterwards because steps 2 and 3 are PRODUCT IDENTIFICATION —
+  // "which Magimix is this, and what ships in its box". A family is the
+  // household's own list of things it already owns, so there is no product to
+  // identify and no accessory list to fetch: "Frying pans" put through those two
+  // AI calls buys two wrong answers. A family goes straight to the list.
+  let kind = $state<EquipmentKind>('equipment');
+  const isFamily = $derived(kind === 'family');
+
   async function handleIdentify(): Promise<void> {
     const name = rawName.trim();
     if (!name) return;
+    if (isFamily) {
+      confirmedName = name;
+      draftAccessories = [];
+      step = 3;
+      return;
+    }
     // Fresh add attempt → fresh trace root. End any prior span (e.g. the user
     // came Back and re-identified) so each attempt is its own trace.
     endActionSpan();
@@ -117,9 +143,11 @@
   function addManualAccessory(): void {
     const name = newAccessoryName.trim();
     if (!name) return;
+    // A family is a list of what the household HAS, so its entries go in owned
+    // and the tick is never shown for them (issue #1373).
     draftAccessories = [
       ...draftAccessories,
-      { id: crypto.randomUUID(), name, owned: false, included: false },
+      { id: crypto.randomUUID(), name, owned: isFamily, included: false },
     ];
     newAccessoryName = '';
   }
@@ -141,6 +169,7 @@
     const result = await captureEquipmentItem(
       confirmedName,
       draftAccessories.map((a) => ({ name: a.name, owned: a.owned, included: a.included })),
+      kind,
     );
     child?.end();
     saveBusy = false;
@@ -165,8 +194,10 @@
 {#if step === 1}
   <FormPage
     title="Add equipment"
-    description="Type your appliance or tool name."
-    submitLabel="Identify"
+    description={isFamily
+      ? 'Name the family, then list what is in it.'
+      : 'Type your appliance or tool name.'}
+    submitLabel={isFamily ? 'Next' : 'Identify'}
     isSubmitting={identifyBusy}
     canSubmit={canIdentify}
     onSubmit={handleIdentify}
@@ -176,16 +207,33 @@
     }}
     class="p-4 sm:p-6"
   >
-    <div class="flex flex-col gap-1.5">
-      <label class="text-sm font-medium" for="equipment-raw-name">Name</label>
-      <TextField
-        id="equipment-raw-name"
-        bind:value={rawName}
-        placeholder="e.g. KitchenAid Artisan, Magimix 5200XL…"
-        disabled={identifyBusy}
-        data-testid="equipment-raw-name-input"
-        autofocus
-      />
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-1.5">
+        <span class="text-sm font-medium">What are you adding?</span>
+        <Select value={kind} onValueChange={(v) => (kind = v as EquipmentKind)}>
+          <SelectTrigger data-testid="equipment-kind-select">
+            {isFamily ? 'A family of kit — several similar things' : 'A piece of equipment'}
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="equipment">A piece of equipment</SelectItem>
+            <SelectItem value="family">A family of kit — several similar things</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium" for="equipment-raw-name">Name</label>
+        <TextField
+          id="equipment-raw-name"
+          bind:value={rawName}
+          placeholder={isFamily
+            ? 'e.g. Frying pans, Weck jars…'
+            : 'e.g. KitchenAid Artisan, Magimix 5200XL…'}
+          disabled={identifyBusy}
+          data-testid="equipment-raw-name-input"
+          autofocus
+        />
+      </div>
     </div>
   </FormPage>
 {:else if step === 2}
@@ -258,7 +306,9 @@
 {:else}
   <FormPage
     title={confirmedName}
-    description="Review AI-suggested accessories, toggle ownership, and add any extras."
+    description={isFamily
+      ? 'List what is in this family. Each one can carry a note on the record afterwards.'
+      : 'Review AI-suggested accessories, toggle ownership, and add any extras.'}
     submitLabel="Save"
     isSubmitting={saveBusy}
     canSubmit={canSave}
@@ -267,7 +317,9 @@
   >
     {#snippet footer()}
       <div class="flex w-full items-center justify-between border-t border-border pt-4">
-        <Button variant="ghost" onclick={() => (step = 2)} disabled={saveBusy}>Back</Button>
+        <Button variant="ghost" onclick={() => (step = isFamily ? 1 : 2)} disabled={saveBusy}>
+          Back
+        </Button>
         <Button
           type="submit"
           loading={saveBusy}
@@ -283,19 +335,21 @@
       <!-- Accessory list -->
       {#if draftAccessories.length > 0}
         <div class="flex flex-col gap-2">
-          <p class="text-sm font-medium">Accessories</p>
+          <p class="text-sm font-medium">{isFamily ? 'Contains' : 'Accessories'}</p>
           <ul class="flex flex-col gap-1" data-testid="equipment-accessory-list">
             {#each draftAccessories as acc (acc.id)}
               <li
                 class="flex items-center gap-3 rounded border border-border bg-card px-3 py-2 text-sm"
                 data-testid="equipment-draft-accessory"
               >
-                <Checkbox
-                  checked={acc.owned}
-                  onCheckedChange={() => toggleDraftOwned(acc.id)}
-                  label=""
-                  aria-label="Owned"
-                />
+                {#if !isFamily}
+                  <Checkbox
+                    checked={acc.owned}
+                    onCheckedChange={() => toggleDraftOwned(acc.id)}
+                    label=""
+                    aria-label="Owned"
+                  />
+                {/if}
                 <span class="flex-1">
                   {acc.name}
                   {#if acc.included}
@@ -318,11 +372,11 @@
 
       <!-- Manual add -->
       <div class="flex flex-col gap-1.5">
-        <p class="text-sm font-medium">Add accessory</p>
+        <p class="text-sm font-medium">{isFamily ? 'Add item' : 'Add accessory'}</p>
         <div class="flex gap-2">
           <TextField
             bind:value={newAccessoryName}
-            placeholder="Accessory name…"
+            placeholder={isFamily ? 'e.g. 28cm cast iron…' : 'Accessory name…'}
             class="flex-1"
             data-testid="equipment-new-accessory-input"
             onkeydown={(e) => {

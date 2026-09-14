@@ -18,7 +18,7 @@ import type { EquipmentItem, Accessory } from '../../src/index.js';
 // resolver returned null in production for both labels the issue named.
 
 function accessory(name: string, owned = true): Accessory {
-  return { id: `acc-${name}`, name, owned, included: owned };
+  return { id: `acc-${name}`, name, owned, included: owned, note: '' };
 }
 
 function item(name: string, accessories: Accessory[] = []): EquipmentItem {
@@ -26,8 +26,10 @@ function item(name: string, accessories: Accessory[] = []): EquipmentItem {
     id: `eq-${name}`,
     schemaVersion: 1,
     name,
+    kind: 'equipment',
     accessories,
     rules: [],
+    note: '',
     environment: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };
@@ -160,5 +162,35 @@ describe('resolveEquipmentItem', () => {
     // "Cocotte Slow Cook Pot" belongs to the Magimix, not the Kenwood — pairing
     // it with the wrong maker's word must not borrow the Kenwood's picture.
     expect(resolveEquipmentItem('Kenwood Cocotte Slow Cook Pot', MANIFEST)).toBeNull();
+  });
+});
+
+// ─── `kind` gates nothing (issue #1373) ──────────────────────────────────────
+//
+// THE CLAIM: the equipment/family flag "picks words only — it must never gate
+// capability, availability or existence", the same discipline CLAUDE.md sets for
+// `recipes.kind`. The resolver is where that would break first: it is the one
+// query that decides whether a piece of kit EXISTS for a label, and it is what
+// the Phase 2 chef tool resolves names through.
+//
+// THE BOUNDARY: this pins the resolver, not every reader in the codebase. A
+// future reader that branches on `kind` to decide availability would not be
+// caught here — it would be caught by the rule, in review.
+describe('kind is words only', () => {
+  it('resolves a family exactly as it resolves the same record as equipment', () => {
+    const asEquipment = item('Frying pans', [accessory('28cm cast iron')]);
+    const asFamily: EquipmentItem = { ...asEquipment, kind: 'family' };
+    for (const label of ['Frying pans', 'Frying pans 28cm cast iron', 'pans']) {
+      // Identity, not the record: the two differ by the flag, and the question
+      // is whether the SAME label finds the SAME record either way.
+      expect(resolveEquipmentItem(label, [asFamily])?.id ?? null).toBe(
+        resolveEquipmentItem(label, [asEquipment])?.id ?? null,
+      );
+    }
+  });
+
+  it('finds a family by name — a family is not invisible to the resolver', () => {
+    const family: EquipmentItem = { ...item('Frying pans'), kind: 'family' };
+    expect(resolveEquipmentItem('Frying pans', [family])?.name).toBe('Frying pans');
   });
 });

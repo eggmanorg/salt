@@ -190,3 +190,67 @@ describe('EquipmentCapturePage', () => {
     await waitFor(() => expect(mockActionSpan.end).toHaveBeenCalled());
   });
 });
+
+// ─── A family of kit (issue #1373) ───────────────────────────────────────────
+// Steps 2 and 3 are PRODUCT IDENTIFICATION — which Magimix is this, what ships
+// in its box. A family is the household's own list of things it already owns, so
+// there is no product to identify: the two AI legs are skipped, not merely
+// ignored, and that is what these pin.
+
+describe('EquipmentCapturePage — a family of kit', () => {
+  async function startFamily(name: string): Promise<void> {
+    const user = userEvent.setup();
+    render(EquipmentCapturePage);
+    await user.click(screen.getByTestId('equipment-kind-select'));
+    await user.click(await screen.findByRole('option', { name: /family of kit/i }));
+    await user.type(screen.getByTestId('equipment-raw-name-input'), name);
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    await waitFor(() => screen.getByTestId('equipment-save-btn'));
+  }
+
+  it('goes straight to the list, spending nothing on AI', async () => {
+    await startFamily('Frying pans');
+    expect(vi.mocked(callIdentifyEquipment)).not.toHaveBeenCalled();
+    expect(vi.mocked(callPopulateEquipmentEntry)).not.toHaveBeenCalled();
+  });
+
+  it('saves the record as a family, with its entries owned', async () => {
+    vi.mocked(captureEquipmentItem).mockResolvedValueOnce({
+      kind: 'ok',
+      value: { itemId: 'pans-1', manifest: makeManifest() },
+    });
+    const user = userEvent.setup();
+    await startFamily('Frying pans');
+
+    await user.type(screen.getByTestId('equipment-new-accessory-input'), '28cm cast iron');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+    await user.click(screen.getByTestId('equipment-save-btn'));
+
+    await waitFor(() => expect(vi.mocked(captureEquipmentItem)).toHaveBeenCalledTimes(1));
+    const [name, accessories, kind] = vi.mocked(captureEquipmentItem).mock.calls[0]!;
+    expect(name).toBe('Frying pans');
+    expect(kind).toBe('family');
+    expect(accessories).toEqual([{ name: '28cm cast iron', owned: true, included: false }]);
+  });
+
+  it('shows no owned tick for a family entry', async () => {
+    const user = userEvent.setup();
+    await startFamily('Weck jars');
+    await user.type(screen.getByTestId('equipment-new-accessory-input'), '1/2 litre Mold jar');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+    await screen.findByTestId('equipment-draft-accessory');
+    expect(screen.queryByLabelText('Owned')).toBeNull();
+  });
+
+  it('saves an ordinary record as equipment', async () => {
+    vi.mocked(captureEquipmentItem).mockResolvedValueOnce({
+      kind: 'ok',
+      value: { itemId: 'new-id', manifest: makeManifest() },
+    });
+    render(EquipmentCapturePage);
+    await walkThroughCapture('KitchenAid');
+    await userEvent.click(screen.getByTestId('equipment-save-btn'));
+    await waitFor(() => expect(vi.mocked(captureEquipmentItem)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(captureEquipmentItem).mock.calls[0]![2]).toBe('equipment');
+  });
+});

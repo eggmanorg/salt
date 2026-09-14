@@ -16,10 +16,11 @@
  *     the chef quietly announcing that a dish it can see does not exist.
  *  3. NOT FOUND DEGRADES, IT DOES NOT THROW. Missing, corrupt and Firestore-down
  *     all reach the model as `{ found: false }`, never as a failed turn.
- *  4. BOTH TOOL DESCRIPTIONS STILL CARRY THEIR "WHEN NOT TO CALL" CLAUSE, and
- *     there are still exactly two tools. That is the constraint the doc's
- *     rewritten principle #1 states, and prompt text is falsifiable only by
- *     content assertion.
+ *  4. EVERY TOOL DESCRIPTION STILL CARRIES ITS "WHEN NOT TO CALL" CLAUSE, and
+ *     the tool list is exactly what it is meant to be — three since issue #1373
+ *     added `readEquipmentDetail`. That is the constraint the doc's rewritten
+ *     principle #1 states, and prompt text is falsifiable only by content
+ *     assertion.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from 'firebase-functions';
@@ -245,11 +246,17 @@ describe('readRecipe — degrading', () => {
 // ─── 4. Two tools, both saying when not to call ──────────────────────────────
 
 describe('the chef’s tool surface', () => {
-  it('is exactly two tools, and no more', () => {
-    // The constraint the rewritten design principle #1 states. A third tool is a
-    // new issue with its own justification, and this is what notices one arriving
-    // without it.
-    expect(defineToolCalls.map((c) => c.name)).toEqual(['findRecipes', 'readRecipe']);
+  it('is exactly three tools, and no more', () => {
+    // The constraint the rewritten design principle #1 states, and this is what
+    // notices a tool arriving without its own issue. It has fired once and worked:
+    // `readEquipmentDetail` is the third, and issue #1373 is its justification. A
+    // FOURTH still needs one — and a WRITE tool is refused outright, which
+    // `chefChat.readEquipmentDetail.test.ts` pins separately.
+    expect(defineToolCalls.map((c) => c.name)).toEqual([
+      'findRecipes',
+      'readRecipe',
+      'readEquipmentDetail',
+    ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
     expect(readRecipeTool).toMatchObject({ __tool: 'readRecipe' });
   });

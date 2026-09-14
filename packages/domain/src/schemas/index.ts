@@ -104,6 +104,7 @@ export {
   AccessorySchema,
   EquipmentItemSchema,
   EquipmentManifestSchema,
+  EquipmentKindSchema,
   EquipmentControlSchema,
   EquipmentHumidityPrecisionSchema,
   EquipmentHumiditySchema,
@@ -114,6 +115,7 @@ export {
 } from './equipmentManifest.js';
 export type { EquipmentItemDoc, AccessoryDoc, EquipmentManifestDoc } from './equipmentManifest.js';
 export type {
+  EquipmentKind,
   EquipmentControl,
   EquipmentHumidityDoc,
   EquipmentStandingSettingDoc,
@@ -244,6 +246,15 @@ export type { FindRecipesInput, FindRecipesOutput, RecipeSearchProjection } from
 // read is the case that legitimately pays for the whole document.
 export { ReadRecipeInputSchema, ReadRecipeOutputSchema } from './readRecipe.js';
 export type { ReadRecipeInput, ReadRecipeOutput } from './readRecipe.js';
+
+// readEquipmentDetail (issue #1373) — the chef's third tool, and the one the
+// "TWO tools, and the whole surface" comment in chefChat.ts required a new issue
+// for. READ-ONLY, permanently: see the comment at its declaration.
+export {
+  ReadEquipmentDetailInputSchema,
+  ReadEquipmentDetailOutputSchema,
+} from './readEquipmentDetail.js';
+export type { ReadEquipmentDetailInput, ReadEquipmentDetailOutput } from './readEquipmentDetail.js';
 
 // identifyRecipeKit (issue #882) — "what do I need to get out?", inferred from the
 // whole stored recipe. Labels are FREE TEXT on purpose; read the header before

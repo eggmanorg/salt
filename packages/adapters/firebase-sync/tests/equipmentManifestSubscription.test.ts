@@ -94,8 +94,14 @@ describe('subscribeEquipmentManifest', () => {
           id: 'item-1',
           schemaVersion: 1,
           name: 'Stand Mixer',
-          accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
+          // Same story as `environment` below, for the fields families brought
+          // (#1373): the snapshot has no `kind` and no `note` anywhere, and the
+          // schema's defaults are what read that absence as "a piece of
+          // equipment, with nothing said about it".
+          kind: 'equipment',
+          accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true, note: '' }],
           rules: ['Use speed 2 for bread dough'],
+          note: '',
           // The snapshot above carries no `environment` key — every equipment
           // document in production was written before places existed (#1281) —
           // and the schema's `.default(null)` is what lands it here.
@@ -196,8 +202,10 @@ describe('saveEquipmentManifest', () => {
       id: 'item-1',
       schemaVersion: 1 as const,
       name: 'Stand Mixer',
-      accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true }],
+      kind: 'equipment' as const,
+      accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true, note: '' }],
       rules: ['Use speed 2'],
+      note: '',
       environment: null,
       updatedAt: '2026-05-13T10:00:00.000Z',
     };

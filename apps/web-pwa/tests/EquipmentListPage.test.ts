@@ -41,13 +41,16 @@ function item(
     id,
     schemaVersion: 1,
     name,
+    kind: 'equipment',
     accessories: Array.from({ length: accessoryCount }, (_, i) => ({
       id: `${id}-acc-${i}`,
       name: `Acc ${i}`,
       owned: false,
       included: false,
+      note: '',
     })),
     rules: Array.from({ length: ruleCount }, (_, i) => `rule ${i}`),
+    note: '',
     environment: null,
     updatedAt: '2026-05-13T00:00:00.000Z',
   };

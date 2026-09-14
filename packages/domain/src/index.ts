@@ -102,6 +102,9 @@ export {
   addRule,
   removeRule,
   editRule,
+  editAccessoryNote,
+  editEquipmentNote,
+  setEquipmentKind,
   setEquipmentEnvironment,
   equipmentIconAwaitingApproval,
   // The display-time join from a free-text kit label to the item this household

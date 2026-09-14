@@ -1,11 +1,15 @@
 import { ErrorCode, failure, success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
+import type { EquipmentKind } from '../../schemas/equipmentManifest.js';
 import type { EquipmentManifest } from '../entities/EquipmentManifest.js';
 import type { IdGenerator } from '../ports/IdGenerator.js';
 
 export interface AddEquipmentInput {
   readonly name: string;
   readonly now: string;
+  // Equipment unless the caller says otherwise (issue #1373) — a family is the
+  // rarer case, and every call site that predates families means `'equipment'`.
+  readonly kind?: EquipmentKind;
 }
 
 export function addEquipment(
@@ -21,8 +25,10 @@ export function addEquipment(
     id: ids.newEquipmentId(),
     schemaVersion: 1 as const,
     name,
+    kind: input.kind ?? ('equipment' as const),
     accessories: [],
     rules: [],
+    note: '',
     // Nothing is a place until it is described as one (issue #1281).
     environment: null,
     updatedAt: input.now,

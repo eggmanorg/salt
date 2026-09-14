@@ -643,8 +643,10 @@ const PROOFER = {
   id: 'eq-proofer',
   schemaVersion: 1 as const,
   name: 'Dough proofer',
+  kind: 'equipment' as const,
   accessories: [],
   rules: [],
+  note: '',
   environment: {
     control: 'dedicated' as const,
     minCelsius: 22,
@@ -659,8 +661,10 @@ const KNIFE = {
   id: 'eq-knife',
   schemaVersion: 1 as const,
   name: 'Sharp knife',
+  kind: 'equipment' as const,
   accessories: [],
   rules: [],
+  note: '',
   environment: null,
   updatedAt: WRITTEN_AT,
 };

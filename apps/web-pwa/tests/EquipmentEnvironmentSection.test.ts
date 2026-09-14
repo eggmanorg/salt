@@ -22,8 +22,10 @@ function item(environment: EquipmentEnvironmentDoc | null): EquipmentItemDoc {
     id: 'eq-1',
     schemaVersion: 1,
     name: 'Curing chamber',
+    kind: 'equipment',
     accessories: [],
     rules: [],
+    note: '',
     environment,
     updatedAt: '2026-09-01T00:00:00.000Z',
   };
