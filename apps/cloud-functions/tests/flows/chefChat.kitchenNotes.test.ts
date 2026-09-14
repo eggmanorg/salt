@@ -71,6 +71,7 @@ const {
   writeKitchenNoteTool,
   findRecipesTool,
   readRecipeTool,
+  readEquipmentDetailTool,
   verifiedCaller,
   chefChatFlow,
 } = await import('../../src/flows/chefChat.js');
@@ -348,12 +349,13 @@ describe('chefChat — whose chat gets the notes tools', () => {
     expect(mockFlagEnabled).toHaveBeenCalledWith(LIBRARY_FLAG_KEY, 'u-2', undefined);
   });
 
-  it('gives a caller inside the flag all five tools and the notes section', async () => {
+  it('gives a caller inside the flag all six tools and the notes section', async () => {
     const { tools, system } = await runTurn(signedIn);
 
     expect(tools).toEqual([
       findRecipesTool,
       readRecipeTool,
+      readEquipmentDetailTool,
       findKitchenNotesTool,
       readKitchenNoteTool,
       writeKitchenNoteTool,
@@ -368,7 +370,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
     mockFlagEnabled.mockResolvedValue(false);
     const { tools, system } = await runTurn(signedIn);
 
-    expect(tools).toEqual([findRecipesTool, readRecipeTool]);
+    expect(tools).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
     expect(system).not.toContain('## Their own kitchen notes');
     expect(system).not.toMatch(/findKitchenNotes/);
     // And so cannot cause a note to be WRITTEN either — the write tool rides the
@@ -381,7 +383,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
     // the refusal has to happen before it is ever called.
     const { tools } = await runTurn(undefined);
 
-    expect(tools).toEqual([findRecipesTool, readRecipeTool]);
+    expect(tools).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
     expect(mockFlagEnabled).not.toHaveBeenCalled();
   });
 
@@ -403,7 +405,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
     );
 
     const options = mockGenerateStream.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(options['tools']).toEqual([findRecipesTool, readRecipeTool]);
+    expect(options['tools']).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
     expect(mockFlagEnabled).not.toHaveBeenCalled();
   });
 });
