@@ -18,16 +18,27 @@ foundation (#179).
    one of the household's own fifty-nine recipes is not a kitchen assistant. What the
    original principle was protecting is real and survives as a constraint rather than
    a prohibition: a model with tools reaches for them, and every turn spent searching
-   is a turn not spent being a chef. So — **two tools, no more** (`findRecipes`,
-   `readRecipe`), every tool description carries an explicit _when not to call_
-   clause, and the chef still **writes nothing**. Saving, planning and shopping-list
-   adds stay manual. A third tool is a new issue with its own justification.
+   is a turn not spent being a chef. So — **three tools, no more** (`findRecipes`,
+   `readRecipe`, `readEquipmentDetail`), every tool description carries an explicit
+   _when not to call_ clause, and the chef still **writes nothing**. Saving, planning
+   and shopping-list adds stay manual.
 
-2. **Small and fixed stays ambient; large and growing gets a tool.** Equipment,
-   household favourites and kitchen memory go straight into the chef's system prompt
-   ("here's the equipment available — draw on it when it genuinely helps, ignore it
-   otherwise"). No retrieval tool, nothing the model feels obliged to call, and the
-   assistant is never _bound_ to the user's equipment.
+   **`readEquipmentDetail` is the third (#1373), and it arrived the way the rule
+   says one must** — a new issue with its own justification, which was that one
+   equipment record can now stand for a whole set of similar things (twelve frying
+   pans) and rendering all of their detail ambiently would cost five AI flows on
+   every call. It is **read-only permanently**: asked whether the chat should be
+   able to edit equipment, Daniel's answer was "No, and not ever", because a kit
+   list that is quietly wrong is worse than one that is out of date and there is no
+   surface where a bad write would be noticed. A fourth tool still needs its own
+   issue; a WRITE tool is refused outright, and
+   `chefChat.readEquipmentDetail.test.ts` pins that the tool list holds none.
+
+2. **Small and fixed stays ambient; large and growing gets a tool.** Household
+   favourites and kitchen memory go straight into the chef's system prompt. Equipment
+   does too, but only its NAMES — see the split below. No retrieval tool for what is
+   ambient, nothing the model feels obliged to call, and the assistant is never
+   _bound_ to the user's equipment.
 
    **This is a SIZE test, not a matter of taste** — which is why the recipe library
    is on the other side of it (#840). The library fails the test in both directions:
@@ -37,6 +48,26 @@ foundation (#179).
    method of a dish it did not open with, ambient cannot help it at all. Apply the
    same two questions — _is it bounded?_ and _is a summary enough?_ — before making
    anything else ambient or a tool.
+
+   **Equipment is now split across the line rather than sitting on one side of it
+   (#1373), and that is the interesting case.** One record can stand for a family of
+   similar things — twelve frying pans, eleven Weck jar models — each with its own
+   note. The names stay bounded and stay ambient; the notes are unbounded and are
+   fetched. So per record the prompt carries its name, one row of its entry names
+   and its household rules, and nothing else: no note of any kind, from the record or
+   from an entry, reaches any prompt. The rule of thumb Daniel writes by follows
+   from it — **a household RULE is always in front of the chef, a NOTE is read only
+   when the chef goes looking.** Anything that must never be missed ("never sear in
+   the non-stick") is a rule; anything that settles a choice the chef is already
+   weighing ("the Kenwood bowl is a pain to clean") is a note.
+
+   **What that traded away, stated plainly.** The prompt no longer carries the
+   roll-call of accessories the household does NOT own (28 entries across the live
+   manifest), so the chef cannot volunteer "that needs the XL Steamer Attachment,
+   which you don't have" unprompted; it may suggest one from its own product
+   knowledge and be corrected. The warning moved rather than vanished — the fetched
+   detail marks the unowned entries — and no stored tick was deleted. A household
+   rule on the item is the ambient answer where it matters.
 
 3. **Pro-tier model for the chef.** Conversation quality is the whole point — use a
    Pro-tier Gemini for the chef, not Flash. The librarian (structured extraction)
@@ -224,6 +255,14 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   because a recipe that parses always renders at least a `Title:` line, which
   `chefChat.readRecipe.test.ts` pins. **Do not add a third recipe renderer** —
   `authorRecipe.ts` already admits one duplicate exists.
+- It looks **one piece of kit up** through `readEquipmentDetail` (issue #1373), which
+  is `renderEquipmentDetail` in `equipmentContext.ts` beside the ambient renderer —
+  so the two cannot drift about what a record contains. Name resolution is
+  `resolveEquipmentItem`'s, the same one the "You'll need" strip uses, so a name
+  matching nothing or matching two records equally is `{ found: false }` rather than
+  a guess. The fetched detail carries what the prompt deliberately does not: every
+  entry's note, the record's own note, and the **not-owned entries, marked**. A
+  Firestore failure degrades to `{ found: false }` and never fails the turn.
 - **What the reader watched is what gets stored.** The flow returns the text it
   accumulated while streaming, not `response.text` — which is the LAST model message
   alone, and a turn that reaches for `findRecipes` or `readRecipe` makes a second

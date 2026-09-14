@@ -93,9 +93,32 @@ export function renderEquipmentEnvironment(item: EquipmentItemDoc): string[] {
 /**
  * Renders the equipment manifest as plain text for a system prompt.
  *
- * Owned and unowned accessories are BOTH rendered — unowned ones explicitly
- * marked unavailable — so the chef can say "that needs the XL Steamer
- * Attachment, which you don't have" instead of suggesting it blindly.
+ * NAMES AND RULES, AND NOTHING ELSE (issue #1373). One record can now stand for a
+ * whole SET of similar things — twelve frying pans, eleven Weck jar models — so
+ * what this used to render per item is now what it would render per item times
+ * forty, five times over, on every single AI call. The answer is not a shorter
+ * list: it is that detail stops being ambient and becomes something the chef
+ * FETCHES when the question actually turns on it (`readEquipmentDetail`, and only
+ * chefChat has tools).
+ *
+ * So, per item: its name, its environment if it is a place, ONE row of its OWNED
+ * entry names, and its household rules verbatim.
+ *
+ * - THE ENTRY ROW IS A CONCATENATION, NEVER A PARSE. Names joined with ', ' and
+ *   nothing more. Do not derive "from 20cm to 32cm", do not group by material, do
+ *   not read a number out of a name — that is the type-laundering site #1281's
+ *   "store the numbers, describe the contraption in prose" rule exists to avoid
+ *   creating. `kind` picks the row's LABEL and nothing else.
+ * - NO NOTE IS EVER EMITTED, from an item or from an entry. Notes reach the chef
+ *   only through the tool. Pinned by a test asserting no note text appears in the
+ *   output for any input.
+ * - THE NOT-OWNED ROLL-CALL IS GONE, deliberately (issue #1373, decision 8).
+ *   This used to render unowned accessories marked unavailable, so the chef could
+ *   say "that needs the XL Steamer Attachment, which you don't have" — 28 entries
+ *   of it across the live manifest. Nothing is deleted: every tick is still
+ *   stored, still editable, and the tool still reports them, marked, when the chef
+ *   looks a record up. What the chef is told ambiently instead is simpler: use
+ *   only what is listed (see EQUIPMENT_CHEF_FRAMING).
  *
  * Returns '' for an empty manifest so the caller can omit the section entirely.
  */
@@ -105,14 +128,9 @@ export function renderEquipmentManifest(items: readonly EquipmentItemDoc[]): str
     .map((item) => {
       const parts = [`- ${item.name}`, ...renderEquipmentEnvironment(item)];
       const owned = item.accessories.filter((a) => a.owned);
-      const unowned = item.accessories.filter((a) => !a.owned);
       if (owned.length > 0) {
-        parts.push(`  accessories owned: ${owned.map((a) => a.name).join(', ')}`);
-      }
-      if (unowned.length > 0) {
-        parts.push(
-          `  accessories NOT owned (unavailable — do not use): ${unowned.map((a) => a.name).join(', ')}`,
-        );
+        const label = item.kind === 'family' ? 'contains' : 'accessories';
+        parts.push(`  ${label}: ${owned.map((a) => a.name).join(', ')}`);
       }
       if (item.rules.length > 0) {
         parts.push(
@@ -122,6 +140,44 @@ export function renderEquipmentManifest(items: readonly EquipmentItemDoc[]): str
       return parts.join('\n');
     })
     .join('\n');
+}
+
+/**
+ * Renders ONE record in full, for the chef's `readEquipmentDetail` tool (#1373).
+ *
+ * THE OTHER HALF OF THE AMBIENT/FETCHED SPLIT. `renderEquipmentManifest` above
+ * gives every flow names and rules; this gives the chef — the only flow with
+ * tools — everything the household has actually written, at the moment it asks.
+ * What is here and deliberately NOT up there:
+ *
+ * - every entry's note, and the record's own note;
+ * - the NOT-OWNED entries, marked. Decision 8 took the roll-call out of the
+ *   prompt; it did not throw it away. "You don't own the XL Steamer Attachment"
+ *   is worth reading exactly when the chef is looking the Magimix up, and worth
+ *   nothing on every unrelated turn. Pinned by a unit test.
+ *
+ * Entry names are still never parsed — "28cm cast iron" is a string that gets
+ * printed, here as everywhere (#1281).
+ */
+export function renderEquipmentDetail(item: EquipmentItemDoc): string {
+  const what = item.kind === 'family' ? 'a family of kit the household owns' : 'a piece of kit';
+  const lines = [`${item.name} — ${what}`, ...renderEquipmentEnvironment(item)];
+
+  if (item.note) {
+    lines.push(`  what they say about it: ${item.note}`);
+  }
+  if (item.rules.length > 0) {
+    lines.push(`  household rules (override your own product knowledge): ${item.rules.join('; ')}`);
+  }
+  if (item.accessories.length > 0) {
+    lines.push(item.kind === 'family' ? '  contains:' : '  accessories:');
+    for (const accessory of item.accessories) {
+      const owned = accessory.owned ? '' : ' (NOT OWNED — they do not have this one)';
+      const note = accessory.note ? ` — ${accessory.note}` : '';
+      lines.push(`    - ${accessory.name}${owned}${note}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -180,9 +236,13 @@ A knife wins for one onion; the 4 mm slicing disc wins for 2 kg of potatoes. Jud
 of the job, the hassle of getting the kit out, and the cleanup — never capability alone. \
 Reaching for the biggest appliance for a small job is a mistake, not thoroughness.
 
-Accessories marked NOT owned are unavailable — never assume access to them. If the best method \
-needs one, say so plainly ("that really wants the XL Steamer Attachment, which you don't have") \
-and give the best alternative using what they do own.
+WHAT IS LISTED IS WHAT THEY HAVE. Use only the kit named here, and the accessories named under \
+it. Do not assume an attachment, insert, lid or container exists because the product usually \
+ships with one — if it is not listed, they do not have it, and the answer is a method that uses \
+what is.
+
+Some entries are a FAMILY of similar things rather than one object — a line reading "contains" is \
+a set the household owns several of, and you may pick whichever member of it suits the job.
 
 Where an item lists household rules, those are the household's own plain-English instructions \
 for that equipment. They OVERRIDE your general product knowledge — follow them exactly, even \
@@ -252,6 +312,17 @@ Attachment" is written "hand blender attachment", and "Steam Basket" is written 
 
 Naming which appliance is NOT a licence to introduce one. If the method does the job by hand, the \
 kit is the hand tool the method uses, and nothing from this list belongs in the answer.`;
+
+// ONE LINE IN THE KIT FRAMING ABOVE IS NOW INERT, and is left standing
+// deliberately (issue #1373). "Accessories marked NOT owned are unavailable —
+// never name one" describes a row `renderEquipmentManifest` no longer emits to
+// ANY flow: only owned entries are rendered, so the kit flow cannot see an
+// unowned accessory, let alone name one. The sentence therefore constrains
+// nothing and grants nothing. It stays because changing it would change the
+// prompt text of a flow this work has no reason to disturb, and because the
+// stored ticks are untouched — if a future change ever renders them again, the
+// instruction is already correct. Do not read its presence as evidence that the
+// roll-call is still sent.
 
 // ─── Stage framing (extractProcessStages) ────────────────────────────────────
 //

@@ -11,13 +11,19 @@ import {
   RECIPE_SEARCH_PROJECTION_FIELDS,
 } from '@salt/domain/schemas';
 import { ReadRecipeInputSchema, ReadRecipeOutputSchema } from '@salt/domain/schemas';
+import {
+  ReadEquipmentDetailInputSchema,
+  ReadEquipmentDetailOutputSchema,
+} from '@salt/domain/schemas';
 import type {
   FindRecipesInput,
   FindRecipesOutput,
   ReadRecipeInput,
   ReadRecipeOutput,
+  ReadEquipmentDetailInput,
+  ReadEquipmentDetailOutput,
 } from '@salt/domain/schemas';
-import { recipePhaseTotals, searchRecipes } from '@salt/domain';
+import { recipePhaseTotals, resolveEquipmentItem, searchRecipes } from '@salt/domain';
 import type { RecipeSearchCandidate } from '@salt/domain';
 import {
   AI_TEXT_FLOW_TIMEOUT,
@@ -33,7 +39,12 @@ import { UK_INGREDIENT_PRINCIPLE } from './ingredientConversions.js';
 // "½ tsp salt (3 g)" against the pipeline's "2g whole black peppercorns (1 tsp)".
 // Never restate it here; interpolate it.
 import { READER_UNIT_PRINCIPLE } from '@salt/domain/prompts';
-import { readEquipmentContext, equipmentSectionForChef } from './equipmentContext.js';
+import {
+  readEquipmentContext,
+  readEquipmentItems,
+  renderEquipmentDetail,
+  equipmentSectionForChef,
+} from './equipmentContext.js';
 import { readKitchenMemoryContext, kitchenMemorySectionForChef } from './kitchenMemoryContext.js';
 import { readComponentContext, componentSectionForChef } from './componentContext.js';
 import { formatRecipeForPrompt, withComponents } from './recipeText.js';
@@ -336,6 +347,111 @@ export const readRecipeTool = ai.defineTool(
   (input) => readRecipeForChef(getFirestore(), input),
 );
 
+// ─── The chef's kit, on demand (issue #1373) ─────────────────────────────────
+//
+// The THIRD tool. `chefChat.ts` used to say "the chef's TWO tools, and the whole
+// surface (issue #840) — a third is a new issue with its own justification";
+// issue #1373 is that justification, and the comment below now says three.
+//
+// WHY IT EXISTS. One equipment record can stand for a whole set of similar
+// things — twelve frying pans, eleven Weck jar models — each with its own note
+// about what it is good for. Rendering all of that into five AI prompts on every
+// call is what this replaces: the ambient list is names and rules, and the detail
+// is fetched at the moment a question turns on it.
+//
+// READ-ONLY, PERMANENTLY. Asked whether the chat should be able to edit
+// equipment, Daniel's answer was "No, and not ever" — so there is no write
+// sibling to this tool and none is to be added. The reason is not caution about
+// AI generally: an equipment list that is quietly WRONG is worse than one that is
+// out of date, and there is no review surface anywhere in Salt where a bad write
+// here would be noticed. A confirmation step does not fix that — the confirmation
+// is the ceremony Salt avoids, and the failure mode is silent either way. Pinned
+// by a test asserting the chef's tools array holds no equipment writer.
+
+// What to do with the third tool, as its own section beside LIBRARY_FRAMING —
+// tool-use guidance, not equipment policy. It is deliberately NOT in
+// EQUIPMENT_CHEF_FRAMING: that string lives in `equipmentContext.ts` beside three
+// framings for flows that have no tools at all, and its header is explicit that
+// the four must not drift into each other.
+//
+// GATED ON THE KIT LIST, unlike LIBRARY_FRAMING. The library's size is unknown
+// until the tool has been called, so its framing is unconditional; the kit list
+// is right there in the prompt, and with no manifest this tool can only ever
+// miss. A household with no equipment gets exactly the prompt it got before.
+const KITCHEN_DETAIL_FRAMING = `## Looking their kit up
+The list above is names and household rules. There is more behind it that you are NOT being shown \
+every turn: what each accessory or family member is actually like, and what the household has \
+written about the item itself — "the 28cm cast iron is the only one that goes in the oven", "the \
+Magimix is on a high shelf and takes ages to wash, only for genuinely large volumes".
+
+readEquipmentDetail fetches all of that for one item, by name. Call it when the answer turns on \
+the detail — choosing between two machines that would both work, picking which pan or which jar, \
+committing to a piece of kit where being wrong about it would matter. Do not call it to confirm \
+something the list already says.
+
+NEVER GUESS WHAT IS BEHIND A NAME. If it would change your answer, look it up; if you have not \
+looked it up, do not state it.
+
+You cannot change their kitchen. Reading is the whole of what you can do here — if they ask you to \
+add, rename or remove a piece of equipment, say plainly that they edit it in the app themselves, \
+and do not pretend to have done it.`;
+
+/**
+ * Reads ONE equipment record in full for the chef.
+ *
+ * A MISS, NEVER A GUESS. Name resolution is `resolveEquipmentItem`'s, the same
+ * one the "You'll need" strip uses — so a name matching nothing, or matching two
+ * records equally, returns `found: false` rather than borrowing one of them. The
+ * tool never invents a record, and the chef is told to say so rather than
+ * inventing its contents.
+ */
+export async function readEquipmentDetailForChef(
+  db: ReturnType<typeof getFirestore>,
+  input: ReadEquipmentDetailInput,
+): Promise<ReadEquipmentDetailOutput> {
+  const items = await readEquipmentItems(db, 'chefChat.readEquipmentDetail');
+  const item = resolveEquipmentItem(input.name, items);
+  return item
+    ? { found: true, detail: renderEquipmentDetail(item) }
+    : { found: false, detail: null };
+}
+
+const READ_EQUIPMENT_DETAIL_DESCRIPTION = `Look up ONE piece of kit, or one family of kit, in full — what it contains or what accessories it \
+has, what the household has written about each of those, their notes on the item itself, its \
+household rules, and the temperature it holds if it holds one. Takes the name as it appears in the \
+kitchen list in your instructions.
+
+CALL THIS when the answer genuinely turns on the detail:
+- choosing between two things that would both do the job — "the Magimix or the Kenwood?" — where \
+what the household has written about each is the deciding fact
+- picking one member of a family: which pan, which jar, which dish, when size or material or what \
+it can take matters
+- before committing to a piece of kit for anything where being wrong about it would matter
+
+DO NOT CALL IT when the names in the list already answer the question. That they own a mandoline, \
+that a frying pan exists, that the oven is an oven — the list carries all of that. Looking up \
+three items to name one is a turn spent reading instead of cooking.
+
+Anything the detail marks NOT OWNED is something they do not have: never propose it, and say \
+plainly what is missing if the best method needs it.
+
+If found comes back false, no single item answers to that name — you may have used a name that is \
+not in the list, or one that fits two items equally. Say so and ask which they mean; never invent \
+what an item contains.
+
+You cannot change anything here. This reads their kitchen and nothing more — if they ask you to \
+add, rename or remove equipment, tell them it is theirs to edit in the app.`;
+
+export const readEquipmentDetailTool = ai.defineTool(
+  {
+    name: 'readEquipmentDetail',
+    description: READ_EQUIPMENT_DETAIL_DESCRIPTION,
+    inputSchema: ReadEquipmentDetailInputSchema,
+    outputSchema: ReadEquipmentDetailOutputSchema,
+  },
+  (input) => readEquipmentDetailForChef(getFirestore(), input),
+);
+
 // ─── Household favourites (issue #726) ───────────────────────────────────────
 //
 // What the household actually buys, counted from shopping-list tick-offs. Read
@@ -464,7 +580,10 @@ function buildSystemPrompt(
   const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING];
 
   const equipmentSection = equipmentSectionForChef(equipmentContext);
-  if (equipmentSection) sections.push(equipmentSection);
+  // Both or neither, and in this order: the kit list first, then what to do when
+  // a name on it is not enough (issue #1373). With no manifest there is nothing
+  // for readEquipmentDetail to find, so neither section appears.
+  if (equipmentSection) sections.push(equipmentSection, KITCHEN_DETAIL_FRAMING);
 
   if (favouritesContext) sections.push(favouritesContext);
 
@@ -555,19 +674,22 @@ export const chefChatFlow = ai.defineFlow(
         system: systemPrompt,
         messages: history,
         prompt: input.newMessage,
-        // The chef's TWO tools, and the whole surface (issue #840) — a third is a
-        // new issue with its own justification. Genkit runs the tool loop inside
-        // this call and keeps streaming across it, so the reply still arrives in
-        // fragments; the gaps while tools run are silence, which is what the idle
-        // timer below bounds. A turn may now search AND read, so that is two
-        // round-trips inside one stream — each is a Firestore read measured in
-        // milliseconds, nowhere near the 55 s idle budget. Passed BY VALUE rather
-        // than by name so the flow and the tools cannot get out of step.
+        // The chef's THREE tools, and the whole surface (issues #840, #1373) — a
+        // fourth is a new issue with its own justification, and a WRITE tool is
+        // not on the table at all ("No, and not ever": see the comment at
+        // `readEquipmentDetailTool`). Genkit runs the tool loop inside this call
+        // and keeps streaming across it, so the reply still arrives in fragments;
+        // the gaps while tools run are silence, which is what the idle timer
+        // below bounds. A turn may search, read a dish AND look a piece of kit
+        // up, so that is three round-trips inside one stream — each is a
+        // Firestore read measured in milliseconds, nowhere near the 55 s idle
+        // budget. Passed BY VALUE rather than by name so the flow and the tools
+        // cannot get out of step.
         //
         // Note what is still absent: no `output` option, and none is coming. Half
         // of design principle #1 survives intact — the chef returns prose, and
         // structure stays the librarian's job at save time.
-        tools: [findRecipesTool, readRecipeTool],
+        tools: [findRecipesTool, readRecipeTool, readEquipmentDetailTool],
       });
 
       // The DRAIN is what needs the deadline, not what follows it (issue #915).
