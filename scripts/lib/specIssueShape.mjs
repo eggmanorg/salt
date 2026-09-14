@@ -22,10 +22,23 @@
 // the one that actually costs `/salt-run` a re-sweep. A `specced` issue is one /salt-run
 // will not trip over structurally — not one whose contents are any good.
 //
+// THE LABEL ALSO DEPENDS ON THE TITLE, and `classifySpecIssue` deliberately
+// does not. "Is this body a shape /salt-run can consume" is a question about the
+// body and stays one — three command files pipe a bare body in with no title to
+// give it. But an EPIC is a container that is never built, and one filed in a
+// spec shape is runnable by construction: #1372 was stamped `specced` eleven
+// seconds after filing and a `/salt-run` then picked the container up as work.
+// `specLabelVerdict({ title, body })` below is where the two facts meet, and it
+// is what the CLI and the workflow ask. The SHAPE-never-TRUTH limit above is
+// unchanged by it: a title tells you what KIND of issue this is, never whether
+// its contents are any good.
+//
 // The variant tables below are copies of the templates in `.claude/commands/`,
 // and a copy goes stale in silence. `scripts/tests/specIssueShape.test.mjs`
 // parses those templates and asserts every heading and field here still matches
 // them, so editing a template without editing this file fails CI.
+
+import { isEpicishTitle } from './boardTitles.mjs';
 
 /** One entry per spec command. `signature` is the level-2 heading unique to that
  *  variant — no two templates share one, which is what makes classification a
@@ -196,4 +209,55 @@ export function classifySpecIssue(body) {
   });
 
   return { variant: variant.id, ok: problems.length === 0, problems };
+}
+
+/** The one problem a category error produces. Not a list of shape complaints:
+ *  an epic body's missing **Must not touch** is beside the point when the issue
+ *  should carry no `## Phases` section at all. */
+const epicProblem = (command) =>
+  `the title opens "epic", but the body is in a ${command} shape. An epic is a container: file its children as separate issues, and give this one no \`## Phases\` section.`;
+
+/**
+ * Does the `specced` label belong on this issue? Title AND body, which is the
+ * question `spec-shape.yml` actually has to answer.
+ *
+ * `classifySpecIssue` answers "would /salt-run trip over this body". That is
+ * necessary and not sufficient: an epic is a container that is never built, so a
+ * spec-shaped epic body is a CATEGORY ERROR rather than a well-formed spec, and
+ * labelling it runnable is what let a container be handed to `/salt-run` as a
+ * single job (#1378).
+ *
+ * @param {{title?: string, body?: string}} issue
+ * @returns {{variant: string|null, ok: boolean, problems: string[], epic: boolean,
+ *   applies: boolean}} `applies` is the label verdict and is the only field a
+ *   caller needs to decide. `epic` says the title matched, so a caller can say
+ *   WHY rather than listing shape problems. `variant`, `ok` and `problems` keep
+ *   `classifySpecIssue`'s meanings, with one substitution: on the category error
+ *   `problems` is the category error alone.
+ *
+ * AN EPIC WITH A NON-SPEC BODY IS THE ORDINARY, CORRECT CASE — `variant: null`,
+ * `ok: false`, no problems, exit 2 — and is exactly what `/salt-epic` posts.
+ * Nothing here treats an epic as a fault; what it refuses is calling one
+ * runnable.
+ *
+ * WHAT THIS CANNOT SEE (CLAUDE.md rule 12): an epic that omits the `epic`
+ * prefix from its title is indistinguishable from work here, and its body is
+ * judged on shape alone. `board.mjs check`'s band rule is the second lens for
+ * that one; see `isEpicishTitle`.
+ */
+export function specLabelVerdict({ title, body } = {}) {
+  const shape = classifySpecIssue(body);
+  const epic = isEpicishTitle(title);
+
+  if (!epic) return { ...shape, epic: false, applies: shape.ok };
+  if (!shape.variant) return { ...shape, epic: true, applies: false };
+
+  const { command } = SPEC_VARIANTS.find((entry) => entry.id === shape.variant);
+  return {
+    variant: shape.variant,
+    ok: false,
+    problems: [epicProblem(command)],
+    epic: true,
+    applies: false,
+  };
 }

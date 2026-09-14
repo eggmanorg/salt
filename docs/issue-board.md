@@ -60,6 +60,26 @@ of **Context pointers**; whether the `file:line` in there points at anything is
 the expensive failure, and it is still checked only by the agent that wrote the
 issue. See the header of [`scripts/lib/specIssueShape.mjs`](../scripts/lib/specIssueShape.mjs).
 
+**An epic can never carry it, whatever its body says.** An epic is a container
+that is never built, and a container filed in a `/salt-spec` shape is runnable
+_by construction_ — #1372 was stamped `specced` eleven seconds after filing and a
+`/salt-run` then picked it up as a single job. So the verdict reads the TITLE as
+well as the body: a title opening `epic` is refused the label, the workflow's
+step summary says the issue is a category error rather than a near-miss spec, and
+the fix is to file the children as separate issues, leaving the epic itself with
+no `## Phases` section at all.
+
+The predicate there is the wide `^epic`, not the band rule's `^epic:`, because
+the two have opposite cost asymmetries — see **Where that rule stops** below.
+
+**Where the title half stops, and the second lens that covers it.** An epic filed
+_without_ the prefix is invisible to the guard, and its body is judged on shape
+alone. `board.mjs check` is the other lens: **an open issue in the `Epic` band
+carrying `specced` is a failure**, whatever it is titled. That also catches a
+stale label on an issue nobody has edited since the guard shipped, because the
+workflow only re-checks an issue when it is edited — which is what the backfill
+sweep above is for.
+
 ---
 
 ## `Queue` — which pile
@@ -155,8 +175,19 @@ filter carries `-queue:Epic`. `The queue` needs nothing, because grouping by
 `Queue` already separates them. `Product` is a judgement call: an epic like #778
 is genuinely product work, so it is left visible there.
 
-`board.mjs check` enforces the half of this that is mechanical: **an open issue
-titled `epic:` must be in the `Epic` band.**
+`board.mjs check` enforces the half of this that is mechanical, and it is now two
+rules rather than one — the same invariant approached from both ends:
+
+- **An open issue titled `epic:` must be in the `Epic` band.** Title in, band out.
+- **An open issue in the `Epic` band must not carry `specced`.** Band in, label
+  out. An epic is a container, so "a robot may build this" is a category error
+  about it — and this is the rule that still fires when the title guard in
+  [`spec-shape.yml`](../.github/workflows/spec-shape.yml) cannot see the epic at
+  all, because it was filed without the prefix.
+
+The pair is deliberate. Each is blind to what the other sees, and the residue
+they share — an epic that is both mis-titled and untriaged — falls to the
+untriaged-`Queue` rule, which is why that rule has no epic carve-out.
 
 That test used to be "an open issue with sub-issues", and it was wrong. It read
 a parent link as proof of an epic, and a parent link is nothing of the kind: it
@@ -174,6 +205,15 @@ not have made it hold the `Epic` band. Four of the five match, not five. The
 band rule is deliberately left that narrow — widening what counts as an epic
 title is a naming decision, not a check tweak — so read it as "an open issue
 titled `epic:`", never as "every epic".
+
+**The `specced` guard uses a wider predicate, and the difference is the point.**
+`isEpicishTitle` matches `^epic`, so it catches #941 where the band rule does
+not. The two are not drift: a miss in the band rule costs an epic sitting in the
+wrong column where a person sees it, and a miss in the label guard costs a
+container being handed to `/salt-run` as a job. Cheap and visible against
+expensive and silent — so the band rule stays narrow and the guard is wide, and
+an extra match there costs only that an issue whose title opens `epic` cannot be
+called runnable.
 
 ## A parent is not an epic
 

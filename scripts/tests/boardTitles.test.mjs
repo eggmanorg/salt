@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isEpicishTitle,
   isEpicTitle,
   isHandClosed,
   isLedger,
@@ -45,6 +46,44 @@ describe('isEpicTitle', () => {
 
   it('survives a title that is missing', () => {
     expect(isEpicTitle(undefined)).toBe(false);
+  });
+});
+
+describe('isEpicishTitle', () => {
+  // The gap this predicate exists to close: #941 is a real epic that the narrow
+  // band predicate misses, and an epic slipping past the `specced` guard is the
+  // defect #1378 is about.
+  it('matches a scoped epic title, which isEpicTitle does not', () => {
+    expect(isEpicishTitle('epic(test): make the test suite safe for the #913 refactor')).toBe(true);
+    expect(isEpicTitle('epic(test): make the test suite safe for the #913 refactor')).toBe(false);
+  });
+
+  it('matches the plain form too', () => {
+    expect(isEpicishTitle('epic: formulas, schedules and batches')).toBe(true);
+  });
+
+  // The cost of being wide is bounded by this: no title convention in this repo
+  // opens with `epic` except an epic's. If one ever does, this test says so.
+  it.each([
+    'feat: the recipe phase timeline',
+    'fix: nothing stops an epic being labelled specced',
+    'refactor: split the planner week mutators',
+    'chore(deps): bump the github-actions group',
+    'docs: the epic band is a container',
+    'campaign: overnight next-5 sweep (#995)',
+    'question(board): should an epic carry a size?',
+    'review: the architecture findings',
+  ])('does not match the work title %s', (title) => {
+    expect(isEpicishTitle(title)).toBe(false);
+  });
+
+  it('only matches at the start, so an issue merely mentioning one is work', () => {
+    expect(isEpicishTitle('fix: an epic can be labelled specced')).toBe(false);
+  });
+
+  it('survives a title that is missing', () => {
+    expect(isEpicishTitle(undefined)).toBe(false);
+    expect(isEpicishTitle(null)).toBe(false);
   });
 });
 

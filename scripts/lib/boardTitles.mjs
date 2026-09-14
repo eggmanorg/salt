@@ -41,6 +41,35 @@ export const isLedger = (title) => /^campaign:/i.test(title ?? '');
 export const isEpicTitle = (title) => /^epic:/i.test(title ?? '');
 
 /**
+ * The WIDE epic-title test — `^epic` rather than `^epic:` — used where missing an
+ * epic is the expensive direction rather than the cheap one.
+ *
+ * Two predicates for one word looks like drift and is not. They serve rules with
+ * opposite cost asymmetries. `isEpicTitle` gates the `Epic` BAND rule, where a
+ * miss costs an epic sitting in the wrong column and a person seeing it —
+ * cheap, visible, and its narrowness is a documented naming decision
+ * (docs/issue-board.md → `Epic` — a container, not a band). This one gates the
+ * `specced` LABEL, where a miss is the defect it was written for: an
+ * `epic(test):`-titled container stamped runnable and handed to `/salt-run` as a
+ * single job (#1378). An EXTRA match here costs only that an issue whose title
+ * opens `epic` cannot be called runnable, and no title convention in this repo
+ * opens that way except an epic's (`feat`, `fix`, `refactor`, `test`, `docs`,
+ * `chore`, `review`, `question(`, `campaign`, `spec`).
+ *
+ * The same `^epic` is already what docs/issue-board.md → A parent is not an epic
+ * tells a person to run when looking for a candidate parent, for the same
+ * reason: #941 is `epic(test):` and the tighter form drops it.
+ *
+ * WHAT THIS CANNOT SEE, stated rather than implied (CLAUDE.md rule 12). It reads
+ * the TITLE and nothing else, so an epic filed WITHOUT the prefix is invisible
+ * to it and its body will be labelled on shape alone. That residue is why the
+ * guard has a second lens that does not go through this predicate at all:
+ * `board.mjs check` fails an open item sitting in the `Epic` BAND while carrying
+ * `specced`, which catches the mis-titled container this cannot.
+ */
+export const isEpicishTitle = (title) => /^epic/i.test(title ?? '');
+
+/**
  * A kind of issue that CLOSES BY HAND, with no pull request — so no PR body ever
  * carries `Closes #N` and nothing automated will ever move its `Status` along.
  * Consulted in exactly one place: the closed-at-a-shipping-status rule in

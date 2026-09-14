@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { classifySpecIssue, SPEC_VARIANTS } from '../lib/specIssueShape.mjs';
+import { classifySpecIssue, SPEC_VARIANTS, specLabelVerdict } from '../lib/specIssueShape.mjs';
 
 // Two properties, and the first is the one that rots.
 //
@@ -184,5 +184,78 @@ describe('classifySpecIssue', () => {
     expect(classifySpecIssue(body).problems).toContain(
       'Phase 3 is in position 2 — phases must be numbered 1..N in order',
     );
+  });
+});
+
+// The guard from #1378: an epic is a container that is never built, so it must
+// never be called runnable however well-formed its body is. Every case here
+// fails against the code before that change — the verdict function did not
+// exist, and the CLI answered on the body alone.
+describe('specLabelVerdict', () => {
+  const spec = SPEC_VARIANTS[0];
+
+  it('refuses the label to an epic-titled issue in a perfect spec shape', () => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body: bodyFor(spec) });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(true);
+    expect(verdict.ok).toBe(false);
+    // The category error, not a list of shape complaints — the body's shape is
+    // beside the point when the issue should carry no `## Phases` at all.
+    expect(verdict.problems).toHaveLength(1);
+    expect(verdict.problems[0]).toContain('An epic is a container');
+  });
+
+  it('refuses a SCOPED epic title, which the band predicate would miss', () => {
+    // #941 is `epic(test):`. The narrow `^epic:` form drops it, which is why
+    // the verdict uses the wide predicate.
+    expect(
+      specLabelVerdict({ title: 'epic(test): safe test suite', body: bodyFor(spec) }).applies,
+    ).toBe(false);
+  });
+
+  it.each(SPEC_VARIANTS)('refuses an epic-titled $id body too', (variant) => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body: bodyFor(variant) });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.problems[0]).toContain(variant.command);
+  });
+
+  it('labels the identical body under an ordinary title', () => {
+    const verdict = specLabelVerdict({ title: 'feat: ordinary work', body: bodyFor(spec) });
+    expect(verdict.applies).toBe(true);
+    expect(verdict.epic).toBe(false);
+  });
+
+  // The correct, ordinary epic — the shape `/salt-epic` posts. Not a fault: no
+  // variant, no problems, and the workflow says nothing about it.
+  it('says nothing about an epic whose body is not a spec at all', () => {
+    const verdict = specLabelVerdict({
+      title: 'epic: a programme',
+      body: '## Goal\n\nA container.\n',
+    });
+    expect(verdict).toEqual({ variant: null, ok: false, problems: [], epic: true, applies: false });
+  });
+
+  // The no-title path is how the three spec commands' own verification step
+  // invokes this, with no issue to take a title from yet. It must stay exactly
+  // what `classifySpecIssue` says.
+  it.each(SPEC_VARIANTS)('with no title, matches classifySpecIssue for $id', (variant) => {
+    for (const body of [bodyFor(variant), bodyFor(variant).replace('## Phases', '## Delivery')]) {
+      const shape = classifySpecIssue(body);
+      for (const title of [undefined, '']) {
+        expect(specLabelVerdict({ title, body })).toEqual({
+          ...shape,
+          epic: false,
+          applies: shape.ok,
+        });
+      }
+    }
+  });
+
+  it("keeps reporting an ordinary spec body's own problems", () => {
+    const body = bodyFor(spec).replace('**Scope:** real content\n', '');
+    const verdict = specLabelVerdict({ title: 'feat: ordinary work', body });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(false);
+    expect(verdict.problems).toContain('Phase 1: missing **Scope:**');
   });
 });
