@@ -139,6 +139,29 @@ describe('deriveFormula reconciles the basis to exactly 100', () => {
     }
   });
 
+  // WHICH MEMBER GETS THE RESIDUAL, pinned (issue #1370). Every other assertion in
+  // this file is blind to that: the sums are unchanged whoever carries it, and the
+  // fixtures above are exact ties, where a stable sort hands it to the first member
+  // from either end. So reversing the comparator in `reconciledBasisPercents` used
+  // to leave this whole suite green while giving the unit to the member that lost
+  // LEAST of one — the opposite of largest remainder, and every basis member on the
+  // far side of its true share. This split has no tie: the remainders are 0.6667,
+  // 0.3333 and 0 for one unit to hand out.
+  it('hands the residual to the largest remainder, not merely to someone', () => {
+    const derived = deriveFormula({
+      recipeId: 'r',
+      components: [
+        { ingredientId: 'b0', grams: 1, inBasis: true },
+        { ingredientId: 'b1', grams: 2, inBasis: true },
+        { ingredientId: 'b2', grams: 3, inBasis: true },
+      ],
+    });
+    if (!derived.ok) throw new Error(derived.reason.kind);
+    // b0 lost the most to the floor and is rounded UP; b2 is exact and is left
+    // alone. Smallest-remainder-first would read [16.6666, 33.3333, 50.0001].
+    expect(basisOf(derived.formula.components)).toEqual([16.6667, 33.3333, 50]);
+  });
+
   it('never moves a basis member further than one ten-thousandth off its true share', () => {
     const split = [100, 100, 100, 100, 100, 100, 100];
     const derived = deriveFormula({

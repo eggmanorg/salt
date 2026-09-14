@@ -137,9 +137,16 @@ function componentsAgainst(
  * Derive a formula from grams. Pure; no clock, no I/O, no throw.
  *
  * The basis members' percentages are reconciled to 100 (see `reconciledBasisPercents`
- * above) rather than left to round where they fall, so a derived formula is
- * always solvable by `solveFormula`. It only becomes unnormalised once a human
- * edits it, which is the case `BASIS_PERCENT_TOLERANCE` exists to forgive.
+ * above) rather than left to round where they fall, so a formula derived HERE never
+ * fails `solveFormula` with `basisNotNormalised`. That is the only failure this
+ * reconciliation rules out: a derived formula can still be refused for a
+ * `boundViolation`, since bounds come in from the caller and are never checked
+ * against each other here.
+ *
+ * Nor is a stored formula guaranteed normalised. A hand edit can unnormalise one,
+ * and so can simply having been written before this reconciliation existed
+ * (#1364) — production holds those. `BASIS_PERCENT_TOLERANCE` is what forgives
+ * both.
  */
 export function deriveFormula(input: DeriveFormulaInput): DeriveFormulaResult {
   const { recipeId, components, referenceYield } = input;

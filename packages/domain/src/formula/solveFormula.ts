@@ -16,8 +16,11 @@ import { doughAmountGrams } from './doughAmount.js';
 // to unpick — the same argument the contract doc makes.
 
 // Basis percentages are compared to 100 with this tolerance, in percentage
-// points. Derived percentages are rounded to four decimals, so a three-way basis
-// split lands at 99.9999 and must not be refused.
+// points. WHAT STILL NEEDS IT, since #1364: `deriveFormula` now reconciles the
+// basis to exactly 100, so nothing this codebase derives today lands short — the
+// three-way 99.9999 that originally justified this number can no longer happen.
+// What can is a formula STORED BEFORE that fix (production holds them) and one a
+// human has edited by hand. Both are the reason this is not tightened to zero.
 export const BASIS_PERCENT_TOLERANCE = 0.01;
 
 export type SolvedComponent = {
