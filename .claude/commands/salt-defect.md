@@ -23,6 +23,31 @@ This is the heavyweight path — Explore agents, a tracked issue, the decision a
 
 If the cause is obvious, the change is contained to a file or two, and there is no decision for the user to make, **do not run this** — just fix it inline (with a regression test) and report. When unsure, say so and ask before spinning up the full flow.
 
+**The other direction, and it is the one nothing here used to ask.** The escape above runs downward —
+too small for this path. There is an upward one: some things are too big to be a **work issue at
+all**. A programme whose increments each get specced, triaged and sequenced against other work
+_independently_ is an **epic**, and an epic is a container that is never built.
+
+The criterion is the board's own, so it is answerable about a specific proposal rather than felt: **if
+the thing can hold a `Size` and a `Queue` band honestly, it is work.** An epic can do neither — it
+cannot be _done_, cannot be sized against its neighbours, and carries no priority because its children
+carry it ([docs/issue-board.md](../../docs/issue-board.md) → `Epic` — a container, not a band).
+
+**The floor, stated as a rule:** a container with one child is worse than a root. Two phases of one
+job is a work issue, however many phases it has. This is not a licence to file epics.
+
+**If it is one, route — do not file this shape anyway.** Put the call to Daniel in one line (the
+choice, a one-sentence reason, an offer to file the other shape), and on his yes **spawn a subagent
+pointed at [`.claude/commands/salt-epic.md`](salt-epic.md)**. Naming the route matters as much as
+naming the destination: no agent can invoke one of these commands — every file in
+`.claude/commands/` carries `disable-model-invocation: true` — so "hand back to `/salt-epic`" names
+something that cannot happen, and leaves hand-writing the container body from in here as the path of
+least resistance. That is the fallback CLAUDE.md names, not the default.
+
+**Why the tie breaks toward asking:** the costs are unequal. A work issue filed as an epic costs a
+thin container someone deletes. An epic filed as a work issue costs a stalled `/salt-run` and a human
+driving a container phase by phase — which is what happened on 2026-09-14 (#1378).
+
 ## Standing rules
 
 - **CLAUDE.md is binding.** Layer map, hard rules, data-model and Zod conventions. A fix that requires bending one of them is a finding for Step 3, not a detail to settle during implementation.
@@ -65,6 +90,21 @@ Ask me to decide the forks the investigation surfaced. Use `AskUserQuestion` whe
 - **Urgency** — minimal hotfix now vs the full fix.
 
 Surface the regression risks. Do not propose implementation detail yet. If the fix needs a new or upgraded dependency, check what is actually published (`npm view <pkg> version`) before it reaches the issue.
+
+## Checkpoint — is this still one work issue?
+
+The gate in **When to use this** fires before any repo has been opened, and what settles the size
+question is usually what you have just done: the architecture read, or the forks failing to
+materialise. So ask it again here, where the answer is knowable and **before the body is drafted**.
+Cheap to check twice; expensive to get wrong once — which is why the front gate stays and this is in
+addition to it.
+
+Can this hold a `Size` and a `Queue` band honestly? Or has it turned out to be a programme whose
+increments each get specced, triaged and sequenced independently?
+
+If the answer has changed, **route rather than carry on**: the call to Daniel in one line, then on his
+yes a subagent spawned against [`.claude/commands/salt-epic.md`](salt-epic.md). Do not quietly draft a
+phased body for a container — that is exactly the failure this checkpoint exists to catch.
 
 ## Step 4 — Draft and post the issue
 

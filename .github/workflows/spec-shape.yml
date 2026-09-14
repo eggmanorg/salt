@@ -23,6 +23,14 @@ name: Spec shape
 # payload, for two reasons: it is the same code path for a single issue and for
 # the `workflow_dispatch` backfill sweep, and an issue body is attacker-supplied
 # text that must never be interpolated into a `run:` block.
+#
+# THE TITLE IS FETCHED THE SAME WAY AND FOR THE SAME REASON. An epic is a
+# container that is never built, so an epic-titled issue must never be called
+# runnable however well-formed its body is (#1378) — and that fact lives
+# entirely in the title. A title is attacker-supplied text of exactly the same
+# class as a body: it is written to a file with `jq` and passed to the checker
+# BY PATH. Never `${{ github.event.issue.title }}` in a `run:` block, and never
+# an inline shell expansion of it.
 
 on:
   issues:
@@ -74,15 +82,18 @@ jobs:
           fi
 
           for n in $numbers; do
-            gh issue view "$n" --json body,labels > issue.json
+            gh issue view "$n" --json body,labels,title > issue.json
             jq -r '.body // ""' issue.json > body.md
+            jq -r '.title // ""' issue.json > title.txt
             has_label=$(jq -r '[.labels[].name] | index("specced") != null' issue.json)
 
             rc=0
-            report=$(node scripts/check-spec-shape.mjs body.md) || rc=$?
+            report=$(node scripts/check-spec-shape.mjs body.md --title-file title.txt) || rc=$?
 
-            # 0 runnable, 1 a spec with problems, 2 not a spec at all. Only 0
-            # earns the label; 1 and 2 both lose it, for different reasons.
+            # 0 the label belongs on it, 1 a spec body that must not carry it,
+            # 2 not a spec at all. Only 0 earns the label; 1 and 2 both lose it,
+            # for different reasons. An epic in a spec shape is a 1 — loud, and
+            # through the branch that already exists.
             if [ "$rc" -eq 0 ] && [ "$has_label" != "true" ]; then
               gh issue edit "$n" --add-label specced
             elif [ "$rc" -ne 0 ] && [ "$has_label" = "true" ]; then
@@ -90,8 +101,9 @@ jobs:
             fi
 
             # Only say something when the verdict is interesting: a spec that
-            # /salt-run would trip over. "Not a spec" is the ordinary case for a
-            # hand-written issue and is not a finding.
+            # /salt-run would trip over, or a container filed in a spec shape.
+            # "Not a spec" is the ordinary case for a hand-written issue — and
+            # for a correctly-filed epic — and is not a finding.
             if [ "$rc" -eq 1 ]; then
               {
                 echo "### #$n — not runnable"

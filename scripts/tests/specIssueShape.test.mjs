@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { classifySpecIssue, SPEC_VARIANTS } from '../lib/specIssueShape.mjs';
+import { classifySpecIssue, SPEC_VARIANTS, specLabelVerdict } from '../lib/specIssueShape.mjs';
 
 // Two properties, and the first is the one that rots.
 //
@@ -185,4 +185,188 @@ describe('classifySpecIssue', () => {
       'Phase 3 is in position 2 — phases must be numbered 1..N in order',
     );
   });
+});
+
+// The guard from #1378: an epic is a container that is never built, so it must
+// never be called runnable however well-formed its body is. Every case here
+// fails against the code before that change — the verdict function did not
+// exist, and the CLI answered on the body alone.
+describe('specLabelVerdict', () => {
+  const spec = SPEC_VARIANTS[0];
+
+  it('refuses the label to an epic-titled issue in a perfect spec shape', () => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body: bodyFor(spec) });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(true);
+    expect(verdict.ok).toBe(false);
+    // The category error, not a list of shape complaints — the body's shape is
+    // beside the point when the issue should carry no `## Phases` at all.
+    expect(verdict.problems).toHaveLength(1);
+    expect(verdict.problems[0]).toContain('An epic is a container');
+  });
+
+  it('refuses a SCOPED epic title, which the band predicate would miss', () => {
+    // #941 is `epic(test):`. The narrow `^epic:` form drops it, which is why
+    // the verdict uses the wide predicate.
+    expect(
+      specLabelVerdict({ title: 'epic(test): safe test suite', body: bodyFor(spec) }).applies,
+    ).toBe(false);
+  });
+
+  it.each(SPEC_VARIANTS)('refuses an epic-titled $id body too', (variant) => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body: bodyFor(variant) });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.problems[0]).toContain(variant.command);
+  });
+
+  it('labels the identical body under an ordinary title', () => {
+    const verdict = specLabelVerdict({ title: 'feat: ordinary work', body: bodyFor(spec) });
+    expect(verdict.applies).toBe(true);
+    expect(verdict.epic).toBe(false);
+  });
+
+  // The correct, ordinary epic — the shape `/salt-epic` posts. Not a fault: no
+  // variant, no problems, and the workflow says nothing about it.
+  it('says nothing about an epic whose body is not a spec at all', () => {
+    const verdict = specLabelVerdict({
+      title: 'epic: a programme',
+      body: '## Goal\n\nA container.\n',
+    });
+    expect(verdict).toEqual({ variant: null, ok: false, problems: [], epic: true, applies: false });
+  });
+
+  // The no-title path is how the three spec commands' own verification step
+  // invokes this, with no issue to take a title from yet. It must stay exactly
+  // what `classifySpecIssue` says.
+  it.each(SPEC_VARIANTS)('with no title, matches classifySpecIssue for $id', (variant) => {
+    for (const body of [bodyFor(variant), bodyFor(variant).replace('## Phases', '## Delivery')]) {
+      const shape = classifySpecIssue(body);
+      for (const title of [undefined, '']) {
+        expect(specLabelVerdict({ title, body })).toEqual({
+          ...shape,
+          epic: false,
+          applies: shape.ok,
+        });
+      }
+    }
+  });
+
+  it("keeps reporting an ordinary spec body's own problems", () => {
+    const body = bodyFor(spec).replace('**Scope:** real content\n', '');
+    const verdict = specLabelVerdict({ title: 'feat: ordinary work', body });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(false);
+    expect(verdict.problems).toContain('Phase 1: missing **Scope:**');
+  });
+});
+
+// `/salt-epic` posts a CONTAINER, and the property that makes it safe is that
+// its template is unclassifiable: no spec signature heading, no `## Phases`. If
+// anyone ever adds one, an epic body starts earning a verdict it must never
+// earn, and this goes red.
+describe('/salt-epic template', () => {
+  const body = template('.claude/commands/salt-epic.md');
+
+  it('is not a spec of any kind, so no /salt-run can consume it', () => {
+    expect(classifySpecIssue(body)).toEqual({ variant: null, ok: false, problems: [] });
+  });
+
+  it('carries no ## Phases section', () => {
+    expect(headingsOf(body)).not.toContain('Phases');
+  });
+
+  it('carries no variant signature heading', () => {
+    const headings = headingsOf(body);
+    for (const variant of SPEC_VARIANTS) expect(headings).not.toContain(variant.signature);
+  });
+
+  it('is refused the label under the epic: title its own command mandates', () => {
+    const verdict = specLabelVerdict({ title: 'epic: a programme', body });
+    expect(verdict.applies).toBe(false);
+    expect(verdict.epic).toBe(true);
+  });
+
+  // The floor, as the command states it: a container with one child is worse
+  // than a root. `## Children` is where that list lives, so losing the heading
+  // loses the rule.
+  it('still declares the container sections the command describes', () => {
+    expect(headingsOf(body)).toEqual([
+      'Goal',
+      'Scope boundary',
+      'Children',
+      'Open Questions / Decisions',
+      'Definition of Done',
+    ]);
+  });
+});
+
+// #1378 Phase 3: all four issue-filing commands must know when the thing in
+// front of them is the OTHER shape, and must name a route an agent can actually
+// take. Three of the four had no such section at all, and the fourth did not
+// exist — the asymmetry (every command asked "am I too small for this?" and none
+// asked "am I too big?") is why `/salt-spec` got reached for to file an epic.
+//
+// WHAT THIS PINS AND WHAT IT CANNOT (CLAUDE.md rule 12). It proves the steer is
+// PRESENT and that it names a command-file route rather than a slash command no
+// agent can invoke. It cannot prove an agent FOLLOWED it, and nothing here
+// could: the thing being steered is a judgement made in a session. Presence is
+// the arm of rule 12 this lands on, and that is the claim — not "epics are now
+// filed correctly".
+describe('issue-filing commands route to the other shape', () => {
+  /** Everything before the `---` fenced issue-body template: the prose an agent
+   *  reads to decide what to do, as opposed to the body it posts. */
+  const prose = (relative) => {
+    const text = read(relative);
+    const marker = text.indexOf('**Issue body');
+    expect(marker, `no "Issue body" marker in ${relative}`).toBeGreaterThan(-1);
+    return text.slice(0, marker);
+  };
+
+  const WORK_COMMANDS = [
+    '.claude/commands/salt-spec.md',
+    '.claude/commands/salt-defect.md',
+    '.claude/commands/salt-refactor.md',
+  ];
+  const ALL = [...WORK_COMMANDS, '.claude/commands/salt-epic.md'];
+
+  it.each(WORK_COMMANDS)('%s says when the work is too big, and routes upward', (file) => {
+    const text = prose(file);
+    // The criterion, written the same way in all three so it reads as one rule.
+    expect(text).toContain('`Size` and a `Queue` band honestly');
+    // The floor, which is what stops the steer becoming a licence to file epics.
+    expect(text).toContain('a container with one child is worse than a root');
+    // THE ROUTE, not just the destination. A section naming `/salt-epic` and
+    // nothing else is the defect being fixed, not a partial pass: no agent can
+    // invoke a command file, so only the path is actionable.
+    expect(text).toContain('.claude/commands/salt-epic.md');
+  });
+
+  it('.claude/commands/salt-epic.md routes downward, and names which of the three', () => {
+    const text = prose('.claude/commands/salt-epic.md');
+    expect(text).toContain('`Size` and a `Queue` band honestly');
+    // Coming down is a second judgement — "it is work" does not say which shape.
+    for (const target of WORK_COMMANDS) expect(text).toContain(target);
+  });
+
+  it.each(ALL)('%s asks again after the read, before it drafts anything', (file) => {
+    const text = prose(file);
+    const checkpoint = text.indexOf('## Checkpoint —');
+    const drafting = text.indexOf('— Draft and post the issue');
+    expect(checkpoint, `no post-read checkpoint in ${file}`).toBeGreaterThan(-1);
+    expect(drafting, `no drafting step in ${file}`).toBeGreaterThan(-1);
+    // Sited by what the steps ARE, not by their numbers: salt-defect.md numbers
+    // one higher than the other two.
+    expect(checkpoint).toBeLessThan(drafting);
+    // The checkpoint carries the route too, or it is only an observation.
+    expect(text.slice(checkpoint, drafting)).toContain('.claude/commands/salt-');
+  });
+
+  it.each(ALL)(
+    '%s still cannot be invoked by an agent, which is why the route is a file',
+    (file) => {
+      // The premise the whole steer rests on. If this ever stops being true, the
+      // "spawn a subagent pointed at the file" wording is no longer the reason.
+      expect(read(file)).toContain('disable-model-invocation: true');
+    },
+  );
 });

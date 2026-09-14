@@ -76,6 +76,7 @@ import {
 } from './lib/boardTitles.mjs';
 import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
 import { disabledWorkflowFailures } from './lib/boardWorkflows.mjs';
+import { SPEC_LABEL } from './lib/specIssueShape.mjs';
 
 const OWNER = 'eggmanorg';
 const REPO = 'salt';
@@ -150,7 +151,8 @@ function loadItems(project) {
       items(first:100, after:${after}){
         pageInfo{ hasNextPage endCursor }
         nodes{ id createdAt
-          content{ ... on Issue { number title state stateReason closedAt } }
+          content{ ... on Issue { number title state stateReason closedAt
+            labels(first:20){ nodes{ name } } } }
           queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
@@ -171,6 +173,11 @@ function loadItems(project) {
         // something linked it to a parent. See `closedItemVerdict`.
         createdAt: n.createdAt ?? null,
         closedAt: n.content.closedAt ?? null,
+        // Read for exactly one rule: an epic must not be runnable. `first:20`
+        // is the cap, so an issue carrying more than twenty labels could hide
+        // `specced` from the check below — no issue in this repo is close, and
+        // the failure direction is a missed finding rather than a false one.
+        labels: (n.content.labels?.nodes ?? []).map((l) => l.name),
         queue: n.queue?.name ?? null,
         status: n.status?.name ?? null,
         blockedBy: n.blockedBy?.text ?? '',
@@ -665,6 +672,27 @@ function cmdCheck(project) {
     if (item.queue === 'Epic') continue;
     failures.push(
       `#${item.number} is titled "epic:" but sits in Queue="${item.queue ?? 'unset'}" — an epic belongs in the Epic band, not among the work units`,
+    );
+  }
+
+  // THE CONVERSE, AND IT IS A DIFFERENT LENS RATHER THAN THE SAME ONE TWICE. The
+  // rule above and `spec-shape.yml`'s guard both key off the TITLE, so an epic
+  // filed without the `epic` prefix is invisible to both — and that is the
+  // dangerous direction: a container stamped `specced` is a container `/salt-run`
+  // will pick up and build as one job (#1378). This one keys off the BAND, which
+  // a person sets by hand and which the mis-titled epic still ends up in. It
+  // also catches a stale label on an issue nobody has edited since the guard
+  // shipped, because `spec-shape.yml` only re-checks an issue when it is edited.
+  //
+  // WHERE IT STOPS: it needs the item to be in `Epic` already. An epic that is
+  // both mis-titled AND untriaged is caught by neither this nor the rule above —
+  // it is caught by the untriaged rule below, which is the third lens and the
+  // reason that one has no epic carve-out.
+  for (const item of items) {
+    if (item.state !== 'OPEN' || item.queue !== 'Epic') continue;
+    if (!item.labels.includes(SPEC_LABEL)) continue;
+    failures.push(
+      `#${item.number} sits in Queue="Epic" but carries \`${SPEC_LABEL}\` — an epic is a container and must never be runnable: file its children as separate issues and give it no \`## Phases\` section`,
     );
   }
 
