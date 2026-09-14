@@ -157,13 +157,14 @@ describe('LibraryPageView — what it shows', () => {
 
   // ─── Diagrams (#1376) ───────────────────────────────────────────────────
   //
-  // The library page is the ONE surface in the app that passes `sanitizedHtml`,
-  // so raw HTML in a body is no longer inert here: it is parsed and then put
-  // through `svgSanitizeSchema`'s allowlist. The counterpart — the SAME input
-  // staying inert in a recipe note — is asserted in `RecipeNotesCard.test.ts`,
-  // and the allowlist itself has its own hostile-input suite in
-  // `packages/ui-components/tests/MarkdownSanitize.test.ts`. What is pinned here
-  // is that this page, and only this page, opted in.
+  // This page passes `sanitizedHtml`, so raw HTML in a body is no longer inert
+  // here: it is parsed and then put through `svgSanitizeSchema`'s allowlist. What
+  // is pinned below is that the opt-in WORKS. Which surfaces opted in at all is
+  // pinned mechanically, by a source scan, in `sanitizedHtmlCallers.test.ts` —
+  // this comment used to make that claim in prose and could not keep it (#1391).
+  // The counterpart — the SAME input staying inert in a recipe note — is in
+  // `RecipeNotesCard.test.ts`, and the allowlist has its own hostile-input suite
+  // in `packages/ui-components/tests/MarkdownSanitize.test.ts`.
   it('renders a diagram drawn in SVG as a drawing, sized by its own viewBox', async () => {
     mount(page({ body: `## Jars\n\n${DIAGRAM}` }));
     const body = await screen.findByTestId('library-body');

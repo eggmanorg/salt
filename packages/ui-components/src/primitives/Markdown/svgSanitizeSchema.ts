@@ -35,7 +35,7 @@ import { defaultSchema, type Schema } from 'hast-util-sanitize';
  *
  * ─── WHAT IT DOES NOT BUY YOU ───────────────────────────────────────────────
  *
- * Two limits worth stating plainly rather than discovering:
+ * Three limits worth stating plainly rather than discovering:
  *
  *  1. **It is not SVG-only.** `rehype-raw` parses every raw HTML tag, not just
  *     `<svg>`, so a `<b>` or a `<table>` typed into the body of a surface that
@@ -48,6 +48,18 @@ import { defaultSchema, type Schema } from 'hast-util-sanitize';
  *     reuse are expressible and non-functional; a diagram is geometry and text.
  *     `MarkdownSanitize.test.ts` pins that rewrite, so the limit cannot quietly
  *     stop being true.
+ *  3. **The protocol list is narrower than the web, and case-sensitive.** Taking
+ *     `defaultSchema.protocols` unchanged is the right trade — a hand-written
+ *     list is how `javascript:` gets let back in — but it is not free, and #1391
+ *     asked for the price to be written down rather than implied. `href` allows
+ *     `http, https, irc, ircs, mailto, xmpp` and nothing else, so a `tel:` link a
+ *     person typed into a library page renders as plain text; and the check is
+ *     `url.slice(0, protocol.length) === protocol`, so `HTTPS://example.test`
+ *     does not match `https` and loses its `href` too. Both fail CLOSED, which is
+ *     what keeps them nuisances instead of holes — an uppercase `JAVASCRIPT:` is
+ *     dropped by the same case-blindness. `MarkdownSanitize.test.ts` pins all
+ *     three, including that last one. Widening this is one `protocols.href`
+ *     override away if `tel:` is ever wanted; it is a product call, not a fix.
  */
 
 /**

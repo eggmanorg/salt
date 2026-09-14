@@ -59,10 +59,28 @@ const DROP_WITH_CONTENTS = new Set([
 // into an embedded newline, and the GFM plugin's `cell()` re-escapes any newline
 // it finds in a cell back into a literal `<br>` tag rather than leave the row
 // broken — the same raw-HTML route through a different door. Afterwards no
-// bail-out condition is left — the plugin's others are a nested table (which it
-// renders as paragraphs, not HTML) and `preserveTableStyles`, which is off.
-// `tests/libraryImport.test.ts` asserts no tag survives, so this stays true rather
-// than merely being believed.
+// bail-out condition is left INSIDE A CELL. `tests/libraryImport.test.ts` asserts
+// no tag survives, so this stays true rather than merely being believed.
+//
+// TWO LIMITS, both measured rather than reasoned about, both pinned by tests:
+//
+//  1. THE SCAN IS WIDER THAN THE CELLS. `tableShouldBeHtml` walks the whole
+//     `<table>`, so a `<caption>` holding a list, a heading or a rule trips the
+//     `outerHTML` bail-out even though every `<td>` is clean. That is why
+//     `CELL_SELECTOR` below names `caption` alongside `td, th`: a caption is the
+//     one other place a copied table can carry block content. Flattening it costs
+//     nothing — turndown already emits a caption as the paragraph above the table,
+//     so `<caption><h3>Times</h3></caption>` lands as the line `Times`.
+//  2. A NESTED TABLE IS NOT A TABLE AFTERWARDS, and this module does not try to
+//     make it one. The plugin's remaining bail-outs are a nested table and
+//     `preserveTableStyles` (off). Neither emits HTML, so the no-markup property
+//     holds — but the nested case does not degrade to paragraphs either: both
+//     tables collapse to their cells' text run together with no separator at all
+//     (`<table><tr><td><table>…inner…</table></td><td>outer</td></tr></table>`
+//     converts to the single word `innerouter`). Layout tables and tables inside
+//     tables arrive as unreadable prose, not as markup. Stated rather than fixed:
+//     what a nested table SHOULD become is a product question, and #1383 is
+//     already rewriting the flattening this sits next to.
 const CELL_LISTS = 'ul, ol';
 const CELL_BLOCKS = 'h1, h2, h3, h4, h5, h6, blockquote, pre, code';
 
@@ -99,8 +117,12 @@ function flattenLineBreaks(doc: Document, cell: Element): void {
   }
 }
 
+// `caption` is in here for the reason set out in limit 1 of the module's table
+// comment above: `tableShouldBeHtml` scans the whole table, not just its cells.
+const CELL_SELECTOR = 'td, th, caption';
+
 function flattenTableCells(doc: Document): void {
-  for (const cell of doc.querySelectorAll('td, th')) {
+  for (const cell of doc.querySelectorAll(CELL_SELECTOR)) {
     // Lists first: one inside a blockquote must become its items, not the
     // blockquote's run-together text.
     for (const list of cell.querySelectorAll(CELL_LISTS)) {

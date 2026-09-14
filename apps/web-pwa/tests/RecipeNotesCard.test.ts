@@ -53,11 +53,12 @@ describe('RecipeNotesCard', () => {
   });
 
   // The counterpart to `LibraryPageView.test.ts`'s diagram case, and the same
-  // string (#1376). The library page passes `Markdown`'s `sanitizedHtml` prop
+  // string (#1376). The library surfaces pass `Markdown`'s `sanitizedHtml` prop
   // and a note does not, so the very markup that becomes a drawing there stays
   // visible source here. Not merely absent: `svelte-exmarkdown` prints a `raw`
   // node as its own escaped text, which is why the TEXT is asserted alongside
-  // the missing element.
+  // the missing element. (Who opts in is pinned by the source scan in
+  // `sanitizedHtmlCallers.test.ts`, not by this comment — #1391.)
   const DIAGRAM =
     '<svg viewBox="0 0 40 20"><rect x="1" y="1" width="38" height="18" fill="none" stroke="black" stroke-width="2" /></svg>';
 

@@ -260,4 +260,40 @@ describe('Markdown sanitizedHtml — the stated limits', () => {
     });
     expect(container.querySelector('b')?.textContent).toBe('bold');
   });
+
+  // THE PROTOCOL LIST IS THE DEFAULT'S, AND IT IS NARROWER THAN THE WEB (#1391).
+  //
+  // `defaultSchema.protocols.href` is `http, https, irc, ircs, mailto, xmpp` —
+  // taking it unchanged was the right call for #1376, whose Definition of Done
+  // names `javascript:` and `data:`, but it is not free and the PR body read as
+  // though it were. Two links a person could reasonably write in a library page
+  // lose their `href` and render as plain text:
+  //
+  //  - `tel:` is simply not on the list. Adding `'tel'` to a `protocols.href`
+  //    override is the one-line fix IF that is ever wanted; it is deliberately not
+  //    done here, because a phone link in a recipe page is a product decision with
+  //    nothing asking for it, not a defect.
+  //  - The match is CASE-SENSITIVE (`url.slice(0, protocol.length) === protocol`
+  //    in `hast-util-sanitize@5`), so `HTTPS://` does not match `https`.
+  //
+  // The second one fails CLOSED, which is why it stays a nuisance rather than a
+  // hole, and the third assertion below is the one that has to keep passing.
+  it('drops a tel: link, and an uppercase scheme, back to plain text', () => {
+    for (const href of ['tel:+441234567890', 'HTTPS://example.test/jars']) {
+      const { container } = render(Markdown, {
+        props: { text: `<a href="${href}">tap</a>`, sanitizedHtml: true },
+      });
+      expect(container.querySelector('a')?.hasAttribute('href')).toBe(false);
+      expect(container.textContent).toContain('tap');
+      cleanup();
+    }
+  });
+
+  it('drops an UPPERCASE javascript: scheme too — the case-blindness fails closed', () => {
+    const { container } = render(Markdown, {
+      props: { text: '<a href="JAVASCRIPT:alert(1)">tap</a>', sanitizedHtml: true },
+    });
+    expect(container.querySelector('a')?.hasAttribute('href')).toBe(false);
+    expect(container.innerHTML).not.toContain('alert');
+  });
 });
