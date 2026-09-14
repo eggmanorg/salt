@@ -83,6 +83,36 @@ walkthroughs, no implementation proposals; those belong to the children, and eac
 Put the scope boundary and the child list in front of me before either is baked in. Use
 `AskUserQuestion` for real forks with discrete options; plain prose for open-ended ones.
 
+## Checkpoint — is this still a programme?
+
+The gate in **When to use this** fires before any repo has been opened, and what settles the size
+question is usually what you have just done: the read, or the child list collapsing. So ask it again
+here, where the answer is knowable and **before the body is drafted**. Cheap to check twice; expensive
+to get wrong once — which is why the front gate stays and this is in addition to it.
+
+Can any of this hold a `Size` and a `Queue` band honestly? Did the child list come out at one or two
+increments of the same job? A container with one child is worse than a root.
+
+If the answer has changed, **route rather than carry on**. Put it to Daniel in one line, and on his
+yes **spawn a subagent pointed at the right command file** — and name which of the three, because that
+is a second judgement and "it is work" does not answer it:
+
+- something Salt cannot do at all today, or does and would do better →
+  [`.claude/commands/salt-spec.md`](salt-spec.md)
+- something broken, with an observed wrong behaviour → [`.claude/commands/salt-defect.md`](salt-defect.md)
+- a shape change with no behaviour change → [`.claude/commands/salt-refactor.md`](salt-refactor.md)
+
+**Spawning a subagent against the file is the route, because no agent can invoke one of these
+commands** — every file in `.claude/commands/` carries `disable-model-invocation: true`, so "hand back
+to `/salt-spec`" names something that cannot happen. Writing that shape's body yourself from in here
+is the fallback CLAUDE.md names, not the default: a body produced by a command that never ran is the
+failure this whole family exists to stop. If you do fall back, verify it with
+`node scripts/check-spec-shape.mjs`.
+
+The costs are unequal, which is why the tie breaks toward asking: a work issue filed as an epic costs
+a thin container someone deletes; an epic filed as a work issue costs a stalled `/salt-run` and a human
+driving a container phase by phase, which is what happened on 2026-09-14 (#1378).
+
 ## Step 3 — Draft and post the issue
 
 Once we've agreed, post it with `gh issue create`.

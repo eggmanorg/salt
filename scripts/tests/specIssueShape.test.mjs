@@ -299,3 +299,74 @@ describe('/salt-epic template', () => {
     ]);
   });
 });
+
+// #1378 Phase 3: all four issue-filing commands must know when the thing in
+// front of them is the OTHER shape, and must name a route an agent can actually
+// take. Three of the four had no such section at all, and the fourth did not
+// exist — the asymmetry (every command asked "am I too small for this?" and none
+// asked "am I too big?") is why `/salt-spec` got reached for to file an epic.
+//
+// WHAT THIS PINS AND WHAT IT CANNOT (CLAUDE.md rule 12). It proves the steer is
+// PRESENT and that it names a command-file route rather than a slash command no
+// agent can invoke. It cannot prove an agent FOLLOWED it, and nothing here
+// could: the thing being steered is a judgement made in a session. Presence is
+// the arm of rule 12 this lands on, and that is the claim — not "epics are now
+// filed correctly".
+describe('issue-filing commands route to the other shape', () => {
+  /** Everything before the `---` fenced issue-body template: the prose an agent
+   *  reads to decide what to do, as opposed to the body it posts. */
+  const prose = (relative) => {
+    const text = read(relative);
+    const marker = text.indexOf('**Issue body');
+    expect(marker, `no "Issue body" marker in ${relative}`).toBeGreaterThan(-1);
+    return text.slice(0, marker);
+  };
+
+  const WORK_COMMANDS = [
+    '.claude/commands/salt-spec.md',
+    '.claude/commands/salt-defect.md',
+    '.claude/commands/salt-refactor.md',
+  ];
+  const ALL = [...WORK_COMMANDS, '.claude/commands/salt-epic.md'];
+
+  it.each(WORK_COMMANDS)('%s says when the work is too big, and routes upward', (file) => {
+    const text = prose(file);
+    // The criterion, written the same way in all three so it reads as one rule.
+    expect(text).toContain('`Size` and a `Queue` band honestly');
+    // The floor, which is what stops the steer becoming a licence to file epics.
+    expect(text).toContain('a container with one child is worse than a root');
+    // THE ROUTE, not just the destination. A section naming `/salt-epic` and
+    // nothing else is the defect being fixed, not a partial pass: no agent can
+    // invoke a command file, so only the path is actionable.
+    expect(text).toContain('.claude/commands/salt-epic.md');
+  });
+
+  it('.claude/commands/salt-epic.md routes downward, and names which of the three', () => {
+    const text = prose('.claude/commands/salt-epic.md');
+    expect(text).toContain('`Size` and a `Queue` band honestly');
+    // Coming down is a second judgement — "it is work" does not say which shape.
+    for (const target of WORK_COMMANDS) expect(text).toContain(target);
+  });
+
+  it.each(ALL)('%s asks again after the read, before it drafts anything', (file) => {
+    const text = prose(file);
+    const checkpoint = text.indexOf('## Checkpoint —');
+    const drafting = text.indexOf('— Draft and post the issue');
+    expect(checkpoint, `no post-read checkpoint in ${file}`).toBeGreaterThan(-1);
+    expect(drafting, `no drafting step in ${file}`).toBeGreaterThan(-1);
+    // Sited by what the steps ARE, not by their numbers: salt-defect.md numbers
+    // one higher than the other two.
+    expect(checkpoint).toBeLessThan(drafting);
+    // The checkpoint carries the route too, or it is only an observation.
+    expect(text.slice(checkpoint, drafting)).toContain('.claude/commands/salt-');
+  });
+
+  it.each(ALL)(
+    '%s still cannot be invoked by an agent, which is why the route is a file',
+    (file) => {
+      // The premise the whole steer rests on. If this ever stops being true, the
+      // "spawn a subagent pointed at the file" wording is no longer the reason.
+      expect(read(file)).toContain('disable-model-invocation: true');
+    },
+  );
+});
