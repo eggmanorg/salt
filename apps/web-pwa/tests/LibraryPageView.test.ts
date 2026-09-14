@@ -19,6 +19,7 @@ const {
   mockBegin,
   mockEnd,
   mockRemove,
+  mockRestore,
   mockGate,
   mockToast,
 } = await vi.hoisted(async () => {
@@ -31,6 +32,7 @@ const {
     mockBegin: vi.fn(),
     mockEnd: vi.fn(),
     mockRemove: vi.fn(),
+    mockRestore: vi.fn(),
     mockGate: makeStore<{ enabled: boolean; settled: boolean }>({ enabled: true, settled: true }),
     mockToast: vi.fn(),
   };
@@ -45,6 +47,7 @@ vi.mock('../src/lib/libraryService.js', () => ({
   beginLibraryEdit: mockBegin,
   endLibraryEdit: mockEnd,
   removeLibraryPage: mockRemove,
+  restoreLibraryRevision: mockRestore,
 }));
 vi.mock('../src/lib/featureGate.js', () => ({
   libraryGate: mockGate,
@@ -92,7 +95,18 @@ beforeEach(() => {
   mockQueue.mockResolvedValue(success(undefined));
   mockFlush.mockResolvedValue(undefined);
   mockRemove.mockResolvedValue(success(undefined));
+  mockRestore.mockResolvedValue(success(undefined));
 });
+
+function revision(over: Partial<LibraryPageDoc['revisions'][number]> = {}) {
+  return {
+    title: 'Weck jars',
+    body: '## Jars\n\nThe 742 holds 580 g.',
+    savedAt: '2026-09-14T09:00:00.000Z',
+    savedBy: 'Daniel',
+    ...over,
+  };
+}
 
 describe('LibraryPageView — what it shows', () => {
   it('waits for the first snapshot rather than claiming the page is gone', () => {
@@ -322,5 +336,105 @@ describe('LibraryPageView — the feature gate', () => {
     mockGate.set({ enabled: false, settled: true });
     mount();
     await waitFor(() => expect(screen.queryByTestId('library-page-view')).toBeNull());
+  });
+});
+
+// The history surface (issue #1375, Phase 1). The service-level proof that a
+// restore keeps the version it replaced lives in `libraryHistory.test.ts`; what
+// is asserted here is the screen — that the control is always there, that a
+// version can be read before anything changes, and that the page lands a
+// half-typed edit BEFORE opening the sheet, which is what makes the version a
+// restore then replaces the one actually on screen.
+describe('LibraryPageView — history', () => {
+  it('offers History even on a page nobody has edited, and says it is empty', async () => {
+    mount(page({ revisions: [] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    expect(await screen.findByTestId('library-history-empty')).toBeTruthy();
+    expect(screen.queryByTestId('library-history-list')).toBeNull();
+  });
+
+  it('lists the versions newest first, each with when and by whom', async () => {
+    mount(
+      page({
+        revisions: [
+          revision({ title: 'Newest', savedBy: 'Daniel' }),
+          revision({ title: 'Older', savedBy: 'Amy' }),
+        ],
+      }),
+    );
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    const rows = await screen.findAllByTestId('library-history-row');
+    expect(rows.map((r) => r.querySelector('span')?.textContent?.trim())).toEqual([
+      'Newest',
+      'Older',
+    ]);
+    expect(rows[1]?.textContent).toMatch(/replaced by Amy/);
+  });
+
+  it('shows a version rendered, and changes nothing until Restore is pressed', async () => {
+    mount(page({ revisions: [revision({ body: '## Jars\n\n| Model |\n| --- |\n| 742 |' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    const preview = await screen.findByTestId('library-history-preview');
+    expect(preview.querySelector('h2')?.textContent).toBe('Jars');
+    expect(preview.querySelector('table')).toBeTruthy();
+    expect(mockRestore).not.toHaveBeenCalled();
+  });
+
+  // A title can be cleared in place, so a version can carry an empty one — and a
+  // blank row would be unclickable-looking rather than merely untitled.
+  it('names an untitled version rather than showing a blank row', async () => {
+    mount(page({ revisions: [revision({ title: '  ' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    const row = await screen.findByTestId('library-history-row');
+    expect(row.querySelector('span')?.textContent?.trim()).toBe('Untitled');
+  });
+
+  it('says so when the version being previewed was empty', async () => {
+    mount(page({ revisions: [revision({ body: '   ' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    const preview = await screen.findByTestId('library-history-preview');
+    expect(preview.textContent).toMatch(/nothing written/i);
+  });
+
+  it('goes back to the list from a preview without restoring anything', async () => {
+    mount(page({ revisions: [revision()] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    await fireEvent.click(await screen.findByText('Back'));
+    expect(await screen.findByTestId('library-history-list')).toBeTruthy();
+    expect(mockRestore).not.toHaveBeenCalled();
+  });
+
+  it('restores the version being previewed and closes', async () => {
+    mount(page({ revisions: [revision(), revision({ title: 'Older' })] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click((await screen.findAllByTestId('library-history-row'))[1]!);
+    await fireEvent.click(await screen.findByTestId('library-history-restore'));
+    await waitFor(() => expect(mockRestore).toHaveBeenCalledWith('page-1', 1));
+    await waitFor(() => expect(screen.queryByTestId('library-history-preview')).toBeNull());
+  });
+
+  it('lands a half-typed edit before the sheet opens', async () => {
+    mount();
+    await fireEvent.click(await screen.findByTestId('library-body'));
+    await fireEvent.input(await screen.findByTestId('library-body-input'), {
+      target: { value: 'half typed' },
+    });
+    mockFlush.mockClear();
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    expect(mockEnd).toHaveBeenCalledWith('page-1');
+    expect(mockFlush).toHaveBeenCalled();
+    await screen.findByTestId('library-history-empty');
+  });
+
+  it('says so when the restore fails', async () => {
+    mockRestore.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    mount(page({ revisions: [revision()] }));
+    await fireEvent.click(await screen.findByTestId('library-page-history'));
+    await fireEvent.click(await screen.findByTestId('library-history-row'));
+    await fireEvent.click(await screen.findByTestId('library-history-restore'));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
   });
 });

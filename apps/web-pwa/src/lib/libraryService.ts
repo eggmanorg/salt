@@ -6,7 +6,7 @@ import {
   type LibraryPageDoc,
   type LibraryPageRevisionDoc,
 } from '@salt/domain/schemas';
-import { success, type DomainError, type ReadResult } from '@salt/shared-types';
+import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
@@ -210,6 +210,47 @@ export async function createLibraryPage(
   _pages.update((current) => [...(current ?? []), page]);
   const result = reportIfFailed(getErrorReporter(), await saveLibraryPage(page));
   return result.kind === 'ok' ? success(page) : result;
+}
+
+/**
+ * Put revision `index` of page `id` back — its title and its body — as an
+ * ordinary edit.
+ *
+ * ROUTED THROUGH THE SESSION MACHINERY, not around it. `beginLibraryEdit` first,
+ * so the version being replaced is snapshotted and rides into `revisions` on the
+ * write `queueLibraryEdit` makes. Calling `saveLibraryPage` (or `queueLibraryEdit`
+ * alone) would discard the text the restore is overwriting — the one thing a
+ * history feature must never do — and a restore made by mistake would be final.
+ *
+ * Which is also why a restore is undoable by restoring again: what was showing
+ * becomes revision 0, so restoring that puts it back.
+ *
+ * A RESTORE THAT CHANGES NOTHING WRITES NOTHING — the guard below, and not
+ * `pushRevision`'s dedup, is what makes that true. The dedup compares the incoming
+ * snapshot against `revisions[0]`, so restoring version 3 while version 3's text
+ * is already on screen would snapshot that same text, find `revisions[0]`
+ * different, and record an eleventh copy of what is showing. Short-circuiting here
+ * is the only place that can see the comparison that actually matters.
+ *
+ * The cap stays enforced in `pushRevision` and only there.
+ *
+ * `NotFound` rather than a thrown error for a page or an index the store does not
+ * hold — deleted on another device while the sheet was open (Rule 10).
+ */
+export function restoreLibraryRevision(
+  id: string,
+  index: number,
+): Promise<ReadResult<void, DomainError>> {
+  const page = libraryPageById(id);
+  const revision = page?.revisions[index];
+  if (page === undefined || revision === undefined) {
+    return Promise.resolve(failure({ kind: 'NotFound', resource: 'libraryPage', id }));
+  }
+  if (revision.title === page.title && revision.body === page.body) {
+    return Promise.resolve(success(undefined));
+  }
+  beginLibraryEdit(id);
+  return queueLibraryEdit({ ...page, title: revision.title, body: revision.body });
 }
 
 /**

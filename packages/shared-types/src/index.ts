@@ -68,7 +68,12 @@ export type DomainError =
         // A product-form record (issue #892). Added when the image-prompt
         // callable gained a not-found arm and a form was the one family with no
         // honest resource name to report itself as.
-        | 'productForm';
+        | 'productForm'
+        // A library page (issue #1375). Restoring a revision names both the page
+        // and the version inside it, and a page the store no longer holds — it
+        // was deleted on another device while the history sheet was open — is a
+        // not-found rather than a failed write.
+        | 'libraryPage';
       readonly id: string;
     }
   | {

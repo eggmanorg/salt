@@ -22,7 +22,9 @@
     endLibraryEdit,
     flushLibraryWrites,
     queueLibraryEdit,
+    restoreLibraryRevision,
   } from '../../lib/libraryService.js';
+  import LibraryHistorySheet from './LibraryHistorySheet.svelte';
   import { parseTagLine } from './libraryTags.js';
 
   /**
@@ -80,6 +82,7 @@
 
   let deleteOpen = $state(false);
   let deleting = $state(false);
+  let historyOpen = $state(false);
 
   function open(field: Field): void {
     beginLibraryEdit(page.id);
@@ -117,6 +120,32 @@
     const next = event.relatedTarget;
     if (next instanceof Node && editorEl?.contains(next)) return;
     void close();
+  }
+
+  /**
+   * Open the history, having first LANDED whatever is half-typed.
+   *
+   * `close()` is what ends the editing session and flushes it, so the version a
+   * restore then replaces is the one actually on screen. Skip this and an open
+   * editor's pending snapshot would still be waiting when `restoreLibraryRevision`
+   * calls `beginLibraryEdit` — which is idempotent, keeps the older snapshot, and
+   * would quietly drop the text the restore overwrote.
+   */
+  async function openHistory(): Promise<void> {
+    await close();
+    historyOpen = true;
+  }
+
+  /**
+   * Put a version back. The write is the page's, not the sheet's — one write path
+   * for this document, and it is this file.
+   */
+  async function handleRestore(index: number): Promise<void> {
+    const write = restoreLibraryRevision(page.id, index);
+    // A restore is a deliberate act, not a keystroke: it has no burst to wait for
+    // and no reason to sit out the debounce window.
+    await flushLibraryWrites();
+    if ((await write).kind === 'err') addToast("Couldn't restore that version.", 'destructive');
   }
 
   async function handleDelete(): Promise<void> {
@@ -232,6 +261,10 @@
   {/snippet}
 </DetailPage>
 
+<!-- Outside the DetailPage for the same reason the delete dialog is: a restore
+     re-renders the page underneath it. -->
+<LibraryHistorySheet bind:open={historyOpen} revisions={page.revisions} onRestore={handleRestore} />
+
 <!-- Outside the DetailPage so the dialog is not torn out from under itself when
      the delete lands before the animation finishes. -->
 <Dialog bind:open={deleteOpen}>
@@ -286,6 +319,17 @@
 {/snippet}
 
 {#snippet actions()}
+  <!-- Always offered, including on a page nobody has edited yet: the sheet says
+       the history is empty, which is a fact about the page. A control that came
+       and went would read as one that had broken. -->
+  <Button
+    variant="ghost"
+    size="sm"
+    onclick={() => void openHistory()}
+    data-testid="library-page-history"
+  >
+    History
+  </Button>
   <Button
     variant="ghost"
     size="sm"
