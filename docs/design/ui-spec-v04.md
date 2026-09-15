@@ -783,18 +783,20 @@ Primary use case: rendering AI-generated assistant responses in the chat UI (AI 
 
 ## 12.2 Props
 
-| Name     | Type                  | Default | Notes                                                    |
-| -------- | --------------------- | ------- | -------------------------------------------------------- |
-| `text`   | `string`              | —       | Markdown source string to render                         |
-| `breaks` | `boolean`             | `false` | Treat every single newline as a hard break (see §12.3.1) |
-| `class`  | `string \| undefined` | —       | Extra classes merged onto the `salt-md` wrapper `<div>`  |
+| Name            | Type                  | Default  | Notes                                                                                      |
+| --------------- | --------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `text`          | `string`              | —        | Markdown source string to render                                                           |
+| `breaks`        | `boolean`             | `false`  | Treat every single newline as a hard break (see §12.3.1)                                   |
+| `scale`         | `'note' \| 'doc'`     | `'note'` | Type scale: note proportions, or document proportions for a page body (see §12.3.2)        |
+| `sanitizedHtml` | `boolean`             | `false`  | Render raw HTML in the source as elements, through the allowlist in `svgSanitizeSchema.ts` |
+| `class`         | `string \| undefined` | —        | Extra classes merged onto the `salt-md` wrapper `<div>`                                    |
 
 ## 12.3 Implementation
 
 - **File:** `packages/ui-components/src/primitives/Markdown/Markdown.svelte`
 - **Renderer:** `svelte-exmarkdown` (`<Markdown md={text} plugins={[gfmPlugin()]} />`)
 - **Plugin:** `gfmPlugin()` from `svelte-exmarkdown/gfm` — adds tables, strikethrough, task lists, and autolinks.
-- **Wrapper:** `<div class={cn('salt-md', className)}>` — the `salt-md` scope prevents styles from leaking into or out of the component.
+- **Wrapper:** `<div class={cn('salt-md', scale === 'doc' && 'salt-md-doc', className)}>` — the `salt-md` scope prevents styles from leaking into or out of the component.
 
 ### 12.3.1 `breaks` — line-per-thought source text
 
@@ -822,29 +824,87 @@ Both the recipe view page and the recipe editor's Notes preview pass `breaks`,
 so "how a recipe note's line breaks render" has exactly one implementation and
 the preview cannot disagree with the saved result.
 
+### 12.3.2 `scale` — note proportions vs document proportions
+
+The default scale is a **note**: a chat reply or a recipe note, rendered inside
+something else, with `0` paragraph margins and headings stepping from `1.125rem`
+down to `1rem`. A library page body is not inside something else — it _is_ the
+page — so it reads at **document** proportions: `1.5rem` headings, real
+paragraph margins, and a table that scrolls inside its own box rather than
+widening the page (the one sanctioned horizontal scroller on a Salt surface).
+
+`scale="doc"` adds `salt-md-doc` to the same wrapper `<div>` that carries
+`salt-md`. The rules live in the primitive's own `<style>` block, beside the
+base rules they override.
+
+**The two classes chain on one element deliberately.** `.salt-md.salt-md-doc :global(p)`
+outranks `.salt-md :global(p)` on **specificity**, so the doc scale wins
+whatever order the two rule sets are emitted in. Written the obvious way — as
+`.salt-md-doc :global(p)` on a descendant wrapper — the two would tie and source
+order would be the only tiebreak, which flips the first time a bundler reorders
+two stylesheets. Preserve the chained form in any future edit.
+
+The doc scale **overrides, it does not replace**: everything the table in §12.4
+lists and §12.4.1 does not restate — inline code, `pre`, `blockquote`, `hr`,
+`th`/`td` borders, the `svg` cap — still comes from the note scale, because none
+of those selectors collide with a §12.4.1 rule. Two base rules that also go
+unrestated are not so lucky: see §12.4.1 for `:first-child`/`:last-child` and
+`li > ul`/`li > ol`, which lose to the doc rules on specificity despite never
+being named there.
+
+**Default is `'note'`**, which is the scale every caller had before the prop
+existed, so `ChatThread.svelte` and `RecipeNotesCard.svelte` are unaffected by
+its introduction. The three library surfaces — the page body, the history
+preview and the paste-in preview — all pass `scale="doc"`, on purpose: a version
+previews as the page it will become rather than as a smaller cousin of it.
+
 ## 12.4 `salt-md` CSS scope
 
 All styles are applied via `:global()` selectors scoped under `.salt-md` so they target only `svelte-exmarkdown`'s rendered HTML without polluting the rest of the app.
 
-| Element         | Style applied                                                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `:first-child`  | `margin-top: 0`                                                                                                                                 |
-| `:last-child`   | `margin-bottom: 0`                                                                                                                              |
-| `p`             | `margin: 0`; successive paragraphs separated by `0.5rem` top margin                                                                             |
-| `ul`            | `margin: 0.25rem 0; padding-left: 1.25rem; list-style: disc`                                                                                    |
-| `ol`            | `margin: 0.25rem 0; padding-left: 1.25rem; list-style: decimal`                                                                                 |
-| `li`            | `margin: 0.125rem 0`                                                                                                                            |
-| `h1`–`h6`       | `font-weight: 600; line-height: 1.3; margin: 0.5rem 0 0.25rem`; font sizes step from `1.125rem` (h1) down to `1rem` (h3); h4–h6 inherit h3 size |
-| `strong`        | `font-weight: 600`                                                                                                                              |
-| `em`            | `font-style: italic`                                                                                                                            |
-| `a`             | `text-decoration: underline`                                                                                                                    |
-| `code` (inline) | `font-family: ui-monospace, monospace; font-size: 0.875em; background: rgb(0 0 0 / 0.06); padding: 0.0625rem 0.25rem; border-radius: 0.25rem`   |
-| `pre`           | `background: rgb(0 0 0 / 0.06); padding: 0.5rem 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0`                             |
-| `pre code`      | Resets `background` and `padding` so block-code doesn't double-apply the inline-code tint                                                       |
-| `blockquote`    | `border-left: 3px solid currentColor; opacity: 0.85; padding-left: 0.75rem; margin: 0.5rem 0`                                                   |
-| `hr`            | `border: none; border-top: 1px solid currentColor; opacity: 0.2; margin: 0.5rem 0`                                                              |
-| `table`         | `border-collapse: collapse; margin: 0.5rem 0`                                                                                                   |
-| `th`, `td`      | `border: 1px solid currentColor; padding: 0.25rem 0.5rem`                                                                                       |
+| Element         | Style applied                                                                                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `:first-child`  | `margin-top: 0`                                                                                                                                                       |
+| `:last-child`   | `margin-bottom: 0`                                                                                                                                                    |
+| `p`             | `margin: 0`; successive paragraphs separated by `0.5rem` top margin                                                                                                   |
+| `ul`            | `margin: 0.25rem 0; padding-left: 1.25rem; list-style: disc`                                                                                                          |
+| `ol`            | `margin: 0.25rem 0; padding-left: 1.25rem; list-style: decimal`                                                                                                       |
+| `li`            | `margin: 0.125rem 0`                                                                                                                                                  |
+| `h1`–`h6`       | `font-weight: 600; line-height: 1.3; margin: 0.5rem 0 0.25rem`; font sizes step from `1.125rem` (h1) down to `1rem` (h3); h4–h6 inherit h3 size                       |
+| `strong`        | `font-weight: 600`                                                                                                                                                    |
+| `em`            | `font-style: italic`                                                                                                                                                  |
+| `a`             | `text-decoration: underline`                                                                                                                                          |
+| `code` (inline) | `font-family: ui-monospace, monospace; font-size: 0.875em; background: rgb(0 0 0 / 0.06); padding: 0.0625rem 0.25rem; border-radius: 0.25rem`                         |
+| `pre`           | `background: rgb(0 0 0 / 0.06); padding: 0.5rem 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0`                                                   |
+| `pre code`      | Resets `background` and `padding` so block-code doesn't double-apply the inline-code tint                                                                             |
+| `blockquote`    | `border-left: 3px solid currentColor; opacity: 0.85; padding-left: 0.75rem; margin: 0.5rem 0`                                                                         |
+| `hr`            | `border: none; border-top: 1px solid currentColor; opacity: 0.2; margin: 0.5rem 0`                                                                                    |
+| `table`         | `border-collapse: collapse; margin: 0.5rem 0`                                                                                                                         |
+| `th`, `td`      | `border: 1px solid currentColor; padding: 0.25rem 0.5rem`                                                                                                             |
+| `svg`           | `max-width: 100%; height: auto` — a drawing only exists under `sanitizedHtml` and arrives with whatever `width` its author typed; the `viewBox` keeps the proportions |
+
+### 12.4.1 `salt-md-doc` — the document-scale overrides
+
+Added to the same `<div>` by `scale="doc"` (§12.3.2). Every selector is written
+`.salt-md.salt-md-doc :global(…)` so it beats its counterpart above on
+specificity rather than on source order. Anything not listed here that doesn't
+collide with one of these selectors keeps its note-scale value — but two base
+rules do collide, and lose, without being restated: `:first-child`/`:last-child`
+(specificity 0-3-0) and `li > ul`/`li > ol` (0-2-2) both rank below these
+0-3-1 rules. So at doc scale a first paragraph keeps its top margin instead of
+being zeroed by `:first-child`, and a list nested inside an `li` gets this
+table's `margin: 0.75rem 0` rather than `li > ul`/`li > ol`'s `0.125rem 0`. That
+is the behaviour both before and after #1394 — only the selector prefix moved.
+
+| Element    | Style applied                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `p`        | `margin: 0.75rem 0` (replaces the note scale's `margin: 0` plus `p + p` top margin)                                            |
+| `h1`       | `font-size: 1.5rem; margin: 1.25rem 0 0.5rem`                                                                                  |
+| `h2`       | `font-size: 1.25rem; margin: 1.25rem 0 0.5rem`                                                                                 |
+| `h3`       | `font-size: 1.0625rem; margin: 1rem 0 0.375rem`                                                                                |
+| `ul`, `ol` | `margin: 0.75rem 0`                                                                                                            |
+| `li`       | `margin: 0.25rem 0`                                                                                                            |
+| `table`    | `display: block; width: max-content; max-width: 100%; overflow-x: auto` — scrolls in its own box rather than widening the page |
 
 ## 12.5 Usage example
 
@@ -864,6 +924,10 @@ All styles are applied via `:global()` selectors scoped under `.salt-md` so they
 - The component does **not** expose event handlers or interactive behaviour — it is display-only.
 - `breaks` off (the default): a single newline does **not** produce a `<br>` — standard CommonMark folding.
 - `breaks` on: a single newline produces a `<br>`; a blank line still produces a second `<p>`, not a `<br>`.
+- `scale` off (the default) and `scale="note"`: the wrapper carries `salt-md` and **not** `salt-md-doc`.
+- `scale="doc"`: `salt-md-doc` lands on the `salt-md` wrapper itself — one element, not a second nested one — and `class` still merges alongside both.
+- `scale` is presentation only: the same source renders the same element tree at either scale.
+- **Not testable in the unit environment:** jsdom does not compute Svelte's scoped styles across a component boundary, so no assertion here can prove a rendered font size or margin. Visual parity for `scale="doc"` is covered by the `DocumentScale` Storybook story's Chromatic baseline, not by vitest.
 
 ---
 

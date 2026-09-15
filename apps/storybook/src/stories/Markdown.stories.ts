@@ -21,6 +21,8 @@ const RICH = [
   '1. Boil the pasta until al dente.',
   '2. Gently sauté the garlic.',
   '',
+  '### Notes',
+  '',
   'Season with `salt` to taste, or call `cook()` inline.',
   '',
   '```js',
@@ -44,6 +46,7 @@ const meta = {
   argTypes: {
     text: { control: 'text' },
     sanitizedHtml: { control: 'boolean' },
+    scale: { control: 'inline-radio', options: ['note', 'doc'] },
     class: { control: 'text' },
   },
 } satisfies Meta<typeof Markdown>;
@@ -57,6 +60,13 @@ export const Playground: Story = {};
 // Rich content: headings, list, ordered list, inline + fenced code, blockquote,
 // table, and a link.
 export const RichContent: Story = { args: { text: RICH } };
+
+// Document proportions — what a library page body renders at, against the note
+// scale `RichContent` shows directly above it. Same fixture on purpose: the two
+// stories side by side are the Chromatic baseline for the `scale` prop, and
+// `RICH` already carries headings, both list kinds and a table, which is every
+// rule the doc scale overrides.
+export const DocumentScale: Story = { args: { text: RICH, scale: 'doc' } };
 
 // A short, single-paragraph fragment.
 export const Simple: Story = {

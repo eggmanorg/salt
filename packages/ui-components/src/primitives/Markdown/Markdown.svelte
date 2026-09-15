@@ -11,8 +11,15 @@
     text,
     breaks = false,
     sanitizedHtml = false,
+    scale = 'note',
     class: className,
-  }: { text: string; breaks?: boolean; sanitizedHtml?: boolean; class?: string } = $props();
+  }: {
+    text: string;
+    breaks?: boolean;
+    sanitizedHtml?: boolean;
+    scale?: 'note' | 'doc';
+    class?: string;
+  } = $props();
 
   // Raw HTML in a body is INERT by default and stays that way unless a caller
   // asks otherwise. `remark-rehype` keeps it as a `raw` node and the renderer
@@ -59,9 +66,16 @@
   }
 
   const md = $derived(breaks ? withHardBreaks(text) : text);
+
+  // `scale` is presentation only — it adds a second class to the one wrapper
+  // div and changes nothing about parsing or the AST → Svelte pipeline. The
+  // default `'note'` is the scale every caller had before the prop existed, so
+  // adding it changed no surface. See the `salt-md-doc` block in the style
+  // section below for what document proportions are and why the selectors are
+  // written two class levels deep.
 </script>
 
-<div class={cn('salt-md', className)}>
+<div class={cn('salt-md', scale === 'doc' && 'salt-md-doc', className)}>
   <ExMarkdown {md} {plugins} />
 </div>
 
@@ -171,5 +185,52 @@
   .salt-md :global(td) {
     border: 1px solid currentColor;
     padding: 0.25rem 0.5rem;
+  }
+
+  /* ─── `scale="doc"` — document proportions ──────────────────────────────────
+     Everything above is the note scale: a chat reply or a recipe note, sitting
+     inside something else. A library page body IS the page, so it reads at
+     document proportions instead — bigger headings, real paragraph margins, and
+     a table that scrolls in its own box rather than widening the page. These
+     override the rules above rather than replacing them; every declaration not
+     restated here (code, blockquote, `th`/`td` borders, the `svg` cap) still
+     comes from the note scale.
+
+     TWO CLASS LEVELS, DELIBERATELY. Both classes land on the same wrapper div,
+     so each rule beats its `.salt-md :global(…)` counterpart on SPECIFICITY and
+     not on source order — a rule that won only by ordering would flip the first
+     time the bundler reordered two stylesheets. Writing these as
+     `.salt-md-doc :global(…)` would tie with the base rules and reintroduce
+     exactly that fragility. */
+  .salt-md.salt-md-doc :global(p) {
+    margin: 0.75rem 0;
+  }
+  .salt-md.salt-md-doc :global(h1) {
+    font-size: 1.5rem;
+    margin: 1.25rem 0 0.5rem;
+  }
+  .salt-md.salt-md-doc :global(h2) {
+    font-size: 1.25rem;
+    margin: 1.25rem 0 0.5rem;
+  }
+  .salt-md.salt-md-doc :global(h3) {
+    font-size: 1.0625rem;
+    margin: 1rem 0 0.375rem;
+  }
+  .salt-md.salt-md-doc :global(ul),
+  .salt-md.salt-md-doc :global(ol) {
+    margin: 0.75rem 0;
+  }
+  .salt-md.salt-md-doc :global(li) {
+    margin: 0.25rem 0;
+  }
+  /* A jar table is the point of the library, and a phone is narrower than one.
+     The table scrolls inside its own box rather than widening the page — the
+     one sanctioned horizontal scroller on a Salt surface. */
+  .salt-md.salt-md-doc :global(table) {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
   }
 </style>
