@@ -846,7 +846,11 @@ two stylesheets. Preserve the chained form in any future edit.
 
 The doc scale **overrides, it does not replace**: everything the table in §12.4
 lists and §12.4.1 does not restate — inline code, `pre`, `blockquote`, `hr`,
-`th`/`td` borders, the `svg` cap — still comes from the note scale.
+`th`/`td` borders, the `svg` cap — still comes from the note scale, because none
+of those selectors collide with a §12.4.1 rule. Two base rules that also go
+unrestated are not so lucky: see §12.4.1 for `:first-child`/`:last-child` and
+`li > ul`/`li > ol`, which lose to the doc rules on specificity despite never
+being named there.
 
 **Default is `'note'`**, which is the scale every caller had before the prop
 existed, so `ChatThread.svelte` and `RecipeNotesCard.svelte` are unaffected by
@@ -883,8 +887,14 @@ All styles are applied via `:global()` selectors scoped under `.salt-md` so they
 
 Added to the same `<div>` by `scale="doc"` (§12.3.2). Every selector is written
 `.salt-md.salt-md-doc :global(…)` so it beats its counterpart above on
-specificity rather than on source order. Anything not listed here keeps its
-note-scale value.
+specificity rather than on source order. Anything not listed here that doesn't
+collide with one of these selectors keeps its note-scale value — but two base
+rules do collide, and lose, without being restated: `:first-child`/`:last-child`
+(specificity 0-3-0) and `li > ul`/`li > ol` (0-2-2) both rank below these
+0-3-1 rules. So at doc scale a first paragraph keeps its top margin instead of
+being zeroed by `:first-child`, and a list nested inside an `li` gets this
+table's `margin: 0.75rem 0` rather than `li > ul`/`li > ol`'s `0.125rem 0`. That
+is the behaviour both before and after #1394 — only the selector prefix moved.
 
 | Element    | Style applied                                                                                                                  |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |

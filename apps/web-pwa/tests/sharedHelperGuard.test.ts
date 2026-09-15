@@ -269,19 +269,35 @@ const FORBIDDEN: readonly Shape[] = [
   // `@salt/ui-components`, outside this tree, and UT-E4 forbids reaching across
   // a `../../../../packages/…` path to read it.
   //
-  // WHAT THIS CATCHES, HONESTLY. It catches a second DECLARATION SITE — any
-  // `.svelte` file under `src` reaching into the primitive's rendered markdown
-  // through `:global(.salt-md …)` or `:global(.salt-md-doc …)`, which is the
-  // literal shape all three deleted copies had and the shape a fourth surface
-  // would reach for first, because it is what the other three looked like.
+  // WHAT THIS CATCHES, HONESTLY. It catches a second DECLARATION SITE — a
+  // `.ts` or `.svelte` file under `src` reaching into the primitive's rendered
+  // markdown through the PAREN form `:global(.salt-md …)` or
+  // `:global(.salt-md-doc …)`, which is the literal shape all three deleted
+  // copies had.
   //
   // WHAT IT CANNOT CATCH, and no lint rule can: a surface that reimplements
   // document proportions by a route that never names the class — Tailwind
   // utilities on a wrapper, a `prose`-style plugin, or `:global(h1)` under some
   // class of its own. Those are not spellings of this rule; they are a second
   // rule that happens to look the same on screen, and telling them apart needs
-  // a person reading the diff. The claim this guard makes is bounded to the
-  // declaration site, and that is the whole of it.
+  // a person reading the diff.
+  //
+  // Two further gaps, both inside what this half means to cover rather than a
+  // Tailwind-style rewrite:
+  //  - `app.css` is never read. `walk()` (below) collects only `.ts` and
+  //    `.svelte` files, and a fourth copy there needs no `:global()` at all —
+  //    `.salt-md-doc p { margin: 0.75rem 0 }` in
+  //    `apps/web-pwa/src/app.css` is already global at that scope — so this
+  //    half of the guard could not match it even if the file were walked.
+  //  - Svelte 5's `:global { … }` BLOCK form slips the pattern below, which is
+  //    anchored on the paren: `:global { .salt-md p { margin: 0.75rem 0 } }`
+  //    compiles to the same fully-global rule as `:global(.salt-md p)` and is
+  //    invisible to this matcher. `.salt-md-doc :global(p)` — the token on the
+  //    surface's own wrapper rather than the primitive's — also slips it,
+  //    despite naming this issue's own class.
+  //
+  // The claim this guard makes is bounded to a `.ts`/`.svelte` file using the
+  // paren form of `:global()`, and that is the whole of it.
   {
     instead: 'scale="doc" on <Markdown> from @salt/ui-components',
     because:

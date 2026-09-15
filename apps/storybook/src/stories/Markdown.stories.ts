@@ -21,6 +21,8 @@ const RICH = [
   '1. Boil the pasta until al dente.',
   '2. Gently sauté the garlic.',
   '',
+  '### Notes',
+  '',
   'Season with `salt` to taste, or call `cook()` inline.',
   '',
   '```js',
