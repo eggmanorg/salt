@@ -47,6 +47,7 @@ import {
   libraryPages,
   queueLibraryEdit,
   removeLibraryPage,
+  restoreLibraryRevision,
 } from '../src/lib/libraryService.js';
 
 function page(over: Partial<LibraryPageDoc> = {}): LibraryPageDoc {
@@ -246,6 +247,194 @@ describe('revision capture', () => {
       deliver([current]);
     }
     expect(current.revisions).toHaveLength(LIBRARY_PAGE_REVISION_CAP);
+  });
+});
+
+// Issue #1392, and the Rule 12 pin for `queueLibraryEdit`'s declaration — BOTH
+// halves of it: what the FIRST write of an editing session puts in the document it
+// sends, and the boundary past which that version is no longer safe. The last test
+// in this block is the second half, and it asserts a loss on purpose.
+//
+// The window is real and deterministic: an editor is open on one device while
+// another writer — a person on a second device, or the chef's
+// `writeKitchenNoteForChef` Cloud Function — saves the page. Snapshotting the
+// version the editor OPENED on files a version the other writer has already put in
+// `revisions[0]`, where `pushRevision`'s dedup drops it as the duplicate it is; the
+// version actually overwritten then appears nowhere, and the only clue anything was
+// lost is that it is missing. The human's own edit is never what goes — which is
+// what makes the loss one-sided and invisible.
+describe('revision capture — a second writer landed while the editor was open', () => {
+  /** What the page said when the editor opened, on both devices. */
+  const preEdit = page({ body: 'original' });
+
+  /**
+   * What the chef writes from the other device. Its own write correctly pushed the
+   * pre-edit version to `revisions[0]` — which is exactly the snapshot this browser
+   * is holding, and exactly why filing that snapshot records nothing.
+   */
+  const chefsVersion = page({
+    body: 'original\n\nThe 1-litre tapered jar holds 900 g.',
+    lastEditedBy: 'The chef',
+    updatedAt: '2026-09-14T09:05:00.000Z',
+    revisions: [
+      {
+        title: preEdit.title,
+        body: preEdit.body,
+        savedAt: '2026-09-14T09:05:00.000Z',
+        savedBy: 'The chef',
+      },
+    ],
+  });
+
+  /** The editor opens, the chef writes, and the human's own edit lands on top. */
+  async function humanWritesOver(second: LibraryPageDoc): Promise<void> {
+    deliver([preEdit]);
+    beginLibraryEdit('page-1');
+    deliver([second]);
+    // The page rebuilds the whole document from the store, as `LibraryPageDocument`
+    // does — so the human is editing the chef's text, and their word wins.
+    void queueLibraryEdit({
+      ...(libraryPageById('page-1') as LibraryPageDoc),
+      body: `${second.body} Confirmed.`,
+    });
+    await flushLibraryWrites();
+  }
+
+  it('files the version the write REPLACES, not the version the editor opened on', async () => {
+    await humanWritesOver(chefsVersion);
+
+    // The human's edit is still the one on the page — the clobber is the LWW
+    // contract and is not what this fixes.
+    expect(lastSaved().body).toBe(`${chefsVersion.body} Confirmed.`);
+    // …and the chef's line is in the history rather than gone. Before the fix this
+    // is `revisions[0] = { body: 'original', savedBy: 'The chef' }` — the stale
+    // snapshot deduplicated away, the chef's version recorded nowhere.
+    expect(lastSaved().revisions[0]).toMatchObject({
+      body: chefsVersion.body,
+      // `savedBy` is who REPLACED it, which is the person editing here, not the
+      // chef who wrote it. That is how the history sheet reads the field.
+      savedBy: 'Daniel',
+    });
+    // One revision pushed, not two: the pre-edit version the chef already filed is
+    // still underneath it, exactly once.
+    expect(lastSaved().revisions.map((r) => r.body)).toEqual([chefsVersion.body, preEdit.body]);
+  });
+
+  it("restores the second writer's text from the version it recorded", async () => {
+    await humanWritesOver(chefsVersion);
+    deliver([lastSaved()]);
+
+    const recorded = lastSaved().revisions[0]!;
+    const restore = restoreLibraryRevision('page-1', recorded);
+    await flushLibraryWrites();
+    expect((await restore).kind).toBe('ok');
+    expect(lastSaved().body).toBe(chefsVersion.body);
+  });
+
+  // The control. The change must be invisible when the store has not moved, which
+  // is every ordinary session: the stored version IS the snapshot, so the same one
+  // revision is recorded, holding the same text, attributed the same way.
+  it('records exactly one revision, holding the pre-edit text, when nobody else wrote', async () => {
+    deliver([preEdit]);
+    beginLibraryEdit('page-1');
+    void queueLibraryEdit({ ...preEdit, body: 'rewritten' });
+    await flushLibraryWrites();
+
+    expect(lastSaved().revisions).toHaveLength(1);
+    expect(lastSaved().revisions[0]).toMatchObject({
+      title: preEdit.title,
+      body: 'original',
+      savedBy: 'Daniel',
+    });
+  });
+
+  // A second writer that changed neither title nor body — a tag edit from another
+  // device, say — is not a version worth filing, and the existing dedup is what
+  // says so. Nothing extra is recorded.
+  it('files nothing extra when the second writer changed neither title nor body', async () => {
+    await humanWritesOver(page({ body: preEdit.body, tags: ['Fermentation', 'Jars'] }));
+    expect(lastSaved().revisions.map((r) => r.body)).toEqual([preEdit.body]);
+  });
+
+  // A rename is a version too. `LibraryPageRevisionDoc` carries both fields and a
+  // restore puts both back, so a second writer who only retitled the page must not
+  // fall through to the snapshot's old title.
+  it('files a second writer who changed only the title', async () => {
+    deliver([preEdit]);
+    beginLibraryEdit('page-1');
+    deliver([page({ title: 'Weck jars and lids', body: preEdit.body })]);
+    void queueLibraryEdit({ ...(libraryPageById('page-1') as LibraryPageDoc), body: 'rewritten' });
+    await flushLibraryWrites();
+
+    expect(lastSaved().revisions[0]).toMatchObject({
+      title: 'Weck jars and lids',
+      body: preEdit.body,
+    });
+  });
+
+  // THE BOUNDARY, PINNED — not the behaviour anyone wants (CLAUDE.md Rule 12).
+  // `revisions` is a field of a full-document `setDoc` like `body` is, so a write
+  // built from a store that has not seen the previous one replaces the WHOLE array.
+  // The version filed above therefore survives only until the next such write —
+  // including this same tab's next write in the same editing session, once the
+  // once-per-session snapshot is spent and nothing can tell this tab's own text
+  // from someone else's.
+  //
+  // This test exists so that boundary cannot change silently: close the window and
+  // it goes red, which is the point. Closing it needs the tab to remember what it
+  // last wrote, which turns one-revision-per-session into one per session plus one
+  // per foreign write detected — a spec decision, not taken.
+  it('loses it again when this tab writes once more after the other writer does', async () => {
+    deliver([preEdit]);
+    beginLibraryEdit('page-1');
+    deliver([chefsVersion]);
+    void queueLibraryEdit({
+      ...(libraryPageById('page-1') as LibraryPageDoc),
+      body: `${chefsVersion.body} Confirmed.`,
+    });
+    // Filed, at this point — by the write above, into the document it queued.
+    expect(libraryPageById('page-1')?.revisions.map((r) => r.body)).toEqual([
+      chefsVersion.body,
+      preEdit.body,
+    ]);
+
+    // The chef writes a second time, from a store that never saw the write above,
+    // so its document carries `revisions` as it was before: just the pre-edit
+    // version. The subscription replaces the store wholesale with that.
+    const chefsSecondVersion = page({
+      body: `${chefsVersion.body} The 2-litre holds 1.8 kg.`,
+      lastEditedBy: 'The chef',
+      revisions: chefsVersion.revisions,
+    });
+    deliver([chefsSecondVersion]);
+
+    // One more keystroke in the SAME session — rebuilt from the store, as
+    // `LibraryPageDocument` does, and with no snapshot left to capture anything.
+    void queueLibraryEdit({
+      ...(libraryPageById('page-1') as LibraryPageDoc),
+      body: `${chefsSecondVersion.body} Confirmed again.`,
+    });
+    await flushLibraryWrites();
+
+    // The human's text still wins, as always…
+    expect(lastSaved().body).toBe(`${chefsSecondVersion.body} Confirmed again.`);
+    // …and BOTH chef versions are recorded nowhere: the first was filed and then
+    // un-filed, the second was never filed at all.
+    expect(lastSaved().revisions.map((r) => r.body)).toEqual([preEdit.body]);
+  });
+
+  // The page can also leave the store while an editor is open — deleted on another
+  // device. The write resurrects it (full-document `setDoc`, the LWW contract), and
+  // with nothing stored to read there is nothing better than the snapshot to file.
+  it('falls back to the version the editor opened on when the page has left the store', async () => {
+    deliver([preEdit]);
+    beginLibraryEdit('page-1');
+    deliver([]);
+    void queueLibraryEdit({ ...preEdit, body: 'rewritten' });
+    await flushLibraryWrites();
+
+    expect(lastSaved().revisions).toHaveLength(1);
+    expect(lastSaved().revisions[0]).toMatchObject({ body: preEdit.body, savedBy: 'Daniel' });
   });
 });
 

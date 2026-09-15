@@ -44,9 +44,12 @@ foundation (#179).
    permitted where #1373 refused writing for equipment because neither of that
    refusal's reasons holds here: a note is a document somebody opens and reads, and
    it carries a visible revision history with restore (#1375), so a wrong write is
-   noticeable and reversible rather than silently wrong. It cannot delete, every
-   replacement folds the version it replaced into that history via `pushRevision`,
-   and "only when told to" is enforced by the tool description — prompt text, not a
+   noticeable and reversible rather than silently wrong. It cannot delete, and a
+   replacement folds the version it displaces into that history via `pushRevision`
+   — except when that version is itself the chef's own last write, in which case
+   consecutive chef writes coalesce rather than push a new revision, so a chatty
+   run of chef edits cannot evict the human-authored version beneath them (#1392).
+   "Only when told to" is enforced by the tool description — prompt text, not a
    mechanism (CLAUDE.md Rule 12); `chefChat.writeKitchenNote.test.ts` pins what
    actually is mechanical. These three tools are **gated server-side, per caller**,
    on the same `library` PostHog flag the browser already gates on (`LIBRARY_FLAG_KEY`,
@@ -305,7 +308,10 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   replaces one wholesale — there is no append, and the tool description tells the
   model to read a note first and resend its whole text to add to it — folding the
   replaced version into `LibraryPageDoc.revisions` via `pushRevision`
-  (`@salt/domain/schemas/libraryPage.ts`) so a bad write is recoverable; it cannot
+  (`@salt/domain/schemas/libraryPage.ts`) so a bad write is recoverable, unless
+  that replaced version is itself the chef's own last write: consecutive chef
+  writes coalesce rather than push a new revision, so a chatty run of edits
+  cannot evict the human-authored version beneath them (#1392). It cannot
   delete, and writes only to `libraryPages`. A caller outside the flag gets a chef
   with no such tools and no mention of notes — the framing section is omitted
   entirely rather than sent empty, so today's prompt is byte for byte unchanged for

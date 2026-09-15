@@ -14,9 +14,10 @@ import { z } from 'zod';
 //
 // FAMILY-SHARED, like everything except the four per-user collections CLAUDE.md
 // enumerates: no `ownerUid`, no per-user scoping. `createdBy`/`lastEditedBy` are
-// display NAMES denormalised at write time, for audit only — never read to decide
-// anything, never a gate. firestore.rules records the standing invariant that uids
-// appear nowhere in the family-shared data model.
+// display NAMES denormalised at write time — see the note at their declaration for
+// the one place `lastEditedBy` is read and why that is still not per-user scoping.
+// firestore.rules records the standing invariant that uids appear nowhere in the
+// family-shared data model.
 //
 // GREENFIELD → no back-compat constraint (docs/data-model.md §Back-compat lists the
 // six production collections; this is not one).
@@ -99,13 +100,51 @@ export const LibraryPageSchema = z.object({
   tags: z.array(z.string()).default([]),
   createdAt: z.string(), // ISO
   updatedAt: z.string(), // ISO
-  // Display NAMES, never uids. Audit only — displayed and nothing else; never
-  // checked on read, never pinned on update, never a gate on anything.
+  // Display NAMES, never uids. `createdBy` is audit only — displayed and nothing
+  // else.
   createdBy: z.string(),
+  // `lastEditedBy` is displayed too, and is READ IN EXACTLY ONE PLACE:
+  // `writeKitchenNoteForChef` compares it against the constant `CHEF_AUTHOR_NAME`
+  // to decide whether a chef write is continuing its own run and so should coalesce
+  // rather than push a revision. That is authorship CLASS, not identity — the
+  // compared value is a literal, no capability, availability or ordering varies by
+  // who is asking, and nothing is ever pinned on update. It is therefore not the
+  // per-user scoping CLAUDE.md's data-model convention forbids, but it is a read,
+  // so do not restate the old "never checked on read" absolute here.
   lastEditedBy: z.string(),
-  // Newest first. Travels with the page on a single read rather than sitting in a
-  // subcollection, because there is exactly one editor at a time — unlike
-  // `batches/observations`, which is append-only with two concurrent writers.
+  // Newest first, and EMBEDDED rather than a subcollection so the history travels
+  // with the page on the single read the page already makes — unlike
+  // `batches/observations`, which is append-only and genuinely concurrent.
+  //
+  // THERE IS NOT EXACTLY ONE EDITOR AT A TIME, and there has not been since #1377.
+  // Two writers replace this document: the browser's in-place editor
+  // (`queueLibraryEdit`) and `writeKitchenNoteForChef`, a Cloud Function reachable
+  // from a different device while an editor is open on another. Embedding is CHOSEN
+  // for the single-read reason above, not justified by writers being serialised —
+  // what it costs with two of them is the last paragraph here.
+  //
+  // WHAT HOLDS (#1392, pinned by `apps/web-pwa/tests/libraryService.test.ts` →
+  // `revision capture — a second writer landed while the editor was open`): the
+  // document a browser write SENDS carries the version that write is actually
+  // replacing, read from the store at write time, rather than the version the
+  // editor happened to open on. That is a property of one write's document.
+  //
+  // WHAT DOES NOT — AND THIS ARRAY IS NOT APPEND-ONLY, WHICH IS THE WHOLE OF IT.
+  // Embedding buys the single read and costs exactly this: `revisions` is a field
+  // of a full-document `setDoc` like `body` is, so any write built from a store
+  // that has not seen the previous one replaces the entire array. A version filed
+  // by one write can therefore be un-filed by the next — by another device, by the
+  // chef, or by the SAME TAB's next write in the editing session, once its
+  // once-per-session snapshot is spent and nothing can tell that tab's own text
+  // from someone else's. Two people typing on one page can end with neither of the
+  // versions they overwrote recorded anywhere; the browser-side test above pins
+  // that as the boundary.
+  //
+  // So: do not reason from this array as a log. It is a best-effort history under
+  // LWW, and it is where a THIRD writer would do real damage. Making it append-only
+  // means moving it to a subcollection, which is a schema and read-shape change
+  // across the adapter, the service and three surfaces — not done, and the thing to
+  // weigh before another writer is added.
   revisions: z.array(LibraryPageRevisionSchema).default([]),
 });
 

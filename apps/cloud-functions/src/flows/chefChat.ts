@@ -700,9 +700,11 @@ const refused = (problem: string): WriteKitchenNoteOutput => ({
  *     has one either; the suite scans this whole module for one;
  *   - this tool CANNOT EMPTY A NOTE either — a blank or whitespace-only body is
  *     refused before any write, the same shape as the blank-title guard;
- *   - every replacement goes through `pushRevision`, so the version it replaced is
- *     recoverable — and the cap still holds, because `pushRevision` is the only
- *     thing that ever grows the array;
+ *   - a replacement that displaces a version THE CHEF DID NOT WRITE goes through
+ *     `pushRevision`, so that version is recoverable — and the cap still holds,
+ *     because `pushRevision` is the only thing that ever grows the array. That is
+ *     the claim's real boundary and not a hedge: the one replacement that pushes
+ *     nothing is the chef's own last write, which is the next bullet;
  *   - CONSECUTIVE CHEF WRITES COALESCE: a replacement only pushes a new revision
  *     when the version it replaces was NOT itself written by the chef, so a
  *     chatty run of chef writes cannot evict the human-authored version beneath
