@@ -54,13 +54,12 @@ const DROP_WITH_CONTENTS = new Set([
 //
 // So the block content is flattened out of the cells BEFORE turndown sees them,
 // which is the only faithful thing available: markdown has no cell that could hold
-// it. A `<br>`, or more than one block child (`<p><p>`, `<div><div>`), gets
-// flattened the same way, by `flattenLineBreaks` below: turndown converts either
-// into an embedded newline, and the GFM plugin's `cell()` re-escapes any newline
-// it finds in a cell back into a literal `<br>` tag rather than leave the row
-// broken — the same raw-HTML route through a different door. Afterwards no
-// bail-out condition is left INSIDE A CELL. `tests/libraryImport.test.ts` asserts
-// no tag survives, so this stays true rather than merely being believed.
+// it. Afterwards no bail-out condition is left INSIDE A CELL.
+//
+// THAT IS THE BAIL-OUT ROUTE AND IT IS A LIST BECAUSE THE PLUGIN'S IS. The OTHER
+// way raw HTML gets into a cell is not a list at all, and is closed somewhere else
+// entirely — at `emitCellOnOneLine` below, on the converted text rather than on the
+// DOM. See the comment there (#1383).
 //
 // TWO LIMITS, both measured rather than reasoned about, both pinned by tests:
 //
@@ -79,8 +78,8 @@ const DROP_WITH_CONTENTS = new Set([
 //     (`<table><tr><td><table>…inner…</table></td><td>outer</td></tr></table>`
 //     converts to the single word `innerouter`). Layout tables and tables inside
 //     tables arrive as unreadable prose, not as markup. Stated rather than fixed:
-//     what a nested table SHOULD become is a product question, and #1383 is
-//     already rewriting the flattening this sits next to.
+//     what a nested table SHOULD become is a product question, and no answer to it
+//     belongs in a defect fix.
 const CELL_LISTS = 'ul, ol';
 const CELL_BLOCKS = 'h1, h2, h3, h4, h5, h6, blockquote, pre, code';
 
@@ -90,31 +89,6 @@ const CELL_BLOCKS = 'h1, h2, h3, h4, h5, h6, blockquote, pre, code';
 // is unreachable rather than defensive, and is written once for that reason.
 function textOf(element: Element): string {
   return (element.textContent ?? '').trim();
-}
-
-// A `<br>`, or more than one block child (`<p><p>`, `<div><div>`) — the ordinary
-// shape of a table cell copied out of Google Docs, or a time-and-temperature cell
-// typed with a line break — converts to an embedded newline in turndown's own
-// output: a `<br>` becomes a literal `\n`, and a second `<p>`/`<div>` gets its own
-// blank-line paragraph. `CELL_LISTS`/`CELL_BLOCKS` above never see it, because
-// nothing there matches a `<br>`, a `<p>` or a `<div>`. The GFM plugin's `cell()`
-// then re-escapes that embedded newline back into a literal `<br>` tag so the pipe
-// row still parses — which is exactly the raw HTML this module exists to keep out
-// (see the module header).
-//
-// So the line break is removed the same way the blocks above are: before turndown
-// ever sees it. UNWRAPPING rather than reducing to bare text (unlike the
-// heading/list case above), so a `<strong>`/`<a>` inside the paragraph keeps its
-// formatting instead of losing it — this is the ordinary shape of a pasted table,
-// not the edge case the block/list flattening exists for.
-function flattenLineBreaks(doc: Document, cell: Element): void {
-  for (const br of cell.querySelectorAll('br')) {
-    br.replaceWith(doc.createTextNode('; '));
-  }
-  for (const block of cell.querySelectorAll('p, div')) {
-    const separator = block.previousSibling === null ? [] : [doc.createTextNode('; ')];
-    block.replaceWith(...separator, ...block.childNodes);
-  }
 }
 
 // `caption` is in here for the reason set out in limit 1 of the module's table
@@ -133,7 +107,6 @@ function flattenTableCells(doc: Document): void {
       block.replaceWith(doc.createTextNode(textOf(block)));
     }
     for (const rule of cell.querySelectorAll('hr')) rule.remove();
-    flattenLineBreaks(doc, cell);
   }
 }
 
@@ -183,6 +156,57 @@ const service = new TurndownService({
 });
 service.use(gfm);
 service.remove((node) => DROP_WITH_CONTENTS.has(node.nodeName.toLowerCase()));
+
+// THE SECOND WAY RAW HTML GETS INTO A CELL, closed where the newline is CONSUMED
+// rather than where it is produced — because the places that produce one cannot be
+// enumerated.
+//
+// `@joplin/turndown-plugin-gfm`'s cell rule ends by turning every newline in a
+// converted cell into a literal `<br>` tag, so the pipe row still parses rather
+// than breaking in half. That `<br>` is markup the person never typed, in a body
+// #1376 now renders as HTML. The newline it reacts to comes from turndown's
+// default for a block element — `'\n\n' + content + '\n\n'` — and `isBlock` is a
+// 49-name list (`ADDRESS, ARTICLE, DL, FIELDSET, FIGURE, LI, SECTION, …`) that
+// HTML keeps adding to. Naming those elements here would be the same defect with a
+// longer list, and would go stale on the next element HTML gains; the property that
+// actually holds is stated once, over the converted text — NO NEWLINE REACHES
+// `cell()` — and covers every element, named or not, now or later. #1383.
+//
+// WRAPPING rather than replacing the plugin's rule. `cell()` also does the column
+// prefix, the pipe escaping and `colspan`; a second copy of that here would be a
+// fork of the plugin by another name. `addRule` unshifts, so the wrapper below is
+// the rule matched for a `<td>`/`<th>` and the captured original never is — which
+// is why it has to be captured BEFORE the wrapper is added.
+//
+// A plugin version that stopped registering that rule would leave the wrapper with
+// nothing to wrap, and a cell converting without the guarantee is exactly the
+// failure this module must not have quietly. So it refuses to load instead — and
+// the refusal is EXPORTED rather than inlined because a `throw` no green run can
+// reach is a claim nothing checks (Rule 12); `tests/libraryImport.test.ts` hands
+// this an empty rule list and asserts it.
+export function gfmTableCellRule(
+  rules: TurndownService.Rule[],
+): NonNullable<TurndownService.Rule['replacement']> {
+  const replacement = rules.find(
+    (rule) => Array.isArray(rule.filter) && rule.filter.includes('td'),
+  )?.replacement;
+  if (replacement === undefined) {
+    throw new Error('libraryImport: the GFM plugin registered no <td>/<th> rule to wrap');
+  }
+  return replacement;
+}
+
+const gfmCell = gfmTableCellRule(service.rules.array);
+
+/** A converted cell's content as one line: every newline becomes the `; ` separator. */
+function onOneLine(content: string): string {
+  return content.trim().replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/g, '; ');
+}
+
+const emitCellOnOneLine: typeof gfmCell = (content, node, options) =>
+  gfmCell(onOneLine(content), node, options);
+
+service.addRule('tableCellOnOneLine', { filter: ['th', 'td'], replacement: emitCellOnOneLine });
 
 /**
  * A chunk of HTML as markdown — headings, lists, emphasis, links and GFM tables.
