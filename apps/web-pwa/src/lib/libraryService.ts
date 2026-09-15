@@ -196,16 +196,30 @@ function replacedVersion(id: string, snapshot: LibraryPageRevisionDoc): LibraryP
  * the `ReadResult` its failure toast needs (Rule 10) — and every edit in one window
  * shares one promise, so a burst can raise at most one toast.
  *
- * WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md Rule 12). A version another
- * writer landed between an editor opening and that session's FIRST write is filed
- * into `revisions` rather than lost — pinned by `libraryService.test.ts` → "a second
- * writer's version reached the store". It does NOT stop the clobber: the
- * full-document `setDoc` still overwrites that writer's text, which is the LWW
- * contract and deliberate. And it covers the first write of a session only: once the
- * snapshot is spent, a second writer landing later in the same session is
- * overwritten with no revision recorded, because nothing here can then tell "someone
- * else changed the body" from "this tab changed it". Closing that needs the tab to
- * remember what it last wrote, and it is not closed today.
+ * WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md Rule 12). The guarantee is
+ * about the DOCUMENT THIS WRITE SENDS, and it stops there: on the first write of an
+ * editing session, the `revisions` array in that document holds the version this
+ * write replaces — read from the store at write time — rather than the version the
+ * editor happened to open on. Pinned by `libraryService.test.ts` → "revision
+ * capture — a second writer landed while the editor was open".
+ *
+ * It does NOT make that version durable, and nothing here can. `revisions` is a
+ * field of a full-document `setDoc` like any other, so the next write built from a
+ * store that has not seen this one replaces the whole array — un-filing the version
+ * just filed. That is the LWW contract, deliberate, and it bites in two ways:
+ *
+ *   - another device's write, landing after this one from a stale store, and
+ *   - THIS TAB'S OWN NEXT WRITE in the same session, once the snapshot is spent.
+ *     `initLibrarySync` replaces the store wholesale, every edit rebuilds the
+ *     document from the store, and with no snapshot left nothing here can tell
+ *     "someone else changed the body" from "this tab changed it".
+ *
+ * So two people typing on one page can still finish with neither of the versions
+ * they overwrote recorded anywhere — pinned, as the boundary rather than as the
+ * behaviour anyone wants, by "loses it again when this tab writes once more after
+ * the other writer does" in that same block. Closing it needs the tab to remember
+ * what it last wrote, which changes one-revision-per-session into one per session
+ * plus one per foreign write detected — a spec decision, not built (#1392).
  */
 export function queueLibraryEdit(page: LibraryPageDoc): Promise<ReadResult<void, DomainError>> {
   const snapshot = pendingSnapshots.get(page.id);

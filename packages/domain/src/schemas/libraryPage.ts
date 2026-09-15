@@ -119,20 +119,32 @@ export const LibraryPageSchema = z.object({
   // THERE IS NOT EXACTLY ONE EDITOR AT A TIME, and there has not been since #1377.
   // Two writers replace this document: the browser's in-place editor
   // (`queueLibraryEdit`) and `writeKitchenNoteForChef`, a Cloud Function reachable
-  // from a different device while an editor is open on another. Embedding is safe
-  // for the single-read reason above, not because writers are serialised.
+  // from a different device while an editor is open on another. Embedding is CHOSEN
+  // for the single-read reason above, not justified by writers being serialised —
+  // what it costs with two of them is the last paragraph here.
   //
   // WHAT HOLDS (#1392, pinned by `apps/web-pwa/tests/libraryService.test.ts` →
-  // `revision capture`): a browser write files the version it is ACTUALLY
-  // replacing, read from the store at write time, so a version another writer
-  // landed while an editor was open reaches the history instead of vanishing.
+  // `revision capture — a second writer landed while the editor was open`): the
+  // document a browser write SENDS carries the version that write is actually
+  // replacing, read from the store at write time, rather than the version the
+  // editor happened to open on. That is a property of one write's document.
   //
-  // WHAT DOES NOT: a full-document `setDoc` still clobbers a concurrent write —
-  // that is the LWW contract and deliberate, and the history is what makes it
-  // recoverable rather than final. And the browser captures one revision per
-  // EDITING SESSION, so a second writer landing after that session's first write
-  // has spent its snapshot is overwritten with nothing recorded. A third writer
-  // would need this array to be append-only, which embedding cannot give it.
+  // WHAT DOES NOT — AND THIS ARRAY IS NOT APPEND-ONLY, WHICH IS THE WHOLE OF IT.
+  // Embedding buys the single read and costs exactly this: `revisions` is a field
+  // of a full-document `setDoc` like `body` is, so any write built from a store
+  // that has not seen the previous one replaces the entire array. A version filed
+  // by one write can therefore be un-filed by the next — by another device, by the
+  // chef, or by the SAME TAB's next write in the editing session, once its
+  // once-per-session snapshot is spent and nothing can tell that tab's own text
+  // from someone else's. Two people typing on one page can end with neither of the
+  // versions they overwrote recorded anywhere; the browser-side test above pins
+  // that as the boundary.
+  //
+  // So: do not reason from this array as a log. It is a best-effort history under
+  // LWW, and it is where a THIRD writer would do real damage. Making it append-only
+  // means moving it to a subcollection, which is a schema and read-shape change
+  // across the adapter, the service and three surfaces — not done, and the thing to
+  // weigh before another writer is added.
   revisions: z.array(LibraryPageRevisionSchema).default([]),
 });
 
