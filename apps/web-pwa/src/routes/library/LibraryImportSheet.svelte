@@ -118,11 +118,8 @@
       {#if markdown.trim() !== ''}
         <!-- Exactly what saving will produce: the same renderer and the same
              document scale the page body uses. -->
-        <div
-          class="salt-md-doc rounded border border-border p-3"
-          data-testid="library-import-preview"
-        >
-          <Markdown text={markdown} sanitizedHtml />
+        <div class="rounded border border-border p-3" data-testid="library-import-preview">
+          <Markdown text={markdown} sanitizedHtml scale="doc" />
         </div>
       {/if}
     </div>
@@ -147,36 +144,3 @@
     </SheetFooter>
   </SheetContent>
 </Sheet>
-
-<style>
-  /* The page body's document scale, so the preview is the size the page will be. */
-  .salt-md-doc :global(.salt-md p) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md h1) {
-    font-size: 1.5rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h2) {
-    font-size: 1.25rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h3) {
-    font-size: 1.0625rem;
-    margin: 1rem 0 0.375rem;
-  }
-  .salt-md-doc :global(.salt-md ul),
-  .salt-md-doc :global(.salt-md ol) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md li) {
-    margin: 0.25rem 0;
-  }
-  /* A jar table is the point of this feature, and a phone is narrower than one. */
-  .salt-md-doc :global(.salt-md table) {
-    display: block;
-    width: max-content;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-</style>

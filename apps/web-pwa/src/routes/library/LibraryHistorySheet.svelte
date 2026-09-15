@@ -34,14 +34,13 @@
    * to, so stacking two modals would only add a second thing to dismiss — and
    * `z-dialog` is one rung, deliberately (ui-spec-v02 §4.1).
    *
-   * The preview renders through the same `Markdown` primitive and the same
-   * `.salt-md-doc` document scale the page body uses, so a version previews as the
-   * page it will become rather than as a smaller cousin of it. The styles are
-   * duplicated from `LibraryPageDocument` rather than shared: Svelte scopes styles
-   * per component, so a shared `.salt-md-doc` would have to become a global
-   * stylesheet or a variant on the primitive, and the repo promotes on the second
-   * consumer only when the thing promoted is a component. Two copies of six
-   * margins is the cheaper of the two.
+   * The preview renders through the same `Markdown` primitive at the same
+   * `scale="doc"` the page body uses, so a version previews as the page it will
+   * become rather than as a smaller cousin of it. That matching is the point and
+   * not an accident of reuse: a preview at proportions of its own would answer a
+   * different question from the one being asked of it. The scale itself belongs
+   * to the primitive (ui-spec-v04 §12.3.2) — this sheet passes a prop and
+   * declares no type rules of its own.
    */
 
   interface Props {
@@ -155,11 +154,11 @@
     {:else}
       {@const chosen = selected}
       <!-- The preview, before anything changes. -->
-      <div class="salt-md-doc min-h-0 overflow-y-auto" data-testid="library-history-preview">
+      <div class="min-h-0 overflow-y-auto" data-testid="library-history-preview">
         {#if chosen.revision.body.trim() === ''}
           <p class="text-sm text-muted-foreground">This version had nothing written in it.</p>
         {:else}
-          <Markdown text={chosen.revision.body} sanitizedHtml />
+          <Markdown text={chosen.revision.body} sanitizedHtml scale="doc" />
         {/if}
       </div>
       <SheetFooter>
@@ -178,38 +177,3 @@
     {/if}
   </SheetContent>
 </Sheet>
-
-<style>
-  /* The page body's document scale, so a preview is the size the page will be.
-     Two class levels deep, beating the primitive's own `.salt-md :global(h1)` on
-     specificity rather than on source order. */
-  .salt-md-doc :global(.salt-md p) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md h1) {
-    font-size: 1.5rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h2) {
-    font-size: 1.25rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h3) {
-    font-size: 1.0625rem;
-    margin: 1rem 0 0.375rem;
-  }
-  .salt-md-doc :global(.salt-md ul),
-  .salt-md-doc :global(.salt-md ol) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md li) {
-    margin: 0.25rem 0;
-  }
-  /* A jar table is the point of this feature, and a phone is narrower than one. */
-  .salt-md-doc :global(.salt-md table) {
-    display: block;
-    width: max-content;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-</style>

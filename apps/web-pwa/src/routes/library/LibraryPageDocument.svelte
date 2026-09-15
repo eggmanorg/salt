@@ -69,11 +69,12 @@
    * the chat is the reason: its text is written by a model, which is the one place
    * in this app markup should not be accepted from.
    *
-   * The document-scale type at the foot is a page-local override of `.salt-md`,
-   * whose own sizes are tuned for a two-line note inside a card (h1 at 1.125rem,
-   * `p` margin 0). A page is a document and wants document proportions. Page-local
-   * rather than a variant on the primitive: one consumer, and the repo promotes on
-   * the second.
+   * The body renders at `scale="doc"`. `Markdown`'s default sizes are tuned for a
+   * two-line note inside a card (h1 at 1.125rem, `p` margin 0); a page is a
+   * document and wants document proportions. The rules themselves are the
+   * primitive's (ui-spec-v04 §12.3.2), not this file's — three surfaces render a
+   * page body at that scale and the thing they share is the primitive they
+   * already share (#1394).
    */
   let {
     page,
@@ -252,7 +253,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
-          class="salt-md-doc min-h-24 cursor-text rounded"
+          class="min-h-24 cursor-text rounded"
           onclick={() => open('body')}
           data-testid="library-body"
         >
@@ -261,7 +262,7 @@
               Nothing written yet. Tap to start — markdown, including tables.
             </p>
           {:else}
-            <Markdown text={page.body} sanitizedHtml />
+            <Markdown text={page.body} sanitizedHtml scale="doc" />
           {/if}
         </div>
         <!-- The keyboard route in. The body region above is a mouse/touch
@@ -376,41 +377,3 @@
     Delete
   </Button>
 {/snippet}
-
-<style>
-  /* Document proportions for a page body, overriding `.salt-md`'s note-scale type.
-     Two class levels deep, so this beats the primitive's own `.salt-md :global(h1)`
-     on specificity rather than on source order — a rule that won only by ordering
-     would flip the first time the bundler reordered two stylesheets. */
-  .salt-md-doc :global(.salt-md p) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md h1) {
-    font-size: 1.5rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h2) {
-    font-size: 1.25rem;
-    margin: 1.25rem 0 0.5rem;
-  }
-  .salt-md-doc :global(.salt-md h3) {
-    font-size: 1.0625rem;
-    margin: 1rem 0 0.375rem;
-  }
-  .salt-md-doc :global(.salt-md ul),
-  .salt-md-doc :global(.salt-md ol) {
-    margin: 0.75rem 0;
-  }
-  .salt-md-doc :global(.salt-md li) {
-    margin: 0.25rem 0;
-  }
-  /* A jar table is the point of this feature, and a phone is narrower than one. The
-     table scrolls inside its own box rather than widening the page — the one
-     sanctioned horizontal scroller on a Salt surface. */
-  .salt-md-doc :global(.salt-md table) {
-    display: block;
-    width: max-content;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-</style>
