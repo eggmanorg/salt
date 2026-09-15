@@ -575,8 +575,9 @@ export const coverageThresholds = {
   // deleted and CI stay green. `apps/web-pwa/src/lib/**` moved the same way by a
   // smaller amount (77.32 vs its 76.93 pin; uncovered lines 772 against a ceiling
   // of 773, branches 591 against 596) when `parseIngredients` and
-  // `takeImportedDraft`'s optional-id arm went; it is inside tolerance, so the
-  // ratchet did not ask for it and it is left alone rather than retyped by hand.
+  // `takeImportedDraft`'s optional-id arm went; that one was inside tolerance, so
+  // the ratchet did not ask for it then. It has since been banked in its own
+  // right — see the note on that area's pin below.
   'apps/web-pwa/src/routes/**': {
     lines: 83.87,
     branches: 72.96,
@@ -602,11 +603,16 @@ export const coverageThresholds = {
   // the real page in `BatchCookPage.test.ts`. Earned coverage, banked: it moved
   // more than the staleness tolerance, so the ratchet asked for the pin rather
   // than letting a later PR delete those tests and land green.
+  // RE-PINNED 77.66/69.84 → 78.36/70.86 in #1383. Deleting `flattenLineBreaks`
+  // took a covered function out of `libraryImport.ts` and the newline collapse
+  // that replaced it is one expression, so the area lost lines faster than it
+  // lost tests; the new cell suite then covered the rest. Every figure moves the
+  // safe way — both ratios up, both uncovered counts down or level.
   'apps/web-pwa/src/lib/**': {
-    lines: 77.66,
-    branches: 69.84,
+    lines: 78.36,
+    branches: 70.86,
     uncoveredLines: 772,
-    uncoveredBranches: 595,
+    uncoveredBranches: 594,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
