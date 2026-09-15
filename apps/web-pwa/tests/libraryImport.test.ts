@@ -13,15 +13,22 @@ import { appendedBody, htmlToMarkdown } from '../src/lib/libraryImport.js';
 //  1. A TABLE ARRIVES AS A TABLE. Tables are the entire point; a converter that
 //     dropped them would be pointless and would still look like it worked on the
 //     prose either side.
-//  2. NO MARKUP SURVIVES. The renderer has no `rehype-raw`, so HTML in a body is
-//     not dangerous — but it is not invisible either: `svelte-exmarkdown` emits a
-//     `raw` hast node as its own escaped text, so anything that got through would
-//     show up on the page as literal markup source. Two ways it could get in:
-//     turndown keeping the text of an element it has no rule for (`<script>`),
-//     and the GFM plugin bailing out to `outerHTML` — either the whole table, or
-//     a `<br>`/extra block child inside one cell forcing a re-escaped `<br>` back
-//     in. Both are covered below, and both were observed failing before the code
-//     that stops them was written.
+//  2. NO MARKUP SURVIVES. Since #1376 the library page passes `Markdown`'s
+//     `sanitizedHtml` prop, so raw HTML in a body is PARSED and rendered through
+//     `svgSanitizeSchema`'s allowlist rather than shown as escaped source: a
+//     `<table>` that got through here would render as a table the person cannot
+//     see in the text they are editing, and a `joplin-table-wrapper` div would
+//     render as a div. (Before #1376 the same leak showed up as visible markup
+//     source instead — different symptom, same defect, and the earlier wording of
+//     this paragraph described that world.) Either way the requirement is
+//     unchanged and is the whole reason this module exists: what a person
+//     deliberately types is theirs, what a paste smuggled in is not. Three ways it
+//     could get in: turndown keeping the text of an element it has no rule for
+//     (`<script>`), the GFM plugin bailing out to `outerHTML` (the whole table —
+//     from a cell OR from a `<caption>`, which the plugin scans too), and a
+//     `<br>`/extra block child inside one cell forcing a re-escaped `<br>` back in.
+//     All are covered below, and each was observed failing before the code that
+//     stops it was written.
 
 /** Every HTML tag left in a converted body. Empty is the only acceptable answer. */
 function residualTags(markdown: string): string[] {
@@ -177,11 +184,48 @@ describe('htmlToMarkdown — what must not survive', () => {
     expect(md).toContain('54C');
   });
 
-  it('leaves no markup behind for a nested table either', () => {
+  // A nested table takes the plugin's OTHER bail-out, which emits no HTML — so the
+  // no-markup property holds. What it does emit is the finding this test now pins:
+  // not paragraphs, not a table, but every cell of both tables run together with no
+  // separator whatsoever. `residualTags()` alone was green on that, which is how
+  // the module comment came to claim "paragraphs" for two PRs running. Asserted
+  // exactly, so changing the behaviour has to be a decision rather than a drift.
+  it('collapses a nested table to run-on text — no markup, and no separator either', () => {
     const md = htmlToMarkdown(
       '<table><tr><td><table><tr><td>inner</td></tr></table></td><td>outer</td></tr></table>',
     );
     expect(residualTags(md)).toEqual([]);
+    expect(md).toBe('innerouter');
+  });
+
+  // The third route in, and the one #1391 found: `tableShouldBeHtml` walks the
+  // whole `<table>`, so block content in a `<caption>` trips the `outerHTML`
+  // bail-out with every `<td>` already clean. Drop `caption` from `CELL_SELECTOR`
+  // in `libraryImport.ts` and all three assertions below go red with a
+  // `joplin-table-wrapper` div in the body.
+  it('still produces a TABLE when the CAPTION holds a list, a heading or a rule', () => {
+    const rows = '<tr><th>Stage</th><th>Time</th></tr><tr><td>Bulk</td><td>4 h</td></tr>';
+    for (const caption of [
+      '<ul><li>measured cold</li><li>fan off</li></ul>',
+      '<h3>Times</h3>',
+      'Times<hr>',
+    ]) {
+      const md = htmlToMarkdown(`<table><caption>${caption}</caption>${rows}</table>`);
+      expect(residualTags(md)).toEqual([]);
+      expect(md).toContain('| Stage | Time |');
+    }
+  });
+
+  // Flattening a caption costs nothing, because turndown already emits a caption as
+  // the paragraph above the table — so the text survives where the reader expects
+  // it rather than being thrown away with the markup.
+  it('keeps the caption text as the line above the table', () => {
+    const md = htmlToMarkdown(
+      '<table><caption><h3>Sous vide</h3></caption>' +
+        '<tr><th>Cut</th><th>Time</th></tr><tr><td>Ribeye</td><td>2 h</td></tr></table>',
+    );
+    expect(md.split('\n')[0]).toBe('Sous vide');
+    expect(md).toContain('| Cut | Time |');
   });
 
   // THE fix for the finding measured against this PR's own code: a cell holding a

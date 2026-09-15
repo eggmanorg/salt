@@ -735,10 +735,13 @@ describe('ChatSessionPage — a chat that has gone quiet', () => {
 });
 
 // The chef's reply is the one string in this app an outside system writes, and
-// it is the reason `Markdown`'s `sanitizedHtml` prop (#1376) defaults off and is
-// passed by the library page alone. The same drawing renders as a drawing in
-// `LibraryPageView.test.ts`; here it must stay visible source. Not merely absent
-// — `svelte-exmarkdown` prints a `raw` node as its own escaped text.
+// it is the reason `Markdown`'s `sanitizedHtml` prop (#1376) defaults off and the
+// chat never passes it. That the chat is absent from the opted-in set is pinned
+// mechanically by `sanitizedHtmlCallers.test.ts`, which is a source scan — this
+// comment naming the callers was the unenforced version of it (#1391). The same
+// drawing renders as a drawing in `LibraryPageView.test.ts`; here it must stay
+// visible source. Not merely absent — `svelte-exmarkdown` prints a `raw` node as
+// its own escaped text.
 describe('ChatSessionPage — a model reply is never markup', () => {
   const DIAGRAM =
     '<svg viewBox="0 0 40 20"><rect x="1" y="1" width="38" height="18" fill="none" stroke="black" stroke-width="2" /></svg>';
