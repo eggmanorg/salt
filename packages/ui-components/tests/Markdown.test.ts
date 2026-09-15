@@ -33,6 +33,55 @@ describe('Markdown', () => {
     });
   });
 
+  // §12.3.2. What these can and cannot prove: jsdom does not compute Svelte's
+  // scoped styles across a component boundary, so no assertion here sees a
+  // font-size. What they DO pin is the contract the CSS hangs off — the doc
+  // scale is reached by one token on the one wrapper div, the default is the
+  // note scale, and `class` still merges alongside. If the token stops being
+  // applied, every doc-scale rule in `<style>` silently stops matching, and
+  // these are what go red.
+  describe('scale', () => {
+    it('leaves the wrapper at the note scale by default', () => {
+      const { container } = render(Markdown, { props: { text: '# Heading' } });
+      const wrapper = container.querySelector('.salt-md');
+      expect(wrapper).not.toBeNull();
+      expect(wrapper).not.toHaveClass('salt-md-doc');
+    });
+
+    it('leaves the wrapper at the note scale when asked for it explicitly', () => {
+      const { container } = render(Markdown, { props: { text: '# Heading', scale: 'note' } });
+      expect(container.querySelector('.salt-md')).not.toHaveClass('salt-md-doc');
+    });
+
+    it('puts the doc token on the salt-md wrapper itself, not a second element', () => {
+      const { container } = render(Markdown, { props: { text: '# Heading', scale: 'doc' } });
+      // Both classes on ONE div is what makes the doc rules win on specificity
+      // rather than on source order — a descendant wrapper would not.
+      expect(container.querySelectorAll('.salt-md-doc')).toHaveLength(1);
+      expect(container.querySelector('.salt-md')).toHaveClass('salt-md-doc');
+    });
+
+    it('merges the class prop alongside the doc token', () => {
+      const { container } = render(Markdown, {
+        props: { text: 'x', scale: 'doc', class: 'min-h-24 cursor-text' },
+      });
+      const wrapper = container.querySelector('.salt-md');
+      expect(wrapper).toHaveClass('salt-md', 'salt-md-doc', 'min-h-24', 'cursor-text');
+    });
+
+    it('renders the same markup at either scale', () => {
+      // The prop is presentation only: it must not reach the parser. Same
+      // source in, same elements out.
+      const src = '# Title\n\nBody text.\n\n- one\n- two\n\n| a | b |\n| - | - |\n| 1 | 2 |';
+      const note = render(Markdown, { props: { text: src } }).container;
+      const doc = render(Markdown, { props: { text: src, scale: 'doc' } }).container;
+      const shape = (el: HTMLElement): string =>
+        [...el.querySelectorAll('.salt-md *')].map((n) => n.tagName).join(',');
+      expect(shape(doc)).toBe(shape(note));
+      expect(shape(note)).not.toBe('');
+    });
+  });
+
   // The whole point of `breaks` is that turning a plain-text field into a
   // Markdown-rendered one is a no-op for text already saved as line-per-thought
   // prose. These assert both halves of §12.3.1: lines stay lines, blank lines
