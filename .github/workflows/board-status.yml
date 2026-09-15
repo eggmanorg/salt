@@ -23,6 +23,11 @@ name: Board status
 #   Released    — HERE. A production deploy succeeded AND the issue's merge
 #                 commit is an ancestor of the deployed sha. See below.
 #
+# A seventh move is not a status at all: when an issue closes, the checklist it
+# hangs off gets its line ticked, and closes itself once every line is ticked and
+# every sibling is closed. `scripts/lib/boardRollup.mjs` holds what that cannot
+# see; the `rolled-up` job below holds why it needs two tokens.
+#
 # The issue→PR link is the `Closes #N` that /salt-run writes into every PR body. That
 # is not a convention this workflow invented: GitHub's own "linked issue" is
 # derived from the same text, so anything that closes an issue on merge is
@@ -43,7 +48,7 @@ name: Board status
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, closed]
   pull_request:
     types: [opened, ready_for_review, closed]
   workflow_run:
@@ -77,7 +82,7 @@ jobs:
   # spec-shape.yml deliberately re-fetches rather than trusting the payload.
   started:
     name: Work started → In progress
-    if: github.event_name == 'issues'
+    if: github.event_name == 'issues' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -87,6 +92,39 @@ jobs:
       - run: node scripts/board.mjs start ${{ github.event.issue.number }}
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+
+  # A closed sub-issue → the checklist that asked for it.
+  #
+  # `/salt-campaign` files a `campaign follow-ups:` issue and deliberately leaves
+  # it open; nothing afterwards ticks its lines or closes it when the last child
+  # lands. #1335 sat open for two days with all three children closed. This is
+  # the event that proves the move, and it is the only one there is.
+  #
+  # TWO TOKENS, and neither will do on its own. PROJECT_TOKEN writes the project
+  # field and can only READ issues; the Actions GITHUB_TOKEN writes the issue and
+  # cannot touch an org project at all. `board.mjs rollup` takes the issue half
+  # as ISSUE_WRITE_TOKEN. A GITHUB_TOKEN-authored close raises no further
+  # `issues` event by design, so a parent that is itself a sub-issue does not
+  # cascade — one hop per close, deliberately.
+  #
+  # Like `started`, this never reads the payload's body text: `board.mjs` fetches
+  # both issues over GraphQL from the number alone, in a job holding the PAT.
+  rolled-up:
+    name: Sub-issue closed → tick its parent
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/board.mjs rollup ${{ github.event.issue.number }}
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE_WRITE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # BOTH pull_request jobs skip Dependabot's own PRs. A run triggered by
   # Dependabot reads GitHub's separate Dependabot secrets store, so
