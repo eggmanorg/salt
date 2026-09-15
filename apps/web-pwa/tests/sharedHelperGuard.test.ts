@@ -1,12 +1,13 @@
 /**
- * Source guard: nothing re-declares a shared rule (issues #933, #1055).
+ * Source guard: nothing re-declares a shared rule (issues #933, #1055, #1394).
  *
- * Two issues' worth of rows, one walk of `src`. #933 collapsed eleven DISPLAY
+ * Three issues' worth of rows, one walk of `src`. #933 collapsed eleven DISPLAY
  * rules — what a number, a date, a URL or a viewport reads as. #1055 collapsed
  * eight PAGE-LOCAL copies where the answer already existed a few lines away and
- * the page wrote it again. Same cause, same shape of fix, so the same guard
- * rather than a second file scanning the same tree (which would itself have been
- * #1055's subject matter).
+ * the page wrote it again. #1394 collapsed three copies of the library's
+ * document type scale into a prop on the `Markdown` primitive. Same cause, same
+ * shape of fix, so the same guard rather than a second file scanning the same
+ * tree (which would itself have been #1055's subject matter).
  *
  * Eleven rules that decide what a number, a date, a URL or a viewport READS AS on
  * screen each had between two and eight implementations. Three of them had
@@ -260,6 +261,33 @@ const FORBIDDEN: readonly Shape[] = [
     // module here — it deleted the copy that shadowed this one.
     allowed: ['lib/membersService.ts'],
   },
+
+  // ── issue #1394 ────────────────────────────────────────────────────────────
+  //
+  // A CSS rule, not an expression, which is why it is a FORBIDDEN shape and not
+  // an OWNER row: the thing that owns it is `Markdown.svelte` in
+  // `@salt/ui-components`, outside this tree, and UT-E4 forbids reaching across
+  // a `../../../../packages/…` path to read it.
+  //
+  // WHAT THIS CATCHES, HONESTLY. It catches a second DECLARATION SITE — any
+  // `.svelte` file under `src` reaching into the primitive's rendered markdown
+  // through `:global(.salt-md …)` or `:global(.salt-md-doc …)`, which is the
+  // literal shape all three deleted copies had and the shape a fourth surface
+  // would reach for first, because it is what the other three looked like.
+  //
+  // WHAT IT CANNOT CATCH, and no lint rule can: a surface that reimplements
+  // document proportions by a route that never names the class — Tailwind
+  // utilities on a wrapper, a `prose`-style plugin, or `:global(h1)` under some
+  // class of its own. Those are not spellings of this rule; they are a second
+  // rule that happens to look the same on screen, and telling them apart needs
+  // a person reading the diff. The claim this guard makes is bounded to the
+  // declaration site, and that is the whole of it.
+  {
+    instead: 'scale="doc" on <Markdown> from @salt/ui-components',
+    because:
+      "the library's document type scale was declared three times — page body, history preview, import preview — byte-identical and held that way by a comment asking the next author to keep them in step; #1394 moved the rules into the primitive, where the next change is made once",
+    pattern: /:global\([^)]*\.salt-md\b/,
+  },
 ];
 
 // ─── Half three: the rule collapsed WITHIN one file ───────────────────────────
@@ -433,6 +461,26 @@ describe('display rules are declared once', () => {
     expect(carries('  const currentMember = $derived($members.find((m) => m.email === currentEmail) ?? null);', shape('currentMember'))).toBe(true); // prettier-ignore
     expect(carries('  const isAdmin = $derived($currentMember?.admin === true);', shape('currentMember'))).toBe(false); // prettier-ignore
     expect(carries('  members.find((m) => m.id === memberId)', shape('currentMember'))).toBe(false);
+
+    // ── issue #1394: the block re-added, then the shapes beside it ──
+    const docScale = shape('scale="doc"');
+    // Real lines this issue deleted, from all three surfaces.
+    expect(carries('  .salt-md-doc :global(.salt-md h1) {', docScale)).toBe(true);
+    expect(carries('  .salt-md-doc :global(.salt-md table) {', docScale)).toBe(true);
+    // And the two other spellings a fourth surface would reach for: the token
+    // targeted directly now that the primitive owns it, and the base class with
+    // no wrapper at all.
+    expect(carries('  :global(.salt-md-doc p) {', docScale)).toBe(true);
+    expect(carries('  :global(.salt-md h2) {', docScale)).toBe(true);
+
+    // What it must NOT fire on, or every library surface fails its own guard:
+    // passing the prop, the primitive's own scoped rules (which live in
+    // ui-components and are never scanned here anyway), and an unrelated
+    // `:global` in a page.
+    expect(carries('  <Markdown text={page.body} sanitizedHtml scale="doc" />', docScale)).toBe(false); // prettier-ignore
+    expect(carries('  <div class="min-h-24 cursor-text rounded">', docScale)).toBe(false);
+    expect(carries('  .salt-md.salt-md-doc :global(p) {', docScale)).toBe(false);
+    expect(carries('  :global(.cook-deck h1) {', docScale)).toBe(false);
   });
 
   it('has no file outside its owning module re-declaring one of them', () => {
