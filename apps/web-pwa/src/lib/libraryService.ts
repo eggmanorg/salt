@@ -152,17 +152,67 @@ export function endLibraryEdit(id: string): void {
 }
 
 /**
+ * The version this write is about to REPLACE — which is not always the version the
+ * editor opened on (issue #1392).
+ *
+ * The pending snapshot decides WHETHER a revision is captured at all: once per
+ * editing session, for the reason above. It is no longer the only source of WHAT is
+ * captured, because between the editor opening and this write landing another
+ * writer can have saved the page — a person on a second device, or the chef's
+ * `writeKitchenNoteForChef` Cloud Function. The store is the live view of what is
+ * in Firestore, and this runs BEFORE `applyOptimistically`, so it still holds the
+ * outgoing version at this point. Filing the snapshot instead would file a version
+ * that is already sitting in `revisions[0]` — the other writer put it there when it
+ * wrote — where `pushRevision`'s dedup correctly drops it as a duplicate, and the
+ * version actually being overwritten would leave no trace anywhere.
+ *
+ * When nobody else wrote, the stored version IS the snapshot and this returns it
+ * unchanged, so ordinary editing records exactly what it recorded before. When they
+ * differ, the difference is itself the evidence of a second writer: the store can
+ * only have moved while an editor was open for that reason.
+ *
+ * `savedBy` stays the SESSION'S author rather than becoming the other writer's name
+ * — the field is rendered as "replaced by …" and this write is the replacement.
+ * `savedAt` moves to the clock, because a version that arrived after the editor
+ * opened stopped being current now, not then.
+ */
+function replacedVersion(id: string, snapshot: LibraryPageRevisionDoc): LibraryPageRevisionDoc {
+  const stored = libraryPageById(id);
+  if (stored === undefined) return snapshot;
+  if (stored.title === snapshot.title && stored.body === snapshot.body) return snapshot;
+  return {
+    ...snapshot,
+    title: stored.title,
+    body: stored.body,
+    savedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Queue an in-place edit to a page. The store is updated synchronously; the write
  * lands at the end of the debounce window, or sooner if something flushes it.
  *
  * The returned promise is the write that will carry this edit, so a caller keeps
  * the `ReadResult` its failure toast needs (Rule 10) — and every edit in one window
  * shares one promise, so a burst can raise at most one toast.
+ *
+ * WHAT THIS GUARANTEES, AND WHAT IT DOES NOT (CLAUDE.md Rule 12). A version another
+ * writer landed between an editor opening and that session's FIRST write is filed
+ * into `revisions` rather than lost — pinned by `libraryService.test.ts` → "a second
+ * writer's version reached the store". It does NOT stop the clobber: the
+ * full-document `setDoc` still overwrites that writer's text, which is the LWW
+ * contract and deliberate. And it covers the first write of a session only: once the
+ * snapshot is spent, a second writer landing later in the same session is
+ * overwritten with no revision recorded, because nothing here can then tell "someone
+ * else changed the body" from "this tab changed it". Closing that needs the tab to
+ * remember what it last wrote, and it is not closed today.
  */
 export function queueLibraryEdit(page: LibraryPageDoc): Promise<ReadResult<void, DomainError>> {
   const snapshot = pendingSnapshots.get(page.id);
   const withHistory: LibraryPageDoc =
-    snapshot === undefined ? page : { ...page, revisions: pushRevision(page.revisions, snapshot) };
+    snapshot === undefined
+      ? page
+      : { ...page, revisions: pushRevision(page.revisions, replacedVersion(page.id, snapshot)) };
   pendingSnapshots.delete(page.id);
   const stamped = applyOptimistically(withHistory);
   return pageWrites.queue(stamped.id, stamped);

@@ -14,9 +14,10 @@ import { z } from 'zod';
 //
 // FAMILY-SHARED, like everything except the four per-user collections CLAUDE.md
 // enumerates: no `ownerUid`, no per-user scoping. `createdBy`/`lastEditedBy` are
-// display NAMES denormalised at write time, for audit only — never read to decide
-// anything, never a gate. firestore.rules records the standing invariant that uids
-// appear nowhere in the family-shared data model.
+// display NAMES denormalised at write time — see the note at their declaration for
+// the one place `lastEditedBy` is read and why that is still not per-user scoping.
+// firestore.rules records the standing invariant that uids appear nowhere in the
+// family-shared data model.
 //
 // GREENFIELD → no back-compat constraint (docs/data-model.md §Back-compat lists the
 // six production collections; this is not one).
@@ -99,13 +100,39 @@ export const LibraryPageSchema = z.object({
   tags: z.array(z.string()).default([]),
   createdAt: z.string(), // ISO
   updatedAt: z.string(), // ISO
-  // Display NAMES, never uids. Audit only — displayed and nothing else; never
-  // checked on read, never pinned on update, never a gate on anything.
+  // Display NAMES, never uids. `createdBy` is audit only — displayed and nothing
+  // else.
   createdBy: z.string(),
+  // `lastEditedBy` is displayed too, and is READ IN EXACTLY ONE PLACE:
+  // `writeKitchenNoteForChef` compares it against the constant `CHEF_AUTHOR_NAME`
+  // to decide whether a chef write is continuing its own run and so should coalesce
+  // rather than push a revision. That is authorship CLASS, not identity — the
+  // compared value is a literal, no capability, availability or ordering varies by
+  // who is asking, and nothing is ever pinned on update. It is therefore not the
+  // per-user scoping CLAUDE.md's data-model convention forbids, but it is a read,
+  // so do not restate the old "never checked on read" absolute here.
   lastEditedBy: z.string(),
-  // Newest first. Travels with the page on a single read rather than sitting in a
-  // subcollection, because there is exactly one editor at a time — unlike
-  // `batches/observations`, which is append-only with two concurrent writers.
+  // Newest first, and EMBEDDED rather than a subcollection so the history travels
+  // with the page on the single read the page already makes — unlike
+  // `batches/observations`, which is append-only and genuinely concurrent.
+  //
+  // THERE IS NOT EXACTLY ONE EDITOR AT A TIME, and there has not been since #1377.
+  // Two writers replace this document: the browser's in-place editor
+  // (`queueLibraryEdit`) and `writeKitchenNoteForChef`, a Cloud Function reachable
+  // from a different device while an editor is open on another. Embedding is safe
+  // for the single-read reason above, not because writers are serialised.
+  //
+  // WHAT HOLDS (#1392, pinned by `apps/web-pwa/tests/libraryService.test.ts` →
+  // `revision capture`): a browser write files the version it is ACTUALLY
+  // replacing, read from the store at write time, so a version another writer
+  // landed while an editor was open reaches the history instead of vanishing.
+  //
+  // WHAT DOES NOT: a full-document `setDoc` still clobbers a concurrent write —
+  // that is the LWW contract and deliberate, and the history is what makes it
+  // recoverable rather than final. And the browser captures one revision per
+  // EDITING SESSION, so a second writer landing after that session's first write
+  // has spent its snapshot is overwritten with nothing recorded. A third writer
+  // would need this array to be append-only, which embedding cannot give it.
   revisions: z.array(LibraryPageRevisionSchema).default([]),
 });
 

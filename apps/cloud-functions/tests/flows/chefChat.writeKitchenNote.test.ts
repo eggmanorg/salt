@@ -8,9 +8,12 @@
  *     path in the whole flow module, and the scan at the bottom of this file is
  *     what says so. The Firestore stub has no delete method to call either, so a
  *     handler that reached for one would throw rather than quietly pass.
- *  2. EVERY REPLACEMENT GOES THROUGH `pushRevision`. The version that was
- *     replaced comes back in `revisions[0]`, and the cap still holds — asserted
- *     against a page already sitting at the cap.
+ *  2. A REPLACEMENT DISPLACING A VERSION THE CHEF DID NOT WRITE GOES THROUGH
+ *     `pushRevision`. That version comes back in `revisions[0]`, and the cap still
+ *     holds — asserted against a page already sitting at the cap. The exception is
+ *     deliberate and pinned here too: a replacement of the chef's OWN last write
+ *     coalesces and pushes nothing, so a chatty run cannot evict the human
+ *     version beneath it.
  *  3. IT WRITES TO `libraryPages` AND NOWHERE ELSE. The stub throws for any other
  *     collection name, so a stray write is an exception and not a silent pass.
  *  4. NO UID IS EVER WRITTEN INTO A DOCUMENT. The audit fields are display names,
