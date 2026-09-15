@@ -392,6 +392,8 @@ Then triage and attach it per **Filing an issue** — `add` with a Class, band a
 
 Body is a `- [ ]` checklist, one line per finding, PR number on each line. Notes are dropped entirely, and so is anything already fixed in round 1 under the `[trivial]` rule above. File it even when the list is short; skip it only when the list is empty.
 
+**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** Both, not one: the PR says where the finding was seen, the issue number is what ticks the line. [`board-status.yml`](../../.github/workflows/board-status.yml) rolls a closed issue up to its parent, ticks the one line that NAMES it, and closes this issue once every line is ticked and every sub-issue is closed. Nothing else ever closes it — this command leaves it open by design (step 4 of **Finish**), `/salt-run` closes the issue it ran and never looks upward, and `check` reads only Queue and Status. #1335 and #1370 both reached every-child-closed and stayed open, unticked, because their lines named only a PR.
+
 This is a correction to a rule that lost its own output. The previous version said to put the list in the ledger's closing comment — but **Finish** closes the ledger when nothing is parked, so the list landed in a closed issue and left no trace anywhere a human looks. Campaign #1040 lost seven that way, two of them live prod risks.
 
 That rule's stated grounds were also wrong, and the record is checkable: it claimed campaign #1009's seventeen filed follow-ups were "never actioned". Most were closed within a day — and #1021, #1023 and #1030, the entire contents of campaign #1040, were three of them. Filing is the mechanism that feeds the next campaign. One issue per campaign rather than seventeen is the concession to noise; not filing at all is not.
@@ -577,6 +579,6 @@ When the queue is empty:
    **Issues filed:** #f follow-ups; #d, #e — [oversized re-specs and shipped-known-defects; see Review]
    **Decisions taken:** [one line each]
    ```
-   Close the ledger issue only if nothing is parked. A parked issue is unfinished business and the open ledger is where it lives. Nothing that must outlive the campaign may live only in this comment — the ledger closes, the follow-ups issue does not.
+   Close the ledger issue only if nothing is parked. A parked issue is unfinished business and the open ledger is where it lives. Nothing that must outlive the campaign may live only in this comment — the ledger closes, the follow-ups issue does not. The follow-ups issue now closes itself: see **Review** for the one thing its lines must carry for that to work.
 5. `TaskStop` any watchdog still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
 6. Report **once**, and stop. Landed, parked with reasons, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue; do not reproduce either. A clean campaign is a sentence. Do not follow this message with a second one that says the same thing in different words: the last run closed with four.

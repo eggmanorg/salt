@@ -61,12 +61,14 @@
 //   node scripts/board.mjs parent 1234 --of 1129            # sub-issue link
 //   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
 //   node scripts/board.mjs release --sha <deployed sha>
+//   node scripts/board.mjs rollup 1364                      # a closed sub-issue → its checklist
 //   node scripts/board.mjs check
 
 import { execFileSync } from 'node:child_process';
 
 import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
+import { NUDGE_MARKER, tickTask, verdict } from './lib/boardRollup.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -87,12 +89,21 @@ const die = (msg) => {
   process.exit(1);
 };
 
-function gql(query) {
+/**
+ * `token` overrides the ambient one for this call alone.
+ *
+ * Only `rollup` passes it, and it has to: PROJECT_TOKEN is a fine-grained PAT
+ * with WRITE on the org's projects and READ on issues, so the one command that
+ * both moves a field and edits an issue cannot do it under a single token. The
+ * workflow hands it the Actions GITHUB_TOKEN for the issue half.
+ */
+function gql(query, token) {
   let out;
   try {
     out = execFileSync('gh', ['api', 'graphql', '-f', `query=${query}`], {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
+      env: token ? { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token } : process.env,
     });
   } catch (err) {
     die(
@@ -812,6 +823,122 @@ function cmdCheck(project) {
   process.exit(1);
 }
 
+/**
+ * Roll a closed issue up to the checklist that asked for it.
+ *
+ * The gap this closes, and why no existing command could: `/salt-campaign` files
+ * a `campaign follow-ups:` issue, hangs the issues that action its lines off it
+ * as sub-issues, and deliberately leaves it open. Nothing after that owns it.
+ * `/salt-run` closes the issue it ran and never looks at a parent; `check` reads
+ * only Queue and Status. #1335 sat open with all three children closed and every
+ * box unticked; #1370 was closed by hand the same way. See lib/boardRollup.mjs
+ * for what this deliberately cannot see.
+ *
+ * Two tokens, and the split is not incidental: the ambient GH_TOKEN writes the
+ * project field (PROJECT_TOKEN in Actions), and ISSUE_WRITE_TOKEN — the Actions
+ * GITHUB_TOKEN — writes the issue. A GITHUB_TOKEN-authored close raises no
+ * further `issues` event, so a parent that is itself somebody's sub-issue does
+ * not cascade.
+ */
+function cmdRollup(project, [num]) {
+  const child = Number(num);
+  if (!Number.isInteger(child)) die('usage: board.mjs rollup <closed issue>');
+  const writeToken = process.env.ISSUE_WRITE_TOKEN || undefined;
+
+  const c = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${child}){
+    number state parent{ id number title state body
+      subIssues(first:100){ nodes{ number state } } } } } }`).repository?.issue;
+  if (!c) die(`issue #${child} not found in ${OWNER}/${REPO}`);
+  if (c.state !== 'CLOSED') {
+    console.log(`#${child} is not closed — nothing to roll up`);
+    return;
+  }
+  const parent = c.parent;
+  if (!parent) {
+    console.log(`#${child} has no parent — nothing to roll up`);
+    return;
+  }
+  if (parent.state !== 'OPEN') {
+    console.log(`#${child}'s parent #${parent.number} is already closed`);
+    return;
+  }
+
+  // Tick first, so the verdict below reads the body this run just wrote rather
+  // than the one it was handed.
+  let body = parent.body;
+  const tick = tickTask(body, child);
+  if (tick) {
+    body = tick.body;
+    gql(
+      `mutation{ updateIssue(input:{id:"${parent.id}", body:${JSON.stringify(body)}}){ issue{ number } } }`,
+      writeToken,
+    );
+    console.log(`#${parent.number} — ticked: ${tick.text.slice(0, 90)}`);
+  } else {
+    console.log(`#${parent.number} — no single unticked line names #${child}`);
+  }
+
+  const v = verdict({
+    title: parent.title,
+    body,
+    subIssues: parent.subIssues.nodes,
+  });
+
+  if (v.action === 'wait') {
+    console.log(
+      `#${parent.number} stays open — still open: ${v.open.map((n) => `#${n}`).join(', ')}`,
+    );
+    return;
+  }
+
+  if (v.action === 'nudge') {
+    const already = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${parent.number}){
+        comments(last:30){ nodes{ body } } } } }`,
+    ).repository.issue.comments.nodes.some((n) => n.body.includes(NUDGE_MARKER));
+    if (already) {
+      console.log(`#${parent.number} — already nudged`);
+      return;
+    }
+    // Quoted, not repeated as live task items: a second interactive checklist on
+    // the comment is a second place to tick, and only the body's counts.
+    const lines = v.unticked.map((t) => `> ${t.text.trim().slice(0, 140)}`).join('\n');
+    const note =
+      `${NUDGE_MARKER}\nEvery sub-issue of this one is now closed (the last was #${child}), ` +
+      `but it is not being closed automatically — ${v.why}.\n\n` +
+      (lines ? `Still unticked:\n\n${lines}\n\n` : '') +
+      `Tick what has shipped and close this, or say what is outstanding. ` +
+      `A line that names the issue actioning it (\`#1364\`) ticks itself when that issue closes.`;
+    gql(
+      `mutation{ addComment(input:{subjectId:"${parent.id}", body:${JSON.stringify(note)}}){ clientMutationId } }`,
+      writeToken,
+    );
+    console.log(`#${parent.number} — nudged: ${v.why}`);
+    return;
+  }
+
+  // A closed board item must carry `Merged` or `Released` — `check` fails on one
+  // that does not, and this issue never had a PR to move it there.
+  const item = loadItems(project).find((i) => i.number === parent.number);
+  if (item && item.status !== 'Merged' && item.status !== 'Released') {
+    setSelect(project, item.id, 'Status', 'Merged');
+    console.log(`#${parent.number} → Status=Merged`);
+  }
+
+  const done =
+    `Closing — every one of the ${v.items} items on this list is ticked and every sub-issue is ` +
+    `closed, the last being #${child}.`;
+  gql(
+    `mutation{ addComment(input:{subjectId:"${parent.id}", body:${JSON.stringify(done)}}){ clientMutationId } }`,
+    writeToken,
+  );
+  gql(
+    `mutation{ closeIssue(input:{issueId:"${parent.id}", stateReason: COMPLETED}){ issue{ number } } }`,
+    writeToken,
+  );
+  console.log(`#${parent.number} closed — ${v.items} items, every sub-issue closed`);
+}
+
 const [command, ...args] = process.argv.slice(2);
 if (!command || command === '--help' || command === '-h') {
   console.log(`usage:
@@ -821,6 +948,7 @@ if (!command || command === '--help' || command === '-h') {
   board.mjs pr <pr> --status "In review"
   board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
   board.mjs release --sha <deployed sha>
+  board.mjs rollup <closed issue>
   board.mjs check`);
   process.exit(command ? 0 : 1);
 }
@@ -838,5 +966,9 @@ else if (command === 'set') cmdSet(project, args);
 else if (command === 'start') cmdStart(project, args);
 else if (command === 'pr') cmdPr(project, args);
 else if (command === 'release') cmdRelease(project, args);
+else if (command === 'rollup') cmdRollup(project, args);
 else if (command === 'check') cmdCheck(project);
-else die(`unknown command "${command}" — expected add, set, start, pr, parent, release or check`);
+else
+  die(
+    `unknown command "${command}" — expected add, set, start, pr, parent, release, rollup or check`,
+  );

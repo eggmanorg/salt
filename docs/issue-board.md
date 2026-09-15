@@ -617,6 +617,49 @@ opposite situations:
 A board job that is quietly out of date is worse than one that is visibly broken —
 the same reasoning that makes a missing `PROJECT_TOKEN` fail loudly rather than skip.
 
+### A closed sub-issue rolls up to the checklist that asked for it
+
+`/salt-campaign` files a `campaign follow-ups:` issue at **Finish**, hangs the issues
+that action its lines off it as sub-issues, and deliberately leaves it open. Nothing
+afterwards owned it. `/salt-run` closes the issue it ran and never looks at a parent;
+`check` reads only `Queue` and `Status`; the `- [ ]` lines are ticked by whoever
+remembers. So a collector whose every item had shipped stayed open and unticked
+indefinitely — **#1335** sat that way with all three children closed, and **#1370**
+was closed by hand with six boxes still unticked.
+
+`board.mjs rollup <closed issue>`, fired by the `rolled-up` job in
+[`board-status.yml`](../../.github/workflows/board-status.yml) on `issues: closed`,
+does three things and refuses to do a fourth:
+
+1. **Ticks the one unticked line that names the closed issue.** One, not the first
+   match: two lines naming the same issue is a body somebody wrote wrong, and ticking
+   either would hide it.
+2. **Closes the parent** — with a comment, and `Status=Merged`, which a closed board
+   item must carry and which no PR was ever going to set here — but only once every
+   sub-issue is closed **and** every line is ticked.
+3. **Nudges instead** when the children are all closed and the body still claims open
+   work, states no checklist at all, or is a `campaign:` ledger (a ledger closes by
+   hand at **Finish**, because a parked branch is unfinished business its children
+   cannot show). One comment, marked so a re-close does not repeat it.
+
+**The line has to name the issue that actions it, and that is the part a human
+writes.** #1335's lines cited the campaign's PR (`(#1334)`), and the issues that
+actioned them were recorded only in a comment — so on that body this ticks nothing,
+which is why the nudge arm exists rather than closing on sub-issue state alone.
+`/salt-defect`, `/salt-spec` and `/salt-refactor` now say to write the new issue's
+number into the line it actions at the moment they set the parent link.
+
+Sub-issue state is not the whole of "done" either: #1335's item 6 shipped as #1362,
+which was never attached as a sub-issue at all. A parent can have every sub-issue
+closed and still hold real work — the unticked-line gate is what catches that.
+
+**Two tokens, and neither will do alone.** `PROJECT_TOKEN` writes the project field
+and can only _read_ issues; the Actions `GITHUB_TOKEN` writes the issue and cannot
+touch an org project. `rollup` takes the issue half as `ISSUE_WRITE_TOKEN`, which is
+also why the close does not cascade: a `GITHUB_TOKEN`-authored close raises no
+further `issues` event, so a parent that is itself a sub-issue is left for its own
+close to handle. One hop per close, deliberately.
+
 ---
 
 ## Writing the board from somewhere without `gh`
