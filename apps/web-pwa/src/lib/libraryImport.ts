@@ -61,6 +61,19 @@ const DROP_WITH_CONTENTS = new Set([
 // entirely — at `emitCellOnOneLine` below, on the converted text rather than on the
 // DOM. See the comment there (#1383).
 //
+// A `<br>`, or more than one block child (`<p><p>`, `<div><div>`), inside a
+// `<caption>` is a THIRD case that neither of the other two reaches.
+// `emitCellOnOneLine` only wraps the plugin's `<td>`/`<th>` rule — a caption is
+// never run through `cell()` at all, because the plugin's own `tableCaption` rule
+// returns `''` and `rules.table` instead reads `captionNode.textContent` straight
+// off the DOM (`turndown-plugin-gfm.cjs.js`, `rules.table`/`rules.tableCaption`).
+// `textContent` drops a `<br>` outright and runs sibling `<p>`/`<div>` text
+// together with nothing between them — `Times<br>Sous vide` and
+// `<p>Times</p><p>Sous vide</p>` both collapse to `TimesSous vide`. So the
+// caption still gets the DOM-level unwrapping the old blanket `flattenLineBreaks`
+// did, scoped to `caption` alone by `flattenCaptionLineBreaks` below — cells stay
+// unchanged, on the converted-text property above them.
+//
 // TWO LIMITS, both measured rather than reasoned about, both pinned by tests:
 //
 //  1. THE SCAN IS WIDER THAN THE CELLS. `tableShouldBeHtml` walks the whole
@@ -95,6 +108,25 @@ function textOf(element: Element): string {
 // comment above: `tableShouldBeHtml` scans the whole table, not just its cells.
 const CELL_SELECTOR = 'td, th, caption';
 
+// THE CAPTION-ONLY CASE (#1383 follow-up). `rules.table` in
+// `@joplin/turndown-plugin-gfm` builds the line above the table from
+// `captionNode.textContent`, never from a converted cell — so a `<br>` inside a
+// caption vanishes and sibling `<p>`/`<div>` children run together with no
+// separator, neither of which `emitCellOnOneLine` below can see: that wrapper
+// only ever runs for a `<td>`/`<th>`. Unwrapping here, on the DOM, before
+// `textContent` is read is the only place left to put a separator in. Same shape
+// as the deleted `flattenLineBreaks`, restricted to `caption` because a `<td>`/
+// `<th>` already gets this from the converted-text property instead.
+function flattenCaptionLineBreaks(doc: Document, caption: Element): void {
+  for (const br of caption.querySelectorAll('br')) {
+    br.replaceWith(doc.createTextNode('; '));
+  }
+  for (const block of caption.querySelectorAll('p, div')) {
+    const separator = block.previousSibling === null ? [] : [doc.createTextNode('; ')];
+    block.replaceWith(...separator, ...block.childNodes);
+  }
+}
+
 function flattenTableCells(doc: Document): void {
   for (const cell of doc.querySelectorAll(CELL_SELECTOR)) {
     // Lists first: one inside a blockquote must become its items, not the
@@ -107,6 +139,7 @@ function flattenTableCells(doc: Document): void {
       block.replaceWith(doc.createTextNode(textOf(block)));
     }
     for (const rule of cell.querySelectorAll('hr')) rule.remove();
+    if (cell.tagName === 'CAPTION') flattenCaptionLineBreaks(doc, cell);
   }
 }
 

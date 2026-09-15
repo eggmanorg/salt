@@ -243,6 +243,37 @@ describe('htmlToMarkdown — what must not survive', () => {
     expect(md).toContain('| Cut | Time |');
   });
 
+  // Adversarial review on #1398 (against #1383): `flattenLineBreaks` used to run
+  // over `td, th, caption` and is gone, replaced by `emitCellOnOneLine`, which only
+  // wraps the plugin's `<td>`/`<th>` rule. A caption never reaches that rule at
+  // all — `rules.table` in `@joplin/turndown-plugin-gfm` reads
+  // `captionNode.textContent` directly off the DOM — so a caption's own `<br>` or
+  // block children silently welded words together with the fix landed:
+  // `Times<br>Sous vide` gave `TimesSous vide` instead of `Times; Sous vide`. Red
+  // without `flattenCaptionLineBreaks` in `libraryImport.ts`.
+  it('keeps the separator for a <br> inside the caption', () => {
+    const md = htmlToMarkdown(
+      '<table><caption>Times<br>Sous vide</caption>' +
+        '<tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>',
+    );
+    expect(md.split('\n')[0]).toBe('Times; Sous vide');
+    expect(residualTags(md)).toEqual([]);
+  });
+
+  it('keeps the separator for block content (<p>, <div>) inside the caption', () => {
+    const paragraphs = htmlToMarkdown(
+      '<table><caption><p>Times</p><p>Sous vide</p></caption>' +
+        '<tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>',
+    );
+    expect(paragraphs.split('\n')[0]).toBe('Times; Sous vide');
+
+    const divs = htmlToMarkdown(
+      '<table><caption><div>one</div><div>two</div></caption>' +
+        '<tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>',
+    );
+    expect(divs.split('\n')[0]).toBe('one; two');
+  });
+
   // THE fix for the finding measured against this PR's own code: a cell holding a
   // `<br>`, or more than one block child, converts to a literal `<br>` in the
   // pipe cell rather than a table bail-out — `flattenTableCells` never touched
