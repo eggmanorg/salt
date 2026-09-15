@@ -485,7 +485,7 @@ can be in progress _and_ blocked, and the old board could not say so.
 | Todo        | a person, or `/triage`                                                                                                                                                                                             | the one real decision; no event can observe it                                          |
 | In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session; **and `board-status.yml`** for the two kinds of issue no branch is ever cut for | a branch push is too noisy to key on                                                    |
 | In review   | `board-status.yml`                                                                                                                                                                                                 | `pull_request` opened / ready_for_review                                                |
-| Merged      | `board-status.yml`                                                                                                                                                                                                 | `pull_request` closed && merged                                                         |
+| Merged      | `board-status.yml`                                                                                                                                                                                                 | `pull_request` closed && merged, **or** `rollup`'s `close` arm when a checklist parent's last box ticks (see below) |
 | Released    | `board-status.yml`                                                                                                                                                                                                 | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha |
 
 The issue↔PR link is the `Closes #N` that `/salt-run` writes into every PR body —
@@ -554,7 +554,7 @@ What `closedItemVerdict` decides, and why each way:
 | item added **after** the issue closed        | a note       | a parent link auto-added it; it was never in the pipeline, so no PR could have moved it     |
 | closed as **not planned**                    | a note       | won't-fix or superseded; nothing will ever ship it, so leaving the board is the only remedy |
 | `campaign:` ledger, not at a shipping status | **fails**    | it has no PR but it _does_ ship; set it from its run-set, or `release` promotes it          |
-| `epic:`, `campaign follow-ups:`, `question(` | a note       | these close by hand — children done, boxes ticked, question answered. No PR was ever coming |
+| `epic:`, `campaign follow-ups:`, `question(` | a note       | these close by hand — children done, boxes ticked, question answered. No PR was ever coming. (A `campaign follow-ups:` list can also close itself now — see **A closed sub-issue rolls up to the checklist that asked for it** below.) |
 | anything else, not at a shipping status      | **fails**    | a mechanism is broken: an automated move was missed, or the issue should be off the board   |
 
 The three hand-closed kinds are a **title** test — `isHandClosed` in
