@@ -275,6 +275,12 @@ const FORBIDDEN: readonly Shape[] = [
   // `:global(.salt-md-doc …)`, which is the literal shape all three deleted
   // copies had.
   //
+  // THE OTHER HALF IS NOT HERE. That a surface still ASKS for the scale — the
+  // `scale="doc"` prop on its `<Markdown>` — is pinned by
+  // `sanitizedHtmlCallers.test.ts`, which parses the markup rather than matching
+  // text (#1409). A dropped prop is invisible to this row and always will be:
+  // the two are one mechanism in two files, and neither claims the other's half.
+  //
   // WHAT IT CANNOT CATCH, and no lint rule can: a surface that reimplements
   // document proportions by a route that never names the class — Tailwind
   // utilities on a wrapper, a `prose`-style plugin, or `:global(h1)` under some
