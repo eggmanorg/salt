@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import TurndownService from 'turndown';
+import { gfm } from '@joplin/turndown-plugin-gfm';
 import { LIBRARY_PAGE_BODY_MAX } from '@salt/domain/schemas';
 import { appendedBody, gfmTableCellRule, htmlToMarkdown } from '../src/lib/libraryImport.js';
 
@@ -41,8 +43,14 @@ import { appendedBody, gfmTableCellRule, htmlToMarkdown } from '../src/lib/libra
 // survives a cell; it cannot prove anything about an element HTML has not invented
 // yet, which is why the module works on the converted text rather than on a list of
 // tag names. And a page whose own TEXT reads `<br>` still converts to `<br>` —
-// `residualTags()` cannot tell that from a leak, and it should not be told to:
-// reproducing what the page showed is the correct answer. Pinned at the foot of the
+// `residualTags()` cannot tell that from a leak, and it should not be told to. The
+// reason that is the right answer is about PROVENANCE, not fidelity: those
+// characters came from the source page's own text and the conversion smuggled
+// nothing in, which is what this file's second property is actually about. It is
+// NOT that the reader sees what the page showed — since #1376 the body renders
+// through `sanitizedHtml` with `br` on the allowlist, so such a `<br>` renders as a
+// LINE BREAK rather than as those four characters. That is the accepted cost of
+// drawing the boundary here, stated rather than glossed. Pinned at the foot of the
 // cell describe.
 
 /** Every HTML tag left in a converted body. Empty is the only acceptable answer. */
@@ -211,6 +219,108 @@ describe('htmlToMarkdown — what must not survive', () => {
     );
     expect(residualTags(md)).toEqual([]);
     expect(md).toBe('innerouter');
+  });
+
+  // #1410. The nested case above is the MINIMUM of the plugin's skipped path, and
+  // it is unchanged either way — which is exactly why it could not find the defect
+  // underneath it. The three tests below cover the rest of that path: the plugin
+  // returns a cell's converted text VERBATIM whenever it is not going to build a
+  // pipe row, so nothing on that path can put a `<br>` back in, so the `; `
+  // collapsing has nothing left to buy there and only destroys the structure the
+  // page had. Each was red before `emitCellOnOneLine` learned to ask.
+  it('keeps two paragraphs in a ONE-CELL table as two paragraphs', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><section>one</section><section>two</section></td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toBe('one\n\ntwo');
+  });
+
+  // A layout table with a real table inside it — the shape older recipe and
+  // technique sites are built out of. The OUTER table is skipped (it contains a
+  // table) and its cells come back verbatim; the INNER one is an ordinary two-cell
+  // row, so it converts to a pipe table AND its own cell still gets collapsed, which
+  // is what keeps a `<br>` out of it. Before #1410 the inner table's newlines were
+  // collapsed by the outer cell into `; `, leaving a line of loose pipes.
+  it('keeps a table nested inside a LAYOUT table as a table', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><table><tr><td><p>inner a</p><p>inner b</p></td><td>x</td></tr>' +
+        '</table></td><td><article>outer a</article><article>outer b</article></td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    // `toBe`, not `toContain`: the boundary this fix actually changes is the
+    // `|\n\n` right after the inner table's last cell, where it meets the outer
+    // cell's own content — a regression to `…| x   |outer a\n\nouter b` (the
+    // inner table's last row running straight into the outer cell) kept every
+    // previous `toContain`/`not.toContain` here green.
+    expect(md).toBe(
+      '|     |     |\n| --- | --- |\n| inner a; inner b | x   |\n\nouter a\n\nouter b',
+    );
+  });
+
+  // The separator contract limit 2 of `libraryImport.ts` states as fact — "nothing
+  // at all for bare text, a blank line where the cell held blocks" — applied to two
+  // skipped one-cell tables sitting side by side in the same outer cell, rather
+  // than one. Once stated, it is a claim Rule 12 requires pinned rather than left
+  // as an open question: this is not an answer to what a nested/layout table
+  // SHOULD become (still undecided), it is what the stated contract says happens
+  // to THIS shape today.
+  it('concatenates two adjacent skipped tables with nothing between them', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><table>one</table><table>two</table></td><td>x</td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toBe('onetwo\n\nx');
+  });
+
+  // THE DETECTION ITSELF, pinned rather than reasoned about (CLAUDE.md Rule 12).
+  // `emitCellOnOneLine` decides whether the plugin will convert a cell by asking it
+  // — calling the captured rule with the raw content and comparing — rather than by
+  // re-implementing `tableShouldBeSkipped`, which the plugin does not export and
+  // which would go stale silently. That works because of a property of the plugin's
+  // two branches, and this is that property:
+  //
+  //   skipped   → returns the content argument, identically (`===`);
+  //   converted → returns `cell()`'s output, which appends ` |`, prepends `| ` or a
+  //               space, and escapes every `|` in the content — so it can never be
+  //               `===` to what it was given.
+  //
+  // A plugin release that moved the skipped path, or that started trimming or
+  // re-wrapping on it, goes red here — where it names the cause — instead of
+  // surfacing as one of the conversion tests above quietly changing shape.
+  //
+  // THE BOUNDARY: this pins the discriminator, not the membership of the skipped
+  // set. Which tables the plugin skips is its business and is asserted only through
+  // the conversions above.
+  //
+  // THE FIXTURE CARRIES FLANKING WHITESPACE ON PURPOSE. A skip branch that
+  // regressed to `return content.trim()` would still satisfy `===` against a
+  // fixture with no leading/trailing whitespace to strip — which is exactly the
+  // regression that reopens #1410 in full, since every skipped cell holding block
+  // children arrives at this rule as `'\n\n' + content + '\n\n'`. `'\none\n\ntwo\n'`
+  // has whitespace on both ends, so a `.trim()` changes it and the `toBe` below
+  // catches it.
+  it('can tell the plugin skipped a cell from the plugin converting one', () => {
+    const plugin = new TurndownService();
+    plugin.use(gfm);
+    const rule = gfmTableCellRule(plugin.rules.array);
+    const cellOf = (html: string): HTMLElement => {
+      const cell = new DOMParser().parseFromString(html, 'text/html').querySelector('td');
+      if (cell === null) throw new Error('no <td> in the fixture');
+      return cell;
+    };
+    const content = '\none\n\ntwo\n';
+
+    const skipped = rule(content, cellOf('<table><tr><td>c</td></tr></table>'), plugin.options);
+    expect(skipped).toBe(content);
+
+    const converted = rule(
+      content,
+      cellOf('<table><tr><td>c</td><td>d</td></tr></table>'),
+      plugin.options,
+    );
+    expect(converted).not.toBe(content);
+    expect(converted.endsWith(' |')).toBe(true);
   });
 
   // The third route in, and the one #1391 found: `tableShouldBeHtml` walks the
@@ -444,12 +554,19 @@ describe('htmlToMarkdown — a block element of ANY name inside a table cell', (
 
   // THE BOUNDARY of "no markup survives", measured rather than reasoned about, and
   // the one shape `residualTags()` cannot judge: a source page whose TEXT contains
-  // the characters `<br>`. `a &lt;br&gt; b` converts to `a <br> b` — faithfully,
-  // because that is what the page showed the person — and `<noframes>` reaches the
-  // same place by a different door, since the HTML parser reads its content as raw
-  // text rather than as elements. Nothing was smuggled in by the conversion in
-  // either case, which is what this file's second property is actually about; both
-  // are asserted exactly so a change here has to be a decision rather than a drift.
+  // the characters `<br>`. `a &lt;br&gt; b` converts to `a <br> b`, and
+  // `<noframes>` reaches the same place by a different door, since the HTML parser
+  // reads its content as raw text rather than as elements. Nothing was smuggled in
+  // by the conversion in either case — the characters are the page's own text, and
+  // that is what this file's second property is actually about. What it is NOT is
+  // fidelity to what the reader saw: since #1376 the body goes through
+  // `sanitizedHtml` and `br` is on `svgSanitizeSchema`'s allowlist, so this `<br>`
+  // renders as a line break, not as the four characters the source page displayed.
+  // The conversion is still right — `residualTags()` genuinely cannot tell a
+  // page's own `<br>` text from a leak, and teaching it to would cost the property
+  // above — but the cost is real and is written down here rather than implied away.
+  // Both cases are asserted exactly so a change here has to be a decision rather
+  // than a drift.
   // The one part of the fix a green suite cannot otherwise reach. Everything above
   // proves the wrapper WORKS; this proves it is not quietly absent — a
   // `@joplin/turndown-plugin-gfm` that stopped registering a `<td>`/`<th>` rule
@@ -464,7 +581,7 @@ describe('htmlToMarkdown — a block element of ANY name inside a table cell', (
     expect(gfmTableCellRule([{ ...rule, filter: [...rule.filter] }])).toBe(rule.replacement);
   });
 
-  it('reproduces text that LOOKS like a tag, because the page showed it', () => {
+  it('keeps text that LOOKS like a tag, because it came from the page, not from us', () => {
     expect(rowFor('a &lt;br&gt; b')).toContain('| a <br> b |');
     expect(rowFor('<noframes>one<br>two</noframes>')).toContain('| one<br>two |');
   });
