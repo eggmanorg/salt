@@ -39,6 +39,7 @@ const RECIPE_ID = 'drawer-test-dahl';
 // One ingredient, because "the thing you are chatting about is still readable" is
 // asserted against a rendered ingredient row. Nothing else on the dish matters here.
 const RECIPE: Recipe = {
+  cureCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',

@@ -361,6 +361,7 @@ export { isImportError } from './importFailure.js';
 export type { UrlImportFailure, PhotoImportFailure } from './importFailure.js';
 
 export {
+  CureCategorySchema,
   RecipeKindSchema,
   RecipePhaseSchema,
   RecipeSchema,
@@ -371,6 +372,7 @@ export {
   MAX_RECIPE_PHASES,
 } from './recipe.js';
 export type {
+  CureCategoryDoc,
   QuantityDoc,
   IngredientDoc,
   IngredientGroupDoc,

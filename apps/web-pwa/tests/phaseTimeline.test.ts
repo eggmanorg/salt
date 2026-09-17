@@ -122,6 +122,7 @@ describe('phaseTimelineBlocks — what the strip draws', () => {
 
 function recipeWith(phases: readonly RecipePhase[] | undefined): Recipe {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

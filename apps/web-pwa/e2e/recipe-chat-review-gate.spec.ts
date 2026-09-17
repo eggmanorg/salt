@@ -108,6 +108,7 @@ function recipeFixture(
   opts: { rawText: string; componentRecipeIds?: string[] },
 ): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

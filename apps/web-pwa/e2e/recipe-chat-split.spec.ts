@@ -147,6 +147,7 @@ const SEED_TIME = '2026-01-01T00:00:00.000Z';
 function buildRecipe(id: string, title: string, kind: 'recipe' | 'special'): Recipe {
   const long = kind === 'recipe';
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind,

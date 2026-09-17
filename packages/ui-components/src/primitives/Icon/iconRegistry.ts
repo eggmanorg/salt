@@ -52,6 +52,7 @@ import EyeOff from '@lucide/svelte/icons/eye-off';
 import Flame from '@lucide/svelte/icons/flame';
 import FolderInput from '@lucide/svelte/icons/folder-input';
 import GripVertical from '@lucide/svelte/icons/grip-vertical';
+import Ham from '@lucide/svelte/icons/ham';
 import HandPlatter from '@lucide/svelte/icons/hand-platter';
 import Hourglass from '@lucide/svelte/icons/hourglass';
 import ImagePlus from '@lucide/svelte/icons/image-plus';
@@ -134,6 +135,7 @@ export const iconRegistry = {
   Flame,
   FolderInput,
   GripVertical,
+  Ham,
   HandPlatter,
   Hourglass,
   ImagePlus,

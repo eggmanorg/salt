@@ -119,6 +119,7 @@ function makeRecipe(over: {
   phases?: RecipePhase[];
 }): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     id: over.id,
     schemaVersion: 1,
@@ -491,12 +492,16 @@ describe('RecipeListPage — sections', () => {
     // shelf exists.
     expect(kindChip('meal')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('cocktail')).toHaveAttribute('aria-pressed', 'false');
-    // The other two are not gone, just folded away — the row leads with the
+    // The other three are not gone, just folded away — the row leads with the
     // sections you browse and counts the rest, exactly as the tag row does.
+    // Cured meats (issue #1404) joined the folded set from its first day: it is
+    // empty until somebody writes a cure, and an empty chip on everybody's
+    // library is a worse cost than one extra tap for the household that cures.
     expect(queryKindChip('special')).toBeUndefined();
     expect(queryKindChip('placeholder')).toBeUndefined();
+    expect(queryKindChip('cure')).toBeUndefined();
     expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(3);
-    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+2 more');
+    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+3 more');
   });
 
   it('reveals every section behind the "+N more" chip, and folds them back', async () => {
@@ -506,14 +511,17 @@ describe('RecipeListPage — sections', () => {
 
     await user.click(screen.getByTestId('recipe-kind-show-all'));
 
-    // All five sections, and only five — a chip row you STAND in, so a sixth
+    // All six sections, and only six — a chip row you STAND in, so a seventh
     // would be a section that shipped without anyone deciding to. The fourth
     // (issue #652) was decided: you need somewhere to open Regenerate from, and
     // that is the view page you reach from this grid. The fifth is Meals (#752),
-    // which is a section and NOT a kind — you cannot create one.
-    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(5);
+    // which is a section and NOT a kind — you cannot create one. The sixth is
+    // Cured meats (#1404), which is a kind and the first one with a field of its
+    // own.
+    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(6);
     expect(kindChip('special')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('placeholder')).toHaveAttribute('aria-pressed', 'false');
+    expect(kindChip('cure')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByTestId('recipe-kind-show-all')).toBeNull();
 
     await user.click(screen.getByTestId('recipe-kind-show-less'));

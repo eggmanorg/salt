@@ -204,6 +204,7 @@ export type {
   Ingredient,
   IngredientGroup,
   Step,
+  CureCategory,
   Recipe,
   RecipeKind,
   RecipeMetadata,

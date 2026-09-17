@@ -80,6 +80,7 @@ const NOW = Date.parse('2026-08-05T12:00:00.000Z');
 
 function recipe(id: string, title: string, overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

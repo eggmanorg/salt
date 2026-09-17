@@ -476,6 +476,7 @@ describe('assembleRecipeDraft — canon keying', () => {
 // phase-strip suite at the foot of this file can reuse it (issue #1122).
 function baseRecipe(): RecipeDoc {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'cocktail',

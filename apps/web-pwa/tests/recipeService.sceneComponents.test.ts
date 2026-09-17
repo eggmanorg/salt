@@ -72,6 +72,7 @@ function recipe(
   } = {},
 ): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

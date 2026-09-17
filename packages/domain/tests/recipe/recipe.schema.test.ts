@@ -416,7 +416,52 @@ describe('RecipeSchema', () => {
 
   it('never lets the legacy spelling through `RecipeKindSchema` itself (#1322)', () => {
     expect(RecipeKindSchema.safeParse('outing').success).toBe(false);
-    expect(RecipeKindSchema.options).toEqual(['recipe', 'special', 'cocktail', 'placeholder']);
+    expect(RecipeKindSchema.options).toEqual([
+      'recipe',
+      'special',
+      'cocktail',
+      'placeholder',
+      'cure',
+    ]);
+  });
+
+  // --- Cured meat (issue #1404) ---
+  //
+  // The back-compat property the `.default(null)` exists for, stated as the
+  // production fact it is: every one of the ~46 recipes live today was written
+  // before this field and carries no key for it. The realtime subscription SKIPS
+  // documents that fail validation, so a required field here would have emptied
+  // the library — this is the test that goes red if the default is ever removed.
+  it('parses a document carrying no cureCategory, defaulting it to null (#1404)', () => {
+    const { cureCategory: _c, ...legacy } = messyRecipe();
+    expect('cureCategory' in legacy).toBe(false);
+    const result = RecipeSchema.safeParse(legacy);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.cureCategory).toBeNull();
+  });
+
+  it('round-trips a cure carrying a category, and rejects a category it does not know', () => {
+    const stored = { ...messyRecipe(), kind: 'cure', cureCategory: 'dry_cured_whole_muscle' };
+    const result = RecipeSchema.safeParse(stored);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe('cure');
+      expect(result.data.cureCategory).toBe('dry_cured_whole_muscle');
+    }
+    // Closed, not free text — the whole reason it is an enum rather than a tag.
+    expect(RecipeSchema.safeParse({ ...stored, cureCategory: 'dry cured' }).success).toBe(false);
+  });
+
+  it('lets any kind carry a null category, because the schema cannot say otherwise', () => {
+    // Stated as the LIMIT it is rather than as a guarantee. `docs/data-model.md`
+    // forbids a discriminated union here, so the schema genuinely cannot express
+    // "required iff kind is cure" — a recipe with a category set would parse, and
+    // nothing rejects one. What stops it existing is that exactly one kind's copy
+    // declares a category editor, not this schema.
+    expect(RecipeSchema.safeParse({ ...messyRecipe(), cureCategory: null }).success).toBe(true);
+    expect(
+      RecipeSchema.safeParse({ ...messyRecipe(), kind: 'cure', cureCategory: null }).success,
+    ).toBe(true);
   });
 
   it('emptyRecipe builds a recipe by default and the asked-for kind otherwise', () => {
@@ -426,7 +471,7 @@ describe('RecipeSchema', () => {
 
   it('type-level: Recipe kind is the closed union', () => {
     expectTypeOf<Recipe['kind']>().toEqualTypeOf<
-      'recipe' | 'special' | 'cocktail' | 'placeholder'
+      'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'
     >();
   });
 

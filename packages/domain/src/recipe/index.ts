@@ -10,7 +10,13 @@ export type {
   IngredientGroup,
 } from './entities/Ingredient.js';
 export type { Step, StepTimer } from './entities/Step.js';
-export type { Recipe, RecipeKind, RecipeMetadata, RecipePhase } from './entities/Recipe.js';
+export type {
+  CureCategory,
+  Recipe,
+  RecipeKind,
+  RecipeMetadata,
+  RecipePhase,
+} from './entities/Recipe.js';
 
 export {
   emptyRecipe,

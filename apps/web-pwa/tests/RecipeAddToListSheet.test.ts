@@ -90,6 +90,7 @@ function ingredient(id: string, canonId: string, item: string, amount: number, u
 
 function makeRecipe(items: IngredientGroup['items']): Recipe {
   return {
+    cureCategory: null,
     createdBy: '',
     lastEditedBy: '',
     producesCanonId: null,

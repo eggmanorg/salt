@@ -118,6 +118,7 @@ const LOAF: IngredientSpec[] = [
 
 function makeRecipe(specs: IngredientSpec[] = LOAF, overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

@@ -52,6 +52,7 @@ const WRITTEN_AT = '2026-08-01T09:00:00.000Z';
 
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

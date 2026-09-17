@@ -231,10 +231,55 @@ export const RecipeImageSchema = z.object({
 // the pure capability predicates in `recipe/queries/capabilities.ts`, so the
 // fourth kind was, as promised, a one-file change there.
 //
+// A `cure` (issue #1404) is cured meat — a coppa, a bresaola, a bacon, a
+// saucisson, a mortadella. It is a full entry in every way a recipe is: it buys,
+// it canonicalises, it has a method you follow and it gets a hero image. What it
+// is not is dinner, so it is never offered in the planner picker — exactly the
+// line `cocktail` already draws. WHICH KIND of cure it is lives beside the kind,
+// in `cureCategory` below, and deliberately not as five kinds of its own: a kind
+// carries a library section, an icon, wording and a picker badge throughout the
+// app, and five of those for cured meat alone would swamp everything else.
+//
 // Adding a member here is back-compatible on read by construction: `kind` carries
 // `.default('recipe')` below, so every document already in production parses
 // unchanged (salt-architecture.md §1.1 — no migration).
-export const RecipeKindSchema = z.enum(['recipe', 'special', 'cocktail', 'placeholder']);
+export const RecipeKindSchema = z.enum(['recipe', 'special', 'cocktail', 'placeholder', 'cure']);
+
+// Which kind of cure a `cure` is (issue #1404). Five values, ONE axis, and the
+// vocabulary the whole app uses for cured meat. They are split by the SAFETY
+// MECHANISM that makes the thing edible, which is what makes the set closed,
+// finite and worth freezing onto a run:
+//
+//   dry_cured_whole_muscle  moisture reduction + salt; shelf-stable, eaten raw.
+//                           Prosciutto, bresaola, coppa, lonza.
+//   cooked_whole_muscle     salt/nitrite + thermal processing; perishable, and it
+//                           gets cooked. Back/streaky bacon, gammon, pastrami.
+//   fermented_dry_cured     lactic acidification + drying; shelf-stable, eaten
+//                           raw. Saucisson sec, finocchiona, fuet.
+//   semi_dry                rapid acidification + partial drying/smoking; often
+//                           refrigerated. Summer sausage, landjäger, pepperoni.
+//   cooked_emulsified       salt/nitrite + complete cooking/emulsion; perishable,
+//                           eaten cold or hot. Mortadella, frankfurters, bologna.
+//
+// Bacon is not a special case anywhere: it is an ordinary cure in
+// `cooked_whole_muscle` that simply carries no drying target.
+//
+// A CLOSED ENUM, and deliberately not a tag. Tags are free-form search keywords;
+// the one load-bearing exception (`placeholder`'s mood) states the cost beside
+// itself — a typo silently drops the document out of its group. A value that is
+// frozen onto a batch and filtered on cannot carry that cost.
+//
+// It is IDENTITY AND GROUPING, never capability. Nothing branches on it to decide
+// whether something exists or is allowed; it picks words, pictures and groupings.
+// There is no sixth column on the capability table for it, and there must not be
+// (docs/formulas-schedules-batches.md → *Kind versus presence*).
+export const CureCategorySchema = z.enum([
+  'dry_cured_whole_muscle',
+  'cooked_whole_muscle',
+  'fermented_dry_cured',
+  'semi_dry',
+  'cooked_emulsified',
+]);
 
 // One piece of kit a recipe calls for (issue #882). A free-text LABEL and the
 // steps that use it — never a `kitchenTools` id, and that is the load-bearing
@@ -328,6 +373,26 @@ export const RecipeSchema = z.object({
   // make every recipe already in production (#240) silently vanish from the list,
   // and defaulted, every reader sees a concrete `string[]` rather than `undefined`.
   componentRecipeIds: z.array(z.string()).default([]),
+  // Which of the five kinds of cure this is (issue #1404), or `null`.
+  //
+  // NULLABLE rather than required-on-a-cure, and that is forced rather than
+  // chosen: docs/data-model.md forbids making the recipe a discriminated union,
+  // so the schema cannot express "required iff `kind === 'cure'`". It is also
+  // TRUE — a cure nobody has categorised yet is a normal state, not an error, and
+  // an entry that is not a cure at all simply has none.
+  //
+  // `.default(null)` (NOT `.optional()`) for the third time in this schema, and
+  // for the same two reasons `producesCanonId` and `componentRecipeIds` give: the
+  // realtime subscription skips documents that fail validation, so every recipe
+  // already in production (#240) reads back unchanged rather than vanishing from
+  // the list, and every reader sees a concrete `CureCategory | null` rather than
+  // `undefined`. docs/data-model.md names exactly this route — "if they ever need
+  // their own fields, add optional nullable fields to the recipe document first".
+  //
+  // UNLIKE `kind`, it is editable: the authoring pass sets it and it is corrected
+  // in place on the recipe page. A misclassification with no route back would be a
+  // permanent wrong answer, and there is no reason for this one to be immutable.
+  cureCategory: CureCategorySchema.nullable().default(null),
   // The kit this dish needs — the pans, bowls, boards and hand tools a cook gets
   // OUT before starting (issue #882). Inferred server-side from the WHOLE recipe
   // by the identifyRecipeKit flow, because the answer is usually not written down:
@@ -470,5 +535,6 @@ export type RecipeMetadataDoc = z.infer<typeof RecipeMetadataSchema>;
 export type RecipeSourceDoc = z.infer<typeof RecipeSourceSchema>;
 export type RecipeImageDoc = z.infer<typeof RecipeImageSchema>;
 export type RecipeKindDoc = z.infer<typeof RecipeKindSchema>;
+export type CureCategoryDoc = z.infer<typeof CureCategorySchema>;
 export type RecipeKitEntryDoc = z.infer<typeof RecipeKitEntrySchema>;
 export type RecipeDoc = z.infer<typeof RecipeSchema>;

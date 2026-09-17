@@ -338,6 +338,15 @@ export async function assembleRecipeDraft(
     //    the model omits it or invents one — there is no unbounded value here to
     //    guard against.
     kind: baseRecipe?.kind ?? kindHint ?? raw.kind,
+    // WHICH KIND OF CURE (issue #1404). Deliberately NOT the same precedence as
+    // `kind` above, and the difference is the whole point: `kind` is immutable, so
+    // an edit-mode amend must never re-type the entry — the category is the field
+    // a person corrects, so an amend that says something about it is allowed to
+    // change it. `?? null` because the model may omit it (`AuthoredCureCategory
+    // Schema` reads absent as `null`) and because an entry that is not a cure
+    // carries none; `baseRecipe` is the floor, so an amend silent on the subject
+    // leaves a category already set alone rather than erasing it.
+    cureCategory: raw.cureCategory ?? baseRecipe?.cureCategory ?? null,
     title: raw.title,
     description: raw.description,
     ingredients: ingredientGroups,

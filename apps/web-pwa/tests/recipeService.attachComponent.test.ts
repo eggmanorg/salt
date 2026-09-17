@@ -52,6 +52,7 @@ function recipe(
   opts: { elapsedMinutes?: number; componentRecipeIds?: string[] } = {},
 ): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

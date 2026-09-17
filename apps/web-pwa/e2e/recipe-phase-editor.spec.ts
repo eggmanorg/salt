@@ -62,6 +62,7 @@ const DISH_ID = 'hand-edited-loaf';
 // `+ Add a phase` slot exists for, and it is what makes the first row below one
 // this test genuinely created rather than one it inherited.
 const DISH_FIXTURE: Recipe = {
+  cureCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',

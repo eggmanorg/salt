@@ -371,11 +371,19 @@ reference yield**.
 
 ## Kind versus presence
 
-Do **not** add `bread`, `ferment` and `cure` as kinds and hang behaviour off them.
-`kind` keeps doing exactly what it does today (see CLAUDE.md and
-`recipe/queries/capabilities.ts`): identity, copy, icons, library section, which
-prompt authors it, whether the planner offers it. What a document can _do_ comes
-from what it _has_.
+Do **not** add `bread` as a kind, or hang behaviour off a kind at all. `kind` keeps
+doing exactly what it does today (see CLAUDE.md and `recipe/queries/capabilities.ts`):
+identity, copy, icons, library section, which prompt authors it, whether the planner
+offers it. What a document can _do_ comes from what it _has_.
+
+> **Updated by issue #1404.** This section was written when `ferment` and `cure` were
+> assumed to arrive together as two bare kinds with nothing beside them. `cure` has
+> now shipped, as **one kind with a five-value `cureCategory` field beside it** — five
+> kinds for cured meat alone would swamp the library, and the five are one axis of one
+> thing. `ferment` is **not** built and is not implied by this: nothing below commits
+> to it. The category is identity and grouping only; the rule at the foot of this
+> section — capabilities answer questions about the kind, presence answers questions
+> about the document — is what keeps it out of `capabilities.ts`.
 
 | Entry            | `kind`     | formula | process | batches | culture |
 | ---------------- | ---------- | :-----: | :-----: | :-----: | :-----: |
@@ -383,20 +391,36 @@ from what it _has_.
 | Tin loaf         | `recipe`   |    ●    |    ●    |    ●    |    —    |
 | Thin pizza bases | `recipe`   |    ●    |    ●    |    ●    |    —    |
 | Fresh sausage    | `recipe`   |    ●    |    —    |    —    |    —    |
-| Sauerkraut       | `ferment`  |    ●    |    ●    |    ●    |    —    |
-| Kimchi           | `ferment`  |    ●    |    ●    |    ●    |    —    |
-| Milk kefir       | `ferment`  |    ●    |    ●    |    ●    |    ●    |
+| Sauerkraut       | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Kimchi           | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Milk kefir       | `recipe`   |    ●    |    ●    |    ●    |    ●    |
 | Coppa            | `cure`     |    ●    |    ●    |    ●    |    —    |
+| Bacon            | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Salami           | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Negroni          | `cocktail` |  free   |    —    |    —    |    —    |
 | Friday takeaway  | `special`  |    —    |    —    |    —    |    —    |
 
 A loaf **is** a recipe: cooked, plannable, wants a hero image, ingredients on the
-shopping list. A `bread` kind would fork all of that for nothing. `ferment` and
-`cure` earn kinds the way `cocktail` did — they are a different section of the
-library, not dinner. Sausages fall out without a decision: a fresh banger is a
-formula with no process, a salami is nearly the same formula with a cure's
-process. A cocktail could gain a 1:1:1 formula with no code change at all.
+shopping list. A `bread` kind would fork all of that for nothing. `cure` earns a kind
+the way `cocktail` did — a different section of the library, not dinner — and that is
+the whole of what its kind buys: a shelf, an icon, its own words, its own art
+direction, and `isPlannable: false`. Sauerkraut and kimchi are shown above as
+`recipe` because that is what they are today: `ferment` is not built, and vegetables
+are not cured meat. Sausages fall out without a decision: a fresh banger is a `recipe`
+with a formula and no process, a salami is a `cure` in the `fermented_dry_cured`
+category with nearly the same formula and a cure's process. Bacon is an ordinary cure
+in `cooked_whole_muscle` that simply carries no drying target — nothing special-cases
+it. A cocktail could gain a 1:1:1 formula with no code change at all.
+
+**Which kind of cure**, and why it is a field rather than five kinds or a tag:
+`cureCategory` is one of `dry_cured_whole_muscle`, `cooked_whole_muscle`,
+`fermented_dry_cured`, `semi_dry`, `cooked_emulsified`, or `null`. The five are named
+for the **safety mechanism** that makes the thing edible, which is what makes the set
+closed and finite. Five kinds would answer the same five capability questions
+identically five times and put five chips on the library for one ingredient; a tag
+would let a typo silently drop an entry out of its group, which a value frozen onto a
+run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds five
+kinds_.
 
 **The rule that stops the capability table rotting:** capabilities answer
 questions about the **kind**; presence answers questions about the **document**.
@@ -404,7 +428,10 @@ questions about the **kind**; presence answers questions about the **document**.
 `formula != null`. Keep that line sharp and `capabilities.ts` stays as wide as
 the questions it answers about a kind — five columns today (`takesIngredients`,
 `isCookable`, `isPlannable`, `isAuthorable`, `takesComponents`) — instead of
-growing a boolean per feature.
+growing a boolean per feature. `cureCategory` is bound by the same rule from the
+other side: it is neither kind nor presence but **identity**, so it picks words,
+pictures and groupings and answers no capability question. There is no sixth column
+for it, and adding one would be the rot this rule exists to prevent.
 
 ## Placement
 

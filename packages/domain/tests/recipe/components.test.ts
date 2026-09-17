@@ -25,6 +25,7 @@ function makeRecipe(over: {
   steps?: Recipe['steps'];
 }): Recipe {
   return {
+    cureCategory: null,
     id: over.id,
     schemaVersion: 1,
     kind: 'recipe',

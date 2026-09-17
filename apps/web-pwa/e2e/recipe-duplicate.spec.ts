@@ -36,6 +36,7 @@ const ORIGINAL_ID = 'duplicate-source-stew';
 // a document with nothing on it would let `duplicateRecipe` carry nothing and
 // still pass. Bridge-seeded (NF-C4) — issue #1319 Phase 8 deleted the editor.
 const ORIGINAL_RECIPE: Recipe = {
+  cureCategory: null,
   id: ORIGINAL_ID,
   schemaVersion: 1,
   kind: 'recipe',

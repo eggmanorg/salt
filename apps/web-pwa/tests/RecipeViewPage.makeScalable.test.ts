@@ -169,6 +169,7 @@ function ing(over: { id: string; rawText: string; canonId?: string | null }) {
 
 function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

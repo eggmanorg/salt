@@ -29,6 +29,8 @@ const {
   COCKTAIL_SCENE_FALLBACK,
   PLACEHOLDER_IMAGE_STYLE_ANCHORS,
   PLACEHOLDER_SCENE_FALLBACK,
+  CURE_IMAGE_STYLE_ANCHORS,
+  CURE_SCENE_FALLBACK,
   GENERATE_RECIPE_IMAGE_KINDS,
 } = await import('../../src/flows/generateRecipeImage.js');
 
@@ -840,12 +842,56 @@ describe('generateRecipeImage flow — entry kinds', () => {
     expect(PLACEHOLDER_SCENE_FALLBACK).toContain('"comfort"');
   });
 
+  // ─── The CURE arm (issue #1404) ────────────────────────────────────────────
+  // A cure is not a plated dinner: falling to the 'recipe' default arm would paint
+  // a coppa on rustic ceramic with a fork beside it. These assert the three things
+  // the arm exists for — its own words, its own anchors, and no leakage of the
+  // recipe set into a prompt that must not carry it.
+  it('paints a cure with its own opener, fallback and anchors', async () => {
+    const prompt = await promptFor({
+      title: 'Coppa',
+      description: 'Dry-cured pork collar.',
+      kind: 'cure',
+    });
+
+    expect(prompt).toContain('the cured meat "Coppa"');
+    expect(prompt).toContain(CURE_SCENE_FALLBACK);
+    expect(prompt).toContain(CURE_IMAGE_STYLE_ANCHORS);
+    // The failure the arm exists to prevent, asserted directly rather than implied
+    // by the set-size test below: not one word of the dinner direction may reach it.
+    expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
+  });
+
+  it("a cure's anchors say what a cure is and refuse to plate it as dinner", () => {
+    // The subject clause its recipe/special/cocktail siblings share and
+    // `placeholder` alone drops — here there IS a specific subject.
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('always the star of the shot');
+    // The one prohibition of its own: a charcuterie board styled for a magazine,
+    // and a cure served up as a plated dinner, are both pictures of something else.
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('Do NOT stage it as a restaurant would');
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('do NOT plate it as a dinner on home crockery');
+    // The STAGE — hanging, cut open, sliced — is a subject decision and belongs to
+    // the per-doc brief. The anchors reference it and must never name one, or every
+    // cure gets the same picture appended last where no brief can overrule it.
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('the STAGE the direction above describes');
+    // House style and prohibitions, inherited from its siblings.
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('photorealistic photograph');
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain('shallow depth of field');
+    expect(CURE_IMAGE_STYLE_ANCHORS).toContain(
+      'Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people.',
+    );
+    // The fallback owns the per-cure reading and must not smuggle anchors in.
+    expect(CURE_SCENE_FALLBACK).not.toContain('no hands, no people');
+  });
+
   it('gives each kind its own anchors — no two share a set', () => {
     const sets = [
       RECIPE_IMAGE_STYLE_ANCHORS,
       SPECIAL_IMAGE_STYLE_ANCHORS,
       COCKTAIL_IMAGE_STYLE_ANCHORS,
       PLACEHOLDER_IMAGE_STYLE_ANCHORS,
+      CURE_IMAGE_STYLE_ANCHORS,
     ];
     expect(new Set(sets).size).toBe(GENERATE_RECIPE_IMAGE_KINDS.length);
   });

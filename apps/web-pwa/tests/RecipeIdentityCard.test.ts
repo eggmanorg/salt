@@ -832,3 +832,102 @@ describe('RecipeIdentityCard — the Serves pill', () => {
     expect(screen.queryByTestId('recipe-servings-chip')).toBeNull();
   });
 });
+
+// ─── Cure type (issue #1404) ─────────────────────────────────────────────────
+//
+// The first per-kind FIELD on a recipe document, and the reason the guard test
+// `cureKindComparisonGuard.test.ts` exists: the obvious way to render a control
+// only one kind has is `{#if recipe.kind === 'cure'}`, which CLAUDE.md forbids.
+// What the card actually asks is whether the kind's COPY declares a category
+// vocabulary — so every assertion below is on what a user sees, and the four
+// kinds without one are checked to show nothing rather than checked to be
+// excluded by name.
+describe('RecipeIdentityCard — cure type', () => {
+  it('states the category as a fact, in the words the copy table gives it', () => {
+    show(entry({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }), false);
+
+    expect(screen.getByTestId('recipe-cure-category').textContent).toContain(
+      'Dry-cured whole muscle',
+    );
+    // Read mode stays read mode: no pencil beside it, nothing to tap.
+    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+  });
+
+  it('says nothing at all on a cure nobody has categorised, until you edit', () => {
+    // Uncategorised is a NORMAL state, not an error — no warning, no empty chip
+    // sitting on the page telling the reader off. It only becomes visible as the
+    // dashed slot every unfilled field wears while editing.
+    show(entry({ kind: 'cure' }), false);
+    expect(screen.queryByTestId('recipe-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+
+    cleanup();
+    show(entry({ kind: 'cure' }), true);
+    expect(screen.getByTestId('recipe-edit-cure-category').textContent).toContain('Cure type');
+  });
+
+  it('corrects a wrong category in a tap, with no confirmation step', async () => {
+    // The whole reason the field is editable while `kind` is not: a
+    // misclassification the authoring pass made has to have a route back, and
+    // Salt records rather than polices — there is no gate between the tap and
+    // the write.
+    const user = userEvent.setup();
+    show(entry({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
+    await user.click(screen.getByTestId('recipe-cure-category-select'));
+    await user.click(screen.getByRole('option', { name: 'Semi-dry / snack meats' }));
+
+    expect(lastEdit().cureCategory).toBe('semi_dry');
+    expect(lastEdit().kind).toBe('cure');
+  });
+
+  it('offers all five categories, in the stored enum’s own order', async () => {
+    const user = userEvent.setup();
+    show(entry({ kind: 'cure' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
+    await user.click(screen.getByTestId('recipe-cure-category-select'));
+
+    expect(offeredOptions()).toEqual([
+      'Dry-cured whole muscle',
+      'Cured whole muscle (cooked)',
+      'Fermented & dry-cured (salami)',
+      'Semi-dry / snack meats',
+      'Cooked & emulsified',
+    ]);
+  });
+
+  it.each([
+    { kind: 'recipe' as const },
+    { kind: 'special' as const },
+    { kind: 'cocktail' as const },
+    { kind: 'placeholder' as const },
+  ])('shows no category control at all on a $kind, in either mode', ({ kind }) => {
+    // The property that makes "a recipe, cocktail, special and placeholder are
+    // byte-for-byte unaffected" checkable rather than asserted: a kind whose copy
+    // declares no vocabulary gets no chip AND no dashed slot, so the card it
+    // renders is the card it rendered before this field existed.
+    show(entry({ kind }), false);
+    expect(screen.queryByTestId('recipe-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+
+    cleanup();
+    show(entry({ kind }), true);
+    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-cure-category-select')).toBeNull();
+  });
+
+  it('closes the picker when Done is pressed', async () => {
+    const user = userEvent.setup();
+    show(entry({ kind: 'cure', cureCategory: 'cooked_emulsified' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
+    expect(screen.getByTestId('recipe-cure-category-select')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+
+    expect(screen.queryByTestId('recipe-cure-category-select')).toBeNull();
+    expect(screen.getByTestId('recipe-cure-category').textContent).toContain('Cooked & emulsified');
+  });
+});

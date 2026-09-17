@@ -165,6 +165,7 @@ const REFRESHED_TITLE = 'Chorizo & Red Pepper Pilaf, re-written';
 
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],
@@ -195,6 +196,7 @@ function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
 // and why the guided plan cannot survive one. The two tests below peel those apart.
 function librarianDraft(): RecipeDoc {
   return {
+    cureCategory: null,
     producesCanonId: null,
     kit: [],
     createdBy: '',

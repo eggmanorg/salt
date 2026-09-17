@@ -51,6 +51,7 @@ const GRAVY = 'Onion gravy';
 
 function recipe(id: string, title: string): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

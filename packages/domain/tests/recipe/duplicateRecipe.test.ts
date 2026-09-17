@@ -10,6 +10,7 @@ function fullRecipe(overrides: Partial<Recipe> = {}): Recipe {
     id: 'original-id',
     schemaVersion: 1,
     kind: 'recipe',
+    cureCategory: null,
     title: 'Lasagne',
     description: 'The good one.',
     ingredients: [

@@ -47,6 +47,7 @@ const DISH_ID = 'accompaniment-lamb-shoulder';
 // shape matters — the last assertion compares the document field for field against
 // this one, to prove saving the salad left its host untouched.
 const DISH_FIXTURE: Recipe = {
+  cureCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',
