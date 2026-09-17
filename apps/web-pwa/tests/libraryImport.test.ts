@@ -248,9 +248,29 @@ describe('htmlToMarkdown — what must not survive', () => {
         '</table></td><td><article>outer a</article><article>outer b</article></td></tr></table>',
     );
     expect(residualTags(md)).toEqual([]);
-    expect(md).toContain('| --- | --- |\n| inner a; inner b | x');
-    expect(md).not.toContain('|; ');
-    expect(md).toContain('outer a\n\nouter b');
+    // `toBe`, not `toContain`: the boundary this fix actually changes is the
+    // `|\n\n` right after the inner table's last cell, where it meets the outer
+    // cell's own content — a regression to `…| x   |outer a\n\nouter b` (the
+    // inner table's last row running straight into the outer cell) kept every
+    // previous `toContain`/`not.toContain` here green.
+    expect(md).toBe(
+      '|     |     |\n| --- | --- |\n| inner a; inner b | x   |\n\nouter a\n\nouter b',
+    );
+  });
+
+  // The separator contract limit 2 of `libraryImport.ts` states as fact — "nothing
+  // at all for bare text, a blank line where the cell held blocks" — applied to two
+  // skipped one-cell tables sitting side by side in the same outer cell, rather
+  // than one. Once stated, it is a claim Rule 12 requires pinned rather than left
+  // as an open question: this is not an answer to what a nested/layout table
+  // SHOULD become (still undecided), it is what the stated contract says happens
+  // to THIS shape today.
+  it('concatenates two adjacent skipped tables with nothing between them', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><table>one</table><table>two</table></td><td>x</td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toBe('onetwo\n\nx');
   });
 
   // THE DETECTION ITSELF, pinned rather than reasoned about (CLAUDE.md Rule 12).
@@ -272,6 +292,14 @@ describe('htmlToMarkdown — what must not survive', () => {
   // THE BOUNDARY: this pins the discriminator, not the membership of the skipped
   // set. Which tables the plugin skips is its business and is asserted only through
   // the conversions above.
+  //
+  // THE FIXTURE CARRIES FLANKING WHITESPACE ON PURPOSE. A skip branch that
+  // regressed to `return content.trim()` would still satisfy `===` against a
+  // fixture with no leading/trailing whitespace to strip — which is exactly the
+  // regression that reopens #1410 in full, since every skipped cell holding block
+  // children arrives at this rule as `'\n\n' + content + '\n\n'`. `'\none\n\ntwo\n'`
+  // has whitespace on both ends, so a `.trim()` changes it and the `toBe` below
+  // catches it.
   it('can tell the plugin skipped a cell from the plugin converting one', () => {
     const plugin = new TurndownService();
     plugin.use(gfm);
@@ -281,20 +309,17 @@ describe('htmlToMarkdown — what must not survive', () => {
       if (cell === null) throw new Error('no <td> in the fixture');
       return cell;
     };
+    const content = '\none\n\ntwo\n';
 
-    const skipped = rule(
-      'one\n\ntwo',
-      cellOf('<table><tr><td>c</td></tr></table>'),
-      plugin.options,
-    );
-    expect(skipped).toBe('one\n\ntwo');
+    const skipped = rule(content, cellOf('<table><tr><td>c</td></tr></table>'), plugin.options);
+    expect(skipped).toBe(content);
 
     const converted = rule(
-      'one\n\ntwo',
+      content,
       cellOf('<table><tr><td>c</td><td>d</td></tr></table>'),
       plugin.options,
     );
-    expect(converted).not.toBe('one\n\ntwo');
+    expect(converted).not.toBe(content);
     expect(converted.endsWith(' |')).toBe(true);
   });
 
