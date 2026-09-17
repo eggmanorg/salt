@@ -124,10 +124,18 @@ export const LibraryPageSchema = z.object({
   // what it costs with two of them is the last paragraph here.
   //
   // WHAT HOLDS (#1392, pinned by `apps/web-pwa/tests/libraryService.test.ts` →
-  // `revision capture — a second writer landed while the editor was open`): the
-  // document a browser write SENDS carries the version that write is actually
-  // replacing, read from the store at write time, rather than the version the
-  // editor happened to open on. That is a property of one write's document.
+  // `revision capture — a second writer landed while the editor was open`), in the
+  // same form `apps/web-pwa/src/lib/libraryService.ts` states it over
+  // `queueLibraryEdit`: ON THE FIRST WRITE OF AN EDITING SESSION, the document that
+  // browser write SENDS carries the version that write is actually replacing, read
+  // from the store at write time, rather than the version the editor happened to
+  // open on. That is a property of one write's document, and of that one write.
+  //
+  // The qualifier is the whole claim, not a caveat on it. The capture spends a
+  // once-per-session snapshot, so a LATER write in the same session files nothing
+  // at all; and where the stored document is gone — the page was deleted under the
+  // editor — what is filed is the editor's own snapshot, which is what it opened
+  // on rather than anything it replaced.
   //
   // WHAT DOES NOT — AND THIS ARRAY IS NOT APPEND-ONLY, WHICH IS THE WHOLE OF IT.
   // Embedding buys the single read and costs exactly this: `revisions` is a field

@@ -43,8 +43,14 @@ import { appendedBody, gfmTableCellRule, htmlToMarkdown } from '../src/lib/libra
 // survives a cell; it cannot prove anything about an element HTML has not invented
 // yet, which is why the module works on the converted text rather than on a list of
 // tag names. And a page whose own TEXT reads `<br>` still converts to `<br>` —
-// `residualTags()` cannot tell that from a leak, and it should not be told to:
-// reproducing what the page showed is the correct answer. Pinned at the foot of the
+// `residualTags()` cannot tell that from a leak, and it should not be told to. The
+// reason that is the right answer is about PROVENANCE, not fidelity: those
+// characters came from the source page's own text and the conversion smuggled
+// nothing in, which is what this file's second property is actually about. It is
+// NOT that the reader sees what the page showed — since #1376 the body renders
+// through `sanitizedHtml` with `br` on the allowlist, so such a `<br>` renders as a
+// LINE BREAK rather than as those four characters. That is the accepted cost of
+// drawing the boundary here, stated rather than glossed. Pinned at the foot of the
 // cell describe.
 
 /** Every HTML tag left in a converted body. Empty is the only acceptable answer. */
@@ -523,12 +529,19 @@ describe('htmlToMarkdown — a block element of ANY name inside a table cell', (
 
   // THE BOUNDARY of "no markup survives", measured rather than reasoned about, and
   // the one shape `residualTags()` cannot judge: a source page whose TEXT contains
-  // the characters `<br>`. `a &lt;br&gt; b` converts to `a <br> b` — faithfully,
-  // because that is what the page showed the person — and `<noframes>` reaches the
-  // same place by a different door, since the HTML parser reads its content as raw
-  // text rather than as elements. Nothing was smuggled in by the conversion in
-  // either case, which is what this file's second property is actually about; both
-  // are asserted exactly so a change here has to be a decision rather than a drift.
+  // the characters `<br>`. `a &lt;br&gt; b` converts to `a <br> b`, and
+  // `<noframes>` reaches the same place by a different door, since the HTML parser
+  // reads its content as raw text rather than as elements. Nothing was smuggled in
+  // by the conversion in either case — the characters are the page's own text, and
+  // that is what this file's second property is actually about. What it is NOT is
+  // fidelity to what the reader saw: since #1376 the body goes through
+  // `sanitizedHtml` and `br` is on `svgSanitizeSchema`'s allowlist, so this `<br>`
+  // renders as a line break, not as the four characters the source page displayed.
+  // The conversion is still right — `residualTags()` genuinely cannot tell a
+  // page's own `<br>` text from a leak, and teaching it to would cost the property
+  // above — but the cost is real and is written down here rather than implied away.
+  // Both cases are asserted exactly so a change here has to be a decision rather
+  // than a drift.
   // The one part of the fix a green suite cannot otherwise reach. Everything above
   // proves the wrapper WORKS; this proves it is not quietly absent — a
   // `@joplin/turndown-plugin-gfm` that stopped registering a `<td>`/`<th>` rule
@@ -543,7 +556,7 @@ describe('htmlToMarkdown — a block element of ANY name inside a table cell', (
     expect(gfmTableCellRule([{ ...rule, filter: [...rule.filter] }])).toBe(rule.replacement);
   });
 
-  it('reproduces text that LOOKS like a tag, because the page showed it', () => {
+  it('keeps text that LOOKS like a tag, because it came from the page, not from us', () => {
     expect(rowFor('a &lt;br&gt; b')).toContain('| a <br> b |');
     expect(rowFor('<noframes>one<br>two</noframes>')).toContain('| one<br>two |');
   });
