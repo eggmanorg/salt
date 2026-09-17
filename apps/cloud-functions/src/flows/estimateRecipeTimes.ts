@@ -6,7 +6,7 @@ import {
   type EstimateRecipeTimesInput,
   type EstimateRecipeTimesOutput,
 } from '@salt/domain/schemas';
-import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
+import { AI_TRIGGER_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { PHASE_RULES } from './recipeFieldRules.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
@@ -126,11 +126,12 @@ export const estimateRecipeTimesFlow = ai.defineFlow(
           output: { schema: EstimateRecipeTimesAIOutputSchema },
           config: { temperature: 0 },
         }),
-      // No retry (the shared budget's): the trigger treats a failure as "not
-      // estimated yet" and leaves `timesEstimatedAt` unstamped, so re-running the
-      // backfill script IS the retry path and there is nothing to gain from
-      // burning the budget automatically.
-      AI_TEXT_FLOW_TIMEOUT,
+      // The TRIGGER budget, not the callable one (issue #1418): this flow's only
+      // host is `onRecipeWritten`, which runs for 300s with nobody waiting on it.
+      // No retry: one attempt now fills almost the whole quota, and the trigger
+      // treats a failure as "not estimated yet" and leaves `timesEstimatedAt`
+      // unstamped, so re-running the backfill script IS the retry path.
+      AI_TRIGGER_FLOW_TIMEOUT,
     );
 
     // AI output is a trust boundary — validate before it leaves the flow.

@@ -13,7 +13,7 @@ import { readComponentContext } from '../flows/componentContext.js';
 import { readEquipmentContext } from '../flows/equipmentContext.js';
 import { encodeHeroImage } from '../imaging/encodeHeroImage.js';
 import { buildStorageDownloadUrl } from '../imaging/storageDownloadUrl.js';
-import { withAiTimeout } from '../adapters/withAiTimeout.js';
+import { AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { aiFakeEnabled } from '../ai/fakeModel.js';
 import { reportServerError } from '../observability/reportServerError.js';
 import { withFirestoreTrigger, traceContextFromWrittenDoc } from './triggerEntrypoint.js';
@@ -285,9 +285,11 @@ async function maybeInferKit(
     const equipment = await readEquipmentContext(getFirestore(), 'identifyRecipeKit');
 
     // No `withAiTimeout` wrapper HERE, following `describeSceneOrNothing` below
-    // rather than the image branch above: the flow owns its own deadline (55s, no
-    // retry) and a second wrapper would impose the house 20s default on top of it —
-    // cutting the call short and retrying a flow that deliberately does not retry.
+    // rather than the image branch above: the flow owns its own deadline
+    // (`AI_TRIGGER_FLOW_TIMEOUT`, derived from this function's own
+    // `timeoutSeconds`, no retry) and a second wrapper would impose the house 20s
+    // default on top of it — cutting the call short and retrying a flow that
+    // deliberately does not retry.
     const { kit } = await identifyRecipeKitFlow({
       title: recipe.title.trim(),
       description: recipe.description,
@@ -577,7 +579,13 @@ export const onRecipeWritten = onDocumentWritten(
     secrets: [geminiApiKey, posthogApiKey],
     // Image generation (~5–8s+) plus sharp encoding need more headroom than the
     // default text-only triggers.
-    timeoutSeconds: 300,
+    //
+    // The NAMED constant, not a literal (issue #1418): the kit and times flows
+    // derive their AI deadline by subtracting recording headroom from this
+    // number, and holding it in one place is what stops the two drifting apart.
+    // `tests/aiBudgetVsFunctionQuota.test.ts` reads the options object this
+    // function is registered with, so putting a literal back here goes red.
+    timeoutSeconds: AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS,
     // Serialise image work per instance (Cloud Run scales out instances instead)
     // so a burst of recipe writes can't pack multiple libvips/sharp decodes onto
     // one instance and OOM it — same rationale as onCanonItemWritten. 1GiB gives
