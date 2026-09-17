@@ -5,7 +5,7 @@ import {
   type IdentifyRecipeKitInput,
   type RecipeKitEntryDoc,
 } from '@salt/domain/schemas';
-import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
+import { AI_TRIGGER_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { equipmentSectionForKit } from './equipmentContext.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
@@ -164,11 +164,15 @@ export const identifyRecipeKitFlow = ai.defineFlow(
           output: { schema: IdentifyRecipeKitAIOutputSchema },
           config: { temperature: 0 },
         }),
-      // No retry (the shared budget's): the trigger treats a failure as "no kit
-      // yet" and leaves `kitInferredAt` unstamped, so the redo action is the
-      // retry path and there is nothing to gain from burning the budget
-      // automatically.
-      AI_TEXT_FLOW_TIMEOUT,
+      // The TRIGGER budget, not the callable one (issue #1418). This flow's only
+      // host is `onRecipeWritten`, which runs for 300s and has nobody waiting on
+      // it, so a deadline sized for a person watching a spinner only threw away
+      // answers we had already paid for — four recipes arrived with no kit
+      // because of it. No retry: one attempt now fills almost the whole quota.
+      //
+      // A failure still leaves `kitInferredAt` unstamped, and the guard is
+      // edge-triggered on a nonce, so Redo kit remains the only retry path.
+      AI_TRIGGER_FLOW_TIMEOUT,
     );
 
     // AI output is a trust boundary — validate before it leaves the flow.
