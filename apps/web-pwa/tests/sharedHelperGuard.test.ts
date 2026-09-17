@@ -222,6 +222,12 @@ const FORBIDDEN: readonly Shape[] = [
     because:
       'three pages carried this literal and the 25-line guarded effect around it; app.css holds the only other legitimate spelling, in the variant form Tailwind needs',
     pattern: /width\s*>=\s*700px/,
+    // app.css writes the query in `min-width: 700px` form, which this range-
+    // syntax pattern does not match today — but that is Tailwind's compiled
+    // spelling, not a guarantee, and the `because` above already names app.css
+    // as the second legitimate spelling. Made explicit rather than left to rest
+    // on which media-query syntax the file happens to use.
+    allowed: ['app.css'],
   },
   {
     instead: 'prefersReducedMotion() from lib/reducedMotion.js',
@@ -310,12 +316,17 @@ const FORBIDDEN: readonly Shape[] = [
   // apart needs a person reading the diff. That gap is the boundary of the
   // claim, and it did not close in #1409.
   //
-  // Two smaller boundaries worth stating rather than pretending away: a
-  // selector group whose only line naming the class ends in a comma while the
-  // `{` sits on a later line that does not name it is not matched, and the
-  // class reached through a preprocessor variable or an interpolation is not
-  // matched either. Both are catchable by eye in a diff; neither is silent
-  // failure of something the pattern claims.
+  // One smaller boundary worth stating rather than pretending away: the class
+  // reached through a preprocessor variable or an interpolation is not
+  // matched — the literal text `.salt-md` never appears in the source for the
+  // pattern to find. That is catchable by eye in a diff, not silent failure of
+  // something the pattern claims.
+  //
+  // A selector GROUP is NOT a second boundary, and an earlier version of this
+  // comment wrongly claimed one was: `[^;{}]*` crosses a comma and any number
+  // of newlines freely, so a class named on one line of a group with the `{`
+  // several lines later still fires (verified below). The only thing that
+  // stops the match is a `;` or a brace between the class and the `{`.
   {
     instead: 'scale="doc" on <Markdown> from @salt/ui-components',
     because:
@@ -528,6 +539,15 @@ describe('display rules are declared once', () => {
     // `apps/web-pwa/src` writing it genuinely IS a fourth declaration site, so
     // it must fire.
     expect(carries('  .salt-md.salt-md-doc :global(p) {', docScale)).toBe(true);
+
+    // The selector-GROUP case, verified rather than assumed: the pattern
+    // crosses a comma and a newline freely, so a class named on the first line
+    // of a group and a `{` that opens several lines later — none of them
+    // naming the class themselves — still fires. This replaces a comment that
+    // used to claim the opposite.
+    expect(
+      carries(':global(.salt-md h1),\n  :global(.cook-deck h2),\n  :global(.foo p) {', docScale),
+    ).toBe(true);
 
     // What it must NOT fire on, or every library surface fails its own guard:
     // passing the prop, an unrelated `:global` in a page, the class named in

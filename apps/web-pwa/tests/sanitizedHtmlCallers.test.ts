@@ -65,8 +65,15 @@
  *
  * WHAT NEITHER CAN SEE: a surface that gets the same result by another route —
  * raw HTML rendered outside `Markdown`, or document proportions reimplemented
- * with utilities that never touch the prop. These guards are bounded to the prop
- * on a `<Markdown>` element, and that is the whole of what they claim.
+ * with utilities that never touch the prop. These guards are bounded to a
+ * LITERAL spelling of the prop on a `<Markdown>` element — `scale="doc"`, not
+ * `scale={'doc'}` or `scale={someBinding}`. An interpolated `scale` is not read
+ * as text by the second `describe` below, so on its own that would let a fourth
+ * surface pick up the document scale — or drop it — with every assertion here
+ * staying green. That gap does not stay open: a second guard in that `describe`
+ * refuses to guess at an interpolated `scale` and fails loudly instead, so the
+ * whole of what these two guards claim is a literal `scale="doc"`, tracked, and
+ * anything else written into a `<Markdown>`'s `scale`, refused.
  */
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -102,13 +109,17 @@ function literalValue(attribute: unknown): string | null {
 }
 
 /**
- * Does this component's markup render a `<Markdown>` carrying this attribute?
- *
- * With `value` given, the attribute must also be written as that literal string.
- * Walks the template AST. `parent` is skipped because the modern AST's nodes link
- * back to it and the walk would not terminate.
+ * Visits every `<Markdown>` component in this template's markup, calling `test`
+ * with its attribute list; stops at the first list `test` accepts. The
+ * parse-and-walk is written once here and shared by every check below, so
+ * `rendersMarkdownWith` and `hasUnreadableScale` differ only in the predicate
+ * they hand it. `parent` is skipped because the modern AST's nodes link back to
+ * it and the walk would not terminate.
  */
-function rendersMarkdownWith(source: string, name: string, value?: string): boolean {
+function anyMarkdownComponent(
+  source: string,
+  test: (attributes: { type?: string; name?: string }[]) => boolean,
+): boolean {
   let found = false;
   const visit = (node: unknown): void => {
     if (found || node === null || typeof node !== 'object') return;
@@ -116,14 +127,7 @@ function rendersMarkdownWith(source: string, name: string, value?: string): bool
     const record = node as Record<string, unknown>;
     if (record.type === 'Component' && record.name === 'Markdown') {
       const attributes = (record.attributes ?? []) as { type?: string; name?: string }[];
-      if (
-        attributes.some(
-          (a) =>
-            a.type === 'Attribute' &&
-            a.name === name &&
-            (value === undefined || literalValue(a) === value),
-        )
-      ) {
+      if (test(attributes)) {
         found = true;
         return;
       }
@@ -134,6 +138,50 @@ function rendersMarkdownWith(source: string, name: string, value?: string): bool
   };
   visit(parse(source, { modern: true }).fragment);
   return found;
+}
+
+/**
+ * Does this component's markup render a `<Markdown>` carrying this attribute?
+ *
+ * With `value` given, the attribute must also be written as that literal
+ * string. `scale={'doc'}` and `scale={x}` are NOT this — `literalValue` reads
+ * only a one-element `Text` node, so an interpolated `scale` looks identical
+ * here to the prop being absent entirely. That is a real gap for a `value`
+ * check to have on its own, and `hasUnreadableScale` below is what closes it:
+ * this function stays honest about what it can read, rather than trying to
+ * evaluate an expression it was never meant to.
+ */
+function rendersMarkdownWith(source: string, name: string, value?: string): boolean {
+  return anyMarkdownComponent(source, (attributes) =>
+    attributes.some(
+      (a) =>
+        a.type === 'Attribute' &&
+        a.name === name &&
+        (value === undefined || literalValue(a) === value),
+    ),
+  );
+}
+
+/**
+ * Does this component's markup pass `<Markdown>` a `scale` this guard cannot
+ * read as text — `scale={'doc'}`, `scale={someBinding}`, or any other
+ * expression rather than a bare string?
+ *
+ * `passesDocScale` (below) can only see the literal spelling, so on its own an
+ * interpolated `scale` would be a silent way to add or drop a surface from
+ * `DOC_SCALE` with that check staying green either way. Rather than trying to
+ * evaluate the expression — which would mean re-implementing a JS interpreter
+ * to answer "is this string 'doc'?" — this refuses to guess: ANY non-literal
+ * `scale` on a `<Markdown>` is flagged, whatever it would have evaluated to,
+ * so a fourth surface reaching for `scale={DOC}` fails loudly here instead of
+ * quietly missing the list above.
+ */
+function hasUnreadableScale(source: string): boolean {
+  return anyMarkdownComponent(source, (attributes) =>
+    attributes.some(
+      (a) => a.type === 'Attribute' && a.name === 'scale' && literalValue(a) === null,
+    ),
+  );
 }
 
 const passesSanitizedHtml = (source: string): boolean =>
@@ -204,8 +252,11 @@ describe('scale="doc" — which surfaces render at document proportions', () => 
 
   // The half `sharedHelperGuard.test.ts`'s `#1394` row cannot see. That row
   // fires on a second DECLARATION of the rules; this one fires when a surface
-  // stops asking for them — a dropped prop, or a fourth surface picking up the
-  // document scale without anyone deciding it should.
+  // stops asking for them with the LITERAL spelling — a dropped `scale="doc"`,
+  // or a fourth surface adding it the same literal way. A surface that reaches
+  // for `scale={anything}` instead does not move this list either way, since
+  // `passesDocScale` cannot read it; that shape is caught separately, below,
+  // by the guard that refuses to guess at it rather than silently missing it.
   it('is exactly the three library surfaces, and nothing else in the app', () => {
     expect(callers).toEqual(DOC_SCALE);
   });
@@ -230,10 +281,36 @@ describe('scale="doc" — which surfaces render at document proportions', () => 
   it('counts the value, not merely the prop', () => {
     expect(passesDocScale('<Markdown text={x} />')).toBe(false);
     expect(passesDocScale('<Markdown text={x} scale="note" />')).toBe(false);
-    // An interpolated scale is not a literal, so it is honestly not counted —
-    // stated here so a later `scale={x}` caller fails this test rather than
-    // silently dropping out of the list above.
+    // An interpolated scale is not a literal, so `passesDocScale` cannot read
+    // it — on its own that would let `scale={chosen}` add or drop a surface
+    // from the list above with THIS assertion staying green either way. That
+    // gap does not stay open: `hasUnreadableScale`, checked in the next test,
+    // fails on exactly this shape, so a caller written this way is refused
+    // rather than silently counted or silently missed.
     expect(passesDocScale('<Markdown text={x} scale={chosen} />')).toBe(false);
+  });
+
+  // Pins the direction stated above: a `scale` this guard cannot read as text
+  // is refused, not ignored. Both false-negative shapes verified on this PR's
+  // review — an interpolated literal and a variable reference — must flag, and
+  // both the working literal spelling and no `scale` at all must not.
+  it('refuses a <Markdown> whose scale it cannot read, rather than missing it', () => {
+    expect(hasUnreadableScale("<Markdown text={x} scale={'doc'} />")).toBe(true);
+    expect(hasUnreadableScale('<Markdown text={x} scale={chosen} />')).toBe(true);
+    expect(hasUnreadableScale('<Markdown text={x} scale="doc" />')).toBe(false);
+    expect(hasUnreadableScale('<Markdown text={x} scale="note" />')).toBe(false);
+    expect(hasUnreadableScale('<Markdown text={x} />')).toBe(false);
+  });
+
+  // The scan surface itself: no file under `src` today passes `<Markdown>` a
+  // `scale` this guard cannot read. If one does, it must be rewritten as a
+  // literal `scale="doc"` or `scale="note"` so the two guards above can see
+  // it, not left as an expression neither can evaluate.
+  it('has no <Markdown> anywhere in the app passing an unreadable scale', () => {
+    const offenders = files
+      .filter((file) => hasUnreadableScale(readFileSync(file, 'utf8')))
+      .map((file) => relative(srcDir, file).split(sep).join('/'));
+    expect(offenders).toEqual([]);
   });
 
   // The two lists are the same three files today. Asserting that they are equal
