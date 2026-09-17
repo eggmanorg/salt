@@ -90,18 +90,29 @@ const OWNERS: readonly { readonly path: string; readonly rule: string }[] = [
   { path: 'routes/recipes/unitCount.ts', rule: 'how many units a shape declares' },
 ];
 
-/** Every source file under `src`, found by walking — never by a hand-kept list. */
+/**
+ * Every source file under `src`, found by walking — never by a hand-kept list.
+ *
+ * `.css` is in the list because `app.css` is a declaration site like any other
+ * and was invisible to this guard until #1409 — a rule written there needs no
+ * `:global()` to reach the whole app. It is handed to all three halves rather
+ * than to the CSS-shaped row alone: that was checked by running it, and nothing
+ * in the name half, the value half or the count half fires on a stylesheet.
+ */
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) return walk(full);
     if (!entry.isFile()) return [];
-    return entry.name.endsWith('.ts') || entry.name.endsWith('.svelte') ? [full] : [];
+    return ['.ts', '.svelte', '.css'].some((ext) => entry.name.endsWith(ext)) ? [full] : [];
   });
 }
 
-// The three comment forms a `.ts` or `.svelte` file can carry, each as its opener
-// and what closes it. A line comment closes at the newline, which is kept.
+// The three comment forms a `.ts`, `.svelte` or `.css` file can carry, each as
+// its opener and what closes it. A line comment closes at the newline, which is
+// kept. CSS has no `//` form, so applying it to a stylesheet can only over-strip
+// — the tail of a line holding a `url(https://…)` — which costs coverage and
+// never invents a match.
 const COMMENTS: readonly (readonly [open: string, close: string])[] = [
   ['<!--', '-->'],
   ['/*', '*/'],
@@ -269,11 +280,21 @@ const FORBIDDEN: readonly Shape[] = [
   // `@salt/ui-components`, outside this tree, and UT-E4 forbids reaching across
   // a `../../../../packages/…` path to read it.
   //
-  // WHAT THIS CATCHES, HONESTLY. It catches a second DECLARATION SITE — a
-  // `.ts` or `.svelte` file under `src` reaching into the primitive's rendered
-  // markdown through the PAREN form `:global(.salt-md …)` or
-  // `:global(.salt-md-doc …)`, which is the literal shape all three deleted
-  // copies had.
+  // WHAT THIS CATCHES, HONESTLY (widened by #1409). It catches a second
+  // DECLARATION SITE: any file walked above whose text NAMES `.salt-md` or
+  // `.salt-md-doc` as a class in a selector that opens a rule block. That is
+  // every spelling a fourth copy could reach for — the paren form
+  // `:global(.salt-md h1)` the three deleted copies had, Svelte 5's `:global
+  // { … }` BLOCK form, `.salt-md-doc :global(p)` with the token on the
+  // surface's own wrapper, and a bare `.salt-md-doc p { … }` in `app.css`,
+  // which needs no `:global()` at all because it is already global at that
+  // scope. `app.css` is inside the scan surface as of #1409; it was not before.
+  //
+  // WHY "opens a rule block" AND NOT THE BARE CLASS NAME. `\.salt-md` alone
+  // would fire on a JS string — `querySelector('.salt-md')` — which is a
+  // different sin from re-declaring the rules and would make this row noisy
+  // enough to be edited away. Requiring the selector to run on to a `{` keeps
+  // it to declarations. The near-miss self-tests below pin both directions.
   //
   // THE OTHER HALF IS NOT HERE. That a surface still ASKS for the scale — the
   // `scale="doc"` prop on its `<Markdown>` — is pinned by
@@ -281,34 +302,25 @@ const FORBIDDEN: readonly Shape[] = [
   // text (#1409). A dropped prop is invisible to this row and always will be:
   // the two are one mechanism in two files, and neither claims the other's half.
   //
-  // WHAT IT CANNOT CATCH, and no lint rule can: a surface that reimplements
-  // document proportions by a route that never names the class — Tailwind
-  // utilities on a wrapper, a `prose`-style plugin, or `:global(h1)` under some
-  // class of its own. Those are not spellings of this rule; they are a second
-  // rule that happens to look the same on screen, and telling them apart needs
-  // a person reading the diff.
+  // WHAT IT STILL CANNOT CATCH, and no lint rule can: a surface that
+  // reimplements document proportions by a route that never names the class —
+  // Tailwind utilities on a wrapper, a `prose`-style plugin, or `:global(h1)`
+  // under some class of its own. Those are not spellings of this rule; they are
+  // a second rule that happens to look the same on screen, and telling them
+  // apart needs a person reading the diff. That gap is the boundary of the
+  // claim, and it did not close in #1409.
   //
-  // Two further gaps, both inside what this half means to cover rather than a
-  // Tailwind-style rewrite:
-  //  - `app.css` is never read. `walk()` (below) collects only `.ts` and
-  //    `.svelte` files, and a fourth copy there needs no `:global()` at all —
-  //    `.salt-md-doc p { margin: 0.75rem 0 }` in
-  //    `apps/web-pwa/src/app.css` is already global at that scope — so this
-  //    half of the guard could not match it even if the file were walked.
-  //  - Svelte 5's `:global { … }` BLOCK form slips the pattern below, which is
-  //    anchored on the paren: `:global { .salt-md p { margin: 0.75rem 0 } }`
-  //    compiles to the same fully-global rule as `:global(.salt-md p)` and is
-  //    invisible to this matcher. `.salt-md-doc :global(p)` — the token on the
-  //    surface's own wrapper rather than the primitive's — also slips it,
-  //    despite naming this issue's own class.
-  //
-  // The claim this guard makes is bounded to a `.ts`/`.svelte` file using the
-  // paren form of `:global()`, and that is the whole of it.
+  // Two smaller boundaries worth stating rather than pretending away: a
+  // selector group whose only line naming the class ends in a comma while the
+  // `{` sits on a later line that does not name it is not matched, and the
+  // class reached through a preprocessor variable or an interpolation is not
+  // matched either. Both are catchable by eye in a diff; neither is silent
+  // failure of something the pattern claims.
   {
     instead: 'scale="doc" on <Markdown> from @salt/ui-components',
     because:
       "the library's document type scale was declared three times — page body, history preview, import preview — byte-identical and held that way by a comment asking the next author to keep them in step; #1394 moved the rules into the primitive, where the next change is made once",
-    pattern: /:global\([^)]*\.salt-md\b/,
+    pattern: /\.salt-md\b[^;{}]*\{/,
   },
 ];
 
@@ -384,6 +396,12 @@ describe('display rules are declared once', () => {
     expect(names).toContain('RecipeViewPage.svelte');
     expect(names).toContain('ShoppingItemRow.svelte');
     expect(names).toContain('MealPlanWeekPage.svelte');
+    // The `.css` surface added by #1409, named so it cannot drop back out of
+    // the walk silently. `app.css` is the only stylesheet under `src` today and
+    // the likeliest fourth home for a rule the primitive already owns; a walk
+    // that stopped collecting `.css` would otherwise go green having quietly
+    // stopped covering it.
+    expect(names).toContain('app.css');
 
     // Every owner must actually exist and be excluded from the policed set.
     for (const { path } of OWNERS) {
@@ -495,14 +513,31 @@ describe('display rules are declared once', () => {
     expect(carries('  :global(.salt-md-doc p) {', docScale)).toBe(true);
     expect(carries('  :global(.salt-md h2) {', docScale)).toBe(true);
 
+    // ── issue #1409: the three spellings that used to slip past the paren ──
+    // Svelte 5's BLOCK form, which compiles to the same fully-global rule.
+    expect(carries('  :global { .salt-md p { margin: 0.75rem 0; } }', docScale)).toBe(true);
+    // The token on the surface's own wrapper rather than the primitive's.
+    expect(carries('  .salt-md-doc :global(p) {', docScale)).toBe(true);
+    // And a bare rule in `app.css`, which is global already and needs no
+    // `:global()` — the shape the walk could not even read until #1409.
+    expect(carries('.salt-md-doc p {\n  margin: 0.75rem 0;\n}', docScale)).toBe(true);
+    // The primitive's own two-class spelling, appearing under `src`. This
+    // assertion was `false` before #1409, on the stated grounds that the rule
+    // lives in ui-components and is never scanned here — which is a fact about
+    // where the file is, not about what the line means. A file under
+    // `apps/web-pwa/src` writing it genuinely IS a fourth declaration site, so
+    // it must fire.
+    expect(carries('  .salt-md.salt-md-doc :global(p) {', docScale)).toBe(true);
+
     // What it must NOT fire on, or every library surface fails its own guard:
-    // passing the prop, the primitive's own scoped rules (which live in
-    // ui-components and are never scanned here anyway), and an unrelated
-    // `:global` in a page.
+    // passing the prop, an unrelated `:global` in a page, the class named in
+    // markup or in a `cn()` call rather than a selector, and a JS lookup of it
+    // (which is a different sin and not this row's).
     expect(carries('  <Markdown text={page.body} sanitizedHtml scale="doc" />', docScale)).toBe(false); // prettier-ignore
     expect(carries('  <div class="min-h-24 cursor-text rounded">', docScale)).toBe(false);
-    expect(carries('  .salt-md.salt-md-doc :global(p) {', docScale)).toBe(false);
     expect(carries('  :global(.cook-deck h1) {', docScale)).toBe(false);
+    expect(carries('  <div class="salt-md-doc">', docScale)).toBe(false);
+    expect(carries('  const el = root.querySelector(".salt-md");', docScale)).toBe(false);
   });
 
   it('has no file outside its owning module re-declaring one of them', () => {
