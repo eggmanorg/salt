@@ -374,14 +374,22 @@ export const describeEquipmentSubject = onCallGenkit(
 // Plain onCallGenkit rather than makeTracedCallable: there is no browser trace id
 // to unify here (one call, one click, no cross-invocation pair like the equipment
 // callables), so the traced factory would buy only a wire envelope to maintain.
-// 90s so the flow's 55s withAiTimeout has headroom. NOT "inside the callable
-// client's 70s default" — this comment said that, and 90 > 70, which is finding
-// B2-010 in one line: the browser abandoned the call at 70s while the function
-// ran on to 90 and went on writing. `callGenerateGuidedPlan`
-// (`firebase-sync/src/guidedPlanCallables.ts`) now declares a matching 90s
-// client timeout, so raising this number means raising that one too. The issue
-// named two comments making this claim; this was a third, found by reading the
-// neighbours of the two.
+// 210s so the flow's 180s withAiTimeout has headroom for the Firestore read and
+// the response hop. NOT "inside the callable client's 70s default" — this comment
+// once said that, and the number has always exceeded 70, which is finding B2-010
+// in one line: the browser abandoned the call early while the function ran on and
+// went on writing. `callGenerateGuidedPlan`
+// (`firebase-sync/src/guidedPlanCallables.ts`) declares a matching 210s client
+// timeout, so raising this number means raising that one too — and the flow's own
+// budget is the third. THE LOWEST OF THE THREE GOVERNS; they are only useful
+// together.
+//
+// Why 210 and not the 90 this carried before: the flow writes a note for every
+// step of the recipe, so its latency scales with the length of the method, and
+// 90s was below the cost of an ordinary one. The measurements, and why capping
+// the model's thinking budget does not substitute for this, are at
+// GUIDED_PLAN_TIMEOUT in `flows/generateGuidedPlan.ts` — the number's reasoning
+// lives beside the number that drives it, not here.
 //
 // `pro` (see the flow): cue quality IS the feature, and the volume is a handful of
 // recipes ever. posthogApiKey is the bearer token for the AI-OTLP span exporter as
@@ -392,7 +400,7 @@ export const generateGuidedPlan = onCallGenkit(
     ...APP_CHECK_ENFORCEMENT,
     secrets: [geminiApiKey, posthogApiKey],
     authPolicy: isSignedIn(),
-    timeoutSeconds: 90,
+    timeoutSeconds: 210,
   },
   generateGuidedPlanFlow,
 );

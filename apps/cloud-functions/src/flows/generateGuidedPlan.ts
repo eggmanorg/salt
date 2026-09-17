@@ -4,7 +4,7 @@ import {
   GenerateGuidedPlanOutputSchema,
   type RecipeDoc,
 } from '@salt/domain/schemas';
-import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
+import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { requireRecipe } from './loadRecipe.js';
@@ -75,6 +75,33 @@ function promptFor(recipe: RecipeDoc): string {
     .join('\n\n');
 }
 
+// NOT the house `AI_TEXT_FLOW_TIMEOUT` (55s), and the gap is the whole reason this
+// literal exists. That budget was sized for a flow that answers in one short burst;
+// this one writes a note for EVERY step of the recipe — seven fields each — so its
+// work, and therefore its latency, scales with the length of the method. Measured
+// against `gemini-pro-latest` on production recipes:
+//
+//     16 steps (Spaghetti Bolognese)   47–67s   — over the 55s budget on most runs
+//     32 steps                         103s     — over it on every run
+//
+// So 55s was not a deadline the flow occasionally missed; it was below the cost of
+// an ORDINARY recipe, and the failure it produced was total (issue: the editor's
+// "Couldn't write the plan" on every attempt in production). Capping the model's
+// thinking budget was measured too and does not close it — at `thinkingBudget:
+// 4096` the same 16-step recipe still took 47s, inside 55s by seconds rather than
+// by design, and the 32-step case is untouched.
+//
+// 180s clears the longest recipe measured with ~75% headroom. It is the flow's
+// share of the 210s the callable is exported with (see `index.ts`), which is in
+// turn matched by `callGenerateGuidedPlan`'s client timeout — RAISING ANY ONE OF
+// THE THREE MEANS RAISING THE OTHER TWO, and the lowest of them is what actually
+// governs. The 30s left over is for the Firestore read and the response hop.
+//
+// No retry, unchanged from the house budget: the caller is a human sitting in
+// front of the editor with a Write-the-plan button they can press again, and a
+// second 180s attempt they did not ask for would hold them for six minutes.
+const GUIDED_PLAN_TIMEOUT = { timeoutMs: 180_000, retries: 0 } as const;
+
 export const generateGuidedPlanFlow = ai.defineFlow(
   {
     name: 'generateGuidedPlan',
@@ -104,9 +131,7 @@ export const generateGuidedPlanFlow = ai.defineFlow(
           // anchored to the recipe in front of it.
           config: { temperature: 0.4 },
         }),
-      // No retry (the shared budget's): the caller is a human sitting in front
-      // of the editor with a Write-the-plan button they can press again.
-      AI_TEXT_FLOW_TIMEOUT,
+      GUIDED_PLAN_TIMEOUT,
     );
 
     const parsed = GenerateGuidedPlanAIOutputSchema.safeParse(result.output);

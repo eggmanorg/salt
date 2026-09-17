@@ -473,6 +473,22 @@
               {#snippet leading()}<Icon name="Sparkles" size={16} />{/snippet}
               Write the plan
             </Button>
+            <!-- The wait is LONG — the model writes a note for every step, so a
+                 full-length recipe takes a minute or two (see GUIDED_PLAN_TIMEOUT
+                 in the flow). The button's own spinner is 16px inside a control
+                 whose label never changes, which at ten seconds reads as slow and
+                 at ninety reads as broken. This line is the difference between
+                 waiting and giving up, so it says the work is happening AND
+                 roughly how long it runs. No percentage and no countdown: the
+                 call is a single round trip with no progress to report, and a
+                 fake one would be a lie told to a person deciding whether to
+                 reload the page. -->
+            {#if writing}
+              <p class="text-sm text-muted-foreground" data-testid="guided-plan-writing-note">
+                Writing the plan — this takes up to a couple of minutes for a long recipe. You can
+                leave this page open.
+              </p>
+            {/if}
           {/snippet}
         </EmptyState>
       </div>

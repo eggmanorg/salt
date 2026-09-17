@@ -339,7 +339,7 @@ const rows: readonly Row[] = [
   {
     name: 'callGenerateGuidedPlan',
     callable: 'generateGuidedPlan',
-    timeout: 90_000,
+    timeout: 210_000,
     data: { preps: [], stepNotes: [] },
     call: () => barrel.callGenerateGuidedPlan(cast(PLAN_INPUT)),
     payload: PLAN_INPUT,
