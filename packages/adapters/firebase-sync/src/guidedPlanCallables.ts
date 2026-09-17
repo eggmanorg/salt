@@ -3,14 +3,13 @@ import type { GenerateGuidedPlanInput, GenerateGuidedPlanOutput } from '@salt/do
 import { callFunction } from './callFunction.js';
 
 // generateGuidedPlan (issue #751, Phase 1). Sends only the recipe ID — the flow
-// reads the recipe server-side via the Admin SDK — and receives the AUTHORED
-// CONTENT of a plan: the prep jobs and the per-step notes.
+// reads the recipe server-side via the Admin SDK — and receives the WHOLE PLAN
+// DOCUMENT the flow has just written to `guidedPlans/{recipeId}`.
 //
-// It persists nothing and stamps nothing. Assembling the document (minting prep
-// ids, setting `needs_approval`, stamping `recipeUpdatedAtAtSave` and the
-// timestamps) belongs to the ONE write path in guidedPlanService, so a generated
-// plan and a hand-saved plan cannot end up with those control fields set two
-// different ways.
+// THE FLOW HAS ALREADY PERSISTED IT by the time this resolves (issue #1416), which
+// is what makes the plan survive a phone that locks during the one-to-three-minute
+// call. Nothing here writes, and the caller's job is to show what came back rather
+// than to save it.
 //
 // NEVER throws (Rule 10): a failure crosses as a Failure so the editor can leave
 // the plan the user already has untouched and say so.

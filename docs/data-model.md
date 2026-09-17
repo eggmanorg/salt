@@ -114,6 +114,20 @@ Deliberately its **own collection** rather than fields on `RecipeSchema`: a plan
 rendering of a recipe, not part of it, so it can be rewritten without touching — or
 LWW-clobbering — the dish, and a recipe with no plan carries no empty scaffolding.
 
+**Two writers, split by who is waiting** (issue #1416). A GENERATION is written
+server-side by the `generateGuidedPlan` flow through the Admin SDK, which is what
+makes it survive a phone locking during the one-to-three-minute call; the callable
+returns the document it wrote, and the client only paints it. A HUMAN SAVE, edit or
+discard is written client-side by `guidedPlanService`. Whole-document LWW as
+everywhere else, so the hazard is not the two writers but the control fields
+disagreeing: `needs_approval` is set **only** by the flow and dropped **only** by
+`saveGuidedPlan`, and `recipeUpdatedAtAtSave` is stamped by both, each against the
+recipe it actually read. Both halves are pinned by tests — see the header of
+`apps/web-pwa/src/lib/guidedPlanService.ts`.
+
+No `firestore.rules` clause covers the server write and none should: an Admin SDK
+write bypasses rules entirely.
+
 ## `recipes` holds four kinds
 
 `kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'` (issues #637, #652).
