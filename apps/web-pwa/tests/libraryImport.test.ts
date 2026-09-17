@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import TurndownService from 'turndown';
+import { gfm } from '@joplin/turndown-plugin-gfm';
 import { LIBRARY_PAGE_BODY_MAX } from '@salt/domain/schemas';
 import { appendedBody, gfmTableCellRule, htmlToMarkdown } from '../src/lib/libraryImport.js';
 
@@ -211,6 +213,83 @@ describe('htmlToMarkdown — what must not survive', () => {
     );
     expect(residualTags(md)).toEqual([]);
     expect(md).toBe('innerouter');
+  });
+
+  // #1410. The nested case above is the MINIMUM of the plugin's skipped path, and
+  // it is unchanged either way — which is exactly why it could not find the defect
+  // underneath it. The three tests below cover the rest of that path: the plugin
+  // returns a cell's converted text VERBATIM whenever it is not going to build a
+  // pipe row, so nothing on that path can put a `<br>` back in, so the `; `
+  // collapsing has nothing left to buy there and only destroys the structure the
+  // page had. Each was red before `emitCellOnOneLine` learned to ask.
+  it('keeps two paragraphs in a ONE-CELL table as two paragraphs', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><section>one</section><section>two</section></td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toBe('one\n\ntwo');
+  });
+
+  // A layout table with a real table inside it — the shape older recipe and
+  // technique sites are built out of. The OUTER table is skipped (it contains a
+  // table) and its cells come back verbatim; the INNER one is an ordinary two-cell
+  // row, so it converts to a pipe table AND its own cell still gets collapsed, which
+  // is what keeps a `<br>` out of it. Before #1410 the inner table's newlines were
+  // collapsed by the outer cell into `; `, leaving a line of loose pipes.
+  it('keeps a table nested inside a LAYOUT table as a table', () => {
+    const md = htmlToMarkdown(
+      '<table><tr><td><table><tr><td><p>inner a</p><p>inner b</p></td><td>x</td></tr>' +
+        '</table></td><td><article>outer a</article><article>outer b</article></td></tr></table>',
+    );
+    expect(residualTags(md)).toEqual([]);
+    expect(md).toContain('| --- | --- |\n| inner a; inner b | x');
+    expect(md).not.toContain('|; ');
+    expect(md).toContain('outer a\n\nouter b');
+  });
+
+  // THE DETECTION ITSELF, pinned rather than reasoned about (CLAUDE.md Rule 12).
+  // `emitCellOnOneLine` decides whether the plugin will convert a cell by asking it
+  // — calling the captured rule with the raw content and comparing — rather than by
+  // re-implementing `tableShouldBeSkipped`, which the plugin does not export and
+  // which would go stale silently. That works because of a property of the plugin's
+  // two branches, and this is that property:
+  //
+  //   skipped   → returns the content argument, identically (`===`);
+  //   converted → returns `cell()`'s output, which appends ` |`, prepends `| ` or a
+  //               space, and escapes every `|` in the content — so it can never be
+  //               `===` to what it was given.
+  //
+  // A plugin release that moved the skipped path, or that started trimming or
+  // re-wrapping on it, goes red here — where it names the cause — instead of
+  // surfacing as one of the conversion tests above quietly changing shape.
+  //
+  // THE BOUNDARY: this pins the discriminator, not the membership of the skipped
+  // set. Which tables the plugin skips is its business and is asserted only through
+  // the conversions above.
+  it('can tell the plugin skipped a cell from the plugin converting one', () => {
+    const plugin = new TurndownService();
+    plugin.use(gfm);
+    const rule = gfmTableCellRule(plugin.rules.array);
+    const cellOf = (html: string): HTMLElement => {
+      const cell = new DOMParser().parseFromString(html, 'text/html').querySelector('td');
+      if (cell === null) throw new Error('no <td> in the fixture');
+      return cell;
+    };
+
+    const skipped = rule(
+      'one\n\ntwo',
+      cellOf('<table><tr><td>c</td></tr></table>'),
+      plugin.options,
+    );
+    expect(skipped).toBe('one\n\ntwo');
+
+    const converted = rule(
+      'one\n\ntwo',
+      cellOf('<table><tr><td>c</td><td>d</td></tr></table>'),
+      plugin.options,
+    );
+    expect(converted).not.toBe('one\n\ntwo');
+    expect(converted.endsWith(' |')).toBe(true);
   });
 
   // The third route in, and the one #1391 found: `tableShouldBeHtml` walks the

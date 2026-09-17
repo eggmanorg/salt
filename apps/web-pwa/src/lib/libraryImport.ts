@@ -83,16 +83,22 @@ const DROP_WITH_CONTENTS = new Set([
 //     one other place a copied table can carry block content. Flattening it costs
 //     nothing — turndown already emits a caption as the paragraph above the table,
 //     so `<caption><h3>Times</h3></caption>` lands as the line `Times`.
-//  2. A NESTED TABLE IS NOT A TABLE AFTERWARDS, and this module does not try to
+//  2. AN OUTER TABLE IS NOT A TABLE AFTERWARDS, and this module does not try to
 //     make it one. The plugin's remaining bail-outs are a nested table and
 //     `preserveTableStyles` (off). Neither emits HTML, so the no-markup property
-//     holds — but the nested case does not degrade to paragraphs either: both
-//     tables collapse to their cells' text run together with no separator at all
-//     (`<table><tr><td><table>…inner…</table></td><td>outer</td></tr></table>`
-//     converts to the single word `innerouter`). Layout tables and tables inside
-//     tables arrive as unreadable prose, not as markup. Stated rather than fixed:
-//     what a nested table SHOULD become is a product question, and no answer to it
-//     belongs in a defect fix.
+//     holds — but the outer table does not become a table or a set of paragraphs
+//     either: its cells are emitted one after another with nothing between them,
+//     so the MINIMAL case
+//     (`<table><tr><td><table>…inner…</table></td><td>outer</td></tr></table>`)
+//     still converts to the single word `innerouter`. What each cell CONTAINS is
+//     no longer flattened with it, though (#1410): an outer cell keeps its own
+//     paragraphs, and an inner table the plugin does convert arrives as a real
+//     pipe table. The cells are simply concatenated, so what sits between two of
+//     them is whatever turndown left on the end of the first — nothing at all for
+//     bare text, a blank line where the cell held blocks. Readable in places,
+//     run-on in others — stated rather than fixed: what a nested or layout table
+//     SHOULD become is a product question, and no answer to it belongs in a defect
+//     fix.
 const CELL_LISTS = 'ul, ol';
 const CELL_BLOCKS = 'h1, h2, h3, h4, h5, h6, blockquote, pre, code';
 
@@ -205,6 +211,28 @@ service.remove((node) => DROP_WITH_CONTENTS.has(node.nodeName.toLowerCase()));
 // actually holds is stated once, over the converted text — NO NEWLINE REACHES
 // `cell()` — and covers every element, named or not, now or later. #1383.
 //
+// AND THE GUARANTEE IS ABOUT CELLS THE PLUGIN CONVERTS, which is narrower than
+// every `<td>`/`<th>` and was not always narrow enough here (#1410). The plugin's
+// cell rule has two branches: a table it will build a pipe row for, where `cell()`
+// runs and the `<br>` route above is real; and a table it SKIPS — no parent
+// `<table>`, no rows, one row with at most one cell, or any table containing a
+// table — where it returns the converted text verbatim and `cell()` is never
+// reached. On the skipped branch no `<br>` can be produced at all, so collapsing
+// buys nothing there and costs the structure the page had: two paragraphs in a
+// one-cell table arrived as `one; two`, and a real table inside a layout table had
+// its own rows collapsed into a line of loose pipes. So the wrapper ASKS rather
+// than assumes — `tableShouldBeSkipped` is private to the plugin, and a copy of it
+// here would go stale the same way a tag list would. The plugin's two branches are
+// distinguishable from outside because the skipped one returns its argument
+// identically while `cell()` always appends ` |` and escapes every `|` in the
+// content, so `cell()`'s output can never be `===` to what it was given. That
+// discriminator is pinned in `tests/libraryImport.test.ts`, against the plugin
+// itself, so a release that moved the skipped path goes red rather than silent.
+//
+// What a nested or layout table SHOULD become is still the open product question
+// limit 2 above states; the skipped branch now gets what turndown alone would
+// emit, and nothing more was invented for it.
+//
 // WRAPPING rather than replacing the plugin's rule. `cell()` also does the column
 // prefix, the pipe escaping and `colspan`; a second copy of that here would be a
 // fork of the plugin by another name. `addRule` unshifts, so the wrapper below is
@@ -236,8 +264,10 @@ function onOneLine(content: string): string {
   return content.trim().replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/g, '; ');
 }
 
-const emitCellOnOneLine: typeof gfmCell = (content, node, options) =>
-  gfmCell(onOneLine(content), node, options);
+const emitCellOnOneLine: typeof gfmCell = (content, node, options) => {
+  const asPlugin = gfmCell(content, node, options);
+  return asPlugin === content ? asPlugin : gfmCell(onOneLine(content), node, options);
+};
 
 service.addRule('tableCellOnOneLine', { filter: ['th', 'td'], replacement: emitCellOnOneLine });
 
