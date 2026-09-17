@@ -85,6 +85,7 @@
   } from '../../lib/recipeAmend.js';
   import { authorRecipeFromChat } from '../../lib/chatRecipeAuthor.js';
   import IngredientText from './IngredientText.svelte';
+  import { sentenceCase } from '../../lib/sentenceCase.js';
   import { canonItems, isLoadingAisles } from '../../lib/canonService.js';
   import { canonIndex, matchMarkersReady } from '../../lib/canonIndex.js';
   // The ONE shared kitchen-tool lookup (issue #882). Subscribed app-wide in
@@ -2588,6 +2589,15 @@
                  without a parallel accessible name to keep in step with what is on
                  screen. `RecipeViewPage.kit.test.ts` reads it as text.
 
+                 EACH ROW OPENS WITH A CAPITAL, and that is the only letter this
+                 page decides. A label is the household's own wording or the kit
+                 flow's canonical name, so `sentenceCase` raises the first character
+                 and leaves "Cosori 5L Rice Cooker" and "OXO Mandoline" untouched;
+                 `titleCase` would rewrite both. The accessory line under the name
+                 opens "with the …" and is left alone — it is a continuation, not a
+                 row. `groupKitByEquipment` still keys on the stored label, so the
+                 capital is a rendering and nothing downstream sees it.
+
                  The tab's count follows the LINES, `kitGroups.length`, exactly as
                  Ingredients counts the lines you will read rather than the groups
                  they sit in. It was `kit.length` while every entry was its own row
@@ -2613,7 +2623,9 @@
                             {/if}
                           </div>
                           <span class="min-w-0 flex-1"
-                            >{group.entry.label}{#if group.accessories.length > 0}<span
+                            >{sentenceCase(
+                              group.entry.label,
+                            )}{#if group.accessories.length > 0}<span
                                 class="block text-xs text-muted-foreground"
                                 data-testid="recipe-kit-accessories"
                                 >with the {accessoryPhrase(group.accessories)}</span

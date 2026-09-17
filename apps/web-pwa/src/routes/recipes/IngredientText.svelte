@@ -1,5 +1,6 @@
 <script lang="ts">
   import pluralize from 'pluralize';
+  import { sentenceCase } from '../../lib/sentenceCase.js';
   import { scaleQuantity } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import type { QuantityDoc } from '@salt/domain/schemas';
@@ -190,12 +191,31 @@
   // a conversion this app owns. `buildRecipeAddPlan` drops it on a scaled add for
   // exactly this reason (issue #724), and the two now agree.
   const showDisplay = $derived((part === 'all' || part === 'display') && scale === 1);
+
+  // The recipe page's ingredients tab reads as a list of THINGS, one per line, so
+  // the thing starts with a capital — the library stores "red lentils" as the
+  // parser read it, and a column of lowercase names reads like a fragment of a
+  // sentence rather than a list you run your eye down.
+  //
+  // `part === 'name'` and nothing else. That part is asked for by exactly one call
+  // site, `RecipeIngredientsPanel`'s middle column; every other surface — cook
+  // mode's mise rows, the per-step chips, guided cook, batch cook — asks for
+  // `part="all"`, where the item follows the amount mid-line ("300g red lentils")
+  // and a capital there would be wrong. So the boundary is the rendering's own,
+  // not a page flag threaded through.
+  //
+  // Sentence case, never `titleCase`: the words are the recipe's, and only the
+  // opening letter is ours (see `lib/sentenceCase.ts`). A line with no separable
+  // amount carries its raw text here, and gets the same treatment — already
+  // capitalised in most of the library, and `sentenceCase` leaves those alone.
+  const nameText = $derived(part === 'name' ? sentenceCase(itemText) : itemText);
+  const rawText = $derived(part === 'name' ? sentenceCase(ingredient.rawText) : ingredient.rawText);
 </script>
 
-{#if showQuantity && amount}{amount}{/if}{#if part === 'all' && amount}{' '}{/if}{#if showName}{#if parsed && amount}{itemText}{#if preparation}<span
+{#if showQuantity && amount}{amount}{/if}{#if part === 'all' && amount}{' '}{/if}{#if showName}{#if parsed && amount}{nameText}{#if preparation}<span
         class="text-xs text-muted-foreground">{preparation}</span
-      >{/if}{:else}{ingredient.rawText}{/if}{#if notes}<span
-      class="ml-1 text-xs text-muted-foreground">({notes})</span
+      >{/if}{:else}{rawText}{/if}{#if notes}<span class="ml-1 text-xs text-muted-foreground"
+      >({notes})</span
     >{/if}{/if}{#if showDisplay && parsed && amount && parsed.displayText}<span
     class="text-xs text-muted-foreground"
     class:ml-1={part === 'all'}
