@@ -120,7 +120,7 @@ afterEach(cleanup);
 
 describe('IngredientText — a count is an amount (issue #951)', () => {
   it('splits a count line into name, amount and the gram estimate', () => {
-    expect(textOf(COUNT, 'name')).toBe('large egg');
+    expect(textOf(COUNT, 'name')).toBe('Large egg');
     expect(textOf(COUNT, 'quantity')).toBe('1');
     expect(textOf(COUNT, 'display')).toBe('(about 50g)');
     // Reads "1 large egg (about 50g)" on screen. No text-node space before the
@@ -131,12 +131,12 @@ describe('IngredientText — a count is an amount (issue #951)', () => {
   });
 
   it('pluralises the stored item upward when the count is more than one', () => {
-    expect(textOf(COUNT_PLURAL, 'name')).toBe('garlic cloves, peeled and finely sliced');
+    expect(textOf(COUNT_PLURAL, 'name')).toBe('Garlic cloves, peeled and finely sliced');
     expect(textOf(COUNT_PLURAL, 'all')).toBe('4 garlic cloves, peeled and finely sliced');
   });
 
   it('leaves an already-plural item alone', () => {
-    expect(textOf(COUNT_ALREADY_PLURAL, 'name')).toBe('large eggs');
+    expect(textOf(COUNT_ALREADY_PLURAL, 'name')).toBe('Large eggs');
     expect(textOf(COUNT_ALREADY_PLURAL, 'all')).toBe('2 large eggs');
   });
 
@@ -147,7 +147,7 @@ describe('IngredientText — a count is an amount (issue #951)', () => {
       'Chicken legs (thigh and drum)',
       makeParsed({ quantity: single(1), unit: null, item: 'chicken legs' }),
     );
-    expect(textOf(one, 'name')).toBe('chicken legs');
+    expect(textOf(one, 'name')).toBe('Chicken legs');
   });
 
   it('renders a mixed quantity as a vulgar fraction, not a decimal', () => {
@@ -183,7 +183,7 @@ describe('IngredientText — a count is an amount (issue #951)', () => {
 
 describe('IngredientText — behaviour that must not change', () => {
   it('renders a metric row exactly as before, with no space before the parenthetical', () => {
-    expect(textOf(METRIC, 'name')).toBe('red lentils, rinsed');
+    expect(textOf(METRIC, 'name')).toBe('Red lentils, rinsed');
     expect(textOf(METRIC, 'quantity')).toBe('300g');
     expect(textOf(METRIC, 'display')).toBe('(1 ½ cups)');
     // The gap between the amount and its restatement is `ml-1`, never a text node —
@@ -196,7 +196,7 @@ describe('IngredientText — behaviour that must not change', () => {
       '400g plum tomatoes',
       makeParsed({ quantity: single(400), unit: 'g', item: 'plum tomato' }),
     );
-    expect(textOf(many, 'name')).toBe('plum tomato');
+    expect(textOf(many, 'name')).toBe('Plum tomato');
   });
 
   it('renders an unparsed line as its raw text, with an empty amount column', () => {
@@ -225,15 +225,47 @@ describe('IngredientText — behaviour that must not change', () => {
       ),
       isOptional: true,
     };
-    expect(textOf(noted, 'name')).toBe('large eggs(from a farm shop)(optional)');
+    expect(textOf(noted, 'name')).toBe('Large eggs(from a farm shop)(optional)');
   });
 
   it('defaults to `all`, which is the sum of its parts', () => {
+    // One deliberate difference since the ingredients tab reads as a list: the
+    // `name` part leads with a capital and `all` does not, because there the item
+    // follows the amount mid-line. Both sides are normalised at exactly the one
+    // character that may differ, so everything else stays a byte-for-byte match.
+    const unlead = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
     for (const fixture of [COUNT, COUNT_PLURAL, METRIC, UNPARSED, NO_QUANTITY]) {
       const qty = textOf(fixture, 'quantity');
       const expected =
-        (qty === '' ? '' : `${qty} `) + textOf(fixture, 'name') + textOf(fixture, 'display');
-      expect(textOf(fixture)).toBe(expected);
+        (qty === '' ? '' : `${qty} `) +
+        unlead(textOf(fixture, 'name')) +
+        textOf(fixture, 'display');
+      const actual = textOf(fixture);
+      const nameStartsAt = qty === '' ? 0 : qty.length + 1;
+      expect(actual.slice(0, nameStartsAt) + unlead(actual.slice(nameStartsAt))).toBe(expected);
     }
+  });
+
+  it('capitalises the name column, and only that part (recipe page ingredients tab)', () => {
+    // The tab is a list of things, one per line. Every other surface composes the
+    // item after its amount and must stay lowercase mid-line.
+    expect(textOf(METRIC, 'name')).toBe('Red lentils, rinsed');
+    expect(textOf(METRIC, 'all')).toBe('300g red lentils, rinsed(1 \u00bd cups)');
+    expect(textOf(COUNT, 'all')).toBe('1 large egg(about 50g)');
+    expect(textOf(METRIC, 'quantity')).toBe('300g');
+    expect(textOf(METRIC, 'display')).toBe('(1 \u00bd cups)');
+  });
+
+  it('raises only the first letter, including where that is wrong for pH', () => {
+    const branded = makeIngredient(
+      '2g pH-neutral Maldon sea salt',
+      makeParsed({ quantity: single(2), unit: 'g', item: 'pH-neutral Maldon sea salt' }),
+    );
+    expect(textOf(branded, 'name')).toBe('PH-neutral Maldon sea salt');
+  });
+
+  it('leaves a raw line that already starts with a capital alone', () => {
+    expect(textOf(UNPARSED, 'name')).toBe('A jug of gravy, warmed');
+    expect(textOf(NO_QUANTITY, 'name')).toBe('A crack of black pepper');
   });
 });
