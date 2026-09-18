@@ -29,6 +29,7 @@ import {
   selectedStartDate,
   extensionStartDate,
   firstDayOfWeek,
+  mealPlanConfigLoaded,
   kitchenWeeks,
   kitchenAnchorDate,
   subscribeKitchenWeeks,
@@ -192,6 +193,23 @@ describe('mealPlanService — subscriptions', () => {
     emitConfig({ firstDayOfWeek: 'wed', schemaVersion: 1 });
     expect(get(firstDayOfWeek)).toBe('wed');
     expect(get(selectedStartDate)).toBe('2026-06-10'); // week now starts Wed
+  });
+
+  it('distinguishes settled from defaulted (issue #1448 review, finding 1)', () => {
+    // `firstDayOfWeek` answers 'mon' both before the config doc lands and when
+    // the household genuinely picked Monday — `mealPlanConfigLoaded` is the only
+    // way to tell those apart, which is what a reader keying a READ on
+    // `firstDayOfWeek` (rather than merely laying out by it) needs.
+    const { emitConfig } = wireSubscriptions();
+    expect(get(mealPlanConfigLoaded)).toBe(false);
+
+    initMealPlanSync();
+    expect(get(mealPlanConfigLoaded)).toBe(false);
+    expect(get(firstDayOfWeek)).toBe('mon'); // the fallback, not a settled answer
+
+    emitConfig({ firstDayOfWeek: 'mon', schemaVersion: 1 });
+    expect(get(mealPlanConfigLoaded)).toBe(true);
+    expect(get(firstDayOfWeek)).toBe('mon'); // now a settled answer, same value
   });
 });
 

@@ -11,7 +11,12 @@
   import { addCalendarDays, weekStartFor, type MealPlanWeek, type Recipe } from '@salt/domain';
   import { formatDayKey } from '../../lib/dateFormat.js';
   import { todayIso } from '../../lib/today.js';
-  import { addRecipeToDay, firstDayOfWeek, loadWeekForDisplay } from '../../lib/mealPlanService.js';
+  import {
+    addRecipeToDay,
+    firstDayOfWeek,
+    loadWeekForDisplay,
+    mealPlanConfigLoaded,
+  } from '../../lib/mealPlanService.js';
   import { currentMember, members } from '../../lib/membersService.js';
   import { recipesById } from '../../lib/recipeService.js';
   import { resolveRecipeIds } from '../../lib/attachedRecipes.js';
@@ -34,9 +39,21 @@
   // `firstDayOfWeek` no longer lays anything out here, and that is the point: a
   // list has no week rows, so nothing this sheet DRAWS depends on where the
   // household's week starts. It is still read, for one thing — which
-  // `mealPlanWeeks` document a night's summary has to come out of. Reactively,
-  // because it answers 'mon' until the config snapshot lands and the sheet can
-  // be opened before that.
+  // `mealPlanWeeks` document a night's summary has to come out of, and it
+  // answers 'mon' until the config snapshot lands and the sheet can be opened
+  // before that.
+  //
+  // Reactivity alone does NOT make that window safe (issue #1448 review,
+  // finding 1 — a false invariant this comment used to assert). Reactivity
+  // repairs the rows once config arrives; it does nothing about the read
+  // issued BEFORE that, which lands on a document keyed by the fallback rather
+  // than the household's real setting. `loadMealPlanWeek` answering "no such
+  // document" for that wrong key is a legitimate, successful read — not a
+  // pending one and not a `Failure` — so it cannot be told apart from a
+  // genuinely empty week by its shape alone. `known` is therefore gated on
+  // `mealPlanConfigLoaded` as well as on the snapshot: a row stays in the
+  // not-yet-known state until the read it is showing was made under a
+  // SETTLED `firstDayOfWeek`, never a defaulted one.
   //
   // Each row says what is already on that night and who is cooking it, which is
   // most of why the list beats a grid: choosing a free night stops being
@@ -176,7 +193,11 @@
     const me = $currentMember;
     return nights.map((date) => {
       const snapshot = weekSnapshots[weekStartFor(date, $firstDayOfWeek)];
-      const known = snapshot !== undefined && snapshot !== 'unavailable';
+      // A snapshot answered under the 'mon' fallback is a read of the WRONG
+      // document whenever the household is not actually Monday-first — see the
+      // header comment. Until the config doc has settled, no row may claim to
+      // know what is on it, no matter what the (mis-keyed) read came back with.
+      const known = $mealPlanConfigLoaded && snapshot !== undefined && snapshot !== 'unavailable';
       const week = snapshot === undefined || snapshot === 'unavailable' ? null : snapshot;
       const day = week?.days[date];
       const note = day?.note.split('\n')[0]?.trim() ?? '';

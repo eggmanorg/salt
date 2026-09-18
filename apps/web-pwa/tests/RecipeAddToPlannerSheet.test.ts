@@ -30,6 +30,7 @@ import {
 
 const {
   mockFirstDayOfWeek,
+  mockMealPlanConfigLoaded,
   mockAddRecipeToDay,
   mockLoadWeekForDisplay,
   mockCurrentMember,
@@ -40,6 +41,10 @@ const {
   const { makeStore } = await import('./support/testStore.js');
   return {
     mockFirstDayOfWeek: makeStore<string>('mon'),
+    // Settled by default: most tests below are not about the config-loading
+    // window, and a config that has already landed is the ordinary case.
+    // Finding 1's regression test below is the one that moves it.
+    mockMealPlanConfigLoaded: makeStore<boolean>(true),
     mockAddRecipeToDay: vi.fn(),
     mockLoadWeekForDisplay: vi.fn(),
     mockCurrentMember: makeStore<unknown>(null),
@@ -52,6 +57,7 @@ const {
 vi.mock('../src/lib/mealPlanService.js', () => ({
   addRecipeToDay: mockAddRecipeToDay,
   firstDayOfWeek: mockFirstDayOfWeek,
+  mealPlanConfigLoaded: mockMealPlanConfigLoaded,
   loadWeekForDisplay: mockLoadWeekForDisplay,
 }));
 vi.mock('../src/lib/membersService.js', () => ({
@@ -126,6 +132,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(TODAY);
   mockFirstDayOfWeek._set('mon');
+  mockMealPlanConfigLoaded._set(true);
   mockCurrentMember._set(null);
   mockMembers._set([DANIEL, SAM]);
   mockRecipesById._set(new Map());
@@ -379,6 +386,39 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
 
     pending.forEach((release) => release());
     await waitFor(() => expect(mealOf(TODAY_KEY)).toHaveTextContent('Nothing planned'));
+  });
+
+  it('does not say "Nothing planned" while firstDayOfWeek is still on its mon fallback (#1448 review)', async () => {
+    // A household actually on 'fri', mid cold-launch: the config doc has not
+    // landed, so `firstDayOfWeek` is defaulting to 'mon' rather than having
+    // settled on it. A read keyed on the fallback lands on the WRONG document —
+    // Monday-start rather than Friday-start — and `loadMealPlanWeek` answering
+    // "no such document" for that wrong key is a real, successful read, not a
+    // `Failure` and not a pending one. Without the `mealPlanConfigLoaded` gate
+    // that answer renders as "Nothing planned" on a night that actually holds a
+    // roast, which is the exact output the phase's Definition of Done forbids.
+    const FRI_WEEK_START = '2026-08-07';
+    mockMealPlanConfigLoaded._set(false);
+    const friWeek = setDayNote(emptyWeek(FRI_WEEK_START), TODAY_KEY, 'Roast chicken');
+    serveWeeks({ [FRI_WEEK_START]: friWeek });
+    renderSheet();
+    await waitForList();
+
+    // The (mis-keyed) read has come back — a legitimate "no document" for
+    // 2026-08-10, the Monday-start week — and the row must still show the
+    // not-yet-known placeholder rather than "Nothing planned".
+    await waitFor(() => expect(mockLoadWeekForDisplay).toHaveBeenCalledWith('2026-08-10'));
+    expect(mealOf(TODAY_KEY)).toBeNull();
+    expect(
+      nightRow(TODAY_KEY).querySelector('[data-testid="planner-add-night-unknown"]'),
+    ).not.toBeNull();
+
+    // The config doc lands: firstDayOfWeek settles on 'fri' and the sheet
+    // re-keys its read to the household's real week document.
+    mockFirstDayOfWeek._set('fri');
+    mockMealPlanConfigLoaded._set(true);
+
+    await waitFor(() => expect(mealOf(TODAY_KEY)).toHaveTextContent('Roast chicken'));
   });
 
   it('leaves a night pickable when its week could not be read', async () => {

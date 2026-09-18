@@ -124,6 +124,19 @@ export const firstDayOfWeek: Readable<Weekday> = derived(
   ($c) => $c?.firstDayOfWeek ?? DEFAULT_FIRST_DAY,
 );
 
+// Whether the config document has actually been read, as opposed to
+// `firstDayOfWeek` still answering its 'mon' fallback because nothing has
+// landed yet. The two are NOT the same fact: a household really settled on
+// Monday is indistinguishable from one still waiting on its config doc by
+// looking at `firstDayOfWeek` alone. A reader that merely lays out by
+// `firstDayOfWeek` doesn't care — Monday is a fine guess to render and correct
+// itself. A reader that KEYS a read on it does care: a read issued under the
+// fallback lands on a document that may not be the household's, and a
+// legitimate "no such document" answer for the wrong week must not be told
+// apart from "this week is genuinely empty" (issue #1448 review, finding 1 —
+// see `RecipeAddToPlannerSheet.svelte`'s `known` gate).
+export const mealPlanConfigLoaded: Readable<boolean> = derived(_config, ($c) => $c !== null);
+
 // The displayed week — falls back to an unsaved empty week (only persisted on
 // first edit / load-template) so the editor always has seven days to render.
 export const currentWeek: Readable<MealPlanWeek> = derived(
