@@ -345,6 +345,11 @@
   // `tests/RecipeBakeBatchSheet.proposal.test.ts` → "a reopened sheet has forgotten
   // the proposal, even for the identical question", which goes red if this call
   // leaves `seed()`.
+  //
+  // BOUNDARY: this guards the REOPEN edge only. A formula changing while the sheet
+  // stays open does not touch `askKey` and is not caught here or by that test — the
+  // same live-prop path the `notAvailable` refusal above (`:460`) already names as
+  // reachable. Closing that path is a spec question, not this guard's job.
   let wasOpen = false;
   $effect(() => {
     if (open && !wasOpen) seed();

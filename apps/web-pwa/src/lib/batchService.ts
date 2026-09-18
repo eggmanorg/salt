@@ -180,10 +180,13 @@ async function persist(next: BatchDoc): Promise<ReadResult<BatchDoc, DomainError
  * one wasted model call and leaves no trace anywhere.
  *
  * AND IT IS NOT KEPT ANYWHERE EITHER (issue #1428, epic #1417). The answer lives in
- * the sheet's component state for as long as the sheet is open, so a suspended phone
- * or a closed sheet loses it with no error and no trace. Deliberate, and not the
- * fault #1416 fixed: Start is a hard gate in `endAt` mode, so what a suspend costs is
- * a suggestion and one capped `pro` call (19–31 s) with the person still in front of
+ * the sheet's component state, which survives a close — the sheet unmounts with the
+ * recipe page, not with `open` (`RecipeViewPage.svelte:2870`) — so what actually
+ * forgets it is a suspended phone, navigating away from the recipe, or the sheet's
+ * own re-seed on the next open edge (`RecipeBakeBatchSheet.svelte`'s `seed()`), all
+ * with no error and no trace. Deliberate, and not the fault #1416 fixed: Start is a
+ * hard gate in `endAt` mode, so what a suspend costs is a suggestion and one capped
+ * `pro` call (19–31 s) with the person still in front of
  * the button that re-asks — never work this app had already done on their behalf.
  * Hard rule 3 rules out browser storage anyway, and it would not survive an OS
  * killing the process. The reasoning is at the callable
