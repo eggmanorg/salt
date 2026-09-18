@@ -25,9 +25,12 @@ const {
   mockDefaultListId,
   mockSessions,
   mockEquipment,
+  toastSpy,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
+  const { makeToastSpy } = await import('./support/toastSpy.js');
   return {
+    toastSpy: makeToastSpy(),
     mockRecipes: makeStore<readonly Recipe[]>([]),
     mockCanonItems: makeStore<readonly { id: string }[]>([]),
     mockGuidedPlan: makeStore<unknown>(null),
@@ -45,7 +48,10 @@ vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
   router: { querystring: '' },
 }));
-vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
+vi.mock('../src/lib/toastStore.js', () => ({
+  addToast: toastSpy.addToast,
+  dismissToast: toastSpy.dismissToast,
+}));
 vi.mock('../src/lib/auth.svelte.js', () => ({ auth: { user: { email: 'cook@test' } } }));
 vi.mock('../src/lib/canonService.js', () => ({
   canonItems: mockCanonItems,
@@ -127,6 +133,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
+import { authorRecipeTraced } from '../src/lib/recipeService.js';
 import { recipeChatPanePrefs } from '../src/lib/recipeChatPanePrefs.svelte.js';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 
@@ -198,6 +205,7 @@ function toggle(): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  toastSpy.reset();
   mockCanonItems._set([]);
   mockIsLoading._set(false);
   mockRecipes._set([]);
@@ -315,5 +323,64 @@ describe('RecipeViewPage — the pane toggle is inert on a phone (#1141)', () =>
     await waitFor(() => expect(screen.getByTestId('recipe-chat-list')).toBeInTheDocument());
     expect(chatListIsDocked()).toBe(false);
     expect(screen.queryByTestId('recipe-chat-pane-toggle')).toBeNull();
+  });
+});
+
+// The acknowledgement for "Update recipe" (issue #1439), on the surface the
+// shared menu snippet serves — the chat column here, and the drawer, which is
+// the same markup. `disabled={sidebarIsProposing}` was bound to a popover item
+// that unmounts itself on click, so the page went silent for the whole
+// librarian call. Both halves are asserted: a `duration: 0` toast is cleared by
+// nothing but the helper's `finally`. See `support/toastSpy.ts`.
+//
+// The success path through this same handler is pinned in
+// `RecipeViewPage.refresh.test.ts`, which drives the merge end to end.
+describe('RecipeViewPage — "Update recipe" says it has started (#1439)', () => {
+  const ts = '2026-01-01T00:00:00.000Z';
+  const REPLIED = makeSession({
+    messages: [
+      { id: 'm1', role: 'user', text: 'make it for six', createdAt: ts },
+      { id: 'm2', role: 'assistant', text: 'Here is how.', createdAt: ts },
+    ],
+  });
+
+  async function openChatActions(): Promise<void> {
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-chat-actions-menu')).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByTestId('sidebar-chat-actions-menu'));
+    await waitFor(() =>
+      expect(screen.getByTestId('sidebar-apply-changes-btn')).toBeInTheDocument(),
+    );
+  }
+
+  it('acknowledges while the librarian runs, and clears it when it fails', async () => {
+    mockSessions._set([REPLIED]);
+    type LibrarianResult = Awaited<ReturnType<typeof authorRecipeTraced>>;
+    let settle!: (v: LibrarianResult) => void;
+    vi.mocked(authorRecipeTraced).mockReturnValue(
+      new Promise<LibrarianResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    renderPage();
+    await openChatActions();
+
+    await userEvent.click(screen.getByTestId('sidebar-apply-changes-btn'));
+
+    await waitFor(() =>
+      expect(toastSpy.live()).toEqual(['Reading the conversation to update the recipe…']),
+    );
+    expect(toastSpy.addToast).toHaveBeenCalledWith(
+      'Reading the conversation to update the recipe…',
+      'default',
+      { duration: 0 },
+    );
+
+    settle({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as LibrarianResult);
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe update.']));
   });
 });
