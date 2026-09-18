@@ -320,7 +320,10 @@ describe('canonicaliseIngredients', () => {
 // decision needs a pin rather than a paragraph: sending `recipeId` from here would
 // stamp `canonId`/`matchState` onto a row whose `parsed` is still null in
 // Firestore, because the parse half of the pair is written by this function's
-// caller afterwards.
+// caller afterwards. That intermediate row is a real, flagged state
+// (`ingredientMatchIssue`'s `missing_amount`, repaired by the same `?` marker as
+// the ✗) rather than an unrecoverable one — what a canon-only write here actually
+// costs is splitting a pair meant to land as ONE write into two.
 describe('matchIngredient (per-row, still a browser write)', () => {
   it('does not ask the function to write', async () => {
     fs.callParseRecipeIngredients.mockResolvedValue({

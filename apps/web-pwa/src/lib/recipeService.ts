@@ -938,9 +938,15 @@ export async function canonicaliseIngredients(
 // not ask the function to write" in `recipeService.canonicalise.test.ts`. The
 // parse callable is still identity-free, and that is what settles it: a canon
 // write here would stamp `canonId`/`matchState` onto a row whose `parsed` is still
-// null in Firestore, so the ✗ the cook is looking at would be replaced by a
-// matched row with no parsed quantity until this function's caller wrote the rest.
-// Half a row is worse than a row that has to be re-tapped.
+// null in Firestore until this function's caller writes the rest. That is not the
+// stranded row an earlier version of this comment claimed: `ingredientMatchIssue`
+// returns `missing_amount` for exactly `canonId` set + `parsed: null`, and its `?`
+// marker runs this same `handleRematch` repair, same corner of the same tile, as
+// the ✗ it would replace — so a half-written row is also a row that gets re-tapped.
+// What the split write actually costs is atomicity: `parsed` and the match are
+// meant to land as ONE write, and a canon-only write ahead of it would put a
+// family-shared document through an avoidable extra state change moments before
+// this function's own caller writes the rest.
 //
 // A server-side version is therefore one NEW `{ recipeId, ingredientId }` callable
 // replacing both calls below, not a write bolted onto either — and what it buys is

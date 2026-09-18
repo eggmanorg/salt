@@ -60,11 +60,17 @@ async function persistCanonMatches(
   // Only items that named a row can be folded onto one. An item with no
   // `ingredientId` is matched and returned like any other and simply has no
   // destination here.
-  const byIngredientId = new Map<string, ReadResult<MatchOrCreateResult, DomainError>>();
+  // `rawText` rides along per entry, not just the result: the guard below needs
+  // to compare it against the row's CURRENT text, read fresh inside the
+  // transaction, not the text this batch was matched against.
+  const byIngredientId = new Map<
+    string,
+    { result: ReadResult<MatchOrCreateResult, DomainError>; rawText: string | undefined }
+  >();
   items.forEach((item, i) => {
     const result = results[i];
     if (item.ingredientId !== undefined && result !== undefined) {
-      byIngredientId.set(item.ingredientId, result);
+      byIngredientId.set(item.ingredientId, { result, rawText: item.rawText });
     }
   });
   if (byIngredientId.size === 0) return;
@@ -97,15 +103,29 @@ async function persistCanonMatches(
       const next = groups.data.map((group) => ({
         ...group,
         items: group.items.map((ing) => {
-          const result = byIngredientId.get(ing.id);
+          const entry = byIngredientId.get(ing.id);
           // An id that is no longer in the document — the row was deleted while
           // the call ran — is SKIPPED, never re-created. The recipe as it stands
           // is the truth; this write only annotates rows that are still in it.
-          if (result === undefined) return ing;
+          if (entry === undefined) return ing;
+          // The same guard both neighbouring folds of this exact operation apply —
+          // `RecipeViewPage.handleRematch` (`i.rawText === ing.rawText`) and
+          // `scripts/rematch-ingredients.ts` ("lines are re-matched by ingredient
+          // id AND rawText") — and this transaction has what neither of those
+          // needs to fetch specially: the row's CURRENT text, read moments ago by
+          // `tx.get` above. A line edited elsewhere while this call ran (up to
+          // 120s) has a match computed from text it no longer carries; stamping it
+          // anyway would leave a row whose text and match disagree with NO marker
+          // to prompt a re-tap — `rowMarker` reads `canonId` live + `parsed`
+          // non-null and reports nothing wrong. Skipped, not overwritten, exactly
+          // like an id that vanished. `rawText` absent on the item (the nested
+          // `assembleRecipeDraft` path never sends one) leaves the guard inert,
+          // matching every caller that has no text to compare.
+          if (entry.rawText !== undefined && entry.rawText !== ing.rawText) return ing;
           folded = true;
-          return result.kind === 'err'
+          return entry.result.kind === 'err'
             ? { ...ing, canonId: null, matchState: 'failed' as const }
-            : { ...ing, canonId: result.value.item.id, matchState: 'matched' as const };
+            : { ...ing, canonId: entry.result.value.item.id, matchState: 'matched' as const };
         }),
       }));
       // Nothing left to annotate — every row this batch was for has gone. Write

@@ -380,6 +380,33 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     expect(errors[0]![1]).toMatchObject({ error: 'a bare string, not an Error' });
   });
 
+  it('skips a row edited mid-call instead of stamping a match computed from stale text', async () => {
+    // The blocking finding from the #1475 review: a line edited on another
+    // device (or in edit mode on this one) DURING the up-to-120s call must not
+    // be stamped with a match computed from the text it no longer carries — that
+    // would leave a row whose text and match disagree with no marker to prompt a
+    // re-tap. The item's `rawText` is the pre-call snapshot; the document is
+    // seeded with a DIFFERENT current `rawText` for the same id, simulating the
+    // edit landing before this transaction reads the document.
+    seedRecipe('recipe-10', [ingredient('i1', '200g cocoa powder')]);
+
+    const results = await runFlow({
+      recipeId: 'recipe-10',
+      items: [{ ingredientId: 'i1', rawName: 'flor', rawText: '200g plain flor' }],
+    });
+
+    // The match still happened and is still returned — only the fold onto the
+    // recipe document is skipped.
+    expect(results[0]!.kind).toBe('ok');
+    const [row] = rows('recipe-10');
+    expect(row!.matchState).toBe('pending');
+    expect(row!.canonId).toBeNull();
+    expect(row!.rawText).toBe('200g cocoa powder');
+    // Nothing folded means nothing written — same guarantee as every id that
+    // vanished from the document mid-call.
+    expect(storedRecipe('recipe-10').updatedAt).toBe(SEEDED_AT);
+  });
+
   it('skips the fold, and writes nothing, when the stored ingredients fail validation', async () => {
     // A Firestore read is a trust boundary. A document whose `ingredients` field
     // is not the shape the schema names is left alone rather than folded against
