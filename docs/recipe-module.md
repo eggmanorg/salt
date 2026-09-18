@@ -39,7 +39,7 @@ newest local edit).
 Recipe {
   id: string
   schemaVersion: 1
-  kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'  // .default('recipe') — see "Schema extensions (kind)"
+  kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'  // .default('recipe') — see "Schema extensions (kind discriminator)"
   title: string
   description: string | null
   ingredients: IngredientGroup[]   // required array; [] for a special (NOT a discriminated union)
@@ -51,6 +51,9 @@ Recipe {
   componentRecipeIds: string[]     // .default([]); the dishes this dinner is built from (#752).
                                    // Non-empty ⇒ it is a MEAL. Derived, never declared; one level
                                    // deep for display only, and nothing is ever aggregated
+  cureCategory: CureCategory | null // .default(null); which of five kinds of cure, for a `cure` only
+                                   // (#1404) — see "Schema extensions (kind discriminator)" and
+                                   // docs/data-model.md → "`recipes` holds five kinds"
   needs_approval?: boolean         // .optional(); AI-authored, not yet read by a human (#616).
                                    // Used-but-flagged: live and never filtered out. Absent = reviewed
   kit: RecipeKitEntry[]            // .default([]); the kit this dish needs a cook to get out (#882) —
@@ -400,10 +403,10 @@ and both have since been filled in — `image` by the Tier-2 hero pipeline,
   auto-generation trigger skips a user upload rather than clobbering it.
   Reuses the canon **Tier-2** Storage conventions (see `docs/canon-icons.md`).
 
-### Schema extensions (kind discriminator, issues #637, #652)
+### Schema extensions (kind discriminator, issues #637, #652, #1404)
 
 The `recipes` collection holds more than recipes. One additive field,
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'`, says which:
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'`, says which:
 
 - a **`special`** (UI label **"Chef's Specials"**) is a meal that needs no recipe
   card — either because nobody cooked (a takeaway, a picnic, a meal out, a
@@ -416,7 +419,12 @@ The `recipes` collection holds more than recipes. One additive field,
 - a **`placeholder`** is neither: a stock photograph of "a good dinner, no
   particular dish", attached to a planner day that was planned in a sentence so
   that night carries a card like any other. Around ten of them exist, each
-  reused across many evenings.
+  reused across many evenings;
+- a **`cure`** is cured meat — a coppa, a bacon, a saucisson, a mortadella — a
+  full entry in every way a recipe is except that `isPlannable` is `false`. It
+  carries the one per-kind field on this document, `cureCategory`: full
+  definition, the five closed values and why it is a field rather than a fifth
+  kind is in [docs/data-model.md](data-model.md) → "`recipes` holds five kinds".
 
 **`.default('recipe')` is mandatory, not stylistic.** The realtime subscription
 skips documents that fail validation, so a _required_ `kind` would make every
@@ -432,7 +440,7 @@ narrowing site for no gain: the emptiness is already representable.
 **Behaviour comes from capability predicates, never from the kind.** Nothing
 outside `packages/domain` branches on the value; `takesIngredients`,
 `isCookable` and `isPlannable` (`domain/src/recipe/queries/capabilities.ts`)
-answer for it, backed by a `Record<RecipeKind, …>` table so a fourth kind fails
+answer for it, backed by a `Record<RecipeKind, …>` table so a new kind fails
 to compile until it has answered all three questions. The direct comparisons that
 remain are _identity and copy_, never behaviour: which section of the recipe list
 you are looking at, whether a planner picker row wears a badge, and which
@@ -444,13 +452,14 @@ art-direction prompt the hero pipeline reaches for.
 | `special`     | ✗                  | ✗            | ✓             | ✗                 | ✗              |
 | `cocktail`    | ✓                  | ✓            | ✗             | ✓                 | ✓              |
 | `placeholder` | ✗                  | ✗            | ✗             | ✗                 | ✗              |
+| `cure`        | ✓                  | ✓            | ✗             | ✗                 | ✓              |
 
 (`takesComponents` arrived with meals — see below. `isAuthorable` — "can the
-librarian WRITE this kind?" — gained its `cocktail` row in #765, and is also the
-wire bound: `AUTHORABLE_RECIPE_KINDS` is read off this column and is what the AI
-authoring schemas accept for `kind`, so the model is never offered a kind whose
-`takesIngredients` is ✗. The reasoning for each cell is in the capabilities file
-itself.)
+librarian WRITE this kind?" — gained its `cocktail` row in #765 and its `cure`
+row in #1404, and is also the wire bound: `AUTHORABLE_RECIPE_KINDS` is read off
+this column and is what the AI authoring schemas accept for `kind`, so the model
+is never offered a kind whose `takesIngredients` is ✗. The reasoning for each
+cell is in the capabilities file itself.)
 
 Read `isPlannable` as **"is offered in the planner picker"**, which is all it has
 ever gated. A `placeholder` is `false` and still occupies a planner slot — it is
