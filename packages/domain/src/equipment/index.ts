@@ -39,6 +39,10 @@ export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnviro
 
 export { equipmentIconAwaitingApproval, equipmentIconOwnerIds } from './queries/equipmentIcon.js';
 export type { IconOwner } from './queries/equipmentIcon.js';
+// The records with no picture at all (issue #1458) — nothing drawn, nothing
+// borrowed, not hidden. Its header states which of those three it can check
+// exactly and which it reads as a reference only.
+export { undrawnEquipment } from './queries/undrawnEquipment.js';
 // The words ONE ENTRY's picture is described from (issue #1465, Phase 2) — the
 // entry's own name for a family member, qualified by the appliance for a part.
 export { equipmentEntrySubjectName } from './queries/equipmentEntrySubject.js';

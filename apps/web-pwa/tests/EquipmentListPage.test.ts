@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { EquipmentManifest } from '@salt/domain';
+import type { EquipmentIconDoc } from '@salt/domain/schemas';
+import { ErrorCode } from '@salt/shared-types';
 
 const { mockEquipment, mockIsLoading, mockEquipmentIcons } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
@@ -11,7 +13,7 @@ const { mockEquipment, mockIsLoading, mockEquipmentIcons } = await vi.hoisted(as
     // Pictograms (issue #877). Empty by default, which is the real "no art yet"
     // state — every row renders CanonIcon's pale placeholder tile, and these
     // cases go on testing the list rather than the icons.
-    mockEquipmentIcons: makeStore<Map<string, unknown>>(new Map()),
+    mockEquipmentIcons: makeStore<Map<string, EquipmentIconDoc>>(new Map()),
   };
 });
 
@@ -24,11 +26,15 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   equipmentIcons: mockEquipmentIcons,
   equipmentThumbnailFor: () => null,
   equipmentIconVersionFor: () => undefined,
+  // The real ones, not stand-ins: the "not drawn yet" marker is decided by
+  // `undrawnEquipment` reading this map, so a stubbed lookup would test the stub.
+  equipmentIconFor: (icons: Map<string, EquipmentIconDoc>, id: string) => icons.get(id) ?? null,
+  drawEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 
 import EquipmentListPage from '../src/routes/equipment/EquipmentListPage.svelte';
 import { push } from 'svelte-spa-router';
-import { removeEquipmentItems } from '../src/lib/equipmentService.js';
+import { removeEquipmentItems, drawEquipmentIcon } from '../src/lib/equipmentService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 function item(
@@ -72,7 +78,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockEquipment._set(null);
   mockIsLoading._set(false);
+  mockEquipmentIcons._set(new Map());
 });
+
+function iconDoc(overrides: Partial<EquipmentIconDoc> = {}): EquipmentIconDoc {
+  return {
+    subjectBrief: 'A plastic salad spinner with a crank lid.',
+    briefSourceName: 'Salad Spinner',
+    thumbnail: null,
+    ...overrides,
+  };
+}
 
 describe('EquipmentListPage', () => {
   it('renders empty state when manifest has no items', () => {
@@ -196,5 +212,109 @@ describe('EquipmentListPage', () => {
     await waitFor(() => expect(screen.getByTestId('equipment-list-item')).toBeInTheDocument());
     options?.onDismiss?.();
     expect(vi.mocked(removeEquipmentItems)).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #1458, Phase 1 — the gap said out loud, and closed from where it is seen.
+describe('EquipmentListPage — undrawn records', () => {
+  it('marks a record whose description was authored but never drawn', () => {
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(new Map([['spin', iconDoc()]]));
+    render(EquipmentListPage);
+    expect(screen.getByTestId('equipment-undrawn')).toHaveTextContent('Not drawn yet');
+  });
+
+  it('does not mark a record that has a drawing', () => {
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(
+      new Map([['spin', iconDoc({ thumbnail: 'https://example.test/spin.webp' })]]),
+    );
+    render(EquipmentListPage);
+    expect(screen.queryByTestId('equipment-undrawn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipment-draw')).not.toBeInTheDocument();
+  });
+
+  // "Hidden" is the user's answer for that row, not an omission — the whole
+  // point of the marker is that it distinguishes the two states an empty tile
+  // used to conflate.
+  it('does not mark a record whose picture was deliberately hidden', () => {
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(new Map([['spin', iconDoc({ thumbnail: 'hidden' })]]));
+    render(EquipmentListPage);
+    expect(screen.queryByTestId('equipment-undrawn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipment-draw')).not.toBeInTheDocument();
+  });
+
+  it('does not mark a record pointed at a picture that already exists', () => {
+    const borrower = item('spin', 'Salad Spinner');
+    mockEquipment._set(
+      manifest([{ ...borrower, borrowedPicture: { family: 'kitchenTool', id: 'salad-spinner' } }]),
+    );
+    mockEquipmentIcons._set(new Map([['spin', iconDoc()]]));
+    render(EquipmentListPage);
+    expect(screen.queryByTestId('equipment-undrawn')).not.toBeInTheDocument();
+  });
+
+  it('draws from the list with one press, sending the stored description', async () => {
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(
+      new Map([['spin', iconDoc({ subjectBrief: '  A crank-lid spinner. ' })]]),
+    );
+    render(EquipmentListPage);
+    await userEvent.click(screen.getByTestId('equipment-draw'));
+    await waitFor(() =>
+      expect(vi.mocked(drawEquipmentIcon)).toHaveBeenCalledWith('spin', 'A crank-lid spinner.'),
+    );
+    // No navigation: the whole point is closing the gap where it was noticed.
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(vi.mocked(addToast)).toHaveBeenCalledWith('Drew the picture.', 'success'),
+    );
+  });
+
+  // A draw with no brief is not a request the callable should have to interpret,
+  // and a record can be marked before the manifest trigger has authored one.
+  it('marks a record with no description yet, but offers no Draw button', () => {
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    render(EquipmentListPage);
+    expect(screen.getByTestId('equipment-undrawn')).toBeInTheDocument();
+    expect(screen.queryByTestId('equipment-draw')).not.toBeInTheDocument();
+  });
+
+  it('reports a failed draw rather than leaving the row looking pressed', async () => {
+    vi.mocked(drawEquipmentIcon).mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'transient' },
+    });
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(new Map([['spin', iconDoc()]]));
+    render(EquipmentListPage);
+    await userEvent.click(screen.getByTestId('equipment-draw'));
+    await waitFor(() =>
+      expect(vi.mocked(addToast)).toHaveBeenCalledWith(
+        'Failed to draw the picture.',
+        'destructive',
+      ),
+    );
+    expect(screen.getByTestId('equipment-draw')).toBeEnabled();
+  });
+
+  // The kill switch being off is a different sentence from a failure: nothing
+  // went wrong and nothing was spent.
+  it('distinguishes "drawing is switched off" from a draw that failed', async () => {
+    vi.mocked(drawEquipmentIcon).mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'ValidationError', code: ErrorCode.EQUIPMENT_ICON_NOT_DRAWABLE },
+    });
+    mockEquipment._set(manifest([item('spin', 'Salad Spinner')]));
+    mockEquipmentIcons._set(new Map([['spin', iconDoc()]]));
+    render(EquipmentListPage);
+    await userEvent.click(screen.getByTestId('equipment-draw'));
+    await waitFor(() =>
+      expect(vi.mocked(addToast)).toHaveBeenCalledWith(
+        'Drawing is switched off for this environment.',
+        'destructive',
+      ),
+    );
   });
 });

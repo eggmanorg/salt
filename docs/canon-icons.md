@@ -191,14 +191,25 @@ canon shape rather than variations on it:
   `iconNeedsGeneration` precisely because it writes back to the document it watches.
   `onEquipmentManifestWritten` never writes the manifest, so it can just ask the
   honest question — does this item's brief match this item's name? — with no nonce.
-- **A human reads the description before any image is generated.** The trigger
-  authors an appliance description (`describeEquipmentSubject`, `'fast'` tier) and
-  stops; the image is drawn only when someone presses **Draw**, by the
-  `drawEquipmentIcon` callable, which runs the image flow and `sharp` inline. Canon's
-  fully-automatic model is right for groceries — "a bag of frozen peas" has one
-  obvious rendering — but a make and model is exactly where fidelity is won or lost,
-  and a brief is a sentence you can correct where a wrong picture is only a re-roll.
-  Only the description is ever shown or editable; the style anchors stay in code.
+- **No image is generated until a person presses Draw.** The trigger authors an
+  appliance description (`describeEquipmentSubject`, `'fast'` tier) and stops; the
+  image is drawn only when someone presses **Draw**, by the `drawEquipmentIcon`
+  callable, which runs the image flow and `sharp` inline. Canon's fully-automatic
+  model is right for groceries — "a bag of frozen peas" has one obvious rendering —
+  but a make and model is exactly where fidelity is won or lost, and a brief is a
+  sentence you can correct where a wrong picture is only a re-roll. Only the
+  description is ever shown or editable; the style anchors stay in code.
+
+  **The boundary, stated rather than implied (#1458).** This used to read "a human
+  reads the description before any image is generated", and since the equipment
+  list gained a Draw button that is no longer true. What the gate guarantees is the
+  press, not the reading: from the list, Draw sends the record's **stored**
+  description unchanged, and the person may never have looked at it. Reading it,
+  correcting it, re-authoring it from the name or from a photograph all still
+  happen in exactly one place — the record's own page — and that remains the only
+  host for that panel, which is also what #1465 relies on when its picker hands
+  "draw one for it" over to it. A picture drawn from an unread sentence is
+  redrawn there like any other.
 
 ### An entry may have a picture of its own (#1465, Phase 2)
 
@@ -303,6 +314,36 @@ with a picture", discarding whatever was in the box exactly as Start over does. 
 photo is REQUEST-SCOPED: it goes to Gemini as a media prompt part and is never
 written anywhere — no Storage object, no Firestore field, no trace on the item —
 only the sentence it produces persists, and only once **Draw** is pressed.
+
+### A missing picture says so, and is counted (#1458, Phase 1)
+
+Production held 22 equipment records and 20 drawings on 2026-09-18. Both undrawn
+records rendered as the same pale placeholder tile a record whose art is still
+generating renders, so the only way to find one was to go looking — and nobody did,
+for months. The fix is a sentence and a number, not a pipeline.
+
+- **`undrawnEquipment`** (`packages/domain/src/equipment/queries/undrawnEquipment.ts`)
+  is the predicate, and its header is where the definition lives. Three things are
+  **not** gaps: a `"hidden"` thumbnail (the user's answer for that row), a
+  **borrowed** picture (#1465 — a row showing a picture is not missing one), and an
+  **entry's** missing drawing (nothing is ever drawn or described for one
+  automatically, and ~140 of them would be a badge that never falls).
+- **The equipment list says "Not drawn yet"** on a marked row and offers **Draw**
+  beside it, at the same rung as the accessory and rule counters — a fact about the
+  row, not a warning. Draw sends the stored description; see the boundary paragraph
+  under #877 above.
+- **The Admin nav badge gains a third summand** (`apps/web-pwa/src/lib/pictureGaps.ts`),
+  beside canon's and product forms' `needs_approval` counts: undrawn records plus
+  `unresolvedKitLabels`' rows. The two can never name the same thing, because that
+  query already excludes a label resolving to one of the household's records.
+
+**The badge is a floor, not a total**, and deliberately. `unresolvedKitLabels` also
+reads a guided plan's two free-text container fields, and `/admin/kitchen-tools`
+hands it those from a whole-collection read it performs once on arrival. The badge is
+computed on every admin's boot from stores the app already subscribes to, and buying
+a collection read there to find the labels that appear in a plan and in no recipe is
+not worth it. A plan-only gap is real, is listed on that page, and is not in the
+count.
 
 ### The description's two lives (#1433)
 
