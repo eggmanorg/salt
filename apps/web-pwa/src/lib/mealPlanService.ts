@@ -631,10 +631,35 @@ export async function addRecipeToDay(
   if (!week.days[dateKey]) {
     week = { ...week, days: { ...week.days, [dateKey]: emptyDay() } };
   }
-  const attached = week.days[dateKey]!.recipeIds;
-  const next = mergePlannerRecipeIds(attached, expandForPlanner(recipe));
-  if (next.length === attached.length) return success('already-there');
-  const saved = await persistWeekNow(setDayRecipes(week, dateKey, next));
+  const day = week.days[dateKey]!;
+  const next = mergePlannerRecipeIds(day.recipeIds, expandForPlanner(recipe));
+  if (next.length === day.recipeIds.length) return success('already-there');
+  // Name the night (issue #1437). What the planner's week row reads out is
+  // `day.note` and nothing else, so an attach that leaves the note empty renders
+  // "Nothing planned" above the dish's own photograph. The planner's picker has
+  // seeded the note since #469 — `MealDayDetail.svelte`'s `addRecipe`, which
+  // carries the reasoning in full — and this is the same operation reached from
+  // the recipe page, so it seeds on the same terms: only when the note is empty,
+  // so the first attached recipe wins and text the household typed is never lost.
+  //
+  // The seed lives HERE, in the app-layer service, for the reason that block
+  // gives: the title is a live UI value resolved from the recipes store and is
+  // never denormalised onto the plan document (docs/meal-planning.md → _Recipes
+  // on a day_). This function is already handed the whole `Recipe`, so the title
+  // is in hand with no store lookup, and `setDayNote` still takes a plain string
+  // — no title knowledge reaches the domain or any mutator (Rule 1).
+  //
+  // Both mutators are pure, so they compose into the SINGLE `MealPlanWeek` that
+  // `persistWeekNow` writes. A second whole-week `setDoc` to add the note would
+  // be a second LWW clobber window for a field the first write could carry.
+  //
+  // For a meal (#752) `recipe` IS the meal document, so the meal's title lands —
+  // agreeing with the meal-first ordering `expandForPlanner` produces, without
+  // either mechanic knowing about the other.
+  const withRecipes = setDayRecipes(week, dateKey, next);
+  const saved = await persistWeekNow(
+    day.note.trim() ? withRecipes : setDayNote(withRecipes, dateKey, recipe.title),
+  );
   return saved.kind === 'ok' ? success('added') : saved;
 }
 

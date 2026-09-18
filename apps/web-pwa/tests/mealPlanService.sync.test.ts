@@ -557,6 +557,66 @@ describe('mealPlanService — addRecipeToDay', () => {
     const saved = fs.saveMealPlanWeek.mock.calls.at(-1)![0]!;
     expect(saved.days['2026-07-05']).toMatchObject({ recipeIds: ['roast'], attendees: [] });
   });
+
+  // Issue #1437. The planner row's title IS `day.note` — nothing else names a
+  // night — so an attach that leaves the note empty renders "Nothing planned"
+  // above the recipe's own photograph. The planner's picker has seeded the note
+  // since #469; this path never did, and the two are one operation.
+  describe('names the night, exactly as the planner picker does', () => {
+    it('seeds an empty note with the attached recipe title', async () => {
+      seedMealPlanWeek(emptyWeek('2026-06-08'));
+
+      await addRecipeToDay('2026-06-10', recipe('roast'));
+
+      const saved = fs.saveMealPlanWeek.mock.calls.at(-1)![0]!;
+      expect(saved.days['2026-06-10']!.note).toBe('roast');
+      expect(saved.days['2026-06-10']!.recipeIds).toEqual(['roast']);
+    });
+
+    it('never overwrites a note the household already wrote', async () => {
+      seedMealPlanWeek(setDayNote(emptyWeek('2026-06-08'), '2026-06-10', "Sam's birthday"));
+
+      await addRecipeToDay('2026-06-10', recipe('roast'));
+
+      const saved = fs.saveMealPlanWeek.mock.calls.at(-1)![0]!;
+      expect(saved.days['2026-06-10']!.note).toBe("Sam's birthday");
+    });
+
+    it('names the night after the MEAL, not one of its dishes (#752)', async () => {
+      // `expandForPlanner` puts the meal id first; the seed is the meal document
+      // this function was handed, so both agree without either knowing the other.
+      seedMealPlanWeek(emptyWeek('2026-06-08'));
+
+      await addRecipeToDay('2026-06-10', recipe('roast', ['chicken', 'gravy']));
+
+      const saved = fs.saveMealPlanWeek.mock.calls.at(-1)![0]!;
+      expect(saved.days['2026-06-10']!.note).toBe('roast');
+      expect(saved.days['2026-06-10']!.recipeIds).toEqual(['roast', 'chicken', 'gravy']);
+    });
+
+    it('seeds and attaches in ONE whole-week write, not two', async () => {
+      // The pin on "one write": a second `setDoc` would be a second full-document
+      // LWW clobber window for a field the first write could have carried.
+      seedMealPlanWeek(emptyWeek('2026-06-08'));
+
+      await addRecipeToDay('2026-06-10', recipe('roast'));
+
+      expect(fs.saveMealPlanWeek).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes nothing at all — note included — when the dish is already there', async () => {
+      // `'already-there'` returns BEFORE any write, and the seed must not have
+      // given it a reason to start writing: an empty note on an already-planned
+      // night stays empty.
+      seedMealPlanWeek(setDayRecipes(emptyWeek('2026-06-08'), '2026-06-10', ['roast']));
+
+      await expect(addRecipeToDay('2026-06-10', recipe('roast'))).resolves.toEqual({
+        kind: 'ok',
+        value: 'already-there',
+      });
+      expect(fs.saveMealPlanWeek).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Issue #755: the Kitchen page holds week documents of its own, anchored on TODAY

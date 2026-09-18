@@ -230,6 +230,14 @@ rather than becoming a blind overwrite. That one-shot read is deliberately **not
 cached in the service's week store: nothing is listening to it, so nothing would
 refresh it, and its presence would make `weekIsKnown` lie to the next writer.
 
+**It seeds the night's note too** (#1437), on exactly the day sheet picker's
+terms — `recipe.title` into `day.note`, only when that note is empty at attach
+time. Without it the night carried the recipe's hero photograph under the muted
+"Nothing planned", because `day.note` is the only thing that names a night. The
+seed composes into the single `MealPlanWeek` this function already persists, so
+it costs no second write; nights planned before the fix stay unnamed until
+someone edits them, exactly as #652's placeholders were not backfilled.
+
 ### A second page now holds planner weeks (#755)
 
 `mealPlanService` has **three** claims on its subscription set, not two. The
@@ -335,6 +343,16 @@ Nothing about the plan document changed to allow it: `recipeIds` was already a
 - **The meal id goes FIRST**, and two existing mechanics then do the right thing
   by themselves: the day's note seeds from the first attached recipe's title, and
   the day's card takes the first attached hero. Neither was modified.
+
+  The seed is not a property of the plan document — it is a decision each
+  **attach handler** makes, in the app layer, from the `Recipe` it is holding,
+  and only when the day's note is empty at attach time. There are two such
+  handlers: the day sheet's picker (`MealDayDetail.svelte`) and `addRecipeToDay`
+  for the recipe page. The second one shipped without the seed, which is what
+  made a night planned from a recipe page read "Nothing planned" over its own
+  photograph until #1437. A third attach path would have to seed for itself
+  again; nothing downstream of the write supplies a title.
+
 - **`expandForPlanner` takes no recipe store and filters nothing.** A component
   deleted since it was attached leaves a dangling id, which every planner consumer
   already skips silently. Filtering would make a planner _write_ depend on store
