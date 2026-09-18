@@ -4,6 +4,7 @@ import type { DomainError, ReadResult } from '@salt/shared-types';
 import { success, failure } from '@salt/shared-types';
 import { ChatSessionSchema } from '@salt/domain/schemas';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
+import { chatExpiresAt } from '@salt/domain';
 import { classifyFirestoreError } from './firestoreErrors.js';
 import { subscribeCollection } from './subscribeCollection.js';
 import type { ParsedBy } from './schemaParsing.js';
@@ -12,35 +13,12 @@ import type { ParsedBy } from './schemaParsing.js';
 // chatSessions/{id}. Per-user scoped: every read/write is filtered by ownerUid.
 // Messages are stored as an array in the session doc (not a subcollection).
 // saveChatSession bumps expiresAt on every write, and every chat gets a finite
-// one — see the two constants below for how long, and the block after them for
-// the wire type that lets Firestore's TTL machinery act on it (#1008).
+// one — `chatExpiresAt` in `@salt/domain` holds how long and why (it lives there
+// because `chefChatFlow` is the document's other writer and cannot import this
+// package, #1430), and the block below holds the wire type that lets Firestore's
+// TTL machinery act on it at all (#1008).
 
 const COLLECTION = 'chatSessions';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** A general kitchen chat: a fortnight, unchanged since #206. */
-const TTL_MS = 14 * DAY_MS;
-
-// A chat attached to a recipe outlives a general one. It no longer outlives
-// everything (issues #696, #939).
-//
-// The reason it lives longer is unchanged and still right: the recipe page lists
-// every conversation you have had about a dish, including the one it was written
-// from, and a fortnightly sweep would empty that list for exactly the recipes you
-// have lived with longest. What was wrong was the WIDTH of the exemption. It was
-// written as `9999-12-31`, and because a chat claims its recipe as soon as it
-// produces one, the majority of sessions end up in the never-expiring class — 52
-// of staging's 76 carry a `recipeId`. A collection whose dominant class is
-// immortal has no bound at all, and it is read whole at auth, on every cold
-// start, holding the fattest documents in the app.
-//
-// EIGHTEEN MONTHS, because the interval this has to survive is a year. A dish you
-// cook once a Christmas is precisely the "recipe you have lived with longest" the
-// exemption exists for, and a 365-day window is a coin flip on whether the sweep
-// beats the next cook. Eighteen clears an annual cycle with six months to spare,
-// and any turn of the conversation restamps it from today.
-const RECIPE_TTL_MS = 540 * DAY_MS;
 
 // ─── THE TTL FIELD IS A `Timestamp` ON THE WIRE (issue #1008) ────────────────
 //
@@ -61,8 +39,7 @@ const RECIPE_TTL_MS = 540 * DAY_MS;
 // this field is a deliberate post-merge step, never a side effect of a deploy.
 
 function expiresAt(session: ChatSessionDoc): string {
-  const ttl = session.recipeId !== null ? RECIPE_TTL_MS : TTL_MS;
-  return new Date(Date.now() + ttl).toISOString();
+  return chatExpiresAt(session, new Date()).toISOString();
 }
 
 /**

@@ -68,7 +68,10 @@ a side effect of a deploy or a CI run.
   #939 designed. A migration that silently shortened a recorded expiry would
   delete data nobody agreed to delete.
 
-  **540 for every one of them, never the general-chat 14.** `saveChatSession`
+  **540 for every one of them, never the general-chat 14.** `chatExpiresAt`
+  (`packages/domain/src/chat/queries/chatExpiry.ts`, which every writer of a chat
+  document delegates to — #1430 moved it out of the adapter so the `chefChat`
+  flow could call it without importing `firebase-sync`)
   picks the fortnight when `recipeId === null`, so an _unattached_ sentinel would
   restamp to 14 days — but no such document can exist. The write that produced the
   sentinel ran only under `recipeId !== null` (#707), and nothing ever clears a
