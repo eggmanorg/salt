@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { kitchenToolForKitLabel, resolveKitchenTool } from '../../src/index.js';
+import {
+  kitchenToolForKitLabel,
+  namesManifestAccessory,
+  resolveKitchenTool,
+} from '../../src/index.js';
 import type { EquipmentItem } from '../../src/index.js';
 import type { KitchenToolDoc } from '../../src/schemas/index.js';
 
@@ -172,6 +176,23 @@ describe('kitchenToolForKitLabel — #1460’s case table', () => {
         resolveKitchenTool(label, VOCABULARY)?.id ?? null,
       );
     }
+  });
+
+  it('treats a name that normalises away entirely as naming nothing', () => {
+    // A quantity that wandered into a container field — "500g", "2". It names no
+    // accessory and never could, which is the same guard `unresolvedKitLabels`
+    // states for the same reason.
+    expect(namesManifestAccessory('500g', MANIFEST)).toBe(false);
+    expect(namesManifestAccessory('Thermo Bowl', MANIFEST)).toBe(true);
+  });
+
+  it('degrades to “names nothing” for an item carrying no accessories array', () => {
+    // Not hypothetical: the recipe page's own test fixtures build manifest items
+    // as `{ id, name }`, and a throw here would take the whole Equipment tab down
+    // rather than cost one picture. `resolveEquipmentItem` guards the same way.
+    const partial = [{ id: 'x', name: 'Some machine' }] as unknown as EquipmentItem[];
+    expect(namesManifestAccessory('Thermo Bowl', partial)).toBe(false);
+    expect(kitchenToolForKitLabel('Thermo Bowl', VOCABULARY, partial)?.id).toBe('mixing-bowl');
   });
 
   it('matches an accessory name exactly, never by containment', () => {

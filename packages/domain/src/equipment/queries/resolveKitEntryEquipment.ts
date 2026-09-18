@@ -57,6 +57,11 @@ export function resolveKitEntryEquipment(
   const item = items.find((candidate) => candidate.id === link.itemId);
   if (!item) return null;
   if (link.accessoryId === null) return { item, accessory: null };
+  // `?? []` stays, exactly as `resolveEquipmentItem` carries it. The schema
+  // defaults `accessories`, so a PARSED item always has the array — but this
+  // query is pure and takes whatever a caller hands it, and a partial item
+  // (a page fixture, a projection) must degrade to "names nothing" rather than
+  // throw inside a render. Pinned by a test.
   const accessory = (item.accessories ?? []).find((a) => a.id === link.accessoryId);
   if (!accessory) return null;
   return { item, accessory };

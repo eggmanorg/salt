@@ -69,7 +69,12 @@ import { resolveKitchenToolMatch } from './resolveKitchenTool.js';
  */
 export function namesManifestAccessory(label: string, items: readonly EquipmentItem[]): boolean {
   const target = normaliseName(label);
+  // A name that normalises away entirely — "500g", "2" — names no accessory and
+  // never could, the same guard `unresolvedKitLabels` states for the same reason.
   if (!target) return false;
+  // `?? []` stays, exactly as `resolveEquipmentItem` carries it: this query is
+  // pure and takes whatever a caller hands it, and a partial item must degrade to
+  // "names nothing" rather than throw inside a render. Pinned by a test.
   return items.some((item) =>
     (item.accessories ?? []).some((accessory) => normaliseName(accessory.name) === target),
   );

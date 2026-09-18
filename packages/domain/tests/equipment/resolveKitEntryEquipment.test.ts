@@ -93,6 +93,18 @@ describe('resolveKitEntryEquipment', () => {
     expect(got).toBeNull();
   });
 
+  it('answers null for an item carrying no accessories array', () => {
+    // A partial item — a page fixture, a projection. Degrading to "names nothing"
+    // costs one picture; throwing would take the whole row down.
+    const partial = [{ id: 'magimix', name: 'Magimix Cook Expert' }] as unknown as EquipmentItem[];
+    expect(
+      resolveKitEntryEquipment(
+        { equipment: { itemId: 'magimix', accessoryId: 'acc-thermo' } },
+        partial,
+      ),
+    ).toBeNull();
+  });
+
   it('answers null against an empty manifest — the cold-load reading', () => {
     expect(
       resolveKitEntryEquipment({ equipment: { itemId: 'magimix', accessoryId: null } }, []),
