@@ -51,9 +51,26 @@ describe('hasBlockingFindings', () => {
     },
   );
 
+  // #1414: the marked-up spellings of "nothing here" that reviewers actually
+  // write. Each is long enough to clear the 20-character floor on its own, so
+  // the floor cannot be what saves them - only stripping the leading marker can.
+  it.each([
+    ['_None._ Read for correctness, duplication and test gaps.'],
+    ['**None.** Verified the two mutators against the fixture.'],
+    ['- None. Nothing CI does not already cover.'],
+    ['> None — the diff is confined to the guard and its self-tests.'],
+  ])('reads %j as no findings despite the markup around the word', (text) => {
+    expect(hasBlockingFindings(reviewSections(body(text)))).toBe(false);
+  });
+
   it('reads a real finding as a finding', () => {
     const text =
       '- `recipeAmend.ts:97` re-splits the pair, so a fresh strip lands under a stale one.';
+    expect(hasBlockingFindings(reviewSections(body(text)))).toBe(true);
+  });
+
+  it('still reads an emphasised real finding as a finding', () => {
+    const text = '**`recipeAmend.ts:97`** re-splits the pair, so a fresh strip lands under a stale one.'; // prettier-ignore
     expect(hasBlockingFindings(reviewSections(body(text)))).toBe(true);
   });
 });

@@ -33,10 +33,22 @@ export function reviewSections(body) {
  * Does the `## Blocking` section name anything? A stub ("None", "n/a") and a
  * heading with nothing under it both mean no. The length floor is what stops a
  * one-word placeholder reading as a finding.
+ *
+ * THE STUB TEST IS ANCHORED, SO MARKDOWN AROUND THE WORD USED TO DEFEAT IT
+ * (#1414). Reviewers do not write a bare `None.`; they write `_None._`,
+ * `**None.**` or `- None`, and every one of those made the anchor miss. The
+ * length floor cannot save it either, because the more carefully a reviewer
+ * explains under that heading what they checked, the further past 20 characters
+ * they go — so a correct, thorough "nothing is blocking" scored as blocking and
+ * stopped an unattended campaign on a human. Leading emphasis, bullet, blockquote
+ * and heading markers are therefore stripped before the word is matched, and
+ * before the floor is applied.
  */
 export function hasBlockingFindings(sections) {
   const blk = sections.find((s) => /^blocking\b/i.test(s.heading));
-  return !!blk && blk.body.length > 20 && !/^(none|n\/a|no blocking|nothing)\b/i.test(blk.body);
+  if (!blk) return false;
+  const body = blk.body.replace(/^[\s>*_+#-]*/, '');
+  return body.length > 20 && !/^(none|n\/a|no blocking|nothing)\b/i.test(body);
 }
 
 /**
