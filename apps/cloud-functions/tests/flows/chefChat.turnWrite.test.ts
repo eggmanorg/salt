@@ -42,8 +42,9 @@ vi.mock('../../src/adapters/withAiTimeout.js', () => ({
   withAiTimeout: (_flow: string, fn: () => Promise<unknown>) => fn(),
   withAiStreamTimeout: (_flow: string, stream: AsyncIterable<unknown>) => stream,
 }));
+const mockReportFlowError = vi.fn(async () => undefined);
 vi.mock('../../src/observability/reportServerError.js', () => ({
-  reportFlowError: vi.fn(async () => undefined),
+  reportFlowError: mockReportFlowError,
 }));
 
 const { writeChefChatTurn } = await import('../../src/flows/chefChat.js');
@@ -248,5 +249,32 @@ describe('writeChefChatTurn — it never throws', () => {
 
     await expect(writeChefChatTurn(db, turn())).resolves.toBeUndefined();
     expect(mockError).toHaveBeenCalled();
+  });
+});
+
+describe('writeChefChatTurn — a failed write is reported, not just logged', () => {
+  it('reports a failed write through reportFlowError, additively to the log line', async () => {
+    // Before this fix the catch here logged to Cloud Logging alone — the same
+    // failure category the pre-#1430 `persistSession` path reached PostHog with,
+    // via `reportIfFailed` (review of this PR). Uncategorised: this is a raw
+    // Firestore exception, not a classified Result envelope.
+    const { db } = fakeDb({ exists: true, data: storedSession() }, async () => {
+      throw new Error('firestore unavailable');
+    });
+
+    await writeChefChatTurn(db, turn());
+
+    expect(mockError).toHaveBeenCalled();
+    expect(mockReportFlowError).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('does not report when there is nothing to write (not-found, ownership, unreadable)', async () => {
+    const { db } = fakeDb({ exists: false });
+
+    await writeChefChatTurn(db, turn());
+
+    // These are ordinary, expected outcomes — not failures — and the existing
+    // `logger.warn` sites for them are unaffected by this fix.
+    expect(mockReportFlowError).not.toHaveBeenCalled();
   });
 });

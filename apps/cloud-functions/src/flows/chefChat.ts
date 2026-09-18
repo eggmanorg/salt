@@ -1316,6 +1316,11 @@ export async function writeChefChatTurn(
     });
   } catch (err) {
     logger.error('chefChat: failed to write the turn', { sessionId: turn.sessionId, err });
+    // Additive to the log line above (§Observability), not a replacement for it.
+    // No DomainError category to hand it: this is a raw Firestore exception, not
+    // a classified Result envelope, so it goes through uncategorised — the
+    // bucket the reporting policy gates as reportable ("report the unexpected").
+    await reportFlowError(err);
   }
 }
 

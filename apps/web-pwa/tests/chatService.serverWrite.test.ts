@@ -185,3 +185,88 @@ describe('chatService — the generated title cannot clobber the turn', () => {
     expect(fs.saveChatSession).not.toHaveBeenCalled();
   });
 });
+
+describe('chatService — an unrelated write mid-turn cannot wipe the optimistic turn', () => {
+  it('keeps the optimistic user turn when the session is re-delivered with no new turn on it', async () => {
+    // `subscribeChatSessions` re-delivers the owner's WHOLE session set on every
+    // change to ANY of the user's sessions (review of this PR). The commonest
+    // case is the title callable's own `persistSession` echo landing while a
+    // later turn is still in flight — same session id, but the PRE-TURN message
+    // count, since the flow has not written yet.
+    //
+    // A DEDICATED session id, not 'sess-1': `awaitingServerWrite` is module state
+    // that outlives a single test (nothing in this file resets it in `afterEach`),
+    // and another test's still-pending wait for 'sess-1' would otherwise resolve
+    // here as a side effect of the very displacement fix this suite also covers.
+    const id = 'sess-mid-turn-echo';
+    let resolveStream!: (v: { kind: 'ok'; value: string }) => void;
+    fs.streamChefChat.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStream = resolve;
+      }),
+    );
+
+    const sendPromise = sendMessage(makeSession({ id }), 'what can I make?', () => {});
+
+    // The echo: same session, no new messages, just a changed field (as a title
+    // write would produce).
+    deliver.snapshot([
+      makeSession({ id, title: 'New chat', updatedAt: '2026-09-19T10:00:00.500Z' }),
+    ]);
+
+    const midTurn = getChatSessionsSnapshot().find((s) => s.id === id);
+    expect(midTurn?.messages).toHaveLength(1);
+    expect(midTurn?.messages[0]?.text).toBe('what can I make?');
+
+    resolveStream({ kind: 'ok', value: 'A pilaf, at a guess.' });
+    await sendPromise;
+
+    const afterReply = getChatSessionsSnapshot().find((s) => s.id === id);
+    expect(afterReply?.messages).toHaveLength(2);
+  });
+});
+
+describe('chatService — the store never un-supersedes a landed flow write', () => {
+  it('keeps the flow document when its snapshot lands before the callable resolves', async () => {
+    // The flow `await`s its Firestore write before returning, so the listener can
+    // deliver that document before `streamChefChat` resolves here — not a rare
+    // interleaving, just a race between two round trips (review of this PR).
+    const id = 'sess-race-with-flow';
+    let resolveStream!: (v: { kind: 'ok'; value: string }) => void;
+    fs.streamChefChat.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStream = resolve;
+      }),
+    );
+
+    const sendPromise = sendMessage(makeSession({ id }), 'what can I make?', () => {});
+
+    deliver.snapshot([asTheFlowWroteIt({ id })]);
+
+    resolveStream({ kind: 'ok', value: 'A pilaf, at a guess.' });
+    await sendPromise;
+
+    // Un-superseded would put the browser's turn ids back; the server's must win.
+    const shown = getChatSessionsSnapshot().find((s) => s.id === id);
+    expect(shown?.messages.map((m) => m.id)).toEqual(['srv-1', 'srv-2']);
+  });
+});
+
+describe('chatService — a displaced wait resolves rather than leaking', () => {
+  it('does not hang the first turn behind a second send on the same session', async () => {
+    const id = 'sess-displaced-wait';
+    await sendMessage(makeSession({ id }), 'first', () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Turn 1's flow write has not landed yet, so its title generation is parked
+    // on `serverWrite.landed`. A second `sendMessage` on the SAME session id
+    // (a quick follow-up sent before the first turn's title callable resolved)
+    // used to silently displace the map entry without resolving it — leaving
+    // turn 1's `landed` unsettled forever, and its generated title dropped
+    // although the flow's write had not failed.
+    await sendMessage(makeSession({ id }), 'second', () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fs.saveChatSession).toHaveBeenCalled();
+  });
+});
