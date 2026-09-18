@@ -18,6 +18,23 @@ import type { Readable } from 'svelte/store';
 
 // Chat service (issue #206, Phase 3). Optimistic store over the per-user
 // firebase-sync adapter. Follows the recipeService.ts pattern exactly.
+//
+// TWO WRITERS OF A CHAT DOCUMENT, DELIBERATELY, and the split is by who is
+// waiting (issue #1430):
+//
+//  - A TURN is written by the `chefChat` flow, server-side. `sendMessage` below
+//    sends the session id, appends both turns to the STORE for the reader to
+//    watch, and writes nothing. The call runs for most of a minute on a
+//    tool-using turn, so the browser cannot be relied on to be there when it
+//    returns — a locked phone lost the reply AND the user's own sentence while
+//    the browser owned the write.
+//  - EVERYTHING ELSE is written here, through `persistSession`: creating a
+//    session, claiming its recipe, reopening it, the generated title, and the
+//    `/remember` chip line. Each is instant and the person is on the page.
+//
+// The document is whole-document LWW, so two writers is no more hazardous than
+// one — but the two run on two CLOCKS, and `applySnapshot`'s ordering guard below
+// compares their stamps. See `awaitingServerWrite`.
 
 const _sessions = writable<readonly ChatSessionDoc[]>([]);
 export const sessions: Readable<readonly ChatSessionDoc[]> = _sessions;
@@ -43,6 +60,83 @@ function getErrorReporter() {
 // Optimistic snapshot guard — same pattern as recipeService.ts.
 const latestLocalEdit = new Map<string, string>();
 
+// Sessions whose current turn the FLOW is writing (issue #1430), and a way to
+// wait for that write to arrive.
+//
+// THE HAZARD IT ANSWERS IS TWO CLOCKS, not staleness. `latestLocalEdit` exists to
+// suppress a snapshot older than a write WE made, and it holds a stamp from THIS
+// browser's clock (`createChatSession`, the title, a reopen). The flow's write is
+// stamped from the SERVER's. A browser running fast by more than the gap between
+// those two writes would make the ordering guard reject the real turn — the one
+// thing in the store that only exists in Firestore — and it would look exactly
+// like the bug this issue fixes. So for the snapshot that actually carries the
+// flow's write, the ordering guard does not apply.
+//
+// NARROWED TO A SNAPSHOT THAT ACTUALLY CARRIES THE NEW TURN (found in review of
+// this PR). `subscribeChatSessions` re-delivers the owner's WHOLE session set on
+// every change to ANY of them, so the first snapshot naming this session id is
+// NOT provably the flow's write — it is just as often an unrelated write to the
+// SAME session landing while the turn is in flight, most commonly the title
+// callable's own echo a few hundred ms later, carrying the PRE-TURN document.
+// Trusting that snapshot unconditionally used to replace the store's only copy
+// of the user's just-typed turn with a document that had never seen it — #1430's
+// own symptom, reintroduced client-side. `expectedMessageCount` tells the two
+// apart: the flow appends exactly two messages to whatever it reads, so a
+// snapshot IS the flow's write once, and only once, its `messages.length`
+// reaches the pre-turn count plus two. Anything short of that while a write is
+// still expected is some OTHER write to this session, and the optimistic copy
+// is kept — see `applySnapshot`.
+//
+// It is not a licence for any MATCHING snapshot to jump the guard: the entry is
+// set for a named session at the send and cleared by the first snapshot that
+// actually meets `expectedMessageCount`. The residual boundary, since that
+// snapshot is still not PROVABLY the flow's rather than a coincidence: another
+// device appending exactly two messages to this session between the send and
+// the flow's write would take the bypass instead. That costs nothing — it is a
+// real document from the server, the flow's write lands moments later and
+// supersedes it, and no turn is lost, because the store's optimistic copy is no
+// longer the only copy of anything.
+//
+// `arrived` is what `sendMessage` awaits before applying a generated title, so
+// the title is composed onto the flow's document rather than racing it. It never
+// resolves if the flow's write failed — deliberately: the title is then dropped,
+// the chat keeps its seed name, and that is the cosmetic loss #1430 names and
+// leaves open, not a lost turn.
+interface ServerWriteWait {
+  readonly landed: Promise<void>;
+  readonly arrived: () => void;
+  readonly expectedMessageCount: number;
+}
+const awaitingServerWrite = new Map<string, ServerWriteWait>();
+
+function expectServerWrite(id: string, expectedMessageCount: number): ServerWriteWait {
+  // A second `sendMessage` on the same session (a quick follow-up sent before
+  // the first turn's title callable has resolved) would otherwise silently
+  // displace the live entry: `forgetServerWrite` only ever resolves whatever is
+  // CURRENTLY in the map, so the first turn's `landed` would never settle, its
+  // generated title would be dropped even though the flow's write succeeded,
+  // and this promise plus its `.then` closure would leak for the page's
+  // lifetime. Resolve the outgoing wait before replacing it — the only true
+  // thing left to say about a wait nothing will ever settle again.
+  const displaced = awaitingServerWrite.get(id);
+  if (displaced) displaced.arrived();
+
+  let arrived = () => {};
+  const landed = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  const wait = { landed, arrived, expectedMessageCount };
+  awaitingServerWrite.set(id, wait);
+  return wait;
+}
+
+function forgetServerWrite(id: string): void {
+  const wait = awaitingServerWrite.get(id);
+  if (wait === undefined) return;
+  awaitingServerWrite.delete(id);
+  wait.arrived();
+}
+
 function applySnapshot(incoming: ChatSessionDoc[]): void {
   const currentById = new Map(get(_sessions).map((s) => [s.id, s]));
   const result: ChatSessionDoc[] = [];
@@ -50,7 +144,27 @@ function applySnapshot(incoming: ChatSessionDoc[]): void {
   for (const s of incoming) {
     seen.add(s.id);
     const local = latestLocalEdit.get(s.id);
-    if (local !== undefined && s.updatedAt < local) {
+    const wait = awaitingServerWrite.get(s.id);
+    // See the comment above `awaitingServerWrite`: a snapshot only counts as
+    // "the flow's write arrived" once its message count shows the two turns are
+    // actually IN it. Anything short of that while a write is still expected is
+    // some other write to this session — most often the title callable's own
+    // echo of the pre-turn document — and must not be allowed to jump the guard.
+    const flowWriteLanded = wait !== undefined && s.messages.length >= wait.expectedMessageCount;
+    if (flowWriteLanded) forgetServerWrite(s.id);
+    const stillAwaitingFlowWrite = wait !== undefined && !flowWriteLanded;
+    if (stillAwaitingFlowWrite) {
+      // Keep the optimistic copy and carry on waiting — this snapshot is not
+      // the turn, and the ordinary clock guard below would happily accept it
+      // anyway (the browser never stamps `latestLocalEdit` for the turn it
+      // hands to the flow; see `sendMessage`), wiping the user's typed message
+      // off the screen for the rest of the reply. That is #1430's own symptom,
+      // and this is the case that let it back in.
+      const ours = currentById.get(s.id);
+      if (ours) result.push(ours);
+      continue;
+    }
+    if (!flowWriteLanded && local !== undefined && s.updatedAt < local) {
       const ours = currentById.get(s.id);
       if (ours) result.push(ours);
       continue;
@@ -241,10 +355,16 @@ export async function removeSession(id: string): Promise<ReadResult<void, Domain
   return reportIfFailed(getErrorReporter(), await deleteChatSession(id));
 }
 
-// Send a user message: appends the user turn, streams the assistant reply,
-// then appends the final assistant turn and persists the session once.
-// onChunk is called for each streaming text fragment so the UI can render
-// the partial reply live; the full reply is committed to the session on finish.
+// Send a user message: appends the user turn, streams the assistant reply, then
+// appends the final assistant turn. onChunk is called for each streaming text
+// fragment so the UI can render the partial reply live.
+//
+// PERSISTS NOTHING ON THIS PATH (issue #1430). Both appends are to the store
+// alone, for the reader to watch; `chatSessions/{id}` is written by the flow,
+// which mints the stored turns' ids and timestamps and returns only the reply
+// text. The store's copies are therefore superseded, id for id, when the flow's
+// write arrives on the subscription — same two turns, same text, different ids.
+// Nothing here depends on those ids matching, and nothing should start to.
 export async function sendMessage(
   session: ChatSessionDoc,
   text: string,
@@ -282,11 +402,21 @@ export async function sendMessage(
   // Optimistically update with user message. Snapshot the prior store state so a
   // failed send can be rolled back — the turn is only persisted on success, so a
   // left-behind optimistic turn would otherwise accumulate as a ghost on retry.
+  //
+  // NO `latestLocalEdit` STAMP: that map guards against a snapshot older than a
+  // write we made, and this browser is no longer the one writing the turn.
+  // Stamping it here would stamp a client clock against a write the SERVER is
+  // about to make — precisely the comparison `awaitingServerWrite` exists to take
+  // out of the path.
   const prevSessions = get(_sessions);
   const stampedUser = { ...sessionWithUser, updatedAt: now() };
-  latestLocalEdit.set(stampedUser.id, stampedUser.updatedAt);
   const others = prevSessions.filter((s) => s.id !== stampedUser.id);
   _sessions.set([...others, stampedUser]);
+  // The flow appends exactly two messages (user, assistant) to whatever it
+  // reads, so this is the count a snapshot needs to reach before it can be
+  // trusted as the flow's own write rather than some unrelated one — see the
+  // comment above `awaitingServerWrite`.
+  const serverWrite = expectServerWrite(session.id, session.messages.length + 2);
 
   // Who the chef is talking to (issue #816, phase 2). The same source the note's
   // `author` is denormalised from, so the name the chef compares a note's author
@@ -316,12 +446,18 @@ export async function sendMessage(
       newMessage: text,
       recipeId: session.recipeId,
       basedOnRecipeId: session.basedOnRecipeId,
+      // The conversation the flow writes this turn into (issue #1430). Always
+      // sent from here — the field is optional on the wire only so a browser left
+      // on an older bundle after a deploy still gets a working turn.
+      sessionId: session.id,
       ...(speaker ? { speaker } : {}),
     },
     onChunk,
   );
 
   if (streamResult.kind === 'err') {
+    // No write is coming, so release the snapshot bypass with it.
+    forgetServerWrite(session.id);
     _sessions.set(prevSessions);
     // Report the chefChat AI-callable failure (gate drops NetworkError/offline).
     reportWriteError(getErrorReporter(), streamResult.error);
@@ -340,15 +476,45 @@ export async function sendMessage(
     messages: [...stampedUser.messages, assistantMsg],
   };
 
-  const saveResult = await persistSession(finalSession);
-  if (saveResult.kind === 'err') return saveResult;
+  // Store only — the flow has already written the turn (see this function's
+  // header). This is what the reader watches until the subscription catches up.
+  //
+  // ONLY IF THE STORE'S COPY IS STILL THE OPTIMISTIC ONE. The flow's own write is
+  // `await`ed before it returns, so `applySnapshot` can land the real document —
+  // superseding `stampedUser` in the store — before this `streamChefChat` call
+  // above even resolves; not a rare interleaving, just a race between two round
+  // trips. Writing `finalSession` over that unconditionally would un-supersede
+  // it: the store would go back to showing the browser's turn ids, and the title
+  // follow-up below would then `persistSession` (a whole-document `setDoc`) the
+  // browser's copy over the server's under LWW — the exact clobber this file's
+  // header says the flow's write prevents. Reference equality is enough to tell
+  // the two cases apart: nothing but `applySnapshot` ever replaces a session
+  // object in the store, so `stampedUser` is still the live entry if and only if
+  // no snapshot has landed for it since.
+  const liveEntry = get(_sessions).find((s) => s.id === finalSession.id);
+  if (liveEntry === stampedUser) {
+    const withoutThis = get(_sessions).filter((s) => s.id !== finalSession.id);
+    _sessions.set([...withoutThis, finalSession]);
+  }
 
   if (isFirstExchange) {
     // Generate a short title in the background — doesn't block the response.
-    void callGenerateChatTitle(text, streamResult.value).then((titleResult) => {
-      if (titleResult.kind === 'ok' && titleResult.value.trim()) {
-        void persistSession({ ...finalSession, title: titleResult.value.trim() });
-      }
+    void callGenerateChatTitle(text, streamResult.value).then(async (titleResult) => {
+      if (titleResult.kind !== 'ok' || !titleResult.value.trim()) return;
+      // WAIT FOR THE FLOW'S WRITE FIRST, then compose the title onto WHAT THE
+      // STORE HOLDS — never onto the captured `finalSession`, whose turn ids the
+      // flow has already superseded (issue #1430). `persistSession` is a
+      // whole-document `setDoc`, so writing the captured object would put the
+      // browser's copy of the turn back over the server's under LWW, and doing it
+      // before the flow's snapshot arrived would leave the store showing the seed
+      // title over a document that has the real one until the next reload.
+      //
+      // `landed` never resolves if the flow's write failed, and the title is then
+      // simply dropped — the cosmetic half of this failure, which #1430 names and
+      // leaves for #1417 to decide about.
+      await serverWrite.landed;
+      const current = get(_sessions).find((s) => s.id === session.id);
+      if (current) void persistSession({ ...current, title: titleResult.value.trim() });
     });
   }
 

@@ -21,6 +21,13 @@
  * Firestore writes and the realtime store subscription are all production paths.
  * The owner-scoping query (`where('ownerUid', '==', uid)`) is exercised live.
  *
+ * THE TURN IS WRITTEN BY THE FLOW since #1430, not by the browser — so the reload
+ * block below is now the end-to-end statement of that: the document it re-hydrates
+ * from was written server-side, and the ownerUid check that permitted the write is
+ * the flow's own, not `firestore.rules`'. The cross-user block after it carries
+ * more weight for the same reason — user B's store must stay empty although a
+ * Cloud Function, which the rules do not constrain, is now a writer here.
+ *
  * Asserts the conversation in BOTH the chat-sessions store (via the
  * window.__e2e.getChatSessions bridge) and the rendered DOM, plus reload
  * persistence and cross-user isolation.

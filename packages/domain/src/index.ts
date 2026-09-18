@@ -419,8 +419,10 @@ export {
   LIBRARY_PAGE_SEARCH_CEILING,
 } from './library/index.js';
 export type { LibraryPageCandidate, LibraryPageSearchFilters } from './library/index.js';
-// Chat module (issue #1270) — the one place a chat's read-only state is decided.
+// Chat module (issues #1270, #1430) — the one place a chat's read-only state is
+// decided, and the one place its retention is.
 export { isChatReadOnly, CHAT_READ_ONLY_AFTER_MS } from './chat/index.js';
+export { chatExpiresAt, CHAT_TTL_MS, CHAT_RECIPE_TTL_MS } from './chat/index.js';
 // Formula module (issue #782, epic #778) — composition as ratios against a
 // declared basis, and the bidirectional yield solve. Headless: nothing renders it
 // and nothing stores it yet, but the surface is what phase 01 is built against.

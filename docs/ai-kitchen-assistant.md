@@ -196,7 +196,9 @@ authoritative count and the place to argue for a fifth — not this doc.
 ## Components
 
 ```
-chat session doc (Firestore)         ← owned by web-pwa + firebase-sync (client writes)
+chat session doc (Firestore)         ← TWO writers (#1430): the chef flow writes the
+                                        completed turn; web-pwa + firebase-sync write
+                                        everything else (create, title, claim, reopen)
   └─ chef flow (CF, Genkit, streaming, plain text)   ← reads equipmentManifest, returns reply
                                                          + kitchenMemories (issue #816)
   └─ librarian flow (CF, Genkit, structured)         ← conversation → RecipeDoc draft
@@ -237,7 +239,10 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
 - Messages are an **array in the session doc** (not a subcollection): simpler store,
   TTL, and optimistic updates. A cooking chat will not approach the 1 MB doc ceiling;
   note the bound. Per-token streaming is **not** persisted — the client holds the
-  partial assistant text in memory and writes the final message once on completion.
+  partial assistant text in memory and paints it, and the **flow** writes both
+  finished turns once the stream has drained (issue #1430). The client used to do
+  that write, which meant a phone locking mid-reply lost the reply and the user's
+  own sentence with it; a turn that fails or times out still writes nothing.
 - `firebase-sync` store (`chatSessionSubscription.ts` + writes) follows the
   `recipeSubscription.ts` pattern exactly: `onSnapshot` + `safeParse` (skip+log
   invalid on list, `Failure` on single-doc corruption), `ReadResult` envelopes.
@@ -254,8 +259,26 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
 - **Streaming**: define the flow with a stream schema and emit chunks; the client
   consumes via `httpsCallable(...).stream()`. This is the one piece of newer
   plumbing — **validate it early and interactively** (WSL2 emulator quirks).
-- Input: `{ messages: Message[], newMessage: string }` (recent history window +
-  the new turn). The flow is **stateless** — it does not write chat docs.
+- Input: `{ messages: Message[], newMessage: string, sessionId?: string }` (recent
+  history window + the new turn + the conversation it belongs to). The flow
+  **writes the completed turn** into `chatSessions/{sessionId}` when that id is
+  present (issue #1430) — it is not stateless, and it has not been since. Three
+  things about that write are load-bearing and easy to undo by accident:
+  - it **reads the document and appends to it**, never rebuilding the transcript
+    from `messages`: the wire history has every `/remember …` line stripped out of
+    it, so a rebuild would silently delete those lines from storage;
+  - it **re-creates the ownerUid check** `firestore.rules` performs, against the
+    verified caller, because an Admin SDK write bypasses the rules entirely.
+    `sessionId` names a document; it does not authorise writing one;
+  - it **bumps `expiresAt`**, as a `Timestamp`, from `chatExpiresAt` in
+    `@salt/domain` — the one home for the 14-day/540-day policy that
+    `saveChatSession` also calls. A full `.set()` omitting it switches that
+    document's TTL off in silence (issue #1008).
+
+  `sessionId` is **optional** so a browser left on an older bundle after a deploy
+  still gets a working turn; absent, the flow writes nothing and that bundle
+  persists the turn itself, as it always did.
+
 - The flow reads the **equipment manifest** doc server-side (admin SDK, like the
   canon flows read the canon collection) and injects it into the system prompt as
   ambient context. Client stays simple; equipment is always fresh.
