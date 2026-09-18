@@ -152,4 +152,66 @@ describe('unresolvedKitLabels — equipment the household owns (issue #954)', ()
 
     expect(rows).toEqual([{ label: 'mandoline', count: 1 }]);
   });
+
+  // ── The queue and the renderer answer with one function (issues #1460, #1465) ──
+
+  const withCocotte = {
+    ...magimix,
+    accessories: [
+      { id: 'acc-cocotte', name: 'Cocotte Slow Cook Pot', owned: true, included: false, note: '' },
+    ],
+  };
+
+  it('lists a bare accessory name the renderer now declines to draw', () => {
+    // The #1460 blind spot: "Cocotte Slow Cook Pot" resolved to `Stockpot` through
+    // the bare matcher "pot", so the plain resolver dropped the row as "already
+    // drawn" while the page showed a stockpot. The renderer refuses it now, and
+    // the queue has to agree or /admin/kitchen-tools hides a real gap.
+    const stockpot = tool({ id: 'stockpot', label: 'Stockpot', matchers: ['pot'] });
+    const rows = unresolvedKitLabels(
+      [recipe('Cocotte Slow Cook Pot')],
+      [],
+      [stockpot],
+      [withCocotte],
+    );
+
+    expect(rows).toEqual([{ label: 'Cocotte Slow Cook Pot', count: 1 }]);
+  });
+
+  it('leaves out an entry that names one of your things by LINK', () => {
+    // A linked entry draws through `equipmentIcons`, exactly as a resolved
+    // equipment label does — offering it would invite a `kitchenTools` cartoon no
+    // surface would ever show. The words are irrelevant: this one would otherwise
+    // resolve to nothing at all.
+    const rows = unresolvedKitLabels(
+      [
+        {
+          kit: [
+            {
+              label: 'the slow-cook pot',
+              equipment: { itemId: 'eq-1', accessoryId: 'acc-cocotte' },
+            },
+          ],
+        },
+      ],
+      [],
+      [],
+      [withCocotte],
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it('counts an entry whose link no longer answers to anything', () => {
+    // Delete the thing and the row IS words with no picture again, so it is a gap
+    // again — which is the whole degradation contract in one assertion.
+    const rows = unresolvedKitLabels(
+      [{ kit: [{ label: 'the slow-cook pot', equipment: { itemId: 'gone', accessoryId: null } }] }],
+      [],
+      [],
+      [withCocotte],
+    );
+
+    expect(rows).toEqual([{ label: 'the slow-cook pot', count: 1 }]);
+  });
 });

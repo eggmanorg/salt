@@ -12,6 +12,7 @@ const {
   equipmentSectionForChef,
   equipmentSectionForLibrarian,
   equipmentSectionForKit,
+  renderEquipmentManifestForKit,
 } = await import('../../src/flows/equipmentContext.js');
 
 type EquipmentEnvironmentDoc = import('@salt/domain/schemas').EquipmentEnvironmentDoc;
@@ -523,6 +524,86 @@ describe('renderEquipmentDetail', () => {
   it('says only what there is to say about a bare record', () => {
     expect(renderEquipmentDetail(item('Cast iron skillet'))).toBe(
       'Cast iron skillet — a piece of kit',
+    );
+  });
+});
+
+// ─── Handles, for the kit flow only (issue #1465) ─────────────────────────────
+
+describe('renderEquipmentManifestForKit', () => {
+  const MAGIMIX = item('Magimix Cook Expert', {
+    accessories: [accessory('Steam Basket', true), accessory('XL Steamer Attachment', false)],
+    rules: ['the bowl seal is perished'],
+  });
+  const PANS = item('Frying Pans', {
+    kind: 'family',
+    accessories: [accessory('Tefal non-stick 28cm', true)],
+  });
+
+  it('numbers items and their owned entries, and maps every handle it printed', () => {
+    const { rendered, byHandle } = renderEquipmentManifestForKit([MAGIMIX, PANS]);
+
+    expect(rendered).toContain('- [k1] Magimix Cook Expert');
+    expect(rendered).toContain('- [k1.1] Steam Basket');
+    expect(rendered).toContain('- [k2] Frying Pans');
+    expect(rendered).toContain('- [k2.1] Tefal non-stick 28cm');
+    expect(byHandle.get('k1')).toEqual({ itemId: MAGIMIX.id, accessoryId: null });
+    expect(byHandle.get('k1.1')).toEqual({
+      itemId: MAGIMIX.id,
+      accessoryId: MAGIMIX.accessories[0]?.id,
+    });
+  });
+
+  it('prints exactly the handles it maps, and maps exactly the handles it prints', () => {
+    // The property the whole scheme rests on (CLAUDE.md rule 12): a handle printed
+    // but not mapped writes no link, and a handle mapped but not printed can never
+    // come back. One loop produces both, and this is what goes red if that stops
+    // being true.
+    const { rendered, byHandle } = renderEquipmentManifestForKit([MAGIMIX, PANS]);
+    const printed = [...rendered.matchAll(/\[(k[0-9.]+)\]/g)].map((m) => m[1]);
+    expect(printed.sort()).toEqual([...byHandle.keys()].sort());
+  });
+
+  it('gives an unowned entry no handle at all', () => {
+    const { rendered, byHandle } = renderEquipmentManifestForKit([MAGIMIX]);
+    expect(rendered).not.toContain('XL Steamer Attachment');
+    expect([...byHandle.values()].map((v) => v.accessoryId)).toEqual([
+      null,
+      MAGIMIX.accessories[0]?.id,
+    ]);
+  });
+
+  it('gives an item with nothing owned under it a handle and no entry row', () => {
+    // The salad spinner, on the live manifest: a record with no accessories at
+    // all. It still gets a handle, because the cook can still be told to get it
+    // out — what it has no need of is an entry list.
+    const { rendered, byHandle } = renderEquipmentManifestForKit([item('Salad Spinner')]);
+    expect(rendered).toBe('- [k1] Salad Spinner');
+    expect([...byHandle.keys()]).toEqual(['k1']);
+  });
+
+  it('is empty for an empty manifest, so the section is omitted entirely', () => {
+    const { rendered, byHandle } = renderEquipmentManifestForKit([]);
+    expect(rendered).toBe('');
+    expect(byHandle.size).toBe(0);
+    expect(equipmentSectionForKit(rendered)).toBe('');
+  });
+
+  it('leaves `renderEquipmentManifest` byte-identical for the other four flows', () => {
+    // The stated constraint of #1465: the kit flow gets its own rendering, and the
+    // chef, the librarian, the stage extractor and the scheduler keep theirs to the
+    // byte. A handle leaking into the shared renderer would change four prompts for
+    // a feature none of them is part of.
+    const shared = renderEquipmentManifest([MAGIMIX, PANS]);
+    expect(shared).not.toMatch(/\[k\d/);
+    expect(shared).toBe(
+      [
+        '- Magimix Cook Expert',
+        '  accessories: Steam Basket',
+        '  household rules (override your own product knowledge): the bowl seal is perished',
+        '- Frying Pans',
+        '  contains: Tefal non-stick 28cm',
+      ].join('\n'),
     );
   });
 });

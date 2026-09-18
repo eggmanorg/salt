@@ -783,6 +783,15 @@ card above the tab strip until issue #1140): `kit: RecipeKitEntry[]`
 `kitRequestedAt?: number`. All three back-compat on read for the usual reason —
 a required field would empty the list of recipes written before this shipped.
 
+- **`RecipeKitEntry` carries a LABEL and, since #1465, an optional LINK.**
+  `equipment: { itemId, accessoryId | null } | null` (`.default(null)`) records
+  which of the household's own things the line means — an appliance, one of its
+  accessories, or a member of a family of kit. It is read before any word, which
+  is the only way a family member is ever recognised. A link to something deleted
+  resolves to nothing and the entry reads as an unlinked label; nothing is written
+  back to recipes when the manifest changes. This narrows the rule below rather
+  than repealing it: **no `kitchenTools` id is ever written onto a recipe.**
+  Equipment is identity; the tool vocabulary is a vocabulary.
 - **`RecipeKitEntry` stores a LABEL, never an id.** `{ label, stepIds }` —
   "large frying pan", not a `kitchenTools` document id. The vocabulary that
   turns a label into a picture is resolved at DISPLAY time by

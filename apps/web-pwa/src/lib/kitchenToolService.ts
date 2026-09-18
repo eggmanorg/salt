@@ -5,7 +5,6 @@ import {
 } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
 import {
-  resolveKitchenTool,
   isCanonIconRenderable,
   createKitchenTool,
   updateKitchenTool,
@@ -21,7 +20,7 @@ import {
   type ReadResult,
   type Result,
 } from '@salt/shared-types';
-import { writable, derived, get } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 
@@ -70,63 +69,47 @@ export function getKitchenToolsSnapshot(): readonly KitchenToolDoc[] {
   return get(_kitchenTools);
 }
 
-// ─── The one shared lookup ───────────────────────────────────────────────────────
+// ─── The one shared fold ─────────────────────────────────────────────────────────
 //
 // THE POINT OF PUTTING THIS HERE. The `thumbnailFor` / `iconVersionFor` pair was
 // already written out by hand several times over, and each copy is a place the
 // cache-bust rule (`iconRequestedAt ?? updatedAt`, ui-spec-v04 §14.4) or the
-// tri-state render guard can quietly drift. This family gets ONE definition,
-// exported, and every surface that draws a tool uses it. Do not add a private
-// copy to a page.
+// tri-state render guard can quietly drift. It gets ONE definition, exported, and
+// every surface that draws a tool uses it. Do not add a private copy to a page.
 //
-// The ingredient half of the same story now lives in `cookIngredientIcons.ts`
+// The ingredient half of the same story lives in `cookIngredientIcons.ts`
 // (`ingredientIcons`), shared by both cook screens since #994. ShoppingListPage
 // keeps its own pair, and deliberately: it is keyed by a bare `canonId` off a
 // list row and has no product form to prefer.
 //
-// It is a DERIVED STORE OF A LOOKUP rather than two plain functions, and that is
-// reactivity rather than taste: a plain function reading a snapshot has no
-// tracked dependency on the store, so the vocabulary arriving after first paint —
-// which is exactly what happens on a cold load — would leave every tile bare
-// until something unrelated re-rendered the page.
-
-/** The tool lookup a surface calls, resolved against one snapshot of the list. */
-export interface ToolIconLookup {
-  /** The renderable pictogram URL for a free-text container name, or null. */
-  toolIconFor(label: string | null | undefined): string | null;
-  /** The display-time cache-bust nonce for that same name, or undefined. */
-  toolIconVersionFor(label: string | null | undefined): string | number | undefined;
-}
-
-function lookupFor(tools: readonly KitchenToolDoc[]): ToolIconLookup {
-  // Null on every miss, and a miss is a normal outcome rather than a fault: an
-  // unrecognised name renders as words with no picture, which is the whole
-  // contract of a closed vocabulary. `isCanonIconRenderable` folds the other two
-  // non-drawing states in — not generated yet, and hidden by the user.
-  const resolve = (label: string | null | undefined): KitchenToolDoc | null => {
-    const name = label?.trim();
-    if (!name) return null;
-    return resolveKitchenTool(name, tools);
-  };
-  return {
-    toolIconFor(label) {
-      const tool = resolve(label);
-      if (!tool || !isCanonIconRenderable(tool.thumbnail)) return null;
-      return tool.thumbnail;
-    },
-    toolIconVersionFor(label) {
-      const tool = resolve(label);
-      if (!tool || !isCanonIconRenderable(tool.thumbnail)) return undefined;
-      return tool.iconRequestedAt ?? tool.updatedAt;
-    },
-  };
-}
+// REACTIVITY BELONGS TO `kitIcons`, NOT HERE. This is a pure function of one
+// document, so it has nothing to subscribe to; the tracked dependency that makes a
+// tile fill in when the vocabulary lands after first paint is `kitIcons`'s derived
+// store over `kitchenTools`.
 
 /**
- * The shared lookup, recomputed whenever the vocabulary changes. Subscribe to it
- * (`$toolIcons.toolIconFor(name)`) so a tile fills in the moment the list lands.
+ * The picture and nonce for a curated tool the caller has ALREADY resolved.
+ *
+ * ONE DEFINITION, AND THE CALLER OWNS THE RESOLUTION (issue #1465). There used to
+ * be a `toolIcons` derived store here that took a free-text label, resolved it
+ * with `resolveKitchenTool` and folded the result — and `kitIcons.ts` was its only
+ * consumer in the app. It is gone, because `kitIcons` now picks the tool through
+ * `kitchenToolForKitLabel`, which applies the accessory-name rule (#1460) this
+ * file knows nothing about: handing the label back here to be resolved a second
+ * time would have been a second, DISAGREEING answer to "which tool is this?",
+ * which is exactly what `docs/canon-icons.md` means by not writing a second
+ * ordering. What is left is the part that was never about resolution — the
+ * tri-state fold (not drawn yet / hidden / a URL) and the cache-bust rule
+ * (`iconRequestedAt ?? updatedAt`, ui-spec-v04 §14.4, load-bearing because a
+ * redraw reuses the Storage path and its bytes are written `immutable`).
  */
-export const toolIcons: Readable<ToolIconLookup> = derived(_kitchenTools, lookupFor);
+export function toolPicture(
+  tool: KitchenToolDoc,
+): { thumbnail: string; version: string | number } | null {
+  const thumbnail = tool.thumbnail;
+  if (thumbnail === null || !isCanonIconRenderable(thumbnail)) return null;
+  return { thumbnail, version: tool.iconRequestedAt ?? tool.updatedAt };
+}
 
 // ─── Commands (the admin page, issue #882 Phase 4) ──────────────────────────────
 //

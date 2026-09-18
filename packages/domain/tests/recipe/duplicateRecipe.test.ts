@@ -240,11 +240,11 @@ describe('duplicateRecipe', () => {
 
   it('carries the kit and its stamp — the copy needs the same pans, and the step ids still fit', () => {
     const source = fullRecipe({
-      kit: [{ label: 'large frying pan', stepIds: ['step-1'] }],
+      kit: [{ label: 'large frying pan', stepIds: ['step-1'], equipment: null }],
       kitInferredAt: 1_700_000_000_000,
     });
     const copy = duplicateRecipe(source, 'new-id', NOW);
-    expect(copy.kit).toEqual([{ label: 'large frying pan', stepIds: ['step-1'] }]);
+    expect(copy.kit).toEqual([{ label: 'large frying pan', stepIds: ['step-1'], equipment: null }]);
     // Carried WITH the stamp, so the copy does not pay for an inference that could
     // only reproduce the answer above it. Step ids are not re-minted, so every
     // reference is still a step in the copy.

@@ -113,7 +113,12 @@ export {
   // a branded name contains generic tokens ("…Slow Cook Pot"), so the tool
   // vocabulary would otherwise claim it.
   resolveEquipmentItem,
+  // …and the LINK that replaced the guessing for anything a kit flow wrote since
+  // issue #1465. Read first by every kit surface: an id the flow recorded beats a
+  // rule over the words, which is what finally reaches a family member.
+  resolveKitEntryEquipment,
 } from './equipment/index.js';
+export type { ResolvedKitEquipment, KitEquipmentLinkSource } from './equipment/index.js';
 
 // Shopping list module — published surface.
 export type {
@@ -363,6 +368,12 @@ export { pushSubscriptionId } from './pushSubscription/index.js';
 // — `kitchenToolSlug` is the one `createKitchenTool` already mints with.
 export {
   resolveKitchenTool,
+  resolveKitchenToolMatch,
+  // The kit surfaces' entry point (issues #1460, #1465): `resolveKitchenTool`
+  // with the accessory-name rule in front of it, so a machine part named on its
+  // own never borrows an unrelated object's drawing.
+  kitchenToolForKitLabel,
+  namesManifestAccessory,
   unresolvedKitLabels,
   suggestKitchenToolParent,
   instanceNamedKitchenTools,
@@ -374,6 +385,7 @@ export type {
   CreateKitchenToolInput,
   UpdateKitchenToolInput,
   InstanceNamedKitchenTool,
+  KitchenToolMatch,
 } from './kitchenTool/index.js';
 
 // Shopping-day module (issue #629) — pure helpers over `shoppingDays/{date}`:

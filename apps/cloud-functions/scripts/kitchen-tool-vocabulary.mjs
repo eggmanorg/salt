@@ -91,7 +91,16 @@ export const TOOLS = [
   { id: 'bread-knife', label: 'Bread knife', matchers: ['serrated knife'] },
   { id: 'wooden-spoon', label: 'Wooden spoon', matchers: ['spoon'] },
   { id: 'spatula', label: 'Spatula', matchers: ['fish slice', 'turner'] },
-  { id: 'whisk', label: 'Whisk', matchers: [] },
+  // "egg whisk" is NOT dead weight, and it is the one matcher in this table that
+  // rule 2 would otherwise strike out (issue #1465). Containment already reaches
+  // it through the bare label — but `kitchenToolForKitLabel` refuses a
+  // single-word match for a label that exactly names a manifest accessory, and
+  // "Egg Whisk" is one of the Magimix's. Without this phrase the household's own
+  // egg whisk loses its picture; with it, the vocabulary SAYS an egg whisk is an
+  // ordinary whisk, which is a curation decision and exactly the act #1465's
+  // "choose an existing picture" puts one tap away. Exempted by name in
+  // `kitchenToolVocabulary.test.ts`.
+  { id: 'whisk', label: 'Whisk', matchers: ['egg whisk'] },
   { id: 'tongs', label: 'Tongs', matchers: [] },
   { id: 'ladle', label: 'Ladle', matchers: [] },
   { id: 'slotted-spoon', label: 'Slotted spoon', matchers: [] },

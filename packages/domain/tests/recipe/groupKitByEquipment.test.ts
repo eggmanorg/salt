@@ -18,7 +18,16 @@ import type { RecipeKitEntryDoc } from '@salt/domain/schemas';
 //     that could turn on it is written in both orders.
 
 function entry(label: string): RecipeKitEntryDoc {
-  return { label, stepIds: [] };
+  return { label, stepIds: [], equipment: null };
+}
+
+/** The same entry with the link the kit flow records since issue #1465. */
+function linked(
+  label: string,
+  itemId: string,
+  accessoryId: string | null = null,
+): RecipeKitEntryDoc {
+  return { label, stepIds: [], equipment: { itemId, accessoryId } };
 }
 
 function item(id: string, name: string, accessories: readonly string[] = []): EquipmentItem {
@@ -58,6 +67,14 @@ const HAND_BLENDER = item('eq-ninja', 'Ninja Foodi 3-in-1 Hand Blender, Mixer & 
 ]);
 const ANOVA = item('eq-anova', 'Anova Precision Oven', ['Oven Sheet Pan', 'Wire Oven Rack']);
 const SAGE_Q = item('eq-sage-q', 'Sage The Super Q', ['Spatula', 'Tamper']);
+
+// A FAMILY, as the live manifest carries it since #1373: members that share not
+// one word with the family's own name, which is why no rule over the words can
+// find them and why #1465 records the link instead.
+const FRYING_PANS: EquipmentItem = {
+  ...item('eq-pans', 'Frying Pans', ['All-Clad D3 10" frying pan', 'Tefal non-stick 28cm']),
+  kind: 'family',
+};
 // The prefixed spelling issue #1182 is about. `resolveEquipmentItem`'s header names
 // this exact pair as a label the kit flow is licensed to write, and both spellings
 // resolve to this one item — which is why pass one had to stop making both heads.
@@ -353,6 +370,22 @@ describe('groupKitByEquipment', () => {
       [entry('Magimix Cook Expert'), entry('Magimix Cocotte Slow Cook Pot')],
       [entry('Magimix Cocotte Slow Cook Pot'), entry('Magimix Cook Expert')],
       [entry('Magimix Blender Jug'), entry('Magimix Cook Expert'), entry('Cocotte Slow Cook Pot')],
+      // …and the LINK path (issue #1465), which is a fourth and fifth disposition:
+      // a linked accessory that nests, and a family member that never does. Both
+      // orders again, for the same #1182 reason.
+      [
+        linked('Cosori 5L Rice Cooker', 'eq-cosori'),
+        linked('steam basket', 'eq-cosori', 'eq-cosori-acc-0'),
+      ],
+      [
+        linked('steam basket', 'eq-cosori', 'eq-cosori-acc-0'),
+        linked('Cosori 5L Rice Cooker', 'eq-cosori'),
+      ],
+      [entry('frying pan'), linked('the All-Clad', 'eq-pans', 'eq-pans-acc-0')],
+      [linked('Frying Pans', 'eq-pans'), linked('the All-Clad', 'eq-pans', 'eq-pans-acc-0')],
+      // A link nothing answers to falls back to the words, so it is still exactly
+      // one row.
+      [linked('Rice Spoon', 'eq-gone'), entry('Cosori 5L Rice Cooker')],
     ];
     const manifest = [
       RICE_COOKER,
@@ -361,6 +394,7 @@ describe('groupKitByEquipment', () => {
       SAGE_Q,
       MAGIMIX,
       item('eq-rival', 'Kenwood Chef', ['Measuring Cup']),
+      FRYING_PANS,
     ];
 
     for (const kit of kits) {
@@ -370,5 +404,99 @@ describe('groupKitByEquipment', () => {
         kit.map((e) => e.label).sort(),
       );
     }
+  });
+
+  // ── The link path (issue #1465) ────────────────────────────────────────────
+
+  it('nests a linked accessory under its appliance, however the words are spelled', () => {
+    // The point of the link: "steam basket" shares no word with "Cosori 5L Rice
+    // Cooker", so neither word pass can reach it — pass one needs the maker's
+    // word, pass two needs the accessory's exact stored name ("Steam Basket" is
+    // not on this fixture's rice cooker at all). The link answers regardless.
+    const kit = [
+      linked('Cosori 5L Rice Cooker', 'eq-cosori'),
+      linked('steam basket', 'eq-cosori', 'eq-cosori-acc-0'),
+    ];
+    expect(lines(groupKitByEquipment(kit, [RICE_COOKER]))).toEqual([
+      'Cosori 5L Rice Cooker',
+      '  ↳ steam basket',
+    ]);
+  });
+
+  it('does not depend on stored order for which linked entry heads', () => {
+    const kit = [
+      linked('steam basket', 'eq-cosori', 'eq-cosori-acc-0'),
+      linked('Cosori 5L Rice Cooker', 'eq-cosori'),
+    ];
+    expect(lines(groupKitByEquipment(kit, [RICE_COOKER]))).toEqual([
+      'Cosori 5L Rice Cooker',
+      '  ↳ steam basket',
+    ]);
+  });
+
+  it('gives a linked accessory its own row when the appliance is not in the kit', () => {
+    const kit = [linked('steam basket', 'eq-cosori', 'eq-cosori-acc-0'), entry('colander')];
+    expect(lines(groupKitByEquipment(kit, [RICE_COOKER]))).toEqual(['steam basket', 'colander']);
+  });
+
+  it('never makes a family member an attachment of another pan', () => {
+    // The defect in one line. A kit holding "frying pan" and the All-Clad read
+    // "frying pan — with the All-Clad D3 10\" frying pan", as if one pan were a
+    // part of the other. A family is not an appliance with parts.
+    const kit = [entry('frying pan'), linked('the All-Clad', 'eq-pans', 'eq-pans-acc-0')];
+    expect(lines(groupKitByEquipment(kit, [FRYING_PANS]))).toEqual(['frying pan', 'the All-Clad']);
+  });
+
+  it('keeps a family member its own row even when the family itself is named', () => {
+    // The sharper case: the family DOES head a row, so an `equipment`-kind item
+    // would nest here. `kind` is picking presentation and nothing else.
+    const kit = [
+      linked('Frying Pans', 'eq-pans'),
+      linked('the All-Clad', 'eq-pans', 'eq-pans-acc-0'),
+      linked('the Tefal', 'eq-pans', 'eq-pans-acc-1'),
+    ];
+    expect(lines(groupKitByEquipment(kit, [FRYING_PANS]))).toEqual([
+      'Frying Pans',
+      'the All-Clad',
+      'the Tefal',
+    ]);
+  });
+
+  it('falls back to the words when a link no longer answers to anything', () => {
+    // Delete the item and every recipe pointing at it reads exactly as an
+    // unlinked label does — which here means pass two still nests it, because the
+    // words happen to be the accessory's stored name and the cooker heads a row.
+    const kit = [
+      {
+        label: 'Cosori 5L Rice Cooker',
+        stepIds: [],
+        equipment: { itemId: 'eq-gone', accessoryId: null },
+      },
+      { label: 'Rice Spoon', stepIds: [], equipment: { itemId: 'eq-gone', accessoryId: 'nope' } },
+    ];
+    expect(lines(groupKitByEquipment(kit, [RICE_COOKER]))).toEqual([
+      'Cosori 5L Rice Cooker',
+      '  ↳ Rice Spoon',
+    ]);
+  });
+
+  it('leaves a kit with no links grouped exactly as it was', () => {
+    // The back-compat promise: a recipe not yet re-run looks the same.
+    const kit = [entry('Cosori 5L Rice Cooker'), entry('Rice Spoon'), entry('sieve')];
+    expect(lines(groupKitByEquipment(kit, [RICE_COOKER]))).toEqual([
+      'Cosori 5L Rice Cooker',
+      '  ↳ Rice Spoon',
+      'sieve',
+    ]);
+  });
+
+  it('never lets a family member anchor another entry beneath it', () => {
+    // Condition 3 of pass two, restated for the link path: an accessory-form label
+    // must not file itself under a row that is itself a member of a family.
+    const kit = [linked('the All-Clad', 'eq-pans', 'eq-pans-acc-0'), entry('Tefal non-stick 28cm')];
+    expect(lines(groupKitByEquipment(kit, [FRYING_PANS]))).toEqual([
+      'the All-Clad',
+      'Tefal non-stick 28cm',
+    ]);
   });
 });

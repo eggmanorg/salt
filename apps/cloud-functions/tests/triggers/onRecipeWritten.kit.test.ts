@@ -144,24 +144,28 @@ beforeEach(() => {
 });
 
 describe('onRecipeWritten — kit inference gets the equipment manifest', () => {
-  it('passes the rendered manifest to identifyRecipeKitFlow', async () => {
+  it('passes the manifest ITEMS to identifyRecipeKitFlow (issue #1465)', async () => {
+    // Structured, not rendered: the flow renders them itself so the prompt's
+    // handles and the map that reads them back come from one pass.
     manifestSnap = manifestDoc('Magimix Cook Expert', 'OXO Good Grips Chef’s Mandoline');
 
     await (onRecipeWritten as unknown as (e: unknown) => Promise<void>)(makeEvent(makeRecipe()));
 
     expect(mockIdentifyKit).toHaveBeenCalledTimes(1);
-    const arg = mockIdentifyKit.mock.calls[0]?.[0] as { equipment: string };
-    expect(arg.equipment).toContain('- Magimix Cook Expert');
-    expect(arg.equipment).toContain('- OXO Good Grips Chef’s Mandoline');
+    const arg = mockIdentifyKit.mock.calls[0]?.[0] as { equipment: { name: string }[] };
+    expect(arg.equipment.map((i) => i.name)).toEqual([
+      'Magimix Cook Expert',
+      'OXO Good Grips Chef’s Mandoline',
+    ]);
   });
 
-  it('still infers, with an empty manifest string, when the doc is missing', async () => {
+  it('still infers, with an empty manifest, when the doc is missing', async () => {
     manifestSnap = { exists: false };
 
     await (onRecipeWritten as unknown as (e: unknown) => Promise<void>)(makeEvent(makeRecipe()));
 
     expect(mockIdentifyKit).toHaveBeenCalledTimes(1);
-    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: string }).equipment).toBe('');
+    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: unknown[] }).equipment).toEqual([]);
     // And the answer is still written back — a household with no manifest gets the
     // pre-#954 behaviour, not a skipped inference.
     expect(mockUpdate).toHaveBeenCalledWith(
@@ -169,20 +173,20 @@ describe('onRecipeWritten — kit inference gets the equipment manifest', () => 
     );
   });
 
-  it('still infers, with an empty manifest string, when the doc fails validation', async () => {
+  it('still infers, with an empty manifest, when the doc fails validation', async () => {
     manifestSnap = { exists: true, data: () => ({ schemaVersion: 'nope' }) };
 
     await (onRecipeWritten as unknown as (e: unknown) => Promise<void>)(makeEvent(makeRecipe()));
 
-    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: string }).equipment).toBe('');
+    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: unknown[] }).equipment).toEqual([]);
   });
 
-  it('still infers, with an empty manifest string, when the read throws', async () => {
+  it('still infers, with an empty manifest, when the read throws', async () => {
     manifestSnap = () => Promise.reject(new Error('unavailable'));
 
     await (onRecipeWritten as unknown as (e: unknown) => Promise<void>)(makeEvent(makeRecipe()));
 
-    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: string }).equipment).toBe('');
+    expect((mockIdentifyKit.mock.calls[0]?.[0] as { equipment: unknown[] }).equipment).toEqual([]);
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ kit: expect.anything() }));
   });
 });
