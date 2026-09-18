@@ -400,7 +400,10 @@ export const BatchSchema = z.object({
   // back-compat) — the same shape `skipped`, `place`, `abandonedAt`, `recipeKind` and
   // `target` all have. `null` means "nobody recorded a starter", and therefore no
   // nudge: honest, and it costs nothing, because the one run in production predating
-  // this field is bread and bread can never qualify for the nudge anyway.
+  // this field is bread, and bread is excluded from the nudge on its `recipeKind`
+  // regardless of `startedBy` — see `isLongRunKind` in `batch/longRuns.ts` for the
+  // mechanism (#1449 round 2: an earlier draft of this sentence rested the same
+  // claim on "bread's waits are all short", which an observational wait falsifies).
   startedBy: z.string().nullable().default(null),
   createdAt: z.string(),
   // The ordering token for the write path's stale-echo guard, and the only reason

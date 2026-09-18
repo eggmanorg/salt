@@ -701,7 +701,15 @@ them.
 
   - **The guard stays exactly as it is.** It answers a stage whose _start_ is beyond
     30 days; the sweep answers readings _during_ a long stage. Different questions.
-  - **Selection is by presence, never by kind** (see _Kind versus presence_): a
+  - **Selection is gated on the run's frozen kind, then by presence** (see _Kind
+    versus presence_ — this is that rule's "capabilities answer questions about the
+    kind" half, via the named predicate `isLongRunKind`, not an exception to it). A
+    bread batch and a cure can both carry an observational wait (`duration: null`,
+    an `until` condition, no planned span to measure) — the identical shape on the
+    document — so presence alone cannot tell them apart; only the run's kind can.
+    `isLongRunKind` answers **cures and ferments** (today, `recipeKind === 'cure'`;
+    a vegetable ferment has no kind of its own yet and is a stated gap, not a
+    silent one — see that predicate). A run that passes the kind gate still needs a
     `wait` of seven days or more, which bread's overnight retard can never be — so
     the sweep is silent to every batch in production today.
   - **It is addressed to the run's starter**, via `batches.startedBy` — an

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { BatchDoc, BatchStageDoc, ProcessStage } from '../../src/schemas/index.js';
+import type { RecipeKind } from '../../src/index.js';
 import {
   LONG_WAIT_DAYS,
+  isLongRunKind,
   longRunNudge,
   longRunsWantingReading,
   resolveSchedule,
@@ -38,6 +40,14 @@ import {
 //      completely untapped.
 //   3. The day number is counted in CALENDAR DATES, not raw 24-hour blocks off the
 //      instants — see the `timeZone` argument threaded through every call below.
+//
+// #1449 ROUND 2 REGRESSION, FROM FIX 1 — PINNED BELOW. Fix 1's elapsed-time branch
+// cannot tell a cure's observational dry from bread's observational cool-down; they
+// are the identical shape on the document. Daniel's decision was to gate on the
+// run's frozen kind — "cures and ferments" — via `isLongRunKind`. See "an
+// observational wait on a non-cure kind" below, built from production's own
+// "Cool the cobs" stage through `resolveSchedule`, and the direct `isLongRunKind`
+// mapping test after it.
 
 const MS_PER_DAY = 86_400_000;
 const ANCHOR = '2026-01-02T10:00:00.000Z';
@@ -332,6 +342,64 @@ describe('longRunsWantingReading — an observational wait, the real freezeBatch
   it('keeps qualifying well past the week, exactly as a declared-duration wait does', () => {
     const run = observationalBatch();
     expect(longRunsWantingReading([run], iso(40), 'UTC').size).toBe(1);
+  });
+});
+
+describe('longRunsWantingReading — an observational wait on a non-cure kind (#1449 round 2 regression)', () => {
+  // Fix 1 (the cure branch above) made a `duration: null` + `until` wait qualify on
+  // elapsed real time — and, unguarded, that branch cannot tell a cure's dry from
+  // bread's cool-down: THE SAME SHAPE. This is production's actual final stage,
+  // reproduced byte-for-byte from the round-2 review: formula
+  // `708b640b-819c-423c-be44-b43d54aa5a90` ("East Midlands Crusty Cobs"), stage
+  // "Cool the cobs" — `{ kind: 'wait', duration: null, until: 'allow the crust to
+  // crackle' }`. Built through `resolveSchedule` via `freezeStages`, exactly like
+  // the cure fixture above, so this is the real `freezeBatch` shape and not a fixture
+  // engineered to pass.
+  function coolTheCobsBatch(): BatchDoc {
+    const cool = content({
+      id: 'cool',
+      label: 'Cool the cobs',
+      kind: 'wait',
+      duration: null,
+      until: 'allow the crust to crackle',
+    });
+    const stages = freezeStages([cool], ANCHOR);
+    expect(stages[0]?.plannedStartAt).toBe(stages[0]?.plannedEndAt);
+    return batch({
+      id: 'batch-crusty-cobs',
+      recipeId: '708b640b-819c-423c-be44-b43d54aa5a90',
+      recipeTitle: 'East Midlands Crusty Cobs',
+      recipeKind: 'recipe',
+      cureCategory: null,
+      stages,
+      createdAt: ANCHOR,
+    });
+  }
+
+  it('never fires, however long the loaf has been cooling — this is the regression fix', () => {
+    // Before the kind gate, this fired at day 8 exactly like the cure fixture above
+    // (identical shape: `duration: null`, an `until` condition, nothing that ever
+    // closes it). The kind gate is what tells them apart now.
+    const run = coolTheCobsBatch();
+    expect(longRunsWantingReading([run], iso(8), 'UTC').size).toBe(0);
+    expect(longRunsWantingReading([run], iso(40), 'UTC').size).toBe(0);
+    // Not "for ever, until somebody happens to look" — genuinely never, at any
+    // distance, which is the whole point of gating on kind rather than elapsed time.
+    expect(longRunsWantingReading([run], iso(400), 'UTC').size).toBe(0);
+  });
+});
+
+describe('isLongRunKind — the mapping onto real RecipeKind members (#1449 round 2)', () => {
+  it('answers "cures and ferments" as recipeKind === "cure" today, and nothing else', () => {
+    const kinds: readonly RecipeKind[] = ['recipe', 'special', 'cocktail', 'placeholder', 'cure'];
+    const results = Object.fromEntries(kinds.map((kind) => [kind, isLongRunKind(kind)]));
+    expect(results).toEqual({
+      recipe: false, // bread, and — until `ferment` exists — sauerkraut and kimchi too
+      special: false,
+      cocktail: false,
+      placeholder: false,
+      cure: true, // every `cureCategory` value lives under this one kind
+    });
   });
 });
 

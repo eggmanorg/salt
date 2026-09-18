@@ -102,10 +102,13 @@ export const remindBatchReadings = onSchedule(
       }
 
       // (b) WHICH RUNS WANT WEIGHING, and whose they are. The rule is
-      // `@salt/domain`'s: pure, clockless, by the shape of the frozen stages and never
-      // by `recipeKind` (CLAUDE.md's never-branch-on-kind invariant). Bread's longest
-      // wait is an overnight retard, so no bread run can qualify — which is why this
-      // ships dark with every batch in production silent to it.
+      // `@salt/domain`'s: pure and clockless, gated first on the run's frozen kind
+      // (`isLongRunKind` — cures and ferments, #1449 round 2: an observational wait
+      // is the identical shape whether it belongs to a cure or to bread, so kind is
+      // what tells them apart, not the shape of the stages alone) and then by the
+      // shape of the frozen stages. Bread's `recipeKind` never passes the kind gate,
+      // and its longest declared wait is an overnight retard besides — which is why
+      // this ships dark with every batch in production silent to it.
       const byStarter = longRunsWantingReading(batches, now.toISOString(), REMINDER_TIME_ZONE);
       if (byStarter.size === 0) return;
 

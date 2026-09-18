@@ -501,6 +501,7 @@ export {
   NEARING_FRACTION,
   longRunsWantingReading,
   LONG_WAIT_DAYS,
+  isLongRunKind,
   longRunNudge,
 } from './batch/index.js';
 export type {

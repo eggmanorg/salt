@@ -1,4 +1,5 @@
 import type { BatchDoc } from '../schemas/index.js';
+import type { RecipeKind } from '../recipe/index.js';
 import { stageStatus } from './transitions.js';
 import { dateInZone, daysBetween } from '../shoppingDay/index.js';
 
@@ -11,10 +12,25 @@ import { dateInZone, daysBetween } from '../shoppingDay/index.js';
 // down, and the readings that make the log worth keeping never get entered because
 // nothing ever asks. This picks the runs that are in that silence.
 //
-// SELECTION IS BY PRESENCE, NEVER BY KIND (CLAUDE.md's never-branch-on-`recipeKind`
-// invariant, and `docs/formulas-schedules-batches.md` → *Kind versus presence*). The
-// rule is a property of the run's frozen stages, so it works with or without the
-// `cure` kind and with or without a cure category.
+// SELECTION IS GATED ON THE RUN'S FROZEN KIND, THEN ON PRESENCE — NOT "BY PRESENCE,
+// NEVER BY KIND" AS THIS COMMENT ONCE CLAIMED (#1449 round 2). That claim held right
+// up until it was checked against bread: a cure's observational dry
+// (`duration: null`, `until: '30% weight loss'`) and bread's observational
+// cool-down (`duration: null`, `until: 'allow the crust to crackle'`, live in
+// production as "Cool the cobs") are the IDENTICAL SHAPE on the document — presence
+// alone cannot tell them apart, because neither has a planned span to measure. Only
+// the run's frozen kind can. Daniel's decision (#1449 park comment) was to branch on
+// it: **cures and ferments**, via `isLongRunKind` below.
+//
+// THIS IS NOT A VIOLATION of CLAUDE.md's never-branch-on-`recipeKind` invariant — it
+// is that rule's own sanctioned exit: a single named capability predicate living in
+// `packages/domain`, in the same register as `isCookable` / `isPlannable` in
+// `recipe/queries/capabilities.ts`, never an inline `=== 'cure'` at a call site.
+// Presence still decides everything else this function asks — which stage, whether
+// it has actually started, how long it has run. `docs/formulas-schedules-batches.md`
+// → *Kind versus presence* is updated to match: this predicate is exactly the
+// "capabilities answer questions about the kind" half of that rule, not an exception
+// to it.
 //
 // PURE AND CLOCKLESS (Rule 1): `nowIso` is injected, exactly as `freezeBatch`'s `now`
 // is. `timeZone` is injected too, for the same reason `shopDayHeadline` takes
@@ -28,17 +44,57 @@ import { dateInZone, daysBetween } from '../shoppingDay/index.js';
 // append-only, and Salt records rather than polices.
 
 /**
- * How long a wait has to be before its run is worth a weekly nudge, in whole days.
+ * How long a DECLARED wait has to be before its run is worth a weekly nudge, in
+ * whole days.
  *
- * SEVEN, AND THE FIGURE IS WHAT KEEPS BREAD OUT. Bread's longest wait is an overnight
- * fridge retard — twelve hours, sixteen at the outside — so no bread batch can ever
- * qualify, which is why this ships dark: every batch in production today is bread and
- * is silent to the nudge. A kraut's single three-week ferment and a cure's month-long
- * dry both clear it comfortably. `tests/batch/longRuns.test.ts` pins the bread half.
+ * SEVEN, AND THE FIGURE IS WHAT KEEPS A SHORT DECLARED WAIT OUT. Bread's longest
+ * declared wait is an overnight fridge retard — twelve hours, sixteen at the
+ * outside — so it never reaches this. A cure's month-long declared dry clears it
+ * comfortably.
+ *
+ * WHAT THIS CONSTANT DOES NOT DO (#1449 round 2 regression, CLAUDE.md rule 12): by
+ * itself it does not keep bread out of the nudge. An OBSERVATIONAL wait
+ * (`duration: null`) has no planned span to measure against this figure at all —
+ * bread's own "Cool the cobs" (`{ duration: null, until: 'allow the crust to
+ * crackle' }`) is exactly that shape, and it is live in production today. What
+ * excludes bread from THAT branch is `isLongRunKind`, gated on the run's frozen
+ * `recipeKind`, not this threshold. `tests/batch/longRuns.test.ts` pins bread out
+ * through the real fixture shape (built via `resolveSchedule`, matching
+ * production's document), not through this constant.
  */
 export const LONG_WAIT_DAYS = 7;
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Whether a run's frozen kind is the sort of long, unattended process the weekly
+ * nudge exists for — Daniel's words, **"cures and ferments"** (#1449 round 2 park
+ * comment), landed on the two real fields a batch carries.
+ *
+ * THE MAPPING, STATED, BECAUSE IT IS NOT TWO BRANCHES. `recipeKind` has exactly one
+ * member in this domain — `'cure'` — and it already covers all five `cureCategory`
+ * values (`dry_cured_whole_muscle`, `cooked_whole_muscle`, `fermented_dry_cured`,
+ * `semi_dry`, `cooked_emulsified`; see `CureCategorySchema`). Two of those five ARE
+ * ferments by their own schema comment — `fermented_dry_cured` is lactic
+ * acidification, `semi_dry` is rapid acidification — so "cures and ferments" is not
+ * two conditions to write, it is one: `recipeKind === 'cure'` already spans both
+ * halves of the phrase within the cured-meat domain, and `cureCategory` adds no
+ * further narrowing once that holds — every category under `cure` is a run worth a
+ * weekly weighing.
+ *
+ * THE BOUNDARY, STATED (CLAUDE.md rule 12). A VEGETABLE ferment — sauerkraut,
+ * kimchi, "a kraut's single three-week ferment" from this feature's own pitch — is
+ * NOT reachable by this predicate today, because it has no `recipeKind` of its own
+ * to check: `docs/formulas-schedules-batches.md` → *Kind versus presence* is
+ * explicit that `ferment` "is not built", and its own table freezes Sauerkraut and
+ * Kimchi as plain `recipeKind: 'recipe'` — byte-for-byte the same kind bread
+ * carries. A kraut run through today's app with an observational wait is therefore
+ * excluded exactly as bread is: an ACCEPTED gap, stated rather than discovered, and
+ * this is the one place to widen when `ferment` (or an equivalent field) exists.
+ */
+export function isLongRunKind(recipeKind: RecipeKind): boolean {
+  return recipeKind === 'cure';
+}
 
 /** One qualifying run, as the nudge needs to word it. */
 export interface LongRunDescriptor {
@@ -61,6 +117,11 @@ export interface LongRunDescriptor {
  *
  * A run qualifies when all of these hold:
  *
+ *   • its frozen kind passes `isLongRunKind` — cures and ferments, in Daniel's
+ *     words, which today means `recipeKind === 'cure'` (see that predicate for the
+ *     mapping and its stated boundary). This is checked FIRST and is what stops
+ *     bread's own observational cool-down from ever reaching the branch below
+ *     (#1449 round 2);
  *   • it is still running — an abandoned run is dropped outright;
  *   • among its frozen stages there is a `wait`, not yet marked done or skipped,
  *     THAT IS NOT `currentStage` NECESSARILY (see below) — nobody needs telling to
@@ -108,6 +169,13 @@ export interface LongRunDescriptor {
  *     branch an observational long dry has a permanent zero-length planned span and
  *     is dropped forever, which is exactly the run this feature exists to catch.
  *
+ * THE OBSERVATIONAL BRANCH HAS NO UPPER BOUND OF ITS OWN, WHICH IS WHY THE KIND
+ * GATE ABOVE IS NOT OPTIONAL (#1449 round 2). Nothing about `now - plannedStartAt`
+ * can distinguish "a cure open a week, worth asking about" from "a loaf cooling
+ * for a week, nobody left to ask" — both are the same shape, indefinitely. That
+ * distinction is exactly what `isLongRunKind` exists to draw, and it is drawn
+ * once, before this branch runs, rather than folded into the arithmetic here.
+ *
  * THE UPPER BOUND, STATED, BECAUSE THERE ISN'T ONE (CLAUDE.md rule 12). A run whose
  * planned end has passed (or, for an observational wait, one that has simply been
  * open a long time) and whose stage nobody has marked done KEEPS QUALIFYING, and
@@ -142,6 +210,7 @@ export function longRunsWantingReading(
   if (Number.isNaN(now)) return grouped;
 
   for (const batch of batches) {
+    if (!isLongRunKind(batch.recipeKind)) continue;
     const startedBy = batch.startedBy;
     if (startedBy === null || startedBy === '') continue;
     if (batch.state !== 'running') continue;
