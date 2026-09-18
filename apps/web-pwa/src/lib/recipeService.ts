@@ -859,7 +859,31 @@ export function takeImportedDraft(expectedId: string): Recipe | null {
 
 // Canonicalise all parsed-but-unmatched ingredients in a recipe via a single
 // batch CF call. Only processes ingredients with parsed !== null and matchState
-// 'pending' or 'failed'. Results are applied wholesale via persistRecipe.
+// 'pending' or 'failed'.
+//
+// THE FUNCTION WRITES THE RESULT, NOT THIS (issue #1434, epic #1417). The payload
+// carries `recipeId` and a per-item `ingredientId`, and the flow folds
+// `canonId`/`matchState` onto `recipes/{id}` in a transaction before it returns.
+// The write used to be the statement AFTER this function's two-minute `await`, so
+// a locked phone or a closed tab lost the matching while the canon documents the
+// same run created survived — half a result, silently.
+//
+// WHAT THAT IS WORTH, stated with its limit rather than as a guarantee: the match
+// now survives THE BROWSER GOING AWAY. It is not un-clobberable. `recipes/{id}`
+// is written WHOLE by `persistRecipe` and the edit coalescer above, so an
+// in-place edit composed from a copy older than the function's write still
+// overwrites it — document-level LWW, the same contract that governs `thumbnail`
+// and `embedding`. This moves where the write happens, not the granularity it
+// happens at.
+//
+// NOTHING IS APPLIED OPTIMISTICALLY and no `latestLocalEdit` is registered: this
+// function no longer writes, and stamping a local edit for a write it is not
+// making would make `applySnapshot` discard the server's own result as stale. The
+// subscription is what updates the rows.
+//
+// The selection rules stay here, because they read the browser's live canon
+// snapshot: an ingredient already matched to a canon item that still exists is
+// skipped, one whose canon item has been deleted is re-matched.
 export async function canonicaliseIngredients(
   recipe: Recipe,
 ): Promise<ReadResult<void, DomainError>> {
@@ -878,40 +902,24 @@ export async function canonicaliseIngredients(
   if (toProcess.length === 0) return success(undefined);
 
   const batchResult = await callCanonicaliseRecipeIngredients({
-    items: toProcess.map(({ rawName, rawText }) => ({ rawName, rawText })),
+    recipeId: recipe.id,
+    items: toProcess.map(({ ingredientId, rawName, rawText }) => ({
+      ingredientId,
+      rawName,
+      rawText,
+    })),
   });
-  // Report the batch CF transport failure (the whole canonicalise call failed).
-  // Per-row `settled[i]` slots below are per-ingredient match OUTCOMES folded
-  // into matchState:'failed' — expected results, not I/O failures — so they are
-  // intentionally not reported.
+  // Report the batch CF transport failure (the whole canonicalise call failed),
+  // and write nothing — there is nothing to write here any more, and a transport
+  // failure means the function never reached its own write either.
+  //
+  // The per-row slots in the returned array are per-ingredient match OUTCOMES
+  // folded into matchState:'failed' server-side — expected results, not I/O
+  // failures — so they are still intentionally not reported.
   if (batchResult.kind === 'err') return reportIfFailed(getErrorReporter(), batchResult);
-  const settled = batchResult.value;
-
-  // Map ingredientId → matchOrCreate result for O(1) lookup.
-  const resultById = new Map(
-    toProcess.map((p, i) => {
-      const r = settled[i];
-      return [p.ingredientId, r] as const;
-    }),
-  );
-
-  const updatedGroups = recipe.ingredients.map((group) => ({
-    ...group,
-    items: group.items.map((ing) => {
-      const result = resultById.get(ing.id);
-      if (result === undefined) return ing;
-      if (result.kind === 'err') {
-        return { ...ing, matchState: 'failed' as const, canonId: null };
-      }
-      return {
-        ...ing,
-        canonId: result.value.item.id,
-        matchState: 'matched' as const,
-      };
-    }),
-  }));
-
-  return persistRecipe({ ...recipe, ingredients: updatedGroups });
+  // The returned results are not folded here: the function has already recorded
+  // them on the recipe, and the subscription delivers them.
+  return success(undefined);
 }
 
 // Parse and canon-match a single ingredient line. Chains callParseRecipeIngredients
@@ -922,9 +930,23 @@ export async function canonicaliseIngredients(
 // an unfixed #1416. What is persisted is the MATCH — `parsed`, `canonId` and
 // `matchState` written together after BOTH callables return — never the parse on
 // its own, which would store a parsed-but-unmatched row and re-arm the ✗. So the
-// write belongs to the pair, and neither callable can carry it: both wire contracts
-// are identity-free (`{ rawText }` here, `{ items: [{ rawName, rawText }] }` next
-// door), so neither can name the document it would write into.
+// write belongs to the pair, and neither callable can carry it alone.
+//
+// UPDATED BY #1434, which removed half the reason: `canonicaliseRecipeIngredients`
+// now DOES take `{ recipeId, ingredientId }` and writes the rows it matched, and
+// this function deliberately calls it WITHOUT them (`:971-973`) — pinned by "does
+// not ask the function to write" in `recipeService.canonicalise.test.ts`. The
+// parse callable is still identity-free, and that is what settles it: a canon
+// write here would stamp `canonId`/`matchState` onto a row whose `parsed` is still
+// null in Firestore until this function's caller writes the rest. That is not the
+// stranded row an earlier version of this comment claimed: `ingredientMatchIssue`
+// returns `missing_amount` for exactly `canonId` set + `parsed: null`, and its `?`
+// marker runs this same `handleRematch` repair, same corner of the same tile, as
+// the ✗ it would replace — so a half-written row is also a row that gets re-tapped.
+// What the split write actually costs is atomicity: `parsed` and the match are
+// meant to land as ONE write, and a canon-only write ahead of it would put a
+// family-shared document through an avoidable extra state change moments before
+// this function's own caller writes the rest.
 //
 // A server-side version is therefore one NEW `{ recipeId, ingredientId }` callable
 // replacing both calls below, not a write bolted onto either — and what it buys is
@@ -945,9 +967,11 @@ export async function canonicaliseIngredients(
 // the sheet's "Match again" is reachable on a line with no ✗ to prompt the
 // retry (`RecipeViewPage.svelte:662-669`), so there the loss is silent.
 //
-// BOUNDARY: this holds while both wire contracts stay identity-free. The per-row
-// match callable above reopens it — one decision shared with
-// `canonicaliseRecipeIngredients`, recorded in docs/recipe-module.md.
+// BOUNDARY: this holds while the PARSE contract stays identity-free (the canon
+// one no longer is, as of #1434). The one new `{ recipeId, ingredientId }`
+// callable replacing both calls below closes it — one decision shared with
+// `canonicaliseRecipeIngredients`, recorded in docs/recipe-module.md, and nobody
+// has filed it yet.
 export async function matchIngredient(
   ing: Ingredient,
 ): Promise<ReadResult<Ingredient, DomainError>> {

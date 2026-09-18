@@ -13,6 +13,8 @@ import type { MatchOrCreateInput, MatchOrCreateResult, ProductForm } from '@salt
 import {
   CanonicaliseRecipeIngredientsInputSchema,
   CanonicaliseRecipeIngredientsOutputSchema,
+  IngredientGroupSchema,
+  type CanonicaliseRecipeIngredientsInput,
   type ProductFormProposal,
 } from '@salt/domain/schemas';
 import type { DomainError, ReadResult } from '@salt/shared-types';
@@ -24,6 +26,127 @@ import { createFirestoreProductFormStore } from '../adapters/firestoreProductFor
 import { reportServerError } from '../observability/reportServerError.js';
 import { arbitrateProductFormFlow } from './arbitrateProductForm.js';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
+
+// ─── The function records the match, instead of handing it back (issue #1434) ──
+//
+// The canonicalise button used to be a two-minute `await` in the browser with the
+// recipe write as the statement AFTER it, so a locked phone or a closed tab threw
+// away the `canonId`/`matchState` half of the run while the canon documents the
+// same run created stayed in Firestore. The expensive half was always durable;
+// this makes the cheap half durable too.
+//
+// THE BOUNDARY, stated rather than implied: this makes the match survive THE
+// BROWSER GOING AWAY. It does NOT make the match un-clobberable. `recipes/{id}`
+// is rewritten WHOLE by the client (`persistRecipe` / the edit coalescer in
+// `apps/web-pwa/src/lib/recipeService.ts`), so an in-place edit composed from a
+// copy older than this write still overwrites it — document-level LWW, exactly
+// the contract CLAUDE.md names for `thumbnail` and `embedding`. What the
+// transaction below buys is narrower and real: the clobber window shrinks from
+// the whole 120 s call to the transaction itself, because the rows are folded
+// onto the document as it is NOW rather than onto a snapshot the caller took
+// before the call.
+//
+// Best-effort, never a throw (Rule 10), and shaped after `persistImportedRecipe`:
+// an already-paid-for AI run is not discarded over a Firestore hiccup, so a
+// failure is logged, reported and the results still returned. It does NOT copy
+// that function's full `.set()`, whose justification ("the doc cannot already
+// exist") is false here — this recipe exists, is family-shared, and other people
+// and other triggers write it.
+async function persistCanonMatches(
+  recipeId: string,
+  items: CanonicaliseRecipeIngredientsInput['items'],
+  results: ReadResult<MatchOrCreateResult, DomainError>[],
+): Promise<void> {
+  // Only items that named a row can be folded onto one. An item with no
+  // `ingredientId` is matched and returned like any other and simply has no
+  // destination here.
+  // `rawText` rides along per entry, not just the result: the guard below needs
+  // to compare it against the row's CURRENT text, read fresh inside the
+  // transaction, not the text this batch was matched against.
+  const byIngredientId = new Map<
+    string,
+    { result: ReadResult<MatchOrCreateResult, DomainError>; rawText: string | undefined }
+  >();
+  items.forEach((item, i) => {
+    const result = results[i];
+    if (item.ingredientId !== undefined && result !== undefined) {
+      byIngredientId.set(item.ingredientId, { result, rawText: item.rawText });
+    }
+  });
+  if (byIngredientId.size === 0) return;
+
+  try {
+    const db = getFirestore();
+    const ref = db.collection('recipes').doc(recipeId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return; // deleted mid-call — nothing to fold onto
+
+      // A Firestore read is a trust boundary, and the ingredients array is the
+      // only field this write touches, so it is the only field validated. On a
+      // parse failure the fold is SKIPPED rather than attempted against an
+      // unknown shape: the run's canon documents are already written and the
+      // results still return.
+      const groups = IngredientGroupSchema.array().safeParse(snap.get('ingredients'));
+      if (!groups.success) {
+        logger.error(
+          'canonicaliseRecipeIngredients: recipe ingredients failed validation — matches not written',
+          { recipeId },
+        );
+        return;
+      }
+
+      // The same fold the browser used to perform: an `err` slot is a match
+      // OUTCOME, not an I/O failure, and lands as `failed` + `canonId: null` so
+      // the row re-arms its ✗ and can be retried.
+      let folded = false;
+      const next = groups.data.map((group) => ({
+        ...group,
+        items: group.items.map((ing) => {
+          const entry = byIngredientId.get(ing.id);
+          // An id that is no longer in the document — the row was deleted while
+          // the call ran — is SKIPPED, never re-created. The recipe as it stands
+          // is the truth; this write only annotates rows that are still in it.
+          if (entry === undefined) return ing;
+          // The same guard both neighbouring folds of this exact operation apply —
+          // `RecipeViewPage.handleRematch` (`i.rawText === ing.rawText`) and
+          // `scripts/rematch-ingredients.ts` ("lines are re-matched by ingredient
+          // id AND rawText") — and this transaction has what neither of those
+          // needs to fetch specially: the row's CURRENT text, read moments ago by
+          // `tx.get` above. A line edited elsewhere while this call ran (up to
+          // 120s) has a match computed from text it no longer carries; stamping it
+          // anyway would leave a row whose text and match disagree with NO marker
+          // to prompt a re-tap — `rowMarker` reads `canonId` live + `parsed`
+          // non-null and reports nothing wrong. Skipped, not overwritten, exactly
+          // like an id that vanished. `rawText` absent on the item (the nested
+          // `assembleRecipeDraft` path never sends one) leaves the guard inert,
+          // matching every caller that has no text to compare.
+          if (entry.rawText !== undefined && entry.rawText !== ing.rawText) return ing;
+          folded = true;
+          return entry.result.kind === 'err'
+            ? { ...ing, canonId: null, matchState: 'failed' as const }
+            : { ...ing, canonId: entry.result.value.item.id, matchState: 'matched' as const };
+        }),
+      }));
+      // Nothing left to annotate — every row this batch was for has gone. Write
+      // nothing rather than bump `updatedAt` and re-fire `onRecipeWritten` for a
+      // document that would be byte-identical.
+      if (!folded) return;
+
+      // `update`, not `set`: every other field on the document is left exactly as
+      // the transaction read it. `updatedAt` is stamped because this IS a change
+      // to the document, and the client's `applySnapshot` echo guard needs the
+      // incoming snapshot to be newer than anything it wrote itself.
+      tx.update(ref, { ingredients: next, updatedAt: new Date().toISOString() });
+    });
+  } catch (err) {
+    logger.error('canonicaliseRecipeIngredients: failed to persist canon matches', {
+      recipeId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    reportServerError(err, 'StorageError');
+  }
+}
 
 export const canonicaliseRecipeIngredientsFlow = ai.defineFlow(
   {
@@ -448,7 +571,19 @@ export const canonicaliseRecipeIngredientsFlow = ai.defineFlow(
         });
       }
 
-      return results as ReadResult<MatchOrCreateResult, DomainError>[];
+      const settled = results as ReadResult<MatchOrCreateResult, DomainError>[];
+
+      // The persistence branch. `recipeId` present means the caller is asking for
+      // the results to be RECORDED as well as returned; absent means content only
+      // — `assembleRecipeDraft` runs this in-process for a recipe that does not
+      // exist yet, and an unconditional write there would have no document to
+      // name. Pinned by "writes no recipe document" in
+      // `canonicaliseRecipeIngredients.persist.test.ts`, not merely asserted here.
+      if (input.recipeId !== undefined) {
+        await persistCanonMatches(input.recipeId, input.items, settled);
+      }
+
+      return settled;
     } finally {
       batchSpan.end();
       // Span buffering is drained by the makeTracedCallable entrypoint's finally

@@ -310,6 +310,8 @@ A recipe canonicalises many ingredient names at once (a 35-ingredient recipe). T
 
 **There is one matching path. A single item is a batch of one.** Both stages and orchestration are shared, so stages, thresholds, arbitration, `needs_approval`, and per-item match-log emission cannot drift between single and batch.
 
+**The batch entry point also RECORDS its result (#1434), and it is the only one that does.** Its input carries an optional `recipeId` and an optional per-item `ingredientId` — identity for persistence, read by nothing in the matcher — and when `recipeId` is present the flow folds `canonId`/`matchState` onto `recipes/{recipeId}` in a transaction after the results are assembled. Absent, it behaves exactly as before: `assembleRecipeDraft` runs this flow in-process for a recipe that is not in Firestore yet. Nothing about the matching changes in either arm; see `docs/recipe-module.md` § "Canon interaction" for the write's shape and its LWW limit.
+
 ### One path: batch, with single as `n = 1`
 
 `matchOrCreate`'s body is a **three-phase batch orchestrator** that fans each phase across the whole input list, and the single-item entry point becomes a thin alias:

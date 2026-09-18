@@ -1045,13 +1045,37 @@ canonicalisation is a **fifth entry point** into the same pipeline, routed
 through the `canonicaliseRecipeIngredients` callable (issue #187):
 
 - All parsed-but-unmatched ingredients from one recipe are sent in a **single
-  batch call** — `{ items: [{ rawName, rawText }, …] }`.
+  batch call** — `{ recipeId?, items: [{ ingredientId?, rawName, rawText }, …] }`.
 - The CF reads the `canonItems` collection **once**, batch-embeds all names,
   and runs `resolveOne` per ingredient against a growing in-memory snapshot so
   two ingredients resolving to the same new item collapse to one canon item.
 - Results come back as an **order-preserving array**, one `{ kind, value/error }`
-  per input item. The client writes `canonId` + `matchState` back onto each
-  ingredient exactly as before.
+  per input item.
+- **The function writes `canonId` + `matchState` back onto the recipe itself
+  (#1434), when the caller named one.** It used to hand that half back to the
+  browser, as the statement _after_ a two-minute `await` — so a locked phone or a
+  closed tab kept the canon documents the run had created and lost the matching
+  they were created for, silently, on a button that saves without asking. The
+  write is a read-modify-write in a **transaction** on `recipes/{recipeId}`,
+  folding results onto rows by `ingredientId`, skipping ids the document no
+  longer has, stamping `updatedAt`, and never throwing — a failure is logged and
+  reported and the results still return (Rule 10, `persistImportedRecipe`'s
+  shape). The client applies nothing optimistically and registers no
+  `latestLocalEdit`: a local-edit stamp for a write it is not making would make
+  `applySnapshot` discard the server's own result.
+- **`recipeId` is optional, and the absent arm is a different job, not a
+  fallback.** Absent means content only: match, write the canon documents, return
+  the results, write no recipe. `assembleRecipeDraft` invokes this flow
+  in-process while assembling a recipe that does not exist in Firestore yet, so
+  an unconditional write would have no document to name; an old cached PWA tab
+  lands on the same arm and keeps working. Pinned in
+  `canonicaliseRecipeIngredients.persist.test.ts`, not merely stated.
+- **What it does not buy.** The match now survives **the browser going away**. It
+  is not un-clobberable: `recipes/{id}` is written whole by the client, so an
+  in-place edit composed from a copy older than the function's write still
+  overwrites it — document-level LWW, the same contract that governs `thumbnail`
+  and `embedding`. The transaction narrows the window from the whole 120 s call
+  to the transaction itself; it does not close it.
 - Unmatched/ambiguous results flow into the **existing review queue** via
   `needs_approval` — same semantics as all other entry points.
 
@@ -1142,7 +1166,7 @@ layer-map change**. One Cloud Function (the parse flow) arrives in Phase 3.
 - `packages/domain/src/recipe/` — entities, pure commands/queries
 - `packages/domain/src/schemas/recipe*.ts` — zod schemas (validated on read in firebase-sync; on flow output in the CF)
 - `packages/adapters/firebase-sync/src/recipe*.ts` — subscription + writes
-- `apps/cloud-functions/src/` — `parseRecipeIngredients` Genkit callable (Phase 3), wrapped in `withAiTimeout`. #1319 Phase 8 retired "Parse from text" — the editor's paste-a-block affordance, whose replacement for the cook is pasting the page into the chef — but the callable is NOT dead and was deliberately kept: `matchIngredient` in `recipeService.ts` calls it for a single ingredient line, which is what the ✗ marker on a recipe row runs. **Its result is persisted by the browser, deliberately** (#1435, epic #1417): what gets written is the _match_ — parse plus canon together — and neither callable's wire input carries recipe identity, so the durable version is one new `{ recipeId, ingredientId }` callable replacing both browser calls, shared with `canonicaliseRecipeIngredients` and not either one's to take alone. Until that exists, the write stays on the page, where the mid-flight `rawText` guard lives — that guard, not the absence of a race, is the client's real advantage over a hypothetical server-side matcher: full-document LWW on `recipes/{id}` already races a server copy today, since `onRecipeWritten` does three partial `.update()`s on that same document (`thumbnail`, `embedding`, …) that a client `setDoc` can clobber — the documented contract, not something this call site changes. Reasoning at the call sites; a source scan in `tests/flows/parseRecipeIngredients.test.ts` pins that the flow itself writes nothing
+- `apps/cloud-functions/src/` — `parseRecipeIngredients` Genkit callable (Phase 3), wrapped in `withAiTimeout`. #1319 Phase 8 retired "Parse from text" — the editor's paste-a-block affordance, whose replacement for the cook is pasting the page into the chef — but the callable is NOT dead and was deliberately kept: `matchIngredient` in `recipeService.ts` calls it for a single ingredient line, which is what the ✗ marker on a recipe row runs. **Its result is persisted by the browser, deliberately** (#1435, epic #1417): what gets written is the _match_ — parse plus canon together — so the durable version is one new `{ recipeId, ingredientId }` callable replacing both browser calls, shared with `canonicaliseRecipeIngredients` and not either one's to take alone. **The original reason was that neither wire input carried recipe identity; #1434 changed that for the canon half**, which now takes `{ recipeId, ingredientId }` and writes the rows it matched — and `matchIngredient` calls it without them on purpose (pinned in `recipeService.canonicalise.test.ts`), because a canon write from here would stamp `canonId`/`matchState` onto a row whose `parsed` is still null in Firestore until this function's caller writes the rest. The parse callable is still identity-free, so a canon-only write here would persist only half of the pair — the match, not the fresher `parsed` this function just computed — before this function's caller writes the rest a moment later. That intermediate row is flagged, not stranded (`ingredientMatchIssue` returns `missing_amount` for `canonId` set + `parsed: null`, and its `?` marker runs this same repair, same corner as the ✗ it replaces); what the split write actually costs is landing the pair as two family-visible states instead of one. Until that exists, the write stays on the page, where the mid-flight `rawText` guard lives — that guard, not the absence of a race, is the client's real advantage over a hypothetical server-side matcher: full-document LWW on `recipes/{id}` already races a server copy today, since `onRecipeWritten` does three partial `.update()`s on that same document (`thumbnail`, `embedding`, …) that a client `setDoc` can clobber — the documented contract, not something this call site changes. Reasoning at the call sites; a source scan in `tests/flows/parseRecipeIngredients.test.ts` pins that the flow itself writes nothing
 - `apps/web-pwa/src/lib/recipeService.ts` + routes — store, list/view UI (a recipe is edited on the page it is read on; there is no edit route)
 - `apps/web-pwa/src/routes/recipes/RecipeIdentityCard.svelte` — the card under
   the hero (description, fact pills, tags, phase strip, source link), lifted out

@@ -365,6 +365,11 @@ export {
   RecipeKindSchema,
   RecipePhaseSchema,
   RecipeSchema,
+  // The ingredients array on its own. Exported for the one server-side reader
+  // that folds canon matches onto an EXISTING recipe document and so validates
+  // that field alone (issue #1434) — parsing the whole `RecipeSchema` there
+  // would make an unrelated field's drift silently skip the fold.
+  IngredientGroupSchema,
   // The way-IN phase gate (issue #1122) — the librarian, both extractors and the
   // re-estimator constrain their `phases` output against these, and #1202's row
   // editor needs `MAX_RECIPE_PHASES` to cap "add a phase" against the same bound.

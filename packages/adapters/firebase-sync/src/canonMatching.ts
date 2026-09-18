@@ -37,6 +37,12 @@ export async function callMatchOrCreate(
 
 type WireBatchResult = ReadResult<MatchOrCreateResult, DomainError>[];
 
+// The batch canon matcher. Since issue #1434 the input can also carry the
+// IDENTITY of what is being matched — a `recipeId` and a per-item
+// `ingredientId` — and when it does, the function records `canonId`/`matchState`
+// onto that recipe itself rather than returning them for the caller to write. It
+// rides on the input type and needs nothing here: no branch, no second call
+// shape, no timeout change. The results array comes back either way.
 export async function callCanonicaliseRecipeIngredients(
   input: CanonicaliseRecipeIngredientsInput,
   traceparent?: string,

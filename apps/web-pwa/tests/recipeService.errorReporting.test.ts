@@ -200,6 +200,20 @@ describe('recipeService — write/command failure reporting (Phase 2)', () => {
       await canonicaliseIngredients(recipe);
       expect(reportSpy).toHaveBeenCalledWith(STORAGE_ERR, 'StorageError');
     });
+
+    it('writes nothing on a transport failure', async () => {
+      // Since #1434 the success path writes nothing either — the function does.
+      // This pins the OTHER half: a call that never reached the function must not
+      // leave a recipe write behind it. It was an uncovered gap before the move
+      // and would be the obvious place for one to creep back in.
+      const recipe = makeRecipe([{ id: 'g1', name: null, items: [parsedIngredient('a')] }]);
+      fs.callCanonicaliseRecipeIngredients.mockResolvedValueOnce({
+        kind: 'err',
+        error: STORAGE_ERR,
+      });
+      await canonicaliseIngredients(recipe);
+      expect(fs.saveRecipe).not.toHaveBeenCalled();
+    });
   });
 
   describe('commitRecipeAddPlan (shopping-list item writes)', () => {
