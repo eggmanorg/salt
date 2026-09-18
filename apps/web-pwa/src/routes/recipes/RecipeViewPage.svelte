@@ -319,7 +319,7 @@
     });
     showComponentUrlImport = false;
     showComponentPhotoImport = false;
-    const attached = await attachComponentToMeal(recipe.id, imported.id);
+    const attached = await attachComponentToMeal(recipe.id, imported.id, imported);
     // Rule 10. The dish is already saved on the server, so a failed attach must
     // not strand it — say what happened and still go to it.
     if (attached.kind !== 'ok') {
@@ -1450,10 +1450,10 @@
     );
     sidebarIsSavingNew = false;
     if (result.kind !== 'ok') {
-      addToast(
-        result.error.stage === 'author' ? 'Failed to generate recipe.' : 'Failed to save recipe.',
-        'destructive',
-      );
+      // One message, for the reason written out at `runSave` in ChatSessionPage:
+      // since issue #1431 the flow writes the recipe and its write never fails
+      // the call, so there is no save leg here to report on separately.
+      addToast('Failed to generate recipe.', 'destructive');
       return;
     }
     // The sidebar twin of the chat page's "Save as new recipe" (issue #765):

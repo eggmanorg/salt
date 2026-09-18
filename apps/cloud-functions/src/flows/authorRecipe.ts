@@ -8,11 +8,12 @@ import {
   RecipeSchema,
 } from '@salt/domain/schemas';
 import type { RecipeDoc } from '@salt/domain/schemas';
-import { isAuthorable } from '@salt/domain';
+import { isAuthorable, stampAttribution } from '@salt/domain';
 import { setActiveSpanName } from '@salt/observability/server';
 import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
+import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 import { readEquipmentContext, equipmentSectionForLibrarian } from './equipmentContext.js';
@@ -147,7 +148,65 @@ export const authorRecipeFlow = ai.defineFlow(
     // if one ever were, the model's own answer is used rather than minting an
     // entry with a method its kind is not allowed to have.
     const kindHint = variationBase && isAuthorable(variationBase.kind) ? variationBase.kind : null;
-    return assembleRecipeDraft(parsed.data, { source: { type: 'manual' }, baseRecipe, kindHint });
+    const draft = await assembleRecipeDraft(parsed.data, {
+      source: { type: 'manual' },
+      baseRecipe,
+      kindHint,
+    });
+
+    // ─── The flow writes the recipe it authored (issue #1431) ──────────────────
+    //
+    // Only in CREATE mode, and the gate is `input.recipeId` — read exactly as the
+    // Promise.all above reads it, so the mode this writes for and the mode it
+    // grounded the prompt for cannot disagree. Everything below is skipped when
+    // one is set, which is what protects the review gate:
+    //
+    //   * EDIT MODE (`recipeAmend.propose` → `proposeRecipeAmendment`, always
+    //     `recipeId: existing.id`) is a PROPOSAL. The draft is merged and shown as
+    //     a diff, and reaches Firestore only when the user confirms. A write here
+    //     would commit an unreviewed amendment over a live recipe — data
+    //     destruction, not a UX regression — so it is pinned by a test that goes
+    //     red if an edit-mode call writes anything (#764, #791). It still READS:
+    //     grounding the librarian on the existing recipe is the whole of edit
+    //     mode.
+    //   * A failed base read does NOT reopen it. `readBaseRecipe` degrades to null
+    //     on a missing or corrupt document, so `baseRecipe` is an unsafe gate: it
+    //     is null on an amend whose recipe would not parse, and writing then would
+    //     mint a stray recipe out of an amendment nobody confirmed.
+    //   * VARIATION mode (`basedOnRecipeId`, no `recipeId`) IS a create and is
+    //     written: it authors a new independent dish, and its one caller treats it
+    //     exactly like any other create.
+    //
+    // WHY HERE AND NOT THE BROWSER. `chatRecipeAuthor` used to write the document
+    // on the statement after the `await` — the statement a locked phone, a
+    // backgrounded PWA or a closed tab never runs. The flow completed, the
+    // librarian and the whole parse/canon fan-out were paid for, and the recipe
+    // was thrown away with no error and nothing on screen. Same fault and same fix
+    // as `persistAuthoredRecipe` itself (#616), `generateGuidedPlan` (#1416) and
+    // `chefChat` (#1430).
+    //
+    // THE BOUNDARY, rather than "the recipe can no longer be lost": this removes
+    // the loss caused by the PAGE going away, which was 100% of occurrences. A
+    // FAILED WRITE still loses it — deliberately, because failing the call would
+    // throw away a generation that succeeded — recovered only by the stash and the
+    // first in-place edit, with the limits written out in `persistAuthoredRecipe`.
+    //
+    // NOT FLAGGED `needs_approval`: that is `assembleRecipeDraft`'s option and the
+    // librarian does not pass it. A chat-authored recipe is something you talked
+    // through and asked for, not raw AI output nobody has read.
+    if (input.recipeId) return draft;
+
+    // The same stamp the browser applies to every other recipe write, from
+    // `@salt/domain` so there is one rule and not two: `createdBy` filled only
+    // when blank, `lastEditedBy` always, and BOTH left alone when no name came
+    // over the wire. The assembler carries `createdBy` forward from a base recipe
+    // and blanks it on a create, so fill-once here re-points nothing.
+    const recipe = stampAttribution(draft, input.authorName ?? '');
+    await persistAuthoredRecipe(recipe, 'authorRecipe');
+    // The document that was written, not the one before the stamp: the client
+    // stashes this for the page it navigates to, so a divergence would paint a
+    // recipe that disagrees with Firestore the moment the listener catches up.
+    return recipe;
   },
 );
 

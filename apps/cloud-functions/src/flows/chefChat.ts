@@ -1219,7 +1219,7 @@ interface ChefChatTurn {
  * drained. A phone that locked, or a tab that closed, performed none of that: the
  * function completed, the tokens were paid for, and both the chef's reply AND the
  * user's own typed sentence were gone with no error and nothing on screen. Same
- * fault and same fix as `persistImportedRecipe` (#616) and `generateGuidedPlan`
+ * fault and same fix as `persistAuthoredRecipe` (#616) and `generateGuidedPlan`
  * (#1416).
  *
  * READ-THEN-`.set()`, NEVER REBUILT FROM `input.messages`. The history on the wire
@@ -1247,7 +1247,7 @@ interface ChefChatTurn {
  * conversation. `chatExpiresAt` from `@salt/domain` is the one home for the two
  * durations; only the `Timestamp` conversion is ours.
  *
- * IT NEVER THROWS (Rule 10, and `persistImportedRecipe`'s reasoning): a Firestore
+ * IT NEVER THROWS (Rule 10, and `persistAuthoredRecipe`'s reasoning): a Firestore
  * hiccup must not throw away a completed, already-paid-for turn. The callable
  * still returns the reply, the browser still paints it, and the failure is logged.
  * The boundary, because "the turn is never lost" would be too strong: when this

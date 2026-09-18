@@ -281,8 +281,13 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     await importALink();
 
     // The attach is made HERE, not a navigation later off a querystring — which is
-    // why the URL it pushes carries no `?meal=` at all.
-    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'imported-9'));
+    // why the URL it pushes carries no `?meal=` at all. The third argument is the
+    // just-imported `Recipe` itself (issue #1431 review, blocking): the store may
+    // not have heard about it yet, so `attachComponentToMeal` needs it in hand to
+    // rank correctly.
+    await waitFor(() =>
+      expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'imported-9', imported),
+    );
     expect(push).toHaveBeenCalledWith('/recipes/imported-9');
     expect(push).not.toHaveBeenCalledWith(expect.stringContaining('meal='));
     expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
@@ -302,7 +307,9 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     renderPage();
     await importALink();
 
-    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'chicken'));
+    await waitFor(() =>
+      expect(attachComponentToMeal).toHaveBeenCalledWith(MEAL_ID, 'chicken', imported),
+    );
     expect(attachComponentToMeal).toHaveBeenCalledTimes(1);
     expect(persistRecipe).not.toHaveBeenCalled();
   });

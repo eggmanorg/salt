@@ -18,7 +18,7 @@
  *     would switch that document's TTL off in silence (#1008), and carrying the
  *     old value forward lets a chat expire mid-conversation.
  *  4. IT NEVER THROWS. A Firestore hiccup must not throw away a completed,
- *     already-paid-for turn (Rule 10, and `persistImportedRecipe`'s reasoning).
+ *     already-paid-for turn (Rule 10, and `persistAuthoredRecipe`'s reasoning).
  *
  * The real `firebase-admin` `Timestamp` is used deliberately — claim 3 is about
  * the wire TYPE, and a fake would assert only that the fake was called.

@@ -26,6 +26,10 @@ export {
   newStep,
 } from './commands/builders.js';
 export { clearIngredientMatch } from './commands/clearIngredientMatch.js';
+// The one attribution stamp (issue #1431) — the browser stamps an in-place edit
+// and the librarian flow stamps the recipe it writes for itself, so the fill-once
+// `createdBy` rule lives where both can reach it rather than being typed twice.
+export { stampAttribution } from './commands/stampAttribution.js';
 // The one tag normalisation (issue #1054) — the recipe editor and the authoring
 // flows are different apps that cannot import each other, so the rule that
 // decides what a typed or generated tag becomes lives here.

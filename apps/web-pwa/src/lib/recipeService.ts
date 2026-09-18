@@ -49,7 +49,7 @@ import type {
   RecipePagePhoto,
 } from '@salt/domain/schemas';
 import { isImportError } from '@salt/domain/schemas';
-import { hasLiveCanonMatch } from '@salt/domain';
+import { hasLiveCanonMatch, stampAttribution } from '@salt/domain';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { currentMember } from './membersService.js';
 import { getCanonItemsSnapshot } from './canonService.js';
@@ -173,30 +173,38 @@ export function initRecipeSync(): () => void {
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
-// Stamp attribution (issue #845). The ONE implementation, exported because
-// `chatRecipeAuthor` goes to `saveRecipeDoc` directly rather than through
-// `persistRecipe` and so must stamp itself — a second inline stamp there would
-// be a second chance to forget one, exactly as `createdAt`/`updatedAt` are
-// stamped once per path and no more. `recipeAmend`'s apply used to be a second
-// direct caller of THIS function; since issue #1330 it stamps through
-// `applyRecipeOptimistically` below instead, so this function now has exactly
-// two callers — that function's own body, and `chatRecipeAuthor`.
+// Resolve WHO is writing, and apply the attribution stamp (issue #845).
 //
-// `lastEditedBy` on every write, `createdBy` only when it is still blank: a
-// recipe is added once and edited forever, so `createdBy` is fill-once and is
-// never re-pointed at a later editor. This is the service layer's job because
-// `packages/domain` knows no user, and the name is a snapshot of
-// `Member.name` taken at write time — audit only, never a gate.
+// This half is the service layer's job because `packages/domain` knows no user:
+// all it does is read the signed-in member off the store. The RULE it applies —
+// `lastEditedBy` on every write, `createdBy` only when still blank, and both left
+// alone when there is no name — is `stampAttribution` in `@salt/domain`, because
+// since issue #1431 the `authorRecipe` flow stamps the recipe it writes for
+// itself, and one rule written twice is one rule that drifts.
 //
-// No name available — the roster hasn't loaded, or the signed-in email isn't on
-// it — leaves BOTH fields exactly as they were. A placeholder ("Unknown",
-// "Someone") would be a value people read as a person; `''` already means "no
-// attribution on record", and clobbering a real creator with a placeholder
-// because a store hadn't settled is worse than recording nothing.
+// EXACTLY ONE CALLER: `applyRecipeOptimistically` below, which every in-place
+// write goes through. It used to have two more. `recipeAmend`'s apply stopped
+// calling it directly in #1330; `chatRecipeAuthor` stopped in #1431, when the
+// recipe it authors stopped being written by the browser at all — it now sends
+// the name over the wire and the flow applies the same domain function to the
+// document it writes. Still exported because `recipeService.attribution.test.ts`
+// pins these semantics directly, which is the point of a rule three write paths
+// depend on.
 export function stampRecipeAttribution(recipe: Recipe): Recipe {
-  const name = get(currentMember)?.name ?? '';
-  if (!name) return recipe;
-  return { ...recipe, createdBy: recipe.createdBy || name, lastEditedBy: name };
+  return stampAttribution(recipe, currentMemberName());
+}
+
+// The one read of WHO is writing — `''` when nobody is signed in, when the roster
+// has not loaded, or when the signed-in email is not on it. Every consumer treats
+// that blank the same way: record nothing rather than a placeholder.
+//
+// Exported for `chatRecipeAuthor` (issue #1431), which does not stamp anything:
+// the recipe it authors is written by the Cloud Function, so it sends this name
+// over the wire and the flow applies `stampAttribution` to the document it
+// writes. Reading the store there instead would put the member subscription in a
+// second module for one field.
+export function currentMemberName(): string {
+  return get(currentMember)?.name ?? '';
 }
 
 // Stamp updatedAt + attribution and update the store optimistically —
@@ -328,20 +336,40 @@ export function discardPendingRecipeWrites(): void {
 //
 // Persisted through `persistRecipe`, i.e. a whole-document write under LWW —
 // the established contract for every recipe write in the app.
+//
+// `justWritten` (issue #1431 review, blocking) — the component the CALLER just
+// had a recipe written for, when it has one in hand. `insertComponentByElapsedTime`
+// ranks off the IN-MEMORY store, and for a dish the SERVER just wrote (the chat
+// door's `saved`, the import doors' `imported`) that store has not necessarily
+// heard about it yet: the write settles on the callable's response, not on a
+// listener round trip, so `all` can still lack the very id being attached the
+// moment this runs. A dangling lookup there reads as "no strip" and sorts to the
+// top — the wrong place, and one that gets WRITTEN DOWN (positional insert,
+// never re-sorted, so a wrong rank here is the meal's order from then on).
+// Folding `justWritten` into the ranking list — only when the store does not
+// already carry `componentId` — makes the rank correct whether or not the
+// listener has caught up, without changing anything for
+// `RecipeMadeFromCard`'s picker, which attaches an id the store already holds
+// and passes nothing here.
 export async function attachComponentToMeal(
   mealId: string,
   componentId: string,
+  justWritten?: Recipe,
 ): Promise<ReadResult<void, DomainError>> {
   const all = get(_recipes);
   const meal = all.find((r) => r.id === mealId);
   if (meal === undefined) return failure({ kind: 'NotFound', resource: 'recipe', id: mealId });
+  const forRanking =
+    justWritten !== undefined && !all.some((r) => r.id === componentId)
+      ? [...all, justWritten]
+      : all;
   return persistRecipe({
     ...meal,
     componentRecipeIds: insertComponentByElapsedTime(
       mealId,
       meal.componentRecipeIds,
       componentId,
-      all,
+      forRanking,
     ),
   });
 }

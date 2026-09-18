@@ -13,7 +13,7 @@ import { ai } from '../genkit.js';
 import { ssrfGuardedFetch, SsrfFetchError } from '../adapters/ssrfFetch.js';
 import { extractRecipeJsonLd, type JsonLdRecipe } from '../adapters/jsonLdRecipe.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
-import { persistImportedRecipe } from './persistImportedRecipe.js';
+import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 
@@ -166,9 +166,9 @@ export const extractRecipeFromUrlFlow = ai.defineFlow(
     });
 
     // 7. Persist it here, server-side, flagged as not yet human-reviewed
-    //    (issue #616) — see persistImportedRecipe for why, and for why a write
+    //    (issue #616) — see persistAuthoredRecipe for why, and for why a write
     //    failure must not fail the import.
-    await persistImportedRecipe(recipe, 'extractRecipeFromUrl');
+    await persistAuthoredRecipe(recipe, 'extractRecipeFromUrl');
     return recipe;
   },
 );

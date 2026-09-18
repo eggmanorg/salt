@@ -12,7 +12,7 @@
 //      `extractRecipeFromPhoto.ts` and `authorRecipe.ts` — every URL import, photo
 //      import and chat-authored recipe; and `scripts/rematch-ingredients.ts`. The
 //      three import paths already persist at the right moment, once and whole, via
-//      `persistImportedRecipe`, so a write here would fire mid-assembly, writing
+//      `persistAuthoredRecipe`, so a write here would fire mid-assembly, writing
 //      partial ingredient state for a recipe that does not exist yet. The script's
 //      default mode is deliberately read-only, and a write here would break that
 //      promise silently.

@@ -497,8 +497,15 @@ raw.kind`:
   replied" gate.
 
 - Authoring a NEW recipe out of a conversation — one leg, `src/lib/chatRecipeAuthor.ts`,
-  three buttons (#798). It is always the CREATE path (`recipeId` never sent), it stamps
-  the clock, saves, and fires one `recipe.created` with `recipe_method: 'chat'`; the
+  three buttons (#798). It is always the CREATE path (`recipeId` never sent), which is
+  also what arms the flow's own write: since #1431 **the `authorRecipe` flow writes the
+  recipe**, stamping the clock and the attribution (from a `authorName` the leg sends
+  over the wire) on the document it persists, so a phone that locks during the minute
+  the librarian takes no longer loses it. The leg sends the call, stashes what comes
+  back for the page it is about to navigate to, and fires one `recipe.created` with
+  `recipe_method: 'chat'` — a browser usage event, so a suspend now loses the event and
+  keeps the recipe. It writes nothing to Firestore, and there is one failure message
+  rather than two, because a write failure deliberately does not fail the call. The
   page owns its busy state, its toasts, its navigation and whether the conversation
   goes on to claim what it produced. The three:
   - **"Save as recipe"** on a general chat (`chat-save-recipe-btn`) — passes the

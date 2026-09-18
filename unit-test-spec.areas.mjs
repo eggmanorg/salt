@@ -221,9 +221,27 @@ export const violationCeilings = {
   // namer, the fake-model resolver); none of them can carry this assertion, and
   // splitting one case into a file of its own would duplicate all five to dodge
   // the counter.
+  // UT-B1 33 → 34 (issue #1431). ONE new file:
+  // `flows/authorRecipe.persist.test.ts`, which pins the two properties the
+  // librarian's new server-side write turns on and off — create mode WRITES the
+  // recipe, edit mode writes NOTHING, because an edit-mode call is the review
+  // gate's proposal and a write there would commit an unreviewed amendment over a
+  // live recipe. Seven mocks, and none of them narrowable: five are the harness
+  // every flow suite in this directory carries (genkit, the model catalogue, the
+  // AI timeout, and the parse + canon sibling flows, which would otherwise make
+  // live calls), and the other two ARE the subject — `firebase-admin/firestore`
+  // is the seam the write is asserted on, and `firebase-functions` is the logger
+  // the log-and-continue failure path is asserted on. The flow imports both; there
+  // is no argument to inject a fake through.
+  //
+  // The alternative was to fold these cases into `flows/authorRecipe.test.ts`,
+  // which already breaches. That buys the counter and costs the reader: that file
+  // is the prompt-composition suite (create/edit/variation grounding), this is a
+  // persistence regression, and every sibling of this fix in campaign #1417 has
+  // its own `*.persist.test.ts` beside the suite it is not part of.
   'apps/cloud-functions': {
     'UT-A1': 3,
-    'UT-B1': 33,
+    'UT-B1': 34,
     'UT-C2': 4,
     'UT-E4': 0,
     'UT-G1': 0,

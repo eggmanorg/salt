@@ -96,7 +96,7 @@ let pendingWrites = 0;
 // accepted, whatever wrote it. A write that failed server-side therefore leaves it
 // set for the rest of the session, which is the intended posture — the store holds
 // the plan the flow handed back, the editor paints it, and the cook's Save writes
-// it (the same recovery `persistImportedRecipe` documents, and the same boundary:
+// it (the same recovery `persistAuthoredRecipe` documents, and the same boundary:
 // it takes a Save).
 let awaitingServerWrite: string | null = null;
 
