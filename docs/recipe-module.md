@@ -141,9 +141,12 @@ recipe.** One flow writes briefs (`describeRecipeScene`) and it runs from two ho
 which is why the field looks inconsistently durable and is not:
 
 - **The `onRecipeWritten` trigger PERSISTS its brief**, in the same update as the
-  image it directed, so a generated hero is never on screen without its brief beside
-  it. Nobody is watching that path, so saving is the only sane outcome — this is the
-  shape #1416 exists to enforce, already applied.
+  image it directed, so there is no in-flight window where a freshly generated hero
+  shows next to a stale brief. That is a guarantee about synchronisation, not
+  presence: the brief step can still return nothing (an empty result, or any throw),
+  in which case the image is written with no brief at all, same as an uploaded hero.
+  Nobody is watching that path, so saving whatever brief there is remains the only
+  sane outcome — this is the shape #1416 exists to enforce, already applied.
 - **The `describeRecipeScene` CALLABLE persists nothing.** It serves the regenerate
   dialog, where the paragraph is handed back for a human to read; only their
   Regenerate writes it, via `regenerateRecipeImage`. An unreviewed revision lives in

@@ -328,57 +328,79 @@ export const authorRecipe = makeTracedCallable({
 // That is NOT an unfixed instance of #1416, where `generateGuidedPlan`'s result
 // went missing on a path with no human step in it at all. The distinction the epic
 // asks this file's sweep to preserve is whether the app SAVED IT FOR YOU or HANDED
-// IT TO YOU TO REVIEW, and four facts — this call site's own, not inherited from
+// IT TO YOU TO REVIEW, and three facts — this call site's own, not inherited from
 // sibling #1428 — put it in the second bucket:
 //
-//   • Regenerate is the gate, and the only writer. The dialog's single route to
-//     Firestore is handleRegenerateConfirm → recipeService.regenerateRecipeImage →
-//     the regenerateRecipeImage callable, which stamps `imageBrief`. Nothing else
-//     on that page puts brief text on a document.
-//   • A write here would be WRONG, not merely wasteful — the exact inverse of
-//     #1428, which stayed transient partly because there was NOWHERE to write it.
-//     Here there is: `recipes/{id}.imageBrief`, and it means "the art direction
-//     behind the photo you are looking at". The dialog copy says so, and the
-//     onRecipeWritten trigger re-saves it in the same update as the image so no
-//     hero is ever on screen without its brief beside it. Storing an UNREVIEWED
-//     revision there makes the recipe claim art direction that no visible image was
-//     generated from, and the next Regenerate inherits words the user walked away
-//     from — possibly for a dish that has since been rewritten.
-//   • The no-human half of this flow ALREADY persists, server-side. onRecipeWritten
-//     runs this same flow when a recipe has no brief and writes the result in the
-//     same update as the image it produced. #1416's fix is already applied to this
-//     flow, on the path where nobody is watching; the callable is the
-//     human-in-the-loop path and nothing else.
-//   • What is exposed is seconds, not the 90 s below. That number is the FUNCTION
-//     ceiling. The AI budget is AI_TEXT_FLOW_TIMEOUT (55 s, NO retry), the role is
-//     `fast` (appSettings.ts) and the output is capped at about 80 words — the
-//     cheapest, shortest call in the epic's sweep, with the button that re-asks it
-//     on screen in front of the person who pressed it.
+//   • Regenerate is the only path that ORIGINATES a new brief. No other handle on
+//     the page computes or sends brief text of its own; the dialog's single route
+//     for an unaccepted revision is handleRegenerateConfirm →
+//     recipeService.regenerateRecipeImage → the regenerateRecipeImage callable,
+//     which stamps `imageBrief`. That is narrower than "the only writer of the
+//     FIELD": every full-document write the page makes — `queueRecipeEdit` above
+//     all, which every inline edit, canonicalise and review-flag save routes
+//     through — carries forward whatever `imageBrief` its in-memory snapshot
+//     already holds, because a full-document `setDoc` writes the whole document.
+//     A `queueRecipeEdit` write queued from a snapshot that predates a Regenerate
+//     can land after it and silently revert both the new hero and the brief that
+//     came with it — no toast, no self-heal (`imageNeedsGeneration` in
+//     onRecipeWritten.ts sees a non-null `image` on the next pass and moves on).
+//     That is CLAUDE.md's stated LWW contract — a client `setDoc` clobbering a
+//     field a concurrent write set — not a bug this fact denies; it is simply
+//     outside what this fact claims. What it claims, precisely: no path other than
+//     an accepted Regenerate ever puts a NEW, unreviewed brief on the document.
+//   • `imageBrief` means one thing — "the art direction behind the photo you are
+//     looking at" — and a write here would make that FALSE, not merely wasteful:
+//     the exact inverse of #1428, which stayed transient partly because there was
+//     NOWHERE to write it. Here there is, `recipes/{id}.imageBrief`, and storing an
+//     UNREVIEWED revision there makes the recipe claim art direction no visible
+//     image was generated from — the next Regenerate would then inherit words the
+//     user walked away from, possibly for a dish since rewritten. That meaning
+//     holds only because of two things together, not one: fact one above (nothing
+//     else originates new brief text) and the onRecipeWritten trigger persisting
+//     ITS brief in the SAME Firestore update as the image it directed, on the one
+//     path nobody reviews — so there is no in-flight window where a freshly
+//     generated hero shows next to a stale brief (the trigger's own words). That is
+//     a claim about synchronisation, not universal presence: `describeSceneOrNothing`
+//     can still return nothing (an empty brief, or any throw) and the image is then
+//     written with no brief at all, same as an uploaded hero — #1416's fix is
+//     already applied to the automatic path, it does not guarantee every hero gets
+//     a brief.
+//   • What is exposed by any of this is seconds, not the 90 s below. That number is
+//     the FUNCTION ceiling. The AI budget is AI_TEXT_FLOW_TIMEOUT (55 s, NO retry),
+//     the role is `fast` (appSettings.ts) and the output is capped at about 80
+//     words — the cheapest, shortest call in the epic's sweep, with the button that
+//     re-asks it on screen in front of the person who pressed it.
 //
 // BOUNDARY — this is NOT "the scene brief is never persisted server-side", and must
-// not be written as one: the trigger persists it deliberately (fact three). What is
-// transient is the CALLABLE's result before a human has accepted it. The four facts
-// also fail independently, so each carries its own condition and its own pin:
+// not be written as one: the trigger persists it deliberately (fact two). What is
+// transient is the CALLABLE's result before a human has accepted it. Each fact below
+// carries its own condition and its own pin — no two facts share a pin, and no
+// fact's void condition is silently implied by another's:
 //
-//   • Fact one goes void if a second path from that dialog can put text on the
-//     document, or if the box is ever seeded from anything but the saved brief.
-//     Pinned client-side by apps/web-pwa/tests/RecipeViewPage.imageBrief.test.ts →
-//     "re-seeds from the saved brief on each open" and "discards a revision the user
-//     abandoned" (the second watches every mutating handle the page holds, rather
-//     than this one by name); the stamp itself by
+//   • Fact one goes void if any handle on the page is reached with brief text the
+//     user has not committed via Regenerate, or if the box is ever seeded from
+//     anything but the saved brief. It is NOT voided by an already-committed brief
+//     later being clobbered by a stale full-document write — that is the LWW hazard
+//     named above, and sits outside this fact's boundary rather than contradicting
+//     it. Pinned client-side by
+//     apps/web-pwa/tests/RecipeViewPage.imageBrief.test.ts → "re-seeds from the
+//     saved brief on each open" and "discards a revision the user abandoned", which
+//     watches every mutating handle the page holds — regenerateRecipeImage,
+//     persistRecipe, setRecipeImageUpload, saveRecipe AND queueRecipeEdit — by
+//     handle, not by name; the stamp itself by
 //     tests/callables/regenerateRecipeImage.test.ts.
-//   • Fact two goes void if `imageBrief` stops meaning "the art direction behind the
-//     current photo" — give the field a second meaning ("the draft you are working
-//     on") and the desynchronisation argument evaporates on its own, with facts one,
-//     three and four untouched. What holds the current meaning in place is the
-//     trigger writing the brief in the SAME update as the image:
-//     tests/triggers/onRecipeWritten.test.ts.
-//   • Fact three goes void on its own if the trigger stops authoring or stops
-//     persisting its own brief — same test file, and nothing above depends on it.
-//   • Fact four goes void one constant at a time: the `fast` role
+//   • Fact two goes void if the trigger stops writing its brief in the SAME update
+//     as the image, or stops authoring one at all — either decouples image and
+//     brief on the one path nobody reviews, which is a failure from the OTHER side
+//     of the meaning argument than fact one's. Fact two draws on fact one (nothing
+//     else originates new brief text) but is not voided by fact one's failure, nor
+//     does fact one depend on fact two. Pinned by
+//     tests/triggers/onRecipeWritten.test.ts, which asserts the brief lands in the
+//     SAME update object as the image, not merely somewhere in the same handler.
+//   • Fact three goes void one constant at a time: the `fast` role
 //     (@salt/domain/schemas appSettings), the ~80-word cap (the flow's system
 //     prompt), or AI_TEXT_FLOW_TIMEOUT. Any one of the three moving widens the
-//     window without touching the other three facts.
+//     window without touching the other two facts.
 //
 // And note what does NOT carry from the epic: #1417's "no firestore.rules change is
 // needed, for any child" holds here only because nothing is written. `recipes/{id}`

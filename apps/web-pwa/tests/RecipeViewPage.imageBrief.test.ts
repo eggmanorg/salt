@@ -117,6 +117,12 @@ vi.mock('../src/lib/recipeService.js', () => ({
   canonicaliseIngredients: vi.fn(),
   matchIngredient: vi.fn(),
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // The page's actual full-document recipe writer — every inline edit, canonicalise
+  // and review-flag save routes through this, not persistRecipe directly (#1456
+  // review, blocking 1). Mocked the same shape as persistRecipe so it is watchable
+  // rather than merely absent — an absent mock would throw if this path were ever
+  // reached, which is a pin that holds by accident, not by construction.
+  queueRecipeEdit: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   stashImportedDraft: vi.fn(),
   authorRecipeTraced: vi.fn(),
   regenerateRecipeImage: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -137,6 +143,7 @@ import {
   startOverRecipeSceneBrief,
   persistRecipe,
   setRecipeImageUpload,
+  queueRecipeEdit,
 } from '../src/lib/recipeService.js';
 
 const RECIPE_ID = 'recipe-1';
@@ -322,11 +329,15 @@ describe('RecipeViewPage — brief revision and start over', () => {
     await waitFor(() => expect(regenerateRecipeImage).toHaveBeenCalledWith(RECIPE_ID, REVISED));
   });
 
-  // Every handle this page holds that can put text on a Firestore document. The pin
-  // below is "REVISED reached NONE of them", not "regenerateRecipeImage was called
-  // with BRIEF": a future change making the brief durable would reach for one of the
-  // others, and an assertion listing one method by name is a pin you can walk around
-  // (issue #1432 — the same mistake the sibling PRs had to fix in review).
+  // Every handle this page holds that can put text on a Firestore document —
+  // including queueRecipeEdit, the page's ACTUAL full-document recipe writer (every
+  // inline edit, canonicalise and review-flag save routes through it), which a first
+  // pass at this pin missed and which happened to throw rather than pass, for want
+  // of a mock (#1456 review, blocking 1). The pin below is "REVISED reached NONE of
+  // them", not "regenerateRecipeImage was called with BRIEF": a future change making
+  // the brief durable would reach for one of the others, and an assertion listing
+  // one method by name is a pin you can walk around (issue #1432 — the same mistake
+  // the sibling PRs had to fix in review).
   const mutatingCalls = () =>
     JSON.stringify(
       [
@@ -334,6 +345,7 @@ describe('RecipeViewPage — brief revision and start over', () => {
         vi.mocked(persistRecipe),
         vi.mocked(setRecipeImageUpload),
         vi.mocked(saveRecipe),
+        vi.mocked(queueRecipeEdit),
       ].map((m) => m.mock.calls),
     );
 
