@@ -19,6 +19,7 @@ import {
   stageLabelById,
   targetStanceClass,
   weightLossText,
+  substitutionSummary,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
 
@@ -259,6 +260,24 @@ describe('orderBatches', () => {
       'stopped',
       'done',
     ]);
+  });
+});
+
+describe('substitutionSummary', () => {
+  it('names what went on and what it replaced', () => {
+    // Off the run's OWN frozen snapshot, never through to the formula — which is the
+    // whole reason the field lives on the batch.
+    expect(
+      substitutionSummary(
+        batch({ cureSaltSubstitution: { from: 'cure1', to: 'nitritedCuringSalt' } }),
+      ),
+    ).toBe('Nitrited curing salt, instead of Cure #1 (Prague powder #1)');
+  });
+
+  it('says nothing for a run that used what the recipe named', () => {
+    // Null rather than a dash: every line on these screens says one thing, and a
+    // dash would be a second thing that means nothing.
+    expect(substitutionSummary(batch())).toBeNull();
   });
 });
 

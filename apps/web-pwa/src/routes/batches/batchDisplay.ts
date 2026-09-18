@@ -1,4 +1,4 @@
-import { currentStage, stageStatus } from '@salt/domain';
+import { CURE_SALT_PRODUCTS, currentStage, stageStatus } from '@salt/domain';
 import type { CureCategory, PhProgress, TargetStance, WeightLossProgress } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
 import { CureCategorySchema } from '@salt/domain/schemas';
@@ -99,6 +99,25 @@ export function formatDate(iso: string): string {
 export function yieldSummary(totals: BatchTotalsDoc): string {
   if (totals.units === null) return formatGrams(totals.totalGrams);
   return formatDoughAmount(totals.units);
+}
+
+/**
+ * WHICH CURING SALT ACTUALLY WENT ON, when it was not the one the recipe asked for
+ * (issue #1402, phase 3) — and `null` for every run that used what the recipe named,
+ * which is the ordinary case.
+ *
+ * Read off the run's own frozen snapshot, never through to the formula: that is the
+ * whole reason the field is on the batch, so the log still says what happened after
+ * the recipe has been re-mapped. The quantities beside this already carry the
+ * substitute's own label and weight; what this adds is what was REPLACED, which no
+ * weight can say.
+ *
+ * It says nothing about whether either product suited the cure. Salt does not ask.
+ */
+export function substitutionSummary(batch: BatchDoc): string | null {
+  const swap = batch.cureSaltSubstitution;
+  if (swap === undefined) return null;
+  return `${CURE_SALT_PRODUCTS[swap.to].label}, instead of ${CURE_SALT_PRODUCTS[swap.from].label}`;
 }
 
 // ─── The next action ────────────────────────────────────────────────────────────

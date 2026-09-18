@@ -105,6 +105,16 @@ describe('a batch document written before #1274', () => {
     expect(parsed.cureCategory).toBeNull();
   });
 
+  it('reads as a run that used the product its recipe named (#1402)', () => {
+    // `cureSaltSubstitution` is optional rather than defaulted, exactly as `vessel`
+    // above is, so a document written before it is ABSENT rather than an empty
+    // object — and absent means "the recipe's own product went on", which is what
+    // every run in production did.
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.cureSaltSubstitution).toBeUndefined();
+    expect(Object.keys(parsed)).not.toContain('cureSaltSubstitution');
+  });
+
   it('still runs — the producers do not depend on anything that was deleted', () => {
     const parsed = BatchSchema.parse(LEGACY_BATCH);
     expect(currentStage(parsed)?.id).toBe('bulk');

@@ -48,6 +48,7 @@
     isObservational,
     nextAction,
     phTargetText,
+    substitutionSummary,
     targetStanceClass,
     weightLossText,
     yieldSummary,
@@ -250,6 +251,9 @@
   // itself and is indifferent to the order it is handed, so passing the unreversed
   // list keeps the two facts independent.
   const progress = $derived(run == null || log === undefined ? null : targetProgress(run, log));
+  // Which curing salt actually went on, off the run's own frozen snapshot (#1402).
+  // Null for every run that used what the recipe named.
+  const substitution = $derived(run == null ? null : substitutionSummary(run));
 
   let logOpen = $state(false);
   // Dismissal of the end-of-run invitation, for this visit only. In memory by
@@ -568,6 +572,16 @@
                 <div class="flex justify-between gap-3">
                   <dt class="text-muted-foreground">Baked in</dt>
                   <dd data-testid="batch-vessel">{run.vessel}</dd>
+                </div>
+              {/if}
+              <!-- WHICH CURING SALT ACTUALLY WENT ON, when it was not the one the
+                   recipe asked for (issue #1402). Absent for every run that used
+                   what the recipe named — the weights above already carry the
+                   substitute's own label, and this is what says what it replaced. -->
+              {#if substitution !== null}
+                <div class="flex justify-between gap-3">
+                  <dt class="text-muted-foreground">Cure salt</dt>
+                  <dd data-testid="batch-cure-salt-substitution">{substitution}</dd>
                 </div>
               {/if}
             </dl>

@@ -6,6 +6,7 @@ import type {
   SaltProduct,
 } from '../schemas/formula.js';
 import type { FormulaFailure } from './failure.js';
+import { boundsPatch } from './adjustComponent.js';
 import { saltProductBounds } from './cureSalt.js';
 import { PERCENT_DECIMALS, roundPercent } from './rounding.js';
 
@@ -90,6 +91,12 @@ export type DeriveFormulaResult =
  * be possible. A caller's bounds are honoured only where no product is named —
  * which is how `withComponentPercentScaled`'s leavening rail still works.
  *
+ * THE PATCH ITSELF COMES FROM `boundsPatch` (`adjustComponent.ts`), the one place
+ * that decides how a bounds record replaces whatever a component already carries.
+ * `cureSalt.ts`'s substitution stamp reads from the same function, so the two
+ * cannot independently drift on a case like `plain`'s (#1402 review, should-fix 4).
+ * The PRECEDENCE decided here — which record wins — is this function's alone.
+ *
  * NOTHING IS CHECKED HERE. This returns data; `solveFormula` is what refuses.
  */
 function boundsOn(component: FormulaComponentInput): {
@@ -97,16 +104,9 @@ function boundsOn(component: FormulaComponentInput): {
   maxPercent?: number;
 } {
   if (component.saltProduct !== undefined) {
-    const { minPercent, maxPercent } = saltProductBounds(component.saltProduct);
-    return {
-      ...(minPercent === undefined ? {} : { minPercent }),
-      ...(maxPercent === undefined ? {} : { maxPercent }),
-    };
+    return boundsPatch(saltProductBounds(component.saltProduct));
   }
-  return {
-    ...(component.minPercent === undefined ? {} : { minPercent: component.minPercent }),
-    ...(component.maxPercent === undefined ? {} : { maxPercent: component.maxPercent }),
-  };
+  return boundsPatch({ minPercent: component.minPercent, maxPercent: component.maxPercent });
 }
 
 /** One component, measured against the basis before any reconciliation. */

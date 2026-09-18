@@ -588,6 +588,27 @@ them.
   arrived wrong. `cureSalt.ts`'s header states all of this at the declaration, and
   `packages/domain/tests/formula/cureSalt.test.ts` pins each claim.
 
+  **And the jar you actually have.** A run can be started with the OTHER MEMBER of
+  the named product's pair — nitrite-only ↔ nitrite-only, nitrate-bearing ↔
+  nitrate-bearing, never across — and `withCureSaltSubstituted` holds the **nitrite**
+  dose constant, converts to the mass of the substitute that delivers it, and lets
+  the plain salt absorb the remainder (`plain` is a member of `SaltProductSchema` for
+  exactly that, and carries no window). It checks no dose: the substitute's own
+  window is restamped and `solveFormula` refuses an out-of-window result, so there is
+  still one refusal. The swap is frozen onto the batch
+  (`BatchSchema.cureSaltSubstitution`), in the shape `vessel` established, and the
+  substituted line's frozen label names the product that actually went on.
+
+  **Its limits, again narrower than they sound:** nitrite is matched and **the
+  nitrate diverges** — cure #2 is ~6.25%/~4% against Salvianda's 0.6%/0.9%, so
+  ingoing nitrate ends up ~2.3× apart, and splitting the difference would move the
+  number that matters to flatter the one that does not. A salt total too low to carry
+  the dose is **refused with both figures, never clamped** in either direction. And
+  nothing about a substitution says the substitute SUITS the cure. The suitability
+  limit stated above holds unchanged: whether a nitrite-only product is fit for a
+  ninety-day dry is a different question, it is Daniel's to answer, and nothing built
+  here answers it by accident.
+
 - **How good are the two AI passes.** The gate on everything: hand three real
   bread recipes to the cheap model and check the wait stages come out clean, then
   the same three to a better model with a target time and read the schedules. If

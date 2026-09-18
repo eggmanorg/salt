@@ -442,14 +442,20 @@ export {
   withComponentPercentScaled,
   LEAVENING_PERCENT_BOUNDS,
   CURE_SALT_PRODUCTS,
+  CURE_SALT_PAIRS,
   saltProductBounds,
   ingoingNitritePpm,
   guessSaltProduct,
+  isCuringSalt,
+  pairOf,
+  withCureSaltSubstituted,
 } from './formula/index.js';
 export type {
   BoundViolation,
   ComponentPercentBounds,
   CureSaltProductInfo,
+  CureSaltSubstitutionFailure,
+  CureSaltSubstitutionResult,
   FormulaFailure,
   SaltProductGuessEntry,
 } from './formula/index.js';

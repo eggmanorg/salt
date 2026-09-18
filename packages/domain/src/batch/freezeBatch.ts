@@ -5,7 +5,13 @@ import type {
   BatchStagePlace,
   BatchTotalsDoc,
 } from '../schemas/index.js';
-import type { CureCategoryDoc, Formula, ReferenceYield, RecipeKindDoc } from '../schemas/index.js';
+import type {
+  CureCategoryDoc,
+  Formula,
+  ReferenceYield,
+  RecipeKindDoc,
+  SaltProduct,
+} from '../schemas/index.js';
 import type { FormulaFailure } from '../formula/index.js';
 import { solveFormula } from '../formula/index.js';
 import type { ScheduleAnchor, ScheduleFailure } from '../process/index.js';
@@ -59,6 +65,18 @@ export interface FreezeBatchInput {
   // `BatchSchema.vessel`. Omitted for the two answers that name no vessel (a count
   // of pieces, a plain weight of dough).
   vessel?: string;
+  // WHICH CURING SALT ACTUALLY WENT ON, when it was not the one the recipe asked for
+  // (issue #1402, phase 3). Copied onto the document untouched and read by nothing:
+  // see `BatchSchema.cureSaltSubstitution`. Omitted for every run that used what the
+  // recipe named, which is the ordinary case and every run in production today.
+  //
+  // A NOTE BESIDE THE NUMBERS, NOT THE NUMBERS THEMSELVES. The substituted
+  // percentages reach this function the way every other percentage does — inside
+  // `formula`, because the caller substituted before calling — so the quantities
+  // below are solved from them with no knowledge here that a swap happened. Nothing
+  // in this function reads this field, and nothing may start to: a freeze that
+  // re-derived a swap would be a second place the arithmetic lived.
+  cureSaltSubstitution?: { from: SaltProduct; to: SaltProduct };
   // Where the run is nailed to the clock: mixing now, or out of the oven at 07:30.
   anchor: ScheduleAnchor;
   // Frozen onto the document. The title so the log survives a rename or a delete;
@@ -122,6 +140,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     formula,
     atYield,
     vessel,
+    cureSaltSubstitution,
     anchor,
     recipeTitle,
     recipeKind,
@@ -204,6 +223,10 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       // Omitted rather than nulled when no vessel was named, so the field is simply
       // absent on the document — `BatchSchema.vessel` is optional, not nullable.
       ...(vessel === undefined ? {} : { vessel }),
+      // Omitted rather than nulled when the recipe's own product was used, for the
+      // reason `vessel` above is: `BatchSchema.cureSaltSubstitution` is optional,
+      // not nullable, and an empty object would read as a swap nobody made.
+      ...(cureSaltSubstitution === undefined ? {} : { cureSaltSubstitution }),
       state: 'running',
       abandonedAt: null,
       quantities,

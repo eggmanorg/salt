@@ -41,15 +41,29 @@ export const DensityClassSchema = z.enum(['waterLike', 'oil', 'syrup']);
 // percentage being checked. So the product is stored and the window is read off it;
 // `formula/cureSalt.ts` holds the table and states its limits.
 //
-// NAMED FOR THE PRODUCT, NOT FOR "CURE SALT", and that is deliberate: the phase
-// after this one adds `plain` to this enum, because a substitution has to be able to
-// find the ordinary salt it moves mass into. A second field for that would be one
-// field too many.
+// NAMED FOR THE PRODUCT, NOT FOR "CURE SALT", and that is deliberate: `plain` is a
+// member, because a substitution has to be able to find the ordinary salt it moves
+// mass into (issue #1402, phase 3). A second field for that would be one field too
+// many.
+//
+// `plain` CARRIES NO WINDOW, and that is not an omission awaiting a figure. A window
+// is a fact about a product's nitrite content (`formula/cureSalt.ts`), and ordinary
+// salt has none — too much of it is a dish nobody eats, which is a taste failure and
+// not this rail's business. So naming a component `plain` bounds it by nothing at
+// all, exactly as naming no product does.
 //
 // OPTIONAL, and `schemaVersion` stays at 1 — an added optional field is
 // read-compatible and production's bread formulas carry none, exactly as `process`
-// and `target` below did.
-export const SaltProductSchema = z.enum(['cure1', 'cure2', 'nitritedCuringSalt', 'salvianda']);
+// and `target` below did. Adding a MEMBER is read-compatible for the mirror-image
+// reason: no document already written carries the new member, so nothing stored
+// fails to parse against the wider enum.
+export const SaltProductSchema = z.enum([
+  'cure1',
+  'cure2',
+  'nitritedCuringSalt',
+  'salvianda',
+  'plain',
+]);
 
 export const FormulaComponentSchema = z.object({
   // FK into the recipe's `ingredients[].id`.

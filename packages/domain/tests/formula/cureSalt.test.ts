@@ -1,13 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CURE_SALT_PAIRS,
   CURE_SALT_PRODUCTS,
   deriveFormula,
   guessSaltProduct,
   ingoingNitritePpm,
+  isCuringSalt,
+  pairOf,
   saltProductBounds,
   solveFormula,
+  withCureSaltSubstituted,
 } from '../../src/formula/index.js';
-import { SaltProductSchema, type SaltProduct } from '../../src/schemas/formula.js';
+import { SaltProductSchema, type Formula, type SaltProduct } from '../../src/schemas/formula.js';
+
+// THE CURING PRODUCTS, which since phase 3 is not every member of the enum: `plain`
+// joined it so a substitution can find the ordinary salt it moves mass into, and it
+// deliberately carries no window. Every claim about windows below is a claim about
+// the products that HAVE one, and `isCuringSalt` is read off composition rather than
+// hand-listed here so the two cannot drift.
+const CURING = SaltProductSchema.options.filter(isCuringSalt);
 
 // The cure-salt rail (issue #1402, phase 04 of epic #778).
 //
@@ -76,14 +87,29 @@ describe('the table', () => {
     expect(dilute / concentrated).toBeGreaterThan(5);
   });
 
-  it('gives every product a window with both ends', () => {
-    for (const product of SaltProductSchema.options) {
+  it('gives every curing product a window with both ends', () => {
+    for (const product of CURING) {
       const { minPercent, maxPercent } = saltProductBounds(product);
       // Both ends, because UNDER-dosing is a hazard too — too little nitrite is a
       // cure that does not protect.
       expect(minPercent).toBeGreaterThan(0);
       expect(maxPercent).toBeGreaterThan(minPercent!);
     }
+  });
+
+  it('gives a window to exactly the products that carry nitrite', () => {
+    // WHAT LICENSES EVERY `CURING` LOOP ABOVE, in both directions (CLAUDE.md rule
+    // 12). A window is derived from ingoing nitrite, so a product carrying nitrite
+    // must have one and a product carrying none must not: a fifth curing salt added
+    // with no window would otherwise be skipped silently by every claim below.
+    for (const product of SaltProductSchema.options) {
+      const { minPercent, maxPercent } = saltProductBounds(product);
+      const hasWindow = minPercent !== undefined && maxPercent !== undefined;
+      expect(hasWindow).toBe(isCuringSalt(product));
+    }
+    // And `plain` is the one member that is not a curing salt today, so the filter
+    // above is not quietly hiding a second one.
+    expect(SaltProductSchema.options.filter((p) => !isCuringSalt(p))).toEqual(['plain']);
   });
 
   // ─── Claim 2: the TOPS satisfy the requirement that set them ─────────────────
@@ -99,18 +125,15 @@ describe('the table', () => {
     // The ceiling on ingoing sodium nitrite, in ppm of the meat.
     const CEILING_PPM = 200;
 
-    it.each([...SaltProductSchema.options])(
-      'keeps %s under the ceiling at the top of its window',
-      (product) => {
-        const top = saltProductBounds(product).maxPercent!;
-        expect(ingoingNitritePpm(product, top)).toBeLessThan(CEILING_PPM);
-      },
-    );
+    it.each([...CURING])('keeps %s under the ceiling at the top of its window', (product) => {
+      const top = saltProductBounds(product).maxPercent!;
+      expect(ingoingNitritePpm(product, top)).toBeLessThan(CEILING_PPM);
+    });
 
     it('leaves real headroom rather than sitting on the ceiling', () => {
       // A window whose top landed on 199.9 ppm would pass the assertion above and
       // still be a figure chosen to pass it. Every product is at least 5% clear.
-      for (const product of SaltProductSchema.options) {
+      for (const product of CURING) {
         const top = saltProductBounds(product).maxPercent!;
         expect(ingoingNitritePpm(product, top)).toBeLessThan(CEILING_PPM * 0.95);
       }
@@ -155,7 +178,7 @@ describe('the table', () => {
       // the floor from an outside ppm target. This test states that limit rather
       // than implying a check that is not there — `cure1.minPercent` could sit
       // anywhere in (0.05, 0.25) and nothing in this file would fail.
-      for (const product of SaltProductSchema.options) {
+      for (const product of CURING) {
         const { minPercent, maxPercent } = saltProductBounds(product);
         expect(minPercent).toBeGreaterThan(0);
         expect(minPercent!).toBeLessThan(maxPercent!);
@@ -403,5 +426,418 @@ describe('guessSaltProduct', () => {
     if (!derived.ok) throw new Error('expected a derive');
     expect(derived.formula.components[1]).toMatchObject({ minPercent: 2, maxPercent: 3.15 });
     expect(solveFormula(derived.formula).ok).toBe(true);
+  });
+});
+
+// ─── The jar you actually have (issue #1402, phase 3) ─────────────────────────
+//
+// WHAT THESE PIN, and again it is deliberately not "the swap is safe":
+//
+//   5. THE NITRITE DOSE IS HELD CONSTANT AND THE NITRATE DIVERGES. Both directions
+//      of the worked example land on the figures the issue states, ingoing nitrite
+//      is equal across the swap, and the nitrate is ~2.3× apart — computed from the
+//      table rather than asserted in prose.
+//   6. NOTHING CROSSES A PAIR, and the pairing itself is checked against the
+//      compositions rather than trusted: each pair's members agree about whether
+//      they carry nitrate.
+//   7. THE SUBSTITUTION CHECKS NO DOSE. It restamps the substitute's own window and
+//      `solveFormula` is what refuses an out-of-window result — the same refusal a
+//      hand-typed percentage gets, and there is still exactly one.
+//   8. A RESIDUAL THAT WILL NOT BALANCE IS REFUSED WITH ITS FIGURES, never clamped
+//      in either direction.
+
+/** The coppa as it is mapped for a substitution: meat, named plain salt, named cure. */
+function pairedFormula(cure: { product: SaltProduct; grams: number }, saltGrams = 25) {
+  const derived = deriveFormula({
+    recipeId: 'recipe-1',
+    components: [
+      { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+      ...(saltGrams === 0
+        ? []
+        : [
+            {
+              ingredientId: 'ing-salt',
+              grams: saltGrams,
+              inBasis: false,
+              saltProduct: 'plain' as const,
+            },
+          ]),
+      { ingredientId: 'ing-cure', grams: cure.grams, inBasis: false, saltProduct: cure.product },
+    ],
+  });
+  if (!derived.ok) throw new Error(`derive failed: ${derived.reason.kind}`);
+  return derived.formula;
+}
+
+function percentOf(formula: Formula, id: string) {
+  const component = formula.components.find((c) => c.ingredientId === id);
+  if (component === undefined) throw new Error(`no component ${id}`);
+  return component.percent;
+}
+
+function gramsAt(formula: Formula, id: string, basisGrams: number) {
+  const solved = solveFormula(formula, { kind: 'basis', grams: basisGrams });
+  if (!solved.ok) throw new Error(`solve failed: ${solved.reason.kind}`);
+  const component = solved.solution.components.find((c) => c.ingredientId === id);
+  if (component === undefined) throw new Error(`no component ${id}`);
+  return component.grams;
+}
+
+describe('withCureSaltSubstituted', () => {
+  it('converts the worked example, and the plain salt absorbs the difference', () => {
+    // 1000 g of meat, 2.5 g of cure #1 (6.25% nitrite ⇒ 0.156 g nitrite) and 25 g of
+    // salt. 0.156 ÷ 0.006 is 26 g of nitrited curing salt, leaving 1.5 g of plain
+    // salt — the figures the issue states, through the ordinary solve.
+    const result = withCureSaltSubstituted(pairedFormula({ product: 'cure1', grams: 2.5 }), {
+      to: 'nitritedCuringSalt',
+    });
+    if (!result.ok) throw new Error(`expected a substitution: ${result.reason.kind}`);
+    expect(gramsAt(result.formula, 'ing-cure', 1000)).toBe(26);
+    expect(gramsAt(result.formula, 'ing-salt', 1000)).toBe(1.5);
+    // Nothing else moves.
+    expect(gramsAt(result.formula, 'ing-meat', 1000)).toBe(1000);
+  });
+
+  it('converts back to exactly the figures it started from', () => {
+    const original = pairedFormula({ product: 'cure1', grams: 2.5 });
+    const forward = withCureSaltSubstituted(original, { to: 'nitritedCuringSalt' });
+    if (!forward.ok) throw new Error('expected a substitution');
+    const back = withCureSaltSubstituted(forward.formula, { to: 'cure1' });
+    if (!back.ok) throw new Error('expected a substitution back');
+    // EXACTLY, not approximately: percentages are rounded to four decimals on the
+    // way through, so a conversion that lost a ten-thousandth would show here.
+    expect(percentOf(back.formula, 'ing-cure')).toBe(percentOf(original, 'ing-cure'));
+    expect(percentOf(back.formula, 'ing-salt')).toBe(percentOf(original, 'ing-salt'));
+    expect(back.formula.components).toEqual(original.components);
+  });
+
+  it('holds ingoing nitrite constant and lets the nitrate diverge', () => {
+    // THE DECISION, MADE MECHANICAL. Nitrite is the acute number, so it is the one
+    // that must not move; the two cannot both be matched, and this is how far apart
+    // the other one ends up. A conversion that split the difference would fail the
+    // first assertion — which is the point of having it.
+    const original = pairedFormula({ product: 'cure2', grams: 2.5 });
+    const result = withCureSaltSubstituted(original, { to: 'salvianda' });
+    if (!result.ok) throw new Error('expected a substitution');
+
+    const before = percentOf(original, 'ing-cure');
+    const after = percentOf(result.formula, 'ing-cure');
+    expect(ingoingNitritePpm('salvianda', after)).toBeCloseTo(
+      ingoingNitritePpm('cure2', before),
+      2,
+    );
+
+    const nitratePpm = (product: SaltProduct, percent: number) =>
+      percent * CURE_SALT_PRODUCTS[product].nitratePercent * 100;
+    const divergence = nitratePpm('salvianda', after) / nitratePpm('cure2', before);
+    // "Roughly 2.3× apart", stated as a range rather than a figure chosen to pass.
+    expect(divergence).toBeGreaterThan(2.2);
+    expect(divergence).toBeLessThan(2.5);
+  });
+
+  it('refuses a salt total too low to carry the dose, with both figures', () => {
+    // A REAL RECIPE, and both ways of hiding it are harmful: clamping the substitute
+    // under-cures, clamping the residual over-salts. So it refuses and says what it
+    // would need against what there is.
+    const result = withCureSaltSubstituted(pairedFormula({ product: 'cure1', grams: 2.5 }, 1), {
+      to: 'nitritedCuringSalt',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toEqual({
+      kind: 'saltTooLow',
+      needsPercent: 2.6042,
+      saltBearingPercent: 0.35,
+    });
+  });
+
+  it('refuses when the freed-up weight has no plain salt to go into', () => {
+    // The other direction of the same problem: the substitute needs LESS mass than
+    // the product it replaces and there is no ordinary-salt row to put the rest in.
+    // Dropping it would quietly make a less salty cure.
+    const result = withCureSaltSubstituted(
+      pairedFormula({ product: 'nitritedCuringSalt', grams: 26 }, 0),
+      { to: 'cure1' },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason.kind).toBe('noPlainSalt');
+  });
+
+  it('names the real remedy — not a false "salt too low" — on the state every real formula is in', () => {
+    // THE STATE EVERY REAL FORMULA IS ACTUALLY IN (#1402 review, blocking 1). Phase
+    // 2 shipped with no keyword that ever proposes `plain`, and `FormulaPage`'s
+    // Select answers "Which curing salt is this?" with "Not a curing salt" for an
+    // ordinary salt row — the honest-sounding answer nobody has a reason to
+    // override. So the PRIMARY direction (a concentrated cure named, swapping to a
+    // dilute one) meets a formula whose ordinary salt is on the formula but named
+    // nothing at all — not `plain`, not any other product.
+    //
+    // Before this fix, `withCureSaltSubstituted` could not tell that apart from
+    // "the salt really is too low": it returned `saltTooLow` with
+    // `saltBearingPercent: 0.25` — a figure that is false about the recipe, which
+    // has 2.5% of salt sitting right there — and a remedy ("put the salt up") that
+    // can never clear the refusal, because an unnamed row's weight never reaches
+    // `saltBearingPercent`. The fix routes this to `noPlainSalt`, whose remedy
+    // (name the ordinary salt) is the one that actually works.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        // No `saltProduct` at all — "Not a curing salt" was left as the answer,
+        // exactly as a real recipe's ordinary salt row is today.
+        { ingredientId: 'ing-salt', grams: 25, inBasis: false },
+        { ingredientId: 'ing-cure', grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+
+    const result = withCureSaltSubstituted(derived.formula, { to: 'nitritedCuringSalt' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toEqual({
+      kind: 'noPlainSalt',
+      // Negative: the substitute needs MORE than the named cure alone provides —
+      // the deficit direction `noPlainSalt` did not used to cover.
+      residualPercent: -2.3542,
+      needsPercent: 2.6042,
+      saltBearingPercent: 0.25,
+    });
+  });
+
+  it('refuses rather than dropping the residual when the named plain-salt row carries no weight', () => {
+    // Should-fix 2 from the #1402 review: guarding on `plain.length === 0` instead
+    // of `plainPercent === 0` let a 0 g plain-salt row slip past both branches and
+    // have its residual silently rounded to zero and written back — "a quietly less
+    // salty cure", which is the exact harm `noPlainSalt`'s own comment names.
+    // Built directly rather than through `deriveFormula`, which refuses a 0 g
+    // component outright (`invalidAmount`) — a stored formula can still reach this
+    // shape by hand-clearing a row's weight without removing it.
+    const formula: Formula = {
+      recipeId: 'recipe-1',
+      schemaVersion: 1,
+      components: [
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true },
+        { ingredientId: 'ing-salt', percent: 0, inBasis: false, saltProduct: 'plain' },
+        {
+          ingredientId: 'ing-cure',
+          percent: 2.6,
+          inBasis: false,
+          saltProduct: 'nitritedCuringSalt',
+          minPercent: 2,
+          maxPercent: 3.15,
+        },
+      ],
+      referenceYield: { kind: 'basis', grams: 1000 },
+      target: null,
+    };
+    const result = withCureSaltSubstituted(formula, { to: 'cure1' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason.kind).toBe('noPlainSalt');
+  });
+
+  it('never crosses a pair, in either direction or onto plain salt', () => {
+    // CROSSING CHANGES WHAT THE CURE IS FIT FOR, not merely its concentration —
+    // which is the suitability question Salt deliberately does not ask.
+    const nitriteOnly = pairedFormula({ product: 'cure1', grams: 2.5 });
+    for (const to of ['cure2', 'salvianda', 'cure1', 'plain'] as const) {
+      expect(withCureSaltSubstituted(nitriteOnly, { to }).ok).toBe(false);
+    }
+    const nitrateBearing = pairedFormula({ product: 'cure2', grams: 2.5 });
+    for (const to of ['cure1', 'nitritedCuringSalt', 'cure2', 'plain'] as const) {
+      expect(withCureSaltSubstituted(nitrateBearing, { to }).ok).toBe(false);
+    }
+  });
+
+  it('pairs products that agree about nitrate, and pairs nothing else', () => {
+    // THE PAIRING CHECKED AGAINST THE COMPOSITIONS rather than trusted: a pair
+    // written the wrong way round would put a nitrate-bearing product opposite a
+    // nitrite-only one, and this is what goes red for it.
+    for (const [one, other] of CURE_SALT_PAIRS) {
+      const carries = (product: SaltProduct) => CURE_SALT_PRODUCTS[product].nitratePercent > 0;
+      expect(carries(one)).toBe(carries(other));
+      expect(pairOf(one)).toBe(other);
+      expect(pairOf(other)).toBe(one);
+    }
+    // Every curing product has exactly one partner; plain salt has none.
+    for (const product of CURING) expect(pairOf(product)).not.toBeNull();
+    expect(pairOf('plain')).toBeNull();
+  });
+
+  it('restamps the substitute’s own window, and agrees with the table on every component that names one', () => {
+    // ONE PLACE DECIDES A WINDOW FOR A NAMED PRODUCT, and this is what keeps that
+    // true across the swap: no component NAMING A PRODUCT may carry a window that
+    // product does not dictate. Stamp a figure here, or leave the replaced
+    // product's window behind, and this fails.
+    //
+    // NARROWED FROM "no component ... disagrees with it" (#1402 review, should-fix
+    // 3): that unqualified claim was false as stated, because a component naming NO
+    // product may legitimately carry a caller's own bounds (`boundsOn`'s precedence
+    // rule in `deriveFormula`, and `withComponentPercentScaled`'s leavening stamp).
+    // `pairedFormula` never included one, so the over-broad half of the old
+    // assertion could not fail on the case that falsifies it. `ing-yeast` here is
+    // that case: it carries hand-declared bounds, no `saltProduct`, and the
+    // substitution must leave it exactly as it arrived.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        { ingredientId: 'ing-salt', grams: 25, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: 'ing-cure', grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+        {
+          ingredientId: 'ing-yeast',
+          grams: 10,
+          inBasis: false,
+          minPercent: 0.2,
+          maxPercent: 2.5,
+        },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    const result = withCureSaltSubstituted(derived.formula, { to: 'nitritedCuringSalt' });
+    if (!result.ok) throw new Error('expected a substitution');
+
+    for (const component of result.formula.components) {
+      if (component.saltProduct === undefined) continue;
+      const expected = saltProductBounds(component.saltProduct);
+      expect(component.minPercent).toBe(expected.minPercent);
+      expect(component.maxPercent).toBe(expected.maxPercent);
+    }
+    // THE CASE THAT FALSIFIES THE UNQUALIFIED CLAIM: untouched, caller-declared
+    // bounds on a component naming no product.
+    const yeast = result.formula.components.find((c) => c.ingredientId === 'ing-yeast');
+    expect(yeast).toMatchObject({ minPercent: 0.2, maxPercent: 2.5 });
+
+    const cure = result.formula.components.find((c) => c.ingredientId === 'ing-cure');
+    expect(cure).toMatchObject({
+      saltProduct: 'nitritedCuringSalt',
+      minPercent: 2,
+      maxPercent: 3.15,
+    });
+  });
+
+  it('checks no dose itself — an out-of-window result is the solve’s to refuse', () => {
+    // Cure #1 at 0.16% is inside ITS window; the same nitrite as nitrited curing
+    // salt is 1.667%, which is below that product's 2% floor. The substitution
+    // happily returns it and `solveFormula` refuses it, naming the window — exactly
+    // as it refuses a hand-typed percentage. There is no second check.
+    const result = withCureSaltSubstituted(pairedFormula({ product: 'cure1', grams: 1.6 }), {
+      to: 'nitritedCuringSalt',
+    });
+    if (!result.ok) throw new Error('expected a substitution');
+    const solved = solveFormula(result.formula);
+    expect(solved.ok).toBe(false);
+    if (solved.ok) return;
+    expect(solved.reason.kind).toBe('boundViolation');
+    if (solved.reason.kind !== 'boundViolation') return;
+    expect(solved.reason.violations[0]).toMatchObject({
+      ingredientId: 'ing-cure',
+      bound: 'min',
+      minPercent: 2,
+      maxPercent: 3.15,
+    });
+  });
+
+  it('leaves the formula it was given untouched', () => {
+    const original = pairedFormula({ product: 'cure1', grams: 2.5 });
+    const before = JSON.stringify(original);
+    withCureSaltSubstituted(original, { to: 'nitritedCuringSalt' });
+    expect(JSON.stringify(original)).toBe(before);
+  });
+
+  it('splits the residual across several plain-salt rows in proportion', () => {
+    // THE STATED BOUNDARY of the exact-round-trip claim above (CLAUDE.md rule 12).
+    // Two plain rows share the residual in proportion to what they already hold, and
+    // each is re-rounded — so the total is preserved but a round trip can land a
+    // ten-thousandth of a point from where it started.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        { ingredientId: 'ing-salt', grams: 20, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: 'ing-flakes', grams: 5, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: 'ing-cure', grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    const result = withCureSaltSubstituted(derived.formula, { to: 'nitritedCuringSalt' });
+    if (!result.ok) throw new Error('expected a substitution');
+    const salt = percentOf(result.formula, 'ing-salt');
+    const flakes = percentOf(result.formula, 'ing-flakes');
+    // 4 : 1, as they went in — 0.11664 and 0.02916 of an exact 0.1458 residual,
+    // each rounded to the four decimals every percentage here is stored at. The
+    // total is preserved; the RATIO is now 3.993 rather than 4, which is the whole
+    // of the cost and the reason the round-trip claim above is stated for one row.
+    expect(salt).toBe(0.1166);
+    expect(flakes).toBe(0.0292);
+    expect(salt + flakes).toBeCloseTo(0.1458, 10);
+  });
+
+  it('refuses a formula naming more than one curing salt', () => {
+    // No single answer to "which one is being swapped", so it is refused rather
+    // than guessed at — and `batchService` relies on exactly this to find the
+    // substituted row by its product.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        { ingredientId: 'ing-salt', grams: 25, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: 'ing-cure', grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+        { ingredientId: 'ing-cure-2', grams: 2.5, inBasis: false, saltProduct: 'cure2' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    expect(withCureSaltSubstituted(derived.formula, { to: 'nitritedCuringSalt' }).ok).toBe(false);
+  });
+
+  it('refuses a formula that names no curing salt at all', () => {
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-flour', grams: 500, inBasis: true },
+        { ingredientId: 'ing-salt', grams: 10, inBasis: false, saltProduct: 'plain' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    expect(withCureSaltSubstituted(derived.formula, { to: 'cure1' }).ok).toBe(false);
+  });
+});
+
+describe('plain salt is a member of the enum and not of the rail', () => {
+  it('bounds a component named plain by nothing at all', () => {
+    // A WINDOW IS A FACT ABOUT NITRITE, and ordinary salt carries none. Naming it
+    // therefore bounds it exactly as naming nothing does — 40% of plain salt is a
+    // dish nobody eats, which is a taste failure and not this rail's business.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        { ingredientId: 'ing-salt', grams: 400, inBasis: false, saltProduct: 'plain' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    const salt = derived.formula.components.find((c) => c.ingredientId === 'ing-salt');
+    expect(salt).toMatchObject({ saltProduct: 'plain' });
+    expect(salt?.minPercent).toBeUndefined();
+    expect(salt?.maxPercent).toBeUndefined();
+    expect(solveFormula(derived.formula).ok).toBe(true);
+  });
+
+  it('is never PROPOSED by the recogniser, however the line is worded', () => {
+    // THE DECISION BEHIND `plain`'s EMPTY KEYWORD LIST. Bare "salt" is the obvious
+    // keyword and it is the wrong one: word-boundary matched it reaches "pink curing
+    // salt" and "curing salt" — the lines the table deliberately refuses to guess at
+    // — and a confident "Plain salt" on a curing salt is worse than "you pick".
+    for (const text of [
+      '10 g salt',
+      '25 g sea salt',
+      '25 g fine sea salt',
+      '30 g pink curing salt',
+      '30 g curing salt',
+    ]) {
+      expect(guessSaltProduct({ canonName: null, rawText: text })).not.toBe('plain');
+    }
+    expect(CURE_SALT_PRODUCTS.plain.keywords).toEqual([]);
   });
 });

@@ -60,10 +60,24 @@ export type { ComponentPercentBounds } from './adjustComponent.js';
 // second rail — `deriveFormula` stamps the window and `solveFormula` refuses it,
 // exactly as it has since #782. `cureSalt.ts`'s header states the rail's real
 // limits, which are narrower than "Salt prevents an unsafe cure".
+// `withCureSaltSubstituted` (issue #1402 phase 3) is arithmetic in the same species:
+// percentages in, percentages out, the substitute's own window RESTAMPED from the
+// table, and `solveFormula` left to refuse an out-of-window result. It refuses only
+// what is not a dose question — a pair it may not cross, and a salt total it cannot
+// rebalance — and its reasons carry figures rather than sentences.
 export {
   CURE_SALT_PRODUCTS,
+  CURE_SALT_PAIRS,
   saltProductBounds,
   ingoingNitritePpm,
   guessSaltProduct,
+  isCuringSalt,
+  pairOf,
+  withCureSaltSubstituted,
 } from './cureSalt.js';
-export type { CureSaltProductInfo, SaltProductGuessEntry } from './cureSalt.js';
+export type {
+  CureSaltProductInfo,
+  SaltProductGuessEntry,
+  CureSaltSubstitutionFailure,
+  CureSaltSubstitutionResult,
+} from './cureSalt.js';
