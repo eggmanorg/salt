@@ -325,7 +325,15 @@ function occursAsName(text: string, keyword: string): boolean {
   for (let from = 0; ; from += 1) {
     const at = text.indexOf(needle, from);
     if (at === -1) return false;
-    const nextWord = text.slice(at + needle.length).split(' ')[0] ?? '';
+    // Sliced at the next space rather than `split(' ')[0] ?? ''`: under
+    // `noUncheckedIndexedAccess` that spelling needs a `??` whose right-hand side
+    // `split` can never produce, which is an untestable branch — and the coverage
+    // ratchet is right to refuse one. Both arms here are real: a match at the very
+    // end of the text has no following space (`2.5 g cure #1`), and a match with a
+    // word after it does (`cure 2 days`).
+    const rest = text.slice(at + needle.length);
+    const space = rest.indexOf(' ');
+    const nextWord = space === -1 ? rest : rest.slice(0, space);
     if (!DURATION_WORDS.includes(nextWord)) return true;
     from = at;
   }
