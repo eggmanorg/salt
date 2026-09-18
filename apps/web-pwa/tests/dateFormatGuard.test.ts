@@ -29,7 +29,7 @@
  * inferred: its construction is inside `formatterFor`, a memo that builds each
  * distinct (locale, options) pair once and hands the same object back forever.
  * A caller that passes its options in — the planner's day labels, the
- * add-to-planner calendar — cannot be a constant, and that memo is the shape
+ * add-to-planner night list — cannot be a constant, and that memo is the shape
  * that serves them. Exempting the file rather than pattern-matching "looks
  * cached" keeps the rule mechanical: there is one memo, in one place, and this
  * test fails if a second file starts claiming to be one.

@@ -16,8 +16,8 @@
 // One formatter per distinct (locale, options) pair, built on first use.
 //
 // A memo rather than a fixed set of constants because two callers pass their
-// options in — the planner's week/day labels and the add-to-planner calendar
-// each format the same date six different ways. The keys are the option literals
+// options in — the planner's week/day labels and the add-to-planner night
+// list each format the same date six different ways. The keys are the option literals
 // written in the source, so the map is bounded by the code, not by the data:
 // nothing user-supplied ever reaches it.
 const formatters = new Map<string, Intl.DateTimeFormat>();

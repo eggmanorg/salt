@@ -1,32 +1,55 @@
 <script lang="ts">
   import {
     Button,
-    Icon,
     Sheet,
     SheetContent,
     SheetFooter,
     SheetHeader,
     SheetTitle,
   } from '@salt/ui-components';
-  import { addCalendarDays, weekStartFor, type Recipe } from '@salt/domain';
+  import { addCalendarDays, type Recipe } from '@salt/domain';
   import { formatDayKey } from '../../lib/dateFormat.js';
   import { todayIso } from '../../lib/today.js';
-  import { addRecipeToDay, firstDayOfWeek } from '../../lib/mealPlanService.js';
+  import { addRecipeToDay } from '../../lib/mealPlanService.js';
   import { addToast } from '../../lib/toastStore.js';
 
-  // "Add to planner", from the recipe page.
+  // "Add to planner", from the recipe page (issue #1438).
   //
-  // The calendar is hand-rolled rather than `<input type="date">` on purpose:
-  // the native control hands the whole interaction to the OS, so the same app
-  // shows a wheel on iOS, a Material dialog on Android and a drop-down on
-  // desktop — none of them ours, none of them agreeing with each other, and none
-  // of them able to start the week where this household starts it. This grid is
-  // one control on every device, built from Salt primitives and the planner's own
-  // `firstDayOfWeek`, so the row a date sits in here is the row it sits in there.
+  // A LIST OF NIGHTS, not a month grid. The question this sheet answers is
+  // "which night am I cooking this on", and a grid of bare numbers makes you
+  // decode a column position into a weekday before you can start. One night per
+  // row, named in words, in the order they will happen.
   //
-  // Picking a day SELECTS it; the footer button commits. A month grid is dense
-  // enough that commit-on-tap would write the plan on a mis-tap, and the confirm
-  // names the day in words so what is about to happen is legible before it does.
+  // Still hand-rolled rather than `<input type="date">`, and that half of the old
+  // argument is unchanged: the native control hands the whole interaction to the
+  // OS, so the same app shows a wheel on iOS, a Material dialog on Android and a
+  // drop-down on desktop — none of them ours, and none of them able to say what
+  // is already planned on a night. This is one control on every device, built
+  // from Salt primitives.
+  //
+  // `firstDayOfWeek` is NOT read here any more, and its absence is the point. A
+  // list has no week rows to lay out, so nothing in this sheet depends on where
+  // the household's week starts. It still decides which `mealPlanWeeks` document
+  // a night belongs to — but that is `mealPlanService`'s business, on the write
+  // and on any read, and never this component's.
+  //
+  // Picking a night SELECTS it; the footer button commits. The old comment argued
+  // that from grid density, and a list row is a much larger target, so that
+  // argument no longer holds and is not the reason. The reasons that do: the
+  // write is not undoable from this sheet (the only way back is the planner); a
+  // tall scrolling list invites the tap-while-still-settling misfire that a dense
+  // grid invites by proximity; and the footer reading the night back in full
+  // words is the one moment the user sees what is about to happen stated plainly.
+
+  // How far back the list reaches. Recording what was actually eaten is a
+  // legitimate thing to do — the month grid allowed it and nothing here takes it
+  // away — but a picker for choosing a night to cook does not need last March.
+  const PAST_NIGHTS = 7;
+  // The window opens a fortnight ahead and grows by a fortnight, to a ceiling.
+  // Planning genuinely far out is the planner's own job: it navigates week by
+  // week and has the whole week's context, which is what you want out there.
+  const WINDOW_STEP = 14;
+  const MAX_AHEAD = 56;
 
   interface Props {
     recipe: Recipe;
@@ -35,60 +58,65 @@
   let { recipe, open = $bindable() }: Props = $props();
 
   let selected = $state(todayIso());
-  // First of the month on show. The grid derives from this; nothing else does.
-  let monthAnchor = $state(`${todayIso().slice(0, 7)}-01`);
+  // How many nights past today the window currently reaches.
+  let aheadDays = $state(WINDOW_STEP);
   let busy = $state(false);
 
+  let listEl = $state<HTMLElement | null>(null);
+  // Set on open, cleared once tonight's row has been scrolled to. A flag rather
+  // than an effect over `nights`, because extending the window must not yank the
+  // scroll position back to tonight underneath the reader.
+  let pinPending = $state(false);
+
   // Re-seed on each open: a sheet reopened tomorrow must not still be offering
-  // yesterday, and a month the user browsed away to is not where the next
+  // yesterday, and a window the user scrolled out to is not where the next
   // recipe's planning starts.
   let wasOpen = false;
   $effect(() => {
     if (open && !wasOpen) {
       selected = todayIso();
-      monthAnchor = `${selected.slice(0, 7)}-01`;
+      aheadDays = WINDOW_STEP;
+      pinPending = true;
     }
     wasOpen = open;
   });
 
-  function shiftMonth(anchor: string, months: number): string {
-    const [y, m] = anchor.split('-').map(Number) as [number, number];
-    const d = new Date(Date.UTC(y, m - 1 + months, 1));
-    return d.toISOString().slice(0, 10);
-  }
+  const today = $derived(todayIso());
 
-  // Last calendar day of the anchored month (day 0 of the next month).
-  const monthEnd = $derived.by(() => {
-    const [y, m] = monthAnchor.split('-').map(Number) as [number, number];
-    return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-  });
-
-  // The grid: whole weeks, starting on the household's first day of the week, and
-  // running from the week the 1st falls in to the week the last day falls in. So
-  // the leading and trailing cells belong to the neighbouring months — they are
-  // shown, and are pickable, because "the last day of last month" is a perfectly
-  // ordinary night to plan and hiding it would mean a month-flip to reach it.
-  const cells = $derived.by(() => {
+  // Oldest first, so the nights run in the order they happen and tonight sits a
+  // short scroll down from the top. Nothing above tonight is hidden or disabled.
+  const nights = $derived.by(() => {
     const out: string[] = [];
-    let d = weekStartFor(monthAnchor, $firstDayOfWeek);
-    while (d <= monthEnd || out.length % 7 !== 0) {
+    const last = addCalendarDays(today, aheadDays);
+    let d = addCalendarDays(today, -PAST_NIGHTS);
+    while (d <= last) {
       out.push(d);
       d = addCalendarDays(d, 1);
     }
     return out;
   });
 
-  const weekdayHeads = $derived(
-    cells.slice(0, 7).map((d) => formatDayKey(d, { weekday: 'narrow' })),
-  );
+  const canExtend = $derived(aheadDays < MAX_AHEAD);
 
-  const today = $derived(todayIso());
-  const selectedLabel = $derived(
-    formatDayKey(selected, { weekday: 'long', day: 'numeric', month: 'long' }),
-  );
+  // Scroll tonight to the top of the list once it is on screen. `scrollTop`
+  // against the list's own box rather than `scrollIntoView`, which would also
+  // scroll every scrollable ancestor — including the page behind the sheet.
+  $effect(() => {
+    if (!pinPending || !listEl) return;
+    const row = listEl.querySelector<HTMLElement>(`[data-date="${today}"]`);
+    if (!row) return;
+    listEl.scrollTop = row.offsetTop;
+    pinPending = false;
+  });
 
-  function inMonth(date: string): boolean {
-    return date.slice(0, 7) === monthAnchor.slice(0, 7);
+  const selectedLabel = $derived(fullLabel(selected));
+
+  function nightLabel(date: string): string {
+    return formatDayKey(date, { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
+  function fullLabel(date: string): string {
+    return formatDayKey(date, { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
   async function handleConfirm(): Promise<void> {
@@ -125,61 +153,53 @@
       {recipe.title}
     </p>
 
-    <!-- Month bar. Both arrows stay live in both directions: a past day is a
-         legitimate thing to plan (recording what was actually eaten), so nothing
-         here is disabled by the calendar. -->
-    <div class="flex items-center justify-between">
-      <Button
-        variant="ghost"
-        size="sm"
-        onclick={() => (monthAnchor = shiftMonth(monthAnchor, -1))}
-        aria-label="Previous month"
-        data-testid="planner-add-prev-month"
-      >
-        <Icon name="ChevronLeft" size={18} />
-      </Button>
-      <span class="text-sm font-medium" data-testid="planner-add-month">
-        {formatDayKey(monthAnchor, { month: 'long', year: 'numeric' })}
-      </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        onclick={() => (monthAnchor = shiftMonth(monthAnchor, 1))}
-        aria-label="Next month"
-        data-testid="planner-add-next-month"
-      >
-        <Icon name="ChevronRight" size={18} />
-      </Button>
-    </div>
+    <div
+      class="relative max-h-[50vh] flex-1 overflow-y-auto"
+      bind:this={listEl}
+      data-testid="planner-add-nights"
+    >
+      <ul class="flex flex-col gap-1">
+        {#each nights as date (date)}
+          <li>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded px-3 py-2.5 text-left text-sm transition-colors
+                     {date === selected
+                ? 'bg-primary font-semibold text-primary-foreground'
+                : date < today
+                  ? 'text-muted-foreground hover:bg-accent'
+                  : 'hover:bg-accent'}"
+              aria-pressed={date === selected}
+              aria-current={date === today ? 'date' : undefined}
+              aria-label={fullLabel(date)}
+              onclick={() => (selected = date)}
+              disabled={busy}
+              data-testid="planner-add-night"
+              data-date={date}
+            >
+              <span class="whitespace-nowrap">
+                {#if date === today}<span class="font-semibold">Tonight</span> ·
+                {/if}{nightLabel(date)}
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
 
-    <div class="overflow-y-auto">
-      <div class="grid grid-cols-7 gap-1" aria-hidden="true">
-        {#each weekdayHeads as head, i (i)}
-          <span class="py-1 text-center text-xs font-semibold text-muted-foreground">{head}</span>
-        {/each}
-      </div>
-      <div class="grid grid-cols-7 gap-1" data-testid="planner-add-calendar">
-        {#each cells as date (date)}
-          <button
-            type="button"
-            class="flex h-10 items-center justify-center rounded text-sm transition-colors
-                   {date === selected
-              ? 'bg-primary font-semibold text-primary-foreground'
-              : inMonth(date)
-                ? 'hover:bg-accent'
-                : 'text-muted-foreground/60 hover:bg-accent'}
-                   {date === today && date !== selected ? 'ring-1 ring-primary' : ''}"
-            aria-pressed={date === selected}
-            aria-label={formatDayKey(date, { weekday: 'long', day: 'numeric', month: 'long' })}
-            onclick={() => (selected = date)}
+      {#if canExtend}
+        <div class="pt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="w-full"
+            onclick={() => (aheadDays = Math.min(aheadDays + WINDOW_STEP, MAX_AHEAD))}
             disabled={busy}
-            data-testid="planner-add-day"
-            data-date={date}
+            data-testid="planner-add-more"
           >
-            {formatDayKey(date, { day: 'numeric' })}
-          </button>
-        {/each}
-      </div>
+            More nights
+          </Button>
+        </div>
+      {/if}
     </div>
 
     <SheetFooter class="flex justify-end gap-2">
