@@ -208,9 +208,18 @@ same `recipes` collection. What the picker filters on is
 `isPlannable(kind)` — a cocktail is not dinner and never appears — and what the
 per-recipe **Add to shop** action is gated on is `takesIngredients(kind)`, since
 a takeaway has nothing to buy. Both are the pure domain predicates: the planner
-never compares a kind to decide behaviour. The one place it names a kind at all
-is copy — a non-`recipe` picker row wears a small label ("Chef's Specials") so the
-option can be told apart in a list of dinners.
+never compares a kind to decide behaviour.
+
+The picker's own badge and shelf filter are **section**-based, not kind-based
+(#1454), reusing the recipe list page's own vocabulary (`sectionOf`,
+`SECTION_COPY`, `LIST_SECTIONS` in `apps/web-pwa/src/routes/recipes/recipeKind.ts`):
+a picker row wears `SECTION_COPY[section].label`, so a meal — an ordinary
+`kind: 'recipe'` that has gained components (#752) — is told apart exactly as a
+Chef's Special is; plain `recipe` wears nothing. A row of shelf chips above the
+picker (`All`, plus every section the night has something to offer from) narrows
+the same `isPlannable` candidate set to one shelf. The chips can only narrow that
+set, never widen or replace it — a chip decides what you are looking at, not what
+may be attached.
 
 ### Attaching from the recipe page
 
