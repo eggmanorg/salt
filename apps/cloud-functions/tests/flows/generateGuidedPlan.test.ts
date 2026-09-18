@@ -1,18 +1,43 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AI_FLOW_ROLES } from '@salt/domain/schemas';
+import { AI_FLOW_ROLES, GuidedPlanSchema, type GuidedPlanDoc } from '@salt/domain/schemas';
 
-const { mockGenerate, mockGet, mockDoc, mockCollection, mockFlowModel } = vi.hoisted(() => {
+// Two collections now: `recipes` (read) and `guidedPlans` (read for `createdAt`,
+// then written). They are kept apart so a test can fail one without the other —
+// the whole point of the log-and-continue arms below.
+const {
+  mockGenerate,
+  mockGet,
+  mockDoc,
+  mockCollection,
+  mockPlanGet,
+  mockPlanSet,
+  mockPlanDoc,
+  mockFlowModel,
+} = vi.hoisted(() => {
   const mockGet = vi.fn();
   const mockDoc = vi.fn(() => ({ get: mockGet }));
-  const mockCollection = vi.fn(() => ({ doc: mockDoc }));
+  const mockPlanGet = vi.fn();
+  const mockPlanSet = vi.fn();
+  const mockPlanDoc = vi.fn(() => ({ get: mockPlanGet, set: mockPlanSet }));
+  const mockCollection = vi.fn((name: string) =>
+    name === 'guidedPlans' ? { doc: mockPlanDoc } : { doc: mockDoc },
+  );
   return {
     mockGenerate: vi.fn(),
     mockGet,
     mockDoc,
     mockCollection,
+    mockPlanGet,
+    mockPlanSet,
+    mockPlanDoc,
     mockFlowModel: vi.fn().mockResolvedValue('gemini-pro-latest'),
   };
 });
+
+vi.mock('firebase-functions', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+
+const { logger } = await import('firebase-functions');
+const logged = vi.mocked(logger.error);
 
 vi.mock('../../src/genkit.js', () => ({
   ai: {
@@ -39,10 +64,9 @@ vi.mock('../../src/ai/fakeModel.js', () => ({
 }));
 
 const { generateGuidedPlanFlow } = await import('../../src/flows/generateGuidedPlan.js');
-const run = generateGuidedPlanFlow as unknown as (input: { recipeId: string }) => Promise<{
-  prep: unknown[];
-  stepNotes: { stepId: string }[];
-}>;
+const run = generateGuidedPlanFlow as unknown as (input: {
+  recipeId: string;
+}) => Promise<GuidedPlanDoc>;
 
 const RECIPE = {
   id: 'recipe-1',
@@ -113,17 +137,27 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFlowModel.mockResolvedValue('gemini-pro-latest');
   mockGet.mockResolvedValue({ exists: true, data: () => RECIPE });
+  // No plan yet, the common case.
+  mockPlanGet.mockResolvedValue({ exists: false, data: () => undefined });
+  mockPlanSet.mockResolvedValue(undefined);
 });
 
+/** The document handed to `guidedPlans/{id}.set()`. */
+function written(): GuidedPlanDoc {
+  expect(mockPlanSet).toHaveBeenCalledTimes(1);
+  return mockPlanSet.mock.calls[0]![0] as GuidedPlanDoc;
+}
+
 describe('generateGuidedPlan', () => {
-  it('reads the recipe server-side by id and returns the authored plan', async () => {
+  it('reads the recipe server-side by id and returns the plan it authored', async () => {
     mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
 
     const result = await run({ recipeId: 'recipe-1' });
 
     expect(mockCollection).toHaveBeenCalledWith('recipes');
     expect(mockDoc).toHaveBeenCalledWith('recipe-1');
-    expect(result).toEqual(AI_OUTPUT);
+    expect(result.prep[0]!.text).toBe(AI_OUTPUT.prep[0]!.text);
+    expect(result.stepNotes[0]!.cue).toBe(AI_OUTPUT.stepNotes[0]!.cue);
   });
 
   it('runs on the `pro` role — cue quality IS the feature', async () => {
@@ -217,5 +251,139 @@ describe('generateGuidedPlan', () => {
   it('throws when the model output is not the expected shape', async () => {
     mockGenerate.mockResolvedValue({ output: { prep: 'not a list' } });
     await expect(run({ recipeId: 'recipe-1' })).rejects.toThrow(/invalid output/);
+  });
+});
+
+// THE REGRESSION SUITE for issue #1416. The plan used to be assembled and written
+// by the browser after this callable resolved, so a phone that locked during the
+// one-to-three-minute call threw away a finished plan — silently, with the model
+// already paid for. Nothing below touches the client: if these pass, the document
+// exists whatever the browser does next.
+describe('generateGuidedPlan — the flow writes the document', () => {
+  beforeEach(() => {
+    mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
+  });
+
+  it('writes the plan to guidedPlans/{recipeId} before it returns', async () => {
+    await run({ recipeId: 'recipe-1' });
+
+    expect(mockCollection).toHaveBeenCalledWith('guidedPlans');
+    expect(mockPlanDoc).toHaveBeenCalledWith('recipe-1');
+    expect(written().id).toBe('recipe-1');
+    expect(written().recipeId).toBe('recipe-1');
+  });
+
+  it('writes a document the stored schema accepts', async () => {
+    // The write is a full `.set()` on the live collection, so a document that would
+    // not survive `GuidedPlanSchema` is one the subscription then skips — the plan
+    // would be in Firestore and invisible, which is the original bug wearing a
+    // different hat.
+    await run({ recipeId: 'recipe-1' });
+    expect(GuidedPlanSchema.safeParse(written()).success).toBe(true);
+  });
+
+  it('returns exactly what it wrote, so the page needs no second source', async () => {
+    const result = await run({ recipeId: 'recipe-1' });
+    expect(result).toEqual(written());
+  });
+
+  it('flags the plan unreviewed — the ONLY place needs_approval is ever set', async () => {
+    // Dropped by a human save and set nowhere else. A plan authored or corrected
+    // by hand is never flagged.
+    await run({ recipeId: 'recipe-1' });
+    expect(written().needs_approval).toBe(true);
+  });
+
+  it('mints a prep id per entry — the model authors content, never identity', async () => {
+    await run({ recipeId: 'recipe-1' });
+    const plan = written();
+    expect(plan.prep).toHaveLength(1);
+    expect(plan.prep[0]!.id).toBeTruthy();
+    expect(plan.prep[0]!.text).toBe('Dice the onion into 5mm dice');
+  });
+
+  it('stamps recipeUpdatedAtAtSave from the recipe IT read', async () => {
+    // Strictly more correct than the client stamping it from its own copy, which
+    // could be staler than the recipe the plan was actually written against.
+    await run({ recipeId: 'recipe-1' });
+    expect(written().recipeUpdatedAtAtSave).toBe(RECIPE.updatedAt);
+  });
+
+  it('carries createdAt across a re-run — the plan for this recipe is not new', async () => {
+    mockPlanGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ createdAt: '2026-07-01T00:00:00.000Z' }),
+    });
+
+    await run({ recipeId: 'recipe-1' });
+
+    const plan = written();
+    expect(plan.createdAt).toBe('2026-07-01T00:00:00.000Z');
+    expect(plan.updatedAt > plan.createdAt).toBe(true);
+  });
+
+  it('dates a first plan now, when there is nothing to carry across', async () => {
+    await run({ recipeId: 'recipe-1' });
+    expect(written().createdAt).toBe(written().updatedAt);
+  });
+
+  it('still returns the plan when the write fails, rather than binning the call', async () => {
+    // `persistImportedRecipe`'s shape: a generation that has already been paid for
+    // is never thrown away over a write error. The editor paints it and the cook's
+    // Save writes it — and THAT is the boundary, because the recovery takes a Save.
+    mockPlanSet.mockRejectedValue(new Error('unavailable'));
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.prep).toHaveLength(1);
+    expect(result.needs_approval).toBe(true);
+  });
+
+  it('still writes the plan when the existing-plan read fails', async () => {
+    // A cosmetic `createdAt` is not worth failing a finished generation over.
+    mockPlanGet.mockRejectedValue(new Error('unavailable'));
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(written().createdAt).toBe(written().updatedAt);
+    expect(result).toEqual(written());
+  });
+
+  it('logs a write failure that rejected with something other than an Error', async () => {
+    // Firestore is not the only thing that can reject here, and a rejection that
+    // is not an `Error` must still reach the log with a readable value rather than
+    // "[object Object]" — the log line is the only trace a failed write leaves.
+    mockPlanSet.mockRejectedValue('quota exhausted');
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.prep).toHaveLength(1);
+    expect(logged).toHaveBeenCalledWith(
+      'generateGuidedPlan: failed to persist the plan',
+      expect.objectContaining({ error: 'quota exhausted' }),
+    );
+  });
+
+  it('logs a read failure that rejected with something other than an Error', async () => {
+    mockPlanGet.mockRejectedValue('quota exhausted');
+
+    await run({ recipeId: 'recipe-1' });
+
+    expect(logged).toHaveBeenCalledWith(
+      'generateGuidedPlan: failed to read the existing plan',
+      expect.objectContaining({ error: 'quota exhausted' }),
+    );
+  });
+
+  it('writes nothing when the model output is unusable', async () => {
+    mockGenerate.mockResolvedValue({ output: { prep: 'not a list' } });
+    await expect(run({ recipeId: 'recipe-1' })).rejects.toThrow(/invalid output/);
+    expect(mockPlanSet).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the recipe does not exist', async () => {
+    mockGet.mockResolvedValue({ exists: false, data: () => undefined });
+    await expect(run({ recipeId: 'nope' })).rejects.toThrow();
+    expect(mockPlanSet).not.toHaveBeenCalled();
   });
 });

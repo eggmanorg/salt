@@ -112,7 +112,8 @@ export const GuidedStepNoteContentSchema = z.object({
 
 export const GuidedPrepEntrySchema = GuidedPrepEntryContentSchema.extend({
   // Local to this document, minted when the entry is created (the AI does not
-  // author ids — it authors content, and the write path mints the identity).
+  // author ids — it authors content, and whoever writes the document mints the
+  // identity). On a generation that is the flow; on a hand-added entry, the editor.
   id: z.string(),
   container: z.string().nullable().default(null),
   ingredientIds: z.array(z.string()).default([]),
@@ -145,7 +146,8 @@ export const GuidedPlanSchema = z.object({
   recipeUpdatedAtAtSave: z.string(),
   // Used-but-flagged, exactly as on RecipeSchema / CanonItem / ProductForm: the
   // plan is fully live regardless; the flag ONLY records that no human has read
-  // it. Set when the AI writes a plan, dropped (never written `false`) by a save.
+  // it. Set by the `generateGuidedPlan` flow — the one assignment of it in the
+  // codebase — and dropped (never written `false`) by a save.
   // `.optional()` — a control field, and ABSENT MEANS REVIEWED, so a plan
   // authored entirely by hand is never flagged.
   needs_approval: z.boolean().optional(),
@@ -164,16 +166,27 @@ export const GenerateGuidedPlanInputSchema = z.object({
   recipeId: z.string().min(1),
 });
 
-// What the model returns: content only. The document's control fields —
-// `needs_approval`, `recipeUpdatedAtAtSave`, the timestamps, the prep-entry ids —
-// are stamped by the ONE write path in the web service, so a generated plan and a
-// hand-saved plan cannot end up with those fields set two different ways.
+// What the MODEL returns: content only. It authors no ids, no timestamps and no
+// control fields — those are the flow's to stamp, immediately below, and a schema
+// that let the model supply them would let it decide whether its own plan had been
+// reviewed.
 export const GenerateGuidedPlanAIOutputSchema = z.object({
   prep: z.array(GuidedPrepEntryContentSchema),
   stepNotes: z.array(GuidedStepNoteContentSchema),
 });
 
-export const GenerateGuidedPlanOutputSchema = GenerateGuidedPlanAIOutputSchema;
+// What the CALLABLE returns: the whole document, exactly as the flow wrote it to
+// `guidedPlans/{recipeId}` (issue #1416).
+//
+// It is not a second copy the client has to reconcile — the flow writes first and
+// returns what it wrote, so the value on the wire IS the document. The client takes
+// it because the alternative is a blank editor for as long as the realtime snapshot
+// takes to arrive, at the end of a wait that can already run to three minutes.
+//
+// Why the flow writes rather than the browser: the browser may not be there. The
+// call outlives a locked phone, and everything the client did after the `await`
+// used to be lost with the page (#1416, the same loss #616 fixed for imports).
+export const GenerateGuidedPlanOutputSchema = GuidedPlanSchema;
 
 export type GuidedCheckInDoc = z.infer<typeof GuidedCheckInSchema>;
 export type GuidedPrepEntryDoc = z.infer<typeof GuidedPrepEntrySchema>;

@@ -131,52 +131,80 @@ describe('initGuidedPlanSync — the three-state store', () => {
   });
 });
 
+// The CLIENT half of issue #1416's fix. The flow assembles and persists the
+// document and hands back what it wrote, so every control-field assertion that
+// used to live here now lives where the fields are set — `needs_approval`, the
+// minted prep ids, `recipeUpdatedAtAtSave` and the `createdAt` carry-across are
+// all pinned in `apps/cloud-functions/tests/flows/generateGuidedPlan.test.ts`.
+// What is left to prove here is that the browser is no longer load-bearing.
 describe('generateGuidedPlan', () => {
-  it('mints prep ids, flags the plan unreviewed and stamps it against the recipe', async () => {
-    fs.callGenerateGuidedPlan.mockResolvedValue({
-      kind: 'ok',
-      value: {
-        prep: [{ text: 'Dice the onion', container: 'small bowl', ingredientIds: ['ing-1'] }],
-        stepNotes: [
-          {
-            stepId: 'step-1',
-            container: null,
-            setup: null,
-            cue: 'a gentle sizzle',
-            checkIns: [],
-            lookahead: null,
-            getAhead: null,
-          },
-        ],
-      },
-    });
+  // The plan as the flow wrote it: ids minted, flag set, stamps done.
+  const WRITTEN: GuidedPlanDoc = makePlan({
+    needs_approval: true,
+    recipeUpdatedAtAtSave: '2026-08-02T00:00:00.000Z',
+    prep: [{ id: 'prep-1', text: 'Dice the onion', container: 'small bowl', ingredientIds: [] }],
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-08-02T00:00:01.000Z',
+  });
+
+  it('WRITES NOTHING — the flow has already persisted the plan', async () => {
+    // The regression. Everything the client used to do after the `await` was lost
+    // with a page that did not survive the one-to-three-minute call, which on a
+    // phone is the ordinary case rather than a race.
+    fs.callGenerateGuidedPlan.mockResolvedValue({ kind: 'ok', value: WRITTEN });
     initGuidedPlanSync(RECIPE_ID);
     emit(null);
 
     const result = await generateGuidedPlan(makeRecipe('2026-08-02T00:00:00.000Z'));
 
     expect(result.kind).toBe('ok');
-    const written = fs.saveGuidedPlan.mock.calls[0]![0];
-    expect(written.id).toBe(RECIPE_ID);
-    expect(written.recipeUpdatedAtAtSave).toBe('2026-08-02T00:00:00.000Z');
-    // Nobody has read it yet. This is the ONLY place the flag is ever set.
-    expect(written.needs_approval).toBe(true);
-    expect(written.prep).toHaveLength(1);
-    expect(written.prep[0]!.id).toBeTruthy();
-    expect(written.prep[0]!.text).toBe('Dice the onion');
+    expect(fs.saveGuidedPlan).not.toHaveBeenCalled();
   });
 
-  it('carries createdAt across a re-run — the plan for this recipe is not new', async () => {
-    fs.callGenerateGuidedPlan.mockResolvedValue({
-      kind: 'ok',
-      value: { prep: [], stepNotes: [] },
-    });
+  it('shows the plan the flow returned, unchanged', async () => {
+    // Taken from the response rather than waited for on the subscription: the
+    // editor's empty state is a "Write the plan" button, and painting it at the end
+    // of a three-minute wait, over a plan that exists, is not a frame anyone sees.
+    fs.callGenerateGuidedPlan.mockResolvedValue({ kind: 'ok', value: WRITTEN });
     initGuidedPlanSync(RECIPE_ID);
-    emit(makePlan({ createdAt: '2026-07-01T00:00:00.000Z' }));
+    emit(null);
 
+    const result = await generateGuidedPlan(makeRecipe('2026-08-02T00:00:00.000Z'));
+
+    expect(result).toEqual({ kind: 'ok', value: WRITTEN });
+    expect(get(guidedPlan)).toEqual(WRITTEN);
+    // Stamped by the flow against the recipe IT read, and passed through here
+    // rather than re-decided; the flow's own test is what pins the value.
+    expect((get(guidedPlan) as GuidedPlanDoc).needs_approval).toBe(true);
+  });
+
+  it('does not let a late absence blank the plan the flow just wrote', async () => {
+    // A generation is not a local write, so it never reaches the local cache and an
+    // absence queued before the server's write is superseded by nothing. It simply
+    // lands after the callable returned — and would put a "Write the plan" button
+    // over a plan that is in Firestore.
+    fs.callGenerateGuidedPlan.mockResolvedValue({ kind: 'ok', value: WRITTEN });
+    initGuidedPlanSync(RECIPE_ID);
+    emit(null);
     await generateGuidedPlan(makeRecipe('2026-08-02T00:00:00.000Z'));
 
-    expect(fs.saveGuidedPlan.mock.calls[0]![0].createdAt).toBe('2026-07-01T00:00:00.000Z');
+    emit(null);
+
+    expect(get(guidedPlan)).toEqual(WRITTEN);
+  });
+
+  it('accepts the plan again once the listener catches up, then trusts absence', async () => {
+    // The guard is not permanent: it lifts the moment the subscription has shown us
+    // the document, so a genuine later deletion still empties the editor.
+    fs.callGenerateGuidedPlan.mockResolvedValue({ kind: 'ok', value: WRITTEN });
+    initGuidedPlanSync(RECIPE_ID);
+    emit(null);
+    await generateGuidedPlan(makeRecipe('2026-08-02T00:00:00.000Z'));
+
+    emit(WRITTEN);
+    emit(null);
+
+    expect(get(guidedPlan)).toBeNull();
   });
 
   it('writes nothing when the callable fails, and reports it', async () => {
@@ -191,6 +219,7 @@ describe('generateGuidedPlan', () => {
 
     expect(result.kind).toBe('err');
     expect(fs.saveGuidedPlan).not.toHaveBeenCalled();
+    expect(get(guidedPlan)).toBeNull();
     expect(reportSpy).toHaveBeenCalled();
   });
 });

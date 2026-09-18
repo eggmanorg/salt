@@ -364,12 +364,18 @@ export const describeEquipmentSubject = onCallGenkit(
   describeEquipmentSubjectFlow,
 );
 
-// Guided plan (issue #751, Phase 1): read the recipe → return the prep list and
-// the notes to sit under its steps. Takes only a recipe id; the flow reads the
-// recipe with the Admin SDK, so the plan is always about the recipe that is
-// actually stored. PERSISTS NOTHING — the web service assembles and writes the
-// document, which is the single place `needs_approval`, `recipeUpdatedAtAtSave`
-// and the timestamps are decided.
+// Guided plan (issue #751, Phase 1): read the recipe → write the plan → return
+// it. Takes only a recipe id; the flow reads the recipe with the Admin SDK, so
+// the plan is always about the recipe that is actually stored.
+//
+// PERSISTS THE DOCUMENT ITSELF (issue #1416), and is the odd one out among the
+// flows either side of it here. It writes `guidedPlans/{recipeId}` before it
+// returns, and so owns the control fields a generated plan carries: the
+// prep-entry ids, `needs_approval`, `recipeUpdatedAtAtSave` and the timestamps.
+// The client's `guidedPlanService.saveGuidedPlan` — the HUMAN save — is the other
+// writer of that document. Why the flow rather than the browser, and where the
+// two-writer split is pinned, are in the flow's own header; the client write this
+// replaced is not to be restored.
 //
 // Plain onCallGenkit rather than makeTracedCallable: there is no browser trace id
 // to unify here (one call, one click, no cross-invocation pair like the equipment

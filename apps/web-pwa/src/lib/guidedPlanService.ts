@@ -6,7 +6,7 @@ import {
   callGenerateGuidedPlan,
 } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter } from '@salt/observability';
-import type { GuidedPlanDoc, GuidedPrepEntryDoc } from '@salt/domain/schemas';
+import type { GuidedPlanDoc } from '@salt/domain/schemas';
 import type { Recipe } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 import { success, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -14,12 +14,34 @@ import { writable, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 
 // Guided-plan service (issue #751, Phase 1). An optimistic store over the
-// firebase-sync single-doc subscription, and the ONE write path for the document.
+// firebase-sync single-doc subscription, and the CLIENT-SIDE write path for the
+// document.
 //
-// Everything that decides a control field lives here, not in the flow and not in
-// the page: `needs_approval` (set by a generation, dropped by a save),
-// `recipeUpdatedAtAtSave` (re-stamped by BOTH), `createdAt`/`updatedAt`, and the
-// prep-entry ids. The CF authors prose; this file owns the document.
+// TWO WRITERS, DELIBERATELY, and the split is by who is waiting (issue #1416):
+//
+//  - a GENERATION is written by the `generateGuidedPlan` flow, server-side. It
+//    mints the prep-entry ids, sets `needs_approval`, stamps
+//    `recipeUpdatedAtAtSave` from the recipe it read, and carries `createdAt`
+//    across. Nothing on this path writes; `generateGuidedPlan` below only puts
+//    what the flow wrote into the store. The call runs for one to three minutes,
+//    so the browser cannot be relied on to be there when it returns — a locked
+//    phone lost the plan outright while the browser owned the write.
+//  - a HUMAN SAVE is written here, through `persist`, and so are the edits and the
+//    discard. The person is on the page by definition, the write is instant, and
+//    the optimistic store is what makes the editor feel immediate.
+//
+// The document is whole-document LWW, so two writers is no more hazardous than one
+// — but the CONTROL FIELDS have to agree. `needs_approval` is set by the flow and
+// dropped by `saveGuidedPlan`; `recipeUpdatedAtAtSave` is stamped by both, each
+// against the recipe it actually read. Each of those is pinned by a test
+// (`apps/cloud-functions/tests/flows/generateGuidedPlan.test.ts`,
+// `apps/web-pwa/tests/guidedPlanService.test.ts`).
+//
+// What holds the pair EXCLUSIVE is structural rather than tested, so it is worth
+// naming: `persist` below has exactly one caller, `saveGuidedPlan`, which strips
+// the flag before it writes — so there is no client path that can set it. A second
+// caller of `persist` is what would quietly break that, and it is the thing to
+// look at before adding one.
 //
 // The plan editor owns the subscription lifecycle: it calls initGuidedPlanSync
 // with the recipe id and disposes the returned unsub on teardown.
@@ -63,9 +85,25 @@ let latestLocalEdit: { id: string; updatedAt: string } | null = null;
 // rather than replayed.
 let pendingWrites = 0;
 
+// The id of a plan the FLOW wrote and this listener has not yet shown us (issue
+// #1416). The same hazard as `pendingWrites` and a different mechanism: a
+// generation is not a local write, so it never reaches the local cache and an
+// absence queued before the server's write is not superseded by anything — it
+// simply arrives on the listener after the callable has already returned the
+// document, and blanks a plan that demonstrably exists.
+//
+// Cleared when the listener catches up: the moment a snapshot for that id is
+// accepted, whatever wrote it. A write that failed server-side therefore leaves it
+// set for the rest of the session, which is the intended posture — the store holds
+// the plan the flow handed back, the editor paints it, and the cook's Save writes
+// it (the same recovery `persistImportedRecipe` documents, and the same boundary:
+// it takes a Save).
+let awaitingServerWrite: string | null = null;
+
 function applySnapshot(incoming: GuidedPlanDoc | null): void {
   if (incoming === null) {
-    if (pendingWrites > 0) return; // keep the optimistic copy; see above
+    // Keep the copy we hold; see both comments above.
+    if (pendingWrites > 0 || awaitingServerWrite !== null) return;
     _plan.set(null);
     return;
   }
@@ -74,6 +112,7 @@ function applySnapshot(incoming: GuidedPlanDoc | null): void {
     // Stale echo: our local copy is newer — ignore it.
     return;
   }
+  if (awaitingServerWrite === incoming.id) awaitingServerWrite = null;
   latestLocalEdit = { id: incoming.id, updatedAt: incoming.updatedAt };
   _plan.set(incoming);
 }
@@ -87,6 +126,7 @@ function applySnapshot(incoming: GuidedPlanDoc | null): void {
 export function initGuidedPlanSync(recipeId: string): () => void {
   _plan.set(undefined);
   latestLocalEdit = null;
+  awaitingServerWrite = null;
   const errors = getErrorReporter();
   return subscribeGuidedPlan(
     recipeId,
@@ -121,42 +161,32 @@ async function persist(plan: GuidedPlanDoc): Promise<ReadResult<GuidedPlanDoc, D
 }
 
 /**
- * Write (or re-write) the plan for a recipe from the AI.
+ * Ask the flow to write (or re-write) the plan for a recipe.
  *
- * A re-run REPLACES the previous plan outright — whole-document LWW, no merge:
- * "get a fresh one" is the whole point of the button, and half-merging a new prep
- * list into hand-corrected text would produce a document neither the model nor the
- * human wrote. `createdAt` is carried over from an existing plan (the plan for this
- * recipe has existed since then), everything else is fresh.
+ * WRITES NOTHING ITSELF (issue #1416). The flow assembles and persists the
+ * document and returns exactly what it wrote; this is the client putting that on
+ * screen. A re-run REPLACES the previous plan outright — whole-document LWW, no
+ * merge — and every control field on it, `needs_approval` and `createdAt`
+ * included, is decided server-side.
  *
- * Flagged `needs_approval` because nobody has read it yet. That is the ONLY place
- * the flag is ever set — a plan authored entirely by hand is never flagged.
+ * Why the returned document is used rather than waiting for the subscription to
+ * deliver it: the person has just waited one to three minutes, and the editor's
+ * empty state is a "Write the plan" button. Painting that button for however long
+ * the snapshot takes to arrive — at the end of that wait, over a plan that exists —
+ * is not a frame anyone should see. It is not a second source of truth either: the
+ * flow wrote first, so this IS the document.
  */
 export async function generateGuidedPlan(
   recipe: Recipe,
 ): Promise<ReadResult<GuidedPlanDoc, DomainError>> {
-  const authored = await callGenerateGuidedPlan({ recipeId: recipe.id });
-  if (authored.kind !== 'ok') return reportIfFailed(getErrorReporter(), authored);
+  const written = await callGenerateGuidedPlan({ recipeId: recipe.id });
+  if (written.kind !== 'ok') return reportIfFailed(getErrorReporter(), written);
 
-  const now = new Date().toISOString();
-  const existing = get(_plan);
-  return persist({
-    id: recipe.id,
-    schemaVersion: 1,
-    recipeId: recipe.id,
-    // Stamped against the recipe the FLOW read, which is the recipe in Firestore.
-    recipeUpdatedAtAtSave: recipe.updatedAt,
-    needs_approval: true,
-    // Ids are minted here, not by the model: they are document-local identity, and
-    // the editor needs them the moment the list renders (they key the rows).
-    prep: authored.value.prep.map((entry): GuidedPrepEntryDoc => ({
-      ...entry,
-      id: crypto.randomUUID(),
-    })),
-    stepNotes: authored.value.stepNotes,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  });
+  const plan = written.value;
+  awaitingServerWrite = plan.id;
+  latestLocalEdit = { id: plan.id, updatedAt: plan.updatedAt };
+  _plan.set(plan);
+  return success(plan);
 }
 
 /**
@@ -201,6 +231,7 @@ export async function discardGuidedPlan(recipeId: string): Promise<ReadResult<vo
     return result;
   }
   latestLocalEdit = null;
+  awaitingServerWrite = null;
   _plan.set(null);
   return success(undefined);
 }

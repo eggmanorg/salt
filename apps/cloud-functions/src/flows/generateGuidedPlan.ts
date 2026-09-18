@@ -1,7 +1,11 @@
+import { getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import {
   GenerateGuidedPlanInputSchema,
   GenerateGuidedPlanAIOutputSchema,
   GenerateGuidedPlanOutputSchema,
+  type GuidedPlanDoc,
+  type GuidedPrepEntryDoc,
   type RecipeDoc,
 } from '@salt/domain/schemas';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
@@ -25,9 +29,19 @@ import { GUIDED_PREP_RULES, GUIDED_STEP_NOTE_RULES } from './stepRules.js';
 // the recipe that is actually in Firestore, and a 60-step recipe never has to
 // round-trip through the browser to be annotated.
 //
-// It authors CONTENT ONLY — no ids, no timestamps, no `needs_approval`. The web
-// service assembles and persists the document (one write path, one place those
-// control fields are decided). This flow persists nothing.
+// IT WRITES THE DOCUMENT ITSELF (issue #1416), and that is the whole point of the
+// arrangement. It used to author content only and hand it back for the browser to
+// assemble and persist — which meant a phone that locked, or a tab that closed,
+// during the one-to-three-minute call threw away a finished plan the moment it
+// arrived. The same loss #616 fixed for recipe imports (`persistImportedRecipe`),
+// for the same reason, by the same move. Writing here means the plan exists as soon
+// as the flow finishes, whatever the client does next.
+//
+// So this flow owns the control fields a generated plan carries: the prep-entry
+// ids, `needs_approval`, `recipeUpdatedAtAtSave` and the timestamps. The MODEL
+// still authors content only. `guidedPlanService.saveGuidedPlan` — the human save —
+// is the other writer of this document, and the split is stated in that file's
+// header.
 //
 // Prompt policy lives in stepRules.ts alongside STEP_RULES, which is the single
 // source of truth for what a cook is told at a step; see that file's header.
@@ -95,12 +109,74 @@ function promptFor(recipe: RecipeDoc): string {
 // share of the 210s the callable is exported with (see `index.ts`), which is in
 // turn matched by `callGenerateGuidedPlan`'s client timeout — RAISING ANY ONE OF
 // THE THREE MEANS RAISING THE OTHER TWO, and the lowest of them is what actually
-// governs. The 30s left over is for the Firestore read and the response hop.
+// governs. The 30s left over is for the Firestore work and the response hop —
+// since #1416 that is three round trips rather than one (read the recipe, read
+// the plan being replaced, write the new one), which is still noise beside 180s.
 //
 // No retry, unchanged from the house budget: the caller is a human sitting in
 // front of the editor with a Write-the-plan button they can press again, and a
 // second 180s attempt they did not ask for would hold them for six minutes.
 const GUIDED_PLAN_TIMEOUT = { timeoutMs: 180_000, retries: 0 } as const;
+
+const PLANS = 'guidedPlans';
+
+/**
+ * `createdAt` of the plan this generation replaces, or `null` if there is none.
+ *
+ * A re-run replaces the plan outright, but the PLAN FOR THIS RECIPE is not new —
+ * it has existed since the first one was written — so the original stamp carries
+ * across. Only that one field is taken: everything else in the old document is
+ * being thrown away on purpose.
+ *
+ * A failed read is logged and answered `null`, which re-dates the plan to now. The
+ * alternative is failing a generation that has already been paid for over a
+ * cosmetic timestamp, and a plan is worth more than its birthday.
+ */
+async function existingCreatedAt(recipeId: string): Promise<string | null> {
+  try {
+    const snap = await getFirestore().collection(PLANS).doc(recipeId).get();
+    const createdAt: unknown = snap.data()?.createdAt;
+    return typeof createdAt === 'string' ? createdAt : null;
+  } catch (err) {
+    logger.error('generateGuidedPlan: failed to read the existing plan', {
+      recipeId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Write the plan to `guidedPlans/{recipeId}`.
+ *
+ * A full `.set()` on a deterministic id — whole-document LWW, no merge, which is
+ * the contract for every document in this app and doubly the intent here: "get a
+ * fresh one" is the whole point of the button, and half-merging a new prep list
+ * into hand-corrected text would produce a document neither the model nor the
+ * human wrote.
+ *
+ * A write failure does NOT fail the call, following `persistImportedRecipe`: the
+ * plan is still returned, the editor paints it, and the cook's Save writes it —
+ * rather than throwing away a successful, already-paid-for generation. Logged so
+ * the failure is visible; not reported as an unexpected error, since the person
+ * still has a working plan in front of them.
+ *
+ * The boundary, because "the plan is never lost" unqualified would be exactly the
+ * kind of claim nothing guarantees: this recovery takes a Save. A cook who reads a
+ * plan whose server-side write failed, changes nothing and navigates away loses it,
+ * and nothing on screen says so. What the fix DOES guarantee is that a plan whose
+ * write succeeded survives the page, which is the failure this issue is about.
+ */
+async function persistGuidedPlan(plan: GuidedPlanDoc): Promise<void> {
+  try {
+    await getFirestore().collection(PLANS).doc(plan.id).set(plan);
+  } catch (err) {
+    logger.error('generateGuidedPlan: failed to persist the plan', {
+      recipeId: plan.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export const generateGuidedPlanFlow = ai.defineFlow(
   {
@@ -144,9 +220,33 @@ export const generateGuidedPlanFlow = ai.defineFlow(
     // anyway — but silently carrying it into the document makes every later reader
     // handle it, and a note the cook can never see is not worth storing.
     const stepIds = new Set(recipe.steps.map((s) => s.id));
-    return {
-      prep: parsed.data.prep,
+
+    const now = new Date().toISOString();
+    const plan: GuidedPlanDoc = {
+      id: recipeId,
+      schemaVersion: 1,
+      recipeId,
+      // Stamped against the recipe THIS FLOW READ, which is the recipe in
+      // Firestore. The client used to stamp this from its own copy, which could be
+      // staler than the one the plan was actually written against.
+      recipeUpdatedAtAtSave: recipe.updatedAt,
+      // Nobody has read it yet. This is the only assignment of the flag anywhere
+      // in the codebase — the web service's `saveGuidedPlan` strips it and no
+      // write path sets it — which is what keeps "flagged" meaning "written by a
+      // model and unread" rather than drifting into a general staleness marker.
+      needs_approval: true,
+      // Ids are minted here, not by the model: they are document-local identity,
+      // and the editor needs them the moment the list renders (they key the rows).
+      prep: parsed.data.prep.map((entry): GuidedPrepEntryDoc => ({
+        ...entry,
+        id: crypto.randomUUID(),
+      })),
       stepNotes: parsed.data.stepNotes.filter((note) => stepIds.has(note.stepId)),
+      createdAt: (await existingCreatedAt(recipeId)) ?? now,
+      updatedAt: now,
     };
+
+    await persistGuidedPlan(plan);
+    return plan;
   },
 );
