@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { basisYield, targetYield } from '@salt/domain';
 import {
   DEFAULT_TRAY_DEPTH_CM,
   EMPTY_DOUGH_ANSWER,
   LOAF_TIN_CHIP_GRAMS,
   doughAmountFrom,
+  referenceYieldFrom,
   seedDoughAnswer,
   suggestedTrayGrams,
   vesselFrom,
@@ -178,7 +180,7 @@ describe('vesselFrom', () => {
 
 describe('seedDoughAnswer', () => {
   it('leads with the tin for one unit, carrying its weight into both weight boxes', () => {
-    const seeded = seedDoughAnswer({ count: 1, unitDoughGrams: 900 });
+    const seeded = seedDoughAnswer(targetYield({ count: 1, unitDoughGrams: 900 }));
     expect(seeded.mode).toBe('tin');
     expect(seeded.fields.tinGramsText).toBe('900');
     expect(seeded.fields.tinCountText).toBe('1');
@@ -187,26 +189,27 @@ describe('seedDoughAnswer', () => {
   });
 
   it('reads more than one unit as pieces — a run of eight is rolls, not eight tins', () => {
-    const seeded = seedDoughAnswer({ count: 8, unitDoughGrams: 120 });
+    const seeded = seedDoughAnswer(targetYield({ count: 8, unitDoughGrams: 120 }));
     expect(seeded.mode).toBe('pieces');
     expect(seeded.fields.pieceCountText).toBe('8');
     expect(seeded.fields.pieceGramsText).toBe('120');
   });
 
-  it('seeds nothing from a basis-driven formula, and still leads with the tin', () => {
+  it('leads with the tin when there is no declaration to seed from at all', () => {
     const seeded = seedDoughAnswer(null);
     expect(seeded.mode).toBe('tin');
-    expect(doughAmountFrom(seeded.mode, seeded.fields)).toBeNull();
+    expect(referenceYieldFrom(seeded.mode, seeded.fields)).toBeNull();
   });
 
-  it('round-trips every seeded answer back to the amount it came from', () => {
-    for (const amount of [
-      { count: 1, unitDoughGrams: 900 },
-      { count: 2, unitDoughGrams: 450 },
-      { count: 12, unitDoughGrams: 120 },
+  it('round-trips every seeded answer back to the yield it came from', () => {
+    for (const declared of [
+      targetYield({ count: 1, unitDoughGrams: 900 }),
+      targetYield({ count: 2, unitDoughGrams: 450 }),
+      targetYield({ count: 12, unitDoughGrams: 120 }),
+      basisYield(2430),
     ]) {
-      const seeded = seedDoughAnswer(amount);
-      expect(doughAmountFrom(seeded.mode, seeded.fields)).toEqual(amount);
+      const seeded = seedDoughAnswer(declared);
+      expect(referenceYieldFrom(seeded.mode, seeded.fields)).toEqual(declared);
     }
   });
 
@@ -215,9 +218,72 @@ describe('seedDoughAnswer', () => {
     // `1031.9999999999998`. Reopening must not put that in front of anyone —
     // the "Tin size (g)" box on the formula screen and the bake sheet both seed
     // from this.
-    const seeded = seedDoughAnswer({ count: 1, unitDoughGrams: 1031.9999999999998 });
+    const seeded = seedDoughAnswer(targetYield({ count: 1, unitDoughGrams: 1031.9999999999998 }));
     expect(seeded.fields.tinGramsText).toBe('1032');
     expect(seeded.fields.totalGramsText).toBe('1032');
+  });
+});
+
+// ─── The fifth answer: a weight of what goes in (issue #1402) ──────────────────
+//
+// The other four answer "how much does this make"; this one answers the opposite
+// question, and it is the only answer a cure can give. Nobody decides in advance
+// that they are making 1.8 kg of coppa — you unwrap the shoulder and weigh it.
+describe('a weight of what goes in', () => {
+  it('resolves to a basis yield, which is the other direction of the same equation', () => {
+    expect(referenceYieldFrom('basis', fields({ basisGramsText: '2430' }))).toEqual(
+      basisYield(2430),
+    );
+  });
+
+  it('reads its own box and no other', () => {
+    // A fall-through to `totalGramsText` would have made "a weight of dough" and
+    // "a weight of what goes in" the same box wearing two labels — and the two
+    // mean opposite things, so one of the readings would always be wrong.
+    expect(referenceYieldFrom('basis', fields({ totalGramsText: '1400' }))).toBeNull();
+    expect(referenceYieldFrom('basis', fields({ tinGramsText: '900' }))).toBeNull();
+    expect(
+      referenceYieldFrom('basis', fields({ basisGramsText: '2430', totalGramsText: '1400' })),
+    ).toEqual(basisYield(2430));
+  });
+
+  it('is not a dough amount, and says so rather than falling through', () => {
+    expect(doughAmountFrom('basis', fields({ basisGramsText: '2430' }))).toBeNull();
+  });
+
+  it('refuses what the schema would refuse, rather than rounding it into shape', () => {
+    // `ReferenceYieldSchema`'s basis variant is `grams: z.number().positive()`.
+    for (const text of ['', '0', '-2430', 'two and a half kilos']) {
+      expect(referenceYieldFrom('basis', fields({ basisGramsText: text }))).toBeNull();
+    }
+  });
+
+  it('takes no anchor — there is no count, so there is nothing to divide', () => {
+    // The anchor answers "how much does each of N get out of this dough". A
+    // weighed basis has no N.
+    expect(referenceYieldFrom('basis', fields(), 2430)).toBeNull();
+  });
+
+  it('names no vessel, because a curing chamber is a place rather than a vessel', () => {
+    // Recorded per stage as `stagePlaceIds` since #1281. Calling it a vessel would
+    // put the same fact on the document twice under two names.
+    expect(vesselFrom('basis', fields({ basisGramsText: '2430' }))).toBeUndefined();
+  });
+
+  it('seeds the one box it has, from the formula the run is started off', () => {
+    const seeded = seedDoughAnswer(basisYield(2430));
+    expect(seeded.mode).toBe('basis');
+    expect(seeded.fields.basisGramsText).toBe('2430');
+    // And nothing else: a seeded basis must not leave a figure behind in a dough
+    // box, or switching the answer on the formula screen would silently declare a
+    // total nobody typed.
+    expect(seeded.fields.tinGramsText).toBe('');
+    expect(seeded.fields.totalGramsText).toBe('');
+    expect(seeded.fields.pieceGramsText).toBe('');
+  });
+
+  it('rounds a noisy stored weight into the box, exactly as a dough figure is', () => {
+    expect(seedDoughAnswer(basisYield(2429.9999999999995)).fields.basisGramsText).toBe('2430');
   });
 });
 

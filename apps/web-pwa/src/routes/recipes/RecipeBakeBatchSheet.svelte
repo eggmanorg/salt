@@ -24,7 +24,6 @@
     placeReachesTemperature,
     solveFormula,
     stageTemperatureText,
-    targetYield,
     withComponentPercentScaled,
     type Recipe,
     type ScheduleAnchor,
@@ -36,7 +35,7 @@
   import {
     EMPTY_DOUGH_ANSWER,
     LOAF_TIN_CHIP_GRAMS,
-    doughAmountFrom,
+    referenceYieldFrom,
     seedDoughAnswer,
     suggestedTrayGrams,
     vesselFrom,
@@ -45,6 +44,7 @@
     type TrayBy,
   } from './doughAnswer.js';
   import { KIND_COPY, kindOf } from './recipeKind.js';
+  import { describeBoundViolation } from '../../lib/boundViolation.js';
   import { addToast } from '../../lib/toastStore.js';
   import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 
@@ -142,9 +142,10 @@
 
   // ─── What ─────────────────────────────────────────────────────────────────────
 
-  // "What are you filling?" — the answer, and every box all three answers use. See
-  // `doughAnswer.ts` for the rule that turns them into a `DoughAmount`, and for why
-  // the tin leads.
+  // "What are you filling?" — the answer, and every box every answer uses. See
+  // `doughAnswer.ts` for the rule that turns them into a `ReferenceYield`, and for
+  // why the tin leads. `'basis'` is reached only by seeding from a formula written
+  // that way (issue #1402), never by a radio on this sheet — see `basisDriven`.
   let answerMode = $state<DoughAnswerMode>('tin');
   let answer = $state<DoughAnswerFields>({ ...EMPTY_DOUGH_ANSWER });
   // Whether the person has ANSWERED the question, as against merely being shown
@@ -298,18 +299,17 @@
    * answer most runs want, and it should be sitting in the boxes rather than
    * waiting to be typed.
    *
-   * A basis-driven formula declares a weight rather than a count of anything, so
-   * there is nothing to seed: the boxes come up empty, no amount resolves, and the
-   * solve falls back to `formula.referenceYield` for exactly that answer.
+   * A basis-driven formula seeds the one box it has (issue #1402): the formula's own
+   * weight lands in it, and the person types what the scale actually says over the
+   * top. It used to seed nothing at all, which left the sheet asking a coppa what
+   * size of loaf tin it was going in.
    */
   function seed(): void {
     mode = 'startAt';
     whenLocal = localNow();
     startError = null;
     discardProposal();
-    const seeded = seedDoughAnswer(
-      formula.referenceYield.kind === 'target' ? formula.referenceYield.shape : null,
-    );
+    const seeded = seedDoughAnswer(formula.referenceYield);
     answerMode = seeded.mode;
     answer = seeded.fields;
     answered = false;
@@ -348,16 +348,29 @@
     answered = true;
   }
 
-  const amount = $derived(doughAmountFrom(answerMode, answer));
+  // WHICH QUESTION THIS FORMULA IS ASKED (issue #1402), off the formula's own
+  // reference yield and never off the recipe's kind — presence, not kind (CLAUDE.md
+  // → *Data model conventions*). A formula written as a weight going in is asked one
+  // question, what it weighs; everything else is asked what it fills.
+  //
+  // THE SHEET OFFERS NO CHOICE BETWEEN THEM, because it is not a choice about
+  // tonight: the formula already says which direction it solves in, and answering
+  // the other way would freeze a run solved in a direction the formula was not
+  // written in. So this hides the radio group, and `answerMode` is `'basis'` exactly
+  // when this is true — `seed()` reads it off the same field, and the hidden radio is
+  // the only thing that could set the mode to anything else.
+  const basisDriven = $derived(formula.referenceYield.kind === 'basis');
   // What we would propose for an un-named vessel. A PROPOSAL: it reaches the grams
   // box only when the button is pressed, and can be typed straight over.
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
-  // Omitted, never invented: no amount means the formula's own reference yield,
+  // Omitted, never invented: no answer means the formula's own reference yield,
   // which is precisely what `startBatch` does with an absent `atYield`.
-  const atYield = $derived(amount === null ? null : targetYield(amount));
+  const atYield = $derived(referenceYieldFrom(answerMode, answer));
   // The vessel this run is recorded against — the tin and tray answers only, and
   // only once the question has actually been answered. It is a note on the
-  // finished record and nothing reads it back: see `BatchSchema.vessel`.
+  // finished record and nothing reads it back: see `BatchSchema.vessel`. A weighed
+  // basis names none: `vesselFrom` returns undefined for it, because a curing
+  // chamber is a place and is recorded per stage (#1281).
   const vessel = $derived(answered ? vesselFrom(answerMode, answer) : undefined);
 
   // ─── The leavening opinion, priced by the domain ──────────────────────────────
@@ -418,6 +431,13 @@
         return 'This formula has no basis — nothing is marked as the 100%.';
       case 'basisNotNormalised':
         return "This formula's basis doesn't add up to 100%.";
+      case 'boundViolation':
+        // A cure salt outside its product's window, in the ONE wording the formula
+        // screen and the freeze's own refusal also use (issue #1402). It used to
+        // fall through to the `default` below, which said nothing about which window
+        // was missed. The tail is the template's and is unchanged: "Open the formula
+        // screen to sort it out."
+        return describeBoundViolation(solved.reason, (id) => labelById.get(id));
       default:
         return "This formula doesn't resolve into weights.";
     }
@@ -590,18 +610,24 @@
            by the dough it takes, so there is no sum in between and nothing to
            overrule — see `doughAnswer.ts`. -->
       <div class="flex flex-col gap-3">
-        <RadioGroup
-          label="What are you filling?"
-          value={answerMode}
-          onValueChange={(v) => {
-            setAnswerMode(v as DoughAnswerMode);
-          }}
-        >
-          <RadioGroupItem value="tin" label="A loaf tin" />
-          <RadioGroupItem value="tray" label="A tray or dish" />
-          <RadioGroupItem value="pieces" label="A number of pieces" />
-          <RadioGroupItem value="weight" label="A weight of dough" />
-        </RadioGroup>
+        {#if !basisDriven}
+          <!-- NOT OFFERED for a formula written as a weight going in (issue #1402).
+               A coppa has no tin, no count of pieces and no tray, and the direction
+               a formula solves in is not a choice about tonight — see `basisDriven`.
+               The box below is then the one question the sheet asks. -->
+          <RadioGroup
+            label="What are you filling?"
+            value={answerMode}
+            onValueChange={(v) => {
+              setAnswerMode(v as DoughAnswerMode);
+            }}
+          >
+            <RadioGroupItem value="tin" label="A loaf tin" />
+            <RadioGroupItem value="tray" label="A tray or dish" />
+            <RadioGroupItem value="pieces" label="A number of pieces" />
+            <RadioGroupItem value="weight" label="A weight of dough" />
+          </RadioGroup>
+        {/if}
 
         {#if answerMode === 'tin'}
           <div class="flex flex-col gap-2" data-testid="bake-batch-tin">
@@ -766,6 +792,31 @@
               onValueChange={(v) => setAnswer({ pieceGramsText: v })}
               data-testid="bake-batch-piece-grams"
             />
+          </div>
+        {:else if answerMode === 'basis'}
+          <!-- ONE QUESTION AND ONE BOX (issue #1402). The box opens on the formula's
+               own figure; you type what the scale actually said over it, and the run
+               freezes at that.
+
+               NO SECOND FIGURE, anywhere. No trim allowance and no green weight
+               beside a usable one — you weigh the meat you hang, after trimming.
+               Batch nine's drying curve is only comparable with batch ten's if the
+               number at the top of each means the same thing. -->
+          <div class="flex flex-col gap-2" data-testid="bake-batch-basis">
+            <div class="flex flex-wrap items-end gap-3">
+              <TextField
+                label="What does it weigh? (g)"
+                inputmode="numeric"
+                class="w-36"
+                value={answer.basisGramsText}
+                onValueChange={(v) => setAnswer({ basisGramsText: v })}
+                data-autofocus
+                data-testid="bake-batch-basis-grams"
+              />
+            </div>
+            <p class="text-xs text-muted-foreground" data-testid="bake-batch-basis-note">
+              On the scale now, trimmed and ready to go in. Everything below is a percentage of it.
+            </p>
           </div>
         {:else}
           <div class="flex flex-wrap items-end gap-3" data-testid="bake-batch-weight">

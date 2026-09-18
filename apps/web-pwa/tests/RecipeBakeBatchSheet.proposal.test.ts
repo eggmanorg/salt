@@ -428,6 +428,52 @@ describe('RecipeBakeBatchSheet — the leavening is words plus a number domain c
   });
 });
 
+describe('RecipeBakeBatchSheet — a leavening-shaped adjustment must never touch a cure salt', () => {
+  // Blocking finding from the #1402 review. `withComponentPercentScaled` used to
+  // stamp `LEAVENING_PERCENT_BOUNDS` onto whatever component id the model
+  // returned, with no idea what that component was. A model output naming a
+  // cure-salt component's id could replace its 0.15%-0.3% nitrite window with
+  // yeast's 0.2%-2.5% and let a factor of 4 (four times the top of the real
+  // window) solve, preview and freeze. This proves the domain fix
+  // (`withComponentPercentScaled` refuses a `saltProduct` component outright) at
+  // the one screen that could trigger it.
+  const CURE_LEAVENING_FORMULA: Formula = {
+    ...FORMULA,
+    components: FORMULA.components.map((c) =>
+      c.ingredientId === 'ing-yeast'
+        ? { ...c, percent: 0.25, saltProduct: 'cure1' as const, minPercent: 0.15, maxPercent: 0.3 }
+        : c,
+    ),
+  };
+
+  it('leaves the component untouched by the adjustment, at the exact overdose factor the review found', async () => {
+    mockProposeSchedule.mockResolvedValue({
+      kind: 'ok',
+      value: {
+        ...RESTRUCTURE,
+        // Four times the top of the 0.15%-0.3% window — the concrete factor the
+        // review traced through to a frozen 625 ppm dose before this fix.
+        adjustment: { ingredientId: 'ing-yeast', factor: 4, reason: 'take the cure up' },
+      },
+    });
+    renderSheet(CURE_LEAVENING_FORMULA);
+    await proposeAndSettle();
+
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const input = mockStartBatch.mock.calls[0]![0];
+    const cure = input.formula.components.find(
+      (c: { ingredientId: string }) => c.ingredientId === 'ing-yeast',
+    );
+    // Not scaled by the factor, and its cure-salt window intact — the component
+    // this bug used to widen to 1.0% instead freezes at exactly what the stored
+    // formula already had.
+    expect(cure).toEqual(
+      CURE_LEAVENING_FORMULA.components.find((c) => c.ingredientId === 'ing-yeast'),
+    );
+  });
+});
+
 describe('RecipeBakeBatchSheet — accepting and declining', () => {
   it('freezes the restructured process, back-solved from the minute asked for', async () => {
     renderSheet();

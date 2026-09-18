@@ -1,10 +1,12 @@
 import {
   DEFAULT_DOUGH_DEPTH_CM,
+  basisYield,
   doughGramsFromArea,
   doughGramsFromVolumeMl,
   roundGrams,
+  targetYield,
 } from '@salt/domain';
-import type { DoughAmount } from '@salt/domain/schemas';
+import type { DoughAmount, ReferenceYield } from '@salt/domain/schemas';
 import { parseUnitCount } from './unitCount.js';
 
 // "What are you filling?" — the answers, as arithmetic (issue #1274).
@@ -33,19 +35,39 @@ import { parseUnitCount } from './unitCount.js';
 //
 // PAGE-LOCAL, in the shape `unitCount.ts` establishes: both consumers live in this
 // folder, and `lib/` is for rules a `.ts` service also needs (issue #1055).
+//
+// ─── AND ONE ANSWER THAT IS NOT A FILLING AT ALL (issue #1402) ────────────────
+//
+// A cure is not asked what it makes. Nobody decides in advance that they are making
+// 1.8 kg of coppa — you unwrap the shoulder, put it on the scale, and THAT is where
+// the run starts. So the question gains a fifth answer, `basis`, which resolves to
+// the OTHER variant of `ReferenceYield` and is therefore the one answer
+// `doughAmountFrom` cannot express. `referenceYieldFrom` is the seam where both
+// directions come out as one type, and it is what the two screens now call.
+//
+// The two screens diverge again here, and again on purpose: the formula screen
+// OFFERS the answer alongside the other four, while the bake sheet never asks which
+// direction a run is in — it reads that off the formula and asks the one question
+// that fits. See `RecipeBakeBatchSheet.svelte`.
 
 /**
- * The four answers, in the order the screens list them.
+ * The five answers, in the order the screens list them.
  *
  * `tin` leads because it is how the question is actually asked — "I have a 900 g
  * loaf tin, what do I put in to fill it". A UK tin is SOLD BY THE DOUGH IT TAKES,
  * so it needs no coefficient and no sum: the tin size IS the grams.
  *
- * `tray` is the only one that needs an estimate, and it is last for that reason: it
- * covers vessels sold with no trade name, where nothing about the thing says how
- * much dough it holds.
+ * `tray` is the only one that needs an estimate: it covers vessels sold with no
+ * trade name, where nothing about the thing says how much dough it holds.
+ *
+ * `basis` IS THE ODD ONE OUT AND SAYS SO (issue #1402). The other four answer "how
+ * much does this make" and resolve to a `DoughAmount`; this one answers the
+ * opposite question — you unwrap the shoulder, it weighs 2,430 g — and resolves to
+ * a `ReferenceYield` of the other variant. It is last because it is the answer for
+ * a cure and a ferment rather than for bread, which is every recipe in production
+ * today. See `referenceYieldFrom` for the one place the two directions meet.
  */
-export type DoughAnswerMode = 'tin' | 'pieces' | 'weight' | 'tray';
+export type DoughAnswerMode = 'tin' | 'pieces' | 'weight' | 'tray' | 'basis';
 
 /** How an un-named vessel is being described. Two ways of saying the same volume. */
 export type TrayBy = 'size' | 'volume';
@@ -78,6 +100,17 @@ export interface DoughAnswerFields {
    * become load-bearing. See `doughAmount.ts` for why that matters.
    */
   trayGramsText: string;
+  /**
+   * `basis`: WHAT GOES IN, in grams — the weighed meat, the shredded cabbage
+   * (issue #1402).
+   *
+   * ONE BOX, AND THERE IS DELIBERATELY NO SECOND ONE. No trim allowance, no green
+   * weight beside a usable weight: you weigh the meat you actually hang, after
+   * trimming, and that figure is the start of the run. Comparing batch nine's
+   * drying curve with batch ten's only works if the number at the top of each
+   * means the same thing.
+   */
+  basisGramsText: string;
 }
 
 // Aliased from the domain rather than re-declared, so the depth box's default and
@@ -97,6 +130,7 @@ export const EMPTY_DOUGH_ANSWER: DoughAnswerFields = {
   trayVolumeText: '',
   trayVolumeUnit: 'ml',
   trayGramsText: '',
+  basisGramsText: '',
 };
 
 /** UK tins are sold as 1 lb and 2 lb. Quick fills beside the box, never instead of it. */
@@ -147,12 +181,19 @@ function dividedUnitGrams(count: number | null, anchorDoughGrams: number | null)
  * A plain weight is one of itself — `count: 1` — which is why the read-back for it
  * is "1.4 kg of dough" and not "1 × 1400 g". It takes no anchor, and neither does a
  * tray: a tray has its own suggest button, and a plain weight has nothing to divide.
+ *
+ * `basis` IS NOT A DOUGH AMOUNT AND RETURNS NULL (issue #1402). A weighed basis
+ * says what goes in, so there is no count and no per-unit weight to report — and
+ * the null is written explicitly rather than left to fall through to
+ * `totalGramsText`, which would have read a box the basis answer does not use.
+ * `referenceYieldFrom` below is what resolves it.
  */
 export function doughAmountFrom(
   mode: DoughAnswerMode,
   fields: DoughAnswerFields,
   anchorDoughGrams: number | null = null,
 ): DoughAmount | null {
+  if (mode === 'basis') return null;
   if (mode === 'tin') {
     const count = parseUnitCount(fields.tinCountText);
     const unitDoughGrams =
@@ -173,6 +214,35 @@ export function doughAmountFrom(
   }
   const unitDoughGrams = parseGrams(fields.totalGramsText);
   return unitDoughGrams === null ? null : { count: 1, unitDoughGrams };
+}
+
+/**
+ * The answer as a REFERENCE YIELD — either direction of the same equation — or
+ * nothing (issue #1402).
+ *
+ * This is the whole of what the new answer adds, and it adds no arithmetic:
+ * `solveFormula` has resolved both directions since #782 and `basisYield` has been
+ * its constructor for as long. The gap was that no screen ever called it.
+ *
+ * THE ONE ENTRY POINT THE SCREENS USE, so the mode and the box it reads cannot come
+ * apart in one screen and not the other. The four dough answers delegate to
+ * `doughAmountFrom` unchanged, anchor and all; `basis` reads its own box and takes
+ * no anchor, because a weighed basis has nothing to divide.
+ *
+ * `null` for a half-typed answer, exactly as `doughAmountFrom` is, and for the same
+ * reason: a gap is no declaration yet, not a lenient one.
+ */
+export function referenceYieldFrom(
+  mode: DoughAnswerMode,
+  fields: DoughAnswerFields,
+  anchorDoughGrams: number | null = null,
+): ReferenceYield | null {
+  if (mode === 'basis') {
+    const grams = parseGrams(fields.basisGramsText);
+    return grams === null ? null : basisYield(grams);
+  }
+  const amount = doughAmountFrom(mode, fields, anchorDoughGrams);
+  return amount === null ? null : targetYield(amount);
 }
 
 /**
@@ -223,8 +293,13 @@ export function suggestedTrayGrams(fields: DoughAnswerFields): number | null {
  * must not introduce.
  *
  * Returned for the two answers that describe a vessel — a tin and a tray. A count
- * of pieces and a plain weight of dough name none, and an invented one would be a
- * fact nobody stated.
+ * of pieces, a plain weight of dough and a weighed basis name none, and an invented
+ * one would be a fact nobody stated.
+ *
+ * A WEIGHED BASIS NAMES NO VESSEL AT ALL (issue #1402), and that is a decision
+ * rather than an omission: a curing chamber is a PLACE — recorded per stage as
+ * `stagePlaceIds` since #1281 — and calling it a vessel would put the same fact on
+ * the document twice under two names. Pinned in `doughAnswer.test.ts`.
  */
 export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): string | undefined {
   if (mode === 'tin') {
@@ -252,7 +327,8 @@ export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): st
 }
 
 /**
- * Which answer a stored amount comes back as, when a screen is seeded from one.
+ * Which answer a stored reference yield comes back as, when a screen is seeded
+ * from one.
  *
  * A formula stores grams and nothing else, so this cannot know whether one 900 g
  * unit was a tin or a boule — and it leads with the tin, because that is the
@@ -260,12 +336,26 @@ export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): st
  * framing starts there. More than one unit is pieces: a run of eight is rolls, not
  * eight tins, far more often than not. Either way the person starting the bake is
  * looking at the answer before they press Start.
+ *
+ * A BASIS YIELD NEEDS NO GUESS (issue #1402), and it is the only variant that does
+ * not: it stores one figure, that figure means one thing, and it comes back into
+ * the one box that holds it. The guesswork above is the price of a `DoughAmount`
+ * having been three questions' answer, and none of it applies here.
  */
-export function seedDoughAnswer(amount: DoughAmount | null): {
+export function seedDoughAnswer(declared: ReferenceYield | null): {
   mode: DoughAnswerMode;
   fields: DoughAnswerFields;
 } {
-  if (amount === null) return { mode: 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
+  if (declared === null) return { mode: 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
+  if (declared.kind === 'basis') {
+    // ROUNDED for the same reason the dough figure below is: this lands verbatim in
+    // an editable box and, from there, into what a run is frozen at.
+    return {
+      mode: 'basis',
+      fields: { ...EMPTY_DOUGH_ANSWER, basisGramsText: String(roundGrams(declared.grams)) },
+    };
+  }
+  const amount = declared.shape;
   // ROUNDED (issue #1325 review, blocking-1). `amount.unitDoughGrams` can carry a
   // percentage round-trip's noise — a stored `1031.9999999999998` — and this is
   // the figure that lands verbatim in an editable box (the formula screen's "Tin

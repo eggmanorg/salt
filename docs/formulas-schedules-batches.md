@@ -185,11 +185,16 @@ tray") and never the weight — the weight already lives at
 `totals.units.unitDoughGrams`, and a second copy is the drift being avoided. So a
 run whose suggested weight was typed over still names the tray it was baked in.
 
-A **loss allowance is not forbidden, it is unbuilt.** Trim loss on a pork
-shoulder is 10–20%, an order of magnitude from anything in bread; phase 04
-(cures) is where that requirement gets stated, and reintroducing a field there is
-free on a greenfield collection. What produced the rework was preserving
-switched-off machinery against a use case nobody had written down.
+A **loss allowance is not merely unbuilt, it is settled against** (issue #1402).
+This paragraph used to point phase 04 at trim loss on a pork shoulder as the real
+requirement that would earn the field back. It does not: you weigh the meat
+**after** trimming, and that figure is the start of the run. One box, one meaning
+— comparing batch nine's drying curve with batch ten's is the whole point of the
+observation log, and it is worth nothing if "2.4 kg" means the untrimmed shoulder
+on one run and the trimmed muscle on the next. An allowance would be a guessed
+number standing between the scale and the record. The `usableGrams`/`totalGrams`
+split #1274 collapsed therefore has no customer; the comment at
+`solveFormula.ts`'s `usableGrams` says so at the declaration.
 
 All of it is arithmetic. Pure domain, no dependencies.
 
@@ -520,14 +525,14 @@ the entire lifecycle — create, plan, schedule, notify, observe, finish — in
 eighteen hours. A kraut takes three weeks; a coppa four months. A batch model
 cannot be debugged on a four-month feedback loop.
 
-| Phase  | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **04** | Cures. New kind, the observation log worked hard, a target a run is stamped with, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **A trim-loss allowance is this phase's to build** — #1274 deleted bread's, which fed no arithmetic; a 10–20% trim on a shoulder is a real requirement and belongs where it is actually stated. **This row used to promise a weight-loss COMPLETION CRITERION and REVISED PROJECTIONS, and issue #1407 cut both.** A run carries a target and every weighing says how far along it is; that figure decides nothing — no `finished` state, no gate, no verdict — and Salt makes no claim about _when_ a run will reach it, because a cure is done on feel and a projected date would be a confident number that is usually wrong. |
-| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Phase  | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **04** | Cures. New kind, the observation log worked hard, a target a run is stamped with, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **This row used to promise a TRIM-LOSS ALLOWANCE, and issue #1402 cut it** — the weight you type is the trimmed meat you actually hang, so there is exactly one figure and nothing is subtracted from it. **It also used to promise a weight-loss COMPLETION CRITERION and REVISED PROJECTIONS, and issue #1407 cut both.** A run carries a target and every weighing says how far along it is; that figure decides nothing — no `finished` state, no gate, no verdict — and Salt makes no claim about _when_ a run will reach it, because a cure is done on feel and a projected date would be a confident number that is usually wrong. |
+| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### What bread hands on
 
@@ -535,10 +540,15 @@ Carries over whole: the formula model and its two-tier basis; the batch
 collection, snapshot and state machine; the in-flight surface; reminders on the
 Tasks path; diff review and the two model tiers; canon, shopping, images, search.
 
-Still to build at 03–04: the basis-driven solve direction; stages carrying
-additions; projections that observations revise; reminders beyond the Tasks
-scheduling horizon; `authorFerment` and two kinds; vessel headspace and the
+Still to build at 03–04: stages carrying additions; reminders beyond the Tasks
+scheduling horizon; `authorFerment` and a ferment kind; vessel headspace and the
 cure-salt bounds.
+
+Off that list since: **the basis-driven solve direction** — shipped in #1402, where
+the formula screen gained "a weight of what goes in" and the bake sheet learned to
+ask a formula written that way what it weighs. **Projections that observations
+revise** — cut by #1407, not built: a run carries a target and every weighing says
+how far along it is, and Salt makes no claim about when it will get there.
 
 Optional stages and the four-condition run (started / done / skipped, with a reason)
 shipped with bread, in #1275 — they are not on that list.
@@ -548,9 +558,36 @@ shipped with bread, in #1275 — they are not on that list.
 Settle the first before promising anything; the rest before the phase that needs
 them.
 
-- **Cure salt is a safety boundary, not a number.** Nitrite percentages carry hard
-  bounds in `domain`, and the scaler refuses rather than extrapolates. Settle
-  before any curing UI exists.
+- ~~**Cure salt is a safety boundary, not a number.**~~ **SETTLED — keyed by
+  PRODUCT** (issue #1402). There is no single cure-salt percentage, and a phrasing
+  that implied one was the dangerous part of this question: two families of product
+  are in ordinary use and their doses differ by more than tenfold. The
+  **concentrated** ones (cure #1, cure #2, ~6.25% sodium nitrite) go in at ~0.25% of
+  the meat _alongside_ ordinary salt; the **dilute** European ones (nitrited curing
+  salt, Salvianda, well under 1%) _are_ the salt, at ~3%. One window wide enough for
+  both permits a twelvefold overdose of the other.
+
+  So the component records **which product** it is (`SaltProductSchema`, a named
+  class following `DensityClassSchema` — never a canon id, never free text), a
+  checked-in table in `packages/domain/src/formula/cureSalt.ts` holds each product's
+  own window, `deriveFormula` stamps that window onto the component on every derive,
+  and `solveFormula`'s existing refusal is what refuses. **No second check anywhere**
+  — not a validator on the save path, not the adapter, not a Cloud Function. Names
+  only ever **propose** a product; the bound is read from the product recorded on the
+  component. This is the one place Salt says no.
+
+  **Its limits, which are narrower than "Salt prevents an unsafe cure":** no product
+  named means no bound; celery-powder "natural" cures are **absent by design**
+  (their nitrite content varies by brand, so a fixed figure would be a guess wearing
+  a safety rail's clothes); nothing checks the rest of the salt; nothing checks
+  **suitability** (whether a nitrite-only product is fit for a ninety-day dry is a
+  different question, and is deliberately unasked); and scaling is never the danger,
+  because percentages scale linearly. A formula that saves is therefore **not** a
+  formula Salt has pronounced safe. The rail earns its place catching a mis-typed
+  percentage, a basis mapped to the wrong ingredient, and a scraped recipe that
+  arrived wrong. `cureSalt.ts`'s header states all of this at the declaration, and
+  `packages/domain/tests/formula/cureSalt.test.ts` pins each claim.
+
 - **How good are the two AI passes.** The gate on everything: hand three real
   bread recipes to the cheap model and check the wait stages come out clean, then
   the same three to a better model with a target time and read the schedules. If

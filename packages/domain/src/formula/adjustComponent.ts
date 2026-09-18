@@ -31,6 +31,23 @@ import { roundPercent } from './rounding.js';
 // throw. A factor that is not a usable number, or an id the formula does not hold,
 // returns the formula UNCHANGED rather than failing — an adjustment is an opinion
 // offered, and an opinion that cannot be applied is simply not applied.
+//
+// ─── A NAMED PRODUCT REFUSES THE STAMP TOO (issue #1402 review, blocking 1) ────
+//
+// `boundsOn` in `deriveFormula` is documented as "the ONE place a bound is
+// decided" — but this function was a second one in practice. It stamps
+// `minPercent`/`maxPercent` straight onto whatever component the caller names,
+// with no idea what that component IS. A cure-salt component's window comes from
+// `CURE_SALT_PRODUCTS`, keyed by `saltProduct`, and nothing here stopped a caller
+// — the bake sheet, on a MODEL-NAMED ingredient id — from overwriting that window
+// with an unrelated one (`LEAVENING_PERCENT_BOUNDS`, sized for yeast) and letting
+// a nitrite dose several times the safe ceiling solve, preview and freeze.
+//
+// So a component that already carries `saltProduct` is never touched here, full
+// stop: not scaled, not restamped, returned exactly as it arrived. Its bounds are
+// `boundsOn`'s to decide and only `boundsOn`'s — this must not become a second
+// site that could disagree with it. Naming such a component is therefore an
+// adjustment this seam treats exactly like an id the formula does not hold.
 
 /** The bounds to declare on the component being adjusted. Both ends optional. */
 export interface ComponentPercentBounds {
@@ -71,9 +88,12 @@ export function withComponentPercentScaled(
 ): Formula {
   const { ingredientId, factor } = adjustment;
   if (!Number.isFinite(factor) || factor <= 0) return formula;
-  if (!formula.components.some((component) => component.ingredientId === ingredientId)) {
-    return formula;
-  }
+  const target = formula.components.find((component) => component.ingredientId === ingredientId);
+  if (target === undefined) return formula;
+  // A cure-salt component's window is not this function's to touch — see the
+  // header above. Refusing here is what keeps `boundsOn` the one place a bound is
+  // decided, rather than one of two.
+  if (target.saltProduct !== undefined) return formula;
 
   return {
     ...formula,

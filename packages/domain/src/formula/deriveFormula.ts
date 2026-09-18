@@ -3,8 +3,10 @@ import type {
   Formula,
   FormulaComponent,
   ReferenceYield,
+  SaltProduct,
 } from '../schemas/formula.js';
 import type { FormulaFailure } from './failure.js';
+import { saltProductBounds } from './cureSalt.js';
 import { PERCENT_DECIMALS, roundPercent } from './rounding.js';
 
 // Turn a recipe's gram figures plus a basis selection into percentages — the one
@@ -23,6 +25,13 @@ export type FormulaComponentInput = {
   grams: number;
   inBasis: boolean;
   density?: DensityClass;
+  // WHICH SALT-BEARING PRODUCT THIS IS, carried through onto the derived component
+  // (issue #1402). The screen has to be able to hand this back on a re-save, which
+  // is what makes the choice survive a reload.
+  saltProduct?: SaltProduct;
+  // Bounds a caller wants declared on this component, when it has an opinion of its
+  // own. A NAMED PRODUCT OUTRANKS THEM: see `boundsOn` below for why there is a
+  // precedence rule here at all rather than a merge.
   minPercent?: number;
   maxPercent?: number;
 };
@@ -64,6 +73,41 @@ export type DeriveFormulaResult =
 // its neighbours' 33.3333), so that figure now depends on the others. `rounding.ts`
 // rejects exactly that coupling for GRAMS, and this is a deliberately different
 // call on a different quantity — see the amended comment there.
+
+/**
+ * The window to stamp on one component — the ONE place a bound is decided.
+ *
+ * A NAMED PRODUCT WINS OUTRIGHT, and that is the whole mechanism (issue #1402). The
+ * window is a fact about the product, so it is recomputed from `saltProduct` on
+ * every derive: a stored bound therefore cannot drift from the table, cannot be lost
+ * on a re-save the way `FormulaPage.componentsFrom` silently lost one before this,
+ * and cannot be widened except by naming a DIFFERENT PRODUCT — which changes what
+ * the ingredient is, and is exactly the sort of thing the person mapping a formula
+ * is looking straight at.
+ *
+ * Precedence rather than a merge, because a merge would let a caller's `maxPercent`
+ * widen a product's window one end at a time, which is the one thing that must not
+ * be possible. A caller's bounds are honoured only where no product is named —
+ * which is how `withComponentPercentScaled`'s leavening rail still works.
+ *
+ * NOTHING IS CHECKED HERE. This returns data; `solveFormula` is what refuses.
+ */
+function boundsOn(component: FormulaComponentInput): {
+  minPercent?: number;
+  maxPercent?: number;
+} {
+  if (component.saltProduct !== undefined) {
+    const { minPercent, maxPercent } = saltProductBounds(component.saltProduct);
+    return {
+      ...(minPercent === undefined ? {} : { minPercent }),
+      ...(maxPercent === undefined ? {} : { maxPercent }),
+    };
+  }
+  return {
+    ...(component.minPercent === undefined ? {} : { minPercent: component.minPercent }),
+    ...(component.maxPercent === undefined ? {} : { maxPercent: component.maxPercent }),
+  };
+}
 
 /** One component, measured against the basis before any reconciliation. */
 type Measured = {
@@ -127,8 +171,8 @@ function componentsAgainst(
       percent: reconciled.get(entry) ?? entry.percent,
       inBasis: component.inBasis,
       ...(component.density !== undefined ? { density: component.density } : {}),
-      ...(component.minPercent !== undefined ? { minPercent: component.minPercent } : {}),
-      ...(component.maxPercent !== undefined ? { maxPercent: component.maxPercent } : {}),
+      ...(component.saltProduct !== undefined ? { saltProduct: component.saltProduct } : {}),
+      ...boundsOn(component),
     };
   });
 }
@@ -142,6 +186,12 @@ function componentsAgainst(
  * reconciliation rules out: a derived formula can still be refused for a
  * `boundViolation`, since bounds come in from the caller and are never checked
  * against each other here.
+ *
+ * A NAMED CURING SALT GETS ITS PRODUCT'S WINDOW STAMPED ON THE WAY THROUGH (issue
+ * #1402, `boundsOn`), which is what makes a bound impossible to lose and impossible
+ * to hand-edit. Still nothing is CHECKED here — a derived formula whose cure salt is
+ * out of its window comes back `ok` and is refused by `solveFormula`, which is the
+ * one rail and has been since #782.
  *
  * Nor is a stored formula guaranteed normalised. A hand edit can unnormalise one,
  * and so can simply having been written before this reconciliation existed

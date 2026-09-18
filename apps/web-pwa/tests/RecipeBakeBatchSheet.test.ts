@@ -613,3 +613,137 @@ describe('RecipeBakeBatchSheet — a tray or dish', () => {
     expect(container.textContent).not.toMatch(/0\.45|g per ml|g\/ml/i);
   });
 });
+
+// ─── A run that starts from the weight of the meat (issue #1402) ───────────────
+//
+// Everything above asks what this run FILLS. A formula written the other way round
+// is asked the only question it can answer: what does it weigh. The sheet reads
+// which of the two it is off `formula.referenceYield.kind` — presence, not the
+// recipe's kind — so nothing here waits on `recipe.kind` being `cure`.
+describe('RecipeBakeBatchSheet — what does it weigh', () => {
+  // 2 400 g of trimmed shoulder as the 100%, 2.5% salt, 0.25% cure #1. The ids are
+  // the bread recipe's so the label join is the same one every case above uses;
+  // what differs is the DIRECTION the formula solves in, which is the whole point.
+  const CURE_FORMULA: Formula = {
+    recipeId: RECIPE_ID,
+    schemaVersion: 1,
+    components: [
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true },
+      { ingredientId: 'ing-water', percent: 2.5, inBasis: false },
+      { ingredientId: 'ing-salt', percent: 0.25, inBasis: false },
+    ],
+    referenceYield: { kind: 'basis', grams: 2400 },
+  } as Formula;
+
+  it('asks one question, pre-filled with the formula’s own weight', async () => {
+    renderSheet(CURE_FORMULA);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+
+    expect(screen.getByTestId('bake-batch-basis-grams')).toHaveValue('2400');
+    // NO CHOICE OF DIRECTION, because it is not a choice about tonight: answering
+    // "a loaf tin" here would solve the run in a direction the formula was not
+    // written in. So the four dough answers are not offered at all.
+    expect(screen.queryByTestId('bake-batch-tin')).toBeNull();
+    expect(screen.queryByTestId('bake-batch-pieces')).toBeNull();
+    expect(screen.queryByTestId('bake-batch-weight')).toBeNull();
+    expect(screen.queryByText('A loaf tin')).toBeNull();
+    // ONE BOX. No trim allowance and no second figure of any kind.
+    expect(screen.getAllByTestId('bake-batch-basis-grams')).toHaveLength(1);
+  });
+
+  it('restates the run at whatever the scale actually said, and counts nothing', async () => {
+    renderSheet(CURE_FORMULA);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
+    expect(previewGrams()).toEqual(['2400 g', '60 g', '6 g']);
+
+    await fireEvent.input(screen.getByTestId('bake-batch-basis-grams'), {
+      target: { value: '2430' },
+    });
+
+    // 2.5% of 2 430 is 60.75 g and 0.25% is 6.075 g, both through `roundGrams`.
+    await waitFor(() => expect(previewGrams()).toEqual(['2430 g', '61 g', '6.1 g']));
+    expect(screen.getByTestId('bake-batch-total-grams')).toHaveTextContent('2497 g');
+    // Weighing the meat says nothing about how many of anything you end up with, so
+    // the yield line is absent rather than inventing "1 ×".
+    expect(screen.queryByTestId('bake-batch-yield')).toBeNull();
+  });
+
+  it('freezes the run at the weight typed, and names no vessel', async () => {
+    renderSheet(CURE_FORMULA);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await fireEvent.input(screen.getByTestId('bake-batch-basis-grams'), {
+      target: { value: '2430' },
+    });
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const input = mockStartBatch.mock.calls[0]![0];
+    expect(input.atYield).toEqual({ kind: 'basis', grams: 2430 });
+    // Absent, not empty. A curing chamber is a PLACE (#1281), recorded per stage —
+    // calling it a vessel would put the same fact on the run twice.
+    expect('vessel' in input).toBe(false);
+  });
+
+  it('falls back to the formula’s own weight when the box is cleared', async () => {
+    // `atYield` omitted means "the recipe as written", which is what `startBatch`
+    // already does with an absent yield. A half-typed weight must not freeze a run
+    // at nothing.
+    renderSheet(CURE_FORMULA);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    await fireEvent.input(screen.getByTestId('bake-batch-basis-grams'), { target: { value: '' } });
+
+    await waitFor(() => expect(previewGrams()).toEqual(['2400 g', '60 g', '6 g']));
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    expect('atYield' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+});
+
+// ─── A cure salt outside its product's window (issue #1402, phase 2) ───────────
+//
+// `solveFormula` has refused a bound violation since #782, and until now this sheet
+// took the `default` branch for it — "This formula doesn't resolve into weights",
+// which says nothing about which window was missed. The wording is now the one
+// `lib/boundViolation.ts` holds, shared with the formula screen and with the
+// freeze's own refusal.
+describe('RecipeBakeBatchSheet — a refused window', () => {
+  // The coppa's cure salt at 1.2% of the basis, with cure #1 named: four times the
+  // top of its window. The bound is not on the document here — `deriveFormula`
+  // stamps it, and this fixture is what a stored formula looks like afterwards.
+  const OVERDOSED: Formula = {
+    recipeId: RECIPE_ID,
+    schemaVersion: 1,
+    components: [
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true },
+      { ingredientId: 'ing-salt', percent: 2.5, inBasis: false },
+      {
+        ingredientId: 'ing-water',
+        percent: 1.2,
+        inBasis: false,
+        saltProduct: 'cure1',
+        minPercent: 0.15,
+        maxPercent: 0.3,
+      },
+    ],
+    referenceYield: { kind: 'basis', grams: 1000 },
+  } as Formula;
+
+  it('refuses to start the run, naming the line, the figure and the window', async () => {
+    renderSheet(OVERDOSED);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-unsolvable')).toBeInTheDocument());
+
+    const said = (screen.getByTestId('bake-batch-unsolvable').textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    expect(said).toContain(
+      'That would put “350 g water” at 1.2% of the basis, outside the 0.15%–0.3% window it has to sit in.',
+    );
+    // The tail is this surface's own, and it is the one that was already here.
+    expect(said).toContain('Open the formula screen to sort it out.');
+
+    // And Start stays put. `canStart` consults the same solve, so there is nothing
+    // to tap past — the one place in Salt that says no.
+    expect(screen.getByTestId('bake-batch-confirm')).toBeDisabled();
+    expect(screen.queryByTestId('bake-batch-preview')).toBeNull();
+  });
+});

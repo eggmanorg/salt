@@ -50,10 +50,15 @@ export type FormulaSolution = {
   totalGrams: number;
   totalExactGrams: number;
   // What is actually portioned. EQUAL to the total, always, since #1274 deleted
-  // the handling allowance that was the only thing that ever separated them — the
-  // two names survive because they are two different questions, and a loss
-  // allowance built against a real requirement (#778 phase 04's trim loss) is
-  // where they would part company again.
+  // the handling allowance that was the only thing that ever separated them. The
+  // two names survive because they are two different questions.
+  //
+  // AND NO CUSTOMER FOR THE SPLIT IS COMING. This comment used to name #778 phase
+  // 04's trim loss as the requirement that would part them again; issue #1402
+  // settled that there is no trim allowance anywhere. You weigh the meat AFTER
+  // trimming and that figure is the start of the run — one box, one meaning — so a
+  // cure declares its basis and nothing is subtracted from it. Anyone reading this
+  // for permission to reintroduce the split needs a requirement of their own.
   usableGrams: number;
   usableExactGrams: number;
   components: SolvedComponent[];
