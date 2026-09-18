@@ -113,6 +113,8 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 /** #778's worked example, as `freezeBatch` would have written it. */
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -1597,5 +1599,53 @@ describe('BatchDetailPage — gated (issue #831)', () => {
 
     expect(screen.getByTestId('feature-guard-loading')).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── What this run was (issue #1404) ─────────────────────────────────────────
+describe('BatchDetailPage — cure type', () => {
+  it('says which kind of cure the run was, from the run’s own frozen field', async () => {
+    renderPage();
+    mockBatch._set(
+      makeBatch({
+        recipeTitle: 'Coppa',
+        recipeKind: 'cure',
+        cureCategory: 'fermented_dry_cured',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail-category')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-detail-category')).toHaveTextContent(
+      'Fermented & dry-cured (salami)',
+    );
+  });
+
+  it('still says it when the recipe has been renamed, re-mapped or deleted', async () => {
+    // The page holds no recipe and never fetches one, so a dangling `recipeId` —
+    // which is exactly what a deleted dish leaves — changes nothing about what the
+    // run says it was. That is the guarantee the freeze exists for, checked rather
+    // than asserted in prose.
+    renderPage();
+    mockBatch._set(
+      makeBatch({
+        recipeId: 'deleted-recipe',
+        recipeTitle: 'Coppa',
+        recipeKind: 'cure',
+        cureCategory: 'dry_cured_whole_muscle',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail-category')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-detail-category')).toHaveTextContent('Dry-cured whole muscle');
+  });
+
+  it('says nothing at all on a run with no category', async () => {
+    // A dash would be a second thing on a header that states facts. Every batch in
+    // production today lands here.
+    renderPage();
+    mockBatch._set(makeBatch());
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-detail-category')).toBeNull();
   });
 });

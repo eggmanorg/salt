@@ -67,6 +67,8 @@ function observation(
 
 function loaf(stages: BatchStageDoc[], over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'overnight-white-tin',

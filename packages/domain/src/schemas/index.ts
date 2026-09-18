@@ -373,6 +373,7 @@ export {
 } from './recipe.js';
 export type {
   CureCategoryDoc,
+  RecipeKindDoc,
   QuantityDoc,
   IngredientDoc,
   IngredientGroupDoc,

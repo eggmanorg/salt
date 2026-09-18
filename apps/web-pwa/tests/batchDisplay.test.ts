@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { roundGrams } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
 import {
+  categoriesPresent,
+  categoryChips,
+  categoryLabel,
   defaultObservationStageId,
   formatGrams,
   formatStatedDuration,
@@ -50,6 +53,8 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 
 function batch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -498,5 +503,60 @@ describe('groupLogByDay', () => {
 
   it('is nothing for nothing', () => {
     expect(groupLogByDay([])).toEqual([]);
+  });
+});
+
+// ─── What kind of cure a run was (issue #1404) ───────────────────────────────
+//
+// Three properties, and each is a claim about where the answer COMES FROM: the
+// run's own frozen fields, and the library's own words. Nothing here reads a
+// recipe, which is the point — a run whose dish was renamed, re-mapped or deleted
+// still says what it was.
+describe('categoryLabel', () => {
+  it('says which kind of cure, in the library’s words', () => {
+    expect(categoryLabel(batch({ recipeKind: 'cure', cureCategory: 'semi_dry' }))).toBe(
+      'Semi-dry / snack meats',
+    );
+  });
+
+  it('is null on a run with no category, so a card can simply say nothing', () => {
+    expect(categoryLabel(batch())).toBeNull();
+    expect(categoryLabel(batch({ recipeKind: 'cure', cureCategory: null }))).toBeNull();
+  });
+
+  it('is null on a kind whose copy declares no category vocabulary at all', () => {
+    // The property that keeps a kind literal out of this module: what is asked is
+    // whether the KIND'S COPY has a vocabulary, never which kind it is. A
+    // `cureCategory` somehow stored on a plain recipe reads as nothing rather than
+    // as a label the library has no word for.
+    expect(categoryLabel(batch({ cureCategory: 'semi_dry' }))).toBeNull();
+  });
+});
+
+describe('categoriesPresent / categoryChips', () => {
+  const coppa = batch({ recipeKind: 'cure', cureCategory: 'dry_cured_whole_muscle' });
+  const bacon = batch({ recipeKind: 'cure', cureCategory: 'cooked_whole_muscle' });
+
+  it('is empty when nothing on the list is a cure', () => {
+    // What keeps a filter row off a screen with nothing to filter — which is
+    // every household in production today.
+    expect(categoriesPresent([batch(), batch()])).toEqual([]);
+    expect(categoryChips([batch()])).toEqual([]);
+  });
+
+  it('lists each category once, in the stored enum’s order rather than first-seen', () => {
+    // Ordered by the enum so the chip row does not reshuffle itself as runs start
+    // and end — `bacon` arrives first here and still comes second.
+    expect(categoriesPresent([bacon, coppa, bacon, batch()])).toEqual([
+      'dry_cured_whole_muscle',
+      'cooked_whole_muscle',
+    ]);
+  });
+
+  it('carries the library’s own words onto each chip', () => {
+    expect(categoryChips([bacon, coppa])).toEqual([
+      { value: 'dry_cured_whole_muscle', label: 'Dry-cured whole muscle' },
+      { value: 'cooked_whole_muscle', label: 'Cured whole muscle (cooked)' },
+    ]);
   });
 });

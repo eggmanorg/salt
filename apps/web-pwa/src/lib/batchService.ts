@@ -423,6 +423,11 @@ export async function startBatch(
     ...(input.vessel === undefined ? {} : { vessel: input.vessel }),
     anchor: input.anchor,
     recipeTitle: input.recipe.title,
+    // What the dish WAS, frozen beside its title (issue #1404). Read off
+    // `input.recipe` exactly as the title above is — the freeze is pure and holds
+    // no recipe, so the join lives here.
+    recipeKind: input.recipe.kind,
+    cureCategory: input.recipe.cureCategory,
     labels,
     places,
     ambientCelsius: input.ambientCelsius ?? null,

@@ -184,6 +184,8 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 /** #1327's worked example, cut down: three steps, a stage on one of them. */
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: RECIPE_ID,

@@ -275,6 +275,12 @@ wrong lifetime, wrong sharing. It:
 - **freezes the resolved quantities and the resolved schedule at start**, because
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
+- **freezes what the dish WAS** — its title, its `recipeKind` and, for a cure, its
+  `cureCategory` (issue #1404). The title was always in the freeze; the other two
+  joined it because "show me all my dry-cured whole muscle" and "the last three
+  bresaola" have to stay answerable in a year, over runs whose recipes have since
+  been renamed, re-mapped or deleted. Both carry read defaults (`'recipe'`, `null`),
+  which are not merely parseable but true of every batch in production today;
 - carries an **observation log** — weight, pH, temperature, humidity, a photo, a note;
 - records **when it was stopped**, not merely that it was (`abandonedAt`, issue
   #1280). A run given up on at ten past eight on the Sunday is a different story

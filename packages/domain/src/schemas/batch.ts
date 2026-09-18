@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
+import { CureCategorySchema, RecipeKindSchema } from './recipe.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
 // at `batches/{batchId}`. Family-shared (no `ownerUid`), a random UUID id minted by
@@ -21,7 +22,8 @@ import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
 //   • the resolved quantities — ingredient id, LABEL, percent and grams;
 //   • the resolved totals from the solve;
 //   • the resolved schedule, stage by stage, with planned and actual times;
-//   • the recipe's title;
+//   • the recipe's title, ITS KIND, and — for a cure — which of the five kinds of
+//     cure it was (issue #1404);
 //   • the worded rationale for the schedule (phase 2 authors it; phase 1 writes
 //     null).
 //
@@ -216,6 +218,24 @@ export const BatchSchema = z.object({
   recipeId: z.string(),
   // The recipe's title, frozen. The log survives the dish being renamed or deleted.
   recipeTitle: z.string(),
+  // WHAT THIS RUN WAS, frozen (issue #1404) — the recipe's kind and, for a cure,
+  // which of the five kinds of cure.
+  //
+  // They join the freeze for exactly the reason `recipeTitle` above is in it, and
+  // the question is the one the whole feature is for: **"show me all my dry-cured
+  // whole muscle" and "the last three bresaola" have to be answerable in a year**,
+  // over runs whose recipes have been renamed, re-mapped or deleted since. Read
+  // through to the live recipe and the first tidy-up rewrites the answer; delete
+  // the dish and the run stops being able to say what it was at all.
+  //
+  // Read defaults, so every `batches/{batchId}` document written before these
+  // fields existed parses unchanged and there is no migration (CLAUDE.md,
+  // production data back-compat) — the same shape `skipped`, `place`,
+  // `abandonedAt` and `checkedIngredientIds` all have. The defaults here are not
+  // merely parseable but TRUE: every batch in production today is bread, and bread
+  // is a `recipe` with no cure category.
+  recipeKind: RecipeKindSchema.default('recipe'),
+  cureCategory: CureCategorySchema.nullable().default(null),
   // WHAT THIS RUN WAS BAKED IN, as the person starting it described it — "900 g
   // loaf tin", "30 × 40 cm tray" (issue #1274). A SNAPSHOT NOTE and nothing else:
   // nothing parses it, nothing computes from it, and it never round-trips back

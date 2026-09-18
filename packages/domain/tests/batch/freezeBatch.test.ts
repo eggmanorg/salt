@@ -90,6 +90,8 @@ function freezeTwelveRolls(
     atYield: TWELVE_ROLLS,
     anchor: overrides.anchor ?? { kind: 'endAt', at: '2026-08-15T07:30:00.000Z' },
     recipeTitle: 'Overnight white tin',
+    recipeKind: 'recipe',
+    cureCategory: null,
     labels: LABELS,
     now: NOW,
   });
@@ -135,6 +137,8 @@ describe('freezeBatch — the quantities', () => {
       atYield: TWELVE_ROLLS,
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: withoutOil,
       now: NOW,
     });
@@ -158,6 +162,42 @@ describe('freezeBatch — the quantities', () => {
     const batch = freezeTwelveRolls();
     expect(batch.recipeTitle).toBe('Overnight white tin');
     expect(batch.recipeId).toBe('overnight-white-tin');
+  });
+
+  // ─── What the run WAS (issue #1404) ─────────────────────────────────────────
+  // The kind and the category join the freeze for the same reason the title is in
+  // it, and for one more: "show me all my dry-cured whole muscle" and "the last
+  // three bresaola" have to stay answerable over runs whose recipes have since been
+  // tidied. A read-through would lose both the first time the library is edited.
+  it('freezes the kind and the category onto the run', () => {
+    const result = freezeBatch({
+      id: 'batch-cure-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Coppa',
+      recipeKind: 'cure',
+      cureCategory: 'dry_cured_whole_muscle',
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+
+    expect(result.batch.recipeKind).toBe('cure');
+    expect(result.batch.cureCategory).toBe('dry_cured_whole_muscle');
+  });
+
+  it('writes both EXPLICITLY, so a new run never inherits a schema read default', () => {
+    // The distinction `checkedIngredientIds` already draws: a `.default()` on
+    // `BatchSchema` is what a document written BEFORE the field existed reads back
+    // as, and must never be what a document written today is born with. Asserted by
+    // reading the keys off the frozen object rather than the parsed one — a parse
+    // would supply the very defaults this is checking are not being relied on.
+    const batch = freezeTwelveRolls();
+    expect(Object.keys(batch)).toContain('recipeKind');
+    expect(Object.keys(batch)).toContain('cureCategory');
+    // And a plain bread run says so rather than saying nothing.
+    expect(batch.recipeKind).toBe('recipe');
+    expect(batch.cureCategory).toBeNull();
   });
 });
 
@@ -262,6 +302,8 @@ describe('freezeBatch — the document', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       now: NOW,
     });
@@ -278,6 +320,8 @@ describe('freezeBatch — what it refuses', () => {
       formula: overnightWhiteTin(null),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Fresh sausage',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       now: NOW,
     });
@@ -299,6 +343,8 @@ describe('freezeBatch — what it refuses', () => {
       formula: unbalanced,
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       now: NOW,
     });
@@ -315,6 +361,8 @@ describe('freezeBatch — what it refuses', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'endAt', at: 'breakfast' },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       now: NOW,
     });
@@ -349,6 +397,8 @@ describe('freezeBatch — where each stage happened', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       places: [null, CURING, null, PROOFER],
       now: NOW,
@@ -374,6 +424,8 @@ describe('freezeBatch — where each stage happened', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       places: [null, PROOFER],
       now: NOW,
@@ -391,6 +443,8 @@ describe('freezeBatch — where each stage happened', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       now: NOW,
     });
@@ -406,6 +460,8 @@ describe('freezeBatch — where each stage happened', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       ambientCelsius: 26,
       now: NOW,
@@ -415,6 +471,8 @@ describe('freezeBatch — where each stage happened', () => {
       formula: overnightWhiteTin(),
       anchor: { kind: 'startAt', at: NOW },
       recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
       labels: LABELS,
       ambientCelsius: 14,
       now: NOW,

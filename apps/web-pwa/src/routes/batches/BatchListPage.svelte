@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { EmptyState, Icon, ListPage } from '@salt/ui-components';
+  import { Chip, ChipGroup, EmptyState, Icon, ListPage } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
+  import type { CureCategory } from '@salt/domain';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
   import { batches, initBatchesSync } from '../../lib/batchService.js';
   import {
+    categoryChips as chipsFor,
+    categoryLabel,
     formatGrams,
     formatWhen,
     nextAction,
@@ -37,7 +40,26 @@
   // different sentence and gets the empty snippet rather than the spinner.
   $effect(() => initBatchesSync());
 
-  const ordered = $derived(orderBatches($batches ?? []));
+  const all = $derived($batches ?? []);
+
+  // ─── Narrowing to one kind of cure (issue #1404) ─────────────────────────────
+  // "Show me all my dry-cured whole muscle", over finished and abandoned runs as
+  // well as in-flight ones — which is what the freeze on the run exists for, and
+  // why the filter lives on this list rather than on a view of running batches.
+  //
+  // `null` is ALL, and it is not a category: a household that cures and bakes wants
+  // one list by default, and an "everything" chip that is also a value is how a
+  // filter row ends up with two ways to mean the same thing.
+  let categoryFilter = $state<CureCategory | null>(null);
+  // Offered only when the runs actually carry one, so a bread-only household — which
+  // is every household today — sees no new chrome at all. Derived from ALL runs
+  // rather than from the shown ones, which is also what stops the row disappearing
+  // under the person who just used it.
+  const categoryChips = $derived(chipsFor(all));
+  const shown = $derived(
+    categoryFilter === null ? all : all.filter((b) => b.cureCategory === categoryFilter),
+  );
+  const ordered = $derived(orderBatches(shown));
 </script>
 
 <!-- Bread is still being built (issue #831): everyone outside the test group is
@@ -62,6 +84,31 @@
     {/snippet}
 
     {#snippet children()}
+      <!-- The same `Chip` single-select row the recipes list uses (ui-spec-v09
+           §8.23, adapted at §8.24.2): exactly one is pressed at all times, which is
+           a property of what the click does rather than of the chip. -->
+      {#if categoryChips.length > 0}
+        <ChipGroup class="mb-3" ariaLabel="Cure type" data-testid="batch-category-filters">
+          <Chip
+            pressed={categoryFilter === null}
+            onclick={() => (categoryFilter = null)}
+            data-testid="batch-category-filter"
+            data-category=""
+          >
+            All
+          </Chip>
+          {#each categoryChips as chip (chip.value)}
+            <Chip
+              pressed={categoryFilter === chip.value}
+              onclick={() => (categoryFilter = chip.value)}
+              data-testid="batch-category-filter"
+              data-category={chip.value}
+            >
+              {chip.label}
+            </Chip>
+          {/each}
+        </ChipGroup>
+      {/if}
       <ul class="flex flex-col gap-2" data-testid="batch-list">
         {#each ordered as batch (batch.id)}
           {@const next = nextAction(batch)}
@@ -120,6 +167,17 @@
                 {formatGrams(batch.totals.totalGrams)} in total{#if batch.vessel !== undefined}
                   · {batch.vessel}{/if}
               </span>
+
+              <!-- WHAT THIS RUN WAS, from the run's own frozen fields (issue
+                   #1404) — never read through to the recipe, which may since have
+                   been renamed, re-mapped or deleted. A run with no category says
+                   nothing rather than "—": every card on this screen says one
+                   thing, and a dash is a second thing that means nothing. -->
+              {#if categoryLabel(batch) !== null}
+                <span class="text-xs text-muted-foreground" data-testid="batch-card-category">
+                  {categoryLabel(batch)}
+                </span>
+              {/if}
             </button>
           </li>
         {/each}

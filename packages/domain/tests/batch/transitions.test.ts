@@ -45,6 +45,8 @@ function runningLoaf(): BatchDoc {
     schemaVersion: 1,
     recipeId: 'overnight-white-tin',
     recipeTitle: 'Overnight white tin',
+    recipeKind: 'recipe',
+    cureCategory: null,
     state: 'running',
     abandonedAt: null,
     checkedIngredientIds: [],

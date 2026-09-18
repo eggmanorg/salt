@@ -124,6 +124,8 @@ const loafStages = (): BatchStageDoc[] => LOAF.map(([id, kind, off]) => stage(id
 
 function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: 'recipe-1',
