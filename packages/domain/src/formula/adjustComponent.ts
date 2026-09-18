@@ -55,6 +55,33 @@ export interface ComponentPercentBounds {
   maxPercent?: number;
 }
 
+/**
+ * A bounds pair reduced to only its defined ends — never a stray `undefined` key
+ * left over from whatever a component already carried.
+ *
+ * ONE HOME FOR THE STAMPING RULE (#1402 review, should-fix 4). `deriveFormula`'s
+ * `boundsOn` and `cureSalt.ts`'s `withProductStamped` both express the same
+ * decision — "the window that wins replaces whatever the component arrived with,
+ * end for end" — and each used to build that patch independently. Two
+ * implementations of one rule stay agreeing only by accident, which is exactly
+ * what `plain`'s "product named, no window" case (both ends `undefined`) put to
+ * the test. This is the one place the patch is built; both callers hand it a
+ * bounds record and use what comes back.
+ *
+ * Lives here rather than in either caller because this module is a leaf —
+ * `deriveFormula.ts` and `cureSalt.ts` already both import from it, and it
+ * imports nothing from either, so there is no cycle to route around.
+ */
+export function boundsPatch(bounds: {
+  readonly minPercent?: number | undefined;
+  readonly maxPercent?: number | undefined;
+}): ComponentPercentBounds {
+  return {
+    ...(bounds.minPercent === undefined ? {} : { minPercent: bounds.minPercent }),
+    ...(bounds.maxPercent === undefined ? {} : { maxPercent: bounds.maxPercent }),
+  };
+}
+
 // The one concrete figure in this file's neighbourhood, and it is data rather than
 // logic. 0.2%–2.5% of flour is the whole domestic range for instant/dried yeast:
 // below it there is not enough to leaven anything on any timescale, above it the

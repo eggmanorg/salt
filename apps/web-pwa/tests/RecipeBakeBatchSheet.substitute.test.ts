@@ -288,6 +288,47 @@ describe('RecipeBakeBatchSheet — which jar are you using', () => {
     expect(screen.getByTestId('bake-batch-confirm')).toBeDisabled();
   });
 
+  it('names the real remedy — not "put the salt up" — when the ordinary salt is not named at all', async () => {
+    // THE STATE EVERY REAL FORMULA IS ACTUALLY IN (#1402 review, blocking 1): no
+    // stored formula carries `saltProduct: 'plain'` yet, because phase 2 never
+    // wrote one and `guessSaltProduct` never proposes it. 25 g of ordinary salt
+    // sits on this formula exactly as it does on `coppaFormula`'s row above —
+    // just without the `saltProduct: 'plain'` tag `coppaFormula` gives it, which
+    // is what "Not a curing salt" on the formula screen actually leaves behind.
+    const untaggedSalt = {
+      recipeId: RECIPE_ID,
+      schemaVersion: 1,
+      components: [
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true },
+        { ingredientId: 'ing-salt', percent: 2.5, inBasis: false },
+        {
+          ingredientId: 'ing-cure',
+          percent: 0.25,
+          inBasis: false,
+          saltProduct: 'cure1',
+          minPercent: 0.15,
+          maxPercent: 0.3,
+        },
+      ],
+      referenceYield: { kind: 'basis', grams: 1000 },
+    } as Formula;
+    renderSheet(untaggedSalt);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
+    await pick('nitritedCuringSalt');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('bake-batch-substitute-refused')).toBeInTheDocument(),
+    );
+    const said = screen.getByTestId('bake-batch-substitute-refused').textContent ?? '';
+    // THE REMEDY THAT ACTUALLY CLEARS IT. Before the fix this fired `saltTooLow`
+    // with a false "the salt in this recipe only comes to 0.25%" (the screen shows
+    // 2.5%) and an unreachable "put the salt up" — raising an unnamed row's weight
+    // never counts toward the swap's own total.
+    expect(said).toContain('Name the ordinary salt on the formula screen');
+    expect(said).not.toContain('put the salt up');
+    expect(screen.getByTestId('bake-batch-confirm')).toBeDisabled();
+  });
+
   it('says so when the formula stops offering the swap under an open sheet', async () => {
     // Not reachable by tapping — the two buttons are the formula's own product and
     // its pair member — but reachable when the FORMULA changes while the sheet is

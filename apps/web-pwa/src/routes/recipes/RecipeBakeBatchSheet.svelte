@@ -441,9 +441,20 @@
     const to = CURE_SALT_PRODUCTS[substituteTo].label;
     const reason: CureSaltSubstitutionFailure = attempt.reason;
     if (reason.kind === 'saltTooLow') {
+      // A NAMED plain-salt row is already counted into `saltBearingPercent` here
+      // and it is still not enough, so "put the salt up" is a remedy this refusal
+      // can actually promise (#1402 review, blocking 1) — unlike `noPlainSalt`
+      // below, where nothing named `plain` is on the formula for that to mean.
       return `${to} would have to be ${reason.needsPercent}% of the meat to carry the same nitrite, and the salt in this recipe only comes to ${reason.saltBearingPercent}%. Nothing is fudged to make it fit — put the salt up on the formula screen, or stay with what the recipe says.`;
     }
     if (reason.kind === 'noPlainSalt') {
+      // NOTHING NAMED `plain` IS ON THIS FORMULA, so neither figure above is one
+      // "put the salt up" could ever clear — an unnamed row's weight never reaches
+      // `saltBearingPercent`. The remedy is the same in both directions: name the
+      // ordinary salt. `residualPercent`'s sign picks which sentence is true.
+      if (reason.residualPercent < 0) {
+        return `${to} would have to be ${reason.needsPercent}% of the meat to carry the same nitrite, and nothing on this formula is named as the ordinary salt for that to draw on. Name the ordinary salt on the formula screen, or stay with what the recipe says.`;
+      }
       return `${to} needs less weight than the recipe's cure salt, and there is no plain salt on this formula to take the ${reason.residualPercent}% that frees up. Name the ordinary salt on the formula screen, or stay with what the recipe says.`;
     }
     // `notAvailable`. Not reachable by tapping — the two options below are the

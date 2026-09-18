@@ -1,5 +1,5 @@
 import type { Formula, FormulaComponent, SaltProduct } from '../schemas/formula.js';
-import type { ComponentPercentBounds } from './adjustComponent.js';
+import { boundsPatch, type ComponentPercentBounds } from './adjustComponent.js';
 import { roundPercent } from './rounding.js';
 
 // The curing salts, and the window each one has to sit in (issue #1402, phase 04 of
@@ -356,16 +356,36 @@ export type CureSaltSubstitutionFailure =
   // offers the pair member of a single named product, so this is the guard behind
   // that offer rather than a state a person can tap their way into.
   | { kind: 'notAvailable' }
-  // The recipe's salt cannot carry the dose in the substitute's dilute form. REFUSED
-  // WITH BOTH FIGURES AND NEVER CLAMPED: clamping the substitute under-cures and
-  // clamping the residual over-salts, so both ways of hiding this are harmful. It is
-  // the same posture the bounds rail takes — refuse, and say what was missed.
+  // A NAMED plain-salt component exists and its weight, together with the cure's
+  // own, still cannot carry the dose in the substitute's dilute form. REFUSED WITH
+  // BOTH FIGURES AND NEVER CLAMPED: clamping the substitute under-cures and
+  // clamping the residual over-salts, so both ways of hiding this are harmful. The
+  // remedy this names — raising the NAMED plain-salt row — is reachable exactly
+  // because that row already carries some weight; see `noPlainSalt` for the state
+  // where nothing named `plain` does (#1402 review, blocking 1).
   | { kind: 'saltTooLow'; needsPercent: number; saltBearingPercent: number }
-  // The substitute needs LESS mass than the salt it replaces and the formula has no
-  // plain-salt component to put the difference into. Refused rather than dropped: a
-  // dropped residual is a quietly less salty cure, and there is no ingredient here to
-  // invent a row for.
-  | { kind: 'noPlainSalt'; residualPercent: number };
+  // NOTHING NAMED `plain` CARRIES ANY WEIGHT — whether because no component names
+  // it at all (the ordinary state every formula is in today, since phase 2 stamps
+  // no formula with `plain` and `guessSaltProduct` never proposes it) or because a
+  // named plain-salt row sits at 0 g (#1402 review, should-fix 2). Either way the
+  // swap has no row to move the difference into or out of, in EITHER direction.
+  // `residualPercent` carries the sign:
+  // positive means the substitute needs LESS mass and the surplus has nowhere to
+  // go (dropping it would be a quietly less salty cure); negative means the
+  // substitute needs MORE than the named cure alone provides, and the shortfall is
+  // salt this formula may well already have — just not under a name the swap can
+  // read. `needsPercent`/`saltBearingPercent` ride along for the same reason
+  // `saltTooLow` carries them: so the screen can print a real figure rather than a
+  // sentence. Either way the remedy is the same and it is the one this states:
+  // name the ordinary salt on the formula screen. "Put the salt up" is NOT this
+  // failure's remedy — an unnamed row's weight never reaches `saltBearingPercent`,
+  // so raising it changes nothing here.
+  | {
+      kind: 'noPlainSalt';
+      residualPercent: number;
+      needsPercent: number;
+      saltBearingPercent: number;
+    };
 
 export type CureSaltSubstitutionResult =
   { ok: true; formula: Formula } | { ok: false; reason: CureSaltSubstitutionFailure };
@@ -375,19 +395,21 @@ export type CureSaltSubstitutionResult =
  *
  * REBUILT FROM THE TABLE, so a bound cannot survive the swap: the component is
  * copied, any window it arrived with is dropped, and the named product's own is put
- * back. `boundsOn` in `deriveFormula` decides the PRECEDENCE between a product's
- * window and a caller's — there is no precedence question here, because this names a
- * product outright — and both read the one table above. `cureSalt.test.ts` asserts
- * that no component of a substituted formula disagrees with it.
+ * back — through `boundsPatch` (`adjustComponent.ts`), the ONE place that patch is
+ * built. `boundsOn` in `deriveFormula` decides the PRECEDENCE between a product's
+ * window and a caller's — there is no precedence question here, because this names
+ * a product outright — but both it and this function apply the winning window
+ * through the same `boundsPatch`, so the two cannot independently drift the way two
+ * hand-written copies could (#1402 review, should-fix 4). `cureSalt.test.ts` asserts
+ * that no component NAMING A PRODUCT disagrees with the table — not every
+ * component, since a component naming none may legitimately carry a caller's own
+ * bounds (`boundsOn`'s precedence rule), and this function leaves that one alone.
  */
 function withProductStamped(component: FormulaComponent, product: SaltProduct): FormulaComponent {
-  const { minPercent, maxPercent } = saltProductBounds(product);
   const next: FormulaComponent = { ...component, saltProduct: product };
   delete next.minPercent;
   delete next.maxPercent;
-  if (minPercent !== undefined) next.minPercent = minPercent;
-  if (maxPercent !== undefined) next.maxPercent = maxPercent;
-  return next;
+  return { ...next, ...boundsPatch(saltProductBounds(product)) };
 }
 
 /**
@@ -451,16 +473,43 @@ export function withCureSaltSubstituted(
   const saltBearingPercent = roundPercent(source.percent + plainPercent);
   const residualPercent = roundPercent(saltBearingPercent - substitutePercent);
 
+  // NO COMPONENT NAMED `plain` HAS ANY WEIGHT TO OFFER — checked on `plainPercent`
+  // rather than `plain.length` (#1402 review, should-fix 2: a plain row present at
+  // 0 g must refuse exactly as an absent one does, not silently drop the residual)
+  // — and checked FIRST, ahead of `saltTooLow` below (#1402 review, blocking 1).
+  // `saltBearingPercent` above only ever counts a NAMED plain-salt row, so on the
+  // formula every real recipe is in today — no row named `plain`, because phase 2
+  // stamps none and the recogniser never proposes it — a deficit here is not
+  // evidence the recipe lacks salt, only that this swap cannot see any. Telling
+  // that person to "put the salt up" would send them chasing a number that can
+  // never move, because an unnamed row's weight never reaches `saltBearingPercent`.
+  // The honest and actionable fact in both directions (surplus or deficit) is the
+  // same one: nothing here is named as the ordinary salt.
+  if (residualPercent !== 0 && plainPercent === 0) {
+    return {
+      ok: false,
+      reason: {
+        kind: 'noPlainSalt',
+        residualPercent,
+        needsPercent: substitutePercent,
+        saltBearingPercent,
+      },
+    };
+  }
+  // Reached only once a NAMED plain-salt row's weight has already been counted
+  // into `saltBearingPercent` and it is still not enough — so raising that row on
+  // the formula screen is a remedy this refusal can actually promise.
   if (residualPercent < 0) {
     return {
       ok: false,
       reason: { kind: 'saltTooLow', needsPercent: substitutePercent, saltBearingPercent },
     };
   }
-  if (residualPercent > 0 && plain.length === 0) {
-    return { ok: false, reason: { kind: 'noPlainSalt', residualPercent } };
-  }
 
+  // `plainPercent` is provably nonzero here: the guard above has already returned
+  // for `residualPercent !== 0 && plainPercent === 0`, and `residualPercent === 0`
+  // makes `plainFactor` irrelevant since nothing is being redistributed. Kept
+  // rather than asserted, so a future change to the guard above fails safe.
   const plainFactor = plainPercent === 0 ? 0 : residualPercent / plainPercent;
   return {
     ok: true,
