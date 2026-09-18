@@ -89,9 +89,12 @@ export const FormulaComponentSchema = z.object({
   // into the components, so an id that no longer resolves is an ordinary state. THE
   // LIMIT, STATED (CLAUDE.md rule 12): such an ingredient is still in the formula,
   // still scaled and still on the shopping list — it reads as at the start. That
-  // fallback lives in exactly one place, `stageAdditions` in
+  // GROUPING fallback lives in exactly one place, `stageAdditions` in
   // `process/stageAdditions.ts`, and `tests/process/stageAdditions.test.ts` is what
-  // goes red if it ever becomes "the ingredient vanishes".
+  // goes red if it ever becomes "the ingredient vanishes" — but `stageNameOf`
+  // (`FormulaPage.svelte`), `stageLabelById` (`batchDisplay.ts`) and `restructured`
+  // (`batchService.ts`) each answer the same question again on their own, and
+  // `FormulaPageStages.test.ts` is what holds the picker's copy in agreement.
   //
   // A READ DEFAULT, not `.optional()`: live `formulas/{recipeId}` documents were
   // written without the key and must keep parsing (CLAUDE.md, production data
