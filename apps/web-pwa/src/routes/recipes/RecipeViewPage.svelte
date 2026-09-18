@@ -680,6 +680,44 @@
   // The unmatched indicator (✗) is the trigger: tapping it parses + canon-matches
   // that single ingredient and persists the recipe. Re-derives from the current
   // store copy and discards the result if the row changed mid-flight.
+  //
+  // THIS PAGE IS THE WRITER, AND THE LOSS WINDOW IS ACCEPTED (issue #1435, epic
+  // #1417). Both AI calls happen while the browser waits, so a locked phone, an
+  // app switch or a closed tab between the tap and `persistRecipe` below loses the
+  // result outright — and there is no Save here to blame it on: the write is
+  // unconditional on success. That is #1416's side of the line, so the reason this
+  // stays in the browser is spelled out at the callable
+  // (`cloud-functions/src/index.ts`) rather than assumed: neither callable's wire
+  // contract carries recipe identity, so neither can write the row, and a new
+  // callable that could would land a read-modify-write on `recipes/{id}` that a
+  // full-document `setDoc` from this very page can silently drop.
+  //
+  // What makes it acceptable is local, specific, and true from only ONE of the
+  // two entry points that share this function. From the ✗ below, the marker
+  // that REPORTS the loss is the control that RE-RUNS it. From the sheet's
+  // "Match again" (`rematchFromSheet` above) it is not: that control exists
+  // precisely for the line with no ✗ to show (the comment at :662-669), so a
+  // suspend reached from there drops the match with no marker and no toast —
+  // the loss is silent on that entry point.
+  //
+  // Nor is the recipe row the only thing a suspend can leave behind. The row
+  // itself is never half-written — `persistRecipe` below is a whole-document
+  // `setDoc`, so before it runs the document is untouched, and there is no
+  // partial write to clean up. But the canon half of this chain already
+  // writes: `canonicaliseRecipeIngredientsFlow` can mint a `productForms`
+  // document (`needs_approval: true`) and create or overwrite a `canonItems`
+  // document, server-side, before this function's result ever reaches
+  // `persistRecipe` — a suspend after that write leaves a live, unreferenced
+  // document in the family-shared canon. Re-running the match (from the ✗)
+  // does not undo that orphan; it just tries again. The round trip is also
+  // not "one `lite`-tier parse plus a batch-of-one canon match" — the canon
+  // half lists the whole canon collection twice per invocation and can run
+  // product-form arbitration, a further AI call. What actually stays safe on
+  // every path is narrower than the whole round trip: the recipe row, because
+  // the write below is whole-document and unconditional on success. Do not
+  // "fix" it
+  // with a keep-alive or a `beforeunload` stash — CLAUDE.md hard rule 3 bars the
+  // storage, and neither survives an OS suspending the process anyway.
   let matchingIds = $state<Record<string, boolean>>({});
 
   async function handleRematch(group: IngredientGroup, ing: Ingredient): Promise<boolean> {

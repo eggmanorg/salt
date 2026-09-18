@@ -917,6 +917,37 @@ export async function canonicaliseIngredients(
 // Parse and canon-match a single ingredient line. Chains callParseRecipeIngredients
 // → callCanonicaliseRecipeIngredients (batch-of-one) and folds the result into the
 // ingredient. Operates on the in-memory draft; the caller must persist the result.
+//
+// THE CALLER PERSISTS IT, AND THAT IS THE DECISION (issue #1435, epic #1417), not
+// an unfixed #1416. What is persisted is the MATCH — `parsed`, `canonId` and
+// `matchState` written together after BOTH callables return — never the parse on
+// its own, which would store a parsed-but-unmatched row and re-arm the ✗. So the
+// write belongs to the pair, and neither callable can carry it: both wire contracts
+// are identity-free (`{ rawText }` here, `{ items: [{ rawName, rawText }] }` next
+// door), so neither can name the document it would write into.
+//
+// A server-side version is therefore one NEW `{ recipeId, ingredientId }` callable
+// replacing both calls below, not a write bolted onto either — and what it buys is
+// capped: `recipes/{id}` is rewritten WHOLE by `persistRecipe`/`recipeWrites`
+// above, so a server read-modify-write can be dropped by the next in-place save
+// from a client holding an older copy (document-level LWW), and it cannot see the
+// caller's mid-flight `rawText` guard. Against that: the parse half below is pure
+// (pinned in `parseRecipeIngredients.test.ts`), but the canon half is not —
+// `canonicaliseRecipeIngredientsFlow` can mint a `productForms` document
+// (`needs_approval: true`) and create or overwrite a `canonItems` document,
+// server-side, before either callable's result reaches this function's caller,
+// so a suspend mid-chain can leave those live and unreferenced. What a suspend
+// reliably protects is narrower than the whole round trip: only the recipe-row
+// write this function's caller makes, because that write is whole-document and
+// never happens at all until both callables return — the canon writes, if they
+// happened, already landed. And the retry depends on which caller reached this
+// function: the ✗ (`RecipeViewPage.svelte`) is the marker that re-runs it, but
+// the sheet's "Match again" is reachable on a line with no ✗ to prompt the
+// retry (`RecipeViewPage.svelte:662-669`), so there the loss is silent.
+//
+// BOUNDARY: this holds while both wire contracts stay identity-free. The per-row
+// match callable above reopens it — one decision shared with
+// `canonicaliseRecipeIngredients`, recorded in docs/recipe-module.md.
 export async function matchIngredient(
   ing: Ingredient,
 ): Promise<ReadResult<Ingredient, DomainError>> {
