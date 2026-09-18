@@ -18,17 +18,27 @@
   } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
   import {
+    CURE_SALT_PRODUCTS,
     LEAVENING_PERCENT_BOUNDS,
     diffProcess,
     flattenIngredients,
+    isCuringSalt,
+    pairOf,
     placeReachesTemperature,
     solveFormula,
     stageTemperatureText,
     withComponentPercentScaled,
+    withCureSaltSubstituted,
+    type CureSaltSubstitutionFailure,
     type Recipe,
     type ScheduleAnchor,
   } from '@salt/domain';
-  import type { Formula, ProposeScheduleOutput, StageEnvironment } from '@salt/domain/schemas';
+  import type {
+    Formula,
+    ProposeScheduleOutput,
+    SaltProduct,
+    StageEnvironment,
+  } from '@salt/domain/schemas';
   import { batches, initBatchesSync, proposeSchedule, startBatch } from '../../lib/batchService.js';
   import { equipment } from '../../lib/equipmentService.js';
   import { reviewRows, type ProposalStageRow } from './scheduleProposal.js';
@@ -313,6 +323,9 @@
     answerMode = seeded.mode;
     answer = seeded.fields;
     answered = false;
+    // Back to the product the recipe names. A sheet reopened next month must not
+    // still be swapping to last month's jar.
+    substituteTo = null;
     ambientText = '';
     ambientTouched = false;
   }
@@ -373,6 +386,79 @@
   // chamber is a place and is recorded per stage (#1281).
   const vessel = $derived(answered ? vesselFrom(answerMode, answer) : undefined);
 
+  // ─── The jar you actually have (issue #1402, phase 3) ─────────────────────────
+  //
+  // A recipe written for cure #1 plus 25 g of salt is no use if what is in the
+  // cupboard is the European nitrited salt. So this offers the OTHER MEMBER OF THE
+  // PAIR — and only that one — and the arithmetic is entirely the domain's:
+  // `withCureSaltSubstituted` holds the nitrite dose constant, converts to the mass
+  // of the substitute that delivers it, and lets the plain salt absorb the rest.
+  //
+  // WHY ONLY THE PAIR MEMBER, and it is not tidiness: crossing the pairs swaps a
+  // nitrate-bearing product for a nitrite-only one, which changes what the cure is
+  // FIT FOR rather than merely its concentration. Salt asks no suitability question
+  // anywhere, and a picker offering all four would answer one by accident.
+  //
+  // A REFUSED SUBSTITUTION IS SURFACED, where a refused leavening opinion below is
+  // silently dropped. The difference is whose idea it was: a leavening factor is an
+  // opinion the model offered, and one that cannot be honoured is simply not
+  // applied; this is the person's own explicit choice, so saying nothing would leave
+  // them looking at the numbers they did not ask for.
+
+  /** Which curing salt this formula names, if it names exactly one. */
+  const namedCuringSalt = $derived.by((): SaltProduct | null => {
+    const named = formula.components.filter(
+      (component) => component.saltProduct !== undefined && isCuringSalt(component.saltProduct),
+    );
+    const only = named.length === 1 ? named[0] : undefined;
+    return only?.saltProduct ?? null;
+  });
+
+  /** The one product that may be swapped in, or null when there is nothing to offer. */
+  const substitutable = $derived(namedCuringSalt === null ? null : pairOf(namedCuringSalt));
+
+  // Null means "what the recipe says", which is the state every sheet opens in.
+  let substituteTo = $state<SaltProduct | null>(null);
+
+  const substitution = $derived.by(() =>
+    substituteTo === null ? null : withCureSaltSubstituted(formula, { to: substituteTo }),
+  );
+  /**
+   * A refused substitution, in words, or null when there is nothing to refuse.
+   *
+   * THE COPY IS HERE AND THE ARITHMETIC IS IN `domain`. `withCureSaltSubstituted`
+   * returns numbers — what the substitute needs, what the salt comes to — and this
+   * is the only surface that words them, so there is one wording by construction. If
+   * a second surface ever needs it, it moves to `lib/`, which is the road
+   * `describeBoundViolation` took when its third surface appeared.
+   *
+   * It says nothing about whether the substitute SUITS this cure. That is a
+   * different question and Salt does not ask it.
+   */
+  const substitutionRefusal = $derived.by((): string | null => {
+    const attempt = substitution;
+    if (substituteTo === null || attempt === null || attempt.ok) return null;
+    const to = CURE_SALT_PRODUCTS[substituteTo].label;
+    const reason: CureSaltSubstitutionFailure = attempt.reason;
+    if (reason.kind === 'saltTooLow') {
+      return `${to} would have to be ${reason.needsPercent}% of the meat to carry the same nitrite, and the salt in this recipe only comes to ${reason.saltBearingPercent}%. Nothing is fudged to make it fit — put the salt up on the formula screen, or stay with what the recipe says.`;
+    }
+    if (reason.kind === 'noPlainSalt') {
+      return `${to} needs less weight than the recipe's cure salt, and there is no plain salt on this formula to take the ${reason.residualPercent}% that frees up. Name the ordinary salt on the formula screen, or stay with what the recipe says.`;
+    }
+    // `notAvailable`. Not reachable by tapping — the two options below are the
+    // formula's own product and its pair member — but reachable when the FORMULA
+    // changes under an open sheet, and then saying so beats previewing the recipe's
+    // untouched numbers as though they were the swap.
+    return `${to} cannot be swapped in for this formula.`;
+  });
+  // The formula every number below is worked out from — substituted, or the recipe's
+  // own. A refused substitution leaves this as the recipe's while Start is disabled,
+  // which is why the preview is replaced by the refusal rather than left on screen.
+  const chosenFormula = $derived(
+    substitution !== null && substitution.ok ? substitution.formula : formula,
+  );
+
   // ─── The leavening opinion, priced by the domain ──────────────────────────────
   //
   // The proposal says "longer and colder, so I'd take the yeast down to roughly
@@ -389,14 +475,18 @@
   // never displayed, and there is no second check anywhere that could disagree with
   // the first.
 
+  // Off `chosenFormula`, so the two compose in one direction: substitute first, then
+  // adjust. They cannot collide — `withComponentPercentScaled` refuses outright to
+  // touch a component that names a salt product, which is what keeps a leavening
+  // window off a cure salt's row (see `adjustComponent.ts`'s header).
   const adjustedFormula = $derived.by(() => {
     const adjustment = activeProposal?.adjustment ?? null;
     if (adjustment === null) return null;
-    return withComponentPercentScaled(formula, adjustment, LEAVENING_PERCENT_BOUNDS);
+    return withComponentPercentScaled(chosenFormula, adjustment, LEAVENING_PERCENT_BOUNDS);
   });
 
   const solvedYield = $derived(atYield ?? formula.referenceYield);
-  const baseSolved = $derived(solveFormula(formula, solvedYield));
+  const baseSolved = $derived(solveFormula(chosenFormula, solvedYield));
   const adjustedSolved = $derived(
     adjustedFormula === null ? null : solveFormula(adjustedFormula, solvedYield),
   );
@@ -407,7 +497,7 @@
   // opinion that cannot be honoured is dropped, never fatal, exactly as
   // `withComponentPercentScaled` drops one it cannot apply.
   const effectiveFormula = $derived(
-    adjustmentApplies && adjustedFormula !== null ? adjustedFormula : formula,
+    adjustmentApplies && adjustedFormula !== null ? adjustedFormula : chosenFormula,
   );
   const solved = $derived(
     adjustmentApplies && adjustedSolved !== null && adjustedSolved.ok ? adjustedSolved : baseSolved,
@@ -488,7 +578,9 @@
     proposeError = null;
   }
 
-  const canPropose = $derived(!proposing && !busy && solved.ok && whenIso !== null);
+  const canPropose = $derived(
+    !proposing && !busy && solved.ok && whenIso !== null && substitutionRefusal === null,
+  );
 
   async function handlePropose(): Promise<void> {
     if (!canPropose) return;
@@ -528,6 +620,9 @@
       !proposing &&
       solved.ok &&
       whenIso !== null &&
+      // A refused substitution is the one gate the person asked for themselves: it
+      // stays disabled until the choice is changed back (issue #1402, phase 3).
+      substitutionRefusal === null &&
       (mode === 'startAt' || activeProposal !== null),
   );
 
@@ -543,6 +638,12 @@
       formula: effectiveFormula,
       ...(atYield === null ? {} : { atYield }),
       ...(vessel === undefined ? {} : { vessel }),
+      // WHAT ACTUALLY WENT ON THE MEAT. `effectiveFormula` already carries the
+      // substituted percentages; this is the note beside them, and the one thing
+      // those percentages cannot say — which product was replaced.
+      ...(substituteTo === null || namedCuringSalt === null
+        ? {}
+        : { cureSaltSubstitution: { from: namedCuringSalt, to: substituteTo } }),
       anchor,
       ...(accepted === null
         ? {}
@@ -833,8 +934,57 @@
         {/if}
       </div>
 
+      <!-- ─── Which jar are you using? ────────────────────────────────────────── -->
+      <!-- OFFERED ONLY WHEN THE FORMULA NAMES A CURING SALT, and then only its
+           pair member: nitrite-only swaps with nitrite-only, nitrate-bearing with
+           nitrate-bearing. Crossing changes what the cure is fit for, which is a
+           suitability question Salt does not ask (issue #1402). -->
+      {#if namedCuringSalt !== null && substitutable !== null}
+        <div class="flex flex-col gap-2" data-testid="bake-batch-substitute">
+          <p class="text-sm font-medium">Which curing salt are you using?</p>
+          <!-- TWO BUTTONS RATHER THAN A PICKER, because there are exactly two
+               answers and never more: what the recipe says, and the other member of
+               its pair. It also means the choice never becomes a string and back —
+               the tin chips above make the same trade. -->
+          <div class="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={substituteTo === null ? 'solid' : 'outline'}
+              onclick={() => (substituteTo = null)}
+              data-testid="bake-batch-substitute-option"
+              data-salt-product={namedCuringSalt}
+              data-chosen={substituteTo === null}
+            >
+              {CURE_SALT_PRODUCTS[namedCuringSalt].label}
+            </Button>
+            <Button
+              size="sm"
+              variant={substituteTo === null ? 'outline' : 'solid'}
+              onclick={() => (substituteTo = substitutable)}
+              data-testid="bake-batch-substitute-option"
+              data-salt-product={substitutable}
+              data-chosen={substituteTo !== null}
+            >
+              {CURE_SALT_PRODUCTS[substitutable].label}
+            </Button>
+          </div>
+          <p class="text-xs text-muted-foreground" data-testid="bake-batch-substitute-note">
+            What is actually in the cupboard. The weights below change to put the same nitrite on
+            the meat, and the plain salt takes up the difference. The run records which one went on.
+          </p>
+        </div>
+      {/if}
+
       <!-- ─── What that weighs out to ─────────────────────────────────────────── -->
-      {#if solved.ok}
+      {#if substitutionRefusal !== null}
+        <!-- IN PLACE OF THE PREVIEW, not beside it. The numbers below would be the
+             recipe's own, which is not what was asked for — showing them under a
+             refusal would read as "here is your swap". Start is disabled until the
+             choice changes back. -->
+        <p class="text-sm text-destructive" data-testid="bake-batch-substitute-refused">
+          {substitutionRefusal}
+        </p>
+      {:else if solved.ok}
         <ul class="flex flex-col gap-1" data-testid="bake-batch-preview">
           {#each solved.solution.components as component (component.ingredientId)}
             <li

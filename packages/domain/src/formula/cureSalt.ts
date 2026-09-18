@@ -1,5 +1,6 @@
-import type { SaltProduct } from '../schemas/formula.js';
+import type { Formula, FormulaComponent, SaltProduct } from '../schemas/formula.js';
 import type { ComponentPercentBounds } from './adjustComponent.js';
+import { roundPercent } from './rounding.js';
 
 // The curing salts, and the window each one has to sit in (issue #1402, phase 04 of
 // epic #778).
@@ -55,6 +56,28 @@ import type { ComponentPercentBounds } from './adjustComponent.js';
 // violation since #782 (`boundViolationsIn` → `{ kind: 'boundViolation' }`). A
 // safety check with two implementations has two behaviours, so there is one — see
 // `adjustComponent.ts`'s header, which argues the same case for leavening.
+//
+// `withCureSaltSubstituted` at the foot of this file does arithmetic and RESTAMPS
+// the window of the product it named, from the table above. It checks no dose: an
+// out-of-window result is `solveFormula`'s to refuse, exactly as a hand-typed
+// percentage is. What it refuses are the things that are not a DOSE question at all
+// — a pair it may not cross, and a salt total that cannot be rebalanced.
+//
+// ─── AND WHAT A SUBSTITUTION DOES NOT DO ──────────────────────────────────────
+//
+//   • IT HOLDS THE NITRITE DOSE CONSTANT AND THE NITRATE DIVERGES. Nitrite is the
+//     acute safety number, so it is the one that must not move — and the two cannot
+//     both be matched: cure #2 is ~6.25% nitrite / ~4% nitrate and Salvianda is
+//     0.6% / 0.9%, so matching nitrite leaves ingoing nitrate roughly 2.3× apart
+//     (pinned in `cureSalt.test.ts`). Splitting the difference would move the
+//     number that matters to flatter the one that does not.
+//   • IT NEVER CROSSES A PAIR. Nitrite-only swaps with nitrite-only and
+//     nitrate-bearing with nitrate-bearing (`CURE_SALT_PAIRS`), because crossing
+//     changes what the cure is FIT FOR rather than merely its concentration. Which
+//     product suits which cure is the suitability question above, and a converter
+//     that crossed the line would answer it by accident.
+//   • IT SAYS NOTHING ABOUT WHETHER THE SUBSTITUTE IS THE RIGHT PRODUCT for what
+//     is being made. It says the nitrite dose is the same one.
 
 /** One product, as the jar and the reference literature describe it. */
 export type CureSaltProductInfo = {
@@ -73,6 +96,21 @@ export type CureSaltProductInfo = {
    */
   nitritePercent: number;
   /**
+   * Potassium nitrate as a percentage of the product, by mass — 0 for the
+   * nitrite-only products and for plain salt.
+   *
+   * IT BOUNDS NOTHING AND IS MATCHED BY NOTHING (issue #1402, phase 3). It is here
+   * for two jobs, both mechanical rather than decorative: it is what makes
+   * `CURE_SALT_PAIRS` checkable — a pair's two members must agree about whether they
+   * carry nitrate, which is the whole reason the pairs exist — and it is what lets
+   * `cureSalt.test.ts` state the divergence a substitution leaves behind, rather
+   * than asserting "roughly 2.3×" in prose nobody can falsify.
+   *
+   * A SUBSTITUTION DOES NOT MATCH IT, deliberately. Nitrite is the acute number and
+   * the two cannot both be held: see this file's header.
+   */
+  nitratePercent: number;
+  /**
    * The window this product's dose has to sit inside, as a percentage of the basis.
    *
    * THE TOP IS SET BY INGOING NITRITE, not by taste, and it is checked
@@ -90,6 +128,12 @@ export type CureSaltProductInfo = {
    * pins on the floor is internal consistency only — positive, below the top,
    * below every dose this file calls ordinary — never a figure computed from an
    * independent minimum (CLAUDE.md rule 12: this is that claim's real boundary).
+   *
+   * EMPTY FOR A PRODUCT THAT CARRIES NO NITRITE — which is `plain` and, by
+   * construction, only `plain`: a window is derived from ingoing nitrite, so a
+   * product with none has nothing to derive one from. That equivalence is pinned in
+   * `cureSalt.test.ts` rather than left to this sentence, so a fifth product cannot
+   * arrive carrying nitrite and no window.
    */
   bounds: Readonly<ComponentPercentBounds>;
   /**
@@ -118,6 +162,7 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   cure1: {
     label: 'Cure #1 (Prague powder #1)',
     nitritePercent: 6.25,
+    nitratePercent: 0,
     bounds: { minPercent: 0.15, maxPercent: 0.3 },
     keywords: ['cure 1', 'cure no 1', 'prague powder 1', 'insta cure 1'],
   },
@@ -127,6 +172,7 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   cure2: {
     label: 'Cure #2 (Prague powder #2)',
     nitritePercent: 6.25,
+    nitratePercent: 4,
     bounds: { minPercent: 0.15, maxPercent: 0.3 },
     keywords: ['cure 2', 'cure no 2', 'prague powder 2', 'insta cure 2'],
   },
@@ -136,6 +182,7 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   nitritedCuringSalt: {
     label: 'Nitrited curing salt',
     nitritePercent: 0.6,
+    nitratePercent: 0,
     // 3.15, not 3: the literature's own standard dose is 3%, and a window whose
     // top equals its standard dose puts ordinary practice one rounding away from a
     // refusal (#1402 review, should-fix 2). 3.15% is still 189 ppm — comfortably
@@ -148,10 +195,36 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   salvianda: {
     label: 'Salvianda',
     nitritePercent: 0.6,
+    nitratePercent: 0.9,
     // Same composition and the same standard-dose-at-the-edge problem as
     // `nitritedCuringSalt` above; widened for the same reason.
     bounds: { minPercent: 2, maxPercent: 3.15 },
     keywords: ['salvianda'],
+  },
+  // ORDINARY SALT, and the reason this enum is named for the salt-bearing product
+  // rather than for cure salt (issue #1402, phase 3). A substitution moves mass
+  // between the curing salt and the plain salt, so the plain salt has to be
+  // findable; a second field for "this is the ordinary salt" would be one field too
+  // many.
+  //
+  // NO NITRITE, NO NITRATE, NO WINDOW. Ordinary salt has no safe-dose ceiling to
+  // read off a composition — too much is a dish nobody eats — so it is bounded by
+  // nothing, exactly as a component naming no product is.
+  //
+  // AND NO KEYWORDS, WHICH IS A DECISION RATHER THAN AN OVERSIGHT. Bare "salt" is
+  // the obvious keyword and it is the wrong one: word-boundary matched, it reaches
+  // "pink curing salt" and "curing salt" — the very lines the entries above
+  // deliberately refuse to guess at, because those words name both families. A
+  // proposal of "Plain salt" on a curing salt is a confident false claim where "you
+  // pick" is an honest one, and it is the recognition-that-decides this file exists
+  // to avoid. So `guessSaltProduct` never proposes this, and the plain salt is
+  // named in the same one tap the curing salt costs (pinned in `cureSalt.test.ts`).
+  plain: {
+    label: 'Plain salt',
+    nitritePercent: 0,
+    nitratePercent: 0,
+    bounds: {},
+    keywords: [],
   },
 };
 
@@ -231,4 +304,180 @@ export function guessSaltProduct(entry: SaltProductGuessEntry): SaltProduct | nu
     }
   }
   return null;
+}
+
+// ─── The jar you actually have (issue #1402, phase 3) ─────────────────────────
+
+/**
+ * Does this product carry nitrite — which is to say, is it a CURING salt at all?
+ *
+ * READ OFF THE COMPOSITION rather than off a second hand-kept list, so it cannot
+ * drift from the table: a curing salt is a salt that carries nitrite, and `plain` is
+ * the one member that does not. It is also what "has a window" means, because a
+ * window is derived from ingoing nitrite — `cureSalt.test.ts` pins that equivalence
+ * in both directions rather than leaving it to this sentence.
+ */
+export function isCuringSalt(product: SaltProduct): boolean {
+  return CURE_SALT_PRODUCTS[product].nitritePercent > 0;
+}
+
+/**
+ * THE TWO PAIRS, AND A SUBSTITUTION NEVER CROSSES THEM.
+ *
+ * Nitrite-only swaps with nitrite-only (cure #1 ↔ nitrited curing salt) and
+ * nitrate-bearing with nitrate-bearing (cure #2 ↔ Salvianda). Crossing changes what
+ * the cure is FIT FOR rather than merely its concentration — nitrite alone depletes
+ * over a long dry with no reservoir behind it — and that suitability question is
+ * deliberately unasked anywhere in Salt. A converter that crossed the line would
+ * answer it by accident.
+ *
+ * The pairing is not merely asserted here: each pair's members must agree about
+ * whether they carry nitrate, checked against `nitratePercent` in
+ * `cureSalt.test.ts`, so a pair written the wrong way round goes red.
+ */
+export const CURE_SALT_PAIRS: readonly (readonly [SaltProduct, SaltProduct])[] = [
+  ['cure1', 'nitritedCuringSalt'],
+  ['cure2', 'salvianda'],
+];
+
+/** The other member of this product's pair, or null for one that has no pair. */
+export function pairOf(product: SaltProduct): SaltProduct | null {
+  for (const [one, other] of CURE_SALT_PAIRS) {
+    if (product === one) return other;
+    if (product === other) return one;
+  }
+  return null;
+}
+
+/** Why a substitution produced no formula. Figures, never sentences — the screen words it. */
+export type CureSaltSubstitutionFailure =
+  // Not an available substitution at all: no curing salt named on the formula, more
+  // than one, or a `to` that is not this product's pair member. The sheet only ever
+  // offers the pair member of a single named product, so this is the guard behind
+  // that offer rather than a state a person can tap their way into.
+  | { kind: 'notAvailable' }
+  // The recipe's salt cannot carry the dose in the substitute's dilute form. REFUSED
+  // WITH BOTH FIGURES AND NEVER CLAMPED: clamping the substitute under-cures and
+  // clamping the residual over-salts, so both ways of hiding this are harmful. It is
+  // the same posture the bounds rail takes — refuse, and say what was missed.
+  | { kind: 'saltTooLow'; needsPercent: number; saltBearingPercent: number }
+  // The substitute needs LESS mass than the salt it replaces and the formula has no
+  // plain-salt component to put the difference into. Refused rather than dropped: a
+  // dropped residual is a quietly less salty cure, and there is no ingredient here to
+  // invent a row for.
+  | { kind: 'noPlainSalt'; residualPercent: number };
+
+export type CureSaltSubstitutionResult =
+  { ok: true; formula: Formula } | { ok: false; reason: CureSaltSubstitutionFailure };
+
+/**
+ * One component with a product named on it and the window that product dictates.
+ *
+ * REBUILT FROM THE TABLE, so a bound cannot survive the swap: the component is
+ * copied, any window it arrived with is dropped, and the named product's own is put
+ * back. `boundsOn` in `deriveFormula` decides the PRECEDENCE between a product's
+ * window and a caller's — there is no precedence question here, because this names a
+ * product outright — and both read the one table above. `cureSalt.test.ts` asserts
+ * that no component of a substituted formula disagrees with it.
+ */
+function withProductStamped(component: FormulaComponent, product: SaltProduct): FormulaComponent {
+  const { minPercent, maxPercent } = saltProductBounds(product);
+  const next: FormulaComponent = { ...component, saltProduct: product };
+  delete next.minPercent;
+  delete next.maxPercent;
+  if (minPercent !== undefined) next.minPercent = minPercent;
+  if (maxPercent !== undefined) next.maxPercent = maxPercent;
+  return next;
+}
+
+/**
+ * Swap the curing salt a formula names for the other member of its pair, holding the
+ * NITRITE DOSE CONSTANT and letting the plain salt absorb the difference.
+ *
+ * The arithmetic, in percent-of-basis, which is how everything here is already
+ * expressed:
+ *
+ *     nitrite%        = curing.percent × curing nitrite fraction
+ *     substitute%     = nitrite% ÷ substitute nitrite fraction
+ *     residual plain% = (curing.percent + plain.percent) − substitute%
+ *
+ * 1000 g of meat, 2.5 g of cure #1 (6.25% nitrite ⇒ 0.156 g nitrite) and 25 g of
+ * salt: 0.156 ÷ 0.006 is 26 g of nitrited curing salt, leaving 1.5 g of plain salt.
+ * Reversed, the same recipe collapses back to 2.5 g and 25 g exactly.
+ *
+ * PURE, and A NEW FORMULA EVERY TIME — the original is untouched, nothing is written
+ * anywhere, and the shape is `withComponentPercentScaled`'s (`adjustComponent.ts`).
+ * It CHECKS NO DOSE: the substituted percentage carries the substitute's own window
+ * and `solveFormula` refuses an out-of-window result exactly as it refuses a
+ * hand-typed one. There is no second rail here and must not be.
+ *
+ * WHAT IT DOES REFUSE is what is not a dose question: a pair it may not cross, and a
+ * salt total that cannot be rebalanced. Unlike a refused leavening opinion — dropped
+ * silently, because nobody asked for it — a refused substitution is the person's own
+ * explicit choice, so the caller is expected to SURFACE it.
+ *
+ * SEVERAL PLAIN-SALT COMPONENTS share the residual in proportion to what they
+ * already hold, and the exact-round-trip claim above is pinned for the ordinary
+ * single one: with two, each is re-rounded to four decimals, so a round trip can land
+ * a ten-thousandth of a point off where it started.
+ */
+export function withCureSaltSubstituted(
+  formula: Formula,
+  substitution: { to: SaltProduct },
+): CureSaltSubstitutionResult {
+  const { to } = substitution;
+  const notAvailable: CureSaltSubstitutionResult = { ok: false, reason: { kind: 'notAvailable' } };
+
+  const curing = formula.components.filter(
+    (component) => component.saltProduct !== undefined && isCuringSalt(component.saltProduct),
+  );
+  const [source] = curing;
+  // More than one curing salt has no single answer to "which one is being swapped",
+  // so it is refused rather than guessed at.
+  if (source === undefined || curing.length > 1) return notAvailable;
+  const from = source.saltProduct;
+  if (from === undefined || pairOf(from) !== to) return notAvailable;
+
+  const fromNitrite = CURE_SALT_PRODUCTS[from].nitritePercent;
+  const toNitrite = CURE_SALT_PRODUCTS[to].nitritePercent;
+  // Both members of a pair carry nitrite by construction, so neither is zero. Guarded
+  // anyway rather than trusted: a division is where a mistaken table edit would reach
+  // a scale as `Infinity g`.
+  if (fromNitrite <= 0 || toNitrite <= 0) return notAvailable;
+
+  const substitutePercent = roundPercent((source.percent * fromNitrite) / toNitrite);
+  const plain = formula.components.filter((component) => component.saltProduct === 'plain');
+  const plainPercent = plain.reduce((sum, component) => sum + component.percent, 0);
+  const saltBearingPercent = roundPercent(source.percent + plainPercent);
+  const residualPercent = roundPercent(saltBearingPercent - substitutePercent);
+
+  if (residualPercent < 0) {
+    return {
+      ok: false,
+      reason: { kind: 'saltTooLow', needsPercent: substitutePercent, saltBearingPercent },
+    };
+  }
+  if (residualPercent > 0 && plain.length === 0) {
+    return { ok: false, reason: { kind: 'noPlainSalt', residualPercent } };
+  }
+
+  const plainFactor = plainPercent === 0 ? 0 : residualPercent / plainPercent;
+  return {
+    ok: true,
+    formula: {
+      ...formula,
+      components: formula.components.map((component) => {
+        if (component.ingredientId === source.ingredientId) {
+          return withProductStamped({ ...component, percent: substitutePercent }, to);
+        }
+        if (component.saltProduct === 'plain') {
+          return withProductStamped(
+            { ...component, percent: roundPercent(component.percent * plainFactor) },
+            'plain',
+          );
+        }
+        return component;
+      }),
+    },
+  };
 }

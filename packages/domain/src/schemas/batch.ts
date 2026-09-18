@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
-import { FormulaTargetSchema } from './formula.js';
+import { FormulaTargetSchema, SaltProductSchema } from './formula.js';
 import { CureCategorySchema, RecipeKindSchema } from './recipe.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
@@ -276,6 +276,22 @@ export const BatchSchema = z.object({
   // ABSENT, not empty, when the run named no vessel: "1.4 kg of dough" is a
   // complete answer and an empty string would read as a vessel nobody described.
   vessel: z.string().optional(),
+  // WHICH CURING SALT ACTUALLY WENT ON THE MEAT, when it was not the one the recipe
+  // asked for (issue #1402, phase 3). The recipe says cure #1; the jar in the
+  // cupboard is the European nitrited salt; this says which was used.
+  //
+  // THE SAME SPECIES AS `vessel` ABOVE, and placed here for the same reasons: a fact
+  // about THIS RUN rather than about the recipe, absent rather than empty when there
+  // was nothing to say, and read back by the log alone — nothing parses it, nothing
+  // computes from it, and it never round-trips into an input. The frozen
+  // `quantities` already carry the substitute's own weights and its label; this is
+  // what lets the log still say what was REPLACED, a month later, with the recipe
+  // since edited.
+  //
+  // PRODUCTS, NOT WORDS. `SaltProductSchema`'s members are the stable thing — the
+  // label beside each one in `formula/cureSalt.ts` is copy and may be reworded —
+  // which is the same call `recipeKind` makes where `vessel` stores a sentence.
+  cureSaltSubstitution: z.object({ from: SaltProductSchema, to: SaltProductSchema }).optional(),
   state: BatchStateSchema,
   // WHEN the run was stopped, and null while it is still running (issue #1280).
   //

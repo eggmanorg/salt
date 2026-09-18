@@ -270,6 +270,29 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     expect(screen.queryByTestId('batch-vessel')).toBeNull();
   });
 
+  it('names which curing salt actually went on, when it was swapped (issue #1402)', async () => {
+    // "What did I actually use?" a month later, with the recipe since edited. The
+    // quantities above already carry the substitute's own label and weight; this row
+    // is what says what it REPLACED, which no weight can.
+    renderPage();
+    mockBatch._set(
+      makeBatch({ cureSaltSubstitution: { from: 'cure1', to: 'nitritedCuringSalt' } }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-cure-salt-substitution')).toHaveTextContent(
+      'Nitrited curing salt, instead of Cure #1 (Prague powder #1)',
+    );
+  });
+
+  it('says nothing about a swap for a run that used what the recipe named', async () => {
+    renderPage();
+    mockBatch._set(makeBatch());
+
+    await waitFor(() => expect(screen.getByTestId('batch-totals')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-cure-salt-substitution')).toBeNull();
+  });
+
   it('shows no baked weight anywhere — the readout went with bake loss (issue #1274)', async () => {
     const { container } = renderPage();
     mockBatch._set(makeBatch({ vessel: '900 g loaf tin' }));

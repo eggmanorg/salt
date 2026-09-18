@@ -535,3 +535,53 @@ describe('freezeBatch — what the run is aiming at (issue #1407)', () => {
     expect(BatchSchema.parse(batch).target).toBeNull();
   });
 });
+
+// ─── Which curing salt actually went on (issue #1402, phase 3) ────────────────
+describe('freezeBatch — the cure-salt substitution', () => {
+  function freezeWithSubstitution(
+    substitution?: Parameters<typeof freezeBatch>[0]['cureSaltSubstitution'],
+  ) {
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: overnightWhiteTin(),
+      atYield: TWELVE_ROLLS,
+      ...(substitution === undefined ? {} : { cureSaltSubstitution: substitution }),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+    return result.batch;
+  }
+
+  it('freezes which product replaced which, and parses as written', () => {
+    const swap = { from: 'cure1', to: 'nitritedCuringSalt' } as const;
+    const batch = freezeWithSubstitution(swap);
+    expect(batch.cureSaltSubstitution).toEqual(swap);
+    // Not merely typed: the shape that reaches Firestore parses back as it went in.
+    expect(BatchSchema.parse(batch).cureSaltSubstitution).toEqual(swap);
+  });
+
+  it('leaves the field ABSENT for a run that used what the recipe named', () => {
+    // Absent rather than an empty object or a null, exactly as `vessel` is: an
+    // empty object would read as a swap nobody made.
+    const batch = freezeWithSubstitution();
+    expect(batch.cureSaltSubstitution).toBeUndefined();
+    expect(Object.keys(batch)).not.toContain('cureSaltSubstitution');
+    expect(Object.keys(BatchSchema.parse(batch))).not.toContain('cureSaltSubstitution');
+  });
+
+  it('computes nothing from it — the quantities come from the formula alone', () => {
+    // THE FREEZE MUST NOT RE-DERIVE A SWAP. The caller substitutes before calling,
+    // so the percentages arriving inside `formula` are the ones that were on screen;
+    // this field is a note beside them. A freeze that read it would be a second
+    // place the arithmetic lived — so a nonsense swap changes not one gram.
+    const withSwap = freezeWithSubstitution({ from: 'cure2', to: 'salvianda' });
+    const without = freezeWithSubstitution();
+    expect(withSwap.quantities).toEqual(without.quantities);
+    expect(withSwap.totals).toEqual(without.totals);
+  });
+});

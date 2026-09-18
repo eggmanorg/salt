@@ -15,9 +15,11 @@ import type {
   ProposeScheduleInput,
   ProposeScheduleOutput,
   ReferenceYield,
+  SaltProduct,
 } from '@salt/domain/schemas';
 import type { FormulaFailure, FreezeBatchFailure, Recipe, ScheduleAnchor } from '@salt/domain';
 import {
+  CURE_SALT_PRODUCTS,
   flattenIngredients,
   freezeBatch,
   withBatchAbandoned,
@@ -207,6 +209,14 @@ export interface StartBatchInput {
   // tin". Omitted for the answers that name no vessel. Frozen onto the batch as a
   // snapshot note and read back by nothing: see `BatchSchema.vessel`.
   vessel?: string;
+  // WHICH CURING SALT ACTUALLY WENT ON, when it was not the one the recipe asked for
+  // (issue #1402, phase 3). Omitted for every run that used what the recipe named.
+  //
+  // THE FORMULA ABOVE IS ALREADY THE SUBSTITUTED ONE — the sheet runs
+  // `withCureSaltSubstituted` and previews the result, so the percentages that reach
+  // the freeze are the ones that were on screen. This field is the NOTE beside them,
+  // plus the one thing the percentages cannot say: which product was replaced.
+  cureSaltSubstitution?: { from: SaltProduct; to: SaltProduct };
   // Mixing now, or out of the oven at 07:30.
   anchor: ScheduleAnchor;
   // A reviewed proposal's RESTRUCTURED PROCESS (issue #812, phase 2). Omitted →
@@ -371,6 +381,24 @@ export async function startBatch(
     labels[ingredient.id] = ingredient.rawText;
   }
 
+  // A SUBSTITUTED LINE IS LABELLED WITH WHAT WENT ON IT (issue #1402, phase 3).
+  // "2.5 g Prague powder #1" is the recipe's word for a product this run did not
+  // use, so the frozen quantity would otherwise read as 26 g of a cure #1 nobody
+  // opened — every screen that shows a run's quantities reads this label, and the
+  // weight beside it is the substitute's.
+  //
+  // FOUND BY THE PRODUCT, not by an id the caller also has to pass: the substituted
+  // formula names `to` on exactly one component, because `withCureSaltSubstituted`
+  // only ever produces one and refuses a formula carrying more than one curing salt.
+  const substitution = input.cureSaltSubstitution;
+  if (substitution !== undefined) {
+    const swapped = input.formula.components.find(
+      (component) => component.saltProduct === substitution.to,
+    );
+    if (swapped !== undefined)
+      labels[swapped.ingredientId] = CURE_SALT_PRODUCTS[substitution.to].label;
+  }
+
   const formula: Formula =
     input.proposedStages === undefined
       ? input.formula
@@ -390,6 +418,7 @@ export async function startBatch(
     formula,
     ...(input.atYield === undefined ? {} : { atYield: input.atYield }),
     ...(input.vessel === undefined ? {} : { vessel: input.vessel }),
+    ...(substitution === undefined ? {} : { cureSaltSubstitution: substitution }),
     anchor: input.anchor,
     recipeTitle: input.recipe.title,
     // What the dish WAS, frozen beside its title (issue #1404). Read off
