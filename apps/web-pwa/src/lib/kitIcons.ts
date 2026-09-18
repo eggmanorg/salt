@@ -9,6 +9,7 @@ import {
 } from '@salt/domain';
 import type { EquipmentItem, EquipmentManifest } from '@salt/domain';
 import type {
+  BorrowedPictureDoc,
   EquipmentIconDoc,
   KitchenToolDoc,
   RecipeKitEquipmentLinkDoc,
@@ -49,6 +50,14 @@ import { equipment, equipmentIcons } from './equipmentService.js';
 //      A `thumbnail: null` entry — described but never drawn — is NOT that, and
 //      does fall through. The two states are distinguishable because
 //      `equipmentIcons` stores the tri-state, and the test table pins both.
+//
+//      AND A BORROWED PICTURE SITS BEHIND EACH OWN ONE (#1465 Phase 3): entry's
+//      own → entry's borrowed → item's own → item's borrowed. A thing you own can
+//      be pointed at a drawing that already exists — "this Tefal 28cm looks like
+//      the generic frying pan" — without anything being drawn for it, and a
+//      borrowed picture is read THROUGH its reference, so redrawing the source
+//      updates every thing borrowing it. It sits behind the own picture because a
+//      drawing OF the thing beats a drawing of something that looks like it.
 //   2. THE WORD PATH, for an entry with no link, one whose link no longer answers
 //      to anything, and for the hand-typed container names on guided-cook cards
 //      which this work never links at all. Equipment first, then tools — steps 3
@@ -145,20 +154,42 @@ function lookupFor(
   };
 
   /**
-   * The picture for a resolved link: the entry's own, else its item's.
+   * A picture one of your things has been POINTED AT rather than given (#1465
+   * Phase 3) — read through the reference, never from a copied URL, so a redraw
+   * of the source reaches everything borrowing it on the same subscription.
+   *
+   * A reference whose target has gone answers null and the search carries on,
+   * which is why the schema needs no refine and no cleanup job.
+   */
+  const borrowedIcon = (borrowed: BorrowedPictureDoc | null | undefined): Picture | null => {
+    if (!borrowed) return null;
+    if (borrowed.family === 'equipment') return ownedIcon(borrowed.id);
+    const tool = toolDocs.find((t) => t.id === borrowed.id);
+    return tool ? toolPicture(tool) : null;
+  };
+
+  /**
+   * The picture for a resolved link: entry's own → entry's borrowed → item's own
+   * → item's borrowed.
    *
    * The one place the tri-state is read for more than "is it renderable": a
-   * HIDDEN entry picture is the user's answer for this row and ends the search,
-   * where an entry with nothing drawn yet falls through to its item. Both are
-   * `ownedIcon` nulls, so they have to be told apart here rather than there.
+   * HIDDEN entry picture is the user's answer for this row and ends the search
+   * before its own borrow is even consulted, where an entry with nothing drawn
+   * yet falls through. Both are `ownedIcon` nulls, so they have to be told apart
+   * here rather than there.
    */
-  const linkedIcon = (item: EquipmentItem, accessory: { id: string } | null): Picture | null => {
+  const linkedIcon = (
+    item: EquipmentItem,
+    accessory: { id: string; borrowedPicture?: BorrowedPictureDoc | null } | null,
+  ): Picture | null => {
     if (accessory) {
       const own = ownedIcon(accessory.id);
       if (own) return own;
       if (icons.get(accessory.id)?.thumbnail === CANON_ICON_HIDDEN) return null;
+      const borrowed = borrowedIcon(accessory.borrowedPicture);
+      if (borrowed) return borrowed;
     }
-    return ownedIcon(item.id);
+    return ownedIcon(item.id) ?? borrowedIcon(item.borrowedPicture);
   };
 
   // The whole order, once, returning the picture or null. Both public lookups are
@@ -177,7 +208,7 @@ function lookupFor(
 
     // 2/3. Equipment by name.
     const item = resolveEquipmentItem(label, items);
-    if (item) return ownedIcon(item.id);
+    if (item) return ownedIcon(item.id) ?? borrowedIcon(item.borrowedPicture);
 
     // 4. The curated tool, with the accessory-name rule in front of it.
     const tool = kitchenToolForKitLabel(label, toolDocs, items);

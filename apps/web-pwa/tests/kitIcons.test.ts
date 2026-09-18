@@ -59,11 +59,19 @@ const MANIFEST: EquipmentManifest = {
       name: 'Magimix Cook Expert',
       kind: 'equipment',
       accessories: [
-        { id: 'acc-thermo', name: 'Thermo Bowl', owned: true, included: true, note: '' },
+        {
+          id: 'acc-thermo',
+          name: 'Thermo Bowl',
+          owned: true,
+          included: true,
+          note: '',
+          borrowedPicture: null,
+        },
       ],
       rules: [],
       note: '',
       environment: null,
+      borrowedPicture: null,
       updatedAt: '',
     },
     {
@@ -72,11 +80,19 @@ const MANIFEST: EquipmentManifest = {
       name: 'Frying Pans',
       kind: 'family',
       accessories: [
-        { id: 'acc-tefal', name: 'Tefal non-stick 28cm', owned: true, included: false, note: '' },
+        {
+          id: 'acc-tefal',
+          name: 'Tefal non-stick 28cm',
+          owned: true,
+          included: false,
+          note: '',
+          borrowedPicture: null,
+        },
       ],
       rules: [],
       note: '',
       environment: null,
+      borrowedPicture: null,
       updatedAt: '',
     },
   ],
@@ -87,6 +103,29 @@ const entry = (label: string, equipment: RecipeKitEntryDoc['equipment'] = null) 
 
 const iconFor = (subject: Parameters<KitIconLookup['kitIconFor']>[0]) =>
   get(kitIcons).kitIconFor(subject);
+
+/**
+ * The manifest with one borrow set on the Frying Pans record — on its Tefal
+ * entry when `accessoryId` is given, on the record itself when it is null.
+ */
+const withBorrow = (
+  accessoryId: string | null,
+  picture: { family: 'equipment' | 'kitchenTool'; id: string },
+): EquipmentManifest => ({
+  ...MANIFEST,
+  items: MANIFEST.items.map((item) =>
+    item.id !== 'eq-pans'
+      ? item
+      : accessoryId === null
+        ? { ...item, borrowedPicture: picture }
+        : {
+            ...item,
+            accessories: item.accessories.map((a) =>
+              a.id === accessoryId ? { ...a, borrowedPicture: picture } : a,
+            ),
+          },
+  ),
+});
 
 beforeEach(() => {
   mockKitchenTools.set([
@@ -204,6 +243,72 @@ describe('kitIcons — the order', () => {
     expect(iconFor(entry('another pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
       'https://example.test/pans.webp',
     );
+  });
+
+  // ─── The borrowed picture (issue #1465, Phase 3) ──────────────────────────
+  // A thing you own can be POINTED at a drawing that already exists. It sits
+  // behind its own picture — a drawing OF the thing beats a drawing of something
+  // that looks like it — and it is read THROUGH the reference, so the version
+  // nonce is the SOURCE's.
+  it("falls back to an entry's borrowed picture before its record's own", () => {
+    mockEquipment.set(withBorrow('acc-tefal', { family: 'kitchenTool', id: 'frying-pan' }));
+    const linked = entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' });
+    expect(iconFor(linked)).toBe('https://example.test/pan.webp');
+    // The nonce comes from the tool that owns the drawing, which is what makes a
+    // redraw of it reach every pan borrowing it.
+    expect(get(kitIcons).kitIconVersionFor(linked)).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it("prefers the entry's OWN picture to one it borrows", () => {
+    mockEquipment.set(withBorrow('acc-tefal', { family: 'kitchenTool', id: 'frying-pan' }));
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', {
+        thumbnail: 'https://example.test/tefal.webp',
+      } as EquipmentIconDoc),
+    );
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBe('https://example.test/tefal.webp');
+  });
+
+  it("borrows for the RECORD too, behind the record's own picture", () => {
+    const manifest = withBorrow(null, { family: 'kitchenTool', id: 'frying-pan' });
+    mockEquipment.set(manifest);
+    // With the family's own drawing present it wins…
+    expect(iconFor(entry('a pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
+      'https://example.test/pans.webp',
+    );
+    // …and without it, the borrowed one answers.
+    mockEquipmentIcons.set(new Map());
+    expect(iconFor(entry('a pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
+      'https://example.test/pan.webp',
+    );
+  });
+
+  it('answers nothing for a borrowed picture whose source has gone', () => {
+    mockEquipment.set(withBorrow('acc-tefal', { family: 'kitchenTool', id: 'retired' }));
+    mockEquipmentIcons.set(new Map());
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBeNull();
+  });
+
+  it('borrows another piece of EQUIPMENT\u2019s picture, read through its icon doc', () => {
+    mockEquipment.set(withBorrow('acc-tefal', { family: 'equipment', id: 'eq-magimix' }));
+    mockEquipmentIcons.set(
+      new Map([
+        [
+          'eq-magimix',
+          {
+            thumbnail: 'https://example.test/magimix.webp',
+            iconRequestedAt: 7,
+          } as EquipmentIconDoc,
+        ],
+      ]),
+    );
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBe('https://example.test/magimix.webp');
   });
 
   it('answers from the words alone before the manifest lands', () => {

@@ -243,6 +243,48 @@ answer for that row, and the record's picture would be answering a different
 question. An entry described but not yet drawn does fall back, which is what keeps
 the ~140 undrawn entries free.
 
+### A picture can be borrowed, and asked for where the miss is noticed (#1465, Phase 3)
+
+A thing you own can be **pointed at a drawing that already exists** instead of
+being given one: `borrowedPicture: { family: 'equipment' | 'kitchenTool', id }` on
+`EquipmentItemSchema` and `AccessorySchema`, `.default(null)` and with **no
+refine** — the manifest is one document, so a refine on a reference whose target
+was later deleted would take the whole equipment list down. A dangling reference
+resolves to nothing at display time and the row falls back, exactly as a dangling
+kit link does.
+
+**A reference, never a copied URL.** Every icon family reuses its Storage object
+path on a redraw and writes the bytes `immutable`, and the cache-bust nonce lives
+on the _source_ document — so a copied URL is stale the moment the source is
+redrawn and has no nonce to fix it. Reading through the id is what makes
+"redraw the frying pan" reach every pan borrowing it. `kitIcons.ts` owns the
+reading, and the order is: entry's own → entry's borrowed → record's own →
+record's borrowed → none.
+
+**The picker is on the recipe page, and that overturns a decision.** #1458
+rejected "a per-recipe one-tap add at the point of the miss"; #1465 reverses it,
+because the miss is noticed on the recipe and sending the person to Admin is the
+friction that leaves gaps open. #1458's concern — one-row-at-a-time minting is how
+#956's near-duplicates arose — is answered by **order**, not by removal:
+`suggestKitchenToolParent` leads, the searchable list of existing drawings comes
+next, and "draw a new one" sits under both.
+
+**Two rows, two different acts**, and they are indistinguishable on screen:
+
+- a row that **links one of your things** gets a borrowed picture on the manifest —
+  a fact about that object. "Draw one for it" hands over to the equipment record's
+  page, where #877's read-the-description gate already lives; there is deliberately
+  no second host for that panel.
+- a row that links nothing is **ordinary words**, so choosing writes a **matcher**
+  on the chosen tool (every recipe that already says them lights up, nothing
+  migrated) and drawing mints a tool named after them. Equipment pictures are not
+  offered there: a record has no matchers, so there would be nothing for the words
+  to be taught to.
+
+What this does **not** do is re-point the recipe's link. "This 'large frying pan'
+is my Tefal 28cm" is a per-recipe edit of what the line _means_, which is a
+different act, and the issue leaves it out.
+
 **The description may also be authored from a photograph (#947).** `describeEquipmentSubject`
 gained a third mode alongside authoring-from-name and revising-from-a-correction:
 **Use a photo** on the item page sends a reference photo of the actual appliance, and

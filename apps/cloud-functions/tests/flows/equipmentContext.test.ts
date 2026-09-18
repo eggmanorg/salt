@@ -24,7 +24,7 @@ beforeEach(() => {
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
 function accessory(name: string, owned: boolean, note = '') {
-  return { id: `acc-${name}`, name, owned, included: false, note };
+  return { id: `acc-${name}`, name, owned, included: false, note, borrowedPicture: null };
 }
 
 function item(
@@ -48,6 +48,7 @@ function item(
     rules: opts.rules ?? [],
     note: opts.note ?? '',
     environment: opts.environment ?? null,
+    borrowedPicture: null,
     updatedAt: '2026-07-01T00:00:00.000Z',
   };
 }

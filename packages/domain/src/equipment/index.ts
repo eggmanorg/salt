@@ -30,6 +30,11 @@ export type { EditEquipmentNoteInput } from './commands/editEquipmentNote.js';
 export { setEquipmentKind } from './commands/setEquipmentKind.js';
 export type { SetEquipmentKindInput } from './commands/setEquipmentKind.js';
 export { setEquipmentEnvironment } from './commands/setEquipmentEnvironment.js';
+// Point one of your things at a picture that already exists (issue #1465, Phase
+// 3) — a reference, never a copied URL, so redrawing the source updates
+// everything borrowing it.
+export { setBorrowedPicture } from './commands/setBorrowedPicture.js';
+export type { SetBorrowedPictureInput } from './commands/setBorrowedPicture.js';
 export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnvironment.js';
 
 export { equipmentIconAwaitingApproval, equipmentIconOwnerIds } from './queries/equipmentIcon.js';

@@ -106,6 +106,7 @@ export {
   editEquipmentNote,
   setEquipmentKind,
   setEquipmentEnvironment,
+  setBorrowedPicture,
   equipmentIconAwaitingApproval,
   // The words one ENTRY's own picture is described from (issue #1465, Phase 2),
   // and the set of ids the icon collection may hold — which is the complement of

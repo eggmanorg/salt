@@ -586,10 +586,10 @@ export const coverageThresholds = {
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
   'apps/web-pwa/src/routes/**': {
-    lines: 85.27,
-    branches: 75.07,
+    lines: 85.28,
+    branches: 75.08,
     uncoveredLines: 1704,
-    uncoveredBranches: 1723,
+    uncoveredBranches: 1725,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
@@ -634,10 +634,10 @@ export const coverageThresholds = {
   // repo has a known macOS/Linux v8 branch-count divergence, and CI is the
   // platform the gate actually enforces against.
   'apps/web-pwa/src/lib/**': {
-    lines: 79.74,
-    branches: 73.13,
+    lines: 79.84,
+    branches: 73.43,
     uncoveredLines: 736,
-    uncoveredBranches: 562,
+    uncoveredBranches: 561,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,

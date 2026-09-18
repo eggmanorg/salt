@@ -46,12 +46,14 @@ function item(
       id: `${id}-acc-${i}`,
       name: `Acc ${i}`,
       owned: false,
+      borrowedPicture: null,
       included: false,
       note: '',
     })),
     rules: Array.from({ length: ruleCount }, (_, i) => `rule ${i}`),
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: '2026-05-13T00:00:00.000Z',
   };
 }

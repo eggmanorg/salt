@@ -110,6 +110,7 @@ export {
   EquipmentHumiditySchema,
   EquipmentStandingSettingSchema,
   EquipmentEnvironmentSchema,
+  BorrowedPictureSchema,
   EQUIPMENT_MANIFEST_COLLECTION,
   EQUIPMENT_MANIFEST_DOC_ID,
 } from './equipmentManifest.js';
@@ -120,6 +121,7 @@ export type {
   EquipmentHumidityDoc,
   EquipmentStandingSettingDoc,
   EquipmentEnvironmentDoc,
+  BorrowedPictureDoc,
 } from './equipmentManifest.js';
 
 export {

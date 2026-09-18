@@ -10,6 +10,7 @@ import {
 } from '@salt/firebase-sync';
 import type { IdentifyEquipmentResult, PopulateEquipmentEntryResult } from '@salt/firebase-sync';
 import type {
+  BorrowedPictureDoc,
   EquipmentEnvironmentDoc,
   EquipmentIconDoc,
   EquipmentKind,
@@ -29,6 +30,7 @@ import {
   editEquipmentNote,
   setEquipmentKind,
   setEquipmentEnvironment,
+  setBorrowedPicture,
 } from '@salt/domain';
 import type { EquipmentManifest, EquipmentManifestPort } from '@salt/domain';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -405,6 +407,32 @@ export async function setEquipmentEnvironmentFor(
   const result = setEquipmentEnvironment(manifest, {
     equipmentId,
     environment,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
+/**
+ * Point one of your things at a picture that already exists (issue #1465,
+ * Phase 3), or stop it borrowing one with `picture: null`.
+ *
+ * `accessoryId` is `null` for the record itself. What is stored is a REFERENCE,
+ * never a copied URL: icon Storage paths are reused on a redraw with immutable
+ * bytes, so a copy goes stale the first time the source is redrawn — reading
+ * through the id is what makes "redraw the frying pan" reach every pan borrowing
+ * it. `kitIcons.ts` owns the reading.
+ */
+export async function setBorrowedPictureFor(
+  equipmentId: string,
+  accessoryId: string | null,
+  picture: BorrowedPictureDoc | null,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = setBorrowedPicture(manifest, {
+    equipmentId,
+    accessoryId,
+    picture,
     now: new Date().toISOString(),
   });
   return applyAndSave(result);

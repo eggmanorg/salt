@@ -113,6 +113,10 @@ vi.mock('../src/lib/chatService.js', () => ({
 vi.mock('../src/lib/equipmentService.js', () => ({
   equipment: mockEquipment,
   equipmentIcons: mockEquipmentIcons,
+  // The picture picker's write (issue #1465, Phase 3). This file only asserts
+  // that a pictureless row opens it; what it then writes is KitPicturePicker's
+  // own suite.
+  setBorrowedPictureFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/clipboardImage.js', () => ({
   clipboardImageReadSupported: () => false,
@@ -560,11 +564,18 @@ describe('RecipeViewPage — the Equipment tab', () => {
     expect(screen.queryByTestId('canon-icon')).toBeNull();
   });
 
-  it('renders each entry as a plain list row — read, not pressed', () => {
+  it('renders a row that HAS a picture as a plain list row — read, not pressed', () => {
     // Carried across from the `PictogramPill` this replaced (ui-spec-v12 §8.30.6,
     // itself carrying ui-spec-v09 §8.23.8): the row is an `<li>` with no control in
     // it, so it is not reachable by Tab and is not announced as something to press.
-    // The list states what the dish needs; it does not offer anything to do about it.
+    //
+    // NARROWED, NOT REPEALED, by issue #1465 Phase 3. The claim used to be "each
+    // entry", full stop; a row with no picture is now the one control this list
+    // offers, because that is where the miss is noticed and it is the whole point
+    // of the phase. A row that already has its picture has nothing to ask, and
+    // stays exactly as read-only as it was — which is what this pins, and the case
+    // below pins the other half.
+    setTools([tool({ id: 'colander', label: 'colander' })]);
     mockRecipes._set([makeEntry({ kit: [{ label: 'colander', stepIds: [], equipment: null }] })]);
     renderPage();
 
@@ -572,6 +583,26 @@ describe('RecipeViewPage — the Equipment tab', () => {
     expect(row.tagName).toBe('LI');
     expect(within(row).queryByRole('button')).toBeNull();
     expect(row.querySelector('a, button, input, [tabindex]')).toBeNull();
+  });
+
+  it('opens the picture picker from a pictureless row', async () => {
+    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [], equipment: null }] })]);
+    renderPage();
+
+    await fireEvent.click(screen.getByTestId('recipe-kit-picture-btn'));
+    await waitFor(() => expect(screen.getByTestId('kit-picture-picker')).toBeTruthy());
+  });
+
+  it('makes a PICTURELESS row the one thing on this list you can press (#1465)', () => {
+    // The gutter stays empty — #882's contract is untouched and no placeholder
+    // tile appears — so the control is the words themselves.
+    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [], equipment: null }] })]);
+    renderPage();
+
+    const row = screen.getAllByTestId('recipe-kit-row')[0]!;
+    const button = within(row).getByTestId('recipe-kit-picture-btn');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.textContent).toContain('Tagine');
   });
 
   it('reserves the icon gutter on a miss, so every name starts at one left edge', () => {

@@ -64,6 +64,7 @@ const ITEM: EquipmentItem = {
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: NOW,
 };
 
@@ -73,6 +74,7 @@ const ACCESSORY: Accessory = {
   owned: true,
   included: true,
   note: '',
+  borrowedPicture: null,
 };
 
 function open(icon: Partial<EquipmentIconDoc> | null = null): void {

@@ -31,6 +31,8 @@ export function addEquipment(
     note: '',
     // Nothing is a place until it is described as one (issue #1281).
     environment: null,
+    // Nothing is borrowed until somebody points this at a drawing (#1465 Phase 3).
+    borrowedPicture: null,
     updatedAt: input.now,
   };
   return success({ ...manifest, items: [...manifest.items, newItem] });

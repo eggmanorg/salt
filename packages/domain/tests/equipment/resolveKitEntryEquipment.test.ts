@@ -15,12 +15,27 @@ const MAGIMIX: EquipmentItem = {
   name: 'Magimix Cook Expert',
   kind: 'equipment',
   accessories: [
-    { id: 'acc-thermo', name: 'Thermo Bowl', owned: true, included: true, note: '' },
-    { id: 'acc-cocotte', name: 'Cocotte Slow Cook Pot', owned: true, included: false, note: '' },
+    {
+      id: 'acc-thermo',
+      name: 'Thermo Bowl',
+      owned: true,
+      included: true,
+      note: '',
+      borrowedPicture: null,
+    },
+    {
+      id: 'acc-cocotte',
+      name: 'Cocotte Slow Cook Pot',
+      owned: true,
+      included: false,
+      note: '',
+      borrowedPicture: null,
+    },
   ],
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: '',
 };
 
@@ -30,11 +45,19 @@ const PANS: EquipmentItem = {
   name: 'Frying Pans',
   kind: 'family',
   accessories: [
-    { id: 'acc-tefal', name: 'Tefal non-stick 28cm', owned: true, included: false, note: '' },
+    {
+      id: 'acc-tefal',
+      name: 'Tefal non-stick 28cm',
+      owned: true,
+      included: false,
+      note: '',
+      borrowedPicture: null,
+    },
   ],
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: '',
 };
 

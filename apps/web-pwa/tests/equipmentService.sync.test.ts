@@ -37,6 +37,7 @@ import {
   setEquipmentItemKind,
   setEquipmentEnvironmentFor,
   authorEntryIconBrief,
+  setBorrowedPictureFor,
   memEquipmentManifestStore,
   __resetEquipmentServiceForTest,
 } from '../src/lib/equipmentService.js';
@@ -230,6 +231,7 @@ describe('equipmentService — mutations after hydration', () => {
       rules: [],
       note: '',
       environment: null,
+      borrowedPicture: null,
       updatedAt: '2026-05-12T00:00:00.000Z',
     };
     emit(makeManifest([existing]));
@@ -421,6 +423,40 @@ describe('equipmentService — notes and kind', () => {
     const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
     expect(saved.items[0]!.kind).toBe('family');
     expect(saved.items[0]!.accessories).toEqual(before.accessories);
+    cleanup();
+  });
+
+  it('writes the reference onto the entry and saves the whole manifest', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const accessoryId = get(equipment)!.items[0]!.accessories[0]!.id;
+    const result = await setBorrowedPictureFor(itemId, accessoryId, {
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    expect(result.kind).toBe('ok');
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.accessories[0]!.borrowedPicture).toEqual({
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    cleanup();
+  });
+
+  it('refuses before the manifest has hydrated, rather than writing over it', async () => {
+    wireSubscription();
+    const cleanup = initEquipmentSync();
+    expect((await setBorrowedPictureFor('eq', null, null)).kind).toBe('err');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('passes a refusal from the command straight back', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const result = await setBorrowedPictureFor(itemId, 'acc-gone', {
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    expect(result.kind).toBe('err');
     cleanup();
   });
 

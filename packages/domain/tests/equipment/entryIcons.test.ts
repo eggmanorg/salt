@@ -16,13 +16,14 @@ function item(overrides: Partial<EquipmentItem> = {}): EquipmentItem {
     rules: [],
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: '2026-09-18T00:00:00.000Z',
     ...overrides,
   };
 }
 
 function accessory(id: string, name: string) {
-  return { id, name, owned: true, included: true, note: '' };
+  return { id, name, owned: true, included: true, note: '', borrowedPicture: null };
 }
 
 describe('equipmentIconOwnerIds', () => {

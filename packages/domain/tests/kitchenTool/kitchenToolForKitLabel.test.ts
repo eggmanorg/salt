@@ -68,10 +68,12 @@ const item = (
     owned: true,
     included: true,
     note: '',
+    borrowedPicture: null,
   })),
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: '',
 });
 

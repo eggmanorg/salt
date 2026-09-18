@@ -27,6 +27,7 @@ function item(environment: EquipmentEnvironmentDoc | null): EquipmentItemDoc {
     rules: [],
     note: '',
     environment,
+    borrowedPicture: null,
     updatedAt: '2026-09-01T00:00:00.000Z',
   };
 }
