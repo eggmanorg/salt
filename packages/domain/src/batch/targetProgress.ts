@@ -40,6 +40,36 @@ import type { BatchDoc, BatchObservationDoc } from '../schemas/index.js';
 // weight of what went in — and this reads whatever was frozen there without asking
 // how that figure was arrived at.
 
+// ─── HOW CLOSE IS "CLOSE"? (issue #1407, phase 2) ─────────────────────────────
+//
+// NINE-TENTHS OF THE WAY THERE. One constant, in one place, with its boundary
+// stated beside it — the same posture `DOUGH_GRAMS_PER_ML` takes in
+// `formula/doughAmount.ts`.
+//
+// IT IS A DOMESTIC STARTING POINT, NOT A FACT. Nothing about curing says a coppa
+// becomes interesting at 31.5% of a 35% target rather than at 30% or 33%. It is
+// the figure that made the cue arrive at roughly the right moment on the runs it
+// was designed against, and it is a fraction rather than a fixed number of
+// percentage points so that it scales with the target: three points from 35% and
+// three points from 12% are very different distances.
+//
+// A FRACTION OF THE TARGET IS THE WHOLE OF WHAT IT MEANS. It has no relationship
+// to elapsed time, to the stages, or to how fast the run is losing weight — this
+// feature makes no claim about WHEN a target will be reached, and a constant that
+// mixed in a rate would be exactly that claim wearing a threshold's clothes.
+export const NEARING_FRACTION = 0.9;
+
+/**
+ * How a run READS against its target, for a cue you catch out of the corner of
+ * your eye. THREE, and the third is not "finished".
+ *
+ * `atOrPast` means the figure has reached or gone past what was aimed at, and that
+ * is all it means: the run is not over, nothing is blocked, and nothing on screen
+ * may turn this into a word. A cook decides when a cure is done; this says where
+ * the scale has got to.
+ */
+export type TargetStance = 'tracking' | 'nearing' | 'atOrPast';
+
 /** The weight half, when the run names a weight-loss target and has been weighed. */
 export interface WeightLossProgress {
   /** `batch.totals.basisGrams`, as frozen at the start of the run. */
@@ -56,6 +86,15 @@ export interface WeightLossProgress {
   percentLost: number;
   /** What the run was aiming at, frozen. */
   targetPercent: number;
+  /**
+   * `percentLost / targetPercent`, UNROUNDED and UNCLAMPED — 1 is the target, 1.09
+   * is a run taken further, and a run that gained weight is negative. The meter
+   * clamps it for its own geometry (`Progress` does that itself); the figure beside
+   * it does not.
+   */
+  fractionOfTarget: number;
+  /** Which of the three appearances this run wears. See `TargetStance`. */
+  stance: TargetStance;
 }
 
 /**
@@ -110,6 +149,33 @@ function latestBy<T>(
   return best;
 }
 
+function buildWeightLoss(
+  startingGrams: number,
+  latestGrams: number,
+  targetPercent: number,
+): WeightLossProgress {
+  const percentLost = ((startingGrams - latestGrams) / startingGrams) * 100;
+  const fractionOfTarget = percentLost / targetPercent;
+  return {
+    startingGrams,
+    latestGrams,
+    percentLost,
+    targetPercent,
+    fractionOfTarget,
+    // THREE, and the boundaries are inclusive at the bottom of each band: exactly
+    // nine-tenths of the way there IS nearing, and exactly at the target IS
+    // at-or-past. A run below `NEARING_FRACTION` — including one that has gained
+    // weight, which reads negative — is tracking, which is the ordinary state of
+    // almost every run almost all the time.
+    stance:
+      fractionOfTarget >= 1
+        ? 'atOrPast'
+        : fractionOfTarget >= NEARING_FRACTION
+          ? 'nearing'
+          : 'tracking',
+  };
+}
+
 /**
  * How far along a run is against what it was aiming at, or `null` when there is
  * nothing to say.
@@ -139,12 +205,7 @@ export function targetProgress(
   const weightLoss: WeightLossProgress | null =
     target.weightLossPercent === null || latestGrams === null
       ? null
-      : {
-          startingGrams,
-          latestGrams,
-          percentLost: ((startingGrams - latestGrams) / startingGrams) * 100,
-          targetPercent: target.weightLossPercent,
-        };
+      : buildWeightLoss(startingGrams, latestGrams, target.weightLossPercent);
 
   const latestPh =
     target.phAtMost === null ? null : latestBy(observations, (observation) => observation.ph);

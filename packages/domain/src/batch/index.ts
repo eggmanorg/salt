@@ -71,5 +71,10 @@ export type { BatchLogEntry } from './buildBatchLog.js';
 // as its target. The exception the header's "ordering arithmetic over the log would
 // be a real domain function" anticipated, and it is here rather than in the PWA's
 // display layer so that layer's "nothing here computes a quantity" stays true.
-export { targetProgress } from './targetProgress.js';
-export type { TargetProgress, WeightLossProgress, PhProgress } from './targetProgress.js';
+export { targetProgress, NEARING_FRACTION } from './targetProgress.js';
+export type {
+  TargetProgress,
+  WeightLossProgress,
+  PhProgress,
+  TargetStance,
+} from './targetProgress.js';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { targetProgress } from '../../src/index.js';
+import { targetProgress, NEARING_FRACTION } from '../../src/index.js';
 import type { BatchDoc, BatchObservationDoc, FormulaTarget } from '../../src/schemas/index.js';
 
 // How far along a run is (issue #1407, phase 04 of epic #778).
@@ -68,6 +68,8 @@ describe('targetProgress — the weight figure', () => {
       latestGrams: 1780,
       percentLost: ((2400 - 1780) / 2400) * 100,
       targetPercent: 35,
+      fractionOfTarget: (((2400 - 1780) / 2400) * 100) / 35,
+      stance: 'tracking',
     });
     expect(Math.round(progress?.weightLoss?.percentLost ?? 0)).toBe(26);
   });
@@ -201,5 +203,71 @@ describe('targetProgress — when there is nothing to say', () => {
     ]);
 
     expect(progress).toBeNull();
+  });
+});
+
+describe('targetProgress — the three appearances (issue #1407, phase 2)', () => {
+  // The cue is a THREE-state one, and the commonest way it would silently become a
+  // two-state one is a later edit collapsing `nearing` into a neighbour. These pin
+  // all three AT THEIR BOUNDARIES, which is the only place that collapse shows.
+  //
+  // 2 400 g green, aiming at 35% lost. The weights are stated rather than computed
+  // from `NEARING_FRACTION`: a test that derives its own input from the constant
+  // under test moves with it and stops checking anything. 1 644 g IS exactly
+  // nine-tenths of the way (31.5 of 35), and 1 560 g is exactly at it.
+  function stanceAt(grams: number, target = LOST_35, basisGrams = GREEN_GRAMS) {
+    return targetProgress(batch(target, basisGrams), [
+      reading('2026-07-01T09:00:00.000Z', { weightGrams: grams }),
+    ])?.weightLoss;
+  }
+
+  it('is tracking well short of the target', () => {
+    expect(stanceAt(2200)?.stance).toBe('tracking');
+  });
+
+  it('is tracking one gram short of the nearing boundary', () => {
+    expect(stanceAt(1645)?.stance).toBe('tracking');
+  });
+
+  it('is nearing AT the boundary, inclusively', () => {
+    const at = stanceAt(1644);
+    expect(at?.fractionOfTarget).toBe(NEARING_FRACTION);
+    expect(at?.stance).toBe('nearing');
+  });
+
+  it('is still nearing one gram short of the target', () => {
+    expect(stanceAt(1561)?.stance).toBe('nearing');
+  });
+
+  it('is at-or-past AT the target, inclusively', () => {
+    const at = stanceAt(1560);
+    expect(at?.fractionOfTarget).toBe(1);
+    expect(at?.stance).toBe('atOrPast');
+  });
+
+  it('stays at-or-past however far past it goes', () => {
+    expect(stanceAt(1488)?.stance).toBe('atOrPast');
+    expect(stanceAt(500)?.stance).toBe('atOrPast');
+  });
+
+  it('is tracking for a run that has gained weight', () => {
+    expect(stanceAt(2520)?.stance).toBe('tracking');
+  });
+
+  it('reports the fraction UNCLAMPED, so the figure can outrun the meter', () => {
+    // The meter clamps for its own geometry (`Progress` does that itself). Nothing
+    // here does, which is what lets the number beside it keep counting.
+    expect(stanceAt(1488)?.fractionOfTarget).toBeGreaterThan(1);
+    expect(stanceAt(2520)?.fractionOfTarget).toBeLessThan(0);
+  });
+
+  it('scales with the target rather than sitting a fixed distance from it', () => {
+    // Three points short of 35% and three points short of 12% are very different
+    // distances, so the constant is a FRACTION. A 10% target reached nine-tenths of
+    // the way must read the same stance as a 35% one — and a run the same NUMBER of
+    // points short of a small target is already past it.
+    const SMALL = { weightLossPercent: 10, phAtMost: null };
+    expect(stanceAt(1820, SMALL, 2000)?.stance).toBe('nearing');
+    expect(stanceAt(1800, SMALL, 2000)?.stance).toBe('atOrPast');
   });
 });

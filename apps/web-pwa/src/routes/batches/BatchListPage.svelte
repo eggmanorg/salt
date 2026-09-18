@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { Chip, ChipGroup, EmptyState, Icon, ListPage } from '@salt/ui-components';
+  import { Chip, ChipGroup, EmptyState, Icon, ListPage, Progress } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
+  import { targetProgress } from '@salt/domain';
   import type { CureCategory } from '@salt/domain';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
   import { batches, initBatchesSync } from '../../lib/batchService.js';
+  import {
+    observationLogs,
+    initBatchObservationLogsSync,
+  } from '../../lib/batchObservationService.js';
   import {
     categoryChips as chipsFor,
     categoryLabel,
@@ -11,6 +16,8 @@
     formatWhen,
     nextAction,
     orderBatches,
+    targetStanceClass,
+    weightLossText,
     yieldSummary,
   } from './batchDisplay.js';
 
@@ -60,6 +67,38 @@
     categoryFilter === null ? all : all.filter((b) => b.cureCategory === categoryFilter),
   );
   const ordered = $derived(orderBatches(shown));
+
+  // ─── How far along each run is (issue #1407, phase 2) ────────────────────────
+  //
+  // ONLY THE RUNS THAT CARRY A TARGET get a log subscription — a household with
+  // nothing but bread opens not a single extra listener, which is what keeps this
+  // dark. `batchObservationService` explains why a per-run listener is the route
+  // rather than a collection-group query or a denormalised figure on the batch.
+  //
+  // The effect reads the JOINED KEY and nothing else, so it re-subscribes when the
+  // SET of targeted runs changes and not merely when the store hands back a new
+  // array on every snapshot.
+  const targetedIdKey = $derived(
+    all
+      .filter((batch) => batch.target !== null)
+      .map((batch) => batch.id)
+      .sort()
+      .join(','),
+  );
+  $effect(() => initBatchObservationLogsSync(targetedIdKey === '' ? [] : targetedIdKey.split(',')));
+
+  /**
+   * The weight half for one run, or null — no meter and no gap where one would be.
+   *
+   * The pH half is deliberately not shown here: it has no bar (there is no frozen
+   * zero to measure from) and the card is a glance rather than a second copy of the
+   * run's page.
+   */
+  function meterFor(batch: (typeof ordered)[number]) {
+    const log = $observationLogs.get(batch.id);
+    if (log === undefined) return null;
+    return targetProgress(batch, log)?.weightLoss ?? null;
+  }
 </script>
 
 <!-- Bread is still being built (issue #831): everyone outside the test group is
@@ -112,6 +151,7 @@
       <ul class="flex flex-col gap-2" data-testid="batch-list">
         {#each ordered as batch (batch.id)}
           {@const next = nextAction(batch)}
+          {@const meter = meterFor(batch)}
           <li>
             <!-- The whole card is the target. A run has exactly one thing you can do
                with it from here — open it — so a row with a separate affordance
@@ -160,6 +200,29 @@
                 <span class="flex items-center gap-2 text-sm" data-testid="batch-card-next">
                   <Icon name="CircleSlash" size={14} class="text-muted-foreground" />
                   <span>Abandoned.</span>
+                </span>
+              {/if}
+
+              <!-- ─── How far along it is (issue #1407) ──────────────────────
+                 THE CUE, and the whole of it: a coppa at 31% of a 35% target is a
+                 different colour and a fuller bar than one at 12%, without reading
+                 the numbers. No word on this card judges a run, nothing is
+                 blocked, and past the target the bar simply stays full while the
+                 figure keeps counting. A run with no target — which is every bake
+                 — renders nothing at all here. -->
+              {#if meter !== null}
+                <span
+                  class="flex flex-col gap-1"
+                  data-testid="batch-card-target"
+                  data-stance={meter.stance}
+                >
+                  <span class="text-sm tabular-nums {targetStanceClass(meter.stance)}">
+                    {weightLossText(meter)}
+                  </span>
+                  <Progress
+                    value={meter.fractionOfTarget * 100}
+                    ariaLabel={`How far ${batch.recipeTitle} has got towards what it is aiming at`}
+                  />
                 </span>
               {/if}
 

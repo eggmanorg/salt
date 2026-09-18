@@ -482,6 +482,7 @@ export {
   withBatchStepDone,
   buildBatchLog,
   targetProgress,
+  NEARING_FRACTION,
 } from './batch/index.js';
 export type {
   FreezeBatchFailure,
@@ -490,6 +491,7 @@ export type {
   TargetProgress,
   WeightLossProgress,
   PhProgress,
+  TargetStance,
 } from './batch/index.js';
 
 // URL module — pure display-time cache-buster for regenerated image URLs (#460).

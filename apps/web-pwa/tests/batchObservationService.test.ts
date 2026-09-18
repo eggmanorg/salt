@@ -33,7 +33,9 @@ vi.mock('@salt/observability', () => ({
 import * as firebaseSync from '@salt/firebase-sync';
 import {
   observations,
+  observationLogs,
   initBatchObservationsSync,
+  initBatchObservationLogsSync,
   logObservation,
 } from '../src/lib/batchObservationService.js';
 
@@ -342,5 +344,85 @@ describe('batchObservationService — logging a reading', () => {
     expect(fs.addBatchObservation).toHaveBeenCalledTimes(2);
     expect(writtenObservation(0).note).toBe('hers');
     expect(writtenObservation(1).note).toBe('his');
+  });
+});
+
+describe('batchObservationService — many runs at once (issue #1407)', () => {
+  // The in-flight list draws a meter per run, and each meter is arithmetic over
+  // that run's own log. One listener per run, reusing the adapter unchanged —
+  // `firestore.rules` and `@salt/firebase-sync` are untouched by #1407, which is
+  // what rules a collection-group query out.
+
+  function entry(id: string, weightGrams: number): BatchObservationDoc {
+    return {
+      id,
+      schemaVersion: 1,
+      at: OBSERVED_AT,
+      stageId: null,
+      weightGrams,
+      ph: null,
+      temperatureC: null,
+      relativeHumidityPercent: null,
+      note: '',
+      image: null,
+    };
+  }
+
+  it('opens exactly one subscription per run it is given', () => {
+    initBatchObservationLogsSync(['coppa-1', 'salami-2']);
+
+    expect(fs.subscribeBatchObservations).toHaveBeenCalledTimes(2);
+    expect(fs.subscribeBatchObservations.mock.calls.map((call) => call[0])).toEqual([
+      'coppa-1',
+      'salami-2',
+    ]);
+  });
+
+  it('opens none at all for an empty list', () => {
+    initBatchObservationLogsSync([]);
+
+    expect(fs.subscribeBatchObservations).not.toHaveBeenCalled();
+  });
+
+  it('keys each run’s readings by its own id', () => {
+    initBatchObservationLogsSync(['coppa-1', 'salami-2']);
+    fs.subscribeBatchObservations.mock.calls[0]![1]([entry('o-1', 1780)]);
+    fs.subscribeBatchObservations.mock.calls[1]![1]([entry('o-2', 900)]);
+
+    const logs = get(observationLogs);
+    expect(logs.get('coppa-1')?.[0]?.weightGrams).toBe(1780);
+    expect(logs.get('salami-2')?.[0]?.weightGrams).toBe(900);
+  });
+
+  it('resets first, so a departed run’s readings cannot outlive it', () => {
+    // A meter drawn from a run that is no longer on the list would be a figure
+    // about nothing, and it would look exactly like a real one.
+    initBatchObservationLogsSync(['coppa-1']);
+    fs.subscribeBatchObservations.mock.calls[0]![1]([entry('o-1', 1780)]);
+    expect(get(observationLogs).has('coppa-1')).toBe(true);
+
+    initBatchObservationLogsSync(['salami-2']);
+
+    expect(get(observationLogs).has('coppa-1')).toBe(false);
+  });
+
+  it('unsubscribes every run it opened', () => {
+    const unsubs = [vi.fn(), vi.fn()];
+    let next = 0;
+    fs.subscribeBatchObservations.mockImplementation(() => unsubs[next++]!);
+
+    initBatchObservationLogsSync(['coppa-1', 'salami-2'])();
+
+    expect(unsubs[0]).toHaveBeenCalledTimes(1);
+    expect(unsubs[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a subscription failure without throwing', () => {
+    initBatchObservationLogsSync(['coppa-1']);
+    const onError = fs.subscribeBatchObservations.mock.calls[0]![2];
+
+    expect(() =>
+      onError({ kind: 'SyncError', reason: 'pull-failed' }, new Error('boom')),
+    ).not.toThrow();
   });
 });

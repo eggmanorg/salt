@@ -18,6 +18,7 @@
     PopoverContent,
     PopoverMenuItem,
     PopoverTrigger,
+    Progress,
     Spinner,
     TextField,
   } from '@salt/ui-components';
@@ -47,6 +48,7 @@
     isObservational,
     nextAction,
     phTargetText,
+    targetStanceClass,
     weightLossText,
     yieldSummary,
   } from './batchDisplay.js';
@@ -871,11 +873,30 @@
             {#if progress !== null}
               <div class="flex flex-col gap-1" data-testid="batch-target-progress">
                 {#if progress.weightLoss !== null}
-                  <p class="text-sm font-medium tabular-nums" data-testid="batch-target-weight">
+                  <p
+                    class="text-sm font-medium tabular-nums {targetStanceClass(
+                      progress.weightLoss.stance,
+                    )}"
+                    data-testid="batch-target-weight"
+                    data-stance={progress.weightLoss.stance}
+                  >
                     {weightLossText(progress.weightLoss)}
                   </p>
+                  <!-- The meter, through `@salt/ui-components`' `Progress` and no
+                     other (CLAUDE.md rule 7). It CLAMPS its own value, so a run
+                     past its target shows a full bar while the figure above it
+                     keeps counting — the geometry stops, the number does not. -->
+                  <div data-testid="batch-target-meter" data-stance={progress.weightLoss.stance}>
+                    <Progress
+                      value={progress.weightLoss.fractionOfTarget * 100}
+                      ariaLabel="How far this run has got towards what it is aiming at"
+                    />
+                  </div>
                 {/if}
                 {#if progress.ph !== null}
+                  <!-- NO BAR HERE, and that is the decision rather than an omission:
+                     a pH curve has no frozen zero to measure from. See
+                     `targetProgress`'s `PhProgress`. -->
                   <p class="text-sm font-medium tabular-nums" data-testid="batch-target-ph">
                     {phTargetText(progress.ph)}
                   </p>

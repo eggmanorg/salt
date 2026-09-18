@@ -287,7 +287,10 @@ wrong lifetime, wrong sharing. It:
   produces (`targetProgress` in `@salt/domain`) is the one live number a batch screen
   shows, and it **decides nothing**: no `finished` state, no gate, no warning, no
   verdict, and no estimate of when the target will be reached. Past it the figure
-  keeps counting;
+  keeps counting, and the meter beside it simply stays full. A run approaching its
+  target changes **appearance** — a colour and a weight, never a word — and the
+  threshold is one constant (`NEARING_FRACTION`) stated as the domestic starting
+  point it is, not as a fact about curing;
 - carries an **observation log** — weight, pH, temperature, humidity, a photo, a note;
 - records **when it was stopped**, not merely that it was (`abandonedAt`, issue
   #1280). A run given up on at ten past eight on the Sunday is a different story

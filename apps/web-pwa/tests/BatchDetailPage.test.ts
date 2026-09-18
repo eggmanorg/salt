@@ -1503,6 +1503,19 @@ describe('BatchDetailPage — a temperature and a humidity in the log (issue #12
     expect(loggedArgs().ph).toBe(5.1);
   });
 
+  it('refuses a pH off the scale on the field, rather than handing it over', async () => {
+    // 0–14 is what a strip or a probe can read, so anything beyond it is a typo.
+    // Said on the box while it is being typed; `BatchObservationSchema` carries the
+    // same bound as the rail behind it.
+    await showRun();
+    await openLogSheet();
+
+    await fireEvent.input(screen.getByTestId('batch-log-ph'), { target: { value: '20' } });
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).toBeDisabled());
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
   it('leaves pH null when nobody typed one', async () => {
     await showRun();
     await openLogSheet();
@@ -1729,5 +1742,72 @@ describe('BatchDetailPage — how far along the run is (issue #1407)', () => {
 
     await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
     expect(screen.queryByTestId('batch-target-progress')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
+  // `makeBatch` freezes `basisGrams: 816`. 604 g is 26% lost and a long way off;
+  // 558 g is just over nine-tenths of the way to a 35% target (559 g is just
+  // under); 506 g is 38% lost, past it.
+  async function showCuring(weightGrams: number): Promise<void> {
+    await showRun({ target: { weightLossPercent: 35, phAtMost: null } });
+    mockObservations._set([observation({ weightGrams })]);
+  }
+
+  it('puts a meter beside the figure', async () => {
+    await showCuring(604);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(
+      screen.getByTestId('batch-target-meter').querySelector('[role="progressbar"]'),
+    ).not.toBeNull();
+  });
+
+  it('wears the nearing appearance nine-tenths of the way there', async () => {
+    await showCuring(558);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing');
+    expect(screen.getByTestId('batch-target-weight').getAttribute('data-stance')).toBe('nearing');
+  });
+
+  it('wears the at-or-past appearance while the figure keeps counting', async () => {
+    await showCuring(506);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('atOrPast');
+    expect(screen.getByTestId('batch-target-weight')).toHaveTextContent('38% lost of 35%');
+  });
+
+  it('changes appearance as the readings come in, on a page already open', async () => {
+    // The live figure has to follow the log rather than whatever it was when the
+    // page was opened — a cure's page is left open while the crock goes on the
+    // scales.
+    await showCuring(700);
+    await waitFor(() =>
+      expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('tracking'),
+    );
+
+    mockObservations._set([observation({ id: 'obs-2', weightGrams: 558 })]);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing'),
+    );
+  });
+
+  it('shows no meter for a pH target — there is no frozen zero to measure from', async () => {
+    await showRun({ target: { weightLossPercent: null, phAtMost: 5.3 } });
+    mockObservations._set([observation({ ph: 5.1 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-ph')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-meter')).toBeNull();
+  });
+
+  it('shows no meter at all on a run with no target', async () => {
+    await showRun();
+    mockObservations._set([observation({ weightGrams: 604 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-meter')).toBeNull();
   });
 });

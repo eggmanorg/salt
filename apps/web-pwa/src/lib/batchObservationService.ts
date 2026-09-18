@@ -70,6 +70,35 @@ import type { Readable } from 'svelte/store';
 const _observations = writable<BatchObservationDoc[] | undefined>(undefined);
 export const observations: Readable<BatchObservationDoc[] | undefined> = _observations;
 
+// ─── MANY RUNS' LOGS AT ONCE (issue #1407, phase 2) ───────────────────────────
+//
+// The in-flight list carries each run's percent-lost figure, and that figure is
+// arithmetic over the LOG — which lives in a subcollection the list has no other
+// path to. Three routes existed and two were shut:
+//
+//   • a collection-group query over `observations` would need a
+//     `match /{path=**}/observations/{id}` clause in `firestore.rules` and an
+//     index; #1407 states outright that the rules and `@salt/firebase-sync` are
+//     untouched, and widening a read rule to serve a display figure is not a
+//     trade this feature is worth;
+//   • denormalising the latest weight onto the batch document would put a second,
+//     derived copy of a reading on a whole-document-LWW record whose entire point
+//     is that it is frozen — precisely the drift `BatchSchema`'s header exists to
+//     prevent.
+//
+// So: ONE `subscribeBatchObservations` PER RUN, reusing the adapter unchanged, and
+// **only for runs that carry a target**. A household with nothing but bread opens
+// not a single extra listener, which is also what keeps this feature genuinely
+// dark. The bound is the number of cures on the go — a handful — and each log is
+// tens of documents.
+//
+// A MAP, keyed by batch id. A run whose key is absent has not loaded yet and shows
+// no figure; an empty array is loaded-and-nothing-recorded. Oldest first within
+// each entry, exactly as the adapter delivers it.
+const _logsByBatch = writable<ReadonlyMap<string, readonly BatchObservationDoc[]>>(new Map());
+export const observationLogs: Readable<ReadonlyMap<string, readonly BatchObservationDoc[]>> =
+  _logsByBatch;
+
 // ─── Error reporting ────────────────────────────────────────────────────────────
 
 let _errorReporter: ReturnType<typeof createObservabilityErrorReportingAdapter> | null = null;
@@ -95,6 +124,37 @@ export function initBatchObservationsSync(batchId: string): () => void {
     (incoming) => _observations.set(incoming),
     (err, rawError) => reportSubscriptionError(errors, err, rawError),
   );
+}
+
+/**
+ * Subscribe to several runs' logs at once, and return the unsub for all of them.
+ *
+ * Idempotent in the sense that matters: the store is RESET first, so a re-init with
+ * a different set of runs can never leave a departed run's readings behind for the
+ * list to draw a meter from. That is the same reset `initBatchObservationsSync`
+ * above does and for the same reason.
+ *
+ * The caller decides which runs are worth a listener — see the note above: today
+ * that is the runs carrying a target, and nothing here assumes it.
+ */
+export function initBatchObservationLogsSync(batchIds: readonly string[]): () => void {
+  _logsByBatch.set(new Map());
+  const errors = getErrorReporter();
+  const unsubs = batchIds.map((batchId) =>
+    subscribeBatchObservations(
+      batchId,
+      (incoming) =>
+        _logsByBatch.update((current) => {
+          const next = new Map(current);
+          next.set(batchId, incoming);
+          return next;
+        }),
+      (err, rawError) => reportSubscriptionError(errors, err, rawError),
+    ),
+  );
+  return () => {
+    for (const unsub of unsubs) unsub();
+  };
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────

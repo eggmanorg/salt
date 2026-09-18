@@ -1,5 +1,5 @@
 import { currentStage, stageStatus } from '@salt/domain';
-import type { CureCategory, PhProgress, WeightLossProgress } from '@salt/domain';
+import type { CureCategory, PhProgress, TargetStance, WeightLossProgress } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
 import { CureCategorySchema } from '@salt/domain/schemas';
 import { KIND_COPY } from '../recipes/recipeKind.js';
@@ -362,4 +362,33 @@ export function weightLossText(progress: WeightLossProgress): string {
  */
 export function phTargetText(progress: PhProgress): string {
   return `pH ${progress.latest} — aiming below ${progress.targetAtMost}`;
+}
+
+/**
+ * THE CUE (issue #1407, phase 2) — the one place the three appearances are chosen.
+ *
+ * A COLOUR AND A WEIGHT, and not a word. Nothing here says "ready", "done",
+ * "overdue" or anything else that reads as a verdict on a run: the whole of the cue
+ * is that a coppa at 31% of a 35% target catches your eye going down the list and
+ * one at 12% does not.
+ *
+ * The METER does the rest of the work and needs nothing from here: `Progress`
+ * clamps its own value to its range (ui-spec-v02 §8.15), so a run past its target
+ * shows a full bar while the figure beside it keeps counting.
+ *
+ * Returned as a class string rather than a variant on the primitive, deliberately:
+ * `Progress` has no colour variant, and adding one to `@salt/ui-components` to
+ * express three states of one feature would put a cure's vocabulary in the design
+ * system. `apps/web-pwa/tests/batchDisplay.test.ts` pins all three at their
+ * boundaries so the cue cannot silently become a two-state one.
+ */
+export function targetStanceClass(stance: TargetStance): string {
+  switch (stance) {
+    case 'atOrPast':
+      return 'text-primary';
+    case 'nearing':
+      return 'text-foreground';
+    default:
+      return 'text-muted-foreground';
+  }
 }
