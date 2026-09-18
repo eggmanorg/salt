@@ -417,6 +417,17 @@ export const generateGuidedPlan = onCallGenkit(
 // stages land on the formula screen for review, and the user's Save is what writes
 // them onto `formulas/{recipeId}`.
 //
+// AND LOSING THEM TO A LOCKED PHONE IS CORRECT (issue #1429, epic #1417), not an
+// unfixed #1416: this callable HANDS THE RESULT OVER TO BE REVIEWED rather than
+// SAVING IT FOR YOU. `formulas/{recipeId}` requires a composition only the user can
+// declare, so there is no stages-only write; on a first visit the screen's own Save
+// is disabled, so a server write would write a document the client is refusing to
+// write; and where a write IS possible it would destroy hand-corrected stages
+// through the re-run confirmation before the user had seen the replacement. Do not
+// add a write here. The full argument, the boundary of the claim and the two tests
+// that pin it are in the flow header (`flows/extractProcessStages.ts`); the decision
+// is in docs/formulas-schedules-batches.md → "Process".
+//
 // Plain onCallGenkit, same call as generateGuidedPlan and for the same reason: one
 // call from one tap, no cross-invocation pair to unify, so the traced factory would
 // buy only a wire envelope to maintain. 90s for the flow's 55s withAiTimeout —

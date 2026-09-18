@@ -266,6 +266,40 @@ waits — but only for a method that has something to wait for. This is enforced
 the flow rather than asked for in the prompt: a model told to list stages will
 always find some, and an invented proof is worse than no process at all.
 
+**And the extracted stages are deliberately held for review — losing them is
+correct** (#1429, under epic #1417). `extractProcessStages` writes nothing: the
+stages land on the formula screen and live in its component state alone, so a
+reload, a closed tab or a suspended phone takes them, and unlike the rest of that
+epic the window stays open until Save is pressed, which may be never. Three reasons,
+any one of which would settle it. **(a)** There is no document to write:
+`FormulaSchema` requires `components` and `referenceYield`, which are exactly the
+two things the screen exists to have a human declare, so a stages-only write does
+not exist and the whole-document one would mean authoring a composition the flow
+cannot know. **(b)** On a first visit the app is already refusing that write —
+`canSave` is false until a yield is declared, so Save is disabled while the extract
+button beside it is not. **(c)** Where a write _is_ possible it is destructive: the
+re-run confirmation replaces outright under whole-document LWW, and a server write
+would destroy hand-corrected stages in Firestore before the user had seen the
+replacement, with no undo and no timestamps to recover from. Note the inversion —
+where the write would be safe it is impossible, and where it is possible it is
+destructive. What the loss costs is one tap of a `lite`-tier, temperature-0
+transcription with the person in front of the button, which is what makes this a
+review gate rather than the defect the same loss was for `generateGuidedPlan`
+(#1416). **Rejected:** writing the whole formula server-side, writing only when a
+formula already exists (which makes behaviour depend on whether a document happens
+to be there), a draft document or new collection, and a browser-held draft (hard
+rule 3). **The boundary:** this is not "stages are never persisted server-side" as a
+timeless rule. All three reasons are properties of `process` living inside
+`formulas/{recipeId}` beside the human's declaration; move it into a document a
+function can author alone (#1405 is the nearest open issue) and the question
+reopens. The server half of the claim is pinned by
+`apps/cloud-functions/tests/flows/extractProcessStages.test.ts` → "nothing is
+written", the client half by `apps/web-pwa/tests/FormulaPageStages.test.ts` → "does
+NOT save what it found". **Still open, deliberately:** whether leaving the formula
+screen with unsaved stages should warn you. Nothing in `apps/web-pwa` guards unsaved
+changes today, and adding the first such guard is a page-wide product decision that
+runs against "Salt records, never polices" — it wants its own issue, not this one.
+
 ### Batch — the run
 
 Salt today has recipe (durable, family-shared) → `cookSessions` (transient,
