@@ -18,7 +18,7 @@
     equipmentIconFor,
     authorEntryIconBrief,
     drawEquipmentIcon,
-    hideEquipmentIcon,
+    hideEquipmentIconFor,
     reviseEquipmentBrief,
   } from '../../lib/equipmentService.js';
   import { addToast } from '../../lib/toastStore.js';
@@ -133,7 +133,7 @@
 
   async function handleHide(): Promise<void> {
     busy = true;
-    const result = await hideEquipmentIcon(accessory.id);
+    const result = await hideEquipmentIconFor(item.id, accessory.id);
     busy = false;
     if (result.kind !== 'ok') addToast('Failed to hide the picture.', 'destructive');
   }
@@ -254,9 +254,10 @@
             Upload
           </Button>
           {#if !hidden}
-            <!-- Hiding an entry's picture stops there: the row shows no picture
-                 at all, rather than falling back to the record's. kitIcons.ts
-                 carries that rule and the reason. -->
+            <!-- Hiding an entry's picture withdraws any picture it borrows too
+                 (hideEquipmentIconFor) and, with nothing left to read, falls
+                 back to no picture at all rather than to the record's own.
+                 kitIcons.ts carries the read order and the reason. -->
             <Button
               variant="outline"
               onclick={handleHide}

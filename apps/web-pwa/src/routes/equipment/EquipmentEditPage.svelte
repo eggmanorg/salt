@@ -50,7 +50,7 @@
     equipmentThumbnailFor,
     equipmentIconVersionFor,
     drawEquipmentIcon,
-    hideEquipmentIcon,
+    hideEquipmentIconFor,
     reviseEquipmentBrief,
     restartEquipmentBrief,
     describeEquipmentFromPhoto,
@@ -263,7 +263,7 @@
   async function handleHideIcon(): Promise<void> {
     if (!item) return;
     iconBusy = true;
-    const result = await hideEquipmentIcon(item.id);
+    const result = await hideEquipmentIconFor(item.id, null);
     iconBusy = false;
     if (result.kind !== 'ok') addToast('Failed to hide the icon.', 'destructive');
   }

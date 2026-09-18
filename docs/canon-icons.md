@@ -238,10 +238,13 @@ specific drawing and a generic one. Nothing displays that string; every heading 
 row shows the entry's own name.
 
 At display time `kitIcons.ts` prefers the entry's picture over its record's, and a
-**hidden** entry picture stops there rather than falling back — "hidden" is the
-answer for that row, and the record's picture would be answering a different
-question. An entry described but not yet drawn does fall back, which is what keeps
-the ~140 undrawn entries free.
+**hidden** entry picture stops the fall from the entry to the record — "hidden" is
+the answer for that row, and the record's picture would be answering a different
+question. It does **not** stop the fall from the entry's own picture to that same
+entry's _borrowed_ one (below): a borrow is not a different question, it is the
+same row pointed at a different drawing, and it can be set after a hide. Blocking
+that too would make the write permanent and silent. An entry described but not yet
+drawn falls back the same way, which is what keeps the ~140 undrawn entries free.
 
 ### A picture can be borrowed, and asked for where the miss is noticed (#1465, Phase 3)
 
@@ -266,20 +269,27 @@ rejected "a per-recipe one-tap add at the point of the miss"; #1465 reverses it,
 because the miss is noticed on the recipe and sending the person to Admin is the
 friction that leaves gaps open. #1458's concern — one-row-at-a-time minting is how
 #956's near-duplicates arose — is answered by **order**, not by removal:
-`suggestKitchenToolParent` leads, the searchable list of existing drawings comes
-next, and "draw a new one" sits under both.
+`suggestKitchenToolParent` leads — filtered to a tool that actually has a
+drawing, the same filter the searchable list beside it applies, since the query
+itself ranks on shared words alone and does not read `thumbnail` — the
+searchable list of existing drawings comes next, and "draw a new one" sits
+under both.
 
-**Two rows, two different acts**, and they are indistinguishable on screen:
+**Two rows, two different acts**, and they are indistinguishable on screen. Which
+one a row gets is decided by `resolveKitEntryItem` — the recorded link, falling
+back to the words where there is none — the same function `kitIcons.ts` renders
+through, so a row the strip already draws as "one of your things" cannot take the
+other act just because this dialog asked a narrower question:
 
-- a row that **links one of your things** gets a borrowed picture on the manifest —
-  a fact about that object. "Draw one for it" hands over to the equipment record's
-  page, where #877's read-the-description gate already lives; there is deliberately
-  no second host for that panel.
-- a row that links nothing is **ordinary words**, so choosing writes a **matcher**
-  on the chosen tool (every recipe that already says them lights up, nothing
-  migrated) and drawing mints a tool named after them. Equipment pictures are not
-  offered there: a record has no matchers, so there would be nothing for the words
-  to be taught to.
+- a row that **resolves to one of your things** gets a borrowed picture on the
+  manifest — a fact about that object. "Draw one for it" hands over to the
+  equipment record's page, where #877's read-the-description gate already lives;
+  there is deliberately no second host for that panel.
+- a row that resolves to nothing is **ordinary words**, so choosing writes a
+  **matcher** on the chosen tool (every recipe that already says them lights up,
+  nothing migrated) and drawing mints a tool named after them. Equipment pictures
+  are not offered there: a record has no matchers, so there would be nothing for
+  the words to be taught to.
 
 What this does **not** do is re-point the recipe's link. "This 'large frying pan'
 is my Tefal 28cm" is a per-recipe edit of what the line _means_, which is a

@@ -37,7 +37,7 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   equipmentIconFor: (icons: Map<string, EquipmentIconDoc>, id: string) => icons.get(id) ?? null,
   authorEntryIconBrief: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   drawEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
-  hideEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  hideEquipmentIconFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   reviseEquipmentBrief: vi.fn().mockResolvedValue({ kind: 'ok', value: 'a perforated basket' }),
 }));
 
@@ -45,7 +45,7 @@ import EquipmentEntryIconDialog from '../src/routes/equipment/EquipmentEntryIcon
 import {
   authorEntryIconBrief,
   drawEquipmentIcon,
-  hideEquipmentIcon,
+  hideEquipmentIconFor,
   reviseEquipmentBrief,
 } from '../src/lib/equipmentService.js';
 import { addToast } from '../src/lib/toastStore.js';
@@ -155,7 +155,7 @@ describe('EquipmentEntryIconDialog — once described, it is the item flow', () 
   it('hides this entry’s picture and offers no Hide once it is hidden', async () => {
     open(DESCRIBED);
     await userEvent.click(screen.getByTestId('equipment-entry-hide-btn'));
-    await waitFor(() => expect(hideEquipmentIcon).toHaveBeenCalledWith(ACCESSORY_ID));
+    await waitFor(() => expect(hideEquipmentIconFor).toHaveBeenCalledWith(ITEM_ID, ACCESSORY_ID));
     cleanup();
     open({ ...DESCRIBED, thumbnail: 'hidden' });
     expect(screen.queryByTestId('equipment-entry-hide-btn')).toBeNull();
@@ -318,7 +318,7 @@ describe('EquipmentEntryIconDialog — a refusal costs the words nothing', () =>
   });
 
   it('says so when hiding fails', async () => {
-    vi.mocked(hideEquipmentIcon).mockResolvedValueOnce({
+    vi.mocked(hideEquipmentIconFor).mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'transient' },
     });

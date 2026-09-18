@@ -47,9 +47,13 @@ export { resolveEquipmentItem, namesItemItself } from './queries/resolveEquipmen
 // entry recorded, read from an id rather than guessed from the words. Where a
 // link resolves it is authoritative; a dangling one answers null and the label
 // falls back to the word resolver above.
-export { resolveKitEntryEquipment } from './queries/resolveKitEntryEquipment.js';
+export {
+  resolveKitEntryEquipment,
+  resolveKitEntryItem,
+} from './queries/resolveKitEntryEquipment.js';
 export type {
   ResolvedKitEquipment,
   KitEquipmentLinkSource,
+  KitEntryEquipmentSource,
 } from './queries/resolveKitEntryEquipment.js';
 export type { EditRuleInput } from './commands/editRule.js';

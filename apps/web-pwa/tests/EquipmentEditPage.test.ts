@@ -38,7 +38,7 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   equipmentThumbnailFor: () => null,
   equipmentIconVersionFor: () => undefined,
   drawEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
-  hideEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  hideEquipmentIconFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   reviseEquipmentBrief: vi.fn(),
   restartEquipmentBrief: vi.fn(),
   describeEquipmentFromPhoto: vi.fn(),

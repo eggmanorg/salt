@@ -496,6 +496,47 @@ export async function hideEquipmentIcon(itemId: string): Promise<ReadResult<void
   return callDrawEquipmentIcon({ action: 'hide', itemId });
 }
 
+/**
+ * Hide this thing's own pictogram AND withdraw any picture it has been pointed
+ * at (#1465 Phase 3, reviewed) — the write half of `kitIcons.ts`'s hidden/
+ * borrowed order.
+ *
+ * A hide and a borrow are writes to two different documents — `equipmentIcons`
+ * via `hideEquipmentIcon`'s callable, `equipmentManifest` directly via
+ * `setBorrowedPictureFor` — so nothing keeps them in step on its own. Without
+ * this, borrowing a picture for a record and then hiding it would leave every
+ * recipe naming it still showing the borrowed picture while this page shows the
+ * hidden tile — the two disagreeing about the same thing. Composing both writes
+ * here is what "Hide" means at either scale: withdraw the drawn picture AND the
+ * pointer, so there is nothing left for `kitIcons.ts` to read. It reads only
+ * WHETHER one is currently set, never which write happened more recently — a
+ * borrow set again afterwards is a fresh, later act and is read straight
+ * through, same as any other borrow.
+ *
+ * @param equipmentId The owning item's id.
+ * @param accessoryId The entry to hide, or `null` for the record itself — also
+ *   the `equipmentIcons` document id to hide when set, an entry's own id being
+ *   its accessory id (the same identity `EquipmentEntryIconDialog` draws
+ *   through).
+ */
+export async function hideEquipmentIconFor(
+  equipmentId: string,
+  accessoryId: string | null,
+): Promise<ReadResult<void, DomainError>> {
+  const hidden = await hideEquipmentIcon(accessoryId ?? equipmentId);
+  if (hidden.kind !== 'ok') return hidden;
+
+  const item = currentManifest()?.items.find((candidate) => candidate.id === equipmentId);
+  const borrowing =
+    accessoryId === null
+      ? (item?.borrowedPicture ?? null)
+      : (item?.accessories.find((a) => a.id === accessoryId)?.borrowedPicture ?? null);
+  if (!borrowing) return hidden;
+
+  const cleared = await setBorrowedPictureFor(equipmentId, accessoryId, null);
+  return cleared.kind === 'ok' ? hidden : failure(cleared.error);
+}
+
 // ─── Description revision (issue #885) ───────────────────────────────────────
 // Both actions call the describeEquipmentSubject callable, which PERSISTS
 // NOTHING — the new description lands back in the textarea, still editable, and

@@ -153,6 +153,39 @@ describe('KitPicturePicker — one of your things', () => {
   });
 });
 
+describe('KitPicturePicker — resolved by words alone (review of #1482)', () => {
+  // A row with NO recorded link whose label already names one of your things by
+  // WORDS — every unlinked stored recipe reaches this dialog exactly this way
+  // until Phase 4 re-runs them (`resolveEquipmentItem` is asked before tools in
+  // `kitIcons.ts`, so the strip already draws this row as "one of your things").
+  // Before the fix the picker asked "is there a *recorded* link?" and answered
+  // no, so choosing wrote a matcher `kitIcons.ts` could never reach, and "draw
+  // new" minted a duplicate, instance-named `kitchenTools` document — the exact
+  // #956 row the issue's own pointer forbids.
+  it('treats a word-resolved row as one of your things, not ordinary words', async () => {
+    open(entry('Frying Pans'));
+    expect(screen.getByTestId('kit-picture-picker').textContent).toContain('Frying Pans');
+    await chooseFromList('Frying pan');
+    await waitFor(() =>
+      expect(setBorrowedPictureFor).toHaveBeenCalledWith('eq-pans', null, {
+        family: 'kitchenTool',
+        id: 'frying-pan',
+      }),
+    );
+    // Never a matcher, and never onto a name the renderer's link-then-words
+    // order would skip straight past.
+    expect(addKitchenToolMatcher).not.toHaveBeenCalled();
+  });
+
+  it('hands "draw one" to the equipment record for a word-resolved row too', async () => {
+    open(entry('Frying Pans'));
+    await userEvent.click(screen.getByTestId('kit-picture-draw-new'));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/equipment/eq-pans'));
+    // Never a second, instance-named tool.
+    expect(addKitchenTool).not.toHaveBeenCalled();
+  });
+});
+
 describe('KitPicturePicker — ordinary words', () => {
   it("teaches the chosen tool the row's words, and draws nothing", async () => {
     open(entry('heatproof bowl'));
@@ -183,6 +216,20 @@ describe('KitPicturePicker — ordinary words', () => {
       expect(addKitchenTool).toHaveBeenCalledWith({ label: 'Tagine', matchers: [] }),
     );
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('never suggests a tool with nothing actually drawn (should-fix, review of #1482)', async () => {
+    // `suggestKitchenToolParent` ranks on shared trailing words alone and never
+    // reads `thumbnail`, so an UNDRAWN tool can still win the guess. The
+    // searchable list beside it is filtered on `toolPicture(t) !== null`; the
+    // suggestion must be too, or tapping it writes a borrow that resolves to no
+    // picture, with the same "Picture set" toast.
+    mockKitchenTools.set([
+      tool('frying-pan', 'Frying pan'),
+      { ...tool('griddle-plate', 'Griddle plate'), thumbnail: null },
+    ]);
+    open(entry('square griddle plate'));
+    expect(screen.queryByTestId('kit-picture-suggestion')).toBeNull();
   });
 
   it('offers only TOOL pictures, never equipment, for words that name nothing you own', async () => {

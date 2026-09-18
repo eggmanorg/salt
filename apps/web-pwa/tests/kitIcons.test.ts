@@ -245,6 +245,45 @@ describe('kitIcons — the order', () => {
     );
   });
 
+  // ─── Hidden and borrowed together (review of #1482, issue #1465) ──────────
+  // Before the fix, `linkedIcon` checked the hidden sentinel for the accessory
+  // only, and stopped the whole search there — including a borrow, even one set
+  // AFTER the hide. So a hidden entry's picker write was silent forever, and the
+  // item level (no check at all) had the opposite problem: its hide never
+  // suppressed an existing borrow. Both must read the same way: hidden gates
+  // only the fall from an entry to its item, never the fall from an own picture
+  // to that SAME thing's borrowed one.
+  it('reads a fresh borrow on a HIDDEN entry, rather than swallowing the write', () => {
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', { thumbnail: 'hidden' } as EquipmentIconDoc),
+    );
+    mockEquipment.set(withBorrow('acc-tefal', { family: 'kitchenTool', id: 'frying-pan' }));
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBe('https://example.test/pan.webp');
+  });
+
+  it('reads a borrow on a HIDDEN record too, the same way', () => {
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('eq-pans', { thumbnail: 'hidden' } as EquipmentIconDoc),
+    );
+    mockEquipment.set(withBorrow(null, { family: 'kitchenTool', id: 'frying-pan' }));
+    expect(iconFor(entry('another pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
+      'https://example.test/pan.webp',
+    );
+  });
+
+  it('still draws nothing for a hidden entry with no borrow, rather than its record’s', () => {
+    // The untouched half of the rule: hidden still blocks the fall from an
+    // entry to its item when there is no borrow at either to answer first.
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', { thumbnail: 'hidden' } as EquipmentIconDoc),
+    );
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBeNull();
+  });
+
   // ─── The borrowed picture (issue #1465, Phase 3) ──────────────────────────
   // A thing you own can be POINTED at a drawing that already exists. It sits
   // behind its own picture — a drawing OF the thing beats a drawing of something

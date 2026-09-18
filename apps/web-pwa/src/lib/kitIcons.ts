@@ -4,8 +4,7 @@ import {
   CANON_ICON_HIDDEN,
   isCanonIconRenderable,
   kitchenToolForKitLabel,
-  resolveEquipmentItem,
-  resolveKitEntryEquipment,
+  resolveKitEntryItem,
 } from '@salt/domain';
 import type { EquipmentItem, EquipmentManifest } from '@salt/domain';
 import type {
@@ -30,46 +29,56 @@ import { equipment, equipmentIcons } from './equipmentService.js';
 //
 // THE ORDER, since issue #1465:
 //
-//   1. THE ENTRY'S RECORDED LINK. A kit entry may carry `equipment: { itemId,
-//      accessoryId }` — which of your things the flow meant, recorded when it had
-//      the manifest in front of it. Where that resolves it is authoritative and
-//      no word is read: the linked item's picture, and nothing else. This is what
-//      finally reaches a family member ("Tefal non-stick 28cm" carries no word of
-//      "Frying Pans" and no rule over the words could find it).
-//      Within that link, the ENTRY'S OWN PICTURE comes first and its ITEM'S
-//      second (#1465 Phase 2). An accessory or family member can be given a
-//      drawing of its own — on request only, never automatically — and where one
-//      exists it is the more specific picture of the two: the Lodge skillet
+//   1. WHICH OF YOUR THINGS THIS ROW MEANS, through `resolveKitEntryItem` — the
+//      entry's RECORDED LINK where it has one (`equipment: { itemId,
+//      accessoryId }`, recorded when the flow had the manifest in front of it,
+//      authoritative and no word read), falling back to EQUIPMENT BY NAME
+//      (`resolveEquipmentItem`) where it does not. ONE FUNCTION, shared with
+//      `KitPicturePicker.svelte`: the picker writes onto whatever this resolves
+//      to, so a row this file would render as "one of your things" and a row the
+//      picker treats as "ordinary words" can no longer be different rows. A word
+//      match never names a specific accessory, so it reads exactly like a
+//      bare item-level link. This is what finally reaches a family member
+//      ("Tefal non-stick 28cm" carries no word of "Frying Pans" and no rule over
+//      the words could find it).
+//      Within a resolved link, the ENTRY'S OWN PICTURE comes first and its
+//      ITEM'S second (#1465 Phase 2). An accessory or family member can be given
+//      a drawing of its own — on request only, never automatically — and where
+//      one exists it is the more specific picture of the two: the Lodge skillet
 //      rather than the Frying Pans tile. Where none exists the item's stands, as
 //      it did before, which is why the ~140 entries that will never be drawn cost
 //      nothing.
 //
-//      AND A HIDDEN ENTRY PICTURE STOPS THERE, rather than falling through to
-//      its item's. "Hidden" is the user saying they do not want a picture on this
-//      row; answering with the parent's would be answering a different question.
-//      A `thumbnail: null` entry — described but never drawn — is NOT that, and
-//      does fall through. The two states are distinguishable because
-//      `equipmentIcons` stores the tri-state, and the test table pins both.
+//      A BORROWED PICTURE SITS BEHIND EACH OWN ONE (#1465 Phase 3): entry's own
+//      → entry's borrowed → item's own → item's borrowed. A thing you own can be
+//      pointed at a drawing that already exists — "this Tefal 28cm looks like the
+//      generic frying pan" — without anything being drawn for it, and a borrowed
+//      picture is read THROUGH its reference, so redrawing the source updates
+//      every thing borrowing it. It sits behind the own picture because a drawing
+//      OF the thing beats a drawing of something that looks like it.
 //
-//      AND A BORROWED PICTURE SITS BEHIND EACH OWN ONE (#1465 Phase 3): entry's
-//      own → entry's borrowed → item's own → item's borrowed. A thing you own can
-//      be pointed at a drawing that already exists — "this Tefal 28cm looks like
-//      the generic frying pan" — without anything being drawn for it, and a
-//      borrowed picture is read THROUGH its reference, so redrawing the source
-//      updates every thing borrowing it. It sits behind the own picture because a
-//      drawing OF the thing beats a drawing of something that looks like it.
-//   2. THE WORD PATH, for an entry with no link, one whose link no longer answers
-//      to anything, and for the hand-typed container names on guided-cook cards
-//      which this work never links at all. Equipment first, then tools — steps 3
-//      and 4 below.
-//   3. EQUIPMENT BY NAME (`resolveEquipmentItem`), before tools, ALWAYS.
-//      `resolveKitchenTool` matches on token-aligned containment, so "Magimix
-//      Cocotte Slow Cook Pot" contains "pot" and would resolve to a generic
-//      saucepan drawing — a specific label losing its own picture to a vague one,
-//      which is the whole defect #954 fixed. Asking equipment first is what
-//      prevents it; making the tool resolver stricter is explicitly not (its
-//      `'Magmix bowl' → mixing-bowl` behaviour is correct and tested).
-//   4. THE CURATED TOOL, THROUGH `kitchenToolForKitLabel` (issue #1460, folded
+//      AND "HIDDEN" GATES ONLY THE FALL FROM AN ENTRY TO ITS ITEM, never the
+//      fall from an own picture to that SAME thing's own borrowed one. Hiding an
+//      accessory's own picture is the user saying "don't answer with the
+//      item's" — answering with the parent's would be answering a different
+//      question — but a borrow is not a different question, it is this same row
+//      pointed at a different drawing, and it can be set AFTER a hide (the
+//      picker does exactly that for a row with nothing else). Blocking it too
+//      would make that write permanent and silent: the picker's "Picture set"
+//      toast would fire and nothing would ever change, recoverable only by
+//      deleting the borrow and redrawing. So the order per level is own, then
+//      that level's borrowed, then — only if BOTH are absent — hidden decides
+//      whether to fall to the next level at all. Read identically for the
+//      accessory and the item, which is what makes hiding a record consistent
+//      with hiding an entry rather than a second, weaker button with the same
+//      label (`hideEquipmentIconFor` in `equipmentService.ts` is the write half:
+//      it withdraws that same level's borrow when you hide, so the two acts
+//      cannot leave a stale reference for this order to resurrect).
+//   2. THE WORD PATH continues to tools for a row `resolveKitEntryItem` answered
+//      null — no link, an entry whose link no longer answers to anything, and the
+//      hand-typed container names on guided-cook cards which this work never
+//      links at all.
+//   3. THE CURATED TOOL, THROUGH `kitchenToolForKitLabel` (issue #1460, folded
 //      into #1465) — not the bare `resolveKitchenTool`. A label that exactly
 //      names one of the manifest's ACCESSORIES is a part of a machine, and an
 //      ordinary object that merely shares a word with it is the wrong picture:
@@ -172,11 +181,16 @@ function lookupFor(
    * The picture for a resolved link: entry's own → entry's borrowed → item's own
    * → item's borrowed.
    *
-   * The one place the tri-state is read for more than "is it renderable": a
-   * HIDDEN entry picture is the user's answer for this row and ends the search
-   * before its own borrow is even consulted, where an entry with nothing drawn
-   * yet falls through. Both are `ownedIcon` nulls, so they have to be told apart
-   * here rather than there.
+   * The one place the tri-state is read for more than "is it renderable", and
+   * read IDENTICALLY at both scales: own, then that same scale's borrowed, and
+   * only once BOTH of those answer null does a HIDDEN own picture stop the
+   * search there rather than falling to the item's. A hidden own picture never
+   * blocks its OWN borrowed — a borrow is a different picture for the same row,
+   * not a different row, and it can be set after a hide (`KitPicturePicker`
+   * does exactly that for a row with nothing else showing). Blocking it too
+   * would make that write permanent and silent, reachable only by deleting the
+   * borrow and redrawing. A `thumbnail: null` own picture — described but never
+   * drawn — is not hidden, and always falls through the same way.
    */
   const linkedIcon = (
     item: EquipmentItem,
@@ -185,11 +199,13 @@ function lookupFor(
     if (accessory) {
       const own = ownedIcon(accessory.id);
       if (own) return own;
-      if (icons.get(accessory.id)?.thumbnail === CANON_ICON_HIDDEN) return null;
       const borrowed = borrowedIcon(accessory.borrowedPicture);
       if (borrowed) return borrowed;
+      if (icons.get(accessory.id)?.thumbnail === CANON_ICON_HIDDEN) return null;
     }
-    return ownedIcon(item.id) ?? borrowedIcon(item.borrowedPicture);
+    const itemOwn = ownedIcon(item.id);
+    if (itemOwn) return itemOwn;
+    return borrowedIcon(item.borrowedPicture);
   };
 
   // The whole order, once, returning the picture or null. Both public lookups are
@@ -197,20 +213,17 @@ function lookupFor(
   const pictureFor = (subject: KitIconSubject): Picture | null => {
     const entry = typeof subject === 'string' || !subject ? null : subject;
     const label = (typeof subject === 'string' ? subject : (entry?.label ?? ''))?.trim();
-
-    // 1. The recorded link. Authoritative where it resolves.
-    if (entry) {
-      const linked = resolveKitEntryEquipment(entry, items);
-      if (linked) return linkedIcon(linked.item, linked.accessory);
-    }
-
     if (!label) return null;
 
-    // 2/3. Equipment by name.
-    const item = resolveEquipmentItem(label, items);
-    if (item) return ownedIcon(item.id) ?? borrowedIcon(item.borrowedPicture);
+    // 1. Which of your things this row means — the link, falling back to the
+    // words. One function, shared with `KitPicturePicker.svelte`.
+    const linked = resolveKitEntryItem(
+      entry ? { label, equipment: entry.equipment ?? null } : { label },
+      items,
+    );
+    if (linked) return linkedIcon(linked.item, linked.accessory);
 
-    // 4. The curated tool, with the accessory-name rule in front of it.
+    // 2/3. The curated tool, with the accessory-name rule in front of it.
     const tool = kitchenToolForKitLabel(label, toolDocs, items);
     return tool ? toolPicture(tool) : null;
   };

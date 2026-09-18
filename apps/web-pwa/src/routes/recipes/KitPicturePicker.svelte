@@ -19,7 +19,7 @@
   import { push } from 'svelte-spa-router';
   import {
     isCanonIconRenderable,
-    resolveKitEntryEquipment,
+    resolveKitEntryItem,
     suggestKitchenToolParent,
   } from '@salt/domain';
   import { sentenceCase } from '../../lib/sentenceCase.js';
@@ -47,16 +47,22 @@
   // stays useful as the place the whole set is visible at once.
   //
   // ─── TWO ROWS, TWO DIFFERENT ACTS, and conflating them is the trap ──────────
-  // A row that LINKS one of your things is an identity: "this Tefal 28cm looks
-  // like the generic frying pan" is a fact about the pan, written onto the
-  // manifest as a BORROWED PICTURE — a reference, so redrawing the source reaches
-  // every pan borrowing it.
+  // A row that RESOLVES TO one of your things — through `resolveKitEntryItem`,
+  // the recorded link or, absent one, the words — is an identity: "this Tefal
+  // 28cm looks like the generic frying pan" is a fact about the pan, written
+  // onto the manifest as a BORROWED PICTURE — a reference, so redrawing the
+  // source reaches every pan borrowing it. That includes a row with no recorded
+  // link at all whose label already names one of your things by words — every
+  // unlinked stored recipe reaches this dialog that way until Phase 4 re-runs
+  // them — because `resolveKitEntryItem` is the exact function `kitIcons.ts`
+  // renders through, and a row this dialog opened on "no picture" cannot be
+  // answered by a different, narrower question than the one that put it here.
   //
-  // A row that links nothing is ORDINARY WORDS, and words are vocabulary: "this
-  // 'heatproof bowl' means the mixing bowl you already draw" is a MATCHER on the
-  // tool, which lights up every recipe that already said those words, with nothing
-  // migrated (#882). So the unlinked side offers tools only — an equipment record
-  // has no matchers and could not be taught a word.
+  // A row that resolves to nothing is ORDINARY WORDS, and words are vocabulary:
+  // "this 'heatproof bowl' means the mixing bowl you already draw" is a MATCHER
+  // on the tool, which lights up every recipe that already said those words,
+  // with nothing migrated (#882). So the unlinked side offers tools only — an
+  // equipment record has no matchers and could not be taught a word.
   //
   // WHAT THIS DOES NOT DO: re-point the recipe's link. "This 'large frying pan' is
   // my Tefal 28cm" is a per-recipe edit of which thing the line MEANS, which is a
@@ -71,14 +77,32 @@
   let { open, onClose, entry }: Props = $props();
 
   const items = $derived($equipment?.items ?? []);
-  /** Which of the household's things this row names, or null for ordinary words. */
-  const linked = $derived(resolveKitEntryEquipment(entry, items));
+  /**
+   * Which of the household's things this row names — the link where it has
+   * one, the words where it does not — or null for ordinary words. The SAME
+   * question `kitIcons.ts` asks to decide what to render, through the same
+   * function: a row the strip already draws as "one of your things" (an
+   * unlinked recipe whose label resolves by name, which is every stored kit
+   * until Phase 4 re-runs it) must take the linked branch here too, or this
+   * dialog writes a matcher the renderer never reaches and "draw new" mints a
+   * duplicate, instance-named tool (#956).
+   */
+  const linked = $derived(resolveKitEntryItem(entry, items));
 
   // Salt's guess, and it leads for the reason #956 exists: minting is two taps
   // and aliasing is a search, so the cheap act has to be the obvious one.
   // Advisory only — `suggestKitchenToolParent` answers null rather than guess when
-  // nothing shares the label's head noun.
-  const suggestion = $derived(suggestKitchenToolParent(entry.label, $kitchenTools));
+  // nothing shares the label's head noun, and is filtered here on actually having
+  // a drawing, the same filter `drawnTools` applies below: an undrawn tool is a
+  // valid alias TARGET on the admin curation queue (`KitchenToolsPage.svelte`,
+  // this function's other caller) but a useless one-tap choice here, since
+  // choosing it would still resolve to no picture.
+  const suggestion = $derived(
+    ((): KitchenToolDoc | null => {
+      const candidate = suggestKitchenToolParent(entry.label, $kitchenTools);
+      return candidate && toolPicture(candidate) !== null ? candidate : null;
+    })(),
+  );
 
   /** Every drawing that already exists, as `family:id` choices for the combobox. */
   const drawnTools = $derived($kitchenTools.filter((t) => toolPicture(t) !== null));
