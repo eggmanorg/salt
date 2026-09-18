@@ -177,6 +177,26 @@ describe('sanitiseRecipeKit', () => {
     ]);
   });
 
+  it('tolerates the brackets the prompt shows the handle in', () => {
+    // `KIT_HANDLE_FRAMING` shows the model `[k3.2] Steam Basket` and asks it to
+    // "copy its handle EXACTLY" — `ref: "[k3.2]"` is a plausible reading of that,
+    // and the map is keyed on the bare handle. Without stripping, this link would
+    // drop silently.
+    const handles = new Map([['k1.1', { itemId: 'item-magimix', accessoryId: 'acc-steam' }]]);
+    const kit = sanitiseRecipeKit(
+      [{ label: 'steam basket', stepIds: [], ref: '[k1.1]' }],
+      [],
+      handles,
+    );
+    expect(kit).toEqual([
+      {
+        label: 'steam basket',
+        stepIds: [],
+        equipment: { itemId: 'item-magimix', accessoryId: 'acc-steam' },
+      },
+    ]);
+  });
+
   it('drops a handle this call never offered, and keeps the entry', () => {
     // The trust boundary doing its job: a returned link is untrusted exactly as a
     // returned step id is, and an invented one costs the line its link, never its

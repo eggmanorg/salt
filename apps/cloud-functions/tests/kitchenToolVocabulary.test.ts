@@ -270,6 +270,11 @@ describe('the seeded kitchen-tool vocabulary', () => {
       // that a redundant matcher can out-length a sibling and steal a label; this
       // one can only ever win "egg whisk", which no other row claims.
       'whisk: egg whisk',
+      // Same mechanism, same reason: the Cosori's owned accessory is named
+      // exactly "Soup Ladle", and the bare label "Ladle" no longer answers for it
+      // once a label names a manifest accessory exactly (#1460's case table).
+      // This phrase can only ever win "soup ladle".
+      'ladle: soup ladle',
     ];
 
     const covers = (phrase: string, by: string) => ` ${phrase} `.includes(` ${by} `);

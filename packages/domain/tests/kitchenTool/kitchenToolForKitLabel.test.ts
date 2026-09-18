@@ -43,7 +43,7 @@ const VOCABULARY: readonly KitchenToolDoc[] = [
   tool('chefs-knife', "Chef's knife", ['knife']),
   tool('whisk', 'Whisk', ['egg whisk']),
   tool('spatula', 'Spatula', ['fish slice', 'turner']),
-  tool('ladle', 'Ladle'),
+  tool('ladle', 'Ladle', ['soup ladle']),
   tool('kitchen-scales', 'Kitchen scales', ['scales']),
   tool('wire-rack', 'Wire rack', ['rack']),
   tool('baking-tray', 'Baking tray', ['tray', 'baking sheet', 'sheet pan']),
@@ -135,6 +135,10 @@ describe('kitchenToolForKitLabel — #1460’s case table', () => {
     ['Spatula', 'spatula'],
     ['Rice Spoon', 'rice-paddle'],
     ['Oven Sheet Pan', 'baking-tray'],
+    // #1460's row is "Soup Ladle, Rice Spoon, Oven Sheet Pan" — all three
+    // "unchanged either way". Left off this list once, which let a false PR claim
+    // ("every row except Egg Whisk") through review undetected.
+    ['Soup Ladle', 'ladle'],
   ])('leaves %s drawing the %s it draws today', (label, id) => {
     expect(drawn(label)).toBe(id);
   });

@@ -102,7 +102,15 @@ export const TOOLS = [
   // `kitchenToolVocabulary.test.ts`.
   { id: 'whisk', label: 'Whisk', matchers: ['egg whisk'] },
   { id: 'tongs', label: 'Tongs', matchers: [] },
-  { id: 'ladle', label: 'Ladle', matchers: [] },
+  // "soup ladle" is the same act as "egg whisk" above, for the same reason
+  // (issue #1465, #1460's case table). Containment already reaches a soup
+  // ladle through the bare label "Ladle" — but the Cosori's owned accessory is
+  // named exactly "Soup Ladle", and `kitchenToolForKitLabel` refuses a
+  // single-word winning phrase for a label that exactly names a manifest
+  // accessory. Without this phrase the household's own soup ladle loses its
+  // picture; with it, the vocabulary SAYS a soup ladle is an ordinary ladle.
+  // Exempted by name in `kitchenToolVocabulary.test.ts`.
+  { id: 'ladle', label: 'Ladle', matchers: ['soup ladle'] },
   { id: 'slotted-spoon', label: 'Slotted spoon', matchers: [] },
   { id: 'box-grater', label: 'Box grater', matchers: ['grater'] },
   { id: 'microplane', label: 'Microplane', matchers: ['fine grater', 'zester'] },

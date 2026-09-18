@@ -116,7 +116,15 @@ export function sanitiseRecipeKit(
   const realSteps = new Set(stepIds);
   const linkFor = (ref: string | null): RecipeKitEquipmentLinkDoc | null => {
     if (!ref) return null;
-    const ids = handles.get(ref.trim());
+    // The prompt SHOWS the handle in brackets — `[k3.2] Steam Basket` — but the
+    // map is keyed on the bare handle `renderEquipmentManifestForKit` minted, so a
+    // model that (plausibly, reading "copy its handle EXACTLY") answers back
+    // `ref: "[k3.2]"` must still resolve, or the link is dropped silently. Harmless
+    // for the bracket-free answer, which is the common case.
+    const trimmed = ref.trim();
+    const key =
+      trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1).trim() : trimmed;
+    const ids = handles.get(key);
     return ids ? { itemId: ids.itemId, accessoryId: ids.accessoryId } : null;
   };
   // Insertion-ordered, so the kit stays in the order the model listed it —
