@@ -8,6 +8,8 @@ import { setNextCrop } from './fixtures/cropStub.js';
 // The description panel's revision loop (issue #885). Revise and Start over both
 // rewrite the words in the box and PERSIST NOTHING — Draw is still the only thing
 // that writes a description to the item, and the only thing that spends money.
+// Losing an unaccepted revision to a sleeping phone is deliberate; the reason is
+// at the callable (cloud-functions/src/index.ts, #1433 / epic #1417).
 // Use a photo (issue #947) is the third of the three: it opens the real
 // EquipmentPhotoDialog (only its ImageCropper stubbed, same seam
 // RecipeImportPhotoDialog's own test uses — jsdom cannot answer a real crop), so
@@ -144,7 +146,9 @@ describe('EquipmentEditPage — Revise', () => {
       STORED_BRIEF,
       "it's matte black, not cream",
     );
-    // Nothing is drawn and nothing is saved: Draw is still the only writer.
+    // Nothing is drawn and nothing is saved: Draw is still the only route from
+    // this box to the document (#1433 — not the only writer of the FIELD; the
+    // manifest trigger writes a brief it authors itself).
     expect(vi.mocked(drawEquipmentIcon)).not.toHaveBeenCalled();
   });
 
@@ -329,7 +333,9 @@ describe('EquipmentEditPage — Use a photo (issue #947)', () => {
       base64: 'stub-cropped-base64',
       contentType: 'image/webp',
     });
-    // Nothing is drawn and nothing is saved: Draw is still the only writer.
+    // Nothing is drawn and nothing is saved: Draw is still the only route from
+    // this box to the document (#1433 — not the only writer of the FIELD; the
+    // manifest trigger writes a brief it authors itself).
     expect(vi.mocked(drawEquipmentIcon)).not.toHaveBeenCalled();
     expect((screen.getByTestId('equipment-icon-steer') as HTMLInputElement).value).toBe('');
     await waitFor(() => expect(screen.queryByTestId('equipment-photo-dialog')).toBeNull());

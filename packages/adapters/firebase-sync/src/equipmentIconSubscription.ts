@@ -12,12 +12,17 @@ import { callFunction } from './callFunction.js';
 import { subscribeCollection } from './subscribeCollection.js';
 
 // Equipment pictograms (issue #877) — the read side of the server-owned
-// `equipmentIcons` collection, plus the one callable that writes it.
+// `equipmentIcons` collection, plus the Draw/Hide callable that writes it.
 //
 // The collection is client-write-denied in firestore.rules, so there is no
 // upsert/delete here to match `canonSubscription`'s: the brief trigger creates
-// and reconciles the documents, and the Draw callable is the only mutation the
-// client can reach.
+// and reconciles the documents, and every client mutation goes through a
+// callable. Two of them do, not one — `drawEquipmentIcon` below, and
+// `setIconUpload` (iconUploadCallables.ts), which replaces the pictogram with an
+// uploaded picture and stamps `thumbnail` + the cache-bust nonce only. Neither
+// `describeEquipmentSubject` nor anything else in this file writes a description:
+// see `apps/cloud-functions/src/index.ts` → `describeEquipmentSubject` for why an
+// unaccepted revision is deliberately transient (#1433).
 
 /**
  * Subscribe to every equipment icon document.

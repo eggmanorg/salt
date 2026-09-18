@@ -210,9 +210,20 @@ export const violationCeilings = {
   // secret with no Secret Manager, a logger, an observability flush) and only two
   // are the subject. Folding these cases into the shopping-day suite would buy the
   // counter and cost the reader a file named after the thing it tests.
+  // UT-B1 32 → 33 (issue #1433). ONE file crosses, and it is
+  // `flows/describeEquipmentSubject.test.ts` going from five mocks to six. The
+  // sixth is `firebase-admin/firestore`, and it is the entire point of the case it
+  // serves: the flow's defining property is that it NEVER takes a Firestore
+  // handle, so the only way to pin that is to own the seam a handle would come
+  // from. It cannot be narrowed — the flow imports nothing to inject through, and
+  // there is no argument to pass a fake in on. The other five are the harness this
+  // suite already had (genkit, the model catalogue, the AI timeout, the span
+  // namer, the fake-model resolver); none of them can carry this assertion, and
+  // splitting one case into a file of its own would duplicate all five to dodge
+  // the counter.
   'apps/cloud-functions': {
     'UT-A1': 3,
-    'UT-B1': 32,
+    'UT-B1': 33,
     'UT-C2': 4,
     'UT-E4': 0,
     'UT-G1': 0,

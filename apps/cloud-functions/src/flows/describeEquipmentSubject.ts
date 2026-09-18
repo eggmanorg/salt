@@ -31,11 +31,35 @@ import { flowModel } from '../ai/fakeModel.js';
 // manifest trigger sends and what "Start over" deliberately sends too. Since
 // #947, a `photo` authors from scratch as well — "Start over, but with a
 // picture" — because nobody in the make-and-model chain has ever SEEN the item
-// and a photo fixes that at the cause. The callable PERSISTS NOTHING —
-// `drawEquipmentIcon` remains the only writer of `subjectBrief`, and the photo
-// itself is never written anywhere — so iterating the words is free and only the
-// picture costs. Its schemas therefore live in `@salt/domain/schemas` (a
-// callable input is a trust boundary), mirroring describeRecipeScene.
+// and a photo fixes that at the cause. Its schemas therefore live in
+// `@salt/domain/schemas` (a callable input is a trust boundary), mirroring
+// describeRecipeScene.
+//
+// ─── THIS FLOW WRITES NOTHING, and the claim has to be stated carefully ─────
+// Neither the flow nor the callable over it persists anything, so a revision the
+// user never accepts is lost to a sleeping phone — deliberately (issue #1433,
+// epic #1417). The photo is never written anywhere either. Say the persistence
+// claim in the form that is actually TRUE, because the unqualified version
+// contradicts a transaction five files away. Scoped correctly, to the CALLABLE
+// rather than to this flow: `drawEquipmentIcon` is the only writer of
+// `subjectBrief` that takes its brief from a client request — the describe
+// callable's output, once the browser sends it. The FIELD has other writers —
+// the manifest trigger, and the `--apply` backfill in
+// scripts/generate-equipment-icons.mjs — both of which call THIS FLOW ITSELF, in
+// AUTHORING mode, and write the sentence they get back directly, never through
+// `drawEquipmentIcon`. (The backfill's briefs ARE read by a human, side by side
+// with their drawings, per that script's own header — "unseen by anybody" is
+// not what separates the writers; taking the brief from a client request is.)
+// That is exactly why drawEquipmentIcon.ts:110-131 needs a transaction: a
+// rename landing mid-draw means the trigger has already re-authored
+// `subjectBrief` under the new name. An agent who reads "the only writer" as
+// literal truth reads that transaction as ceremony and tidies it away.
+//
+// Why the revision stays transient rather than auto-saving — the five facts, each
+// with its void condition and its pin or its honest absence — is at the callable
+// (index.ts, `describeEquipmentSubject`); the decision is in docs/canon-icons.md →
+// "The description's two lives". This flow's own half is pinned by
+// tests/flows/describeEquipmentSubject.test.ts → "PERSISTS NOTHING".
 //
 // ─── SCOPE — the subject half ONLY ──────────────────────────────────────────
 // This flow describes what the THING IS. It must not author house style or
