@@ -15,7 +15,15 @@ const LINKED_PAN: KitEntrySnapshot = {
 };
 
 function recipe(overrides: Partial<RecipeKitSnapshot> = {}): RecipeKitSnapshot {
-  return { id: 'r1', title: 'Omelette', kit: [PAN], kitInferredAt: null, ...overrides };
+  return {
+    id: 'r1',
+    title: 'Omelette',
+    kit: [PAN],
+    kitInferredAt: null,
+    kind: 'recipe',
+    stepCount: 3,
+    ...overrides,
+  };
 }
 
 describe('planKitRerun', () => {
@@ -25,6 +33,20 @@ describe('planKitRerun', () => {
 
   it('leaves a recipe with no kit alone — the flow was already asked and said nothing', () => {
     expect(planKitRerun([recipe({ kit: [] })], null)[0]).toMatchObject({ skip: 'empty-kit' });
+  });
+
+  // PR #1483 review, should-fix 4: these two mirror the trigger's own guards in
+  // `maybeInferKit` (`onRecipeWritten.ts`) — a recipe in either state has a stale
+  // kit the trigger will decline to touch, forever, so targeting it would only
+  // clear its stamp and burn the whole stamp-wait timeout for nothing.
+  it('skips a recipe the trigger would decline as not cookable', () => {
+    const steps = planKitRerun([recipe({ kind: 'special' })], null);
+    expect(steps[0]).toMatchObject({ skip: 'not-cookable' });
+  });
+
+  it('skips a recipe the trigger would decline for having no steps', () => {
+    const steps = planKitRerun([recipe({ stepCount: 0 })], null);
+    expect(steps[0]).toMatchObject({ skip: 'no-steps' });
   });
 
   it('reports every recipe, skipped ones included, so the counts add up', () => {

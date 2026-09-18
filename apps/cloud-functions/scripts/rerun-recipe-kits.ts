@@ -28,13 +28,41 @@
 // with the overlap bounded by however many time out. `SETTLE_MS` is a small gap
 // after each, not the mechanism.
 //
-// HOW "DONE" IS DECIDED, and its actual boundary. The update DELETES
-// `kitInferredAt`, so the field being present again can only have been written
-// after that update landed — no clock comparison, no skew assumption between this
-// machine and the function's. What that does NOT distinguish is a stamp written
-// by a CONCURRENT edit of the same recipe by somebody using the app. That is a
-// benign collision (the kit was re-inferred either way) and it is the only case
-// where "done" means something slightly different from "done by us".
+// `STAMP_TIMEOUT_MS` IS DERIVED, NOT PICKED (PR #1483 review, blocking 1). It is
+// `AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS` — the trigger's own 300s function
+// quota, the same constant `onRecipeWritten` is registered with — plus headroom
+// for eventarc delivery and a cold start, neither counted inside that 300s. A
+// wait shorter than the host's own budget gives up on a merely-slow-but-
+// -successful inference before the system generating the answer does, which is
+// actively harmful, not merely early: the report line for that recipe would show
+// the PRE-RUN kit as "no change", the run would start a second inference on the
+// next recipe while the first is technically still allowed to be running, and a
+// resume would then skip the recipe (it stamped, just after we gave up) so
+// nothing ever revisits it. Deriving from the same constant the trigger is
+// registered with means the two cannot drift apart the way an independently
+// chosen number can.
+//
+// HOW "DONE" IS DECIDED, and its actual boundary (PR #1483 review, blocking 2).
+// The completion test compares the stamp's VALUE against `requestedAt` — the
+// instant this run asked the trigger to run again, reused from the
+// `kitRequestedAt` nonce already written in the same update — not merely its
+// PRESENCE. Presence alone is falsified by this repo's documented whole-document
+// LWW clobber (CLAUDE.md → Data model conventions): a client `setDoc` composed
+// from a copy of the recipe taken before this run's update still carries the
+// OLD `kitInferredAt`, and if a stale copy like that lands between our update
+// and the trigger's write, presence alone reads it as "done" — recording a
+// recipe as re-run that never was, while the real inference is still in flight
+// behind us. A value comparison cannot be fooled that way: a restored old stamp
+// is provably older than `requestedAt`, so it stays on the "not yet" branch.
+// What a value comparison does NOT protect against, stated rather than rounded
+// up: a stale `setDoc` landing AFTER we have already observed a genuine fresh
+// stamp can still clobber the document back to the old kit and the old stamp,
+// closing the trigger's guard on it permanently. No completion test run from
+// here can prevent that — it is the same whole-document-LWW contract that
+// governs every concurrent write to every recipe in this app, not a defect
+// particular to this script, and re-solving it would mean wiring conflict
+// resolution into `packages/domain`, which CLAUDE.md rule 1 says nothing does
+// today.
 //
 // AN INFERENCE THAT FAILS LEAVES NO STAMP — deliberately, so a redo can retry
 // (see `RecipeSchema.kitInferredAt`). After `STAMP_TIMEOUT_MS` such a recipe is
@@ -43,6 +71,18 @@
 // fresh stamp. Note the two are indistinguishable from here: a failed inference
 // and one that is merely slower than the timeout look the same, and both are
 // answered the same way.
+//
+// FOUR STATES MAKE THE TRIGGER DECLINE AND NEVER STAMP (PR #1483 review,
+// should-fix 4) — not-cookable, no-steps, the `devSettings/singleton` kill
+// switch, and a document that fails the trigger handler's own FULL
+// `RecipeSchema.safeParse`. All four are otherwise indistinguishable from a
+// failed inference from here, and all four are permanent, so three are filtered
+// before they can cost a `STAMP_TIMEOUT_MS` wait: not-cookable and no-steps are
+// `planKitRerun` skip reasons (the pure half, using the same `isCookable`
+// predicate `maybeInferKit` reads), the kill switch is a pre-flight read that
+// refuses `--write` outright when it is off, and a recipe failing the full
+// schema is read for its title/kit only (never targeted) and named in the
+// report instead — see `readRecipes` below.
 //
 // RESUMABLE. `--write` prints its own start instant; re-running with
 // `--since <that number>` skips every recipe already stamped at or after it. An
@@ -55,13 +95,25 @@
 // cannot answer one, and this repo has an established failure where a production
 // confirm gate hangs forever after printing its whole write plan
 // (docs/one-shot-scripts.md §3, issue #1067). `--write` is the only gate, and
-// `--limit` is how a first cautious pass is taken on a new environment.
+// `--limit` is how a first cautious pass is taken on a new environment (a
+// positive integer — a negative or fractional value is a usage error, not a
+// weird-but-valid slice).
 //
-// THE REPORT IS THE POINT. Every `--write` run writes a before/after label diff
-// to a markdown file (`--out`, defaulted per project and start instant) — what
-// each recipe's kit said before, what it says now, and which lines gained a link.
-// The issue's own acceptance is a spot-check of recipes using the Magimix, the
-// rice cooker and a named pan; this file is what that check reads.
+// THE REPORT IS THE POINT, and it is written after EVERY recipe, not only once
+// at the end (PR #1483 review, blocking 3): the whole file is rewritten to disk
+// each time an outcome is added, so an interrupt, a thrown `.update()` on a
+// recipe deleted mid-run, or a bad `--out` directory loses at most the recipe in
+// flight, never the record of the ones already done. That before/after record is
+// unrecoverable once lost — Firestore holds no soft-delete or tombstone the
+// script could re-read it from — so the resume feature and the evidence feature
+// have to agree, and only writing incrementally makes that true. `--out`
+// (defaulted per project and start instant) is what each recipe's kit said
+// before, what it says now, and which lines gained a link — plus, since the same
+// review (should-fix 5), every document this run could NOT act on and why: a
+// document failing even the narrow read, and one failing the full schema. The
+// issue's own acceptance is a spot-check of recipes using the Magimix, the rice
+// cooker and a named pan; this file is what that check reads, and it is meant to
+// hold every recipe the run touched or excluded, not only the successes.
 //
 // THE DECISION LAYER — which recipes are in scope, and what counts as a change —
 // lives in the pure, tested `scripts/lib/kitRerunPlan.ts` (docs/one-shot-scripts.md
@@ -91,15 +143,26 @@ import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 import { equipmentEntrySubjectName } from '@salt/domain';
-import { RecipeSchema } from '@salt/domain/schemas';
+import { DevSettingsSchema, RecipeSchema } from '@salt/domain/schemas';
 import type { EquipmentItemDoc } from '@salt/domain/schemas';
 
+import { AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS } from '../src/adapters/withAiTimeout.js';
 import { readEquipmentItems } from '../src/flows/equipmentContext.js';
 import { diffKitEntries, planKitRerun } from './lib/kitRerunPlan.js';
 import type { KitDiff, KitLink, RecipeKitSnapshot } from './lib/kitRerunPlan.js';
 
-/** How long one recipe's inference is waited for before it is called timed out. */
-const STAMP_TIMEOUT_MS = 180_000;
+// Eventarc delivery latency plus, on a cold instance, container start — neither
+// is counted inside the trigger's own `AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS`
+// clock, which starts only once the function body runs. Generous rather than
+// measured, the same posture `AI_TRIGGER_RECORDING_HEADROOM_MS` takes for its
+// own margin.
+const TRIGGER_DELIVERY_HEADROOM_MS = 60_000;
+/**
+ * How long one recipe's inference is waited for before it is called timed out.
+ * Derived from the trigger's own function quota, not picked independently — see
+ * this file's header, blocking finding 1.
+ */
+const STAMP_TIMEOUT_MS = AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS * 1000 + TRIGGER_DELIVERY_HEADROOM_MS;
 /** How often the recipe is re-read while waiting. */
 const POLL_MS = 3_000;
 /** A gap after each completed recipe. Courtesy, not the rate limit — see header. */
@@ -137,7 +200,15 @@ function numericFlag(name: string): number | null {
 }
 
 const since = numericFlag('--since');
-const limit = numericFlag('--limit');
+const rawLimit = numericFlag('--limit');
+// A positive integer, or a usage error (PR #1483 review, should-fix 7 —
+// `--limit -1` used to silently drop the LAST target instead of erroring, and
+// `--limit 1.5` used to silently slice to 1).
+if (rawLimit !== null && (!Number.isInteger(rawLimit) || rawLimit <= 0)) {
+  console.error(`--limit must be a positive whole number, got "${rawLimit}"`);
+  process.exit(1);
+}
+const limit = rawLimit;
 const startedAt = Date.now();
 const outPath = flagValue('--out') ?? `./kit-rerun-${projectId}-${startedAt}.md`;
 
@@ -145,13 +216,12 @@ initializeApp({ projectId, credential: applicationDefault() });
 const db = getFirestore();
 
 // A PICK of the three fields this script reads, rather than the whole
-// `RecipeSchema`: a recipe that fails some UNRELATED field's validation is still
-// one whose kit needs re-running, and skipping it would silently leave a gap the
-// report claims does not exist. Picked from the shared schema rather than
-// re-declared, so the kit entry's link shape cannot drift from what the flow
-// writes. Firestore is a trust boundary and this is a `.safeParse`
-// (CLAUDE.md → Zod conventions); a document that fails even this narrow parse is
-// named in a WARN and skipped, never re-run blind.
+// `RecipeSchema` — but ONLY as a fallback for reporting, not for targeting (PR
+// #1483 review, should-fix 4). `readRecipes` below tries the full schema first;
+// this pick exists so a document that fails it can still be named by title in
+// the report rather than lumped in with `unreadable`. Picked from the shared
+// schema rather than re-declared, so the kit entry's link shape cannot drift
+// from what the flow writes.
 const KitReadSchema = RecipeSchema.pick({ title: true, kit: true, kitInferredAt: true });
 
 function sleep(ms: number): Promise<void> {
@@ -169,90 +239,231 @@ function describeLink(link: KitLink | null, items: readonly EquipmentItemDoc[]):
   return equipmentEntrySubjectName(item, accessory);
 }
 
+/** A recipe named only by id and title — enough to point an operator at it. */
+interface NamedRecipe {
+  readonly id: string;
+  readonly title: string;
+}
+
 async function readRecipes(): Promise<{
   snapshots: readonly RecipeKitSnapshot[];
+  /** Failed even the narrow title/kit pick — nothing here is readable at all. */
   unreadable: readonly string[];
+  /**
+   * Has a non-empty kit but fails the FULL `RecipeSchema` — the same parse
+   * `onRecipeWritten`'s handler runs before any branch runs (PR #1483 review,
+   * should-fix 4). The trigger will decline these forever regardless of what
+   * this script does, so they are read for the report but never targeted.
+   */
+  neverTriggers: readonly NamedRecipe[];
 }> {
   const snap = await db.collection('recipes').get();
   const snapshots: RecipeKitSnapshot[] = [];
   const unreadable: string[] = [];
+  const neverTriggers: NamedRecipe[] = [];
   for (const doc of snap.docs) {
-    const parsed = KitReadSchema.safeParse(doc.data());
-    if (!parsed.success) {
+    const full = RecipeSchema.safeParse(doc.data());
+    if (full.success) {
+      snapshots.push({
+        id: doc.id,
+        title: full.data.title,
+        kit: full.data.kit.map((entry) => ({ label: entry.label, equipment: entry.equipment })),
+        kitInferredAt: full.data.kitInferredAt ?? null,
+        kind: full.data.kind,
+        stepCount: full.data.steps.length,
+      });
+      continue;
+    }
+    const narrow = KitReadSchema.safeParse(doc.data());
+    if (!narrow.success) {
       unreadable.push(doc.id);
       continue;
     }
-    snapshots.push({
-      id: doc.id,
-      title: parsed.data.title,
-      kit: parsed.data.kit.map((entry) => ({ label: entry.label, equipment: entry.equipment })),
-      kitInferredAt: parsed.data.kitInferredAt ?? null,
-    });
+    if (narrow.data.kit.length > 0) {
+      neverTriggers.push({ id: doc.id, title: narrow.data.title });
+    }
+    // A narrow-readable recipe with an EMPTY kit that fails the full schema is
+    // left out of both lists: it was never in scope (an empty kit is left alone
+    // regardless — see `planKitRerun`) and naming it would be noise about a
+    // pre-existing shape problem this run has no stake in.
   }
   snapshots.sort((a, b) => a.title.localeCompare(b.title));
-  return { snapshots, unreadable };
+  return { snapshots, unreadable, neverTriggers };
 }
 
-/** Read one recipe's kit as it stands now. Null when the document has vanished. */
-async function readKitNow(
+/** Why the wait for a fresh stamp ended. */
+type StampWaitResult =
+  | { readonly status: 'stamped'; readonly kit: RecipeKitSnapshot['kit'] }
+  | { readonly status: 'timeout' }
+  | { readonly status: 'not-found' };
+
+/**
+ * Poll one recipe until its `kitInferredAt` reads at or after `requestedAt`, the
+ * document is confirmed gone, or `deadline` passes.
+ *
+ * VALUE, not presence (PR #1483 review, blocking 2 — see this file's header for
+ * the full reasoning and its stated boundary). A document that merely fails
+ * today's narrow parse is NOT treated as gone: only a confirmed-missing
+ * `doc.exists === false` ends the wait early. A transient parse failure — a
+ * concurrent edit briefly leaving the document in some other shape — keeps
+ * polling to the deadline instead of silently dropping the recipe from the
+ * report before it settles (PR #1483 review, should-fix 6).
+ */
+async function waitForStamp(
   id: string,
-): Promise<{ kit: RecipeKitSnapshot['kit']; stamped: boolean } | null> {
-  const doc = await db.collection('recipes').doc(id).get();
-  if (!doc.exists) return null;
-  const parsed = KitReadSchema.safeParse(doc.data());
-  if (!parsed.success) return null;
-  return {
-    kit: parsed.data.kit.map((entry) => ({ label: entry.label, equipment: entry.equipment })),
-    stamped: parsed.data.kitInferredAt !== undefined,
-  };
+  requestedAt: number,
+  deadline: number,
+): Promise<StampWaitResult> {
+  for (;;) {
+    const doc = await db.collection('recipes').doc(id).get();
+    if (!doc.exists) return { status: 'not-found' };
+    const parsed = KitReadSchema.safeParse(doc.data());
+    if (
+      parsed.success &&
+      parsed.data.kitInferredAt !== undefined &&
+      parsed.data.kitInferredAt >= requestedAt
+    ) {
+      return {
+        status: 'stamped',
+        kit: parsed.data.kit.map((entry) => ({ label: entry.label, equipment: entry.equipment })),
+      };
+    }
+    if (Date.now() >= deadline) return { status: 'timeout' };
+    await sleep(POLL_MS);
+  }
+}
+
+/**
+ * Reads the per-environment recipe-generation kill switch this script's
+ * inferences ride on, the same one `onRecipeWritten`'s `isRecipeImageGenerationEnabled`
+ * reads (PR #1483 review, should-fix 4). Checked ONCE, up front, rather than
+ * left to be discovered recipe by recipe: with it off, every targeted recipe
+ * would time out and stamp nothing, and a `--write` run would burn the whole
+ * list's worth of `STAMP_TIMEOUT_MS` waits for zero writes. Fails OPEN — a
+ * missing doc or an unexpected shape both read as enabled — mirroring the
+ * trigger's own fail-open default exactly, so this preflight can never refuse a
+ * run the trigger itself would have allowed.
+ */
+async function killSwitchDisabled(): Promise<boolean> {
+  const snap = await db.collection('devSettings').doc('singleton').get();
+  if (!snap.exists) return false;
+  const parsed = DevSettingsSchema.safeParse(snap.data());
+  if (!parsed.success) return false;
+  return !parsed.data.recipeImageGenerationEnabled;
 }
 
 interface Outcome {
   readonly id: string;
   readonly title: string;
-  readonly stamped: boolean;
+  readonly status: 'stamped' | 'timeout' | 'not-found';
   readonly before: RecipeKitSnapshot['kit'];
-  readonly after: RecipeKitSnapshot['kit'];
-  readonly diff: KitDiff;
+  /** `null` unless `status === 'stamped'` — nothing fresh was ever read. */
+  readonly after: RecipeKitSnapshot['kit'] | null;
+  /** `null` unless `status === 'stamped'`. */
+  readonly diff: KitDiff | null;
 }
 
-function renderReport(outcomes: readonly Outcome[], items: readonly EquipmentItemDoc[]): string {
+function renderReport(
+  outcomes: readonly Outcome[],
+  items: readonly EquipmentItemDoc[],
+  unreadable: readonly string[],
+  neverTriggers: readonly NamedRecipe[],
+): string {
+  const stampedChanged = outcomes.filter((o) => o.status === 'stamped' && o.diff!.changed).length;
+  const timedOut = outcomes.filter((o) => o.status === 'timeout').length;
+  const vanished = outcomes.filter((o) => o.status === 'not-found').length;
   const lines: string[] = [
     `# Kit re-run — ${projectId}`,
     '',
     `Started ${new Date(startedAt).toISOString()} (epoch ${startedAt}).`,
-    `${outcomes.length} recipe(s) re-run, ` +
-      `${outcomes.filter((o) => o.diff.changed).length} with a changed kit, ` +
-      `${outcomes.filter((o) => !o.stamped).length} that never stamped.`,
+    `${outcomes.length} recipe(s) attempted, ${stampedChanged} with a changed kit, ` +
+      `${timedOut} timed out, ${vanished} vanished mid-run.`,
     '',
   ];
+
+  // Excluded up front, in the SAME file the spot-check reads — not only on
+  // stdout (PR #1483 review, should-fix 5, extended to should-fix 4's
+  // full-schema case): a gap here is exactly the gap the narrow-pick comment in
+  // `readRecipes` says it exists to avoid.
+  if (unreadable.length > 0 || neverTriggers.length > 0) {
+    lines.push('## Excluded — never targeted');
+    lines.push('');
+    if (unreadable.length > 0) {
+      lines.push(
+        `${unreadable.length} document(s) failed validation on even title/kit — nothing was read ` +
+          `or written for them: ${unreadable.map((id) => `\`recipes/${id}\``).join(', ')}.`,
+      );
+      lines.push('');
+    }
+    if (neverTriggers.length > 0) {
+      lines.push(
+        `${neverTriggers.length} recipe(s) have a non-empty kit but fail the recipe's FULL schema — ` +
+          `the same parse \`onRecipeWritten\`'s handler runs before any branch. The trigger will ` +
+          `decline these forever regardless of this script; targeting them would only clear their ` +
+          `stamp and burn the wait timeout. Fix their shape, then re-run:`,
+      );
+      for (const entry of neverTriggers) {
+        lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
+      }
+      lines.push('');
+    }
+  }
 
   for (const outcome of outcomes) {
     lines.push(`## ${outcome.title}`);
     lines.push('');
-    lines.push(`\`recipes/${outcome.id}\`${outcome.stamped ? '' : ' — **NEVER STAMPED**'}`);
+    const marker =
+      outcome.status === 'stamped'
+        ? ''
+        : outcome.status === 'timeout'
+          ? ' — **NEVER STAMPED**'
+          : ' — **VANISHED MID-RUN**';
+    lines.push(`\`recipes/${outcome.id}\`${marker}`);
     lines.push('');
-    if (!outcome.diff.changed) {
+
+    if (outcome.status === 'not-found') {
+      lines.push(
+        'The document could not be read after our update — deleted, or a concurrent write left it ' +
+          'in a shape that never resolved before the deadline. Cannot confirm whether the kit was ' +
+          're-run; nothing here should be treated as the current state.',
+      );
+      lines.push('');
+      continue;
+    }
+    if (outcome.status === 'timeout') {
+      lines.push(
+        `No fresh stamp after ${STAMP_TIMEOUT_MS / 1000}s. The line below is the PRE-RUN kit — an ` +
+          'inference may still complete later and this file will not reflect it. A resumed run ' +
+          '(`--since`) re-targets this recipe.',
+      );
+      lines.push('');
+      lines.push(`  before: ${outcome.before.map((e) => e.label).join(' · ') || '(empty)'}`);
+      lines.push('');
+      continue;
+    }
+
+    const diff = outcome.diff!;
+    if (!diff.changed) {
       lines.push('No change — same labels, same links.');
       lines.push('');
       continue;
     }
-    for (const change of outcome.diff.relinked) {
+    for (const change of diff.relinked) {
       lines.push(
         `- **re-linked** "${change.label}": ${describeLink(change.before, items)} → ` +
           `${describeLink(change.after, items)}`,
       );
     }
-    for (const entry of outcome.diff.removed) {
+    for (const entry of diff.removed) {
       lines.push(`- **gone** "${entry.label}" (${describeLink(entry.equipment, items)})`);
     }
-    for (const entry of outcome.diff.added) {
+    for (const entry of diff.added) {
       lines.push(`- **new** "${entry.label}" (${describeLink(entry.equipment, items)})`);
     }
-    lines.push(`- ${outcome.diff.unchanged} line(s) unchanged`);
+    lines.push(`- ${diff.unchanged} line(s) unchanged`);
     lines.push('');
     lines.push(`  before: ${outcome.before.map((e) => e.label).join(' · ') || '(empty)'}`);
-    lines.push(`  after:  ${outcome.after.map((e) => e.label).join(' · ') || '(empty)'}`);
+    lines.push(`  after:  ${outcome.after!.map((e) => e.label).join(' · ') || '(empty)'}`);
     lines.push('');
   }
 
@@ -260,7 +471,7 @@ function renderReport(outcomes: readonly Outcome[], items: readonly EquipmentIte
 }
 
 async function main(): Promise<void> {
-  const [{ snapshots, unreadable }, items] = await Promise.all([
+  const [{ snapshots, unreadable, neverTriggers }, items] = await Promise.all([
     readRecipes(),
     readEquipmentItems(db, 'rerun-recipe-kits'),
   ]);
@@ -271,6 +482,12 @@ async function main(): Promise<void> {
   for (const id of unreadable) {
     console.warn(`  WARN  recipes/${id} failed validation on title/kit — skipped, nothing written`);
   }
+  for (const entry of neverTriggers) {
+    console.warn(
+      `  WARN  recipes/${entry.id} ("${entry.title}") has a kit but fails the full recipe schema — ` +
+        `the trigger will always decline it; excluded from targeting`,
+    );
+  }
 
   const steps = planKitRerun(snapshots, since);
   const allTargets = steps.filter((step) => step.skip === null);
@@ -278,6 +495,9 @@ async function main(): Promise<void> {
 
   for (const step of steps) {
     if (step.skip === 'empty-kit') continue; // the common, uninteresting case
+    if (step.skip === 'not-cookable' || step.skip === 'no-steps') {
+      console.log(`  SKIP  ${step.title} — ${step.skip}, the trigger would decline it`);
+    }
     if (step.skip === 'already-rerun') {
       console.log(`  SKIP  ${step.title} — already re-run (--since ${since})`);
     }
@@ -288,12 +508,28 @@ async function main(): Promise<void> {
 
   console.log(
     `\n${steps.filter((s) => s.skip === 'empty-kit').length} recipe(s) have no kit and are left alone; ` +
-      `${steps.filter((s) => s.skip === 'already-rerun').length} already re-run; ` +
+      `${steps.filter((s) => s.skip === 'not-cookable' || s.skip === 'no-steps').length} the trigger ` +
+      `would decline; ${steps.filter((s) => s.skip === 'already-rerun').length} already re-run; ` +
       `${targets.length} to re-run` +
       (limit !== null && allTargets.length > targets.length
         ? ` (--limit ${limit} of ${allTargets.length})`
         : ''),
   );
+
+  // Cheap, and checked before either the dry-run print returns or --write spends
+  // an hour timing out (PR #1483 review, should-fix 4): with the switch off,
+  // EVERY targeted recipe below would time out and stamp nothing.
+  if (await killSwitchDisabled()) {
+    console.warn(
+      `\nWARN  devSettings/singleton has recipeImageGenerationEnabled=false in ${projectId} — ` +
+        `onRecipeWritten's kit branch declines before it ever calls the model, so every recipe ` +
+        `targeted above would time out and stamp nothing.`,
+    );
+    if (write) {
+      console.error('Re-enable it before running --write. Nothing was written.\n');
+      process.exit(1);
+    }
+  }
 
   if (!write) {
     console.log(
@@ -310,59 +546,76 @@ async function main(): Promise<void> {
   const outcomes: Outcome[] = [];
   for (const [index, step] of targets.entries()) {
     console.log(`  [${index + 1}/${targets.length}] ${step.title}`);
+    const requestedAt = Date.now();
     await db
       .collection('recipes')
       .doc(step.id)
-      .update({ kitInferredAt: FieldValue.delete(), kitRequestedAt: Date.now() });
+      .update({ kitInferredAt: FieldValue.delete(), kitRequestedAt: requestedAt });
 
-    // Presence alone is the completion test, and it is sound because the update
-    // above deleted the field — see the header for what it does and does not
-    // distinguish.
-    const deadline = Date.now() + STAMP_TIMEOUT_MS;
-    let current = await readKitNow(step.id);
-    while (Date.now() < deadline && current !== null && !current.stamped) {
-      await sleep(POLL_MS);
-      current = await readKitNow(step.id);
-    }
+    const result = await waitForStamp(step.id, requestedAt, requestedAt + STAMP_TIMEOUT_MS);
 
-    if (current === null) {
-      console.warn(`          WARN  recipes/${step.id} is gone or unreadable — skipped`);
-      continue;
-    }
-    if (!current.stamped) {
+    let outcome: Outcome;
+    if (result.status === 'not-found') {
       console.warn(
-        `          WARN  no stamp after ${STAMP_TIMEOUT_MS / 1000}s — inference probably failed. ` +
-          `A resumed run re-targets it.`,
+        `          WARN  recipes/${step.id} is gone — cannot confirm the kit was re-run`,
       );
+      outcome = {
+        id: step.id,
+        title: step.title,
+        status: 'not-found',
+        before: step.before,
+        after: null,
+        diff: null,
+      };
+    } else if (result.status === 'timeout') {
+      console.warn(
+        `          WARN  no fresh stamp after ${STAMP_TIMEOUT_MS / 1000}s — inference probably failed ` +
+          `(or declined silently — see the kill-switch and schema notes above). A resumed run re-targets it.`,
+      );
+      outcome = {
+        id: step.id,
+        title: step.title,
+        status: 'timeout',
+        before: step.before,
+        after: null,
+        diff: null,
+      };
+    } else {
+      const diff = diffKitEntries(step.before, result.kit);
+      console.log(
+        `          ${diff.changed ? 'changed' : 'unchanged'} — ` +
+          `${diff.relinked.length} re-linked, ${diff.added.length} new, ${diff.removed.length} gone`,
+      );
+      outcome = {
+        id: step.id,
+        title: step.title,
+        status: 'stamped',
+        before: step.before,
+        after: result.kit,
+        diff,
+      };
     }
+    outcomes.push(outcome);
 
-    const diff = diffKitEntries(step.before, current.kit);
-    outcomes.push({
-      id: step.id,
-      title: step.title,
-      stamped: current.stamped,
-      before: step.before,
-      after: current.kit,
-      diff,
-    });
-    console.log(
-      `          ${diff.changed ? 'changed' : 'unchanged'} — ` +
-        `${diff.relinked.length} re-linked, ${diff.added.length} new, ${diff.removed.length} gone`,
-    );
+    // Rewritten after EVERY recipe, not only once at the end (PR #1483 review,
+    // blocking 3): the record for the recipes already done must survive an
+    // interrupt or a throw on a later one, because their "before" cannot be
+    // reconstructed once the trigger has overwritten it.
+    await writeFile(outPath, renderReport(outcomes, items, unreadable, neverTriggers), 'utf8');
+
     await sleep(SETTLE_MS);
   }
 
-  await writeFile(outPath, renderReport(outcomes, items), 'utf8');
-
-  const stalled = outcomes.filter((outcome) => !outcome.stamped);
+  const incomplete = outcomes.filter((outcome) => outcome.status !== 'stamped');
+  const changed = outcomes.filter((o) => o.status === 'stamped' && o.diff!.changed).length;
   console.log(
-    `\n${outcomes.length} recipe(s) re-run, ${outcomes.filter((o) => o.diff.changed).length} changed. ` +
+    `\n${outcomes.length - incomplete.length} recipe(s) re-run, ${changed} changed. ` +
       `Before/after written to ${outPath}.`,
   );
-  if (stalled.length > 0) {
+  if (incomplete.length > 0) {
     console.warn(
-      `${stalled.length} never stamped: ${stalled.map((o) => o.title).join(', ')}. ` +
-        `Re-run with --since ${startedAt} to retry just those.`,
+      `${incomplete.length} did not complete (timed out or vanished): ` +
+        `${incomplete.map((o) => o.title).join(', ')}. Re-run with --since ${startedAt} to retry just those.`,
     );
   }
   console.log('');

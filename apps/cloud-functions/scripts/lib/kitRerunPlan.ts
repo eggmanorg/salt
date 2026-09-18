@@ -34,6 +34,20 @@
 // showing it as a pair of lines is more honest than guessing which old line a new
 // one descends from. Case and inner whitespace are normalised before pairing, so
 // "Frying Pan" → "frying pan" alone is not reported as a change.
+//
+// TWO SKIP REASONS THAT MIRROR `maybeInferKit`'s OWN GUARDS (PR #1483 review,
+// should-fix 4). `onRecipeWritten`'s kit branch declines — silently, and
+// permanently for this recipe until something else changes it — when the recipe
+// is not cookable (`isCookable(recipe.kind)`) or has no steps. Both are checked
+// here with the SAME predicate the trigger uses, imported rather than
+// re-derived, so a recipe this script would otherwise target but the trigger
+// would always decline is named as a skip instead of burning the full
+// stamp-wait timeout on an inference that structurally cannot happen. A recipe
+// reaching this state has a stale kit left over from before an edit changed its
+// `kind` or emptied its steps.
+
+import { isCookable } from '@salt/domain';
+import type { RecipeKind } from '@salt/domain';
 
 /** A kit entry's link to one of the household's things, as stored on the recipe. */
 export interface KitLink {
@@ -54,10 +68,14 @@ export interface RecipeKitSnapshot {
   readonly kit: readonly KitEntrySnapshot[];
   /** The stamp as read, or `null` when the recipe has never been inferred. */
   readonly kitInferredAt: number | null;
+  /** Gates `isCookable` below — the same field `maybeInferKit` reads. */
+  readonly kind: RecipeKind;
+  /** `recipe.steps.length` — the same count `maybeInferKit` reads. */
+  readonly stepCount: number;
 }
 
 /** Why a recipe is not being re-run. */
-export type KitRerunSkipReason = 'empty-kit' | 'already-rerun';
+export type KitRerunSkipReason = 'empty-kit' | 'not-cookable' | 'no-steps' | 'already-rerun';
 
 /** One recipe's place in the plan. */
 export interface KitRerunStep {
@@ -91,6 +109,10 @@ export function planKitRerun(
     // "nothing". Re-asking buys an AI call per recipe for an answer that is
     // already right, and the issue scopes the re-run to a non-empty kit.
     if (recipe.kit.length === 0) return { ...base, skip: 'empty-kit' as const };
+    // The trigger's own two guards (`maybeInferKit`), checked here so a recipe
+    // it will always decline is never targeted — see this module's header.
+    if (!isCookable(recipe.kind)) return { ...base, skip: 'not-cookable' as const };
+    if (recipe.stepCount === 0) return { ...base, skip: 'no-steps' as const };
     if (since !== null && recipe.kitInferredAt !== null && recipe.kitInferredAt >= since) {
       return { ...base, skip: 'already-rerun' as const };
     }
