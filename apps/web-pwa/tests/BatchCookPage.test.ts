@@ -186,6 +186,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
     recipeKind: 'recipe',
+    target: null,
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: RECIPE_ID,

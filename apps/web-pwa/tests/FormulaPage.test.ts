@@ -460,6 +460,7 @@ describe('FormulaPage — the round trip', () => {
       kind: 'target',
       shape: { count: 8, unitDoughGrams: 120 },
     },
+    target: null,
     schemaVersion: 1,
   };
 

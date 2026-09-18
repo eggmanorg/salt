@@ -70,6 +70,47 @@ import type { Readable } from 'svelte/store';
 const _observations = writable<BatchObservationDoc[] | undefined>(undefined);
 export const observations: Readable<BatchObservationDoc[] | undefined> = _observations;
 
+// ─── MANY RUNS' LOGS AT ONCE (issue #1407, phase 2) ───────────────────────────
+//
+// The in-flight list carries each run's percent-lost figure, and that figure is
+// arithmetic over the LOG — which lives in a subcollection the list has no other
+// path to. Three routes existed and two were shut:
+//
+//   • a collection-group query over `observations` would need a
+//     `match /{path=**}/observations/{id}` clause in `firestore.rules` and an
+//     index; #1407 states outright that the rules and `@salt/firebase-sync` are
+//     untouched, and widening a read rule to serve a display figure is not a
+//     trade this feature is worth;
+//   • denormalising the latest weight onto the batch document would put a second,
+//     derived copy of a reading on a whole-document-LWW record whose entire point
+//     is that it is frozen — precisely the drift `BatchSchema`'s header exists to
+//     prevent.
+//
+// So: ONE `subscribeBatchObservations` PER RUN, reusing the adapter unchanged, and
+// **only for runs that are IN FLIGHT and name a WEIGHT-LOSS target** — the two
+// conditions `BatchListPage` actually needs before it opens a listener. A
+// household with nothing but bread opens not a single extra listener, which is
+// also what keeps this feature genuinely dark.
+//
+// THE BOUND IS ENFORCED AT THE CALL SITE, NOT HERE (#1426 review, blocking 1).
+// This sentence used to say the bound was "the number of cures on the go — a
+// handful" while the caller filtered on `target !== null` alone, over the WHOLE
+// `batches` collection (`subscribeBatches` carries no `where`/`limit`) with ended
+// runs still in it (`orderBatches` keeps them). The true set was every batch ever
+// written that named a target, not the ones in flight — unbounded by history.
+// `BatchListPage.svelte`'s own comment states the narrower gate it applies before
+// calling in here, and `BatchListPage.test.ts` pins it: a done run, an abandoned
+// run and a pH-only run each open no listener despite carrying a target. This
+// module makes no assumption about the gate — see `initBatchObservationLogsSync`
+// below — so the bound lives at exactly one call site, not two.
+//
+// A MAP, keyed by batch id. A run whose key is absent has not loaded yet and shows
+// no figure; an empty array is loaded-and-nothing-recorded. Oldest first within
+// each entry, exactly as the adapter delivers it.
+const _logsByBatch = writable<ReadonlyMap<string, readonly BatchObservationDoc[]>>(new Map());
+export const observationLogs: Readable<ReadonlyMap<string, readonly BatchObservationDoc[]>> =
+  _logsByBatch;
+
 // ─── Error reporting ────────────────────────────────────────────────────────────
 
 let _errorReporter: ReturnType<typeof createObservabilityErrorReportingAdapter> | null = null;
@@ -97,6 +138,43 @@ export function initBatchObservationsSync(batchId: string): () => void {
   );
 }
 
+/**
+ * Subscribe to several runs' logs at once, and return the unsub for all of them.
+ *
+ * Idempotent in the sense that matters: the store is RESET both on init AND on
+ * teardown, so a departed run's readings can never outlive it — across a re-init
+ * with a different set of runs, AND across a re-mount (#1426 review, should-fix
+ * 6: the teardown used to only unsubscribe, leaving the map exactly as the
+ * previous visit left it until the next effect ran, so the first render after
+ * re-entering `/batches` could draw a meter from readings taken before whatever
+ * was logged while the page was closed). That is the same reset
+ * `initBatchObservationsSync` above does on init and for the same reason.
+ *
+ * The caller decides which runs are worth a listener — see the note above: today
+ * that is the runs in flight with a weight-loss target, and nothing here assumes
+ * it.
+ */
+export function initBatchObservationLogsSync(batchIds: readonly string[]): () => void {
+  _logsByBatch.set(new Map());
+  const errors = getErrorReporter();
+  const unsubs = batchIds.map((batchId) =>
+    subscribeBatchObservations(
+      batchId,
+      (incoming) =>
+        _logsByBatch.update((current) => {
+          const next = new Map(current);
+          next.set(batchId, incoming);
+          return next;
+        }),
+      (err, rawError) => reportSubscriptionError(errors, err, rawError),
+    ),
+  );
+  return () => {
+    for (const unsub of unsubs) unsub();
+    _logsByBatch.set(new Map());
+  };
+}
+
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 /** What the log screen collects. Everything is optional except which run it is. */
@@ -120,6 +198,17 @@ export interface LogObservationInput {
   stageId: string | null;
   /** Grams on the scale, or null when the entry is a note or a photo. */
   weightGrams: number | null;
+  /**
+   * The pH reading, 0–14, or null when it was not taken (issue #1407).
+   *
+   * `BatchObservationSchema.ph` has carried the field since the log was built and
+   * was only ever missing a box; a fermented salami's weekly reading is a weight
+   * AND a pH, so the sheet grew one and this passes it on untouched. The sheet
+   * refuses an out-of-range figure on the field rather than handing one over, so
+   * nothing here re-checks it — the schema is the rail either way, exactly as it is
+   * for the humidity beside it.
+   */
+  ph: number | null;
   /**
    * Degrees Celsius at the instant of the reading, or null when it was not taken
    * (issue #1286). Unbounded below zero — a garage in January is a real place a
@@ -162,10 +251,12 @@ export type PhotoOutcome =
  * a temperature and a humidity — so the sheet grew both boxes and this passes them
  * on untouched. Null still means "not measured", which is most bakes.
  *
- * `ph` IS still written null, and deliberately: it is a ferment's measurement rather
- * than a bake's or a cure's, and phase 03 of the epic is where it earns a control
- * (docs/formulas-schedules-batches.md). Null is what "not measured" is, so nothing
- * here has to be revisited when a screen does ask.
+ * `ph` JOINED THEM in issue #1407, for the same reason and by the same route: a
+ * fermented salami is finished when it has dropped below a pH, and a target nothing
+ * can be measured against is half a feature. It is asked for on EVERY run rather
+ * than only where the frozen target names a pH — the field has been on the document
+ * since the log was built, and hiding a measurement behind an intention is the wrong
+ * way round. Null still means "not measured", which is most bakes.
  */
 export async function logObservation(
   input: LogObservationInput,
@@ -192,7 +283,7 @@ export async function logObservation(
     at: new Date(at).toISOString(),
     stageId: input.stageId,
     weightGrams: input.weightGrams,
-    ph: null,
+    ph: input.ph,
     temperatureC: input.temperatureC,
     relativeHumidityPercent: input.relativeHumidityPercent,
     note: input.note,

@@ -18,6 +18,7 @@
     PopoverContent,
     PopoverMenuItem,
     PopoverTrigger,
+    Progress,
     Spinner,
     TextField,
   } from '@salt/ui-components';
@@ -33,7 +34,7 @@
     skipStage,
     startStage,
   } from '../../lib/batchService.js';
-  import { stageStatus, stageTemperatureText } from '@salt/domain';
+  import { stageStatus, stageTemperatureText, targetProgress } from '@salt/domain';
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { addToast } from '../../lib/toastStore.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
@@ -46,6 +47,9 @@
     formatWhen,
     isObservational,
     nextAction,
+    phTargetText,
+    targetStanceClass,
+    weightLossText,
     yieldSummary,
   } from './batchDisplay.js';
 
@@ -229,6 +233,23 @@
   // The card is a glance; three is enough to show what just happened without
   // becoming a second copy of the log screen (issue #1280).
   const previewEntries = $derived(logEntries.slice(0, 3));
+
+  // ─── How far along the run is (issue #1407) ───────────────────────────────────
+  //
+  // `null` for every run that carries no target — which is every bake — and for a
+  // run that has one but has not been measured against it yet. Nothing renders in
+  // either case: no empty meter, no gap where one would be.
+  //
+  // Gated on `batch.target` and NOTHING ELSE. Not on the recipe's kind, not on which
+  // of the five kinds of cure it is (CLAUDE.md data-model conventions), and not on
+  // the run's state — an abandoned run keeps what it recorded, which is this
+  // surface's whole reason for existing.
+  //
+  // Reads the log in its ASCENDING order, as the adapter delivers it, rather than
+  // the reversed `logEntries` above: `targetProgress` takes the latest by `at`
+  // itself and is indifferent to the order it is handed, so passing the unreversed
+  // list keeps the two facts independent.
+  const progress = $derived(run == null || log === undefined ? null : targetProgress(run, log));
 
   let logOpen = $state(false);
   // Dismissal of the end-of-run invitation, for this visit only. In memory by
@@ -844,6 +865,44 @@
             </Button>
           </CardHeader>
           <CardContent class="flex flex-col gap-3">
+            <!-- ─── Where the run has got to (issue #1407) ──────────────────────
+               A FIGURE, not a verdict. Nothing here blocks, warns, confirms or
+               declares a run finished; past the target it keeps counting, and no
+               word on screen judges it. A run with no target renders nothing at
+               all — see `progress` above for what it is gated on. -->
+            {#if progress !== null}
+              <div class="flex flex-col gap-1" data-testid="batch-target-progress">
+                {#if progress.weightLoss !== null}
+                  <p
+                    class="text-sm font-medium tabular-nums {targetStanceClass(
+                      progress.weightLoss.stance,
+                    )}"
+                    data-testid="batch-target-weight"
+                    data-stance={progress.weightLoss.stance}
+                  >
+                    {weightLossText(progress.weightLoss)}
+                  </p>
+                  <!-- The meter, through `@salt/ui-components`' `Progress` and no
+                     other (CLAUDE.md rule 7). It CLAMPS its own value, so a run
+                     past its target shows a full bar while the figure above it
+                     keeps counting — the geometry stops, the number does not. -->
+                  <div data-testid="batch-target-meter" data-stance={progress.weightLoss.stance}>
+                    <Progress
+                      value={progress.weightLoss.fractionOfTarget * 100}
+                      ariaLabel="How far this run has got towards what it is aiming at"
+                    />
+                  </div>
+                {/if}
+                {#if progress.ph !== null}
+                  <!-- NO BAR HERE, and that is the decision rather than an omission:
+                     a pH curve has no frozen zero to measure from. See
+                     `targetProgress`'s `PhProgress`. -->
+                  <p class="text-sm font-medium tabular-nums" data-testid="batch-target-ph">
+                    {phTargetText(progress.ph)}
+                  </p>
+                {/if}
+              </div>
+            {/if}
             {#if log === undefined}
               <!-- Still loading. Nothing is said, because "nothing recorded yet" would
                  be a claim about six weeks of a cure's log that we have not read. -->

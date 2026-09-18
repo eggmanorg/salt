@@ -1,5 +1,5 @@
 import { currentStage, stageStatus } from '@salt/domain';
-import type { CureCategory } from '@salt/domain';
+import type { CureCategory, PhProgress, TargetStance, WeightLossProgress } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
 import { CureCategorySchema } from '@salt/domain/schemas';
 import { KIND_COPY } from '../recipes/recipeKind.js';
@@ -16,6 +16,16 @@ import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 // chooses how to say it. The moment one of these multiplies a gram figure or adds a
 // minute, a screen has begun re-deriving what the freeze exists to pin down — which
 // is exactly how "batch nine at 78% hydration" quietly becomes batch ten.
+//
+// THE BOUNDARY, RESTATED RATHER THAN DELETED (issue #1407, CLAUDE.md rule 12).
+// A run now carries a TARGET, and percent-lost is the first number on a batch screen
+// that is not frozen: it moves every time the crock goes on the scales. That
+// arithmetic is NOT here — it is `targetProgress` in `@salt/domain`'s batch module,
+// which is where the pure computation belongs and why it went there. What the two
+// functions below do is round a number somebody else computed and put words around
+// it, which is what every other function in this file does with a frozen one. The
+// sentence above still holds of everything this module derives; the one live figure
+// it renders, it is handed.
 //
 // The clock is INJECTED, defaulting to now. That keeps "today 09:00" a fixed string
 // in a test and matches how the domain treats time everywhere in this feature.
@@ -316,4 +326,72 @@ export function categoriesPresent(batches: readonly BatchDoc[]): CureCategory[] 
     ),
   );
   return CureCategorySchema.options.filter((category) => seen.has(category));
+}
+
+// ─── What a run is aiming at, in words (issue #1407) ──────────────────────────
+//
+// Both of these take what `targetProgress` computed and say it. NEITHER JUDGES.
+// There is no "ready", no "done", no "overdue", and nothing anywhere below reads as
+// a verdict on a run: past the target the figure keeps counting, because the figure
+// is a fact and stopping is the cook's judgement.
+
+/**
+ * The weight half: `1780 g — 26% lost of 35%`.
+ *
+ * The figure LOST is rounded to the whole percent, because that is the precision
+ * the reading supports and a cure is not weighed to a tenth of a point. The TARGET
+ * is not rounded at all: it is a number a person typed into a box, so `String` says
+ * it back exactly as they wrote it — 35, or 32.5 — and no shared percentage
+ * formatter is needed or wanted here.
+ *
+ * PAST THE TARGET IT SIMPLY KEEPS COUNTING — `38% lost of 35%` — and it can read
+ * BELOW ZERO for a run that gained weight, which a brine does. Both are facts about
+ * the log, and neither is corrected or commented on here.
+ */
+export function weightLossText(progress: WeightLossProgress): string {
+  const lost = Math.round(progress.percentLost);
+  return `${formatGrams(progress.latestGrams)} — ${lost}% lost of ${progress.targetPercent}%`;
+}
+
+/**
+ * The pH half: `pH 5.1 — aiming below 5.3`.
+ *
+ * NO BAR AND NO PERCENTAGE, deliberately. A pH curve has no frozen zero to measure
+ * from — see `targetProgress`'s `PhProgress` for why inventing one is the made-up
+ * coefficient the fermentation-model ban exists to stop.
+ */
+export function phTargetText(progress: PhProgress): string {
+  return `pH ${progress.latest} — aiming below ${progress.targetAtMost}`;
+}
+
+/**
+ * THE CUE (issue #1407, phase 2) — the one place the three appearances are chosen.
+ *
+ * A COLOUR, and not a word (#1426 review, should-fix 4 — this used to also claim
+ * "a weight", but the function returns three colour classes and nothing sets a
+ * font weight from the stance; the docstring is corrected to what the code does
+ * rather than the code being made to grow a fourth visual dimension). Nothing
+ * here says "ready", "done", "overdue" or anything else that reads as a verdict
+ * on a run: the whole of the cue is that a coppa at 31% of a 35% target catches
+ * your eye going down the list and one at 12% does not.
+ *
+ * The METER does the rest of the work and needs nothing from here: `Progress`
+ * clamps its own value to its range (ui-spec-v02 §8.15), so a run past its target
+ * shows a full bar while the figure beside it keeps counting.
+ *
+ * Returned as a class string rather than a variant on the primitive, deliberately:
+ * `Progress` has no colour variant, and adding one to `@salt/ui-components` to
+ * express three states of one feature would put a cure's vocabulary in the design
+ * system. `apps/web-pwa/tests/batchDisplay.test.ts` pins all three at their
+ * boundaries so the cue cannot silently become a two-state one.
+ */
+export function targetStanceClass(stance: TargetStance): string {
+  switch (stance) {
+    case 'atOrPast':
+      return 'text-primary';
+    case 'nearing':
+      return 'text-foreground';
+    default:
+      return 'text-muted-foreground';
+  }
 }

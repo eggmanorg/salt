@@ -47,9 +47,16 @@
   // Home Assistant integration ever writes readings it writes observations exactly
   // as a person does — nothing here would change.
   //
-  // `ph` is STILL not asked for, and the sentence above still holds of it: it is a
-  // ferment's measurement rather than a bake's or a cure's, and phase 03 of the epic
-  // is where it earns a control. The service writes it null and says why.
+  // `ph` JOINED THEM in issue #1407, by the same route and for the same reason: it
+  // had been on the document since the log was built with nothing to fill it in, and
+  // a fermented salami is finished when it has dropped below a pH — a target with
+  // nothing to measure against it is half a feature.
+  //
+  // ON EVERY RUN, not only where the run's frozen target names a pH. Hiding a
+  // measurement behind an intention is the wrong way round: somebody who takes a
+  // reading should be able to write it down, whether or not the formula said to.
+  // A bake walks past a fourth empty box exactly as it walks past the second and
+  // third.
   //
   // ─── THE TWO PRE-FILLED ROWS (issue #1276) ────────────────────────────────────
   //
@@ -112,6 +119,7 @@
   const WHOLE_BATCH = '__whole-batch__';
 
   let weightText = $state('');
+  let phText = $state('');
   let temperatureText = $state('');
   let humidityText = $state('');
   let note = $state('');
@@ -202,6 +210,22 @@
     weightText.trim() !== '' && weightGrams === null ? 'A weight in grams, or leave it blank.' : '',
   );
 
+  // BOUNDED 0–14, and refused HERE, on the field, while the number is still being
+  // typed (issue #1407). A strip or a probe cannot read outside that, so a value
+  // beyond it is a typo rather than a measurement. `BatchObservationSchema.ph`
+  // carries the same bound as the rail behind it; this is not a second opinion, it
+  // is the same one said early enough to be useful — exactly the posture the
+  // humidity below already takes.
+  const ph = $derived.by(() => {
+    const raw = phText.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;
+  });
+  const phError = $derived(
+    phText.trim() !== '' && ph === null ? 'A pH from 0 to 14, or leave it blank.' : '',
+  );
+
   // The same parse-and-say-it-on-the-field shape as the weight above, twice
   // (issue #1286). Blank is "not measured", which is most readings.
   //
@@ -240,6 +264,7 @@
   // nothing to do and says so by being unavailable. Skip is the button for that.
   const hasSomething = $derived(
     weightGrams !== null ||
+      ph !== null ||
       temperatureC !== null ||
       relativeHumidityPercent !== null ||
       note.trim() !== '' ||
@@ -248,6 +273,7 @@
   const canSave = $derived(
     hasSomething &&
       weightError === '' &&
+      phError === '' &&
       temperatureError === '' &&
       humidityError === '' &&
       whenError === '' &&
@@ -265,6 +291,7 @@
   function reset(): void {
     clearPending();
     weightText = '';
+    phText = '';
     temperatureText = '';
     humidityText = '';
     note = '';
@@ -322,6 +349,7 @@
       at: atIso,
       stageId,
       weightGrams,
+      ph,
       temperatureC,
       relativeHumidityPercent,
       note: note.trim(),
@@ -436,7 +464,19 @@
         />
 
         <!-- Beside the weight rather than behind a disclosure: a cure's weekly
-             reading is all three, and a bake simply walks past two empty boxes. -->
+             reading is all three, and a bake simply walks past two empty boxes.
+             A ferment's is a weight and a pH, which is the fourth (issue #1407). -->
+        <TextField
+          label="pH"
+          inputmode="decimal"
+          class="w-40"
+          placeholder="optional"
+          value={phText}
+          error={phError === '' ? undefined : phError}
+          onValueChange={(v) => (phText = v)}
+          data-testid="batch-log-ph"
+        />
+
         <TextField
           label="Temperature (°C)"
           inputmode="decimal"

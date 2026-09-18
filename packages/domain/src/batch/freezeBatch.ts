@@ -191,6 +191,16 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       // as `checkedIngredientIds` below is and for the same reason (issue #1404).
       recipeKind,
       cureCategory,
+      // WHAT THIS RUN IS AIMING AT, off the formula (issue #1407) — and off the
+      // formula rather than off `input`, unlike `recipeKind` above, because the
+      // target IS a field of the document this function already holds. There is no
+      // join for the caller to make and therefore no argument for it to pass.
+      //
+      // `?? null` is the read default made explicit at the one construction site,
+      // exactly as `checkedIngredientIds` below is: a default is what a document
+      // written before the field existed reads back as, never what a new one is
+      // born with.
+      target: formula.target ?? null,
       // Omitted rather than nulled when no vessel was named, so the field is simply
       // absent on the document — `BatchSchema.vessel` is optional, not nullable.
       ...(vessel === undefined ? {} : { vessel }),

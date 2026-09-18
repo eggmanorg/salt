@@ -391,6 +391,7 @@ const FORMULA = {
   recipeId: 'r-1',
   components: [{ ingredientId: 'i-1', percent: 100, inBasis: true }],
   referenceYield: { kind: 'basis' as const, grams: 1000 },
+  target: null,
   schemaVersion: 1 as const,
 };
 
@@ -401,6 +402,7 @@ const BATCH = {
   recipeTitle: 'Sourdough',
   recipeKind: 'recipe' as const,
   cureCategory: null,
+  target: null,
   state: 'running' as const,
   abandonedAt: null,
   quantities: [],

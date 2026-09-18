@@ -579,10 +579,10 @@ export const coverageThresholds = {
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
   'apps/web-pwa/src/routes/**': {
-    lines: 83.87,
-    branches: 72.96,
-    uncoveredLines: 1724,
-    uncoveredBranches: 1718,
+    lines: 84.78,
+    branches: 74.03,
+    uncoveredLines: 1704,
+    uncoveredBranches: 1721,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

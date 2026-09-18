@@ -38,11 +38,14 @@
 //     phase's, and nothing here precludes it. `buildBatchLog` (issue #1280) is the
 //     first of those to arrive: it ORDERS the log against the rest of the run rather
 //     than appending to it, which is a decision, and it still writes nothing.
-//   • The `finished` state a cure's weight-loss criterion would decide. Named in the
-//     contract doc, still with nothing to set it: `BatchStateSchema` stays
-//     `running | abandoned`, and widening it would mean revisiting every reader of
-//     `state` — `currentStage` here, and the "can this be abandoned / what happens
-//     next" derivations on both batch surfaces.
+//   • The `finished` state a cure's weight-loss criterion would decide — CUT, not
+//     merely deferred (issue #1407). The weight-loss target has now landed, and it
+//     decides nothing: the figure counts on past the target, and whether a run is
+//     done is the cook's judgement rather than Salt's. `BatchStateSchema` stays
+//     `running | abandoned` and is no longer waiting for anything.
+//   • Any estimate of WHEN a run will reach its target, at any layer, including as
+//     an unrendered function here. A cure is done on feel; a projected date would be
+//     a confident number that is usually wrong.
 //   • Any fermentation model. What a longer retard does to a dough is an opinion,
 //     and the contract doc's "what not to build" says so outright. The maths here
 //     is addition and subtraction of minutes.
@@ -64,3 +67,14 @@ export type { StageStatus } from './transitions.js';
 export { withBatchIngredientChecked, withBatchStepDone } from './ticks.js';
 export { buildBatchLog } from './buildBatchLog.js';
 export type { BatchLogEntry } from './buildBatchLog.js';
+// THE ONE LIVE NUMBER (issue #1407) — how far a run has got against what it froze
+// as its target. The exception the header's "ordering arithmetic over the log would
+// be a real domain function" anticipated, and it is here rather than in the PWA's
+// display layer so that layer's "nothing here computes a quantity" stays true.
+export { targetProgress, NEARING_FRACTION } from './targetProgress.js';
+export type {
+  TargetProgress,
+  WeightLossProgress,
+  PhProgress,
+  TargetStance,
+} from './targetProgress.js';

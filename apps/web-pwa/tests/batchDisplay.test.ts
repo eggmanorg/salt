@@ -15,7 +15,10 @@ import {
   formatDrift,
   formatTimeOfDay,
   groupLogByDay,
+  phTargetText,
   stageLabelById,
+  targetStanceClass,
+  weightLossText,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
 
@@ -55,6 +58,7 @@ function batch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
     recipeKind: 'recipe',
+    target: null,
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -567,5 +571,77 @@ describe('categoriesPresent / categoryChips', () => {
     const strayBacon = batch({ recipeKind: 'recipe', cureCategory: 'cooked_whole_muscle' });
     expect(categoriesPresent([strayBacon, coppa])).toEqual(['dry_cured_whole_muscle']);
     expect(categoryChips([strayBacon])).toEqual([]);
+  });
+});
+
+describe('what a run is aiming at, in words (issue #1407)', () => {
+  it('reads a weighing as a figure against its target', () => {
+    expect(
+      weightLossText({
+        startingGrams: 2400,
+        latestGrams: 1780,
+        percentLost: 25.833333333333336,
+        targetPercent: 35,
+        fractionOfTarget: 0.738,
+        stance: 'tracking',
+      }),
+    ).toBe('1780 g — 26% lost of 35%');
+  });
+
+  it('keeps counting past the target rather than capping the figure', () => {
+    expect(
+      weightLossText({
+        startingGrams: 2400,
+        latestGrams: 1488,
+        percentLost: 38,
+        targetPercent: 35,
+        fractionOfTarget: 38 / 35,
+        stance: 'atOrPast',
+      }),
+    ).toContain('38% lost of 35%');
+  });
+
+  it('says a target a person typed exactly as they typed it', () => {
+    // No shared percentage formatter, and none wanted: 32.5 stays 32.5 and 35
+    // never becomes 35.0.
+    expect(
+      weightLossText({
+        startingGrams: 1000,
+        latestGrams: 800,
+        percentLost: 20,
+        targetPercent: 32.5,
+        fractionOfTarget: 20 / 32.5,
+        stance: 'tracking',
+      }),
+    ).toContain('of 32.5%');
+  });
+
+  it('says a pH against its target, with no percentage anywhere in it', () => {
+    const said = phTargetText({ latest: 5.1, targetAtMost: 5.3 });
+    expect(said).toBe('pH 5.1 — aiming below 5.3');
+    expect(said).not.toContain('%');
+  });
+});
+
+describe('the cue (issue #1407, phase 2)', () => {
+  // THREE appearances, all distinct. The way this silently becomes a two-state cue
+  // is a later edit giving two stances the same class, which is exactly what is
+  // asserted rather than the specific classes.
+  it('gives each of the three stances a different appearance', () => {
+    const appearances = ['tracking', 'nearing', 'atOrPast'].map((stance) =>
+      targetStanceClass(stance as Parameters<typeof targetStanceClass>[0]),
+    );
+
+    expect(new Set(appearances).size).toBe(3);
+    expect(appearances.every((cls) => cls !== '')).toBe(true);
+  });
+
+  it('is a colour and nothing that reads as a verdict', () => {
+    for (const stance of ['tracking', 'nearing', 'atOrPast'] as const) {
+      const cls = targetStanceClass(stance);
+      for (const verdict of ['ready', 'done', 'overdue', 'fail', 'destructive']) {
+        expect(cls).not.toContain(verdict);
+      }
+    }
   });
 });

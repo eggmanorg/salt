@@ -86,3 +86,46 @@ describe('a formula document written before #1274', () => {
     expect(solved.solution.components.map((c) => c.grams)).toEqual([1047, 733, 21]);
   });
 });
+
+// Issue #1407 added `target` with a read default. Same argument, other direction:
+// a deletion is read-compatible because Zod strips, and an ADDITION with a read
+// default is read-compatible because Zod fills.
+describe('a formula document written before #1407', () => {
+  it('reads as a formula that named no target, rather than refusing to parse', () => {
+    const parsed = FormulaSchema.parse(LEGACY_FORMULA);
+    expect(parsed.target).toBeNull();
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('accepts either half alone, and both together', () => {
+    const coppa = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      target: { weightLossPercent: 35, phAtMost: null },
+    });
+    const salami = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      target: { weightLossPercent: 35, phAtMost: 5.3 },
+    });
+    const ferment = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      target: { weightLossPercent: null, phAtMost: 4.9 },
+    });
+
+    expect(coppa.target).toEqual({ weightLossPercent: 35, phAtMost: null });
+    expect(salami.target).toEqual({ weightLossPercent: 35, phAtMost: 5.3 });
+    expect(ferment.target).toEqual({ weightLossPercent: null, phAtMost: 4.9 });
+  });
+
+  it('refuses figures no scale or probe could produce', () => {
+    // The bound is on the schema rather than only on the box, so a hand-written
+    // correction in the console cannot put 120% loss or pH 20 into a document.
+    for (const target of [
+      { weightLossPercent: 100, phAtMost: null },
+      { weightLossPercent: 0, phAtMost: null },
+      { weightLossPercent: null, phAtMost: 20 },
+      { weightLossPercent: null, phAtMost: -1 },
+    ]) {
+      expect(FormulaSchema.safeParse({ ...LEGACY_FORMULA, target }).success).toBe(false);
+    }
+  });
+});

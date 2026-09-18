@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
+import type { BatchDoc, BatchObservationDoc, BatchStageDoc } from '@salt/domain/schemas';
 
 // The in-flight surface (issue #812, phase 1 of epic #778).
 //
@@ -19,17 +19,20 @@ import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
 // the ordering assertions say nothing about the machine's timezone. The rendered
 // wording is checked separately and loosely, for the same reason.
 
-const { mockBatches, mockInitBatchesSync, mockBreadGate } = await vi.hoisted(async () => {
-  const { makeStore } = await import('./support/testStore.js');
-  return {
-    mockBatches: makeStore<BatchDoc[] | undefined>(undefined),
-    mockInitBatchesSync: vi.fn(() => () => {}),
-    mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
-      enabled: true,
-      settled: true,
-    }),
-  };
-});
+const { mockBatches, mockInitBatchesSync, mockBreadGate, mockLogs, mockInitLogsSync } =
+  await vi.hoisted(async () => {
+    const { makeStore } = await import('./support/testStore.js');
+    return {
+      mockBatches: makeStore<BatchDoc[] | undefined>(undefined),
+      mockInitBatchesSync: vi.fn(() => () => {}),
+      mockBreadGate: makeStore<{ enabled: boolean; settled: boolean }>({
+        enabled: true,
+        settled: true,
+      }),
+      mockLogs: makeStore<ReadonlyMap<string, readonly BatchObservationDoc[]>>(new Map()),
+      mockInitLogsSync: vi.fn(() => () => {}),
+    };
+  });
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 vi.mock('../src/lib/batchService.js', () => ({
@@ -39,6 +42,12 @@ vi.mock('../src/lib/batchService.js', () => ({
 // The bread gate this page now sits behind (issue #831). The real module reads
 // uninitialised observability and so always says "on" — which is why every
 // assertion below needed no change; only the gated case has to say otherwise.
+// The per-run logs the meter reads (issue #1407). A data seam like `batchService`
+// beside it, and the fourth mock in this file — still inside UT-B1's cap of five.
+vi.mock('../src/lib/batchObservationService.js', () => ({
+  observationLogs: mockLogs,
+  initBatchObservationLogsSync: mockInitLogsSync,
+}));
 vi.mock('../src/lib/featureGate.js', () => ({
   breadGate: mockBreadGate,
   featureGate: () => mockBreadGate,
@@ -72,6 +81,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
     recipeKind: 'recipe',
+    target: null,
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -106,6 +116,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockBatches._set(undefined);
   mockBreadGate._set({ enabled: true, settled: true });
+  mockLogs._set(new Map());
 });
 
 function cards(): HTMLElement[] {
@@ -415,5 +426,201 @@ describe('BatchListPage — cure type', () => {
     );
 
     await waitFor(() => expect(categoryChips()).toHaveLength(3));
+  });
+});
+
+describe('BatchListPage — how far along each run is (issue #1407)', () => {
+  // A 2 400 g green weight aiming at 35% lost. 1 656 g is the issue's own 31%
+  // exemplar; 1 686 g is exactly the nearing threshold (85% of the way there);
+  // 2 200 g is a long way off; 1 488 g is past it.
+  const CURING: BatchDoc = makeBatch({
+    id: 'coppa-1',
+    recipeTitle: 'Coppa',
+    target: { weightLossPercent: 35, phAtMost: null },
+    totals: { basisGrams: 2400, totalGrams: 2466, usableGrams: 2466, units: null },
+  });
+
+  function reading(batchId: string, weightGrams: number): [string, BatchObservationDoc[]] {
+    return [
+      batchId,
+      [
+        {
+          id: `obs-${batchId}`,
+          schemaVersion: 1,
+          at: '2026-08-20T09:00:00.000Z',
+          stageId: null,
+          weightGrams,
+          ph: null,
+          temperatureC: null,
+          relativeHumidityPercent: null,
+          note: '',
+          image: null,
+        },
+      ],
+    ];
+  }
+
+  function card(): HTMLElement {
+    const found = screen.queryByTestId('batch-card-target');
+    if (found === null) throw new Error('no target figure on the card');
+    return found;
+  }
+
+  it('carries the same figure the run’s own page shows', async () => {
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map([reading('coppa-1', 1780)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(card()).toBeInTheDocument());
+    expect(card()).toHaveTextContent('1780 g — 26% lost of 35%');
+  });
+
+  it('looks different at a glance at 31% of a 35% target than at 12%', async () => {
+    // THE OUTCOME, stated as the issue states it: without reading the numbers.
+    // Two runs, two stances, and the stance is what the appearance is chosen
+    // from. 1 656 g is 31% lost EXACTLY — the issue's own figure, not a value
+    // borrowed from `NEARING_FRACTION`'s boundary (#1426 review, blocking 2: the
+    // boundary-derived 1 644 g used to sit here, which happened to be exactly
+    // where the OLD constant's boundary fell and so never went red when the
+    // constant put the real 31% figure in the wrong band).
+    mockBatches._set([CURING, makeBatch({ ...CURING, id: 'coppa-2' })]);
+    mockLogs._set(new Map([reading('coppa-1', 1656), reading('coppa-2', 2112)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card-target')).toHaveLength(2));
+    const stances = screen
+      .getAllByTestId('batch-card-target')
+      .map((el) => el.getAttribute('data-stance'));
+    expect(stances).toEqual(['nearing', 'tracking']);
+  });
+
+  it('pins the nearing boundary itself, separately from the exemplar above', async () => {
+    // The boundary case the exemplar test must not collapse into: exactly
+    // `NEARING_FRACTION` (0.85) of the 35% target is nearing, and one gram short
+    // of it is tracking.
+    mockBatches._set([CURING, makeBatch({ ...CURING, id: 'coppa-2' })]);
+    mockLogs._set(new Map([reading('coppa-1', 1686), reading('coppa-2', 1687)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card-target')).toHaveLength(2));
+    const stances = screen
+      .getAllByTestId('batch-card-target')
+      .map((el) => el.getAttribute('data-stance'));
+    expect(stances).toEqual(['nearing', 'tracking']);
+  });
+
+  it('stays full past the target, and says nothing judgemental', async () => {
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map([reading('coppa-1', 1488)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(card()).toBeInTheDocument());
+    expect(card().getAttribute('data-stance')).toBe('atOrPast');
+    expect(card()).toHaveTextContent('38% lost of 35%');
+    const words = (card().textContent ?? '').toLowerCase();
+    for (const verdict of ['ready', 'done', 'overdue', 'failed', 'finished']) {
+      expect(words).not.toContain(verdict);
+    }
+  });
+
+  it('shows no meter and no gap on a run with no target', async () => {
+    mockBatches._set([makeBatch()]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card')).toHaveLength(1));
+    expect(screen.queryByTestId('batch-card-target')).toBeNull();
+  });
+
+  it('opens a log subscription for the runs with a target, and no others', async () => {
+    // A household with nothing but bread opens not a single extra listener — which
+    // is what keeps this dark, and is the whole reason the subscription is
+    // per-run rather than a collection-group query.
+    mockBatches._set([CURING, makeBatch({ id: 'loaf-1' })]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith(['coppa-1']);
+  });
+
+  it('subscribes to nothing at all when no run carries a target', async () => {
+    mockBatches._set([makeBatch({ id: 'loaf-1' }), makeBatch({ id: 'loaf-2' })]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  // THE BOUND ITSELF (#1426 review, blocking 1 and should-fix 3). `all` is every
+  // batch this household has ever written — done and abandoned runs included,
+  // since `subscribeBatches` carries no `where`/`limit` and `orderBatches` keeps
+  // ended runs — so a target alone is not enough to earn a listener. These pin
+  // the narrower gate directly: a run that is not waiting on anything, or that
+  // names no weight-loss figure, must never open one, however long it carries a
+  // target.
+  it('opens no listener for a run that carries a target but has nothing left to do', async () => {
+    const done = makeBatch({
+      ...CURING,
+      id: 'coppa-done',
+      stages: [stage({ actualEndAt: '2026-08-14T12:00:00.000Z' })],
+    });
+    mockBatches._set([done]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  it('opens no listener for an abandoned run, however long its target', async () => {
+    mockBatches._set([makeBatch({ ...CURING, id: 'coppa-abandoned', state: 'abandoned' })]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  it('opens no listener for a run whose target is pH-only — the card never reads it', async () => {
+    mockBatches._set([
+      makeBatch({ ...CURING, id: 'salami-ph', target: { weightLossPercent: null, phAtMost: 5.3 } }),
+    ]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  it('moves when a new weighing lands, without the card being reopened', async () => {
+    // The figure is LIVE — the first thing on a batch screen that is not frozen —
+    // so the appearance has to follow the log rather than whatever it was on first
+    // render.
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map([reading('coppa-1', 2200)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(card().getAttribute('data-stance')).toBe('tracking'));
+
+    mockLogs._set(new Map([reading('coppa-1', 1644)]));
+
+    await waitFor(() => expect(card().getAttribute('data-stance')).toBe('nearing'));
+    expect(card()).toHaveTextContent('1644 g — 32% lost of 35%');
+  });
+
+  it('shows nothing for a run whose log has arrived empty', async () => {
+    // Loaded and nothing weighed yet is a different state from not loaded, and both
+    // render the same: no meter at zero for a run nobody has put on the scales.
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map([['coppa-1', []]]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card')).toHaveLength(1));
+    expect(screen.queryByTestId('batch-card-target')).toBeNull();
+  });
+
+  it('shows nothing for a run whose log has not arrived yet', async () => {
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map());
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card')).toHaveLength(1));
+    expect(screen.queryByTestId('batch-card-target')).toBeNull();
   });
 });

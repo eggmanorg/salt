@@ -127,6 +127,7 @@ function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
     recipeKind: 'recipe',
+    target: null,
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: 'recipe-1',

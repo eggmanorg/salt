@@ -142,6 +142,7 @@ const STORED: Formula = {
     { ingredientId: 'ing-water', percent: 70, inBasis: false },
   ],
   referenceYield: SHAPE,
+  target: null,
   schemaVersion: 1,
 };
 
