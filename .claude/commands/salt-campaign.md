@@ -124,6 +124,14 @@ Any row whose recorded state disagrees with what `gh` says — "merged" with an 
 
 Workers do not survive a session: a `dispatched` row from a dead session has no live agent behind it. Verify what its branch actually holds (the per-branch PR check above, plus `git log --oneline origin/main..origin/<branch>` if it was pushed), then either re-dispatch from where it stands — /salt-run's own resume logic picks up landed phases — or park it.
 
+**And confirm each issue is still open, before you spend anything on it.** The table above covers campaigns this command started; it says nothing about an issue somebody else finished in the meantime — another session, another campaign, Daniel by hand. One call per issue number you were given, before the extractors:
+
+```
+gh api repos/{owner}/{repo}/issues/N --jq '"#\(.number) \(.state) — \(.title)"'
+```
+
+`closed` → drop it from the run-set and say so: no extractor, no worktree, no dispatch, and no row in the ledger beyond the one line recording why. Every issue closed → say that and stop, rather than opening a ledger for a campaign with nothing in it. Campaign #1479 skipped this and paid two extractors, two workers and two worktrees to be told by /salt-run's own resume check what one call would have shown — both its issues had merged hours earlier, under the same epic. That resume check is the backstop and it held; a backstop is not a reason to skip the look.
+
 ### 2. Derive the footprints — delegated, never read
 
 **Do not open the issue bodies yourself.** A phased spec issue runs 10–25KB; you need about 200 tokens of it. Everything you read here stays in your transcript and is resent on every turn for the rest of the campaign — across a hundred-plus coordinator turns that is the single largest avoidable cost in this command, and it buys you nothing, because `/salt-run` reads the issue from source anyway.
