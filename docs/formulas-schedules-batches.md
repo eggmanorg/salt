@@ -361,6 +361,25 @@ pure domain function producing a human-signal render contract that is never
 persisted. Do **not** model a split as a first-class diff operation: one stage
 becoming two is a removal and two additions, and renders honestly as that.
 
+**And the proposal is deliberately transient — losing it is correct** (#1428, under
+epic #1417). It is never written server-side and never written client-side either,
+so a suspended phone or navigating away from the recipe (which unmounts the sheet)
+takes it with it. Closing the sheet alone does not: the proposal is held and only
+discarded on the next open edge (`RecipeBakeBatchSheet.svelte`'s `seed()`). That is
+the review artefact rule above, applied: Start is a hard gate in `endAt` mode, so
+what a suspend costs is a suggestion and one capped `pro` call (19–31 s in the #778
+spike) with the person still in front of the button that re-asks — never work the
+app had already done on their behalf, which is what made the same loss a defect for
+`generateGuidedPlan` (#1416). **Rejected:** a `scheduleProposals` collection (a
+schema, a subscription and a cleanup lifecycle for proposals nobody accepted), a
+draft `batches` document (it would surface on the in-flight list as a run nobody
+started, and "Start is what freezes a batch" would stop being true), and client-side
+persistence (hard rule 3, and it would not survive the OS killing the process).
+**The boundary:** #1417's "no `firestore.rules` change is needed" holds here _only_
+because nothing is written — the Admin SDK bypasses rules for the server's write, it
+does not give the browser a read path to a collection the rules file has never heard
+of. A durable version needs that clause, and reopens this decision.
+
 ## Documents
 
 | Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                                                                                                                  |

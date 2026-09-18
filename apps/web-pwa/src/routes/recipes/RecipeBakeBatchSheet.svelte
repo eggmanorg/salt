@@ -332,6 +332,24 @@
 
   // Re-seed on each open: a sheet reopened this evening must not still be offering
   // this morning's start time, last run's count, or last night's proposal.
+  //
+  // THE `discardProposal()` IN `seed()` IS LOAD-BEARING AND NOT REDUNDANT WITH
+  // `askKey` (issue #1428). Re-seeding moves the ask — back to `startAt`, back to
+  // now — so the old proposal goes inactive, but it is still HELD. Re-enter the
+  // identical question (same mode, same minute, same kitchen figure) and
+  // `proposalFor === askKey` becomes true again and the stored diff resurfaces. What
+  // would resurface is a restructure computed against a `formula` that may since have
+  // changed: `askKey` does not include the formula, and `formula` is a live prop from
+  // `RecipeViewPage`. Dropping it would let a stale restructure be reviewed as
+  // current and frozen onto a run, silently. Pinned by
+  // `tests/RecipeBakeBatchSheet.proposal.test.ts` → "a reopened sheet has forgotten
+  // the proposal, even for the identical question", which goes red if this call
+  // leaves `seed()`.
+  //
+  // BOUNDARY: this guards the REOPEN edge only. A formula changing while the sheet
+  // stays open does not touch `askKey` and is not caught here or by that test — the
+  // same live-prop path the `notAvailable` refusal above (`:460`) already names as
+  // reachable. Closing that path is a spec question, not this guard's job.
   let wasOpen = false;
   $effect(() => {
     if (open && !wasOpen) seed();

@@ -344,6 +344,49 @@ describe('RecipeBakeBatchSheet — asking for a finish time', () => {
     await waitFor(() => expect(screen.queryByTestId('bake-batch-proposal')).toBeNull());
     expect(screen.getByTestId('bake-batch-propose')).toBeInTheDocument();
   });
+
+  it('a reopened sheet has forgotten the proposal, even for the identical question', async () => {
+    // Issue #1428, CLAUDE.md hard rule 12. `seed()` calls `discardProposal()` on
+    // every open edge, and that call is NOT redundant with `askKey`: re-seeding only
+    // moves the ask, so without the discard the old answer is merely inactive and
+    // still held. Re-enter the identical question — same mode, same minute, same
+    // (empty) kitchen figure — and `proposalFor === askKey` becomes true again and
+    // the stored diff resurfaces. `askKey` carries no formula, and `formula` is a
+    // live prop, so what resurfaces can be a restructure computed against a process
+    // that has since changed, reviewed as current and frozen onto a run.
+    //
+    // Delete `discardProposal()` from `seed()` and this test goes red — verified by
+    // doing exactly that.
+    const rendered = renderSheet();
+    await proposeAndSettle();
+    expect(mockProposeSchedule).toHaveBeenCalledTimes(1);
+
+    await rendered.rerender({ recipe: RECIPE, formula: FORMULA, open: false });
+    await waitFor(() => expect(screen.queryByTestId('bake-batch-sheet')).toBeNull());
+    await rendered.rerender({ recipe: RECIPE, formula: FORMULA, open: true });
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+
+    // Re-ask the same question, to the minute — not via `askFor`, which waits for
+    // the propose button and would turn a resurfaced proposal into a timeout instead
+    // of a readable assertion. The kitchen box is empty on both sides of the reopen,
+    // so the ask key here is identical to the one the lost proposal answered.
+    await fireEvent.click(screen.getByRole('radio', { name: /Out of the oven/ }));
+    await fireEvent.input(screen.getByTestId('bake-batch-when'), {
+      target: { value: TARGET_LOCAL },
+    });
+    await waitFor(() => expect(screen.getByTestId('bake-batch-when')).toHaveValue(TARGET_LOCAL));
+
+    expect(screen.queryByTestId('bake-batch-proposal')).toBeNull();
+    expect(screen.queryAllByTestId('bake-batch-diff-row')).toHaveLength(0);
+    expect(screen.queryByTestId('bake-batch-rationale')).toBeNull();
+    // In `endAt` mode with nothing to review there is no Start to press at all —
+    // only the button that asks for a fresh schedule.
+    expect(screen.queryByTestId('bake-batch-confirm')).toBeNull();
+    expect(screen.getByTestId('bake-batch-propose')).toBeInTheDocument();
+    // And the reopen re-asked nothing of its own: the wasted call is the user's to
+    // spend, on the button in front of them.
+    expect(mockProposeSchedule).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('RecipeBakeBatchSheet — the proposal reads as a diff', () => {

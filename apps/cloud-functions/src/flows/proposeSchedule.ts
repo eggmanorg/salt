@@ -51,6 +51,16 @@ import { requireRecipeFrom } from './loadRecipe.js';
 // formula, from ids alone — and PERSISTS NOTHING. What comes back is reviewed as a
 // diff (`diffProcess`), and the user's Start is what freezes a batch.
 //
+// THE TRANSIENCE IS THE DESIGN, NOT AN UNFIXED #1416 (issue #1428, epic #1417). A
+// sleeping phone loses this answer, and that is right here: Start is a hard gate, so
+// what is lost is a suggestion rather than work the app had already committed to;
+// there is no document to write it into that would not be worse than the problem;
+// and the cost is one capped `pro` call — 19–31 s in the #778 spike — with the
+// person still in front of the button that re-asks. The full argument is at the
+// callable (`../index.ts`) and the decision is in
+// docs/formulas-schedules-batches.md → "Review a diff, store a snapshot". Do not add
+// a write here.
+//
 // THREE PROPERTIES ARE ENFORCED IN CODE rather than left to the prompt, each for
 // the same reason as in extraction: they are things a model gets wrong on real
 // recipes and none of them is worth a coin toss. A citation to a stage that is not
