@@ -176,10 +176,11 @@ Plus the `HTMLAttributes<HTMLElement>` passthrough (`data-testid`, `data-*`,
 `id`, `title`, `aria-*`), minus `onclick`, which is `never` (§8.30.6).
 
 **The component never resolves a label into a picture.** The lookup is the
-consuming app's — `kitchenToolService`'s `toolIconFor` / `toolIconVersionFor`
-today — and it lives in `apps/web-pwa` because it reads a Firestore-backed
-vocabulary. A primitive that resolved names would need that vocabulary, which is
-the layer-map boundary `ui-components` exists on the far side of.
+consuming app's — `kitIcons`'s `kitIconFor` / `kitIconVersionFor`
+(`apps/web-pwa/src/lib/kitIcons.ts`) today — and it lives in `apps/web-pwa`
+because it reads Firestore-backed vocabularies. A primitive that resolved names
+would need those vocabularies, which is the layer-map boundary `ui-components`
+exists on the far side of.
 
 ## 8.30.8 Testing requirements
 
