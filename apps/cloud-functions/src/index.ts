@@ -314,11 +314,22 @@ export const populateEquipmentEntry = makeTracedCallable({
 //     guard the server cannot have: `handleRematch` re-derives from the live store
 //     and replaces the row only if `rawText` still matches, so a line edited
 //     mid-flight is not overwritten with a match for its old text.
-//   • THE LOSS IS SELF-ANNOUNCING AND ONE TAP. One `lite`-tier parse of one line
-//     at `temperature: 0`, then a batch-of-one canon match — with the user holding
-//     the phone, and the ✗ that reports the loss the same ✗ that re-runs it.
-//     Compare the guided plan #1416 fixed: tens of seconds on `pro`, no human step
-//     at all, and you come back to no plan and no sign anything happened.
+//   • THE LOSS IS BOUNDED TO THE ROW WRITE, NOT TO THE WHOLE ROUND TRIP. The
+//     recipe row itself is never half-written — `persistRecipe` on the browser
+//     side is a whole-document `setDoc`, so a suspend before it leaves the
+//     document exactly as it was. The canon half is not that cheap or that
+//     clean: `canonicaliseRecipeIngredientsFlow` can mint a `productForms`
+//     document (`needs_approval: true`) and create or overwrite a `canonItems`
+//     document, server-side, before this callable's result ever reaches the
+//     browser — a suspend after that write leaves a live, unreferenced document
+//     in the family-shared canon, and the flow can also run product-form
+//     arbitration, a further AI call, not merely "a batch-of-one canon match".
+//     Re-running from the ✗ protects the recipe row; it does not undo an
+//     orphaned canon write, and from the sheet's "Match again" on an
+//     already-matched line there is not even a marker to prompt the re-run
+//     (`RecipeViewPage.svelte:662-669`). Compare the guided plan #1416 fixed:
+//     tens of seconds on `pro`, no human step at all, and you come back to no
+//     plan and no sign anything happened.
 //
 // THE BOUNDARY, because an unqualified "this match is never persisted server-side"
 // would go false the moment someone files the callable above: it holds while both

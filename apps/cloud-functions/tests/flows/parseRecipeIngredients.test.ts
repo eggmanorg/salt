@@ -785,9 +785,9 @@ describe('parseRecipeIngredients — prompt construction', () => {
 
 // ─── The pin for "this flow persists nothing" (issue #1435, epic #1417) ───────
 //
-// The flow's header states that it deliberately writes nothing, and four
-// in-process callers depend on that: `assembleRecipeDraft` (reached by every URL
-// import, photo import and chat-authored recipe) and the read-only-by-default
+// The flow's header states that it deliberately writes nothing, and two files
+// call it directly and depend on that: `assembleRecipeDraft` (reached by every
+// URL import, photo import and chat-authored recipe) and the read-only-by-default
 // `scripts/rematch-ingredients.ts`. Under CLAUDE.md rule 12 that sentence is
 // pinned, not merely asserted.
 //
@@ -823,8 +823,12 @@ describe('parseRecipeIngredients — persists nothing, by construction', () => {
     expect(code).not.toMatch(/\bFieldValue\b/);
   });
 
-  // Guards the guard: if the flow file ever stops being readable from here the
-  // two cases above would pass vacuously on an empty string.
+  // Guards the guard: `readFileSync` above already throws if the flow file goes
+  // missing or unreadable, so that isn't the failure this catches. What it does
+  // catch is the comment-stripping regexes eating real code along with the
+  // comments — a stray `/*` with no matching `*/`, or a code line that happens
+  // to start with `//`-lookalike syntax, would leave `code` gutted enough that
+  // the two cases above pass without having scanned anything meaningful.
   it('scanned the flow it claims to scan', () => {
     expect(code).toContain('parseRecipeIngredientsFlow');
   });
