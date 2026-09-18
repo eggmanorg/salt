@@ -78,3 +78,13 @@ export type {
   PhProgress,
   TargetStance,
 } from './targetProgress.js';
+// THE WEEKLY "WHAT IS DRYING" NUDGE (issue #1406) — which runs are sitting in a wait
+// long enough to be worth asking about, and the one wording of the question. A
+// SELECTION RULE plus COPY: neither reads a clock, neither reads Firestore, and the
+// scheduled Cloud Function that sends the thing holds no rule of its own. Selection is
+// by the shape of the run's frozen stages and never by `recipeKind` — see
+// `longRuns.ts` and `docs/formulas-schedules-batches.md` → *Kind versus presence*.
+export { longRunsWantingReading, LONG_WAIT_DAYS } from './longRuns.js';
+export type { LongRunDescriptor } from './longRuns.js';
+export { longRunNudge } from './longRunNudge.js';
+export type { LongRunNudgeCopy } from './longRunNudge.js';

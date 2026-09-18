@@ -199,9 +199,20 @@ export const violationCeilings = {
   // against the actual merged `phases`/`timingSummary` payload, so UT-A1's
   // regex is catching an argument-checked write assertion, not a vacuous one.
   // Same shape as the `apps/web-pwa` note above, and the same reasoning.
+  // UT-B1 31 → 32 (issue #1406). ONE new file:
+  // `maintenance/remindBatchReadings.test.ts`, for the weekly "what is drying"
+  // sweep. Its preamble is `remindShoppingDay.test.ts`'s, mock for mock — the
+  // scheduler shim, `defineSecret`, the logger, `sendWebPush`,
+  // `@salt/observability/server` and `firebase-admin/firestore` — which is six, and
+  // the seam cannot be narrowed below it: a scheduled push function has no caller
+  // to inject through, so every boundary it crosses is a module boundary. Four of
+  // the six are the harness (a schedule that would not otherwise be callable, a
+  // secret with no Secret Manager, a logger, an observability flush) and only two
+  // are the subject. Folding these cases into the shopping-day suite would buy the
+  // counter and cost the reader a file named after the thing it tests.
   'apps/cloud-functions': {
     'UT-A1': 3,
-    'UT-B1': 31,
+    'UT-B1': 32,
     'UT-C2': 4,
     'UT-E4': 0,
     'UT-G1': 0,

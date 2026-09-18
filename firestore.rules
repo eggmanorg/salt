@@ -224,8 +224,17 @@ service cloud.firestore {
     //
     // So: NO ownerUid, and this is not a fourth per-user collection. The `author`
     // field is a display NAME denormalised at write time so a note can say who
-    // wrote it — deliberately not a uid, keeping the invariant that uids appear
-    // nowhere in the family-shared data model.
+    // wrote it — deliberately not a uid, keeping the invariant that no family-shared
+    // collection is SCOPED per user.
+    //
+    // That is the invariant, and it is narrower than "uids appear nowhere in the
+    // family-shared data model", which this comment used to claim (softened by issue
+    // #1406). CLAUDE.md never said that: `shoppingDays.setBy` is a uid on a
+    // family-shared document and predates this block, and `batches.startedBy` is
+    // another — recorded because it is true, and used to ADDRESS the weekly
+    // "what is drying" notification. What is forbidden is a uid that SCOPES: checked
+    // on read, pinned on update, or gating what somebody may see or do. None of them
+    // is, and no rule here mentions one.
     //
     // Mirrors the guidedPlans block above, including its lack of a
     // `resource == null` clause: this rule never dereferences `resource.data`.

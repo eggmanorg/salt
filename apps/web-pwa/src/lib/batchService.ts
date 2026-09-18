@@ -29,6 +29,7 @@ import {
   withStageSkipped,
   withStageStarted,
 } from '@salt/domain';
+import { auth } from './auth.svelte.js';
 import { describeBoundViolation } from './boundViolation.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -440,6 +441,13 @@ export async function startBatch(
     // no recipe, so the join lives here.
     recipeKind: input.recipe.kind,
     cureCategory: input.recipe.cureCategory,
+    // WHO TAPPED START (issue #1406) — read here for the reason every other live fact
+    // is: the freeze is pure and holds no session. `?? null` rather than `?? ''`,
+    // unlike `shoppingDayService`'s `setBy`, because "nobody recorded a starter" is a
+    // real answer the weekly nudge has to be able to read, and an empty string would
+    // be a second spelling of it. AUDIT ONLY, and never a gate on who may open, edit
+    // or abandon this run — see `BatchSchema.startedBy`.
+    startedBy: auth.user?.uid ?? null,
     labels,
     places,
     ambientCelsius: input.ambientCelsius ?? null,

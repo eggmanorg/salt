@@ -96,6 +96,17 @@ export interface FreezeBatchInput {
   // compiler names every caller rather than letting one quietly freeze a default.
   recipeKind: RecipeKindDoc;
   cureCategory: CureCategoryDoc | null;
+  // WHO TAPPED START (issue #1406) — the uid, so the weekly "what is drying" nudge
+  // has somewhere to arrive. `null` when nobody is signed in, which is the honest
+  // answer and means no nudge. An AUDIT-STYLE UID and never scoping: the full
+  // statement of what it is and the four things it is not lives at
+  // `BatchSchema.startedBy`, and is not restated here.
+  //
+  // REQUIRED, while the schema field carries a read default — the same deliberate
+  // asymmetry `recipeKind` above has, and for the same reason: this is the one place
+  // a batch is constructed, so the compiler names every caller rather than letting
+  // one quietly freeze a default and leave a run silently un-nudgeable.
+  startedBy: string | null;
   labels: Readonly<Record<string, string>>;
   // The schedule's worded reasoning, when a proposal authored it. Phase 1 passes
   // nothing and the field lands null: arithmetic has no opinion to record.
@@ -145,6 +156,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     recipeTitle,
     recipeKind,
     cureCategory,
+    startedBy,
     labels,
     rationale,
     places,
@@ -240,6 +252,10 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       // written before the field existed gets, not what a new one is born with.
       checkedIngredientIds: [],
       completedStepIds: [],
+      // WHO TAPPED START (issue #1406), frozen with everything else. Written
+      // explicitly rather than left to the schema's read default, for the reason
+      // `recipeKind` above and `checkedIngredientIds` here are.
+      startedBy,
       createdAt: now,
       updatedAt: now,
     },

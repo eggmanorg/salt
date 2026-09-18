@@ -78,6 +78,7 @@ function loaf(stages: BatchStageDoc[], over: Partial<BatchDoc> = {}): BatchDoc {
     abandonedAt: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     quantities: [],
     totals: { basisGrams: 841, totalGrams: 1483, usableGrams: 1440, units: null },
     stages,

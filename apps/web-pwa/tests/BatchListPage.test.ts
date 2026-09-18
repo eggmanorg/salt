@@ -90,6 +90,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     abandonedAt: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     quantities: [],
     totals: {
       basisGrams: 816,

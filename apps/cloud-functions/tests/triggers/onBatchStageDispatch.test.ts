@@ -136,6 +136,7 @@ function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
     abandonedAt: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     quantities: [],
     totals: { basisGrams: 1000, totalGrams: 1700, usableGrams: 1700, units: null },
     stages: [stage()],

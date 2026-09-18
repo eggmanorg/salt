@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { BatchSchema } from '../../src/schemas/index.js';
-import { currentStage, targetProgress, withBatchAbandoned } from '../../src/index.js';
+import {
+  currentStage,
+  longRunsWantingReading,
+  targetProgress,
+  withBatchAbandoned,
+} from '../../src/index.js';
 
 // A `batches/{batchId}` document WRITTEN BEFORE #1274, read by the code after it
 // (rule-12 claim 1).
@@ -150,5 +155,24 @@ describe('a batch document written before #1407', () => {
         },
       ]),
     ).toBeNull();
+  });
+});
+
+// Issue #1406 added `startedBy`, again with a read default and again with no migration.
+// A run started before the field existed recorded no starter, which is what `null`
+// says — and therefore has nobody to ask about it on a Friday.
+describe('a batch document written before #1406', () => {
+  it('reads as a run whose starter was never recorded', () => {
+    expect('startedBy' in LEGACY_BATCH).toBe(false);
+    expect(BatchSchema.parse(LEGACY_BATCH).startedBy).toBeNull();
+  });
+
+  it('is silent to the weekly nudge rather than broadcast to the household', () => {
+    // The accepted answer to the one open question on #1406: no starter, no nudge. It
+    // costs nothing — the one run in production predating the field is bread, and
+    // bread's longest wait could never qualify anyway. A fallback to the household
+    // would reintroduce the broadcast the per-starter audience replaced.
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(longRunsWantingReading([parsed], '2026-09-15T09:00:00.000Z').size).toBe(0);
   });
 });

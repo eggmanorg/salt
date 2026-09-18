@@ -499,6 +499,9 @@ export {
   buildBatchLog,
   targetProgress,
   NEARING_FRACTION,
+  longRunsWantingReading,
+  LONG_WAIT_DAYS,
+  longRunNudge,
 } from './batch/index.js';
 export type {
   FreezeBatchFailure,
@@ -508,6 +511,8 @@ export type {
   WeightLossProgress,
   PhProgress,
   TargetStance,
+  LongRunDescriptor,
+  LongRunNudgeCopy,
 } from './batch/index.js';
 
 // URL module — pure display-time cache-buster for regenerated image URLs (#460).

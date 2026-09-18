@@ -356,6 +356,52 @@ export const BatchSchema = z.object({
   // `abandonedAt` all have.
   checkedIngredientIds: z.array(z.string()).default([]),
   completedStepIds: z.array(z.string()).default([]),
+  // ─── WHO TAPPED START (issue #1406) ─────────────────────────────────────────
+  //
+  // The uid of whoever started the run, frozen with everything else at the moment of
+  // the freeze. It exists so the weekly "what is drying" nudge
+  // (`remindBatchReadings`) has somewhere to arrive: you hang the coppa, so you are
+  // the one asked to weigh it each Friday. See `batch/longRuns.ts`.
+  //
+  // AN AUDIT-STYLE UID, IN THE SENSE CLAUDE.MD ALREADY SANCTIONS — the same species
+  // as `shoppingDays.setBy` and `recipes.createdBy`/`lastEditedBy`: recorded because
+  // it is true. It is additionally used to ADDRESS A NOTIFICATION, which is delivery
+  // rather than scoping; `pushSubscriptions` is already per-user for exactly that
+  // reason.
+  //
+  // SAY WHAT IT IS NOT, because the next reader will see a uid on a family-shared
+  // document and think the rule has moved. It has not:
+  //
+  //   • `batches` is NOT becoming a fifth per-user collection. There is no fifth, and
+  //     this is not one. A crock belongs to the household, not to whoever tapped
+  //     Start (docs/formulas-schedules-batches.md, "a batch is not a cook session").
+  //   • It is NEVER CHECKED ON READ, never pinned on update, and never a gate on who
+  //     may see, open, edit, log a reading to, mark a stage on or abandon a run.
+  //     Anyone in the house still does all of that, exactly as before.
+  //   • `firestore.rules`' `match /batches/{batchId}` stays
+  //     `allow read, write: if request.auth != null` and gains NO clause naming this
+  //     field. Nothing here is an `ownerUid`.
+  //
+  // THE LIMIT, STATED (CLAUDE.md rule 12). Two boundaries, neither of them hidden:
+  //
+  //   1. IF THE STARTER IS AWAY, NOBODY ELSE IS NUDGED about their run — accepted
+  //      deliberately, because the alternative is a household broadcast, which is the
+  //      thing the per-starter audience replaced. The run is still on the batches list
+  //      for anyone to open; it simply goes unasked-about that week.
+  //   2. The AUDIENCE half is pinned mechanically — the audience case in
+  //      `apps/cloud-functions/tests/maintenance/remindBatchReadings.test.ts` goes red
+  //      if a run's nudge ever reaches a second person. The "never checked on read"
+  //      half is CONVENTION, not enforcement: its only mechanical trace is that
+  //      `firestore.rules` gains no clause naming this field, which review can see and
+  //      no suite can hold.
+  //
+  // A read default, so every `batches/{batchId}` document written before this field
+  // existed parses unchanged and there is no migration (CLAUDE.md, production data
+  // back-compat) — the same shape `skipped`, `place`, `abandonedAt`, `recipeKind` and
+  // `target` all have. `null` means "nobody recorded a starter", and therefore no
+  // nudge: honest, and it costs nothing, because the one run in production predating
+  // this field is bread and bread can never qualify for the nudge anyway.
+  startedBy: z.string().nullable().default(null),
   createdAt: z.string(),
   // The ordering token for the write path's stale-echo guard, and the only reason
   // this document carries timestamps at all where `formulas` does not.

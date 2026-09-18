@@ -446,9 +446,16 @@ export const coverageThresholds = {
   // exactly — nothing untested was added, and `ai/fakeModel.ts` keeps the three
   // stub-encoding tests that outlive the declaring turn. Measured by
   // `pnpm test:coverage` on this branch and pasted from the ratchet's own block.
+  // Banked again by #1406: `maintenance/remindBatchReadings.ts`, the weekly "what is
+  // drying" sweep, arrived with its own suite covering every line and every branch it
+  // has — including the not-provisioned VAPID return and the skip-invalid paths. Both
+  // RATIOS rise (lines +0.72, branches +1.06, the latter past the staleness tolerance,
+  // which is what made the ratchet ask) and both uncovered COUNTS hold EXACTLY at 368
+  // and 347: nothing untested was added. Measured by `pnpm test:coverage` on this
+  // branch and pasted from the ratchet's own block.
   'apps/cloud-functions/src/**': {
-    lines: 87.24,
-    branches: 80.29,
+    lines: 87.96,
+    branches: 81.35,
     uncoveredLines: 368,
     uncoveredBranches: 347,
   },

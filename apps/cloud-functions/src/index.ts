@@ -743,6 +743,12 @@ export { listPushoverDevices } from './callables/listPushoverDevices.js';
 export { beforeMemberCreated } from './auth/beforeMemberCreated.js';
 export { sweepOrphanedStorage } from './maintenance/sweepOrphanedStorage.js';
 export { remindShoppingDay } from './maintenance/remindShoppingDay.js';
+// The weekly "what is drying" nudge (issue #1406, phase 04 of epic #778) — the one
+// thing that asks about a run sitting in a wait of a week or more, which the
+// stage-reminder path structurally cannot: it fires when a stage STARTS, and a
+// ninety-day dry has exactly one stage. Ships dark, with no flag: bread's longest wait
+// is an overnight retard, so no batch in production can qualify.
+export { remindBatchReadings } from './maintenance/remindBatchReadings.js';
 export { snapshotVolumetrics } from './maintenance/snapshotVolumetrics.js';
 export { requestEmailOtp } from './callables/requestEmailOtp.js';
 export { verifyEmailOtp } from './callables/verifyEmailOtp.js';
