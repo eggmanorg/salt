@@ -30,6 +30,40 @@ vi.mock('../../src/adapters/withAiTimeout.js', async (importActual) => ({
 
 vi.mock('@salt/observability/server', () => ({ setActiveSpanName: vi.fn() }));
 
+// ─── The server half of the review gate (issue #1433, epic #1417) ───────────
+// This flow hands its sentence back for a human to read and press Draw on; it
+// must not quietly save one on the way past. Nothing here touches Firestore
+// today, so the case at the foot of this file exists to go RED the day something
+// does — rule 12's "pin it" rather than another comment nobody can falsify.
+//
+// ONE spy on ONE seam, deliberately, rather than a list of named methods:
+// `getFirestore` is how every module in this package obtains a handle, so
+// anything reaching that far is caught before it can pick a collection or a
+// write verb, and a list can never be complete. The handle it returns is a Proxy
+// that throws on ANY property access, so a write that somehow slipped the
+// assertion still fails loudly instead of being absorbed by a stub that answers
+// every path with a plausible object. The two halves catch different shapes: a
+// bare write dies on the Proxy, and a best-effort write wrapped in a try/catch —
+// the likelier thing an agent would add — is swallowed there and caught by the
+// `not.toHaveBeenCalled()` assertion instead. Verified red both ways before
+// landing, by adding a write to the flow.
+const mockGetFirestore = vi.hoisted(() =>
+  vi.fn(
+    () =>
+      new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            throw new Error(
+              `describeEquipmentSubject must not touch Firestore — it reached for .${String(prop)}`,
+            );
+          },
+        },
+      ),
+  ),
+);
+vi.mock('firebase-admin/firestore', () => ({ getFirestore: mockGetFirestore }));
+
 const mockResolveModel = vi.fn(async () => 'gemini-flash-latest');
 vi.mock('../../src/ai/resolveModel.js', () => ({ resolveModel: mockResolveModel }));
 
@@ -249,5 +283,42 @@ describe('describeEquipmentSubject flow — photo mode', () => {
       expect.any(Function),
       { timeoutMs: 55_000, retries: 0 },
     );
+  });
+});
+
+describe('describeEquipmentSubject flow — persistence', () => {
+  it('PERSISTS NOTHING — never reaches for a Firestore handle, in any mode', async () => {
+    mockGenerate.mockResolvedValue({ output: { brief: 'A tilt-head stand mixer.' } });
+
+    // All three shapes the flow branches on, because the branch is where a write
+    // would plausibly be added — "save it, but only when a human revised it".
+    await (describeEquipmentSubjectFlow as Function)({ name: NAME });
+    await (describeEquipmentSubjectFlow as Function)({
+      name: NAME,
+      currentBrief: CURRENT_BRIEF,
+      hint: "it's matte black, not cream",
+    });
+    await (describeEquipmentSubjectFlow as Function)({ name: NAME, photo: PHOTO });
+
+    expect(mockGenerate).toHaveBeenCalledTimes(3);
+    // The whole point: the revised sentence lives in the browser's textarea until
+    // Draw is pressed. A save here would overwrite the caption of the picture
+    // currently on screen with words nobody has accepted, and raise no
+    // `equipmentIconAwaitingApproval` signal doing it.
+    expect(mockGetFirestore).not.toHaveBeenCalled();
+  });
+
+  it('and the pin is LIVE — that seam is the one this module graph resolves', async () => {
+    // Anti-vacuity. Without this, the assertion above would read as proof even if
+    // the mock named a module nothing here imports: "never called" is trivially
+    // true of a spy on a dead specifier. Reaching for the handle the way the flow
+    // would have to must land on THIS spy, and must throw.
+    const { getFirestore } = await import('firebase-admin/firestore');
+
+    expect(mockGetFirestore).not.toHaveBeenCalled();
+    expect(() => (getFirestore() as unknown as { collection: unknown }).collection).toThrow(
+      /must not touch Firestore/,
+    );
+    expect(mockGetFirestore).toHaveBeenCalledTimes(1);
   });
 });

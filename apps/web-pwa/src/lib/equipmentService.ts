@@ -455,7 +455,20 @@ export async function hideEquipmentIcon(itemId: string): Promise<ReadResult<void
 //
 // Both take the NAME rather than the item id: the callable reads nothing from
 // Firestore, so the caller supplies the whole input. Neither touches
-// `equipmentIcons` — `drawEquipmentIcon` remains its only writer.
+// `equipmentIcons`, and neither could: the collection is `allow write: if false`
+// in firestore.rules, so the only mutations this app can reach are two callables —
+// `drawEquipmentIcon`, which stamps the brief the user pressed Draw on, and
+// `setIconUpload`, which stamps `thumbnail` and the cache-bust nonce and never a
+// brief. Server-side the field has two further writers, neither of which can carry
+// a sentence from here: the manifest trigger and the `--apply` backfill script
+// both author their own from the item's name. So `drawEquipmentIcon` is the only
+// path by which a description a HUMAN has read reaches Firestore — the qualified
+// claim, not "the only writer of `subjectBrief`", which is false.
+//
+// A revision lost to a sleeping phone is therefore by design, not a gap. The
+// reason, its five facts and which of them are pinned live at the callable
+// (apps/cloud-functions/src/index.ts, `describeEquipmentSubject`) — issue #1433,
+// epic #1417.
 
 /**
  * Rewrite this item's description with a correction folded through it.

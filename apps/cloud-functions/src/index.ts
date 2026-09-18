@@ -427,14 +427,111 @@ export const describeRecipeScene = makeTracedCallable({
 // through the sentence); with neither it authors from scratch, which is what
 // "Start over" sends so a description edited into a corner can be thrown away.
 //
-// PERSISTS NOTHING — deliberately, and this is the load-bearing property.
-// `drawEquipmentIcon` remains the ONLY writer of `subjectBrief` (it stamps it
-// inside the same transaction as `sourceName`), so the revised sentence lives in
-// the browser's textarea until the user presses Draw. That is the economics of
-// the review gate: a revision is a fraction of a penny and touches no document,
-// so you correct the words as often as you like and buy one picture once they
-// are right. A revision that auto-saved would also silently overwrite the words
-// behind the picture currently on screen.
+// PERSISTS NOTHING — deliberately, and this is the load-bearing property. The
+// revised sentence lives in the browser's textarea until the user presses Draw.
+// That is the economics of the review gate: a revision is a fraction of a penny
+// and touches no document, so you correct the words as often as you like and buy
+// one picture once they are right.
+//
+// ─── AND LOSING IT TO A SLEEPING PHONE IS CORRECT (issue #1433, epic #1417) ────
+//
+// The sentence this callable returns lives in one `$state` local on
+// EquipmentEditPage (`briefDraft`) and the textarea bound to it, so a suspended
+// phone, a discarded tab, a reload or simply navigating away loses it. Note the
+// mechanism precisely, because every comment on this path states it the same way:
+// NOTHING DISCARDS THE REVISION DELIBERATELY. The draft has no home outside the
+// page, and on the next mount the page's `$effect` fills the box from
+// `equipmentIcons/{itemId}.subjectBrief` — the stored description, which is what
+// comes back. That effect keys on the STORED pair and re-seeds from any source,
+// which is also why a durable write would be worse than merely unnecessary: a
+// saved revision would arrive back down the page's own subscription and land over
+// whatever the user had typed since.
+//
+// That is NOT an unfixed instance of #1416, where `generateGuidedPlan`'s result
+// went missing on a path with no human step in it at all. The distinction the epic
+// asks this file's sweep to preserve is whether the app SAVED IT FOR YOU or HANDED
+// IT TO YOU TO REVIEW — and here the app does BOTH, on two different paths, on
+// purpose. Five facts decide it, each with its own void condition — no fact's
+// void condition is another's, and no two share a pin. Three of the five have no
+// pin at all; that is said plainly below rather than dressed up, because a stated
+// boundary is CLAUDE.md rule 12's second option and a citation that would stay
+// green is worse than none:
+//
+//   • ONE — the flow behind this callable never obtains a Firestore handle, in any
+//     of its three modes (author, revise, photo). It composes a prompt, generates,
+//     validates and returns a string. VOID if a write is added inside the flow.
+//     PINNED by tests/flows/describeEquipmentSubject.test.ts → "PERSISTS NOTHING —
+//     never reaches for a Firestore handle, in any mode", which mocks
+//     `firebase-admin/firestore` and hands back a handle that throws on ANY
+//     property access, so a write that somehow slipped the assertion still fails
+//     loudly rather than being absorbed by a stub that answers every path. Its
+//     boundary: it catches `getFirestore()`, which is how every module in this
+//     package that touches Firestore obtains its handle — 45 of them today. A
+//     handle passed in as an argument would evade it, and nothing passes one.
+//   • TWO — in the browser, `briefDraft` leaves EquipmentEditPage by exactly one
+//     call: `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`. VOID
+//     if a second handle on that page sends brief text anywhere. PINNED by
+//     apps/web-pwa/tests/EquipmentEditPage.test.ts, which asserts that Revise and
+//     Start over leave `drawEquipmentIcon` uncalled and that Draw sends exactly
+//     what is in the box — and structurally by that suite's `vi.mock` of
+//     equipmentService, whose factory enumerates every export the page imports, so
+//     a new service import errors the suite instead of passing green. Its
+//     boundary: a page reaching around the service into @salt/firebase-sync
+//     directly would evade it.
+//   • THREE — there is no stale-full-document hazard here, unlike the near-twin
+//     describeRecipeScene above. `equipmentIcons` is `allow write: if false`
+//     (firestore.rules), so no browser write reaches it at all; the whole-document
+//     `setDoc`s the equipment surfaces do make land on `equipmentManifest/current`,
+//     which carries no brief field. The only two mutations a browser can reach are
+//     callables — `drawEquipmentIcon`, and `setIconUpload`, which stamps
+//     `thumbnail` and the cache-bust nonce and never a brief. VOID if that rules
+//     clause opens, or if `subjectBrief` moves onto the manifest. NOTHING GUARDS
+//     THIS: no suite asserts the write denial (firestoreRules.emulator.test.ts
+//     does not cover this collection), so a rules edit would go green everywhere.
+//   • FOUR — a brief-only write would be SILENT. `equipmentIconAwaitingApproval`
+//     is `sourceName !== briefSourceName` (@salt/domain, equipment/queries), so a
+//     write of `subjectBrief` alone moves neither field and the one signal that
+//     exists for "the words and the picture have diverged" would never fire: new
+//     words under the old drawing, with nothing saying so. VOID if that predicate
+//     starts reading `subjectBrief`. NOTHING GUARDS THIS: the predicate has no
+//     test anywhere in the repo. Its neighbour IS pinned and is a different claim
+//     — tests/callables/drawEquipmentIcon.test.ts's two arms fix that the Draw
+//     callable stamps the brief and `sourceName` together, or stamps neither.
+//   • FIVE — the path nobody asked for is ALREADY durable, and that asymmetry is
+//     the feature rather than an oversight. onEquipmentManifestWritten runs this
+//     same flow on a create or a rename and writes `subjectBrief` +
+//     `briefSourceName` itself; so does scripts/generate-equipment-icons.mjs under
+//     `--apply`. Both call the flow in AUTHORING mode — `{ name }` only — so
+//     neither can carry a sentence a browser is holding. #1417's "save it for the
+//     user" half is therefore already shipped, on the one path with no human in
+//     it. VOID if the trigger stops writing the brief — the backfill script is an
+//     operator tool rather than a path, so this fact rests on the trigger alone.
+//     NOTHING GUARDS THIS: there is no test for onEquipmentManifestWritten at all;
+//     functionMemoryPin.test.ts names it only to pin its memory.
+//
+// What is exposed is seconds, not the 90 s below — that is the FUNCTION ceiling.
+// The AI budget is AI_TEXT_FLOW_TIMEOUT (55 s, no retry) or 60 s in photo mode,
+// the role is `fast` (appSettings.ts), and the person is sitting in front of the
+// textarea with the button that re-asks it. Those are constants, not invariants:
+// nothing goes red if one of them moves.
+//
+// BOUNDARY — this is NOT "the equipment description is never persisted
+// server-side", and must not be written as one: fact five names two writers that
+// persist one deliberately. Nor is `drawEquipmentIcon` the only writer of
+// `subjectBrief`, which is what this comment claimed until #1433 — an absolute
+// that made drawEquipmentIcon.ts:110-131's transaction look like ceremony when it
+// exists precisely because the trigger is a concurrent writer of that field. What
+// IS true, and is what the review gate rests on: `drawEquipmentIcon` is the only
+// path by which this callable's output, once a human has read it, reaches
+// Firestore. And note what does NOT carry from the epic: #1417's "no
+// firestore.rules change is needed, for any child" is true here for a SERVER-side
+// durable write (the Admin SDK bypasses rules) and false for a client-side one
+// (`allow write: if false`), so it argues nothing either way. A server-side write
+// would in fact be cheap — the document exists, the browser already subscribes to
+// it, one `ref.set({ subjectBrief }, { merge: true })` would do it — and is still
+// wrong, because the field is occupied: it is the caption of the picture currently
+// on screen. The decision is recorded in docs/canon-icons.md → "The description's
+// two lives"; the flow header carries the corrected claim at the flow.
 //
 // Plain onCallGenkit rather than makeTracedCallable, same as generateGuidedPlan
 // below: one press, one call, no cross-invocation pair like identifyEquipment →

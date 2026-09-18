@@ -187,6 +187,27 @@ photo is REQUEST-SCOPED: it goes to Gemini as a media prompt part and is never
 written anywhere — no Storage object, no Firestore field, no trace on the item —
 only the sentence it produces persists, and only once **Draw** is pressed.
 
+### The description's two lives (#1433)
+
+The same flow runs on two paths with opposite durability, and that is the decision
+rather than an inconsistency. On the **automatic** path — a create or a rename —
+`onEquipmentManifestWritten` calls the flow, gets a description nobody asked for and
+writes it to `equipmentIcons/{itemId}` immediately; the `--apply` backfill script does
+the same in bulk. On the **human** path — Revise, Start over, Use a photo — the
+callable hands the sentence back to the textarea and writes nothing, so a revision is
+lost if the phone sleeps before **Draw**. That loss is accepted deliberately. A
+durable version was considered and rejected: the document already exists and the
+browser already subscribes to it, so writing would be cheap, but `subjectBrief` is
+not an empty slot — it is the caption of the picture currently on screen. Saving an
+unaccepted revision there would replace a description somebody approved with one
+nobody has, raise no `equipmentIconAwaitingApproval` signal doing it (that predicate
+compares `sourceName` with `briefSourceName` and never reads the brief), and arrive
+back down the item page's own subscription over whatever the user had typed since.
+Client-side durability was rejected too, by CLAUDE.md hard rule 3. The claim this
+rests on is narrower than the one the code used to state: `drawEquipmentIcon` is the
+only path by which the **callable's** output, once a human has read it, reaches
+Firestore — not the only writer of the field, which has three.
+
 ## Generation pipeline
 
 Extends the **existing** `onCanonItemWritten` trigger (`apps/cloud-functions/src/index.ts`)
