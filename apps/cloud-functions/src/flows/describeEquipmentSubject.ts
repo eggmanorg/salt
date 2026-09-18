@@ -40,15 +40,20 @@ import { flowModel } from '../ai/fakeModel.js';
 // user never accepts is lost to a sleeping phone — deliberately (issue #1433,
 // epic #1417). The photo is never written anywhere either. Say the persistence
 // claim in the form that is actually TRUE, because the unqualified version
-// contradicts a transaction five files away: `drawEquipmentIcon` is the only path
-// by which THIS FLOW'S OUTPUT, once a human has read it, reaches Firestore. The
-// FIELD has other writers — the manifest trigger, and the `--apply` backfill in
-// scripts/generate-equipment-icons.mjs, both of which call this flow in AUTHORING
-// mode and store the sentence they get back, unseen by anybody. That is exactly
-// why drawEquipmentIcon.ts:110-131 needs a transaction: a rename landing mid-draw
-// means the trigger has already re-authored `subjectBrief` under the new name. An
-// agent who reads "the only writer" as literal truth reads that transaction as
-// ceremony and tidies it away.
+// contradicts a transaction five files away. Scoped correctly, to the CALLABLE
+// rather than to this flow: `drawEquipmentIcon` is the only writer of
+// `subjectBrief` that takes its brief from a client request — the describe
+// callable's output, once the browser sends it. The FIELD has other writers —
+// the manifest trigger, and the `--apply` backfill in
+// scripts/generate-equipment-icons.mjs — both of which call THIS FLOW ITSELF, in
+// AUTHORING mode, and write the sentence they get back directly, never through
+// `drawEquipmentIcon`. (The backfill's briefs ARE read by a human, side by side
+// with their drawings, per that script's own header — "unseen by anybody" is
+// not what separates the writers; taking the brief from a client request is.)
+// That is exactly why drawEquipmentIcon.ts:110-131 needs a transaction: a
+// rename landing mid-draw means the trigger has already re-authored
+// `subjectBrief` under the new name. An agent who reads "the only writer" as
+// literal truth reads that transaction as ceremony and tidies it away.
 //
 // Why the revision stays transient rather than auto-saving — the five facts, each
 // with its void condition and its pin or its honest absence — is at the callable

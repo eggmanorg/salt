@@ -204,9 +204,11 @@ nobody has, raise no `equipmentIconAwaitingApproval` signal doing it (that predi
 compares `sourceName` with `briefSourceName` and never reads the brief), and arrive
 back down the item page's own subscription over whatever the user had typed since.
 Client-side durability was rejected too, by CLAUDE.md hard rule 3. The claim this
-rests on is narrower than the one the code used to state: `drawEquipmentIcon` is the
-only path by which the **callable's** output, once a human has read it, reaches
-Firestore — not the only writer of the field, which has three.
+rests on is narrower than the one the code used to state: `drawEquipmentIcon` is
+the only writer of `subjectBrief` that takes its brief from a client request —
+the **callable's** output, once the browser sends it — reaching Firestore. Not
+the only writer of the field, which has three; the other two author their own
+from the item's name and never carry a client-held sentence.
 
 ## Generation pipeline
 

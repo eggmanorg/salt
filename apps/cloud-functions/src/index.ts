@@ -465,19 +465,36 @@ export const describeRecipeScene = makeTracedCallable({
 //     `firebase-admin/firestore` and hands back a handle that throws on ANY
 //     property access, so a write that somehow slipped the assertion still fails
 //     loudly rather than being absorbed by a stub that answers every path. Its
-//     boundary: it catches `getFirestore()`, which is how every module in this
-//     package that touches Firestore obtains its handle — 45 of them today. A
-//     handle passed in as an argument would evade it, and nothing passes one.
-//   • TWO — in the browser, `briefDraft` leaves EquipmentEditPage by exactly one
-//     call: `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`. VOID
-//     if a second handle on that page sends brief text anywhere. PINNED by
-//     apps/web-pwa/tests/EquipmentEditPage.test.ts, which asserts that Revise and
-//     Start over leave `drawEquipmentIcon` uncalled and that Draw sends exactly
-//     what is in the box — and structurally by that suite's `vi.mock` of
-//     equipmentService, whose factory enumerates every export the page imports, so
-//     a new service import errors the suite instead of passing green. Its
-//     boundary: a page reaching around the service into @salt/firebase-sync
-//     directly would evade it.
+//     boundary: it catches a handle THIS FLOW obtains for itself, via
+//     `getFirestore()` — 37 modules in this package do that today. A handle
+//     passed in as an ARGUMENT would evade it, and that is not a theoretical
+//     gap: seven modules already take one that way, three of them sibling flow
+//     modules — flows/equipmentContext.ts, flows/componentContext.ts,
+//     flows/kitchenMemoryContext.ts — plus four adapters/triggers. Giving
+//     `describeEquipmentSubjectFlow` a `db` parameter in that same local idiom
+//     would write to Firestore from inside the flow and never touch
+//     `mockGetFirestore`, and the caller already holds a handle to pass:
+//     onEquipmentManifestWritten.ts:111 obtains `const db = getFirestore()`
+//     earlier in the same function that calls this flow at :120.
+//   • TWO — Draw is the only route from the box to the document: in the
+//     browser, `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`
+//     is the only call that carries brief text into a Firestore write. VOID if
+//     a second handle on this page ever carries brief text into a write,
+//     directly or through another callable. (`briefDraft` itself leaves the
+//     page by two calls today — Draw's and Revise's `reviseEquipmentBrief` —
+//     but only Draw's persists; Revise's goes through this callable, which
+//     fact ONE above shows touches no Firestore handle at all.) PINNED by
+//     apps/web-pwa/tests/EquipmentEditPage.test.ts: "rewrites the description
+//     from a correction, and draws nothing" (:152), "writes a fresh
+//     description from the name, discarding accumulated edits" (:236) and the
+//     photo-mode case (:339) each assert `drawEquipmentIcon` is NOT called;
+//     "draws exactly what is in the box after a revision" (:271) asserts the
+//     one call that does happen carries exactly the box's text. Together they
+//     pin that no handle but Draw's reaches the document. Its boundary: a page
+//     reaching around `drawEquipmentIcon` into @salt/firebase-sync directly, or
+//     a future write added to reviseEquipmentBrief/restartEquipmentBrief/
+//     describeEquipmentFromPhoto's server side, would evade it — the second is
+//     fact ONE's boundary, not this one's.
 //   • THREE — there is no stale-full-document hazard here, unlike the near-twin
 //     describeRecipeScene above. `equipmentIcons` is `allow write: if false`
 //     (firestore.rules), so no browser write reaches it at all; the whole-document
@@ -522,8 +539,10 @@ export const describeRecipeScene = makeTracedCallable({
 // that made drawEquipmentIcon.ts:110-131's transaction look like ceremony when it
 // exists precisely because the trigger is a concurrent writer of that field. What
 // IS true, and is what the review gate rests on: `drawEquipmentIcon` is the only
-// path by which this callable's output, once a human has read it, reaches
-// Firestore. And note what does NOT carry from the epic: #1417's "no
+// writer of `subjectBrief` that takes its brief from a client request — this
+// callable's output reaching Firestore once the browser sends it. The other two
+// writers author their own from the item's name and never carry a client-held
+// sentence. And note what does NOT carry from the epic: #1417's "no
 // firestore.rules change is needed, for any child" is true here for a SERVER-side
 // durable write (the Admin SDK bypasses rules) and false for a client-side one
 // (`allow write: if false`), so it argues nothing either way. A server-side write

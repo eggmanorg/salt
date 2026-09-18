@@ -461,9 +461,13 @@ export async function hideEquipmentIcon(itemId: string): Promise<ReadResult<void
 // `setIconUpload`, which stamps `thumbnail` and the cache-bust nonce and never a
 // brief. Server-side the field has two further writers, neither of which can carry
 // a sentence from here: the manifest trigger and the `--apply` backfill script
-// both author their own from the item's name. So `drawEquipmentIcon` is the only
-// path by which a description a HUMAN has read reaches Firestore — the qualified
-// claim, not "the only writer of `subjectBrief`", which is false.
+// both author their own from the item's name. So `drawEquipmentIcon` is the
+// only writer of `subjectBrief` that takes its brief from a client request —
+// this callable's output, once the browser sends it — reaching Firestore. Not
+// "a description a human has read": the backfill's briefs are read by hand too
+// (scripts/generate-equipment-icons.mjs's own header), and reading is not what
+// separates the writers. And not "the only writer of `subjectBrief`" either,
+// which is false — it has three.
 //
 // A revision lost to a sleeping phone is therefore by design, not a gap. The
 // reason, its five facts and which of them are pinned live at the callable

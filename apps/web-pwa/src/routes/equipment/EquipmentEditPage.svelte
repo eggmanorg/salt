@@ -156,9 +156,13 @@
   // Both call the describeEquipmentSubject callable, which PERSISTS NOTHING: the
   // rewritten sentence lands back in `briefDraft`, still editable, and only
   // becomes the item's description if Draw is pressed afterwards. Draw remains
-  // the one button that spends money, and `briefDraft` leaves this page by that
-  // one call and no other — which is the claim that matters here, NOT "the only
-  // writer of `subjectBrief`": the manifest trigger writes that field too, from a
+  // the one button that spends money, and Draw is the only route from this box
+  // to the document — not "briefDraft leaves this page by one call", which is
+  // false as of Revise: `handleReviseBrief` below also sends `briefDraft.trim()`
+  // off the page, to this same callable. What makes Draw the one that matters
+  // is that the callable persists nothing (index.ts fact ONE), so Revise's call
+  // never reaches Firestore; only Draw's does. Nor is it "the only writer of
+  // `subjectBrief`": the manifest trigger writes that field too, from a
   // sentence it authored itself from the item's name.
   //
   // So a revision is lost if the phone sleeps before Draw, and that is correct
