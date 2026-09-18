@@ -608,11 +608,19 @@ export const coverageThresholds = {
   // that replaced it is one expression, so the area lost lines faster than it
   // lost tests; the new cell suite then covered the rest. Every figure moves the
   // safe way — both ratios up, both uncovered counts down or level.
+  // RE-PINNED 78.36/70.86 → 78.89/71.91 in #1402. The new `lib/boundViolation.ts`
+  // is the whole of the move: it is small, fully covered by
+  // `tests/boundViolation.test.ts`, and it is code MOVED here out of
+  // `batchService.ts` — where the same branches were uncovered, because the two
+  // private functions it came from were reachable only through a freeze failure no
+  // unit test provoked. So the area both gained a well-covered file and lost the
+  // uncovered copies, and the ratchet asked for the gain to be banked rather than
+  // left as four points of hiding room. Measured by CI, pasted, not retyped.
   'apps/web-pwa/src/lib/**': {
-    lines: 78.36,
-    branches: 70.86,
-    uncoveredLines: 772,
-    uncoveredBranches: 594,
+    lines: 78.89,
+    branches: 71.91,
+    uncoveredLines: 759,
+    uncoveredBranches: 576,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
