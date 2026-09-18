@@ -133,6 +133,7 @@ describe('unresolvedKitLabels — equipment the household owns (issue #954)', ()
     rules: [],
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };
 
@@ -158,7 +159,14 @@ describe('unresolvedKitLabels — equipment the household owns (issue #954)', ()
   const withCocotte = {
     ...magimix,
     accessories: [
-      { id: 'acc-cocotte', name: 'Cocotte Slow Cook Pot', owned: true, included: false, note: '' },
+      {
+        id: 'acc-cocotte',
+        name: 'Cocotte Slow Cook Pot',
+        owned: true,
+        included: false,
+        note: '',
+        borrowedPicture: null,
+      },
     ],
   };
 

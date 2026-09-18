@@ -27,7 +27,7 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   equipmentThumbnailFor: () => null,
   equipmentIconVersionFor: () => undefined,
   drawEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
-  hideEquipmentIcon: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  hideEquipmentIconFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   reviseEquipmentBrief: vi.fn(),
   restartEquipmentBrief: vi.fn(),
   describeEquipmentFromPhoto: vi.fn(),
@@ -43,6 +43,10 @@ vi.mock('../src/lib/equipmentService.js', () => ({
   editEquipmentItemNote: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   setEquipmentItemKind: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   setEquipmentEnvironmentFor: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // The entry-picture dialog's own calls (issue #1465, Phase 2). It is lazily
+  // imported by the row below, so its imports have to resolve here even though
+  // what this file asserts is only that the row opens it.
+  authorEntryIconBrief: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 
 import EquipmentEditPage from '../src/routes/equipment/EquipmentEditPage.svelte';
@@ -78,12 +82,14 @@ function seed(kind: EquipmentKind, entries: SeedEntry[] = [], note = ''): void {
           id: e.id,
           name: e.name,
           owned: e.owned,
+          borrowedPicture: null,
           included: false,
           note: e.note ?? '',
         })),
         rules: [],
         note,
         environment: null,
+        borrowedPicture: null,
         updatedAt: NOW,
       },
     ],
@@ -258,5 +264,20 @@ describe('EquipmentEditPage — saying what a record is (issue #1373)', () => {
     await waitFor(() =>
       expect(vi.mocked(addToast)).toHaveBeenCalledWith('Failed to save note.', 'destructive'),
     );
+  });
+});
+
+describe('an entry can be given a picture of its own (issue #1465, Phase 2)', () => {
+  it('opens the picture dialog from the row, for a family member and an accessory alike', async () => {
+    seed('family', [{ id: 'acc-1', name: 'De Buyer 28cm', owned: true }]);
+    render(EquipmentEditPage, { props: { params: { id: ITEM_ID } } });
+
+    // The row's tile shows what THIS entry has, which is nothing — the record's
+    // picture standing in here would answer the wrong question (kitIcons.ts owns
+    // the fallback, and only on a recipe).
+    await fireEvent.click(screen.getByTestId('equipment-accessory-icon-btn'));
+    await waitFor(() => expect(screen.getByTestId('equipment-entry-icon-dialog')).toBeTruthy());
+    // Nothing is described until it is asked for.
+    expect(screen.getByTestId('equipment-entry-describe-btn')).toBeTruthy();
   });
 });

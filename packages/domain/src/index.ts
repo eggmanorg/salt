@@ -106,7 +106,13 @@ export {
   editEquipmentNote,
   setEquipmentKind,
   setEquipmentEnvironment,
+  setBorrowedPicture,
   equipmentIconAwaitingApproval,
+  // The words one ENTRY's own picture is described from (issue #1465, Phase 2),
+  // and the set of ids the icon collection may hold — which is the complement of
+  // what the manifest trigger DELETES, so it is a named query, not a `.map()`.
+  equipmentEntrySubjectName,
+  equipmentIconOwnerIds,
   // The display-time join from a free-text kit label to the item this household
   // actually owns (issue #954) — the specific half of the question
   // `resolveKitchenTool` answers generically. Tried FIRST by the callers of both:
@@ -117,8 +123,17 @@ export {
   // issue #1465. Read first by every kit surface: an id the flow recorded beats a
   // rule over the words, which is what finally reaches a family member.
   resolveKitEntryEquipment,
+  // …and the two composed into the one answer every kit surface must agree on:
+  // the link where it resolves, the words where it does not. `kitIcons.ts` and
+  // `KitPicturePicker.svelte` both read through this rather than each picking an
+  // order of their own.
+  resolveKitEntryItem,
 } from './equipment/index.js';
-export type { ResolvedKitEquipment, KitEquipmentLinkSource } from './equipment/index.js';
+export type {
+  ResolvedKitEquipment,
+  KitEquipmentLinkSource,
+  KitEntryEquipmentSource,
+} from './equipment/index.js';
 
 // Shopping list module — published surface.
 export type {

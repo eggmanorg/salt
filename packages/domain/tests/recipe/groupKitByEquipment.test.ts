@@ -42,10 +42,12 @@ function item(id: string, name: string, accessories: readonly string[] = []): Eq
       owned: true,
       included: true,
       note: '',
+      borrowedPicture: null,
     })),
     rules: [],
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
 }

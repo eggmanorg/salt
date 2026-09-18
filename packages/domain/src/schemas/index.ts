@@ -110,6 +110,7 @@ export {
   EquipmentHumiditySchema,
   EquipmentStandingSettingSchema,
   EquipmentEnvironmentSchema,
+  BorrowedPictureSchema,
   EQUIPMENT_MANIFEST_COLLECTION,
   EQUIPMENT_MANIFEST_DOC_ID,
 } from './equipmentManifest.js';
@@ -120,14 +121,20 @@ export type {
   EquipmentHumidityDoc,
   EquipmentStandingSettingDoc,
   EquipmentEnvironmentDoc,
+  BorrowedPictureDoc,
 } from './equipmentManifest.js';
 
 export {
   EquipmentIconSchema,
   DrawEquipmentIconInputSchema,
+  AuthorEntryIconBriefInputSchema,
   EQUIPMENT_ICONS_COLLECTION,
 } from './equipmentIcon.js';
-export type { EquipmentIconDoc, DrawEquipmentIconInput } from './equipmentIcon.js';
+export type {
+  EquipmentIconDoc,
+  DrawEquipmentIconInput,
+  AuthorEntryIconBriefInput,
+} from './equipmentIcon.js';
 
 export { ShoppingListSchema } from './shoppingList.js';
 export type { ShoppingListDoc } from './shoppingList.js';

@@ -1,5 +1,6 @@
 import type { Accessory, EquipmentItem } from '../entities/EquipmentItem.js';
 import type { RecipeKitEquipmentLinkDoc } from '../../schemas/recipe.js';
+import { resolveEquipmentItem } from './resolveEquipmentItem.js';
 
 // Which of the household's things does this kit entry's LINK name? (Issue #1465.)
 //
@@ -65,4 +66,39 @@ export function resolveKitEntryEquipment(
   const accessory = (item.accessories ?? []).find((a) => a.id === link.accessoryId);
   if (!accessory) return null;
   return { item, accessory };
+}
+
+/** The shape this query reads off a kit entry — a full `RecipeKitEntryDoc` satisfies it. */
+export interface KitEntryEquipmentSource extends KitEquipmentLinkSource {
+  readonly label: string;
+}
+
+/**
+ * Which of the household's things does this kit entry mean — the recorded link
+ * where it has one, the words where it does not? (Issue #1465, reviewed.)
+ *
+ * THE ONE PLACE "WHICH OF YOUR THINGS IS THIS ROW" IS ANSWERED. `kitIcons.ts`
+ * asks this to decide what to render; `KitPicturePicker.svelte` must ask the
+ * SAME question to decide what to write, or the two disagree about a row that
+ * resolves by words alone — every unlinked stored recipe, until Phase 4 re-runs
+ * them. A picker that branched on the link alone answered "is there a link?"
+ * where the row was offered on "is there a picture?", so a row naming one of
+ * your things by words took the ordinary-words act: a matcher the renderer
+ * never reaches, and "draw new" minting an appliance-named `kitchenTools`
+ * document — the exact instance-named row #956 exists to prevent.
+ *
+ * `resolveKitEntryEquipment` (the link) first, `resolveEquipmentItem` (the
+ * words) as the fallback — never the other way, and never a second caller
+ * re-deciding the order. A word match never names a specific accessory, so
+ * `accessory` is null on that branch, the same reading a bare item-level link
+ * gets.
+ */
+export function resolveKitEntryItem(
+  entry: KitEntryEquipmentSource,
+  items: readonly EquipmentItem[],
+): ResolvedKitEquipment | null {
+  const linked = resolveKitEntryEquipment(entry, items);
+  if (linked) return linked;
+  const item = resolveEquipmentItem(entry.label, items);
+  return item ? { item, accessory: null } : null;
 }

@@ -585,11 +585,20 @@ export const coverageThresholds = {
   // `takeImportedDraft`'s optional-id arm went; that one was inside tolerance, so
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
+  // PINNED FROM CI, NOT FROM A LAPTOP (issue #1465, Phase 3). CI's two runners
+  // agree with each other — `coverage-platforms` was green on the run that
+  // produced these — and both read 85.36/75.10 (1707/1736) where this Mac reads
+  // 85.28/75.08 (1704/1725). That is the boundary this file's own
+  // cross-platform paragraph states in as many words: the check covers
+  // `ubuntu-latest` against `macos-latest`, and "a developer's own machine is
+  // not one of them and never will be". The gate enforces against CI, so CI's
+  // figure is the one that goes here; a local `coverage:ratchet:check` reads
+  // fractionally below this floor and that is expected, not a regression.
   'apps/web-pwa/src/routes/**': {
-    lines: 84.78,
-    branches: 74.03,
-    uncoveredLines: 1704,
-    uncoveredBranches: 1721,
+    lines: 85.36,
+    branches: 75.1,
+    uncoveredLines: 1707,
+    uncoveredBranches: 1736,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
@@ -634,10 +643,10 @@ export const coverageThresholds = {
   // repo has a known macOS/Linux v8 branch-count divergence, and CI is the
   // platform the gate actually enforces against.
   'apps/web-pwa/src/lib/**': {
-    lines: 79.74,
-    branches: 73.13,
+    lines: 79.84,
+    branches: 73.43,
     uncoveredLines: 736,
-    uncoveredBranches: 562,
+    uncoveredBranches: 561,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
@@ -657,10 +666,10 @@ export const coverageThresholds = {
   // reason: the type only proves the OTHER two disjuncts, `busy` still has to
   // be re-checked in case a click and the busy flip land in the same tick.
   'apps/web-pwa/src/components/**': {
-    lines: 61.22,
-    branches: 46.02,
-    uncoveredLines: 114,
-    uncoveredBranches: 95,
+    lines: 77.89,
+    branches: 58.52,
+    uncoveredLines: 65,
+    uncoveredBranches: 73,
   },
 };
 

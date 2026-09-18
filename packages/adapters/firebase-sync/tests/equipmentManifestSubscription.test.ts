@@ -99,13 +99,23 @@ describe('subscribeEquipmentManifest', () => {
           // schema's defaults are what read that absence as "a piece of
           // equipment, with nothing said about it".
           kind: 'equipment',
-          accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true, note: '' }],
+          accessories: [
+            {
+              id: 'acc-1',
+              name: 'Dough Hook',
+              owned: true,
+              included: true,
+              note: '',
+              borrowedPicture: null,
+            },
+          ],
           rules: ['Use speed 2 for bread dough'],
           note: '',
           // The snapshot above carries no `environment` key — every equipment
           // document in production was written before places existed (#1281) —
           // and the schema's `.default(null)` is what lands it here.
           environment: null,
+          borrowedPicture: null,
           updatedAt: '2026-05-13T10:00:00.000Z',
         },
       ],
@@ -203,10 +213,20 @@ describe('saveEquipmentManifest', () => {
       schemaVersion: 1 as const,
       name: 'Stand Mixer',
       kind: 'equipment' as const,
-      accessories: [{ id: 'acc-1', name: 'Dough Hook', owned: true, included: true, note: '' }],
+      accessories: [
+        {
+          id: 'acc-1',
+          name: 'Dough Hook',
+          owned: true,
+          included: true,
+          note: '',
+          borrowedPicture: null,
+        },
+      ],
       rules: ['Use speed 2'],
       note: '',
       environment: null,
+      borrowedPicture: null,
       updatedAt: '2026-05-13T10:00:00.000Z',
     };
     await saveEquipmentManifest({ schemaVersion: 1, updatedAt: '', items: [item] });

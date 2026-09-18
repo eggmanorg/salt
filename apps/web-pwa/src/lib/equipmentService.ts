@@ -6,9 +6,11 @@ import {
   subscribeEquipmentIcons,
   callDrawEquipmentIcon,
   callDescribeEquipmentSubject,
+  callAuthorEntryIconBrief,
 } from '@salt/firebase-sync';
 import type { IdentifyEquipmentResult, PopulateEquipmentEntryResult } from '@salt/firebase-sync';
 import type {
+  BorrowedPictureDoc,
   EquipmentEnvironmentDoc,
   EquipmentIconDoc,
   EquipmentKind,
@@ -28,6 +30,7 @@ import {
   editEquipmentNote,
   setEquipmentKind,
   setEquipmentEnvironment,
+  setBorrowedPicture,
 } from '@salt/domain';
 import type { EquipmentManifest, EquipmentManifestPort } from '@salt/domain';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
@@ -409,6 +412,32 @@ export async function setEquipmentEnvironmentFor(
   return applyAndSave(result);
 }
 
+/**
+ * Point one of your things at a picture that already exists (issue #1465,
+ * Phase 3), or stop it borrowing one with `picture: null`.
+ *
+ * `accessoryId` is `null` for the record itself. What is stored is a REFERENCE,
+ * never a copied URL: icon Storage paths are reused on a redraw with immutable
+ * bytes, so a copy goes stale the first time the source is redrawn — reading
+ * through the id is what makes "redraw the frying pan" reach every pan borrowing
+ * it. `kitIcons.ts` owns the reading.
+ */
+export async function setBorrowedPictureFor(
+  equipmentId: string,
+  accessoryId: string | null,
+  picture: BorrowedPictureDoc | null,
+): Promise<ReadResult<EquipmentManifest, DomainError>> {
+  const manifest = currentManifest();
+  if (!manifest) return notHydratedFailure();
+  const result = setBorrowedPicture(manifest, {
+    equipmentId,
+    accessoryId,
+    picture,
+    now: new Date().toISOString(),
+  });
+  return applyAndSave(result);
+}
+
 // ─── AI capture helpers ───────────────────────────────────────────────────────
 
 export { callIdentifyEquipment, callPopulateEquipmentEntry };
@@ -436,6 +465,27 @@ export async function drawEquipmentIcon(
 }
 
 /**
+ * Ask for one ENTRY's description, so its picture can be drawn (issue #1465,
+ * Phase 2).
+ *
+ * The first act on an entry, and the only one an item does not need: the manifest
+ * trigger authors an item's description the moment it appears, but an entry's is
+ * written only when somebody asks — ~140 entries, most never named in a recipe.
+ * Once this has run, everything else on an entry is the item flow unchanged,
+ * because `drawEquipmentIcon`, `setIconUpload` and `getImagePrompt` are all keyed
+ * by the `equipmentIcons` document id and an entry's is its accessory id.
+ *
+ * Nothing comes back: the description arrives through the icons subscription,
+ * which is what makes the words in the box the words on the document.
+ */
+export async function authorEntryIconBrief(
+  itemId: string,
+  accessoryId: string,
+): Promise<ReadResult<void, DomainError>> {
+  return callAuthorEntryIconBrief({ itemId, accessoryId });
+}
+
+/**
  * Hide this item's pictogram — the row falls back to the pale placeholder tile.
  *
  * There is no un-hide command: the brief survives a hide, so pressing Draw again
@@ -444,6 +494,47 @@ export async function drawEquipmentIcon(
  */
 export async function hideEquipmentIcon(itemId: string): Promise<ReadResult<void, DomainError>> {
   return callDrawEquipmentIcon({ action: 'hide', itemId });
+}
+
+/**
+ * Hide this thing's own pictogram AND withdraw any picture it has been pointed
+ * at (#1465 Phase 3, reviewed) — the write half of `kitIcons.ts`'s hidden/
+ * borrowed order.
+ *
+ * A hide and a borrow are writes to two different documents — `equipmentIcons`
+ * via `hideEquipmentIcon`'s callable, `equipmentManifest` directly via
+ * `setBorrowedPictureFor` — so nothing keeps them in step on its own. Without
+ * this, borrowing a picture for a record and then hiding it would leave every
+ * recipe naming it still showing the borrowed picture while this page shows the
+ * hidden tile — the two disagreeing about the same thing. Composing both writes
+ * here is what "Hide" means at either scale: withdraw the drawn picture AND the
+ * pointer, so there is nothing left for `kitIcons.ts` to read. It reads only
+ * WHETHER one is currently set, never which write happened more recently — a
+ * borrow set again afterwards is a fresh, later act and is read straight
+ * through, same as any other borrow.
+ *
+ * @param equipmentId The owning item's id.
+ * @param accessoryId The entry to hide, or `null` for the record itself — also
+ *   the `equipmentIcons` document id to hide when set, an entry's own id being
+ *   its accessory id (the same identity `EquipmentEntryIconDialog` draws
+ *   through).
+ */
+export async function hideEquipmentIconFor(
+  equipmentId: string,
+  accessoryId: string | null,
+): Promise<ReadResult<void, DomainError>> {
+  const hidden = await hideEquipmentIcon(accessoryId ?? equipmentId);
+  if (hidden.kind !== 'ok') return hidden;
+
+  const item = currentManifest()?.items.find((candidate) => candidate.id === equipmentId);
+  const borrowing =
+    accessoryId === null
+      ? (item?.borrowedPicture ?? null)
+      : (item?.accessories.find((a) => a.id === accessoryId)?.borrowedPicture ?? null);
+  if (!borrowing) return hidden;
+
+  const cleared = await setBorrowedPictureFor(equipmentId, accessoryId, null);
+  return cleared.kind === 'ok' ? hidden : failure(cleared.error);
 }
 
 // ─── Description revision (issue #885) ───────────────────────────────────────

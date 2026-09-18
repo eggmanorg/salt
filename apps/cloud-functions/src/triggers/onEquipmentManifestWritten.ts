@@ -9,6 +9,7 @@ import {
   EQUIPMENT_MANIFEST_DOC_ID,
   type EquipmentItemDoc,
 } from '@salt/domain/schemas';
+import { equipmentIconOwnerIds } from '@salt/domain';
 import { describeEquipmentSubjectFlow } from '../flows/describeEquipmentSubject.js';
 import { aiFakeEnabled } from '../ai/fakeModel.js';
 import { reportServerError } from '../observability/reportServerError.js';
@@ -72,6 +73,14 @@ const posthogApiKey = defineSecret('POSTHOG_API_KEY');
  *
  * Runs on EVERY manifest write, including when generation is disabled: it makes
  * no AI call and costs one id-only collection scan.
+ *
+ * THE LIVE SET IS ITEMS *AND* ENTRIES (issue #1465, Phase 2). An accessory or
+ * family member may now own `equipmentIcons/{accessoryId}`, and this pass deletes
+ * anything outside the set it is handed — so building it from the items alone
+ * would have wiped every entry picture in the kit the first time anyone ticked a
+ * checkbox. `equipmentIconOwnerIds` is the definition of what the collection may
+ * hold, and `tests/triggers/onEquipmentManifestWritten.test.ts` goes red if this
+ * pass stops asking it.
  */
 async function reconcileRemovedItems(liveIds: ReadonlySet<string>): Promise<void> {
   const db = getFirestore();
@@ -170,7 +179,7 @@ export const onEquipmentManifestWritten = onDocumentWritten(
     }
     const items = parsed.data.items;
 
-    await reconcileRemovedItems(new Set(items.map((i) => i.id)));
+    await reconcileRemovedItems(equipmentIconOwnerIds(items));
 
     // E2E (FUNCTIONS_AI_FAKE): no brief authoring. The real text model is not
     // emulator-safe here and no e2e spec asserts a generated brief.
@@ -181,6 +190,14 @@ export const onEquipmentManifestWritten = onDocumentWritten(
     // Sequential, not parallel: nineteen concurrent Gemini calls from one
     // invocation is a rate-limit shape for no gain, and the whole point of the
     // gate is that this path is no longer time-critical.
+    //
+    // ITEMS ONLY, and that is a decision rather than an omission (issue #1465,
+    // Phase 2). Entries can own pictures now, but there are ~140 of them and most
+    // are never named in a recipe — authoring a brief for each would be ~140 text
+    // calls on every manifest save, for descriptions nobody asked to read. An
+    // entry's brief is authored on request by the `authorEntryIconBrief`
+    // callable, and the test beside this file asserts this loop never reaches an
+    // accessory.
     for (const item of items) {
       await maybeAuthorBrief(item);
     }

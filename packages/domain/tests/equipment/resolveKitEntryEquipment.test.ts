@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveEquipmentItem, resolveKitEntryEquipment } from '../../src/index.js';
+import {
+  resolveEquipmentItem,
+  resolveKitEntryEquipment,
+  resolveKitEntryItem,
+} from '../../src/index.js';
 import type { EquipmentItem } from '../../src/index.js';
 
 // The link half of "which of your things is this?" (issue #1465).
@@ -15,12 +19,27 @@ const MAGIMIX: EquipmentItem = {
   name: 'Magimix Cook Expert',
   kind: 'equipment',
   accessories: [
-    { id: 'acc-thermo', name: 'Thermo Bowl', owned: true, included: true, note: '' },
-    { id: 'acc-cocotte', name: 'Cocotte Slow Cook Pot', owned: true, included: false, note: '' },
+    {
+      id: 'acc-thermo',
+      name: 'Thermo Bowl',
+      owned: true,
+      included: true,
+      note: '',
+      borrowedPicture: null,
+    },
+    {
+      id: 'acc-cocotte',
+      name: 'Cocotte Slow Cook Pot',
+      owned: true,
+      included: false,
+      note: '',
+      borrowedPicture: null,
+    },
   ],
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: '',
 };
 
@@ -30,11 +49,19 @@ const PANS: EquipmentItem = {
   name: 'Frying Pans',
   kind: 'family',
   accessories: [
-    { id: 'acc-tefal', name: 'Tefal non-stick 28cm', owned: true, included: false, note: '' },
+    {
+      id: 'acc-tefal',
+      name: 'Tefal non-stick 28cm',
+      owned: true,
+      included: false,
+      note: '',
+      borrowedPicture: null,
+    },
   ],
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: '',
 };
 
@@ -109,5 +136,52 @@ describe('resolveKitEntryEquipment', () => {
     expect(
       resolveKitEntryEquipment({ equipment: { itemId: 'magimix', accessoryId: null } }, []),
     ).toBeNull();
+  });
+});
+
+describe('resolveKitEntryItem', () => {
+  // The composed answer to "which of your things is this row" — the link,
+  // falling back to the words. Review of #1482 (issue #1465): the picker was
+  // branching on the link alone, so a row that names one of your things ONLY by
+  // words — every unlinked stored recipe, until Phase 4 re-runs them — took the
+  // "ordinary words" act although `kitIcons.ts` was already rendering it as one
+  // of your things. This is the one function both now read through.
+
+  it('prefers the link, exactly as resolveKitEntryEquipment does', () => {
+    const got = resolveKitEntryItem(
+      { label: 'anything at all', equipment: { itemId: 'magimix', accessoryId: 'acc-thermo' } },
+      MANIFEST,
+    );
+    expect(got?.item.id).toBe('magimix');
+    expect(got?.accessory?.name).toBe('Thermo Bowl');
+  });
+
+  it('falls back to the words when there is no link, unlike the link-only query', () => {
+    expect(resolveKitEntryEquipment({}, MANIFEST)).toBeNull();
+    const got = resolveKitEntryItem({ label: 'Magimix Cook Expert' }, MANIFEST);
+    expect(got?.item.id).toBe('magimix');
+    // A word match never names a specific accessory — only the resolver that
+    // reads an id can do that.
+    expect(got?.accessory).toBeNull();
+  });
+
+  it('falls back to the words when the recorded link no longer answers', () => {
+    const got = resolveKitEntryItem(
+      { label: 'Magimix Cook Expert', equipment: { itemId: 'gone', accessoryId: null } },
+      MANIFEST,
+    );
+    expect(got?.item.id).toBe('magimix');
+    expect(got?.accessory).toBeNull();
+  });
+
+  it('answers null when neither the link nor the words resolve', () => {
+    expect(resolveKitEntryItem({ label: 'a wooden spoon' }, MANIFEST)).toBeNull();
+  });
+
+  it('still answers null for a family member no rule over the words could find', () => {
+    // The case #1465 exists for: without a link, "Tefal non-stick 28cm" resolves
+    // to nothing either way, and that is correct — the words alone cannot reach
+    // a family member.
+    expect(resolveKitEntryItem({ label: 'Tefal non-stick 28cm' }, MANIFEST)).toBeNull();
   });
 });

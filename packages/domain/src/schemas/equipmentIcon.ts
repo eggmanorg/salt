@@ -45,6 +45,29 @@ import { z } from 'zod';
 // Deriving that state from the two names instead of storing a status is what
 // stops a failed or abandoned draw from needing bookkeeping of its own: there is
 // no state to leave behind, because there is no state.
+//
+// ─── The document id is an ITEM id OR an ENTRY id (issue #1465, Phase 2) ─────
+// An accessory or family member may have a picture of its own, on request. Its
+// document is `equipmentIcons/{accessoryId}` and its object
+// `equipment-icons/{accessoryId}.webp` — no second collection and no second
+// Storage prefix, because accessory ids are uuids minted by the same generator as
+// item ids and are unique across the whole manifest. Everything keyed by doc id
+// therefore carries over untouched: `firestore.rules`'s `{itemId}` wildcard, the
+// orphan sweep's `equipment-icons/ → equipmentIcons` join, `drawEquipmentIcon`,
+// `setIconUpload` and `getImagePrompt`.
+//
+// TWO THINGS DO NOT CARRY OVER, and both are in `onEquipmentManifestWritten`:
+//   • its reconcile pass builds the live set from the items alone, and would have
+//     deleted every entry's icon document on the next manifest write. It now
+//     builds the set from `equipmentIconOwnerIds`, pinned by a test that goes red
+//     if it stops.
+//   • its brief-authoring loop stays ITEM-ONLY. ~140 entries means ~140 text
+//     calls on every manifest save, for pictures nobody asked for. An entry's
+//     brief is authored on demand, by the `authorEntryIconBrief` callable below,
+//     and never by a trigger.
+//
+// The set of ids a manifest legitimately owns is `equipmentIconOwnerIds` in
+// `@salt/domain` (equipment/queries/equipmentIcon.ts).
 export const EQUIPMENT_ICONS_COLLECTION = 'equipmentIcons';
 
 export const EquipmentIconSchema = z.object({
@@ -106,6 +129,12 @@ export type EquipmentIconDoc = z.infer<typeof EquipmentIconSchema>;
 // the new URL whatever it held before, so pressing Draw IS the un-hide — canon
 // needs a separate one only because its un-hide has to clear the field back to
 // null and let a trigger pick it up.
+//
+// `itemId` is the DOCUMENT id, and since #1465 Phase 2 that may be an entry's
+// accessory id as readily as an item's. The field keeps its name: it is a wire
+// contract against production clients, and renaming it would buy a more accurate
+// word at the price of a migration on a field whose meaning is "which
+// equipmentIcons document".
 export const DrawEquipmentIconInputSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('draw'),
@@ -121,3 +150,31 @@ export const DrawEquipmentIconInputSchema = z.discriminatedUnion('action', [
 ]);
 
 export type DrawEquipmentIconInput = z.infer<typeof DrawEquipmentIconInputSchema>;
+
+// ─── Author one ENTRY's description, on request (issue #1465, Phase 2) ───────
+//
+// The item path never needs this: `onEquipmentManifestWritten` authors an item's
+// brief the moment it appears, so by the time anyone looks at an item there is a
+// description to read and `drawEquipmentIcon` has something to draw from. An
+// entry has no such document and deliberately never gets one automatically —
+// ~140 entries, most never named in a recipe, and a picture per entry is one more
+// to curate. So the first act on an entry is asking for its description, and this
+// is the callable that does it.
+//
+// IT TAKES A PAIR, NOT AN ID, because the words a brief is authored from are a
+// function of BOTH (`equipmentEntrySubjectName`): an appliance's part is
+// qualified by its appliance, a family member is not. The server reads the
+// manifest itself rather than trusting a name off the wire — the manifest is the
+// authority on what this household owns, and a client-supplied subject would be
+// an unvalidated prompt input for no gain.
+//
+// It PERSISTS what it authors, which is the one way it differs from
+// `describeEquipmentSubject`: there is no document yet, so there is nothing for a
+// transient sentence to be a revision OF. Once it exists, Revise and Draw behave
+// exactly as they do for an item.
+export const AuthorEntryIconBriefInputSchema = z.object({
+  itemId: z.string().min(1),
+  accessoryId: z.string().min(1),
+});
+
+export type AuthorEntryIconBriefInput = z.infer<typeof AuthorEntryIconBriefInputSchema>;

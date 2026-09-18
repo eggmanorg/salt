@@ -1066,7 +1066,8 @@ const NON_WRITERS: Record<string, 'subscription' | 'read' | 'callable' | 'infras
 
   // Cloud Function callables. Some of them do cause a document to change, but
   // server-side and through `classifyCallableError` — a different port with a
-  // different classifier (see the header). All 28 already return a Result.
+  // different classifier (see the header). All 29 already return a Result.
+  callAuthorEntryIconBrief: 'callable',
   callAuthorRecipe: 'callable',
   callCanonicaliseRecipeIngredients: 'callable',
   callDescribeEquipmentSubject: 'callable',
@@ -1137,7 +1138,7 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(118);
+    expect(exported).toHaveLength(119);
     expect(writerCases).toHaveLength(45);
   });
 
