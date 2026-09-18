@@ -41,6 +41,7 @@ import {
   loadTemplateIntoWeek,
   weekHasEdits,
   addRecipeToDay,
+  loadWeekForDisplay,
   setWeekDayNote,
   setWeekDayChefs,
   setWeekDayGuests,
@@ -616,6 +617,84 @@ describe('mealPlanService — addRecipeToDay', () => {
       });
       expect(fs.saveMealPlanWeek).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Issue #1438. The recipe page's night picker shows what is already planned on
+// about twenty nights, which spans weeks the planner is holding none of. The
+// safety property is that showing a week is not the same as knowing it: the
+// display read must stay out of the service's cache, or `weekIsKnown` starts
+// answering true for a week nothing is listening to and a much later
+// full-document write gets built on a snapshot that has since moved on.
+describe('mealPlanService — loadWeekForDisplay', () => {
+  beforeEach(() => {
+    wireSubscriptions();
+    initMealPlanSync();
+    seedMealPlanConfig(CONFIG);
+  });
+
+  it('hands back a week the service is already holding, without a read', async () => {
+    seedMealPlanWeek(setDayNote(emptyWeek('2026-06-08'), '2026-06-10', 'pie'));
+
+    const read = await loadWeekForDisplay('2026-06-08');
+
+    expect(fs.loadMealPlanWeek).not.toHaveBeenCalled();
+    expect(read.kind).toBe('ok');
+    expect(read.kind === 'ok' && read.value?.days['2026-06-10']!.note).toBe('pie');
+  });
+
+  it('reads a week nothing is holding, one-shot', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({
+      kind: 'ok',
+      value: weekWithNote('2026-06-29', 'pie', '2026-06-29T10:00:00.000Z'),
+    });
+
+    const read = await loadWeekForDisplay('2026-06-29');
+
+    expect(fs.loadMealPlanWeek).toHaveBeenCalledWith('2026-06-29');
+    expect(fs.subscribeMealPlanWeek).not.toHaveBeenCalledWith('2026-06-29', expect.anything());
+    expect(read.kind === 'ok' && read.value?.days['2026-06-29']!.note).toBe('pie');
+  });
+
+  it('answers null for a week with no document rather than inventing one', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({ kind: 'ok', value: null });
+
+    await expect(loadWeekForDisplay('2026-06-29')).resolves.toEqual({ kind: 'ok', value: null });
+  });
+
+  it('surfaces a failed read as a Failure for the caller to degrade from', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    });
+
+    const read = await loadWeekForDisplay('2026-06-29');
+
+    expect(read.kind).toBe('err');
+  });
+
+  it('a display read is not the write path evidence', async () => {
+    // RULE 12 PIN for issue #1438. Break it by caching the display read into
+    // `_weeks` and this goes red on the second `loadMealPlanWeek` — verified by
+    // doing exactly that before the test was kept.
+    fs.loadMealPlanWeek.mockResolvedValue({
+      kind: 'ok',
+      value: weekWithNote('2026-06-29', 'pie', '2026-06-29T10:00:00.000Z'),
+    });
+
+    // The picker displays a week three weeks out that nothing is subscribed to.
+    await loadWeekForDisplay('2026-06-29');
+    expect(fs.loadMealPlanWeek).toHaveBeenCalledTimes(1);
+
+    // The write for a night in that very week still reads it for itself...
+    await addRecipeToDay('2026-07-01', recipe('roast'));
+
+    expect(fs.loadMealPlanWeek).toHaveBeenCalledTimes(2);
+    // ...and therefore writes over a document it has actually seen, other six
+    // days intact.
+    const saved = fs.saveMealPlanWeek.mock.calls.at(-1)![0]!;
+    expect(saved.days['2026-06-29']!.note).toBe('pie');
+    expect(saved.days['2026-07-01']!.recipeIds).toEqual(['roast']);
   });
 });
 

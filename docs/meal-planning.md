@@ -217,9 +217,36 @@ option can be told apart in a list of dinners.
 A recipe's own page carries **Add to planner**, gated on the same
 `isPlannable(kind)` the picker uses — the question is identical ("is this
 offered for a night?"), so it gets one answer, not two. It opens a hand-rolled
-month grid rather than `<input type="date">`: the native control hands the
-interaction to the OS, which means a different picker on every device and none of
-them able to start the week on `firstDayOfWeek`.
+**list of nights** rather than `<input type="date">`: the native control hands the
+interaction to the OS, which means a different picker on every device, and none
+of them can say what is already planned on a night. A month grid stood here until
+#1438 — the complaint that retired it was that a bare number has to be decoded
+into a weekday before you can pick one. The list runs a week back to a fortnight
+ahead, extends a fortnight at a time to eight weeks out, and opens scrolled to
+tonight; past nights stay because recording what was actually eaten is
+legitimate. Nothing in the sheet lays out from `firstDayOfWeek` any more — a list
+has no week rows — though it still reads it to know which document a night's
+summary comes out of.
+
+**Each row says what is already on that night, and who is cooking it** (#1438):
+`day.note`'s first line, failing that the titles of the night's attached recipes,
+failing that _Nothing planned_; then `day.chefs` in the planner row's own
+vocabulary — `ChefHat` with **You**, the cook's name(s), or **No cook** on a
+planned night nobody has taken. "Am I cooking" is `chefs.includes(currentMember.id)`
+and nothing else, the same sentence the Kitchen's `isMine` is: a projection over
+family-shared data, storing nothing per user. With no current member nothing is
+marked as yours and the cooks are still named.
+
+That spans two or three `mealPlanWeeks` documents the planner may be holding none
+of, so the sheet reads them through `loadWeekForDisplay` — a week already in the
+service's store is handed back from it, anything else is read one-shot. **Neither
+is cached.** The read never enters `_weeks`, opens no subscription and takes no
+claim in `pruneWeekSubscriptions`, so it cannot widen `weekIsKnown` and a display
+read is never the write path's evidence. A week whose read has not landed renders
+a placeholder rather than _Nothing planned_, which would be a confident lie about
+the one fact the row exists for; a failed read degrades to the same placeholder
+with the row still pickable, because the write reads for itself regardless and
+returns a real `Failure` if that fails. A display-read failure is not reported.
 
 The non-obvious part is the write. Every other day mutator **refuses** a week it
 has not read, because a full-document write built on a week nobody looked at

@@ -404,6 +404,44 @@ function weekIsKnown(start: string): boolean {
 }
 
 /**
+ * One week document, FOR DISPLAY ONLY — a snapshot, never cached (issue #1438).
+ *
+ * The recipe page's night picker shows what is already planned on each of about
+ * twenty nights, which spans two or three week documents the planner may be
+ * holding none of. This answers that, and nothing else:
+ *
+ *  - A week already in `_weeks` is handed straight back. Something has a live
+ *    subscription keeping it fresh, so it is strictly better than a read as well
+ *    as free.
+ *  - Anything else is read ONE-SHOT and returned. The result does **not** enter
+ *    `_weeks` or `latestWeekUpdatedAt`, and no subscription is opened for it.
+ *    Nothing would be listening to a week read this way, so nothing would ever
+ *    refresh it, yet its mere presence in `_weeks` would make `weekIsKnown`
+ *    answer true and let a much later full-document write be built on a snapshot
+ *    that had since moved on. That is the rule `applyWeekOptimistically` states
+ *    for the write path's own one-shot read; obeying it here means keeping this
+ *    read out of the cache entirely rather than remembering to evict it.
+ *
+ * The consequence is the property worth naming: **a display read is never the
+ * write path's evidence.** `addRecipeToDay` for a date this has displayed still
+ * performs its own read-before-write, because nothing this function does can
+ * widen `weekIsKnown`. `tests/mealPlanService.sync.test.ts` → _"a display read is
+ * not the write path's evidence"_ goes red the day that stops being true.
+ *
+ * `null` is a real answer — an unplanned week, with no document. A `Failure` is
+ * the caller's to degrade from quietly: a display read that fails is not
+ * reported (CLAUDE.md § _Observability_), and the row it would have filled stays
+ * pickable because the write path reads for itself regardless.
+ */
+export function loadWeekForDisplay(
+  startDate: string,
+): Promise<ReadResult<MealPlanWeek | null, DomainError>> {
+  const held = get(_weeks)[startDate];
+  if (held !== undefined) return Promise.resolve(success(held));
+  return loadMealPlanWeek(startDate);
+}
+
+/**
  * Apply a day-level edit to the document `dateKey` actually belongs in.
  *
  * The target is derived from the date key, never from what is displayed — with
