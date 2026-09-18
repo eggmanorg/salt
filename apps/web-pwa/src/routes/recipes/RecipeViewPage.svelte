@@ -319,7 +319,7 @@
     });
     showComponentUrlImport = false;
     showComponentPhotoImport = false;
-    const attached = await attachComponentToMeal(recipe.id, imported.id);
+    const attached = await attachComponentToMeal(recipe.id, imported.id, imported);
     // Rule 10. The dish is already saved on the server, so a failed attach must
     // not strand it — say what happened and still go to it.
     if (attached.kind !== 'ok') {

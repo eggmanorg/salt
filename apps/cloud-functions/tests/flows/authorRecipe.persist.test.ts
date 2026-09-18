@@ -78,6 +78,12 @@ vi.mock('firebase-functions', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: mockLoggerError },
 }));
 
+const mockReportServerError = vi.fn();
+vi.mock('../../src/observability/reportServerError.js', () => ({
+  reportServerError: (...args: unknown[]) => mockReportServerError(...(args as [])),
+  reportFlowError: vi.fn(async () => undefined),
+}));
+
 vi.stubGlobal('crypto', { randomUUID: mockUUID });
 
 const { authorRecipeFlow } = await import('../../src/flows/authorRecipe.js');
@@ -206,6 +212,31 @@ describe('authorRecipe — the flow writes what it authored (#1431)', () => {
       expect.stringContaining('failed to persist'),
       expect.objectContaining({ recipeId: recipe.id }),
     );
+  });
+
+  it('reports the failed write (issue #1431 review, should-fix)', async () => {
+    // The caller — the client, via `chatRecipeAuthor` — believes the recipe it
+    // was handed back is safe. A silent Firestore failure here is exactly the
+    // `StorageError` category CLAUDE.md's error-reporting conventions put in the
+    // report column, and it is the same "already-paid-for run, don't fail the
+    // call, but tell someone" reasoning `canonicaliseRecipeIngredients` already
+    // acts on for its own write.
+    const writeError = new Error('firestore unavailable');
+    mockSet.mockRejectedValue(writeError);
+
+    await run({ messages: MESSAGES, existingTags: [] });
+
+    expect(mockReportServerError).toHaveBeenCalledWith(writeError, 'StorageError');
+  });
+
+  it('does not report a StorageError when the write succeeds', async () => {
+    // Not "reports nothing" — this fixture's ingredient line has no parse
+    // result, which `assembleRecipeDraft` reports on its own, unrelated axis.
+    // The property under test is narrower: a successful persist never adds a
+    // `StorageError` report of its own.
+    await run({ messages: MESSAGES, existingTags: [] });
+
+    expect(mockReportServerError).not.toHaveBeenCalledWith(expect.anything(), 'StorageError');
   });
 
   it('writes on the VARIATION path, which is a create with a grounding recipe', async () => {

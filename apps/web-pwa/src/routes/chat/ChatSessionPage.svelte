@@ -136,7 +136,7 @@
   async function returnToMeal(saved: Recipe): Promise<boolean> {
     const mealId = mealReturnId;
     if (mealId === null) return false;
-    const attached = await attachComponentToMeal(mealId, saved.id);
+    const attached = await attachComponentToMeal(mealId, saved.id, saved);
     if (attached.kind !== 'ok') {
       addToast('Saved — but that meal is no longer in the library.', 'destructive');
       push(`/recipes/${saved.id}`);

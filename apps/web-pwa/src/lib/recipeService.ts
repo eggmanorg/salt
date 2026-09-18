@@ -336,20 +336,40 @@ export function discardPendingRecipeWrites(): void {
 //
 // Persisted through `persistRecipe`, i.e. a whole-document write under LWW —
 // the established contract for every recipe write in the app.
+//
+// `justWritten` (issue #1431 review, blocking) — the component the CALLER just
+// had a recipe written for, when it has one in hand. `insertComponentByElapsedTime`
+// ranks off the IN-MEMORY store, and for a dish the SERVER just wrote (the chat
+// door's `saved`, the import doors' `imported`) that store has not necessarily
+// heard about it yet: the write settles on the callable's response, not on a
+// listener round trip, so `all` can still lack the very id being attached the
+// moment this runs. A dangling lookup there reads as "no strip" and sorts to the
+// top — the wrong place, and one that gets WRITTEN DOWN (positional insert,
+// never re-sorted, so a wrong rank here is the meal's order from then on).
+// Folding `justWritten` into the ranking list — only when the store does not
+// already carry `componentId` — makes the rank correct whether or not the
+// listener has caught up, without changing anything for
+// `RecipeMadeFromCard`'s picker, which attaches an id the store already holds
+// and passes nothing here.
 export async function attachComponentToMeal(
   mealId: string,
   componentId: string,
+  justWritten?: Recipe,
 ): Promise<ReadResult<void, DomainError>> {
   const all = get(_recipes);
   const meal = all.find((r) => r.id === mealId);
   if (meal === undefined) return failure({ kind: 'NotFound', resource: 'recipe', id: mealId });
+  const forRanking =
+    justWritten !== undefined && !all.some((r) => r.id === componentId)
+      ? [...all, justWritten]
+      : all;
   return persistRecipe({
     ...meal,
     componentRecipeIds: insertComponentByElapsedTime(
       mealId,
       meal.componentRecipeIds,
       componentId,
-      all,
+      forRanking,
     ),
   });
 }

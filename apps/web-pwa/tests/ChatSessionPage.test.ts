@@ -524,7 +524,13 @@ describe('ChatSessionPage — saving a dish back onto a meal', () => {
 
     await fireEvent.click(getByTestId('chat-save-recipe-btn'));
 
-    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new'));
+    // The third argument is the just-saved `Recipe` itself, not just its id
+    // (issue #1431 review, blocking): the in-memory store has not necessarily
+    // heard about a server-written dish yet, so `attachComponentToMeal` needs it
+    // in hand to rank correctly rather than treating it as untimed.
+    await waitFor(() =>
+      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value),
+    );
     // The claim is untouched — the conversation still belongs to the dish it
     // produced, exactly as it does without a meal.
     expect(claimRecipe).toHaveBeenCalledWith('session-1', 'recipe-new');
@@ -541,7 +547,9 @@ describe('ChatSessionPage — saving a dish back onto a meal', () => {
 
     await fireEvent.click(screen.getByTestId('chat-save-new-recipe-btn'));
 
-    await waitFor(() => expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new'));
+    await waitFor(() =>
+      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value),
+    );
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/roast'));
   });
 
