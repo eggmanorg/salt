@@ -623,11 +623,21 @@ export const coverageThresholds = {
   // unit test provoked. So the area both gained a well-covered file and lost the
   // uncovered copies, and the ratchet asked for the gain to be banked rather than
   // left as four points of hiding room. Measured by CI, pasted, not retyped.
+  // RE-PINNED 78.89/71.91 → 79.81/73.01 in #1474, and NONE OF IT WAS EARNED BY
+  // THAT PR, which is the whole reason it is worth a note. #1468 (the chef flow
+  // writing the turn it streamed) and #1475 (the canon function recording which
+  // ingredient matched what) landed between two CI runs of #1474, adding five test
+  // files — `chatService.serverWrite.test.ts` among them — and widening three
+  // existing web-pwa suites. #1474 was simply the first PR to be measured against
+  // the merged result, so the ratchet asked it to bank a gain it had not made.
+  // Banking is still right: an unbanked 1.10 points is 1.10 points of room for a
+  // later PR to delete those tests and land green. Measured by CI, reproduced
+  // locally after rebasing onto main, pasted, not retyped.
   'apps/web-pwa/src/lib/**': {
-    lines: 78.89,
-    branches: 71.91,
-    uncoveredLines: 759,
-    uncoveredBranches: 576,
+    lines: 79.81,
+    branches: 73.01,
+    uncoveredLines: 736,
+    uncoveredBranches: 565,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
