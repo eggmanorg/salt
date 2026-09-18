@@ -444,18 +444,25 @@
         // hand-typed weight and a deliberate exclusion across a reload.
         included: stored ? component !== undefined && grams !== null : grams !== null,
         inBasis: stored ? (component?.inBasis ?? false) : guessed.has(ing.id),
-        // EXACTLY THE SHAPE `inBasis` ABOVE HAS, and for exactly its reason: a
-        // stored formula's answer wins, INCLUDING the answer "none". Re-guessing
-        // over a stored component would make clearing a product impossible to keep
-        // — you would tap it away and find it back on the next reload — and
-        // clearing it is what an ingredient that is not a curing salt looks like.
-        // The guess therefore only ever fires on a first visit.
-        saltProduct: stored
-          ? (component?.saltProduct ?? null)
-          : guessSaltProduct({
-              canonName: (ing.canonId ? canonNameById.get(ing.canonId) : null) ?? null,
-              rawText: ing.rawText,
-            }),
+        // Keyed on whether THIS COMPONENT exists, not on whether a formula
+        // document exists (#1402 review, should-fix 4, trivial). A stored
+        // component's answer wins, INCLUDING the answer "none" — re-guessing over
+        // one would make clearing a product impossible to keep, since you would
+        // tap it away and find it back on the next reload, and clearing it is what
+        // an ingredient that is not a curing salt looks like. But an ingredient
+        // ADDED to the recipe after the formula was first mapped has no stored
+        // component at all, and used to fall through to `stored`'s truthiness and
+        // come up with a bare `null` — no proposal, and silently no bound, for the
+        // ordinary case of tidying a scraped recipe. Keying on `component`
+        // directly gives both: a guess for a component that has never been seen,
+        // and the stored answer — including "none" — for one that has.
+        saltProduct:
+          component !== undefined
+            ? (component.saltProduct ?? null)
+            : guessSaltProduct({
+                canonName: (ing.canonId ? canonNameById.get(ing.canonId) : null) ?? null,
+                rawText: ing.rawText,
+              }),
       };
     });
 

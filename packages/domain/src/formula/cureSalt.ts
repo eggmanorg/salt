@@ -36,10 +36,15 @@ import type { ComponentPercentBounds } from './adjustComponent.js';
 //   • NOTHING HERE CHECKS SUITABILITY. Whether a nitrite-only product is fit for a
 //     ninety-day dry is a different question from whether its dose is safe, and it
 //     is not asked anywhere.
-//   • SCALING IS NEVER THE DANGER. Percentages scale linearly, so a dose that is
-//     safe at 500 g is safe at 5 kg. What the rail earns its place catching is a
-//     mis-typed percentage, a basis mapped to the wrong ingredient, and a scraped
-//     recipe that arrived wrong.
+//   • SCALING IS NEVER THE DANGER FOR THE STORED PERCENTAGE. Percentages scale
+//     linearly, so a dose that is safe at 500 g is safe at 5 kg AS A PERCENTAGE.
+//     This stops holding for the PRINTED weight below roughly 70 g of basis: a
+//     cure-salt gram figure that small falls under `GRAM_DECIMAL_THRESHOLD` and
+//     rounds to one decimal place, and that rounding step can push the number
+//     someone actually weighs out over the ppm ceiling even though the stored
+//     percentage never moved (pinned in `cureSalt.test.ts`). Above that boundary,
+//     what the rail earns its place catching is a mis-typed percentage, a basis
+//     mapped to the wrong ingredient, and a scraped recipe that arrived wrong.
 //
 // So a formula that saves is NOT a formula Salt has pronounced safe.
 //
@@ -70,13 +75,21 @@ export type CureSaltProductInfo = {
   /**
    * The window this product's dose has to sit inside, as a percentage of the basis.
    *
-   * THE TOP IS SET BY INGOING NITRITE, not by taste: 0.30% of a 6.25% product and
-   * 3.0% of a 0.6% one both land near 190 ppm, under the 200 ppm ceiling, and the
-   * standard doses sit inside rather than at an edge.
+   * THE TOP IS SET BY INGOING NITRITE, not by taste, and it is checked
+   * mechanically (`cureSalt.test.ts`): 0.30% of a 6.25% product lands at 187.5 ppm
+   * and 3.15% of a 0.6% one lands at 189 ppm, both comfortably under the 200 ppm
+   * ceiling, with the standard doses sitting strictly inside rather than at an
+   * edge.
    *
    * THE BOTTOM IS THERE BECAUSE UNDER-DOSING IS THE HAZARD, not an aesthetic
    * failure — too little nitrite is a cure that does not protect, which is the
-   * whole reason this rail refuses rather than clamping.
+   * whole reason this rail refuses rather than clamping. UNLIKE THE TOP, THE
+   * BOTTOM IS NOT CHECKED AGAINST AN EXTERNAL PPM FIGURE: the literature gives a
+   * protective range rather than a bright line the way 200 ppm is one, so no
+   * "minimum protective ppm" constant is asserted here. What `cureSalt.test.ts`
+   * pins on the floor is internal consistency only — positive, below the top,
+   * below every dose this file calls ordinary — never a figure computed from an
+   * independent minimum (CLAUDE.md rule 12: this is that claim's real boundary).
    */
   bounds: Readonly<ComponentPercentBounds>;
   /**
@@ -123,7 +136,11 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   nitritedCuringSalt: {
     label: 'Nitrited curing salt',
     nitritePercent: 0.6,
-    bounds: { minPercent: 2, maxPercent: 3 },
+    // 3.15, not 3: the literature's own standard dose is 3%, and a window whose
+    // top equals its standard dose puts ordinary practice one rounding away from a
+    // refusal (#1402 review, should-fix 2). 3.15% is still 189 ppm — comfortably
+    // under the 200 ppm ceiling — and leaves the standard dose real headroom.
+    bounds: { minPercent: 2, maxPercent: 3.15 },
     keywords: ['nitrited curing salt', 'nitritpokelsalz', 'sel nitrite', 'peklosol', 'colorozo'],
   },
   // 0.6% sodium nitrite plus 0.9% potassium nitrate, used as the whole salt at
@@ -131,7 +148,9 @@ export const CURE_SALT_PRODUCTS: Readonly<Record<SaltProduct, Readonly<CureSaltP
   salvianda: {
     label: 'Salvianda',
     nitritePercent: 0.6,
-    bounds: { minPercent: 2, maxPercent: 3 },
+    // Same composition and the same standard-dose-at-the-edge problem as
+    // `nitritedCuringSalt` above; widened for the same reason.
+    bounds: { minPercent: 2, maxPercent: 3.15 },
     keywords: ['salvianda'],
   },
 };

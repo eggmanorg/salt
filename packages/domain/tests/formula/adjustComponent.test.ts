@@ -60,6 +60,32 @@ describe('withComponentPercentScaled', () => {
     }
   });
 
+  it('refuses to touch a component whose bounds come from a named cure-salt product', () => {
+    // Blocking finding from the #1402 review: `withComponentPercentScaled` used to
+    // be a second place a bound could be decided, because it stamped whatever
+    // bounds a caller passed onto whatever component the caller named. A
+    // model-returned adjustment naming a cure-salt id could replace cure #1's
+    // 0.15–0.3% window with the leavening range and let 1.0% solve, preview and
+    // freeze — three times the nitrite ceiling. Naming a `saltProduct` component
+    // must refuse the stamp entirely, the same as naming an id the formula does
+    // not hold at all.
+    const withCure: Formula = {
+      ...LOAF,
+      components: LOAF.components.map((c) =>
+        c.ingredientId === 'yeast'
+          ? { ...c, saltProduct: 'cure1' as const, minPercent: 0.15, maxPercent: 0.3 }
+          : c,
+      ),
+    };
+    const next = withComponentPercentScaled(
+      withCure,
+      { ingredientId: 'yeast', factor: 4 },
+      LEAVENING_PERCENT_BOUNDS,
+    );
+    // Not scaled, not restamped — the formula comes back byte-for-byte.
+    expect(next).toEqual(withCure);
+  });
+
   it('knows nothing about yeast — the bounds are passed in', () => {
     // The function is generic on purpose: the same seam serves a cure's nitrite.
     // Nothing in it names an ingredient, and no bound is stamped unless asked for.

@@ -203,6 +203,38 @@ describe('FormulaPage — which curing salt is in the jar', () => {
     await waitFor(() => expect(products(container)).toEqual(['', '', 'cure2']));
   });
 
+  it('proposes a product for an ingredient added after the formula was first mapped', async () => {
+    // Should-fix 4 from the #1402 review: the recogniser used to key on whether a
+    // FORMULA existed rather than whether THIS component did, so an ingredient
+    // added to the recipe after the formula was first saved got no proposal and no
+    // bound — silently, since a missing product announces nothing the way an
+    // unchecked basis box does.
+    const existing: Formula = {
+      recipeId: RECIPE_ID,
+      components: [
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true },
+        { ingredientId: 'ing-salt', percent: 2.5, inBasis: false },
+        // ing-cure has no stored component: it is new since this formula was saved.
+      ],
+      referenceYield: { kind: 'basis', grams: 1000 },
+      target: null,
+      schemaVersion: 1,
+    };
+    const rendered = render(FormulaPage, { props: { params: { id: RECIPE_ID } } });
+    mockFormula._set(existing);
+    await waitFor(() => expect(rendered.getByTestId('formula-editor')).toBeTruthy());
+
+    const includeBoxes = [
+      ...rendered.container.querySelectorAll(
+        '[data-testid="formula-row-include"] [role="checkbox"]',
+      ),
+    ] as HTMLElement[];
+    // Bringing the new row into the formula reveals its picker — pre-filled with
+    // the recogniser's guess, not empty the way it silently was before the fix.
+    await fireEvent.click(includeBoxes[2]!);
+    await waitFor(() => expect(products(rendered.container)).toEqual(['', '', 'cure1']));
+  });
+
   it('keeps a CLEARED product cleared across a reopen', async () => {
     // THE HALF A RE-GUESS WOULD BREAK. "Not a curing salt" is a real answer, and if
     // the recogniser fired again on reload it would come back as cure #1 — so
@@ -254,7 +286,7 @@ describe('FormulaPage — which curing salt is in the jar', () => {
     expect(written.components.find((c) => c.ingredientId === 'ing-salt')).toMatchObject({
       saltProduct: 'nitritedCuringSalt',
       minPercent: 2,
-      maxPercent: 3,
+      maxPercent: 3.15,
     });
   });
 

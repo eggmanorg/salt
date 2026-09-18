@@ -17,10 +17,14 @@ import { SaltProductSchema, type SaltProduct } from '../../src/schemas/formula.j
 //      cure #1 at 0.25% and nitrited curing salt at 3% are both accepted, and
 //      swapping the named product between them flips which one is refused. One
 //      window wide enough for both would permit a twelvefold overdose.
-//   2. THE WINDOW EDGES SATISFY THE REQUIREMENT THAT SET THEM. Ingoing sodium
-//      nitrite at the top of each window stays under the 200 ppm ceiling, computed
-//      from each product's own composition rather than asserted in prose — and the
-//      standard doses the literature gives sit strictly inside, not at an edge.
+//   2. THE TOP OF EACH WINDOW SATISFIES THE REQUIREMENT THAT SET IT. Ingoing
+//      sodium nitrite at the top of each window stays under the 200 ppm ceiling,
+//      computed from each product's own composition rather than asserted in prose
+//      — and the standard doses the literature gives sit strictly inside, not at
+//      an edge. THE FLOOR IS NOT justified the same way: no external
+//      minimum-protective-ppm figure is asserted here, only that it is positive
+//      and strictly below the top and every dose this file calls ordinary
+//      (#1402 review, should-fix 3 — stated rather than left implied).
 //   3. ONE PLACE DECIDES A BOUND. `deriveFormula` recomputes it from the product on
 //      every pass, so re-deriving a saved formula keeps it, a caller cannot widen it
 //      one end at a time, and there is no second check anywhere: the refusal is
@@ -82,12 +86,15 @@ describe('the table', () => {
     }
   });
 
-  // ─── Claim 2: the edges satisfy the requirement that set them ────────────────
+  // ─── Claim 2: the TOPS satisfy the requirement that set them ─────────────────
   //
-  // The windows are set by INGOING NITRITE rather than by taste, and this is that
-  // relationship made mechanical rather than left in a comment. Widen any window and
-  // this fails; the figures it checks against are the 200 ppm ceiling and the
-  // standard doses the literature gives, neither of which is a boundary chosen here.
+  // Only the ceiling is checked mechanically here. The windows' tops are set by
+  // INGOING NITRITE rather than by taste, and this is that relationship made
+  // mechanical rather than left in a comment: widen any window's top and this
+  // fails, against the 200 ppm ceiling and the standard doses the literature
+  // gives, neither of which is a boundary chosen here. The floors are a separate,
+  // narrower claim — see `CureSaltProductInfo.bounds`'s header and the
+  // `minPercent` case below.
   describe('ingoing nitrite', () => {
     // The ceiling on ingoing sodium nitrite, in ppm of the meat.
     const CEILING_PPM = 200;
@@ -127,12 +134,59 @@ describe('the table', () => {
       ['nitritedCuringSalt', 2.5],
       ['nitritedCuringSalt', 3],
       ['salvianda', 2.5],
+      ['salvianda', 3],
     ];
 
-    it.each(STANDARD)('puts the standard dose of %s (%s%%) inside its window', (product, dose) => {
-      const { minPercent, maxPercent } = saltProductBounds(product);
-      expect(dose).toBeGreaterThan(minPercent!);
-      expect(dose).toBeLessThanOrEqual(maxPercent!);
+    it.each(STANDARD)(
+      'puts the standard dose of %s (%s%%) STRICTLY inside its window',
+      (product, dose) => {
+        // `toBeLessThan`, not `toBeLessThanOrEqual` (#1402 review, should-fix 2):
+        // an edge is not "inside", and the assertion that was here before let a
+        // window whose top equalled its own standard dose pass while claiming
+        // strictness.
+        const { minPercent, maxPercent } = saltProductBounds(product);
+        expect(dose).toBeGreaterThan(minPercent!);
+        expect(dose).toBeLessThan(maxPercent!);
+      },
+    );
+
+    it('does not pin the floor to an external minimum-protective-ppm figure', () => {
+      // Should-fix 3 from the #1402 review: unlike the top, nothing above computes
+      // the floor from an outside ppm target. This test states that limit rather
+      // than implying a check that is not there — `cure1.minPercent` could sit
+      // anywhere in (0.05, 0.25) and nothing in this file would fail.
+      for (const product of SaltProductSchema.options) {
+        const { minPercent, maxPercent } = saltProductBounds(product);
+        expect(minPercent).toBeGreaterThan(0);
+        expect(minPercent!).toBeLessThan(maxPercent!);
+      }
+    });
+
+    it('is unaffected by scaling above the gram-rounding floor, and not below it', () => {
+      // "SCALING IS NEVER THE DANGER" holds for the STORED percentage (see 'is
+      // unaffected by scaling' below, in 'what the rail does not do'), but not for
+      // the PRINTED weight: `roundGrams` gives sub-10 g figures only one decimal
+      // place, so a basis small enough that the cure's gram figure lands in that
+      // band can print a weight whose OWN ppm exceeds the ceiling even though the
+      // stored percentage never moved (#1402 review, notes). Pinned here rather
+      // than left an unqualified absolute.
+      const { formula } = solvedWith({ percent: 0.25, product: 'cure1' });
+
+      // Comfortably above the boundary — the scaling test below never samples
+      // this low.
+      const safe = solveFormula(formula, { kind: 'basis', grams: 500 });
+      if (!safe.ok) throw new Error('expected a solve');
+      const safeCure = safe.solution.components.find((c) => c.ingredientId === 'ing-cure')!;
+      expect(ingoingNitritePpm('cure1', (safeCure.grams / 500) * 100)).toBeLessThan(200);
+
+      // Below it: a 60 g basis prints 0.25% of cure #1 as 0.2 g, which is 0.333%
+      // of the basis actually weighed out — 208 ppm, over the ceiling the window
+      // was built to respect, from a formula the rail already accepted.
+      const small = solveFormula(formula, { kind: 'basis', grams: 60 });
+      if (!small.ok) throw new Error('expected a solve');
+      const smallCure = small.solution.components.find((c) => c.ingredientId === 'ing-cure')!;
+      expect(smallCure.grams).toBe(0.2);
+      expect(ingoingNitritePpm('cure1', (smallCure.grams / 60) * 100)).toBeGreaterThan(200);
     });
   });
 });
@@ -347,7 +401,7 @@ describe('guessSaltProduct', () => {
       ],
     });
     if (!derived.ok) throw new Error('expected a derive');
-    expect(derived.formula.components[1]).toMatchObject({ minPercent: 2, maxPercent: 3 });
+    expect(derived.formula.components[1]).toMatchObject({ minPercent: 2, maxPercent: 3.15 });
     expect(solveFormula(derived.formula).ok).toBe(true);
   });
 });
