@@ -85,18 +85,19 @@ re-reading ninety days of prose. A reading that is a note or a photo leaves the
 numbers null, so aggregate with `AVG`/`MIN`/`MAX`, which skip nulls, rather than
 dividing by `COUNT(*)`.
 
-Scope note on the join: `path_params` is written to the raw changelog by
-`WILDCARD_IDS=true`, and the query above reads it from the `_raw_latest` view.
-That the view carries the column through is the extension's behaviour and not
-something this repo can assert — confirm it once against the real tables when
-the instances are installed, and fall back to `batchObservations_raw_changelog`
-if it does not.
+Scope note on the join, **settled on prod 2026-09-18**: `WILDCARD_IDS=true` puts
+`path_params` on `batchObservations_raw_changelog`, and `batchObservations_raw_latest`
+selects it through unchanged (`path_params AS path_params` in the view's own SQL).
+The query above therefore works as written against the view; no fallback to the
+changelog is needed.
 
 Selecting "all the whole muscle cures" needs a recipe kind and a category frozen
 onto the run; that is a separate issue and not built here. When those fields
 exist on the document they appear in `data` with no change to this export.
 
 ## Install (one-off, as an owner)
+
+### First install into an empty project
 
 ```bash
 cd infra/bigquery-export
@@ -107,28 +108,84 @@ The project id is spelled out rather than aliased — deliberate friction for a
 prod-only operation. Installing on another environment is possible but pointless
 noise; the BigQuery dataset would just mirror that environment's own project.
 
-Adding an instance means re-running that same command: it reconciles the whole
-manifest, installing what is new. Read the plan it prints before confirming, and
-expect it to touch only the instances you added — an **update** to an
-already-installed instance restarts its function and can leave a gap in the
-changelog, so an unexpected update in that plan is a reason to stop rather than
-to press on. All six are pinned at `@0.3.3` precisely so a re-run has nothing to
-upgrade.
+### Adding an instance later — do NOT re-run the command above
+
+That command reconciles the **whole** manifest, and reconciling is not the same
+as installing what is new. `firebase deploy --only extensions` sorts every
+instance in `firebase.json` into create / update / configure by instance id and
+extension ref **alone** — it never compares parameters
+(`isConfigure` in `firebase-tools/lib/deploy/extensions/prepare.js` is literally
+`same instanceId && refs.equal(ref)`). So every instance already installed at the
+same version lands in "will be configured" on every run, unchanged or not, and
+the configure task then issues a real `configureInstance` API call against each
+one. Configuring restarts an instance's function, which is exactly the gap in the
+changelog this export exists to prevent.
+
+The plan printed by `--dry-run` therefore says "The following extension instances
+will be configured" listing all the existing ones **every time**. That line is not
+evidence that anything changed and it is not a reason to stop; it is what a
+whole-manifest re-run does. Reading the plan does not protect you here, because
+the plan is telling the truth.
+
+Deploy a scratch manifest holding **only** the new instances instead:
+
+```bash
+D=$(mktemp -d)
+mkdir -p "$D/extensions"
+cp extensions/<the-new-instance>.env "$D/extensions/"
+cat > "$D/firebase.json" <<'EOF'
+{ "extensions": { "<the-new-instance>": "firebase/firestore-bigquery-export@0.3.3" } }
+EOF
+cd "$D"
+npx firebase deploy --only extensions --project s2-prod-e46bd --non-interactive
+```
+
+**Omit `--force`, and do not add it.** The instances missing from the scratch
+manifest are reported as "found in your project but do not exist in
+`firebase.json`" and offered for deletion. In non-interactive mode that prompt
+returns its default, which is _no_, so they are left strictly alone —
+`--force` answers _yes_ and deletes every export you did not list. The flag that
+makes the first install unattended is the flag that makes this one destructive.
+
+`infra/bigquery-export/firebase.json` remains the full six-instance record of
+what is installed; the scratch copy is a throwaway deploy target and is not
+checked in.
+
+All six are pinned at `@0.3.3` so that no run has anything to _upgrade_; the pin
+does not stop a whole-manifest run from _configuring_ them, which is the point
+above.
+
+### What install does and does not create
+
+Creating an instance does **not** create its BigQuery table or view — verified on
+prod 2026-09-18, where the dataset held only the four pre-existing table/view
+pairs after `bq-export-batches` and `bq-export-batch-observations` went ACTIVE.
+The tables appear when something first writes: the backfill below, or the live
+extension on the collection's next document write. Do not read an absent table
+straight after install as a failed install.
 
 ## Backfill (immediately after install)
 
 The changelog only accrues from install; the import script backfills the
 current state of pre-existing docs as `IMPORT` rows. Run it per collection,
-**after** the extension has created the tables.
+immediately after installing that collection's instance. The script creates the
+dataset, table and view itself if they are not there yet — the install does not
+(see "What install does and does not create" above), so there is nothing to wait
+for.
 
 > **Done on prod 2026-08-03** — recipes 46, canonItems 219, productForms 6,
 > cookSessions 4. This is a **one-shot**: the script has no idempotency, so a
 > second run appends a duplicate set of `IMPORT` rows. Re-run only after a table
 > rebuild.
 >
-> **`batches` and `batchObservations`: not yet run.** Record the date and the
-> row counts here when they are, in the same form as the line above, so the next
-> reader knows the one-shot has been spent.
+> **Done on prod 2026-09-18** — batches 1. `batchObservations` **0 — no backfill
+> was possible and none was needed**: the collection group was empty, and the
+> import tool refuses an empty source outright (see below). Its tables were
+> created by that refused run and are live; every reading logged from
+> 2026-09-18 onward streams in through the extension. Nothing pre-dating that
+> day exists to recover, so the one-shot for `batchObservations` is **not**
+> spent — if the collection is somehow populated out of band before the app
+> writes to it, it can still be run once.
 
 `npx` cannot run the tool directly: a fresh install resolves
 `@firebase/database-compat` 2.1.5, whose standalone bundle requires an
@@ -210,6 +267,21 @@ For `recipes`, `canonItems` and `productForms` that source is the daily
 collections and no others, so `cookSessions`, `batches` and the observation log
 are checked against a Firestore console count instead. Whether they earn a place
 in the daily snapshot is a separate question and deliberately not settled here.
+
+### An empty source collection is a hard error, not a zero-row import
+
+`fs-bq-import-collection` calls `verifyCollectionExists` before it reads
+anything, and that check throws on an empty source:
+`Failed to access collection: No documents found in collection group:
+<name>` (or `Collection does not exist or is empty: <path>` for a root
+collection). There is no "imported 0 rows" outcome.
+
+This is benign and it is worth knowing before it happens. The check runs _after_
+the tool has created the dataset, changelog table and view, so a refused run
+still leaves a correctly-shaped, empty, live table behind — which is precisely
+the state you want for a collection whose history starts now. It is what
+happened to `batchObservations` on 2026-09-18. Treat the error as "there was
+nothing to backfill", not as a failure to investigate.
 
 ## What you get
 
