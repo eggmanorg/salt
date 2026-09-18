@@ -452,12 +452,25 @@ describe('RecipeSchema', () => {
     expect(RecipeSchema.safeParse({ ...stored, cureCategory: 'dry cured' }).success).toBe(false);
   });
 
-  it('lets any kind carry a null category, because the schema cannot say otherwise', () => {
-    // Stated as the LIMIT it is rather than as a guarantee. `docs/data-model.md`
-    // forbids a discriminated union here, so the schema genuinely cannot express
-    // "required iff kind is cure" — a recipe with a category set would parse, and
-    // nothing rejects one. What stops it existing is that exactly one kind's copy
-    // declares a category editor, not this schema.
+  it('lets any kind carry a non-null category, because the schema cannot say otherwise', () => {
+    // Stated as the LIMIT it is rather than as a guarantee (CLAUDE.md rule 12).
+    // `docs/data-model.md` forbids a discriminated union here, so the schema
+    // genuinely cannot express "required iff kind is cure" — a document like
+    // `{ kind: 'recipe', cureCategory: 'dry_cured_whole_muscle' }` parses fine,
+    // and nothing at THIS layer rejects it.
+    //
+    // What was once claimed here — that "exactly one kind's copy declares a
+    // category editor" is what stops such a document existing — was false: the
+    // copy table (`KIND_COPY.cure.categoryCopy`) gates whether
+    // `RecipeIdentityCard` RENDERS an editor for a category, never whether one
+    // gets WRITTEN. The one write path an AI classifies a category through,
+    // `assembleRecipeDraft`, now correlates the two fields itself (#1425
+    // review, blocking 2) — but that is a property of that function, not of
+    // this schema, and a document built by hand or by a future writer gets no
+    // protection from either.
+    expect(
+      RecipeSchema.safeParse({ ...messyRecipe(), cureCategory: 'dry_cured_whole_muscle' }).success,
+    ).toBe(true);
     expect(RecipeSchema.safeParse({ ...messyRecipe(), cureCategory: null }).success).toBe(true);
     expect(
       RecipeSchema.safeParse({ ...messyRecipe(), kind: 'cure', cureCategory: null }).success,

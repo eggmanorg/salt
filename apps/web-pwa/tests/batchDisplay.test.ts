@@ -559,4 +559,13 @@ describe('categoriesPresent / categoryChips', () => {
       { value: 'cooked_whole_muscle', label: 'Cured whole muscle (cooked)' },
     ]);
   });
+
+  it('leaves out a category stored on a kind with no vocabulary — the same rule categoryLabel applies (#1425 review, should-fix 3)', () => {
+    // A `cureCategory` somehow stored on a plain recipe: `categoryLabel` already
+    // reads this as nothing (see the suite above), so the filter row must not
+    // offer to narrow to a category no card will ever display.
+    const strayBacon = batch({ recipeKind: 'recipe', cureCategory: 'cooked_whole_muscle' });
+    expect(categoriesPresent([strayBacon, coppa])).toEqual(['dry_cured_whole_muscle']);
+    expect(categoryChips([strayBacon])).toEqual([]);
+  });
 });

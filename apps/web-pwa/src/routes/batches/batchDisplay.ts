@@ -246,11 +246,24 @@ export function groupLogByDay<T extends { at: string }>(
 // along. Nothing compares against a kind or a category literal — the copy table is
 // asked whether the kind has a category vocabulary at all.
 
+/**
+ * Whether this run's OWN kind declares a category vocabulary at all — the one
+ * gate `categoryLabel` and `categoriesPresent` must ask the same way (#1425
+ * review, should-fix 3). Before this, `categoryLabel` asked the copy table
+ * while `categoriesPresent` asked only "is `cureCategory` non-null?" — two
+ * different questions that agree everywhere a `cureCategory` can legitimately
+ * exist today, and disagree the moment one does not (a stray value on a kind
+ * whose copy has no category editor), which is exactly the case
+ * `categoryLabel`'s own test pins as reading nothing.
+ */
+function hasCategoryVocabulary(kind: BatchDoc['recipeKind']): boolean {
+  return KIND_COPY[kind].categoryCopy !== undefined;
+}
+
 /** How this run's category reads, or `null` when it has none to read. */
 export function categoryLabel(batch: BatchDoc): string | null {
-  const copy = KIND_COPY[batch.recipeKind].categoryCopy;
-  if (copy === undefined || batch.cureCategory === null) return null;
-  return copy.options[batch.cureCategory];
+  if (!hasCategoryVocabulary(batch.recipeKind) || batch.cureCategory === null) return null;
+  return KIND_COPY[batch.recipeKind].categoryCopy!.options[batch.cureCategory];
 }
 
 /**
@@ -287,8 +300,20 @@ export function categoryChips(
  * Its boundary, stated: it can only see the runs it is handed. `/batches` holds
  * the whole collection, so on that screen this is every category the household has
  * ever run — but it is a property of the argument, not of Firestore.
+ *
+ * Gated through `hasCategoryVocabulary`, the same question `categoryLabel` asks —
+ * not merely "is `cureCategory` non-null?" A run whose `cureCategory` is set but
+ * whose `recipeKind` declares no vocabulary (unreachable on today's write path,
+ * see `assembleRecipeDraft`'s correlation, but not something this display module
+ * should assume forever) contributes no chip: `categoryLabel` already reads
+ * nothing for that same run, and a filter row must not offer to narrow to a
+ * category no card on the list will ever say it belongs to.
  */
 export function categoriesPresent(batches: readonly BatchDoc[]): CureCategory[] {
-  const seen = new Set(batches.flatMap((b) => (b.cureCategory === null ? [] : [b.cureCategory])));
+  const seen = new Set(
+    batches.flatMap((b) =>
+      hasCategoryVocabulary(b.recipeKind) && b.cureCategory !== null ? [b.cureCategory] : [],
+    ),
+  );
   return CureCategorySchema.options.filter((category) => seen.has(category));
 }

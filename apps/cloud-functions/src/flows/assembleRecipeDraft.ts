@@ -319,34 +319,64 @@ export async function assembleRecipeDraft(
   // amend-merge pairing tests in `apps/web-pwa/tests/recipeAmend.test.ts`.
   const phaseStrip = reconcileRecipePhases(raw, baseRecipe?.metadata ?? null);
 
+  // WHAT KIND OF ENTRY this is, in strict precedence (issue #765).
+  //
+  // 1. `baseRecipe.kind` — FIRST and UNCONDITIONAL. `kind` is immutable, so an
+  //    edit-mode amend must never re-type the entry it is editing, whatever the
+  //    model said and whichever of the four kinds it is. Edit mode wins over
+  //    inference, always; that is why this operand is not guarded by anything.
+  // 2. `kindHint` — variation mode, where the base is deliberately not passed
+  //    as `baseRecipe` but its kind is still a known fact rather than a guess.
+  // 3. `raw.kind` — what the model classified. Before #765 this line read
+  //    `?? 'recipe'`, which is why no AI path could produce anything but a
+  //    dinner: it was the single choke point all three creation paths funnel
+  //    through. The schema (`AuthoredRecipeKindSchema`) is what guarantees this
+  //    operand is one of the authorable kinds and floors it at `'recipe'` when
+  //    the model omits it or invents one — there is no unbounded value here to
+  //    guard against.
+  //
+  // Pulled out to a local so `cureCategory` below can be correlated against the
+  // SAME resolved kind, rather than recomputing (and risking disagreeing with)
+  // it (#1425 review, blocking 2).
+  const kind = baseRecipe?.kind ?? kindHint ?? raw.kind;
+
   const draft: RecipeDoc = {
     id: recipeId,
     schemaVersion: 1,
-    // WHAT KIND OF ENTRY this is, in strict precedence (issue #765).
+    kind,
+    // WHICH KIND OF CURE (issue #1404), gated on the resolved `kind` above
+    // (#1425 review, blocking 2): a category is stored ONLY where `kind` is
+    // `'cure'`. Without this gate, an amend of a non-cure the model misreads as
+    // cured meat, or a `.catch('recipe')` degradation that still answered the
+    // category question, would store `{ kind: 'recipe', cureCategory: … }` — a
+    // value `RecipeIdentityCard` cannot show or correct (its editor renders off
+    // `KIND_COPY[kind].categoryCopy`, which only `cure` declares), that
+    // `startBatch` would freeze onto a run regardless of what it baked, and
+    // that would grow a phantom filter chip on `/batches` for a household that
+    // has never cured anything.
     //
-    // 1. `baseRecipe.kind` — FIRST and UNCONDITIONAL. `kind` is immutable, so an
-    //    edit-mode amend must never re-type the entry it is editing, whatever the
-    //    model said and whichever of the four kinds it is. Edit mode wins over
-    //    inference, always; that is why this operand is not guarded by anything.
-    // 2. `kindHint` — variation mode, where the base is deliberately not passed
-    //    as `baseRecipe` but its kind is still a known fact rather than a guess.
-    // 3. `raw.kind` — what the model classified. Before #765 this line read
-    //    `?? 'recipe'`, which is why no AI path could produce anything but a
-    //    dinner: it was the single choke point all three creation paths funnel
-    //    through. The schema (`AuthoredRecipeKindSchema`) is what guarantees this
-    //    operand is one of the authorable kinds and floors it at `'recipe'` when
-    //    the model omits it or invents one — there is no unbounded value here to
-    //    guard against.
-    kind: baseRecipe?.kind ?? kindHint ?? raw.kind,
-    // WHICH KIND OF CURE (issue #1404). Deliberately NOT the same precedence as
-    // `kind` above, and the difference is the whole point: `kind` is immutable, so
-    // an edit-mode amend must never re-type the entry — the category is the field
-    // a person corrects, so an amend that says something about it is allowed to
-    // change it. `?? null` because the model may omit it (`AuthoredCureCategory
-    // Schema` reads absent as `null`) and because an entry that is not a cure
-    // carries none; `baseRecipe` is the floor, so an amend silent on the subject
-    // leaves a category already set alone rather than erasing it.
-    cureCategory: raw.cureCategory ?? baseRecipe?.cureCategory ?? null,
+    // WITHIN a cure, the base wins over the model when it is already set — the
+    // same shape `kind` uses above, and for the same reason: the sanctioned
+    // correction route is the recipe page's tap (#1404 — "there is no
+    // confirmation and no gate"), never chat, so an amend about something else
+    // entirely must not silently re-classify a category someone already
+    // corrected there. `raw.cureCategory` lands only when the base has none
+    // yet — a fresh import, a fresh chat-authored cure, or an existing cure
+    // nobody has categorised.
+    //
+    // This line used to read `raw.cureCategory ?? baseRecipe?.cureCategory ??
+    // null` — the two operands the other way round — on the stated rationale
+    // that "an amend silent on the subject leaves a category already set
+    // alone". That was never true in practice: `CURE_CATEGORY_RULES` tells the
+    // model to answer on every turn and never refuse, and
+    // `formatRecipeForPrompt` never shows it the stored category, so
+    // `raw.cureCategory` is non-null on every cure turn and the intended
+    // "floor" never fired — the identical shape of gap #1203 documents (and
+    // leaves open) for the phase strip below, because closing THAT one needs
+    // prompt work outside this function's reach. This field had no such
+    // excuse: an unconditional base-wins floor was already sitting one field
+    // up, so the fix is to use the same shape, not to describe the gap again.
+    cureCategory: kind === 'cure' ? (baseRecipe?.cureCategory ?? raw.cureCategory ?? null) : null,
     title: raw.title,
     description: raw.description,
     ingredients: ingredientGroups,
