@@ -35,6 +35,7 @@ const RECIPE = {
   id: 'recipe-1',
   schemaVersion: 1,
   kind: 'recipe',
+  cureCategory: null,
   title: 'Overnight white tin',
   description: null,
   ingredients: [

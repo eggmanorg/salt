@@ -72,6 +72,7 @@ let adminApp: App;
 
 function makeRecipe(id: string, overrides: Partial<RecipeDoc> = {}): RecipeDoc {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

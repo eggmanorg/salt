@@ -81,6 +81,7 @@ import { importRecipeFromPhoto, photoImportMessage } from '../src/lib/recipeServ
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
 
 const DRAFT: Recipe = {
+  cureCategory: null,
   id: 'imported-1',
   schemaVersion: 1,
   kind: 'recipe',

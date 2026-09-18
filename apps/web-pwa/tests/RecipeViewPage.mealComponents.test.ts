@@ -170,6 +170,7 @@ const MEAL_ID = 'roast';
 
 function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

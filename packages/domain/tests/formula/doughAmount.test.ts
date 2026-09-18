@@ -30,6 +30,7 @@ describe('doughAmountGrams', () => {
         { ingredientId: 'water', percent: 70, inBasis: false },
       ],
       referenceYield: { kind: 'target', shape: { count: 2, unitDoughGrams: 900 } },
+      target: null,
       schemaVersion: 1,
     };
 

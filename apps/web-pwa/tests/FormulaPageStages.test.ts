@@ -77,6 +77,7 @@ function ingredient(id: string, rawText: string, grams: number, canonId: string)
 
 function makeRecipe(): Recipe {
   return {
+    cureCategory: null,
     producesCanonId: null,
     componentRecipeIds: [],
     kit: [],
@@ -141,6 +142,7 @@ const STORED: Formula = {
     { ingredientId: 'ing-water', percent: 70, inBasis: false },
   ],
   referenceYield: SHAPE,
+  target: null,
   schemaVersion: 1,
 };
 

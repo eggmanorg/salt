@@ -275,6 +275,22 @@ wrong lifetime, wrong sharing. It:
 - **freezes the resolved quantities and the resolved schedule at start**, because
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
+- **freezes what the dish WAS** — its title, its `recipeKind` and, for a cure, its
+  `cureCategory` (issue #1404). The title was always in the freeze; the other two
+  joined it because "show me all my dry-cured whole muscle" and "the last three
+  bresaola" have to stay answerable in a year, over runs whose recipes have since
+  been renamed, re-mapped or deleted. Both carry read defaults (`'recipe'`, `null`),
+  which are not merely parseable but true of every batch in production today;
+- **freezes what the run is AIMING AT** — `target`, a weight-loss percentage, a pH,
+  both or neither, copied off the formula at start (issue #1407). Edit the formula
+  next month and batch nine still says what batch nine was aiming at. The figure it
+  produces (`targetProgress` in `@salt/domain`) is the one live number a batch screen
+  shows, and it **decides nothing**: no `finished` state, no gate, no warning, no
+  verdict, and no estimate of when the target will be reached. Past it the figure
+  keeps counting, and the meter beside it simply stays full. A run approaching its
+  target changes **appearance** — a colour, never a word — and the threshold is
+  one constant (`NEARING_FRACTION`) stated as the domestic starting point it is,
+  not as a fact about curing;
 - carries an **observation log** — weight, pH, temperature, humidity, a photo, a note;
 - records **when it was stopped**, not merely that it was (`abandonedAt`, issue
   #1280). A run given up on at ten past eight on the Sunday is a different story
@@ -342,12 +358,12 @@ becoming two is a removal and two additions, and renders honestly as that.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                      |
-| ------------- | ------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process                                                                                                                                                                                                               |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, the kitchen temperature it was started at (`ambientCelsius`), the frozen place each stage ran in, and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, humidity, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run)                                                                                                     |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                                                                                                                       |
+| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process, and what a run of it aims at (`target` — a weight loss, a pH, both or neither)                                                                                                                                                                                                                           |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, the kitchen temperature it was started at (`ambientCelsius`), the frozen place each stage ran in, what it is aiming at (`target`, frozen from the formula, null for a run aiming at nothing), and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, humidity, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run). Every one of the six has a control on the sheet; `ph` was the last to get one (#1407)                                                                                                          |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                                                                                                                                                                                                                   |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:
@@ -371,11 +387,19 @@ reference yield**.
 
 ## Kind versus presence
 
-Do **not** add `bread`, `ferment` and `cure` as kinds and hang behaviour off them.
-`kind` keeps doing exactly what it does today (see CLAUDE.md and
-`recipe/queries/capabilities.ts`): identity, copy, icons, library section, which
-prompt authors it, whether the planner offers it. What a document can _do_ comes
-from what it _has_.
+Do **not** add `bread` as a kind, or hang behaviour off a kind at all. `kind` keeps
+doing exactly what it does today (see CLAUDE.md and `recipe/queries/capabilities.ts`):
+identity, copy, icons, library section, which prompt authors it, whether the planner
+offers it. What a document can _do_ comes from what it _has_.
+
+> **Updated by issue #1404.** This section was written when `ferment` and `cure` were
+> assumed to arrive together as two bare kinds with nothing beside them. `cure` has
+> now shipped, as **one kind with a five-value `cureCategory` field beside it** — five
+> kinds for cured meat alone would swamp the library, and the five are one axis of one
+> thing. `ferment` is **not** built and is not implied by this: nothing below commits
+> to it. The category is identity and grouping only; the rule at the foot of this
+> section — capabilities answer questions about the kind, presence answers questions
+> about the document — is what keeps it out of `capabilities.ts`.
 
 | Entry            | `kind`     | formula | process | batches | culture |
 | ---------------- | ---------- | :-----: | :-----: | :-----: | :-----: |
@@ -383,20 +407,36 @@ from what it _has_.
 | Tin loaf         | `recipe`   |    ●    |    ●    |    ●    |    —    |
 | Thin pizza bases | `recipe`   |    ●    |    ●    |    ●    |    —    |
 | Fresh sausage    | `recipe`   |    ●    |    —    |    —    |    —    |
-| Sauerkraut       | `ferment`  |    ●    |    ●    |    ●    |    —    |
-| Kimchi           | `ferment`  |    ●    |    ●    |    ●    |    —    |
-| Milk kefir       | `ferment`  |    ●    |    ●    |    ●    |    ●    |
+| Sauerkraut       | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Kimchi           | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Milk kefir       | `recipe`   |    ●    |    ●    |    ●    |    ●    |
 | Coppa            | `cure`     |    ●    |    ●    |    ●    |    —    |
+| Bacon            | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Salami           | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Negroni          | `cocktail` |  free   |    —    |    —    |    —    |
 | Friday takeaway  | `special`  |    —    |    —    |    —    |    —    |
 
 A loaf **is** a recipe: cooked, plannable, wants a hero image, ingredients on the
-shopping list. A `bread` kind would fork all of that for nothing. `ferment` and
-`cure` earn kinds the way `cocktail` did — they are a different section of the
-library, not dinner. Sausages fall out without a decision: a fresh banger is a
-formula with no process, a salami is nearly the same formula with a cure's
-process. A cocktail could gain a 1:1:1 formula with no code change at all.
+shopping list. A `bread` kind would fork all of that for nothing. `cure` earns a kind
+the way `cocktail` did — a different section of the library, not dinner — and that is
+the whole of what its kind buys: a shelf, an icon, its own words, its own art
+direction, and `isPlannable: false`. Sauerkraut and kimchi are shown above as
+`recipe` because that is what they are today: `ferment` is not built, and vegetables
+are not cured meat. Sausages fall out without a decision: a fresh banger is a `recipe`
+with a formula and no process, a salami is a `cure` in the `fermented_dry_cured`
+category with nearly the same formula and a cure's process. Bacon is an ordinary cure
+in `cooked_whole_muscle` that simply carries no drying target — nothing special-cases
+it. A cocktail could gain a 1:1:1 formula with no code change at all.
+
+**Which kind of cure**, and why it is a field rather than five kinds or a tag:
+`cureCategory` is one of `dry_cured_whole_muscle`, `cooked_whole_muscle`,
+`fermented_dry_cured`, `semi_dry`, `cooked_emulsified`, or `null`. The five are named
+for the **safety mechanism** that makes the thing edible, which is what makes the set
+closed and finite. Five kinds would answer the same five capability questions
+identically five times and put five chips on the library for one ingredient; a tag
+would let a typo silently drop an entry out of its group, which a value frozen onto a
+run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds five
+kinds_.
 
 **The rule that stops the capability table rotting:** capabilities answer
 questions about the **kind**; presence answers questions about the **document**.
@@ -404,7 +444,10 @@ questions about the **kind**; presence answers questions about the **document**.
 `formula != null`. Keep that line sharp and `capabilities.ts` stays as wide as
 the questions it answers about a kind — five columns today (`takesIngredients`,
 `isCookable`, `isPlannable`, `isAuthorable`, `takesComponents`) — instead of
-growing a boolean per feature.
+growing a boolean per feature. `cureCategory` is bound by the same rule from the
+other side: it is neither kind nor presence but **identity**, so it picks words,
+pictures and groupings and answers no capability question. There is no sixth column
+for it, and adding one would be the rot this rule exists to prevent.
 
 ## Placement
 
@@ -477,14 +520,14 @@ the entire lifecycle — create, plan, schedule, notify, observe, finish — in
 eighteen hours. A kraut takes three weeks; a coppa four months. A batch model
 cannot be debugged on a four-month feedback loop.
 
-| Phase  | Scope                                                                                                                                                                                                                                                                                                                                                                              |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                 |
-| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                        |
-| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                         |
-| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                              |
-| **04** | Cures. New kind, the observation log worked hard, weight-loss criteria, revised projections, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **A trim-loss allowance is this phase's to build** — #1274 deleted bread's, which fed no arithmetic; a 10–20% trim on a shoulder is a real requirement and belongs where it is actually stated. |
-| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                   |
+| Phase  | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **04** | Cures. New kind, the observation log worked hard, a target a run is stamped with, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **A trim-loss allowance is this phase's to build** — #1274 deleted bread's, which fed no arithmetic; a 10–20% trim on a shoulder is a real requirement and belongs where it is actually stated. **This row used to promise a weight-loss COMPLETION CRITERION and REVISED PROJECTIONS, and issue #1407 cut both.** A run carries a target and every weighing says how far along it is; that figure decides nothing — no `finished` state, no gate, no verdict — and Salt makes no claim about _when_ a run will reach it, because a cure is done on feel and a projected date would be a confident number that is usually wrong. |
+| **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ### What bread hands on
 

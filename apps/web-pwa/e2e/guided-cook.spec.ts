@@ -82,6 +82,7 @@ function ingredient(id: string, rawText: string, firstUsedInStepId: string) {
 /** Three ingredients across two steps, both steps un-timed. */
 function guidedRecipe(): Recipe {
   return {
+    cureCategory: null,
     id: RECIPE_ID,
     schemaVersion: 1,
     kind: 'recipe',

@@ -93,6 +93,7 @@ function tool(over: Partial<KitchenToolDoc> & { id: string; label: string }): Ki
 
 function recipeWithKit(id: string, ...labels: string[]): Recipe {
   return {
+    cureCategory: null,
     createdBy: '',
     lastEditedBy: '',
     id,

@@ -220,6 +220,47 @@ export const PLACEHOLDER_IMAGE_STYLE_ANCHORS =
 // disagreeing.
 export const PLACEHOLDER_SCENE_FALLBACK = `First read the MOOD this picture is for — its tags say either "bright" or "comfort", and that is nearly all there is to read, because there is no dish here and there must not be one. Bright calls for ${PLACEHOLDER_MOOD_MEANINGS.bright}. Comfort calls for ${PLACEHOLDER_MOOD_MEANINGS.comfort}. Let the mood drive the setting, the surface, the props, the colour palette and the quality of light, and let it choose what the picture leads with — anything that belongs to the evening about to be eaten, chosen fresh for this picture rather than reached for out of habit. Make the shift clearly legible at a glance — a deliberate, confident step, never a faint tint — but let it stop at the mood: whatever food is in shot stays generic and unresolved, never a dish anyone could name.`;
 
+// ─── The CURE anchors + fallback (issue #1404) ───────────────────────────────
+// A cure is cured meat — a coppa hanging in a chamber, a side of bacon, a board
+// of sliced saucisson. Painting one with the recipe anchors gets a plated dinner
+// on rustic ceramic, which is a picture of something else entirely: the thing a
+// cure IS is the whole muscle or the sausage, and the way you meet it is a slice.
+//
+// Same contract as the other three pairs: LOCKED IN CODE, appended LAST on every
+// prompt, carrying the same prohibitions.
+//
+// It KEEPS the "fill the frame with the subject" clause its recipe, special and
+// cocktail siblings share and only `placeholder` drops — here there is a real,
+// specific subject and it is the one thing worth looking at.
+//
+// What it deliberately does NOT do is name a stage. A cure is three different
+// pictures — hanging and whole, cut open at the face, or fanned out in slices —
+// and which one is right depends entirely on the dish: a bacon is not hung to
+// slice, a mortadella is never a bloomed whole muscle in a chamber. Naming one
+// here would put it on all of them, appended last where the per-doc brief could
+// not overrule it. That is the identical failure #671 diagnosed in the special
+// anchors and #652 in the placeholder ones, and it takes the identical fix: the
+// STAGE is a subject decision and belongs to the brief, while the anchors hold
+// style and prohibitions. So these reference what the direction above leads with.
+//
+// The one prohibition of its own is restaurant plating: a charcuterie board
+// styled by a stylist is a picture of a restaurant, and what is being recorded
+// here is something somebody made and is keeping.
+export const CURE_IMAGE_STYLE_ANCHORS =
+  "But the CURED MEAT is always the star of the shot: fill the frame with it, composing tight and close so the meat is unmistakably the subject and takes up most of the image. The chamber, the board, the bench and the room behind are only supporting context glimpsed around and behind it — never the main event; avoid wide or pulled-back shots where the surroundings occupy more of the frame than the meat itself. Show it at the STAGE the direction above describes and at no other, whether that is whole and hanging, cut open at the face, or sliced and laid out. Let the texture do the work: the dry rind or bloom on the outside, the grain and the marbling of the cut face, the fat reading white or creamy rather than grey, the colour deep and even rather than lurid. This is something somebody made and is keeping, so the setting is a working one — a rack, a hook, a bench, a wooden board, a butcher's paper, a knife — real and a little lived-in. Do NOT stage it as a restaurant would: no careful plating, no chef's garnish, no styled charcuterie board arranged for a magazine, and do NOT plate it as a dinner on home crockery. Vary the stage, the surface and the angle to suit each cure; do NOT default to the same hook, board or camera position every time. Within that, hold a recognisable house style: a photorealistic photograph with the warm, unfussy, appetising feel of a good larder, shot with real affection. Always keep these anchors — the meat filling most of the frame as the clear subject; soft, low, warm light; a shallow depth of field with the meat in crisp focus and the setting falling softly out of focus. Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people. A single, appetising hero shot of one cure, framed large and close so it fills the frame and makes you want a slice.";
+
+// The cure counterpart to RECIPE_IMAGE_DISH_READING_FALLBACK: used only when no
+// scene brief is available. It asks the same question its three siblings ask —
+// read the thing, then let that reading drive the scene — and what it asks the
+// model to read is the KIND OF CURE, because the stage, the surface and the light
+// all follow from it. A whole muscle drying in a chamber and a cooked mortadella
+// on a slicer are not the same photograph.
+//
+// It may name concrete things, and should: it runs only when there is no brief,
+// so it is the one place on that path with anything specific in it.
+export const CURE_SCENE_FALLBACK =
+  'First read what kind of cure this is and how it is met: a whole muscle dried for months and eaten raw — a coppa, a bresaola, a prosciutto — calls for a cool, dim curing room, a hook or a rack, a dusty white bloom on the rind, and either the whole piece hanging or a deep-red cut face against it; a cured piece that is then cooked or smoked — a bacon, a gammon, a pastrami — calls for a kitchen or a smokehouse rather than a chamber, a board and a knife, a burnished or peppered crust, warmer and brighter light; a fermented, dried sausage — a saucisson, a chorizo, a fuet — calls for a string of them hung together or a few coins cut on a board, the mosaic of lean and fat legible in the slice; a semi-dry or snack sausage calls for something plainer and more everyday, on paper or a bench; a cooked, emulsified one — a mortadella, a bologna — calls for the smooth pale face of a big round, sliced thin and draped rather than stacked. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each cure feels like it lives in its own room.';
+
 // The kinds this flow knows how to paint. Declared LOCALLY as genkit-`z` literals
 // rather than imported from `RecipeKindSchema`: genkit re-exports its own bundled
 // zod instance, and a schema built from plain `zod` is not interchangeable with it.
@@ -230,6 +271,7 @@ export const GENERATE_RECIPE_IMAGE_KINDS = [
   'special',
   'cocktail',
   'placeholder',
+  'cure',
 ] as const;
 
 type ImageKind = (typeof GENERATE_RECIPE_IMAGE_KINDS)[number];
@@ -245,6 +287,8 @@ function anchorsFor(kind: ImageKind | undefined): string {
       return COCKTAIL_IMAGE_STYLE_ANCHORS;
     case 'placeholder':
       return PLACEHOLDER_IMAGE_STYLE_ANCHORS;
+    case 'cure':
+      return CURE_IMAGE_STYLE_ANCHORS;
     default:
       return RECIPE_IMAGE_STYLE_ANCHORS;
   }
@@ -258,6 +302,8 @@ function fallbackFor(kind: ImageKind | undefined): string {
       return COCKTAIL_SCENE_FALLBACK;
     case 'placeholder':
       return PLACEHOLDER_SCENE_FALLBACK;
+    case 'cure':
+      return CURE_SCENE_FALLBACK;
     default:
       return RECIPE_IMAGE_DISH_READING_FALLBACK;
   }
@@ -284,6 +330,11 @@ function openerFor(
       // about mood and season and explicitly disclaimed as something to paint.
       case 'placeholder':
         return `A beautiful, appetising photograph of a good dinner about to be eaten, with no particular dish in it. This one is titled "${title}" — read the title only as a note on the mood and the time of year, never as a dish to paint.`;
+      // A cure is not a dish on a plate and is not eaten as one, so the opener
+      // says what it is and leaves the STAGE — hanging whole, cut open, sliced —
+      // to the brief, which has read the method and knows which one this is.
+      case 'cure':
+        return `A beautiful, appetising photograph of the cured meat "${title}" — the finished cure, shown as the direction below describes it.`;
       default:
         return `A beautiful, appetising photograph of the finished dish "${title}".`;
     }

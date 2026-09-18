@@ -118,6 +118,7 @@ const LOAF: IngredientSpec[] = [
 
 function makeRecipe(specs: IngredientSpec[] = LOAF, overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],
@@ -459,6 +460,7 @@ describe('FormulaPage — the round trip', () => {
       kind: 'target',
       shape: { count: 8, unitDoughGrams: 120 },
     },
+    target: null,
     schemaVersion: 1,
   };
 

@@ -4,8 +4,7 @@
 // since #752, each list SECTION) wears on screen. It never decides whether a
 // section, button or action exists: every capability question goes through
 // `takesIngredients` / `isCookable` / `isPlannable` / `takesComponents` in
-// `@salt/domain`, so adding a fourth kind still only changes behaviour in one
-// place. What lands here is the part a predicate cannot answer: what to CALL the
+// `@salt/domain`, so adding a kind still only changes behaviour in one place. What lands here is the part a predicate cannot answer: what to CALL the
 // thing, and which shelf it stands on.
 //
 // It lives beside the recipe routes rather than in `src/lib` on purpose. The
@@ -24,7 +23,8 @@ import {
   PLACEHOLDER_CONDITION_TAGS,
   PLACEHOLDER_MOODS,
 } from '@salt/domain';
-import type { Recipe, RecipeKind } from '@salt/domain';
+import { CureCategorySchema } from '@salt/domain/schemas';
+import type { CureCategory, Recipe, RecipeKind } from '@salt/domain';
 import type { IconProps } from '@salt/ui-components';
 
 // Read a kind off a recipe-shaped object, defaulting exactly as the schema does.
@@ -90,6 +90,62 @@ interface KindCopy extends SectionCopy {
   // three kinds is not. Rendered by `RecipeIdentityCard`'s tag zone, which is
   // where tags are typed since #1319 Phase 8.
   readonly tagsHint?: string;
+  // What "start a run of this" is CALLED. A run of a loaf is baked; a run of a
+  // coppa is not, and "Bake a batch" on a bresaola is simply wrong words. Not
+  // optional, because the two call sites (the recipe page's overflow item and the
+  // sheet's own title) must always have something to say and a `??` fallback at
+  // each of them is a second place the default can drift from. Every kind but
+  // `cure` states the string the app has always shown, byte for byte.
+  readonly startBatchLabel: string;
+  // The per-kind CATEGORY vocabulary (issue #1404): the words the recipe page's
+  // category editor wears, and the display label for each stored value.
+  //
+  // OPTIONAL, and present on exactly one kind — byte for byte the `tagsHint`
+  // pattern above, and for the same reason its header gives. This is COPY: a
+  // vocabulary that is simply undefined for four kinds is not a branch on
+  // behaviour, and no control, validation or write-path change hangs off it.
+  // `RecipeIdentityCard` renders the editor when the kind's copy declares one,
+  // which is what keeps `kind === 'cure'` out of every Svelte file in the app.
+  //
+  // `options` is a Record over the closed enum, so a sixth category fails to
+  // compile until it has been given words.
+  readonly categoryCopy?: CategoryCopy;
+}
+
+// A kind's category vocabulary. Named rather than inlined so `categoryOptions`
+// below can take it, and so the identity card can hold one in a `$derived`.
+interface CategoryCopy {
+  // The zone's label, its dashed empty slot, and the Select's accessible name.
+  readonly label: string;
+  // The chip's text when nothing has been chosen yet — a normal state, not an
+  // error: a cure nobody has categorised is uncategorised, and Salt records
+  // rather than polices.
+  readonly unsetLabel: string;
+  // A RECORD over the closed enum, so a sixth category fails to compile until it
+  // has been given words. The ORDER it renders in is the enum's, not this
+  // object's — see `categoryOptions`.
+  readonly options: Readonly<Record<CureCategory, string>>;
+}
+
+// The category options, ready to render, in the stored enum's own order.
+//
+// Ordered from `CureCategorySchema.options` rather than `Object.entries`, which
+// widens the key back to `string` and would push a cast into the markup. This way
+// the value is typed by the domain and the Svelte file never names one.
+export function categoryOptions(
+  copy: CategoryCopy,
+): readonly { value: CureCategory; label: string }[] {
+  return CureCategorySchema.options.map((value) => ({ value, label: copy.options[value] }));
+}
+
+// Narrow a picker's string back to a stored category (`Select` hands back a bare
+// `string`). A trust-boundary parse rather than a cast: the options are built from
+// the schema, so the only way this sees anything else is a bug — and for a field
+// whose whole job is to be corrected, `null` (uncategorised) is a truthful answer
+// to one, where a throw would take the page down over a word.
+export function toCureCategory(value: string): CureCategory | null {
+  const parsed = CureCategorySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 export const KIND_COPY: Record<RecipeKind, KindCopy> = {
@@ -102,6 +158,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     noMatchText: 'No recipes match your filters.',
     thumbIcon: 'CookingPot',
     menuIcon: 'Pencil',
+    startBatchLabel: 'Bake a batch',
   },
   // Issue #1322. The shelf collects two things at once: the nights nobody cooked
   // (a takeaway, a pub meal, a picnic) and the dishes the chef knows well enough
@@ -116,6 +173,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     noMatchText: 'Nothing here matches your filters.',
     thumbIcon: 'HandPlatter',
     menuIcon: 'HandPlatter',
+    startBatchLabel: 'Bake a batch',
   },
   cocktail: {
     label: 'Cocktails',
@@ -126,6 +184,7 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     noMatchText: 'No cocktails match your filters.',
     thumbIcon: 'Martini',
     menuIcon: 'Martini',
+    startBatchLabel: 'Bake a batch',
   },
   // Issue #652. The plural label is what the chip and the New menu say, matching
   // the other three; the singular is only ever a count noun. These entries are
@@ -141,7 +200,39 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     noMatchText: 'No placeholders match your filters.',
     thumbIcon: 'Images',
     menuIcon: 'Images',
+    startBatchLabel: 'Bake a batch',
     tagsHint: `Tags decide which evenings this picture turns up on. Mood — exactly one, required: ${PLACEHOLDER_MOODS.join(', ')}. Weather — optional, any number, each one improves the match: ${PLACEHOLDER_CONDITION_TAGS.join(', ')}.`,
+  },
+  // Issue #1404. "Cured meats" is the shelf a coppa, a bacon and a mortadella
+  // share — cured meat is not dinner, and Recipes was the only shelf that could
+  // hold one. The label is the proposal and moves freely, as this module's header
+  // promises; the stored value is `'cure'` either way.
+  cure: {
+    label: 'Cured meats',
+    one: 'cured meat',
+    many: 'cured meats',
+    createdToast: 'Cure created',
+    emptyText: 'Nothing here yet — import or ask for a coppa, a bacon or a saucisson.',
+    noMatchText: 'No cured meats match your filters.',
+    thumbIcon: 'Ham',
+    menuIcon: 'Ham',
+    // Nothing is baked here: a coppa is hung, a bacon is cured then cooked. The
+    // one kind whose run is not a bake.
+    startBatchLabel: 'Start a batch',
+    categoryCopy: {
+      label: 'Cure type',
+      unsetLabel: 'Cure type not set',
+      // The five words the app uses for cured meat, everywhere. Short enough for
+      // a chip and a filter row; what each one MEANS — the safety mechanism it is
+      // named for — is stated once, at `CureCategorySchema`.
+      options: {
+        dry_cured_whole_muscle: 'Dry-cured whole muscle',
+        cooked_whole_muscle: 'Cured whole muscle (cooked)',
+        fermented_dry_cured: 'Fermented & dry-cured (salami)',
+        semi_dry: 'Semi-dry / snack meats',
+        cooked_emulsified: 'Cooked & emulsified',
+      },
+    },
   },
 };
 
@@ -153,10 +244,10 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
 // `RecipeKindSchema`, in a URL segment, or on a stored document.
 export const MEAL_SECTION = 'meal';
 
-// A shelf on the recipes list: one of the four kinds, or Meals.
+// A shelf on the recipes list: one of the stored kinds, or Meals.
 export type ListSection = RecipeKind | typeof MEAL_SECTION;
 
-// The words each shelf wears. `KIND_COPY` supplies four of the five entries
+// The words each shelf wears. `KIND_COPY` supplies every entry but one
 // unchanged — a section that IS a kind talks about itself exactly as it always
 // did — and Meals adds the fifth. Note what the extra entry cannot do: it has no
 // `createdToast` or `menuIcon`, because a meal is not a kind you stamp on a
@@ -185,7 +276,7 @@ export function sectionOf(recipe: Recipe): ListSection {
   return hasComponents(recipe) ? MEAL_SECTION : kindOf(recipe);
 }
 
-// The four KINDS a stored recipe can be, in the order the list page shelves
+// The KINDS a stored recipe can be, in the order the list page shelves
 // them. `recipe` leads because it is where you land and what most entries are.
 //
 // It is no longer the New menu's list. It stopped being that in #1319 Phase 6,
@@ -201,6 +292,7 @@ export const KIND_SECTIONS: readonly RecipeKind[] = [
   'special',
   'cocktail',
   'placeholder',
+  'cure',
 ];
 
 // The creatable kinds whose chips are shown before you ask for the rest. Kept as
@@ -293,20 +385,24 @@ export const LIST_SECTIONS: readonly ListSection[] = [
   'special',
   'cocktail',
   'placeholder',
+  'cure',
 ];
 
 // The sections whose chips are shown before you ask for the rest. Everything in
 // LIST_SECTIONS still exists and is still one tap away — the chip row just leads
 // with the sections you actually browse (you cook dinner, you build a roast, you
 // make a drink) and folds the rest behind a "+N more" chip, exactly as the tag row
-// does. The two it hides are both places you WRITE to more than you read from:
-// Chef's Specials is a handful of standing answers, and a placeholder is picked for
-// you by the planner rather than browsed. Membership here is a presentation
-// choice, so it lives beside the copy; it never decides whether a section exists.
+// does. The three it hides are all places you WRITE to more than you read from:
+// Chef's Specials is a handful of standing answers, a placeholder is picked for
+// you by the planner rather than browsed, and Cured meats (issue #1404) is empty
+// until somebody writes a cure — a chip nobody in the household needs yet, on a
+// row everybody sees. Membership here is a presentation choice, so it lives beside
+// the copy; it never decides whether a section exists, and Cured meats is still
+// one tap away behind "+N more" from the day the first coppa is imported.
 export const PRIMARY_LIST_SECTIONS: readonly ListSection[] = ['recipe', MEAL_SECTION, 'cocktail'];
 
-// Does this section's grid show an ingredient count on its cards? For the four
-// kinds it is the domain's answer, unchanged. For Meals it is unconditionally
+// Does this section's grid show an ingredient count on its cards? For a section
+// that IS a kind it is the domain's answer, unchanged. For Meals it is unconditionally
 // true, and provably so rather than by assertion: every entry in the Meals section
 // carries components, only `recipe` and `cocktail` have `takesComponents: true`,
 // and both of those have `takesIngredients: true`. A meal's ingredients are its

@@ -30,6 +30,7 @@ const { createCookServings } = await import('../src/routes/recipes/cookServings.
 
 function recipeServing(servings: number | null): Recipe {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

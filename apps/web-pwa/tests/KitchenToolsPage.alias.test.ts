@@ -82,6 +82,7 @@ function setTools(tools: readonly KitchenToolDoc[]): void {
 
 function recipeWithKit(id: string, ...labels: string[]): Recipe {
   return {
+    cureCategory: null,
     createdBy: '',
     lastEditedBy: '',
     id,

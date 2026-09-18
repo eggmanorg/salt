@@ -43,6 +43,7 @@ const ORIGINAL_ID = 'chorizo-variation-pilaf';
 // stored shape is load-bearing — the last assertion compares the document field
 // for field against what it was before the variation was talked through.
 const ORIGINAL_RECIPE: Recipe = {
+  cureCategory: null,
   id: ORIGINAL_ID,
   schemaVersion: 1,
   kind: 'recipe',

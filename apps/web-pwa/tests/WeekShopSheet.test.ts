@@ -22,6 +22,7 @@ function makeRecipe(
   overrides: Partial<Recipe> = {},
 ): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

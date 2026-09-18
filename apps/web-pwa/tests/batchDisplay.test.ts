@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { roundGrams } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
 import {
+  categoriesPresent,
+  categoryChips,
+  categoryLabel,
   defaultObservationStageId,
   formatGrams,
   formatStatedDuration,
@@ -12,7 +15,10 @@ import {
   formatDrift,
   formatTimeOfDay,
   groupLogByDay,
+  phTargetText,
   stageLabelById,
+  targetStanceClass,
+  weightLossText,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
 
@@ -50,6 +56,9 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 
 function batch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
+    target: null,
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -498,5 +507,141 @@ describe('groupLogByDay', () => {
 
   it('is nothing for nothing', () => {
     expect(groupLogByDay([])).toEqual([]);
+  });
+});
+
+// ─── What kind of cure a run was (issue #1404) ───────────────────────────────
+//
+// Three properties, and each is a claim about where the answer COMES FROM: the
+// run's own frozen fields, and the library's own words. Nothing here reads a
+// recipe, which is the point — a run whose dish was renamed, re-mapped or deleted
+// still says what it was.
+describe('categoryLabel', () => {
+  it('says which kind of cure, in the library’s words', () => {
+    expect(categoryLabel(batch({ recipeKind: 'cure', cureCategory: 'semi_dry' }))).toBe(
+      'Semi-dry / snack meats',
+    );
+  });
+
+  it('is null on a run with no category, so a card can simply say nothing', () => {
+    expect(categoryLabel(batch())).toBeNull();
+    expect(categoryLabel(batch({ recipeKind: 'cure', cureCategory: null }))).toBeNull();
+  });
+
+  it('is null on a kind whose copy declares no category vocabulary at all', () => {
+    // The property that keeps a kind literal out of this module: what is asked is
+    // whether the KIND'S COPY has a vocabulary, never which kind it is. A
+    // `cureCategory` somehow stored on a plain recipe reads as nothing rather than
+    // as a label the library has no word for.
+    expect(categoryLabel(batch({ cureCategory: 'semi_dry' }))).toBeNull();
+  });
+});
+
+describe('categoriesPresent / categoryChips', () => {
+  const coppa = batch({ recipeKind: 'cure', cureCategory: 'dry_cured_whole_muscle' });
+  const bacon = batch({ recipeKind: 'cure', cureCategory: 'cooked_whole_muscle' });
+
+  it('is empty when nothing on the list is a cure', () => {
+    // What keeps a filter row off a screen with nothing to filter — which is
+    // every household in production today.
+    expect(categoriesPresent([batch(), batch()])).toEqual([]);
+    expect(categoryChips([batch()])).toEqual([]);
+  });
+
+  it('lists each category once, in the stored enum’s order rather than first-seen', () => {
+    // Ordered by the enum so the chip row does not reshuffle itself as runs start
+    // and end — `bacon` arrives first here and still comes second.
+    expect(categoriesPresent([bacon, coppa, bacon, batch()])).toEqual([
+      'dry_cured_whole_muscle',
+      'cooked_whole_muscle',
+    ]);
+  });
+
+  it('carries the library’s own words onto each chip', () => {
+    expect(categoryChips([bacon, coppa])).toEqual([
+      { value: 'dry_cured_whole_muscle', label: 'Dry-cured whole muscle' },
+      { value: 'cooked_whole_muscle', label: 'Cured whole muscle (cooked)' },
+    ]);
+  });
+
+  it('leaves out a category stored on a kind with no vocabulary — the same rule categoryLabel applies (#1425 review, should-fix 3)', () => {
+    // A `cureCategory` somehow stored on a plain recipe: `categoryLabel` already
+    // reads this as nothing (see the suite above), so the filter row must not
+    // offer to narrow to a category no card will ever display.
+    const strayBacon = batch({ recipeKind: 'recipe', cureCategory: 'cooked_whole_muscle' });
+    expect(categoriesPresent([strayBacon, coppa])).toEqual(['dry_cured_whole_muscle']);
+    expect(categoryChips([strayBacon])).toEqual([]);
+  });
+});
+
+describe('what a run is aiming at, in words (issue #1407)', () => {
+  it('reads a weighing as a figure against its target', () => {
+    expect(
+      weightLossText({
+        startingGrams: 2400,
+        latestGrams: 1780,
+        percentLost: 25.833333333333336,
+        targetPercent: 35,
+        fractionOfTarget: 0.738,
+        stance: 'tracking',
+      }),
+    ).toBe('1780 g — 26% lost of 35%');
+  });
+
+  it('keeps counting past the target rather than capping the figure', () => {
+    expect(
+      weightLossText({
+        startingGrams: 2400,
+        latestGrams: 1488,
+        percentLost: 38,
+        targetPercent: 35,
+        fractionOfTarget: 38 / 35,
+        stance: 'atOrPast',
+      }),
+    ).toContain('38% lost of 35%');
+  });
+
+  it('says a target a person typed exactly as they typed it', () => {
+    // No shared percentage formatter, and none wanted: 32.5 stays 32.5 and 35
+    // never becomes 35.0.
+    expect(
+      weightLossText({
+        startingGrams: 1000,
+        latestGrams: 800,
+        percentLost: 20,
+        targetPercent: 32.5,
+        fractionOfTarget: 20 / 32.5,
+        stance: 'tracking',
+      }),
+    ).toContain('of 32.5%');
+  });
+
+  it('says a pH against its target, with no percentage anywhere in it', () => {
+    const said = phTargetText({ latest: 5.1, targetAtMost: 5.3 });
+    expect(said).toBe('pH 5.1 — aiming below 5.3');
+    expect(said).not.toContain('%');
+  });
+});
+
+describe('the cue (issue #1407, phase 2)', () => {
+  // THREE appearances, all distinct. The way this silently becomes a two-state cue
+  // is a later edit giving two stances the same class, which is exactly what is
+  // asserted rather than the specific classes.
+  it('gives each of the three stances a different appearance', () => {
+    const appearances = ['tracking', 'nearing', 'atOrPast'].map((stance) =>
+      targetStanceClass(stance as Parameters<typeof targetStanceClass>[0]),
+    );
+
+    expect(new Set(appearances).size).toBe(3);
+    expect(appearances.every((cls) => cls !== '')).toBe(true);
+  });
+
+  it('is a colour and nothing that reads as a verdict', () => {
+    for (const stance of ['tracking', 'nearing', 'atOrPast'] as const) {
+      const cls = targetStanceClass(stance);
+      for (const verdict of ['ready', 'done', 'overdue', 'fail', 'destructive']) {
+        expect(cls).not.toContain(verdict);
+      }
+    }
   });
 });

@@ -51,6 +51,7 @@ beforeEach(() => {
 
 function existingRecipe(): Recipe {
   return {
+    cureCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: '',
@@ -78,6 +79,7 @@ function existingRecipe(): Recipe {
 /** What the librarian returns: a complete recipe, but with the metadata dropped. */
 function draftWithoutMetadata(overrides: Partial<RecipeDoc['metadata']> = {}): RecipeDoc {
   return {
+    cureCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: '',

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
+import { FormulaTargetSchema } from './formula.js';
+import { CureCategorySchema, RecipeKindSchema } from './recipe.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
 // at `batches/{batchId}`. Family-shared (no `ownerUid`), a random UUID id minted by
@@ -21,7 +23,8 @@ import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
 //   • the resolved quantities — ingredient id, LABEL, percent and grams;
 //   • the resolved totals from the solve;
 //   • the resolved schedule, stage by stage, with planned and actual times;
-//   • the recipe's title;
+//   • the recipe's title, ITS KIND, and — for a cure — which of the five kinds of
+//     cure it was (issue #1404);
 //   • the worded rationale for the schedule (phase 2 authors it; phase 1 writes
 //     null).
 //
@@ -41,13 +44,18 @@ import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
 //
 // TWO states, and the absences are deliberate.
 //
-// There is no `finished`: "every stage is done" is already answerable from the
-// stages themselves (`currentStage` returns null), and a distinct terminal state
-// only earns its place when something OTHER than the stage list decides it — a
-// verdict, a yield, an observation that the cure hit 35%. That is phase 04's, and
-// adding the literal here today would be a state nothing sets and every reader has
-// to handle. Adding it later costs one line: `batches` is greenfield, and a widened
-// enum parses every document already written.
+// There is no `finished`, and phase 04 has now decided there never will be
+// (issue #1407). This comment used to name "an observation that the cure hit 35%"
+// as the thing that would one day set it. A run now carries a TARGET and every
+// weighing says how far along it is — and that figure decides nothing. Salt records;
+// it does not police: you take a cure all the way, cut it short, or leave it hanging
+// another fortnight, and past the target the figure simply keeps counting. There is
+// no moment where Salt declares a cure finished, so there is no state to write.
+//
+// "Every stage is done" remains answerable from the stages themselves
+// (`currentStage` returns null). Adding the literal later would still cost one line
+// — `batches` is greenfield and a widened enum parses every document already
+// written — but nothing is now expected to want it.
 //
 // There is no `paused` either, for the same reason — nothing pauses a batch, and
 // the honest way to stop one is to abandon it.
@@ -216,6 +224,43 @@ export const BatchSchema = z.object({
   recipeId: z.string(),
   // The recipe's title, frozen. The log survives the dish being renamed or deleted.
   recipeTitle: z.string(),
+  // WHAT THIS RUN WAS, frozen (issue #1404) — the recipe's kind and, for a cure,
+  // which of the five kinds of cure.
+  //
+  // They join the freeze for exactly the reason `recipeTitle` above is in it, and
+  // the question is the one the whole feature is for: **"show me all my dry-cured
+  // whole muscle" and "the last three bresaola" have to be answerable in a year**,
+  // over runs whose recipes have been renamed, re-mapped or deleted since. Read
+  // through to the live recipe and the first tidy-up rewrites the answer; delete
+  // the dish and the run stops being able to say what it was at all.
+  //
+  // Read defaults, so every `batches/{batchId}` document written before these
+  // fields existed parses unchanged and there is no migration (CLAUDE.md,
+  // production data back-compat) — the same shape `skipped`, `place`,
+  // `abandonedAt` and `checkedIngredientIds` all have. The defaults here are not
+  // merely parseable but TRUE: every batch in production today is bread, and bread
+  // is a `recipe` with no cure category.
+  recipeKind: RecipeKindSchema.default('recipe'),
+  cureCategory: CureCategorySchema.nullable().default(null),
+  // WHAT THIS RUN IS AIMING AT, frozen (issue #1407) — the formula's own
+  // `FormulaTargetSchema`, copied by `freezeBatch` exactly as the quantities and
+  // the schedule are, and `null` for the ordinary run that aims at nothing.
+  //
+  // IT FREEZES FOR THE REASON EVERYTHING ELSE ON THIS DOCUMENT DOES (see the header):
+  // edit the formula next month and batch nine still says what batch nine was
+  // aiming at. A running batch that read through to a live formula would have its
+  // own log rewritten under it.
+  //
+  // THE SAME TYPE AS THE FORMULA'S, not a copy of its shape. There is one question
+  // here — what is this aiming at — and two schemas for it would be two places a
+  // bound could drift.
+  //
+  // A read default, so every `batches/{batchId}` document already in production
+  // parses unchanged and there is no migration (CLAUDE.md, production data
+  // back-compat) — the same shape `skipped`, `place`, `abandonedAt` and
+  // `checkedIngredientIds` all have. The default is not merely parseable but TRUE:
+  // every batch in production today is bread, and bread aims at no weight loss.
+  target: FormulaTargetSchema.nullable().default(null),
   // WHAT THIS RUN WAS BAKED IN, as the person starting it described it — "900 g
   // loaf tin", "30 × 40 cm tray" (issue #1274). A SNAPSHOT NOTE and nothing else:
   // nothing parses it, nothing computes from it, and it never round-trips back

@@ -10,6 +10,7 @@ function fullRecipe(overrides: Partial<Recipe> = {}): Recipe {
     id: 'original-id',
     schemaVersion: 1,
     kind: 'recipe',
+    cureCategory: null,
     title: 'Lasagne',
     description: 'The good one.',
     ingredients: [
@@ -172,6 +173,21 @@ describe('duplicateRecipe', () => {
         'comp-chicken',
         'comp-potatoes',
       ]);
+    });
+
+    it('carries the cure category — a copy of a coppa is still a coppa (#1404)', () => {
+      // On the CARRY side of the split, with the components above and against
+      // `producesCanonId` and the attribution below. The category is a fact about
+      // the FOOD, and the copy is the same food; a copy starting uncategorised
+      // would be a wrong answer the duplicate path invented, on a field whose
+      // whole reason for being editable is that wrong answers need a route back.
+      const source = { ...fullRecipe(), kind: 'cure' as const, cureCategory: 'semi_dry' as const };
+      expect(duplicateRecipe(source, 'new-id', NOW).cureCategory).toBe('semi_dry');
+      expect(duplicateRecipe(source, 'new-id', NOW).kind).toBe('cure');
+    });
+
+    it('leaves an uncategorised entry uncategorised rather than guessing one', () => {
+      expect(duplicateRecipe(fullRecipe(), 'new-id', NOW).cureCategory).toBeNull();
     });
 
     it('value-clones the components rather than aliasing the original array', () => {

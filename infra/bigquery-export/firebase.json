@@ -3,6 +3,8 @@
     "bq-export-recipes": "firebase/firestore-bigquery-export@0.3.3",
     "bq-export-canon-items": "firebase/firestore-bigquery-export@0.3.3",
     "bq-export-product-forms": "firebase/firestore-bigquery-export@0.3.3",
-    "bq-export-cook-sessions": "firebase/firestore-bigquery-export@0.3.3"
+    "bq-export-cook-sessions": "firebase/firestore-bigquery-export@0.3.3",
+    "bq-export-batches": "firebase/firestore-bigquery-export@0.3.3",
+    "bq-export-batch-observations": "firebase/firestore-bigquery-export@0.3.3"
   }
 }

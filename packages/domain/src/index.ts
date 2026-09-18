@@ -204,6 +204,7 @@ export type {
   Ingredient,
   IngredientGroup,
   Step,
+  CureCategory,
   Recipe,
   RecipeKind,
   RecipeMetadata,
@@ -480,8 +481,18 @@ export {
   withBatchIngredientChecked,
   withBatchStepDone,
   buildBatchLog,
+  targetProgress,
+  NEARING_FRACTION,
 } from './batch/index.js';
-export type { FreezeBatchFailure, StageStatus, BatchLogEntry } from './batch/index.js';
+export type {
+  FreezeBatchFailure,
+  StageStatus,
+  BatchLogEntry,
+  TargetProgress,
+  WeightLossProgress,
+  PhProgress,
+  TargetStance,
+} from './batch/index.js';
 
 // URL module — pure display-time cache-buster for regenerated image URLs (#460).
 export { appendCacheBuster, recipeHeroUrl, type HeroImageSource } from './url/index.js';

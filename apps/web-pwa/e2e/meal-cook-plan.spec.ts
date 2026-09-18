@@ -60,6 +60,7 @@ function recipe(
   opts: { elapsedMinutes?: number; componentRecipeIds?: string[] } = {},
 ): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

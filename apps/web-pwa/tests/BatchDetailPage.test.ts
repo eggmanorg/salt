@@ -113,6 +113,9 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 /** #778's worked example, as `freezeBatch` would have written it. */
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
+    target: null,
     id: BATCH_ID,
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -1484,17 +1487,43 @@ describe('BatchDetailPage — a temperature and a humidity in the log (issue #12
     expect(screen.getByTestId('batch-log-entry-humidity')).toHaveTextContent('75% RH');
   });
 
-  it('still neither asks for pH nor writes one', async () => {
-    // A ferment's measurement, not a bake's or a cure's — phase 03 of the epic is
-    // where it earns a control.
+  it('asks for pH on every run, and writes what was typed (issue #1407)', async () => {
+    // It used to ask for none and write null unconditionally. A fermented salami is
+    // finished when it has dropped below a pH, so a target with nothing able to
+    // reach the document would be half a feature — and the box is offered on EVERY
+    // run rather than only where the frozen target names a pH, because hiding a
+    // measurement behind an intention is the wrong way round.
     await showRun();
     await openLogSheet();
-    expect(screen.queryByTestId('batch-log-ph')).toBeNull();
+    expect(screen.getByTestId('batch-log-ph')).toBeTruthy();
+
+    await fireEvent.input(screen.getByTestId('batch-log-ph'), { target: { value: '5.1' } });
+    await fireEvent.click(screen.getByTestId('batch-log-save'));
+    await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
+    expect(loggedArgs().ph).toBe(5.1);
+  });
+
+  it('refuses a pH off the scale on the field, rather than handing it over', async () => {
+    // 0–14 is what a strip or a probe can read, so anything beyond it is a typo.
+    // Said on the box while it is being typed; `BatchObservationSchema` carries the
+    // same bound as the rail behind it.
+    await showRun();
+    await openLogSheet();
+
+    await fireEvent.input(screen.getByTestId('batch-log-ph'), { target: { value: '20' } });
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-save')).toBeDisabled());
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves pH null when nobody typed one', async () => {
+    await showRun();
+    await openLogSheet();
 
     await typeWeight('1240');
     await fireEvent.click(screen.getByTestId('batch-log-save'));
     await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
-    expect('ph' in loggedArgs()).toBe(false);
+    expect(loggedArgs().ph).toBeNull();
   });
 });
 
@@ -1597,5 +1626,188 @@ describe('BatchDetailPage — gated (issue #831)', () => {
 
     expect(screen.getByTestId('feature-guard-loading')).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── What this run was (issue #1404) ─────────────────────────────────────────
+describe('BatchDetailPage — cure type', () => {
+  it('says which kind of cure the run was, from the run’s own frozen field', async () => {
+    renderPage();
+    mockBatch._set(
+      makeBatch({
+        recipeTitle: 'Coppa',
+        recipeKind: 'cure',
+        cureCategory: 'fermented_dry_cured',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail-category')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-detail-category')).toHaveTextContent(
+      'Fermented & dry-cured (salami)',
+    );
+  });
+
+  it('still says it when the recipe has been renamed, re-mapped or deleted', async () => {
+    // The page holds no recipe and never fetches one, so a dangling `recipeId` —
+    // which is exactly what a deleted dish leaves — changes nothing about what the
+    // run says it was. That is the guarantee the freeze exists for, checked rather
+    // than asserted in prose.
+    renderPage();
+    mockBatch._set(
+      makeBatch({
+        recipeId: 'deleted-recipe',
+        recipeTitle: 'Coppa',
+        recipeKind: 'cure',
+        cureCategory: 'dry_cured_whole_muscle',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail-category')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-detail-category')).toHaveTextContent('Dry-cured whole muscle');
+  });
+
+  it('says nothing at all on a run with no category', async () => {
+    // A dash would be a second thing on a header that states facts. Every batch in
+    // production today lands here.
+    renderPage();
+    mockBatch._set(makeBatch());
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-detail-category')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — how far along the run is (issue #1407)', () => {
+  // The frozen totals put `basisGrams` at 816 (see `makeBatch`), so a reading of
+  // 604 g is 26% lost. The arithmetic itself is `targetProgress`'s and is pinned in
+  // `packages/domain/tests/batch/targetProgress.test.ts`; what is checked here is
+  // what reaches the screen, and — more importantly — what deliberately does not.
+  const LOST_26 = 604;
+
+  async function showWithTarget(
+    target: BatchDoc['target'],
+    log: readonly BatchObservationDoc[],
+  ): Promise<void> {
+    await showRun({ target });
+    mockObservations._set([...log]);
+  }
+
+  it('reads the latest weighing as a percentage of what it is aiming at', async () => {
+    await showWithTarget({ weightLossPercent: 35, phAtMost: null }, [
+      observation({ weightGrams: LOST_26 }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-weight')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-weight')).toHaveTextContent('604 g — 26% lost of 35%');
+  });
+
+  it('keeps counting past the target, and says nothing judgemental', async () => {
+    // The whole of the behaviour, and the half that is a decision rather than
+    // arithmetic: nothing blocks, warns, confirms or declares the run finished.
+    await showWithTarget({ weightLossPercent: 35, phAtMost: null }, [
+      observation({ weightGrams: 506 }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-weight')).toBeInTheDocument());
+    const shown = screen.getByTestId('batch-target-progress').textContent ?? '';
+    expect(shown).toContain('38% lost of 35%');
+    for (const verdict of ['ready', 'done', 'finished', 'overdue', 'failed']) {
+      expect(shown.toLowerCase()).not.toContain(verdict);
+    }
+  });
+
+  it('shows the latest pH against its target, with no percentage beside it', async () => {
+    await showWithTarget({ weightLossPercent: null, phAtMost: 5.3 }, [
+      observation({ id: 'obs-1', at: '2026-08-14T07:00:00.000Z', ph: 5.8 }),
+      observation({ id: 'obs-2', at: '2026-08-15T07:00:00.000Z', ph: 5.1 }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-ph')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-ph')).toHaveTextContent('pH 5.1 — aiming below 5.3');
+    expect(screen.getByTestId('batch-target-ph').textContent).not.toContain('%');
+  });
+
+  it('shows nothing at all on a run with no target — no line, no empty meter', async () => {
+    // Every batch in production today lands here, and bread must be untouched.
+    await showWithTarget(null, [observation({ weightGrams: LOST_26 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-progress')).toBeNull();
+  });
+
+  it('shows nothing until the run has been measured against its target', async () => {
+    await showWithTarget({ weightLossPercent: 35, phAtMost: null }, [
+      observation({ note: 'hung it up' }),
+    ]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-progress')).toBeNull();
+  });
+});
+
+describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
+  // `makeBatch` freezes `basisGrams: 816`. 604 g is 26% lost and a long way off;
+  // 573 g is just over the nearing threshold — 85% of the way to a 35% target
+  // (574 g is just under); 506 g is 38% lost, past it.
+  async function showCuring(weightGrams: number): Promise<void> {
+    await showRun({ target: { weightLossPercent: 35, phAtMost: null } });
+    mockObservations._set([observation({ weightGrams })]);
+  }
+
+  it('puts a meter beside the figure', async () => {
+    await showCuring(604);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(
+      screen.getByTestId('batch-target-meter').querySelector('[role="progressbar"]'),
+    ).not.toBeNull();
+  });
+
+  it('wears the nearing appearance at the nearing threshold', async () => {
+    await showCuring(573);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing');
+    expect(screen.getByTestId('batch-target-weight').getAttribute('data-stance')).toBe('nearing');
+  });
+
+  it('wears the at-or-past appearance while the figure keeps counting', async () => {
+    await showCuring(506);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('atOrPast');
+    expect(screen.getByTestId('batch-target-weight')).toHaveTextContent('38% lost of 35%');
+  });
+
+  it('changes appearance as the readings come in, on a page already open', async () => {
+    // The live figure has to follow the log rather than whatever it was when the
+    // page was opened — a cure's page is left open while the crock goes on the
+    // scales.
+    await showCuring(700);
+    await waitFor(() =>
+      expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('tracking'),
+    );
+
+    mockObservations._set([observation({ id: 'obs-2', weightGrams: 573 })]);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing'),
+    );
+  });
+
+  it('shows no meter for a pH target — there is no frozen zero to measure from', async () => {
+    await showRun({ target: { weightLossPercent: null, phAtMost: 5.3 } });
+    mockObservations._set([observation({ ph: 5.1 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-target-ph')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-meter')).toBeNull();
+  });
+
+  it('shows no meter at all on a run with no target', async () => {
+    await showRun();
+    mockObservations._set([observation({ weightGrams: 604 })]);
+
+    await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
+    expect(screen.queryByTestId('batch-target-meter')).toBeNull();
   });
 });

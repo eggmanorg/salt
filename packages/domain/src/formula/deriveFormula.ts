@@ -179,6 +179,13 @@ export function deriveFormula(input: DeriveFormulaInput): DeriveFormulaResult {
       recipeId,
       components: derived,
       referenceYield: referenceYield ?? { kind: 'basis', grams: basisGrams },
+      // NO TARGET, and nothing here can author one (issue #1407). Derivation turns
+      // weights into percentages; what a run of this is AIMING AT is a separate
+      // answer the screen collects and merges on the way to `saveFormula`. Written
+      // explicitly rather than left to the schema's read default, for the reason
+      // `schemaVersion` below is: this is a CONSTRUCTION, and a default is what a
+      // stored document reads back as.
+      target: null,
       schemaVersion: 1,
     },
   };

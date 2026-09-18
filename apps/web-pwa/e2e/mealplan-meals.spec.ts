@@ -72,6 +72,7 @@ function recipe(
   opts: { hero?: string; componentRecipeIds?: string[] } = {},
 ): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

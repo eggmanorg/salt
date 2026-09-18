@@ -27,6 +27,7 @@ vi.mock('../src/lib/toastStore.js', () => ({ addToast: mockAddToast }));
 import RecipeAddToPlannerSheet from '../src/routes/recipes/RecipeAddToPlannerSheet.svelte';
 
 const RECIPE: Recipe = {
+  cureCategory: null,
   producesCanonId: null,
   componentRecipeIds: [],
   kit: [],

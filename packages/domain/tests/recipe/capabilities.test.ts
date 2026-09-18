@@ -54,6 +54,14 @@ describe('recipe kind capabilities', () => {
       isAuthorable: false,
       takesComponents: false,
     },
+    {
+      kind: 'cure',
+      takesIngredients: true,
+      isCookable: true,
+      isPlannable: false,
+      isAuthorable: true,
+      takesComponents: false,
+    },
   ];
 
   for (const row of table) {
@@ -74,7 +82,7 @@ describe('recipe kind capabilities', () => {
     expect(isCookable('special')).toBe(false);
   });
 
-  it('the librarian can author a recipe and a cocktail, and nothing else (issue #765)', () => {
+  it('the librarian can author a recipe, a cocktail and a cure, and nothing else (#765, #1404)', () => {
     // Named separately because these two `false`s are the ones that MEAN
     // something. The cocktail row was `false` only while `assembleRecipeDraft`
     // hardcoded `kind: 'recipe'` — "not yet", not "by design" — and #765 removed
@@ -82,6 +90,11 @@ describe('recipe kind capabilities', () => {
     // no edit of its own (⋮ → Make a variation, ⋮ → Refresh, both imports, chat).
     expect(isAuthorable('recipe')).toBe(true);
     expect(isAuthorable('cocktail')).toBe(true);
+    // #1404's is the load-bearing one: the recipe editor is gone, so the New
+    // sheet, the two imports and the chef are the only ways an entry comes into
+    // existence — and the last three are bounded by this column. A `false` here
+    // would have shipped a library section nothing could ever put anything on.
+    expect(isAuthorable('cure')).toBe(true);
     // These two are false on their own merits and stay false: a special is a
     // hand-written night off with nothing to author, a placeholder is a
     // photograph and a title.
@@ -89,14 +102,15 @@ describe('recipe kind capabilities', () => {
     expect(isAuthorable('placeholder')).toBe(false);
   });
 
-  it('cookable and authorable now COINCIDE on all four kinds — recorded, not relied on', () => {
+  it('cookable and authorable still COINCIDE on every kind — recorded, not relied on', () => {
     // Stated honestly, because #765 changed it. While the cocktail row was
     // `false` these two columns differed on exactly one kind, and that difference
     // was the evidence they were separate questions. They no longer differ at
-    // all.
+    // all, and #1404's `cure` row (cookable and authorable, like `recipe` and
+    // `cocktail`) did not reintroduce a difference either.
     //
-    // That is a coincidence of today's four kinds, not an identity, and this test
-    // exists to make it VISIBLE rather than to lock it: a fifth kind that is
+    // That is a coincidence of today's five kinds, not an identity, and this test
+    // exists to make it VISIBLE rather than to lock it: a sixth kind that is
     // cookable but not authorable (or the reverse) turns this red, and the right
     // response is to delete this test, not to merge the two predicates. The gate
     // on ⋮ → Make a variation and ⋮ → Refresh stays `isAuthorable` because the
@@ -129,13 +143,16 @@ describe('recipe kind capabilities', () => {
       expect([...AUTHORABLE_RECIPE_KINDS].sort()).toEqual([...fromTable].sort());
     });
 
-    it('offers the model neither a special nor a placeholder', () => {
+    it('offers the model neither a special nor a placeholder, and does offer a cure', () => {
       // The concrete harm the bound exists to prevent: an entry whose
       // `takesIngredients` is false, carrying an ingredient list and a method the
       // editor and the view page then hide.
       const members: readonly string[] = AUTHORABLE_RECIPE_KINDS;
       expect(members).not.toContain('special');
       expect(members).not.toContain('placeholder');
+      // And the one it MUST contain (#1404), for the reason the row states: a
+      // cure the model cannot be asked to write is a shelf with no way onto it.
+      expect(members).toContain('cure');
       expect(takesIngredients('special')).toBe(false);
       expect(takesIngredients('placeholder')).toBe(false);
     });
@@ -145,6 +162,18 @@ describe('recipe kind capabilities', () => {
     expect(takesIngredients('cocktail')).toBe(true);
     expect(isCookable('cocktail')).toBe(true);
     expect(isPlannable('cocktail')).toBe(false);
+  });
+
+  it('a cure is made like a recipe, is never dinner, and is never built from others (#1404)', () => {
+    // The row read back as the sentence it is: a coppa buys, canonicalises and has
+    // a method to follow; it is never offered in the planner picker, which is the
+    // whole of "a coppa is not a Tuesday"; and it takes no components, because
+    // `sectionOf` shelves anything carrying them under Meals — a cure that gained
+    // one would silently leave its own shelf.
+    expect(takesIngredients('cure')).toBe(true);
+    expect(isCookable('cure')).toBe(true);
+    expect(isPlannable('cure')).toBe(false);
+    expect(takesComponents('cure')).toBe(false);
   });
 
   it('a placeholder can do nothing at all — it is a photograph and a title', () => {

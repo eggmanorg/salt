@@ -47,6 +47,7 @@ const DISH_ID = 'accompaniment-lamb-shoulder';
 // shape matters — the last assertion compares the document field for field against
 // this one, to prove saving the salad left its host untouched.
 const DISH_FIXTURE: Recipe = {
+  cureCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',
@@ -221,7 +222,10 @@ test.describe('recipes — save a recipe chat as a new recipe', () => {
     // amount cell reads the bare number — not the whole raw line on the left with
     // an empty amount beside it.
     const saladIngredient = page.getByTestId('recipe-view-ingredient').nth(0);
-    await expect(saladIngredient).toContainText('fennel');
+    // Case-insensitive on purpose: the name column leads with a capital ("Fennels,
+    // shaved"), and which letter is raised is `IngredientText`'s business, pinned
+    // there. What this line is for is that the item landed in the name cell at all.
+    await expect(saladIngredient).toContainText(/fennel/i);
     await expect(saladIngredient).toContainText('2');
     await expect(page.getByTestId('recipe-view-step')).toHaveCount(1);
 

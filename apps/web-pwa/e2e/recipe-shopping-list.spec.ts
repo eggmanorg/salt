@@ -77,6 +77,7 @@ function recipeFixture(
   groups: readonly { readonly name: string | null; readonly items: Ingredient[] }[],
 ): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

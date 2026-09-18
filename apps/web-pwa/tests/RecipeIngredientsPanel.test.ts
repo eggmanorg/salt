@@ -313,7 +313,7 @@ describe('RecipeIngredientsPanel — edit mode takes the line’s tap away', () 
     expect(screen.queryByTestId('recipe-view-ingredient-inspect')).toBeNull();
     const words = screen.getByTestId('recipe-view-ingredient-text');
     expect(words.tagName).toBe('SPAN');
-    expect(words.textContent).toContain('strong white flour');
+    expect(words.textContent).toContain('Strong white flour');
   });
 
   it('takes the match markers with it, so no empty line can be sent to the matcher', () => {
@@ -813,7 +813,7 @@ describe('RecipeIngredientsPanel — the draft', () => {
     };
     await rerender(props(other, true));
 
-    expect(rowTexts().join(' ')).toContain('chorizo');
+    expect(rowTexts().join(' ')).toContain('Chorizo');
     expect(rowTexts().join(' ')).not.toContain('flour');
   });
 
@@ -826,6 +826,6 @@ describe('RecipeIngredientsPanel — the draft', () => {
 
     await rerender(props(recipeWith([group('g1', null, [matched('i1', 'rye flour')])]), false));
 
-    expect(screen.getByTestId('recipe-view-ingredient-inspect').textContent).toContain('rye flour');
+    expect(screen.getByTestId('recipe-view-ingredient-inspect').textContent).toContain('Rye flour');
   });
 });

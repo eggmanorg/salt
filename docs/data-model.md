@@ -128,9 +128,9 @@ recipe it actually read. Both halves are pinned by tests — see the header of
 No `firestore.rules` clause covers the server write and none should: an Admin SDK
 write bypasses rules entirely.
 
-## `recipes` holds four kinds
+## `recipes` holds five kinds
 
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder'` (issues #637, #652).
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'` (issues #637, #652, #1404).
 
 - a **special** (UI label "Chef's Specials") is a meal that needs no recipe card — a
   takeaway, a night off, or the roast the cook knows by heart — with no ingredients
@@ -141,6 +141,11 @@ write bypasses rules entirely.
   dish", attached to a planner day that was planned in a sentence, so that night gets
   a card like any other. Its mood is an ordinary `tags` entry (`bright` / `comfort`,
   constants exported from `@salt/domain`), deliberately **not** a schema field.
+- a **cure** (issue #1404) is cured meat — a coppa, a bacon, a saucisson, a
+  mortadella. A full entry in every way a recipe is (ingredients, shopping list,
+  canon, method, hero image) except that it is never offered in the planner picker.
+  It carries the one per-kind field on this document: `cureCategory`, one of five
+  closed values or `null`.
 
 Schema constraints, each load-bearing:
 
@@ -157,6 +162,16 @@ Schema constraints, each load-bearing:
 Specials and placeholders are **not** separate collections — they occupy a planner
 slot in place of a recipe. If they ever need their own fields, add optional nullable
 fields to the recipe document first.
+
+**That precedent now has a user.** `cureCategory: CureCategory | null`, `.default(null)`,
+is the first per-kind field on this document (issue #1404). Nullable rather than
+required-on-a-cure because the no-discriminated-union rule above means the schema
+_cannot_ express "required iff `kind === 'cure'`" — and because an uncategorised cure
+is a normal state, not an error. It is a **closed enum**, not a tag: it is frozen onto
+a batch and filtered on, so it cannot carry the typo-drops-it-out cost the `placeholder`
+mood accepts. Unlike `kind` it is **editable**, in place on the recipe page, because a
+misclassification with no route back is a permanent wrong answer. It is identity and
+grouping only — no capability predicate reads it, and the table gains no sixth column.
 
 Note what `isPlannable` actually gates: whether a kind is **offered in the planner
 picker**, not whether it may sit in a day. A placeholder is `isPlannable: false` and

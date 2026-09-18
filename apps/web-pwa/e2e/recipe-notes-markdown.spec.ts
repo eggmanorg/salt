@@ -45,6 +45,7 @@ const RECIPE_ID = 'notes-formatting-test';
 // by-hand path left for a recipe since issue #1319 Phase 8 deleted the editor,
 // and authoring one was never what this spec was about.
 const RECIPE: Recipe = {
+  cureCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',

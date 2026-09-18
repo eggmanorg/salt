@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BatchSchema } from '../../src/schemas/index.js';
-import { currentStage, withBatchAbandoned } from '../../src/index.js';
+import { currentStage, targetProgress, withBatchAbandoned } from '../../src/index.js';
 
 // A `batches/{batchId}` document WRITTEN BEFORE #1274, read by the code after it
 // (rule-12 claim 1).
@@ -91,9 +91,54 @@ describe('a batch document written before #1274', () => {
     expect(parsed.completedStepIds).toEqual([]);
   });
 
+  it('reads as a plain bread run, not a cure — and the default is TRUE (#1404)', () => {
+    // `recipeKind` and `cureCategory` are additive with read defaults, so every
+    // batch already in production parses unchanged and there is no migration. What
+    // makes this more than a parse check is that the defaults are the FACTS: every
+    // run in production today is bread, and bread is a `recipe` with no cure
+    // category. A default that merely parsed would quietly file real history under
+    // the wrong answer.
+    expect('recipeKind' in LEGACY_BATCH).toBe(false);
+    expect('cureCategory' in LEGACY_BATCH).toBe(false);
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.recipeKind).toBe('recipe');
+    expect(parsed.cureCategory).toBeNull();
+  });
+
   it('still runs — the producers do not depend on anything that was deleted', () => {
     const parsed = BatchSchema.parse(LEGACY_BATCH);
     expect(currentStage(parsed)?.id).toBe('bulk');
     expect(withBatchAbandoned(parsed, '2026-08-15T09:00:00.000Z').state).toBe('abandoned');
+  });
+});
+
+// Issue #1407 added `target`, again with a read default, and again with no
+// migration. A run started before the field existed aimed at nothing, which is
+// what `null` says.
+describe('a batch document written before #1407', () => {
+  it('reads as a run that was aiming at nothing', () => {
+    expect(BatchSchema.parse(LEGACY_BATCH).target).toBeNull();
+  });
+
+  it('shows no progress figure at all, however much it was weighed', () => {
+    // The gate is `batch.target` and nothing else — not the recipe's kind, not the
+    // cure category — so every run already in production stays exactly as it was.
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(
+      targetProgress(parsed, [
+        {
+          id: 'obs-1',
+          schemaVersion: 1,
+          at: '2026-08-15T09:00:00.000Z',
+          stageId: null,
+          weightGrams: 1200,
+          ph: null,
+          temperatureC: null,
+          relativeHumidityPercent: null,
+          note: '',
+          image: null,
+        },
+      ]),
+    ).toBeNull();
   });
 });

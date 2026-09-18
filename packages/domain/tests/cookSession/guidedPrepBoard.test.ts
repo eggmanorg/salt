@@ -22,6 +22,7 @@ function ingredient(id: string, over: Partial<IngredientDoc> = {}): IngredientDo
 
 function recipe(ids: string[]): Recipe {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

@@ -44,6 +44,7 @@
     type DoughAnswerMode,
     type TrayBy,
   } from './doughAnswer.js';
+  import { KIND_COPY, kindOf } from './recipeKind.js';
   import { addToast } from '../../lib/toastStore.js';
   import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 
@@ -105,6 +106,12 @@
     open: boolean;
   }
   let { recipe, formula, open = $bindable() }: Props = $props();
+
+  // What starting a run is CALLED here, read from the kind's copy rather than
+  // written twice (issue #1404). A loaf is baked; a coppa is hung. Copy, never a
+  // comparison on the kind — the overflow item that opens this sheet reads the
+  // same string, so the two cannot disagree about what the person just tapped.
+  const startBatchLabel = $derived(KIND_COPY[kindOf(recipe)].startBatchLabel);
 
   // ─── When ─────────────────────────────────────────────────────────────────────
 
@@ -569,7 +576,7 @@
 >
   <SheetContent class="flex flex-col gap-4">
     <SheetHeader>
-      <SheetTitle>Bake a batch</SheetTitle>
+      <SheetTitle>{startBatchLabel}</SheetTitle>
     </SheetHeader>
 
     <p class="-mt-2 truncate text-sm text-muted-foreground" data-testid="bake-batch-recipe-title">

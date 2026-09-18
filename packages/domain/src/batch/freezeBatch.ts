@@ -5,7 +5,7 @@ import type {
   BatchStagePlace,
   BatchTotalsDoc,
 } from '../schemas/index.js';
-import type { Formula, ReferenceYield } from '../schemas/index.js';
+import type { CureCategoryDoc, Formula, ReferenceYield, RecipeKindDoc } from '../schemas/index.js';
 import type { FormulaFailure } from '../formula/index.js';
 import { solveFormula } from '../formula/index.js';
 import type { ScheduleAnchor, ScheduleFailure } from '../process/index.js';
@@ -65,6 +65,19 @@ export interface FreezeBatchInput {
   // the labels — the recipe's own `rawText`, keyed by ingredient id — so the
   // quantities read as "Strong white flour 841 g" rather than as ids and numbers.
   recipeTitle: string;
+  // WHAT THE DISH WAS, frozen beside its title (issue #1404). Two more SCALARS,
+  // for the same reason `recipeTitle` is one rather than a `Recipe`: this function
+  // is pure and knows nothing about the `recipes` collection, so the caller reads
+  // them off the recipe it is already holding. `cureCategory` is null for anything
+  // that is not a cure, and for a cure nobody has categorised yet.
+  //
+  // Both REQUIRED here while their schema fields carry read defaults, and that is
+  // the deliberate asymmetry `checkedIngredientIds` already has: a default is what
+  // a document written before the field existed reads back as, never what a new
+  // document is born with. This is the one place a batch is constructed, so the
+  // compiler names every caller rather than letting one quietly freeze a default.
+  recipeKind: RecipeKindDoc;
+  cureCategory: CureCategoryDoc | null;
   labels: Readonly<Record<string, string>>;
   // The schedule's worded reasoning, when a proposal authored it. Phase 1 passes
   // nothing and the field lands null: arithmetic has no opinion to record.
@@ -111,6 +124,8 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     vessel,
     anchor,
     recipeTitle,
+    recipeKind,
+    cureCategory,
     labels,
     rationale,
     places,
@@ -172,6 +187,20 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       schemaVersion: 1,
       recipeId: formula.recipeId,
       recipeTitle,
+      // Written EXPLICITLY rather than left to the schema's read default, exactly
+      // as `checkedIngredientIds` below is and for the same reason (issue #1404).
+      recipeKind,
+      cureCategory,
+      // WHAT THIS RUN IS AIMING AT, off the formula (issue #1407) — and off the
+      // formula rather than off `input`, unlike `recipeKind` above, because the
+      // target IS a field of the document this function already holds. There is no
+      // join for the caller to make and therefore no argument for it to pass.
+      //
+      // `?? null` is the read default made explicit at the one construction site,
+      // exactly as `checkedIngredientIds` below is: a default is what a document
+      // written before the field existed reads back as, never what a new one is
+      // born with.
+      target: formula.target ?? null,
       // Omitted rather than nulled when no vessel was named, so the field is simply
       // absent on the document — `BatchSchema.vessel` is optional, not nullable.
       ...(vessel === undefined ? {} : { vessel }),

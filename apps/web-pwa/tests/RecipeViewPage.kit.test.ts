@@ -159,6 +159,7 @@ const RECIPE_ID = 'entry-1';
 
 function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     id: RECIPE_ID,
@@ -321,7 +322,26 @@ describe('RecipeViewPage — the Equipment tab', () => {
     ]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['large saucepan', 'colander', 'potato masher']);
+    expect(kitLabels()).toEqual(['Large saucepan', 'Colander', 'Potato masher']);
+  });
+
+  it('starts each row with a capital, and changes nothing else about the words', () => {
+    // The tab is a list of things, one per line, so each line opens with a capital
+    // — the same reading the ingredients tab beside it gets. Only the first letter
+    // is ours: a label the household wrote, or the kit flow canonicalised, keeps its
+    // own spelling and its own internal capitals. A label that already starts with a
+    // capital is left exactly as stored.
+    mockRecipes._set([
+      makeEntry({
+        kit: [
+          { label: 'box grater', stepIds: ['step-1'] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: ['step-1'] },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    expect(kitLabels()).toEqual(['Box grater', 'Cosori 5L Rice Cooker']);
   });
 
   it('draws the picture the LABEL resolves to, cache-busted', () => {
@@ -342,7 +362,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
       'https://example.com/kit/saucepan.webp?v=2026-02-02T00:00:00.000Z',
     );
     // Nothing on the recipe named the tool by id — the words did all the work.
-    expect(kitLabels()).toEqual(['large saucepan']);
+    expect(kitLabels()).toEqual(['Large saucepan']);
   });
 
   it('renders an unresolved label as words with NO picture', () => {
@@ -353,7 +373,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [] }] })]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['tagine']);
+    expect(kitLabels()).toEqual(['Tagine']);
     expect(screen.queryByTestId('canon-icon')).toBeNull();
   });
 
@@ -364,7 +384,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([makeEntry({ kit: [{ label: 'large saucepan', stepIds: [] }] })]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['large saucepan']);
+    expect(kitLabels()).toEqual(['Large saucepan']);
     expect(screen.queryByTestId('canon-icon')).toBeNull();
   });
 
@@ -386,7 +406,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     ]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['large saucepan', 'box grater']);
+    expect(kitLabels()).toEqual(['Large saucepan', 'Box grater']);
     expect(screen.queryByTestId('canon-icon')).toBeNull();
   });
 
@@ -524,7 +544,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [] }] })]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['tagine']);
+    expect(kitLabels()).toEqual(['Tagine']);
     expect(screen.queryByTestId('canon-icon')).toBeNull();
   });
 
@@ -635,7 +655,7 @@ describe('RecipeViewPage — accessories under their appliance', () => {
 
     // Two lines for three entries: the spoon is part of the cooker, not a third
     // thing to go and fetch.
-    expect(kitLabels()).toEqual(['sieve', 'Cosori 5L Rice Cooker']);
+    expect(kitLabels()).toEqual(['Sieve', 'Cosori 5L Rice Cooker']);
     expect(accessoryLines()).toEqual(['with the Rice Spoon']);
     // And it is IN the appliance's row, not merely somewhere in the panel.
     const rows = screen.getAllByTestId('recipe-kit-row');
@@ -778,7 +798,7 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     ]);
     renderPage();
 
-    expect(kitLabels()).toEqual(['small frying pan', 'Oven Sheet Pan', 'Wire Oven Rack']);
+    expect(kitLabels()).toEqual(['Small frying pan', 'Oven Sheet Pan', 'Wire Oven Rack']);
     expect(screen.queryByTestId('recipe-kit-accessories')).toBeNull();
     expect(screen.queryByText(/Anova/)).toBeNull();
   });
@@ -831,7 +851,7 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     renderPage();
 
     expect(kitLabels()).toEqual([
-      'tall glass jar',
+      'Tall glass jar',
       'Ninja Foodi 3-in-1 Hand Blender, Mixer & Chopper CI100UK',
     ]);
     expect(accessoryLines()).toEqual(['with the Hand Blender Attachment']);
@@ -942,7 +962,7 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     renderPage();
     await openEquipmentTab();
 
-    expect(kitLabels()).toEqual(['small frying pan', 'Oven Sheet Pan']);
+    expect(kitLabels()).toEqual(['Small frying pan', 'Oven Sheet Pan']);
     expect(screen.queryByTestId('recipe-kit-accessories')).toBeNull();
   });
 });
@@ -1048,7 +1068,7 @@ describe('RecipeViewPage — kit under a method step', () => {
     renderPage();
 
     expect(kitByStepRow()).toEqual([[]]);
-    expect(kitLabels()).toEqual(['oven glove']);
+    expect(kitLabels()).toEqual(['Oven glove']);
   });
 
   it('leaves no misattributed tool when a step has since been deleted', () => {

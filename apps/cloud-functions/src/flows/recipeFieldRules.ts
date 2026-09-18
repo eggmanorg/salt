@@ -144,8 +144,37 @@ competent cook would overlap. Round to numbers a person would say: 5, 10, 15, 20
 long the whole thing spans — "About 40 minutes of you, spread over 2¼ hours — start it the night \
 before." Null only when you have no phases.`;
 
-// IS IT A DRINK YOU MIX, OR SOMETHING YOU EAT (issue #765) — the one question
-// that decides which section of the library an AI-created entry lands in.
+// The five kinds of cure (issue #1404), and what tells them apart. Nested inside
+// KIND_RULES rather than standing beside it, because it is meaningless on its own:
+// the answer is null for every entry the question above did not call a cure, and
+// two rules a model must correlate across a prompt is how they come to disagree.
+//
+// They are named for the SAFETY MECHANISM, not for the shape of the thing, and the
+// rules say so — a model asked to sort by appearance puts a saucisson with a
+// bresaola because both are hanging, which is the one mistake that matters here.
+//
+// A WRONG answer is cheap, and that is deliberate: the category is corrected on
+// the recipe page in a tap, with no confirmation and no gate. So this asks the
+// model to choose rather than to hedge, and takes null only for a genuine refusal.
+const CURE_CATEGORY_RULES = `- cureCategory: which of FIVE kinds of cure, and null for anything whose kind is \
+not "cure". Sort by what makes it safe to eat, never by what it looks like:
+  "dry_cured_whole_muscle" — a whole piece of muscle made safe by salt and by losing a third of \
+its weight to the air, eaten raw without cooking. Prosciutto, bresaola, coppa, lonza, culatello.
+  "cooked_whole_muscle" — a whole piece of muscle cured with salt or nitrite and then COOKED, \
+smoked or boiled, and cooked again or eaten cold. It is not shelf-stable. Back and streaky bacon, \
+gammon, ham, pastrami, kassler.
+  "fermented_dry_cured" — MINCED meat fermented by bacteria until it is sour, then dried, and \
+eaten raw. This is salami in the broad sense. Saucisson sec, finocchiona, fuet, chorizo, \
+soppressata.
+  "semi_dry" — minced meat soured quickly and only partly dried, usually smoked, and usually kept \
+in the fridge rather than on a shelf. Summer sausage, landjäger, pepperoni, snack sticks.
+  "cooked_emulsified" — meat cured and then worked into a smooth paste and fully cooked, eaten \
+cold or hot. Mortadella, frankfurters, bologna, saucisson de Lyon cuit, liver sausage.
+  Choose the closest of the five rather than refusing; answer null only when the entry is not a \
+cure at all.`;
+
+// WHICH SECTION OF THE LIBRARY does an AI-created entry land in — a drink you
+// mix, cured meat, or something you eat (issues #765, #1404).
 //
 // UNCONDITIONAL, and it lives here rather than in each of the four prompts that
 // interpolate this module (the URL import's two, the photo import's, the
@@ -153,21 +182,35 @@ before." Null only when you have no phases.`;
 // classification rule is three classifications one edit apart from disagreeing,
 // which is exactly what #785 pulled apart.
 //
-// The tie-break is stated as loudly as the question, because the two mistakes are
-// NOT symmetrical. A cocktail filed under Recipes is merely in the wrong chip and
-// works in every other way. A dinner filed under Cocktails can never be put on
-// the meal plan — `isPlannable('cocktail')` is false — and `kind` is immutable,
-// so that one is a permanent loss of function with no route back but deleting the
-// entry. Everything doubtful therefore goes to `recipe`. The schema enforces the
+// The tie-break is stated as loudly as the question, because the mistakes are NOT
+// symmetrical. A cocktail — or a cure — filed under Recipes is merely in the wrong
+// chip and works in every other way. A dinner filed under either can never be put
+// on the meal plan (`isPlannable` is false for both) and `kind` is immutable, so
+// that one is a permanent loss of function with no route back but deleting the
+// entry. Everything doubtful therefore goes to `recipe`, and #1404 inherited that
+// argument unchanged rather than restating it: the shelf a cure sits on is worth
+// far less than the planner slot a misfiled dinner loses. The schema enforces the
 // same floor independently (`AuthoredRecipeKindSchema`); this states the
 // preference, the schema guarantees it.
+//
+// The CATEGORY is the opposite case and is treated as such (#1404): it is
+// editable on the recipe page in a tap, so a wrong one costs nothing and
+// `CURE_CATEGORY_RULES` asks the model to choose rather than to hedge.
 const KIND_RULES = `- kind: "cocktail" ONLY for a drink that is MIXED and served in a glass — a \
-Negroni, a margarita, a highball, a punch. "recipe" for everything else, including everything you \
-merely have doubts about.
+Negroni, a margarita, a highball, a punch. "cure" ONLY for CURED MEAT. "recipe" for everything \
+else, including everything you merely have doubts about.
   Anything you eat is a recipe, however boozy: a tiramisu, a rum baba, a beer-braised shoulder. So \
 is anything you brew, infuse, bottle or keep — a cordial, a syrup, a stock, a hot chocolate, a \
 smoothie, a pot of tea — and so is a mocktail. When it is not clearly a mixed drink in a glass, \
-answer "recipe".`;
+answer "recipe".
+  "cure" means meat preserved by salt, nitrite, drying, fermentation or smoking, made to be KEPT \
+and sliced rather than served as a meal the day it is made — a prosciutto, a bresaola, a coppa, a \
+bacon, a gammon, a pastrami, a saucisson, a chorizo, a summer sausage, a mortadella. A dish that \
+merely CONTAINS cured meat is a recipe: a carbonara, a charcuterie board, a bacon sandwich. A \
+fresh sausage you fry the same day is a recipe. Fish, vegetables and dairy are never "cure", \
+however they are preserved — gravlax, sauerkraut, kimchi and cheese are all recipes. When it is \
+not clearly cured meat, answer "recipe".
+${CURE_CATEGORY_RULES}`;
 
 function fields(measures: MeasurePolicy): string {
   return `## Fields

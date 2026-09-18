@@ -77,6 +77,7 @@ interface IngredientSpec {
  */
 function buildRecipe(steps: readonly StepSpec[], ingredients: readonly IngredientSpec[]): Recipe {
   return {
+    cureCategory: null,
     id: RECIPE_ID,
     schemaVersion: 1,
     kind: 'recipe',

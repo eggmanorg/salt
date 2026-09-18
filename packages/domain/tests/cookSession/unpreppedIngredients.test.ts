@@ -24,6 +24,7 @@ function recipe(
   groups: Array<{ id: string; name: string | null; items: IngredientDoc[] }>,
 ): Recipe {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

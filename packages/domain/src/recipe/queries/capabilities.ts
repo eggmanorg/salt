@@ -2,8 +2,9 @@ import type { RecipeKind } from '../entities/Recipe.js';
 
 // What a kind of entry can do (issue #637). These predicates are the ONLY
 // place a `RecipeKind` is ever inspected: no call site outside packages/domain
-// branches on the kind itself, so adding a fourth kind is a one-file change here
-// and every screen inherits the right behaviour.
+// branches on the kind itself, so adding a kind is a one-file change here and
+// every screen inherits the right behaviour — which is how `cure` (#1404) reached
+// the planner picker's filter without the picker being edited.
 //
 // The table is a `Record<RecipeKind, …>` rather than a chain of comparisons on
 // purpose: a new member of the enum fails to compile until it has answered every
@@ -37,6 +38,11 @@ interface Capabilities {
   // kind it had written and `assembleRecipeDraft` stopped hardcoding `'recipe'`.
   // That was the whole of the constraint: before it, a cocktail authored from a
   // chat landed in the dinner list permanently, because `kind` is immutable.
+  //
+  // `cure` became `true` in #1404 for the same reason it had to: with the editor
+  // retired (#1319) the New sheet, the two imports and the chef are the ONLY ways
+  // an entry comes into existence, and the last three are bounded by this column.
+  // A kind marked `false` here is a kind nothing can create.
   //
   // The two remaining `false`s are "by design", not "not yet": a special is a
   // hand-written meal that needs no recipe card — no ingredients and no method
@@ -92,6 +98,37 @@ const CAPABILITIES = {
     isAuthorable: false,
     takesComponents: false,
   },
+  // Cured meat (issue #1404), and every cell has a reason:
+  //
+  //   takesIngredients  meat, salt, cure #2 — it buys, it canonicalises, it goes
+  //                     on the shopping list like anything else.
+  //   isCookable        a cure has a method you follow, so the Method card and
+  //                     the timings grid are right for it.
+  //   isPlannable       a coppa is not a Tuesday. This `false` is the WHOLE of
+  //                     "a cure is never offered in the planner": the picker
+  //                     already filters on the predicate and needs no edit.
+  //   isAuthorable      LOAD-BEARING. The editor is gone (#1319), so the only
+  //                     ways an entry comes into existence are the New sheet, the
+  //                     two imports and the chef — and the last three are bounded
+  //                     by `AUTHORABLE_RECIPE_KINDS`, which is read off this
+  //                     column. A kind absent from it can be created by nothing.
+  //   takesComponents   `sectionOf` shelves anything carrying components under
+  //                     Meals, so a cure with one would silently leave its own
+  //                     shelf. The analogy with `cocktail` (true, so it can point
+  //                     at its own syrup) holds for the affordance and breaks on
+  //                     the shelving, and the shelving is what a user sees.
+  //
+  // The asymmetry `isPlannable: false` creates is the one `cocktail` already has
+  // and `recipeFieldRules.ts` already documents: `kind` is immutable, so a DINNER
+  // misfiled as a cure can never be planned again. That is why the authoring
+  // prompt's tie-break sends everything doubtful to `recipe`.
+  cure: {
+    takesIngredients: true,
+    isCookable: true,
+    isPlannable: false,
+    isAuthorable: true,
+    takesComponents: false,
+  },
   // `satisfies` rather than an annotation, so the literal `true`/`false` of each
   // cell survives for `AuthorableRecipeKind` below to read. It keeps the whole
   // point of the `Record<RecipeKind, …>`: a new member of the enum still fails to
@@ -130,6 +167,7 @@ export type AuthorableRecipeKind = {
 export const AUTHORABLE_RECIPE_KINDS = [
   'recipe',
   'cocktail',
+  'cure',
 ] as const satisfies readonly AuthorableRecipeKind[];
 
 // A type predicate, not a plain boolean, so `AUTHORABLE_RECIPE_KINDS` is
