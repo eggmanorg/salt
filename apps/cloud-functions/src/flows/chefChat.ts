@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { z, type ActionContext } from 'genkit';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { ChefChatInputSchema, ChefChatOutputSchema } from '@salt/domain/schemas';
+import { ChatSessionSchema } from '@salt/domain/schemas';
+import type { ChatSessionDoc } from '@salt/domain/schemas';
 import { RecipeSchema } from '@salt/domain/schemas';
 import { CanonItemSchema, CanonPurchaseCountsSchema } from '@salt/domain/schemas';
 import {
@@ -43,6 +45,7 @@ import type {
   LibraryPageDoc,
 } from '@salt/domain/schemas';
 import {
+  chatExpiresAt,
   libraryPageSummary,
   recipePhaseTotals,
   resolveEquipmentItem,
@@ -1131,6 +1134,191 @@ function buildSystemPrompt(
   return sections.join('\n\n');
 }
 
+const CHAT_SESSION_COLLECTION = 'chatSessions';
+
+/**
+ * Send one fragment to the reader, and never let a failed send end the turn
+ * (issue #1430).
+ *
+ * THE WHOLE FIX RESTS ON THE FLOW BODY OUTLIVING THE CLIENT. `writeChefChatTurn`
+ * below runs after the drain loop, for the express purpose of surviving a phone
+ * that locked mid-reply — so if emitting into a dead connection threw, the loop
+ * would throw into the catch and the write would never happen in exactly the case
+ * it exists for.
+ *
+ * IT DOES NOT THROW, in `firebase-functions@7.3.2`, which is what this repo pins.
+ * Read from the transport rather than assumed: `wrapOnCallHandler`
+ * (`lib/common/providers/https.js`) registers `res.on('close', …)` which aborts an
+ * `AbortController`, and `sendChunk` returns `Promise.resolve(false)` — no write,
+ * no rejection — for the rest of the request once that signal is aborted. Genkit's
+ * `onCallGenkit` (`lib/v2/providers/https.js`) does `await res.sendChunk(chunk)`
+ * and ignores the `false`, so its own drain continues, the flow's `output` promise
+ * is still awaited, and the model call is never cancelled — nothing forwards the
+ * abort signal into `action.stream`.
+ *
+ * SO WHY WRAP IT AT ALL. Because that is a property of a transport we do not own,
+ * established by reading a pinned dependency's source and not by an observation in
+ * production, and a minor-version change to it would silently take the fix with it.
+ * This makes the flow's half true by construction whatever the transport does, and
+ * `chefChat.disconnect.test.ts` goes red if the wrapper is removed. A swallowed
+ * emit costs the reader nothing they can still see — by definition the connection
+ * that would have shown it is gone.
+ *
+ * Deliberately NOT swallowed silently: a throw here would mean the transport
+ * changed, and that is worth a log line rather than a mystery.
+ */
+function emit(streamingCallback: (chunk: string) => void, text: string): void {
+  try {
+    streamingCallback(text);
+  } catch (err) {
+    // The raw error, as `writeKitchenNoteForChef` logs its own: Cloud Logging
+    // serialises it, and narrowing it to a message here would be a branch that
+    // only a contrived non-Error throw could ever cover.
+    logger.warn('chefChat: streaming emit failed, continuing the turn', { err });
+  }
+}
+
+/**
+ * `expiresAt` as stored: a `Timestamp` on everything written since #1008, an
+ * ISO-8601 string on any document not yet migrated. Both become the string
+ * `ChatSessionSchema` expects; anything else passes through for the schema to
+ * refuse.
+ *
+ * The admin SDK's `Timestamp`, and deliberately a second implementation of
+ * `normalizeExpiresAt` in `@salt/firebase-sync` rather than a shared one: the two
+ * name two different `Timestamp` classes from two different SDKs, and neither
+ * package may import the other (Hard rules 1 and 2). What is NOT duplicated is
+ * the thing that would matter if it drifted — how long a chat lives — which is
+ * `chatExpiresAt` in `@salt/domain`, called by both.
+ */
+function chatExpiresAtToIso(data: Record<string, unknown>): Record<string, unknown> {
+  const stored = data['expiresAt'];
+  if (stored instanceof Timestamp) {
+    return { ...data, expiresAt: stored.toDate().toISOString() };
+  }
+  return data;
+}
+
+interface ChefChatTurn {
+  readonly sessionId: string;
+  readonly caller: VerifiedCaller | null;
+  readonly userText: string;
+  readonly replyText: string;
+  /** When the person pressed send — the user turn's `createdAt`. */
+  readonly askedAt: Date;
+  /** When the reply finished — the assistant turn's `createdAt`, and the write's. */
+  readonly repliedAt: Date;
+}
+
+/**
+ * Write the turn this flow has just streamed into `chatSessions/{sessionId}`
+ * (issue #1430).
+ *
+ * WHY THE FLOW AND NOT THE BROWSER. The browser used to mint both turns, hold
+ * them in memory for the length of the call, and write once the stream had fully
+ * drained. A phone that locked, or a tab that closed, performed none of that: the
+ * function completed, the tokens were paid for, and both the chef's reply AND the
+ * user's own typed sentence were gone with no error and nothing on screen. Same
+ * fault and same fix as `persistImportedRecipe` (#616) and `generateGuidedPlan`
+ * (#1416).
+ *
+ * READ-THEN-`.set()`, NEVER REBUILT FROM `input.messages`. The history on the wire
+ * is deliberately filtered — `chatService.sendMessage` strips every `/remember …`
+ * line before sending, because the note is already in the system prompt and the
+ * raw line invites the chef to acknowledge a save it played no part in. The wire
+ * history is therefore NOT a faithful copy of the conversation, and a write built
+ * from it would silently delete every `/remember` line from the stored transcript.
+ * The same read-rebuild-`.set()` shape `writeKitchenNoteForChef` uses above.
+ *
+ * THE OWNERSHIP CHECK IS RE-CREATED HERE because an Admin SDK write bypasses
+ * `firestore.rules` wholesale. `firestore.rules`' `chatSessions` block is what
+ * guarantees a chat is only ever written by its owner (#408), and it still governs
+ * every browser write — it simply does not see this one. So the document's own
+ * `ownerUid` is compared against the VERIFIED caller (`verifiedCaller`, #1377 —
+ * the Genkit action context, never the request body) and a mismatch writes
+ * nothing. Without it a client-supplied `sessionId` would be a write primitive
+ * into someone else's conversation. `chatSessions` stays exactly as per-user as it
+ * was; only the writer changed.
+ *
+ * `expiresAt` IS BUMPED, not carried forward. A full `.set()` that omitted it
+ * would disable the TTL for that document in silence (#1008 — the machinery acts
+ * on a `Timestamp` and skips anything else without a word), and carrying the old
+ * value forward lets a fortnight-old chat expire in the middle of an active
+ * conversation. `chatExpiresAt` from `@salt/domain` is the one home for the two
+ * durations; only the `Timestamp` conversion is ours.
+ *
+ * IT NEVER THROWS (Rule 10, and `persistImportedRecipe`'s reasoning): a Firestore
+ * hiccup must not throw away a completed, already-paid-for turn. The callable
+ * still returns the reply, the browser still paints it, and the failure is logged.
+ * The boundary, because "the turn is never lost" would be too strong: when this
+ * write fails, the turn is lost exactly as it was before this issue — the browser
+ * no longer persists on the send path, so there is no second writer to fall back
+ * on. What this removes is the loss caused by the PAGE going away, which was 100%
+ * of the occurrences; a failed write is a different and much rarer one.
+ */
+export async function writeChefChatTurn(
+  db: ReturnType<typeof getFirestore>,
+  turn: ChefChatTurn,
+): Promise<void> {
+  try {
+    if (turn.caller === null) {
+      logger.warn('chefChat: no verified caller, turn not written', { sessionId: turn.sessionId });
+      return;
+    }
+    const ref = db.collection(CHAT_SESSION_COLLECTION).doc(turn.sessionId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      logger.warn('chefChat: chat session not found, turn not written', {
+        sessionId: turn.sessionId,
+      });
+      return;
+    }
+    const parsed = ChatSessionSchema.safeParse(chatExpiresAtToIso({ ...snap.data(), id: snap.id }));
+    if (!parsed.success) {
+      // Writing over a document we could not read would destroy whatever it
+      // actually holds — the same reason `writeKitchenNoteForChef` leaves an
+      // unreadable note alone.
+      logger.warn('chefChat: chat session unreadable, turn not written', {
+        sessionId: turn.sessionId,
+      });
+      return;
+    }
+    const session = parsed.data;
+    if (session.ownerUid !== turn.caller.uid) {
+      logger.warn('chefChat: chat session belongs to another user, turn not written', {
+        sessionId: turn.sessionId,
+      });
+      return;
+    }
+
+    const repliedAt = turn.repliedAt.toISOString();
+    const updated: ChatSessionDoc = {
+      ...session,
+      messages: [
+        ...session.messages,
+        {
+          id: randomUUID(),
+          role: 'user',
+          text: turn.userText,
+          createdAt: turn.askedAt.toISOString(),
+        },
+        { id: randomUUID(), role: 'assistant', text: turn.replyText, createdAt: repliedAt },
+      ],
+      updatedAt: repliedAt,
+      expiresAt: chatExpiresAt(session, turn.repliedAt).toISOString(),
+    };
+    await ref.set({
+      ...updated,
+      // The one wire divergence from the domain shape, matching `saveChatSession`:
+      // the TTL machinery acts only on a `Timestamp` (#1008). Same instant, new
+      // type.
+      expiresAt: Timestamp.fromDate(new Date(updated.expiresAt)),
+    });
+  } catch (err) {
+    logger.error('chefChat: failed to write the turn', { sessionId: turn.sessionId, err });
+  }
+}
+
 export const chefChatFlow = ai.defineFlow(
   {
     name: 'chefChat',
@@ -1141,6 +1329,10 @@ export const chefChatFlow = ai.defineFlow(
   async (input, streamingCallback) => {
     // Everything the reader has actually been shown, accumulated as it goes.
     let streamedText = '';
+    // When the person pressed send, as near as this side can know it. The user
+    // turn's `createdAt`, so the stored transcript orders the two turns by when
+    // they happened rather than both at the end of the reply.
+    const askedAt = new Date();
     try {
       const db = getFirestore();
       // The verified caller, from the Genkit action context and from nowhere else
@@ -1252,7 +1444,7 @@ export const chefChatFlow = ai.defineFlow(
         const text = chunk.text;
         if (text) {
           streamedText += text;
-          streamingCallback(text);
+          emit(streamingCallback, text);
         }
       }
 
@@ -1266,7 +1458,29 @@ export const chefChatFlow = ai.defineFlow(
       // `finalResponse.text` only as the fallback for a turn that streamed nothing
       // at all — an aggregate arriving without chunks is not a shape we have seen,
       // and an empty reply is worse than a duplicated one.
-      return streamedText || finalResponse.text;
+      const reply = streamedText || finalResponse.text;
+
+      // The turn is stored EXACTLY as it is returned, and only on a turn that got
+      // this far: a stream that times out or errors throws into the catch below
+      // and writes nothing, as it always has (the client rolls its optimistic
+      // append back and the composer restores what was typed).
+      //
+      // Awaited rather than fired and forgotten: the drain is finished, this is one
+      // read and one write measured in milliseconds against a 120 s budget, and a
+      // promise left dangling past the flow's return is not guaranteed to run at all
+      // on a function instance the platform is free to freeze.
+      if (input.sessionId !== undefined) {
+        await writeChefChatTurn(db, {
+          sessionId: input.sessionId,
+          caller,
+          userText: input.newMessage,
+          replyText: reply,
+          askedAt,
+          repliedAt: new Date(),
+        });
+      }
+
+      return reply;
     } catch (err) {
       // onCallGenkit owns this callable's error path; report the AI/Genkit
       // failure (incl. AiTimeoutError, or a mid-stream model error) here, flush,

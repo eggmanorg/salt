@@ -43,7 +43,7 @@ vi.mock('../src/lib/membersService.js', () => ({
 import * as firebaseSync from '@salt/firebase-sync';
 import { trackUsageEvent } from '@salt/observability';
 import { rememberNote } from '../src/lib/kitchenMemoryService.js';
-import { sendMessage } from '../src/lib/chatService.js';
+import { sendMessage, getChatSessionsSnapshot } from '../src/lib/chatService.js';
 
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
 const remember = vi.mocked(rememberNote);
@@ -160,17 +160,35 @@ describe('sendMessage — what the chef is actually sent (phase 2)', () => {
     ]);
   });
 
-  it('keeps the /remember lines in the stored transcript', async () => {
+  it('keeps the /remember lines in the transcript the reader sees', async () => {
     const session: ChatSessionDoc = {
       ...makeSession(),
       messages: [turn('user', '/remember we hate coriander')],
     };
 
-    await sendMessage(session, 'ideas for tonight?', () => {});
+    const result = await sendMessage(session, 'ideas for tonight?', () => {});
 
     // Only what is SENT changes — the chip still renders from the transcript.
-    const saved = fs.saveChatSession.mock.calls.at(-1)?.[0] as ChatSessionDoc;
-    expect(saved.messages.map((m) => m.text)).toContain('/remember we hate coriander');
+    //
+    // THE STORE, not `saveChatSession`, since #1430: the flow writes the turn now,
+    // and it appends to the DOCUMENT's messages rather than to the filtered wire
+    // history — which is where the `/remember` line has to survive, and where
+    // `apps/cloud-functions/tests/flows/chefChat.turnWrite.test.ts` pins it
+    // ("appends to the STORED transcript, not to the history that was on the
+    // wire"). This half is the reader's copy, which must not lose it either.
+    expect(result.kind).toBe('ok');
+    const shown = getChatSessionsSnapshot().find((s) => s.id === session.id);
+    expect(shown?.messages.map((m) => m.text)).toContain('/remember we hate coriander');
+  });
+
+  it('sends the session id, and writes nothing itself', async () => {
+    // The whole of #1430 on this side: the browser stops being the writer, and
+    // names the conversation so the flow can be.
+    await sendMessage(makeSession(), 'ideas for tonight?', () => {});
+
+    const [input] = fs.streamChefChat.mock.calls[0]!;
+    expect(input.sessionId).toBe('sess-1');
+    expect(fs.saveChatSession).not.toHaveBeenCalled();
   });
 });
 

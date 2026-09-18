@@ -295,6 +295,15 @@ service cloud.firestore {
     // session to another user (issue #408). List queries are scoped to
     // ownerUid == request.auth.uid via client-side where() so the read/delete
     // rule only needs to check the authenticated user against the existing doc.
+    //
+    // THE CLIENT IS NO LONGER THE ONLY WRITER (issue #1430). The `chefChat` flow
+    // writes the turn it has just streamed, through the Admin SDK, so that a
+    // phone locking mid-reply cannot lose it — and an Admin SDK write is not
+    // subject to anything below. These clauses are unchanged and still govern
+    // every browser write; what they no longer cover is that one path, which
+    // re-creates this same ownerUid check for itself in `writeChefChatTurn`
+    // (`apps/cloud-functions/src/flows/chefChat.ts`) against the VERIFIED caller.
+    // Change the ownership rule here and that function has to change with it.
     match /chatSessions/{sessionId} {
       allow read, delete: if request.auth != null
         && resource.data.ownerUid == request.auth.uid;

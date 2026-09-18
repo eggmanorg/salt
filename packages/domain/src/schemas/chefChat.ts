@@ -2,13 +2,34 @@ import { z } from 'zod';
 import { MessageSchema } from './chatSession.js';
 
 // Input schema for the chefChat streaming flow (issue #206, Phase 2).
-// The flow is stateless: it receives the recent message history + the new turn.
-// recipeId is set for recipe-attached sessions; the flow reads the recipe
-// server-side and injects it as context when non-null.
+// The flow receives the recent message history + the new turn. recipeId is set
+// for recipe-attached sessions; the flow reads the recipe server-side and
+// injects it as context when non-null.
+//
+// It is no longer STATELESS: given a `sessionId` it writes the completed turn
+// itself (issue #1430). See that field below.
 export const ChefChatInputSchema = z.object({
   messages: z.array(MessageSchema),
   newMessage: z.string(),
   recipeId: z.string().nullable(),
+  // The conversation this turn belongs to (issue #1430). With it, the flow reads
+  // `chatSessions/{sessionId}`, appends the user turn and its own reply and
+  // writes the document — so a completed turn survives a phone that locked or a
+  // tab that closed while the reply was streaming. The browser used to be the
+  // only writer, after the stream had fully drained, and a page that did not
+  // survive the `await` lost the user's own sentence along with the reply.
+  //
+  // OPTIONAL, and that is load-bearing for the same reason `speaker` below is: a
+  // browser left on an older bundle after a deploy sends no `sessionId` and must
+  // get a working turn rather than a rejected call. Absent, the flow writes
+  // nothing and returns exactly as it did before — which is also a correct
+  // arrangement, because that older bundle still persists the turn itself.
+  //
+  // NOT AN AUTHORISATION TOKEN. It names a document; it does not assert a right
+  // to write one. The flow reads the document and compares its `ownerUid` against
+  // the VERIFIED caller before writing, because an Admin SDK write bypasses
+  // `firestore.rules` entirely (see `writeChefChatTurn` in the flow).
+  sessionId: z.string().optional(),
   // Variation chats (issue #763): the dish this conversation started from, which
   // the chat is NOT attached to. Read server-side like `recipeId`, but injected
   // under a different heading — "the starting point for a NEW dish" rather than
