@@ -302,6 +302,17 @@ const FORBIDDEN: readonly Shape[] = [
   // enough to be edited away. Requiring the selector to run on to a `{` keeps
   // it to declarations. The near-miss self-tests below pin both directions.
   //
+  // WHY A QUOTE ALSO TERMINATES THE RUN (#1414). A `{` does not only open a
+  // rule block — it also opens a JS body, so the terminator alone did not tell
+  // a selector from a call expression, and both
+  // `querySelectorAll('.salt-md-doc').forEach((el) => {` and
+  // `if (el.matches('.salt-md-doc')) {` fired. The one committed near-miss
+  // passed only because it happened to end in `;`, which made the claim above
+  // that "both directions are pinned" untrue for the shapes that matter. What
+  // separates the two is the quote: a CSS selector never carries one between
+  // the class and its `{`, and a JS lookup always does. So `'` and `"` end the
+  // run exactly as `;` and a brace do, and both JS shapes are pinned below.
+  //
   // THE OTHER HALF IS NOT HERE. That a surface still ASKS for the scale — the
   // `scale="doc"` prop on its `<Markdown>` — is pinned by
   // `sanitizedHtmlCallers.test.ts`, which parses the markup rather than matching
@@ -326,12 +337,12 @@ const FORBIDDEN: readonly Shape[] = [
   // comment wrongly claimed one was: `[^;{}]*` crosses a comma and any number
   // of newlines freely, so a class named on one line of a group with the `{`
   // several lines later still fires (verified below). The only thing that
-  // stops the match is a `;` or a brace between the class and the `{`.
+  // stops the match is a `;`, a quote, or a brace between the class and the `{`.
   {
     instead: 'scale="doc" on <Markdown> from @salt/ui-components',
     because:
       "the library's document type scale was declared three times — page body, history preview, import preview — byte-identical and held that way by a comment asking the next author to keep them in step; #1394 moved the rules into the primitive, where the next change is made once",
-    pattern: /\.salt-md\b[^;{}]*\{/,
+    pattern: /\.salt-md\b[^;{}'"]*\{/,
   },
 ];
 
@@ -558,6 +569,11 @@ describe('display rules are declared once', () => {
     expect(carries('  :global(.cook-deck h1) {', docScale)).toBe(false);
     expect(carries('  <div class="salt-md-doc">', docScale)).toBe(false);
     expect(carries('  const el = root.querySelector(".salt-md");', docScale)).toBe(false);
+    // #1414: the two JS lookups whose `{` is a function body, not a rule block.
+    // Both used to fire; the committed near-miss above missed them only because
+    // it happened to end in `;`.
+    expect(carries("  querySelectorAll('.salt-md-doc').forEach((el) => {", docScale)).toBe(false); // prettier-ignore
+    expect(carries("  if (el.matches('.salt-md-doc')) {", docScale)).toBe(false);
   });
 
   it('has no file outside its owning module re-declaring one of them', () => {
