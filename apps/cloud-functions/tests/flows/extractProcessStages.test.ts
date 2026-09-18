@@ -44,7 +44,19 @@ const {
   // each, so reaching for either is a change that should stop this test anyway.
   const firestoreStub = {
     collection: mockCollection,
-    doc: (path?: string) => ({ get: mockGet, ...writeHandles(`${path}`) }),
+    // Write coverage only. `get` throws rather than forwarding to `mockGet`: no
+    // top-level `db.doc()` read is expected anywhere in this flow — both reads go
+    // through `collection().doc()`, whose dispatch above is what keeps the
+    // equipment manifest read from silently receiving a recipe (issue #1281). A
+    // `get` here that resolved would reopen exactly that trap.
+    doc: (path?: string) => ({
+      get: () => {
+        throw new Error(
+          `unexpected top-level db.doc('${path}').get() — reads must go through collection().doc()`,
+        );
+      },
+      ...writeHandles(`${path}`),
+    }),
     batch: (...args: unknown[]) => mockWrite('batch()', ...args),
     bulkWriter: (...args: unknown[]) => mockWrite('bulkWriter()', ...args),
     runTransaction: (...args: unknown[]) => mockWrite('runTransaction()', ...args),

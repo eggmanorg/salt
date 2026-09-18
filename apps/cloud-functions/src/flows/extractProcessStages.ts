@@ -61,14 +61,23 @@ import { requireRecipe } from './loadRecipe.js';
 // and the person is sitting in front of the button (see the no-retry note below).
 //
 // BOUNDARY — this is not "the stages are never persisted server-side" as a timeless
-// rule, and must not be written as one. All three reasons are properties of `process`
-// living inside `formulas/{recipeId}` alongside the human's declaration. Move it into
-// a document a function can author alone — #1405 is the nearest open issue to that —
-// and the reasoning is void and the question reopens. The SERVER half of the claim is
-// pinned by `tests/flows/extractProcessStages.test.ts` → "nothing is written"; the
+// rule, and must not be written as one, and the three reasons do not share a single
+// point of failure. Reason one is a property of `process` living inside
+// `formulas/{recipeId}` alongside the human's declaration — move it into a document a
+// function can author alone (#1405 is the nearest open issue to that) and reason one
+// goes void. Reason two is a property of `canSave` requiring a declared yield, a gate
+// that has already moved once (`FormulaPage.svelte:1046-1051` cites the #1325 review
+// for its current shape) and could move again without `process` going anywhere —
+// relax it and reason two goes void on its own. Reason three is a property of the
+// re-run confirmation existing at all, plus the formula document carrying no
+// timestamps or history — drop the dialog, or add history, and reason three goes void
+// on its own. Any one reason going void reopens the question for that reason alone;
+// only #1405 moving `process` voids all three at once. The SERVER half of the claim
+// is pinned by `tests/flows/extractProcessStages.test.ts` → "nothing is written"; the
 // CLIENT half by `apps/web-pwa/tests/FormulaPageStages.test.ts` → "does NOT save what
-// it found". The decision is recorded in docs/formulas-schedules-batches.md →
-// "Process".
+// it found", with the confirmation gate itself at `:287-298` and the disabled-Save
+// half of reason two at `FormulaPage.yieldWins.test.ts` / `FormulaPage.test.ts:624`.
+// The decision is recorded in docs/formulas-schedules-batches.md → "Process".
 //
 // TWO PROPERTIES ARE ENFORCED IN CODE RATHER THAN LEFT TO THE PROMPT, because both
 // are things the spike got wrong on real recipes and neither is worth a coin toss:
