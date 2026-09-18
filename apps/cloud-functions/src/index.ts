@@ -293,7 +293,7 @@ export const populateEquipmentEntry = makeTracedCallable({
 //     nothing else (`schemas/parseRecipeIngredients.ts`) — no recipe id, no group
 //     id, no ingredient id. It cannot write into a document it cannot name, and
 //     giving it identity is a wire-contract change, not #1416's three lines of
-//     `persistImportedRecipe`.
+//     `persistAuthoredRecipe`.
 //   • ITS IN-PROCESS CALLERS REQUIRE IT PURE. `assembleRecipeDraft` calls the
 //     flow directly on the way in for every URL import, photo import and
 //     chat-authored recipe, and `scripts/rematch-ingredients.ts` is read-only by

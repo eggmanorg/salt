@@ -148,7 +148,9 @@
   }
 
   /**
-   * The shared leg: author, save, toast a failure. `null` means it did not land.
+   * The shared leg: author it and toast a failure. `null` means it did not land.
+   * The saving is the Cloud Function's since issue #1431, which is why there is
+   * one failure message below and not two.
    *
    * `startedMessage` is the caller's, not this function's: both buttons come
    * through here and the point of the acknowledgement is that it says WHICH one
@@ -172,10 +174,12 @@
     );
     isSavingRecipe = false;
     if (result.kind !== 'ok') {
-      addToast(
-        result.error.stage === 'author' ? 'Failed to generate recipe.' : 'Failed to save recipe.',
-        'destructive',
-      );
+      // ONE message, because there is one leg left that can fail (issue #1431).
+      // The recipe is written by the flow that authors it, and that write is
+      // best-effort by design — it never fails the call — so "it was written but
+      // not kept" is not news this page can be given, and a branch for it would
+      // be a message nothing can produce.
+      addToast('Failed to generate recipe.', 'destructive');
       return null;
     }
     return result.value;

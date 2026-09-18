@@ -20,7 +20,7 @@
 //     `assets/recipe-page.webp`), not a photograph of a published cookbook. The
 //     repo can hold it without any question about whose words they are, and the
 //     `.html` beside it is what makes that checkable rather than asserted.
-//   * The recipe id is chosen by the SERVER (`persistImportedRecipe`), so the
+//   * The recipe id is chosen by the SERVER (`persistAuthoredRecipe`), so the
 //     `probe-` prefix cannot apply and `ctx.track` would refuse it. Teardown
 //     goes through `ctx.trackCreated` with a reason, which puts the deletion in
 //     `report.adoptedDocs` — audited rather than silent. The hero object is

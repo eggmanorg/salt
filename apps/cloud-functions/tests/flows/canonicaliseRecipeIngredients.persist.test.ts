@@ -335,7 +335,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
 
   it('logs and reports a write failure, and still returns the results', async () => {
     // An already-paid-for AI run is never discarded over a Firestore hiccup
-    // (`persistImportedRecipe`'s shape); the failure crosses as a log, never a
+    // (`persistAuthoredRecipe`'s shape); the failure crosses as a log, never a
     // throw (Rule 10).
     seedRecipe('recipe-6', [ingredient('i1', 'tinned tomatoes')]);
     transactionFailure = new Error('simulated recipes write failure');

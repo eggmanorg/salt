@@ -33,7 +33,7 @@ import { GUIDED_PREP_RULES, GUIDED_STEP_NOTE_RULES } from './stepRules.js';
 // arrangement. It used to author content only and hand it back for the browser to
 // assemble and persist — which meant a phone that locked, or a tab that closed,
 // during the one-to-three-minute call threw away a finished plan the moment it
-// arrived. The same loss #616 fixed for recipe imports (`persistImportedRecipe`),
+// arrived. The same loss #616 fixed for recipe imports (`persistAuthoredRecipe`),
 // for the same reason, by the same move. Writing here means the plan exists as soon
 // as the flow finishes, whatever the client does next.
 //
@@ -155,7 +155,7 @@ async function existingCreatedAt(recipeId: string): Promise<string | null> {
  * into hand-corrected text would produce a document neither the model nor the
  * human wrote.
  *
- * A write failure does NOT fail the call, following `persistImportedRecipe`: the
+ * A write failure does NOT fail the call, following `persistAuthoredRecipe`: the
  * plan is still returned, the editor paints it, and the cook's Save writes it —
  * rather than throwing away a successful, already-paid-for generation. Logged so
  * the failure is visible; not reported as an unexpected error, since the person

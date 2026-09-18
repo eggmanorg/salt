@@ -57,6 +57,11 @@ vi.mock('../src/lib/recipeService.js', () => ({
   attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   // Identity — attribution (#845) has its own suite; this one is about the page.
   stampRecipeAttribution: <T>(recipe: T) => recipe,
+  // The two seams `chatRecipeAuthor` reaches through since issue #1431, when the
+  // recipe stopped being written by the browser: the name it sends so the flow
+  // can attribute what it writes, and the hand-off stash for the page it goes to.
+  currentMemberName: vi.fn(() => 'Daniel'),
+  stashImportedDraft: vi.fn(),
   // The write-ordering seams `applyRecipeAmendment` uses (issue #1330). Identity
   // and no-ops here: the ordering itself is pinned in
   // `recipeAmend.coalescedEdit.test.ts`, against the real service.

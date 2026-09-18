@@ -46,7 +46,7 @@ import { withAiTimeout } from '../adapters/withAiTimeout.js';
 // onto the document as it is NOW rather than onto a snapshot the caller took
 // before the call.
 //
-// Best-effort, never a throw (Rule 10), and shaped after `persistImportedRecipe`:
+// Best-effort, never a throw (Rule 10), and shaped after `persistAuthoredRecipe`:
 // an already-paid-for AI run is not discarded over a Firestore hiccup, so a
 // failure is logged, reported and the results still returned. It does NOT copy
 // that function's full `.set()`, whose justification ("the doc cannot already

@@ -4,8 +4,10 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 import { callFunction } from './callFunction.js';
 
 // Calls the librarian flow: sends a conversation and receives a canon-matched
-// RecipeDoc draft. The client should add/override id + timestamps before
-// persisting with saveRecipe.
+// RecipeDoc. In CREATE mode (no `recipeId`) the flow has already WRITTEN that
+// document to `recipes/{id}` before returning it — id, timestamps and attribution
+// are all the server's, and the caller persists nothing (issue #1431). In edit
+// mode it is a proposal and nothing has been written: the review gate decides.
 //
 // `traceparent` (issue #362) is forwarded on the payload; how and why is written
 // once, at `withTraceparent` in callFunction.ts.

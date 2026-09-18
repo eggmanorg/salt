@@ -270,6 +270,10 @@ export {
   pickPlaceholder,
   PLACEHOLDER_MOODS,
   PLACEHOLDER_CONDITION_TAGS,
+  // The one attribution stamp (issue #1431) — `recipeService` in the browser and
+  // the `authorRecipe` flow in Cloud Functions both apply it, so the fill-once
+  // `createdBy` rule cannot come to mean two things.
+  stampAttribution,
 } from './recipe/index.js';
 export type { RecipeSearchCandidate, RecipeSearchFilters } from './recipe/index.js';
 export type { RecipePhaseTotals } from './recipe/index.js';
