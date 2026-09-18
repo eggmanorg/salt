@@ -181,7 +181,7 @@ document.** The whole kit is ONE doc, `equipmentManifest/current`, holding an
 array. A `thumbnail` on an array element would mean ticking one accessory's checkbox
 could wipe the icons off every item, and the trigger re-firing on its own writes.
 
-So equipment's icons live in a **sibling collection**, `equipmentIcons/{itemId}` —
+So equipment's icons live in a **sibling collection**, `equipmentIcons/{docId}` —
 the `canonEmbeddings` move (#410) and the `guidedPlans` move: when a field and its
 host document have different owners and different read audiences, the field gets its
 own collection. Two further consequences follow, and both are departures from the
@@ -199,6 +199,49 @@ canon shape rather than variations on it:
   obvious rendering — but a make and model is exactly where fidelity is won or lost,
   and a brief is a sentence you can correct where a wrong picture is only a re-roll.
   Only the description is ever shown or editable; the style anchors stay in code.
+
+### An entry may have a picture of its own (#1465, Phase 2)
+
+An accessory or a family member — the steam basket, the Lodge skillet — can carry
+its own drawing, and the document id is the **accessory's uuid**. That is the whole
+of the mechanism: accessory ids come from the same generator as item ids and are
+unique across the manifest, so `firestore.rules`'s `{itemId}` wildcard, the orphan
+sweep's `equipment-icons/ → equipmentIcons` join, `drawEquipmentIcon`,
+`setIconUpload` and `getImagePrompt` all carry over untouched. #1460 priced this as
+"probably an epic" on the assumption of a second keying scheme; there isn't one.
+
+Two things did **not** carry over, both in `onEquipmentManifestWritten`:
+
+- **The reconcile pass deletes every icon doc outside a live set it is handed**, and
+  that set was the items alone — so the first manifest write after entries could own
+  pictures would have deleted all of them. It now asks `equipmentIconOwnerIds`
+  (`packages/domain/src/equipment/queries/equipmentIcon.ts`), and
+  `tests/triggers/onEquipmentManifestWritten.test.ts` goes red if it stops.
+- **The brief-authoring loop stays item-only.** There are ~140 entries, most never
+  named in a recipe; authoring each a description would be ~140 text calls on every
+  manifest save for words nobody asked to read. **Nothing is ever drawn or described
+  for an entry automatically.** The first act is a press — the `authorEntryIconBrief`
+  callable, from the entry's row on the equipment page — and after that the entry is
+  the item flow unchanged: read the description, correct it, Draw.
+
+`authorEntryIconBrief` is the one callable here that **persists** what it authors,
+unlike `describeEquipmentSubject` below, and for a reason that does not generalise:
+there is no document yet, so there is no occupied caption for an unaccepted sentence
+to overwrite. It is idempotent on the subject name, so a second press costs nothing
+until the entry or its record has been renamed.
+
+The words a brief is authored from are `equipmentEntrySubjectName`'s, and they are
+not always the entry's own: a family member stands alone ("De Buyer Mineral B Carbon
+Steel 28cm"), while an appliance's part is qualified by its appliance ("Steam Basket
+(Cosori 5L Rice Cooker)") — a steam basket for _what_ is the difference between a
+specific drawing and a generic one. Nothing displays that string; every heading and
+row shows the entry's own name.
+
+At display time `kitIcons.ts` prefers the entry's picture over its record's, and a
+**hidden** entry picture stops there rather than falling back — "hidden" is the
+answer for that row, and the record's picture would be answering a different
+question. An entry described but not yet drawn does fall back, which is what keeps
+the ~140 undrawn entries free.
 
 **The description may also be authored from a photograph (#947).** `describeEquipmentSubject`
 gained a third mode alongside authoring-from-name and revising-from-a-correction:

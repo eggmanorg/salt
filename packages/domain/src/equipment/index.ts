@@ -32,7 +32,11 @@ export type { SetEquipmentKindInput } from './commands/setEquipmentKind.js';
 export { setEquipmentEnvironment } from './commands/setEquipmentEnvironment.js';
 export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnvironment.js';
 
-export { equipmentIconAwaitingApproval } from './queries/equipmentIcon.js';
+export { equipmentIconAwaitingApproval, equipmentIconOwnerIds } from './queries/equipmentIcon.js';
+export type { IconOwner } from './queries/equipmentIcon.js';
+// The words ONE ENTRY's picture is described from (issue #1465, Phase 2) — the
+// entry's own name for a family member, qualified by the appliance for a part.
+export { equipmentEntrySubjectName } from './queries/equipmentEntrySubject.js';
 export { resolveEquipmentItem, namesItemItself } from './queries/resolveEquipmentItem.js';
 // The LINK half of the same question (issue #1465) — which of your things a kit
 // entry recorded, read from an id rather than guessed from the words. Where a

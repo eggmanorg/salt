@@ -1,6 +1,7 @@
 import { derived } from 'svelte/store';
 import type { Readable } from 'svelte/store';
 import {
+  CANON_ICON_HIDDEN,
   isCanonIconRenderable,
   kitchenToolForKitLabel,
   resolveEquipmentItem,
@@ -34,9 +35,20 @@ import { equipment, equipmentIcons } from './equipmentService.js';
 //      no word is read: the linked item's picture, and nothing else. This is what
 //      finally reaches a family member ("Tefal non-stick 28cm" carries no word of
 //      "Frying Pans" and no rule over the words could find it).
-//      An entry's OWN picture goes in front of its item's here in Phase 2 of
-//      #1465; today a linked entry shows its item's, which is the behaviour the
-//      Intended Experience calls for until then.
+//      Within that link, the ENTRY'S OWN PICTURE comes first and its ITEM'S
+//      second (#1465 Phase 2). An accessory or family member can be given a
+//      drawing of its own — on request only, never automatically — and where one
+//      exists it is the more specific picture of the two: the Lodge skillet
+//      rather than the Frying Pans tile. Where none exists the item's stands, as
+//      it did before, which is why the ~140 entries that will never be drawn cost
+//      nothing.
+//
+//      AND A HIDDEN ENTRY PICTURE STOPS THERE, rather than falling through to
+//      its item's. "Hidden" is the user saying they do not want a picture on this
+//      row; answering with the parent's would be answering a different question.
+//      A `thumbnail: null` entry — described but never drawn — is NOT that, and
+//      does fall through. The two states are distinguishable because
+//      `equipmentIcons` stores the tri-state, and the test table pins both.
 //   2. THE WORD PATH, for an entry with no link, one whose link no longer answers
 //      to anything, and for the hand-typed container names on guided-cook cards
 //      which this work never links at all. Equipment first, then tools — steps 3
@@ -122,14 +134,31 @@ function lookupFor(
   // fold to null here. Unlike a miss on the resolvers, this null does NOT fall
   // through to the tool vocabulary (see the header): a resolved item with nothing
   // drawn renders no tile, not a different object's picture.
-  const ownedIcon = (item: EquipmentItem): Picture | null => {
-    const icon = icons.get(item.id);
+  const ownedIcon = (id: string): Picture | null => {
+    const icon = icons.get(id);
     const thumbnail = icon?.thumbnail ?? null;
     if (thumbnail === null || !isCanonIconRenderable(thumbnail)) return null;
     // The nonce is load-bearing on a redraw: the Storage path is reused and its
     // bytes are written `immutable`, so without it the browser serves the old
     // picture (ui-spec-v04 §14.4).
     return { thumbnail, version: icon?.iconRequestedAt };
+  };
+
+  /**
+   * The picture for a resolved link: the entry's own, else its item's.
+   *
+   * The one place the tri-state is read for more than "is it renderable": a
+   * HIDDEN entry picture is the user's answer for this row and ends the search,
+   * where an entry with nothing drawn yet falls through to its item. Both are
+   * `ownedIcon` nulls, so they have to be told apart here rather than there.
+   */
+  const linkedIcon = (item: EquipmentItem, accessory: { id: string } | null): Picture | null => {
+    if (accessory) {
+      const own = ownedIcon(accessory.id);
+      if (own) return own;
+      if (icons.get(accessory.id)?.thumbnail === CANON_ICON_HIDDEN) return null;
+    }
+    return ownedIcon(item.id);
   };
 
   // The whole order, once, returning the picture or null. Both public lookups are
@@ -141,14 +170,14 @@ function lookupFor(
     // 1. The recorded link. Authoritative where it resolves.
     if (entry) {
       const linked = resolveKitEntryEquipment(entry, items);
-      if (linked) return ownedIcon(linked.item);
+      if (linked) return linkedIcon(linked.item, linked.accessory);
     }
 
     if (!label) return null;
 
     // 2/3. Equipment by name.
     const item = resolveEquipmentItem(label, items);
-    if (item) return ownedIcon(item);
+    if (item) return ownedIcon(item.id);
 
     // 4. The curated tool, with the accessory-name rule in front of it.
     const tool = kitchenToolForKitLabel(label, toolDocs, items);

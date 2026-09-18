@@ -36,6 +36,10 @@
   import type ImagePromptDialogComponent from '../../components/ImagePromptDialog.svelte';
   import type ImageUploadDialogComponent from '../../components/ImageUploadDialog.svelte';
   import type EquipmentPhotoDialogComponent from '../../components/EquipmentPhotoDialog.svelte';
+  // A fourth for the same reason (issue #1465, Phase 2): it hosts ImageUploadDialog
+  // itself, so a module-scope import here would drag `svelte-easy-crop` into the
+  // boot graph through the back door the three above are kept out of.
+  import type EquipmentEntryIconDialogComponent from './EquipmentEntryIconDialog.svelte';
   import { push } from 'svelte-spa-router';
   import { CANON_ICON_HIDDEN, equipmentIconAwaitingApproval } from '@salt/domain';
   import { goBack } from '../../lib/nav.js';
@@ -99,6 +103,23 @@
   async function openPhotoDialog(): Promise<void> {
     PhotoDialog ??= (await import('../../components/EquipmentPhotoDialog.svelte')).default;
     photoOpen = true;
+  }
+
+  // ─── One entry's picture (issue #1465, Phase 2) ───────────────────────────
+  // An accessory or family member may have a drawing of its own, and nothing is
+  // drawn until it is asked for here. `entryIconFor` is the id of the entry whose
+  // dialog is open — one dialog for the whole list rather than one per row, since
+  // only one can be open and a dozen mounted dialogs is a dozen mounted
+  // ImageUploadDialogs.
+  let EntryIconDialog = $state<typeof EquipmentEntryIconDialogComponent | null>(null);
+  let entryIconFor = $state<string | null>(null);
+  const entryIconAccessory = $derived(
+    entryIconFor === null ? null : (item?.accessories.find((a) => a.id === entryIconFor) ?? null),
+  );
+
+  async function openEntryIconDialog(accessoryId: string): Promise<void> {
+    EntryIconDialog ??= (await import('./EquipmentEntryIconDialog.svelte')).default;
+    entryIconFor = accessoryId;
   }
 
   // ─── Pictogram + description review gate (issue #877) ─────────────────────
@@ -702,6 +723,27 @@
                       aria-label="Owned"
                     />
                   {/if}
+                  <!-- The entry's own picture (issue #1465, Phase 2). The tile
+                       shows what this one has — which is nothing, for all but
+                       the few worth asking for — and never its record's: this
+                       row is where you decide whether this entry needs a drawing
+                       of its own, and showing the record's here would answer
+                       that question wrongly. The recipe page is where the
+                       fallback belongs, and kitIcons.ts owns it. -->
+                  <button
+                    type="button"
+                    class="shrink-0 rounded transition-opacity hover:opacity-80"
+                    onclick={() => void openEntryIconDialog(acc.id)}
+                    aria-label="Picture for {acc.name}"
+                    data-testid="equipment-accessory-icon-btn"
+                  >
+                    <CanonIcon
+                      thumbnail={equipmentThumbnailFor($equipmentIcons, acc.id)}
+                      name={acc.name}
+                      size={32}
+                      version={equipmentIconVersionFor($equipmentIcons, acc.id)}
+                    />
+                  </button>
                   <span class="flex-1">
                     {acc.name}
                     {#if acc.included}
@@ -1018,5 +1060,19 @@
     bind:open={photoOpen}
     busy={briefBusy}
     onDescribe={(photo) => handleDescribeFromPhoto(item.name, photo)}
+  />
+{/if}
+
+<!-- One entry's picture (issue #1465, Phase 2). Mounted only while a row's
+     dialog is open, and torn down when it closes, so the list costs nothing —
+     `entryIconAccessory` follows the live manifest, so an entry deleted on
+     another device closes this rather than stranding a dialog onto a row that
+     no longer exists. -->
+{#if item && EntryIconDialog && entryIconAccessory}
+  <EntryIconDialog
+    open={true}
+    {item}
+    accessory={entryIconAccessory}
+    onClose={() => (entryIconFor = null)}
   />
 {/if}

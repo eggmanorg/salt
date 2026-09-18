@@ -13,6 +13,7 @@ vi.mock('@salt/firebase-sync', () => ({
   // in its own cases below.
   subscribeEquipmentIcons: vi.fn(() => () => {}),
   callDrawEquipmentIcon: vi.fn(),
+  callAuthorEntryIconBrief: vi.fn().mockResolvedValue({ kind: 'ok' as const, value: undefined }),
 }));
 
 import * as firebaseSync from '@salt/firebase-sync';
@@ -35,6 +36,7 @@ import {
   editEquipmentItemNote,
   setEquipmentItemKind,
   setEquipmentEnvironmentFor,
+  authorEntryIconBrief,
   memEquipmentManifestStore,
   __resetEquipmentServiceForTest,
 } from '../src/lib/equipmentService.js';
@@ -430,5 +432,18 @@ describe('equipmentService — notes and kind', () => {
     expect((await setEquipmentItemKind('eq', 'family')).kind).toBe('err');
     expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
     cleanup();
+  });
+});
+
+describe("equipmentService — one entry's description (issue #1465, Phase 2)", () => {
+  it('asks for it with the PAIR, because the subject name depends on both', async () => {
+    const result = await authorEntryIconBrief('eq-cosori', 'acc-steam-basket');
+    expect(result.kind).toBe('ok');
+    // The accessory id alone would not say which appliance the part belongs to,
+    // and "a steam basket" is half a subject.
+    expect(fs.callAuthorEntryIconBrief).toHaveBeenCalledWith({
+      itemId: 'eq-cosori',
+      accessoryId: 'acc-steam-basket',
+    });
   });
 });

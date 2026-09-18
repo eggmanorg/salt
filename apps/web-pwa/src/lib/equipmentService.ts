@@ -6,6 +6,7 @@ import {
   subscribeEquipmentIcons,
   callDrawEquipmentIcon,
   callDescribeEquipmentSubject,
+  callAuthorEntryIconBrief,
 } from '@salt/firebase-sync';
 import type { IdentifyEquipmentResult, PopulateEquipmentEntryResult } from '@salt/firebase-sync';
 import type {
@@ -433,6 +434,27 @@ export async function drawEquipmentIcon(
   brief: string,
 ): Promise<ReadResult<void, DomainError>> {
   return callDrawEquipmentIcon({ action: 'draw', itemId, brief });
+}
+
+/**
+ * Ask for one ENTRY's description, so its picture can be drawn (issue #1465,
+ * Phase 2).
+ *
+ * The first act on an entry, and the only one an item does not need: the manifest
+ * trigger authors an item's description the moment it appears, but an entry's is
+ * written only when somebody asks — ~140 entries, most never named in a recipe.
+ * Once this has run, everything else on an entry is the item flow unchanged,
+ * because `drawEquipmentIcon`, `setIconUpload` and `getImagePrompt` are all keyed
+ * by the `equipmentIcons` document id and an entry's is its accessory id.
+ *
+ * Nothing comes back: the description arrives through the icons subscription,
+ * which is what makes the words in the box the words on the document.
+ */
+export async function authorEntryIconBrief(
+  itemId: string,
+  accessoryId: string,
+): Promise<ReadResult<void, DomainError>> {
+  return callAuthorEntryIconBrief({ itemId, accessoryId });
 }
 
 /**

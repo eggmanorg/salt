@@ -172,6 +172,7 @@ const SCHEDULE_INPUT = { recipeId: 'r1', finishBy: '2026-01-01T18:00:00.000Z' };
 const CHAT_INPUT = { sessionId: 's1', messages: [{ role: 'user', text: 'hi' }] };
 const DRAW_INPUT = { itemName: 'Dutch oven', brief: 'a squat pot' };
 const DESCRIBE_INPUT = { itemName: 'Dutch oven' };
+const ENTRY_BRIEF_INPUT = { itemId: 'eq-cosori', accessoryId: 'acc-steam-basket' };
 
 const CATALOG = { byRole: { text: [], image: [] }, fetchedAt: 1 };
 const RECIPE = { id: 'r1', title: 'Focaccia' };
@@ -568,6 +569,41 @@ const rows: readonly Row[] = [
       ...SHARED_ERRORS,
       {
         code: 'functions/invalid-argument',
+        expected: {
+          kind: 'err',
+          error: { kind: 'ValidationError', code: ErrorCode.EQUIPMENT_BRIEF_NOT_WRITABLE },
+        },
+      },
+    ],
+  },
+  {
+    // One ENTRY's description, written on request (issue #1465, Phase 2). The
+    // sibling above hands its sentence back; this one persists it, so it returns
+    // nothing and the words arrive through the icons subscription.
+    name: 'callAuthorEntryIconBrief',
+    callable: 'authorEntryIconBrief',
+    // Sized around the flow's own 55 s deadline, exactly as the describe callable
+    // is. 70 — the callable client's default — would give up first.
+    timeout: 90_000,
+    data: { ok: true },
+    call: () => barrel.callAuthorEntryIconBrief(cast(ENTRY_BRIEF_INPUT)),
+    payload: ENTRY_BRIEF_INPUT,
+    ok: { kind: 'ok', value: undefined },
+    traced: null,
+    errors: [
+      ...SHARED_ERRORS,
+      // The entry was deleted from another device, or the manifest could not be
+      // read — expected states with a friendly message, so suppressed rather than
+      // reported.
+      {
+        code: 'functions/not-found',
+        expected: {
+          kind: 'err',
+          error: { kind: 'ValidationError', code: ErrorCode.EQUIPMENT_BRIEF_NOT_WRITABLE },
+        },
+      },
+      {
+        code: 'functions/failed-precondition',
         expected: {
           kind: 'err',
           error: { kind: 'ValidationError', code: ErrorCode.EQUIPMENT_BRIEF_NOT_WRITABLE },

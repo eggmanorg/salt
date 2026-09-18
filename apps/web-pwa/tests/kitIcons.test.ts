@@ -164,6 +164,48 @@ describe('kitIcons — the order', () => {
     ).toBe(7);
   });
 
+  // ─── The entry's own picture (issue #1465, Phase 2) ───────────────────────
+  // Four states, and the third is the one nothing else would catch: HIDDEN and
+  // NOT-YET-DRAWN are both "no renderable picture on the entry", and they must
+  // answer differently — one ends the search, the other falls back.
+  it("prefers the entry's own picture to its record's", () => {
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', {
+        thumbnail: 'https://example.test/tefal.webp',
+        iconRequestedAt: 42,
+      } as EquipmentIconDoc),
+    );
+    const linked = entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' });
+    expect(iconFor(linked)).toBe('https://example.test/tefal.webp');
+    expect(get(kitIcons).kitIconVersionFor(linked)).toBe(42);
+    // Every other member of the family still shows the family's.
+    expect(iconFor(entry('another pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
+      'https://example.test/pans.webp',
+    );
+  });
+
+  it("falls back to the record's picture for an entry described but not yet drawn", () => {
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', { thumbnail: null } as EquipmentIconDoc),
+    );
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBe('https://example.test/pans.webp');
+  });
+
+  it("draws nothing for an entry whose picture the user HID, rather than its record's", () => {
+    mockEquipmentIcons.update((icons) =>
+      new Map(icons).set('acc-tefal', { thumbnail: 'hidden' } as EquipmentIconDoc),
+    );
+    expect(
+      iconFor(entry('Tefal non-stick 28cm', { itemId: 'eq-pans', accessoryId: 'acc-tefal' })),
+    ).toBeNull();
+    // And the record's own hide is unchanged by any of this.
+    expect(iconFor(entry('another pan', { itemId: 'eq-pans', accessoryId: null }))).toBe(
+      'https://example.test/pans.webp',
+    );
+  });
+
   it('answers from the words alone before the manifest lands', () => {
     // The cold load: no manifest means no link can resolve and no label can be an
     // accessory name, so every answer is the vocabulary's.

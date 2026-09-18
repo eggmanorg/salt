@@ -107,6 +107,11 @@ export {
   setEquipmentKind,
   setEquipmentEnvironment,
   equipmentIconAwaitingApproval,
+  // The words one ENTRY's own picture is described from (issue #1465, Phase 2),
+  // and the set of ids the icon collection may hold — which is the complement of
+  // what the manifest trigger DELETES, so it is a named query, not a `.map()`.
+  equipmentEntrySubjectName,
+  equipmentIconOwnerIds,
   // The display-time join from a free-text kit label to the item this household
   // actually owns (issue #954) — the specific half of the question
   // `resolveKitchenTool` answers generically. Tried FIRST by the callers of both:

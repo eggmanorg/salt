@@ -125,9 +125,14 @@ export type {
 export {
   EquipmentIconSchema,
   DrawEquipmentIconInputSchema,
+  AuthorEntryIconBriefInputSchema,
   EQUIPMENT_ICONS_COLLECTION,
 } from './equipmentIcon.js';
-export type { EquipmentIconDoc, DrawEquipmentIconInput } from './equipmentIcon.js';
+export type {
+  EquipmentIconDoc,
+  DrawEquipmentIconInput,
+  AuthorEntryIconBriefInput,
+} from './equipmentIcon.js';
 
 export { ShoppingListSchema } from './shoppingList.js';
 export type { ShoppingListDoc } from './shoppingList.js';

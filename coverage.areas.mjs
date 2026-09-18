@@ -586,10 +586,10 @@ export const coverageThresholds = {
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
   'apps/web-pwa/src/routes/**': {
-    lines: 84.78,
-    branches: 74.03,
+    lines: 85.27,
+    branches: 75.07,
     uncoveredLines: 1704,
-    uncoveredBranches: 1721,
+    uncoveredBranches: 1723,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
@@ -657,10 +657,10 @@ export const coverageThresholds = {
   // reason: the type only proves the OTHER two disjuncts, `busy` still has to
   // be re-checked in case a click and the busy flip land in the same tick.
   'apps/web-pwa/src/components/**': {
-    lines: 61.22,
-    branches: 46.02,
-    uncoveredLines: 114,
-    uncoveredBranches: 95,
+    lines: 77.89,
+    branches: 58.52,
+    uncoveredLines: 65,
+    uncoveredBranches: 73,
   },
 };
 

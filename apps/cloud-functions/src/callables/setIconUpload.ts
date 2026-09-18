@@ -89,8 +89,10 @@ export const setIconUpload = makeCallable({
     // A PARTIAL `.update()` below, which fails on an absent document — and that is
     // the intended ordering rather than an oversight. Three of the four families
     // always have a document by the time an icon can be uploaded for them. The
-    // fourth, `equipmentIcons`, is authored by the brief trigger, so an upload
-    // before it lands would otherwise `.set()` a document missing the required
+    // fourth, `equipmentIcons`, is authored by the brief trigger — or, for an
+    // ENTRY's own document since #1465 Phase 2, by `authorEntryIconBrief` when
+    // somebody asks for one — so an upload before that lands would otherwise
+    // `.set()` a document missing the required
     // `subjectBrief`/`briefSourceName` and strand it invalid. Checking first turns
     // that into an honest refusal the client can word.
     const snap = await ref.get();

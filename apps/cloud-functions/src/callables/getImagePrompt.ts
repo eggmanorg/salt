@@ -16,6 +16,7 @@ import {
   type GetImagePromptResult,
   type ImagePromptFamily,
 } from '@salt/domain/schemas';
+import { equipmentEntrySubjectName } from '@salt/domain';
 import { makeCallable } from '../tracedCallable.js';
 import { resolveModel } from '../ai/resolveModel.js';
 import { CANON_ICON_SEED_FILE } from '../flows/assets/canonIconSeed.js';
@@ -128,11 +129,27 @@ async function buildFor(family: ImagePromptFamily, id: string): Promise<GetImage
       }
       // No brief authored yet — the degraded arm the builder already has, which
       // is genuinely what would be drawn if someone pressed Draw this second.
+      //
+      // The id may name an ITEM or one of its ENTRIES (issue #1465, Phase 2):
+      // `equipmentIcons` is keyed by either, so this fallback has to answer for
+      // either. An entry's subject is `equipmentEntrySubjectName`'s — the same
+      // words `authorEntryIconBrief` would author from — so the degraded prompt
+      // stays what would genuinely be drawn rather than a different one.
       const manifest = EquipmentManifestSchema.safeParse(
         await loadDoc(EQUIPMENT_MANIFEST_COLLECTION, EQUIPMENT_MANIFEST_DOC_ID),
       );
-      const item = manifest.success ? manifest.data.items.find((i) => i.id === id) : undefined;
-      if (!item) throw missing('No such equipment item.');
+      const items = manifest.success ? manifest.data.items : [];
+      const item = items.find((i) => i.id === id);
+      if (!item) {
+        const parent = items.find((i) => i.accessories.some((a) => a.id === id));
+        const accessory = parent?.accessories.find((a) => a.id === id);
+        if (!parent || !accessory) throw missing('No such equipment item.');
+        return {
+          prompt: buildEquipmentIconPrompt(equipmentEntrySubjectName(parent, accessory)),
+          model: await resolveModel('generateEquipmentIcon'),
+          seedFile: CANON_ICON_SEED_FILE,
+        };
+      }
       return {
         prompt: buildEquipmentIconPrompt(item.name.trim()),
         model: await resolveModel('generateEquipmentIcon'),
