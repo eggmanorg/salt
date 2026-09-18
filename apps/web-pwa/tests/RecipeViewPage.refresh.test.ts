@@ -34,9 +34,12 @@ const {
   mockDefaultListId,
   mockSessions,
   mockEquipment,
+  toastSpy,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
+  const { makeToastSpy } = await import('./support/toastSpy.js');
   return {
+    toastSpy: makeToastSpy(),
     mockRecipes: makeStore<readonly Recipe[]>([]),
     mockCanonItems: makeStore<readonly { id: string }[]>([]),
     mockGuidedPlan: makeStore<unknown>(null),
@@ -54,7 +57,10 @@ vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
   router: { querystring: '' },
 }));
-vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
+vi.mock('../src/lib/toastStore.js', () => ({
+  addToast: toastSpy.addToast,
+  dismissToast: toastSpy.dismissToast,
+}));
 vi.mock('../src/lib/auth.svelte.js', () => ({
   auth: { user: { uid: 'uid-1', email: 'cook@test' } },
 }));
@@ -290,6 +296,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  toastSpy.reset();
   vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(discardGuidedPlan).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(authorRecipeTraced).mockResolvedValue({
@@ -580,5 +587,85 @@ describe('RecipeViewPage — Refresh is offered only where the librarian can wri
     } else {
       expect(screen.queryByTestId('recipe-refresh-menu-item')).toBeNull();
     }
+  });
+});
+
+// ─── The acknowledgement, and which leg owns it (issue #1439) ────────────────
+// Refresh is two AI calls back to back. The chef's is covered by ChatThread's
+// own "Thinking…" spinner and gains nothing here. The librarian's runs with
+// `chat.isSending` back to false — the spinner has gone, the ⋮ menu closed on
+// the first click — which is the longest unacknowledged wait in the app and the
+// half this fixes.
+//
+// What is pinned is the handover: exactly one indicator at a time, never two,
+// and nothing left behind when the chef's leg fails and the librarian never runs.
+describe('RecipeViewPage — Refresh acknowledges the librarian leg, not the chef leg', () => {
+  /** Hold the chef's turn open, and hand back the key to release it. */
+  function heldChef(): () => void {
+    let release!: () => void;
+    const answered = makeSession([
+      { id: 'm-user', role: 'user', text: 'again please', createdAt: '2026-08-13T10:00:00.000Z' },
+      {
+        id: 'm-chef',
+        role: 'assistant',
+        text: CHEF_REPLY,
+        createdAt: '2026-08-13T10:00:01.000Z',
+      },
+    ]);
+    vi.mocked(sendMessage).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => {
+            mockSessions._set([answered]);
+            resolve({ kind: 'ok', value: answered } as Awaited<ReturnType<typeof sendMessage>>);
+          };
+        }),
+    );
+    return () => release();
+  }
+
+  it('shows the spinner alone for the chef, then the toast alone for the librarian', async () => {
+    const releaseChef = heldChef();
+    type LibrarianResult = Awaited<ReturnType<typeof authorRecipeTraced>>;
+    let settleLibrarian!: (v: LibrarianResult) => void;
+    vi.mocked(authorRecipeTraced).mockReturnValue(
+      new Promise<LibrarianResult>((resolve) => {
+        settleLibrarian = resolve;
+      }),
+    );
+    renderPage();
+
+    await clickOverflowItem('recipe-refresh-menu-item');
+
+    // Leg one: ChatThread is saying it, so nothing else is.
+    await waitFor(() => expect(document.body.textContent).toContain('Thinking…'));
+    expect(toastSpy.live()).toEqual([]);
+
+    releaseChef();
+
+    // Leg two: the spinner has gone and the toast has taken over — one indicator
+    // throughout, never none and never two.
+    await waitFor(() =>
+      expect(toastSpy.live()).toEqual(['Reading the conversation to update the recipe…']),
+    );
+    expect(document.body.textContent).not.toContain('Thinking…');
+
+    settleLibrarian({ kind: 'ok', value: librarianDraft() } as LibrarianResult);
+    await waitFor(() => expect(screen.getByTestId('recipe-change-summary')).toBeInTheDocument());
+    expect(toastSpy.live()).toEqual([]);
+  });
+
+  it('leaves nothing behind when the chef never answers and the librarian never runs', async () => {
+    vi.mocked(sendMessage).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as Awaited<ReturnType<typeof sendMessage>>);
+    renderPage();
+
+    await clickOverflowItem('recipe-refresh-menu-item');
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(toastSpy.live()).not.toContain('Reading the conversation to update the recipe…');
   });
 });

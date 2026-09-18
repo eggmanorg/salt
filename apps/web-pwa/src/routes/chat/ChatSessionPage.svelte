@@ -13,6 +13,7 @@
   import { goBack } from '../../lib/nav.js';
   import { sessions, isLoadingSessions, claimRecipe } from '../../lib/chatService.js';
   import { addToast } from '../../lib/toastStore.js';
+  import { withStartedToast } from '../../lib/startedToast.js';
   import { recipes, attachComponentToMeal } from '../../lib/recipeService.js';
   import { readMealParam } from '../../lib/mealReturn.js';
   import { authorRecipeFromChat } from '../../lib/chatRecipeAuthor.js';
@@ -146,18 +147,29 @@
     return true;
   }
 
-  /** The shared leg: author, save, toast a failure. `null` means it did not land. */
+  /**
+   * The shared leg: author, save, toast a failure. `null` means it did not land.
+   *
+   * `startedMessage` is the caller's, not this function's: both buttons come
+   * through here and the point of the acknowledgement is that it says WHICH one
+   * was tapped (issue #1439). The trigger is gone by the time this runs — a
+   * popover item for one caller, an icon-only button for the other — so the
+   * toast is the only thing left saying anything is happening.
+   */
   async function runSave(
     transcript: ChatSessionDoc,
     basedOnRecipeId: string | null,
+    startedMessage: string,
   ): Promise<Recipe | null> {
     isSavingRecipe = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
-    const result = await authorRecipeFromChat({
-      messages: transcript.messages,
-      existingTags,
-      basedOnRecipeId,
-    });
+    const result = await withStartedToast(startedMessage, () =>
+      authorRecipeFromChat({
+        messages: transcript.messages,
+        existingTags,
+        basedOnRecipeId,
+      }),
+    );
     isSavingRecipe = false;
     if (result.kind !== 'ok') {
       addToast(
@@ -178,7 +190,7 @@
     // mentioned. It stays the CREATE path: the flow assembles with no base
     // recipe, so the new dish gets its own title, its own hero image and no
     // "makes" link, and the original is untouched (issue #763).
-    const saved = await runSave(session, session.basedOnRecipeId);
+    const saved = await runSave(session, session.basedOnRecipeId, 'Writing the recipe…');
     if (!saved) return;
     // The conversation now belongs to the dish it produced, so it is listed on
     // that recipe and stops being swept away after a fortnight (issue #696).
@@ -207,7 +219,7 @@
   // the chat is not about it, it merely produced it.
   async function handleSaveAsNewRecipe(): Promise<void> {
     if (!session || isSavingRecipe) return;
-    const saved = await runSave(session, null);
+    const saved = await runSave(session, null, 'Writing the new recipe…');
     if (!saved) return;
     if (await returnToMeal(saved)) return;
     // Same rule as "Save as recipe" above (issue #765): this is a CREATE path
@@ -238,7 +250,13 @@
     }
     isProposing = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
-    const result = await proposeRecipeAmendment(existing, session.messages, existingTags);
+    // The menu item that started this closed itself on the way here, taking
+    // `disabled={isProposing}` with it, so the toast is the acknowledgement
+    // (issue #1439). Raised after the "Recipe not found" guard above: that path
+    // never starts a call, so it must not leave one announced.
+    const result = await withStartedToast('Reading the conversation to update the recipe…', () =>
+      proposeRecipeAmendment(existing, session!.messages, existingTags),
+    );
     isProposing = false;
     if (result.kind !== 'ok') {
       addToast('Failed to generate recipe update.', 'destructive');

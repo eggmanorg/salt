@@ -131,6 +131,7 @@
   import { currentMember } from '../../lib/membersService.js';
   import { defaultListId } from '../../lib/shoppingListService.svelte.js';
   import { addToast } from '../../lib/toastStore.js';
+  import { withStartedToast } from '../../lib/startedToast.js';
   import { auth } from '../../lib/auth.svelte.js';
   import { createChatSession, sessions } from '../../lib/chatService.js';
   import ImagePromptDialog from '../../components/ImagePromptDialog.svelte';
@@ -1290,7 +1291,15 @@
     if (!activeSession || !recipe || sidebarIsProposing) return;
     sidebarIsProposing = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
-    const result = await proposeRecipeAmendment(recipe, activeSession.messages, existingTags);
+    // The popover item that started this unmounted on click, so nothing on screen
+    // was saying anything was happening (issue #1439). This is also Refresh's
+    // second leg: `chat.isSending` is back to false by the time we get here, so
+    // ChatThread's "Thinking…" spinner has gone and this is the ONLY indicator
+    // for the librarian's round-trip. The chef's leg keeps that spinner and gains
+    // nothing, so the two never show at once.
+    const result = await withStartedToast('Reading the conversation to update the recipe…', () =>
+      proposeRecipeAmendment(recipe!, activeSession!.messages, existingTags),
+    );
     sidebarIsProposing = false;
     if (result.kind !== 'ok') {
       addToast('Failed to generate recipe update.', 'destructive');
@@ -1384,11 +1393,14 @@
     if (!activeSession || sidebarIsSavingNew) return;
     sidebarIsSavingNew = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
-    const result = await authorRecipeFromChat({
-      messages: activeSession.messages,
-      existingTags,
-      basedOnRecipeId: null,
-    });
+    // Same vanishing trigger as "Update recipe" above (issue #1439).
+    const result = await withStartedToast('Writing the new recipe…', () =>
+      authorRecipeFromChat({
+        messages: activeSession!.messages,
+        existingTags,
+        basedOnRecipeId: null,
+      }),
+    );
     sidebarIsSavingNew = false;
     if (result.kind !== 'ok') {
       addToast(

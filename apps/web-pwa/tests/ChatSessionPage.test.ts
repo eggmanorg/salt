@@ -9,21 +9,28 @@ const NOW = '2026-08-01T00:00:00.000Z';
 // Back goes where you came from, and "Save as recipe" leaves the conversation
 // attached to the dish it produced (issue #696).
 
-const { mockSessions, mockIsLoading, mockRecipes, mockRouter } = await vi.hoisted(async () => {
-  const { makeStore } = await import('./support/testStore.js');
-  return {
-    mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
-    mockIsLoading: makeStore<boolean>(false),
-    mockRecipes: makeStore<readonly Recipe[]>([]),
-    // Stands in for the address bar. Setting it is how this suite says "a meal
-    // sent you here" (issue #752, Phase 3) — there is nowhere else the id could
-    // come from, which is the whole point of the phase.
-    mockRouter: { querystring: undefined as string | undefined },
-  };
-});
+const { mockSessions, mockIsLoading, mockRecipes, mockRouter, toastSpy } = await vi.hoisted(
+  async () => {
+    const { makeStore } = await import('./support/testStore.js');
+    const { makeToastSpy } = await import('./support/toastSpy.js');
+    return {
+      toastSpy: makeToastSpy(),
+      mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
+      mockIsLoading: makeStore<boolean>(false),
+      mockRecipes: makeStore<readonly Recipe[]>([]),
+      // Stands in for the address bar. Setting it is how this suite says "a meal
+      // sent you here" (issue #752, Phase 3) — there is nowhere else the id could
+      // come from, which is the whole point of the phase.
+      mockRouter: { querystring: undefined as string | undefined },
+    };
+  },
+);
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), pop: vi.fn(), router: mockRouter }));
-vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
+vi.mock('../src/lib/toastStore.js', () => ({
+  addToast: toastSpy.addToast,
+  dismissToast: toastSpy.dismissToast,
+}));
 // `RecipeChangeSummary` reads the phase feature key since #1212, so this mock is
 // now on `featureGate.ts`'s import path and must carry everything it names.
 vi.mock('@salt/observability', () => ({
@@ -100,6 +107,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  toastSpy.reset();
   mockIsLoading._set(false);
   mockRecipes._set([]);
   mockRouter.querystring = undefined;
@@ -764,5 +772,112 @@ describe('ChatSessionPage — a model reply is never markup', () => {
     );
     expect(drawings).toHaveLength(0);
     expect(document.body.textContent).toContain('<svg viewBox="0 0 40 20">');
+  });
+});
+
+// ─── The acknowledgement (issue #1439) ───────────────────────────────────────
+// Every one of these three actions starts a librarian call that runs for tens of
+// seconds, from a control that is GONE by the time it starts: two are popover
+// items that close the menu on click, and the third is an icon-only button whose
+// `disabled` only dims a 20px glyph. Before the fix the page said nothing at all
+// for the whole call.
+//
+// What is asserted is both halves — raised while the call is pending, and gone
+// once it settles — because a persistent toast (`duration: 0`) is cleared by
+// nothing but the helper's own `finally`. `toastSpy.live()` is what would still
+// be on screen; see `support/toastSpy.ts`, and `startedToast.test.ts` for the
+// same contract against the real store.
+describe('ChatSessionPage — an AI action says it has started', () => {
+  type LibrarianResult = Awaited<ReturnType<typeof authorRecipeTraced>>;
+
+  /** A librarian call that is held open until the test lets it finish. */
+  function heldLibrarian(): { settle: (v: LibrarianResult) => void } {
+    let settle!: (v: LibrarianResult) => void;
+    vi.mocked(authorRecipeTraced).mockReturnValue(
+      new Promise<LibrarianResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    return { settle: (v) => settle(v) };
+  }
+
+  const OK = { kind: 'ok', value: emptyRecipe('recipe-new', NOW) } as LibrarianResult;
+  const FAILED = {
+    kind: 'err',
+    error: { kind: 'NetworkError', reason: 'offline' },
+  } as LibrarianResult;
+
+  it('acknowledges "Save as recipe", then clears it on success', async () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const call = heldLibrarian();
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-save-recipe-btn'));
+
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Writing the recipe…']));
+    expect(toastSpy.addToast).toHaveBeenCalledWith('Writing the recipe…', 'default', {
+      duration: 0,
+    });
+
+    call.settle(OK);
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
+    expect(toastSpy.live()).not.toContain('Writing the recipe…');
+  });
+
+  it('clears the acknowledgement when the save fails, leaving only the failure', async () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    const call = heldLibrarian();
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-save-recipe-btn'));
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Writing the recipe…']));
+
+    call.settle(FAILED);
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe.']));
+  });
+
+  it('acknowledges "Save as new recipe" from the menu that has just closed', async () => {
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    const call = heldLibrarian();
+    renderPage();
+    await openChatActions();
+
+    await fireEvent.click(screen.getByTestId('chat-save-new-recipe-btn'));
+
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Writing the new recipe…']));
+    call.settle(OK);
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Recipe created']));
+  });
+
+  it('acknowledges "Update recipe" from the menu that has just closed', async () => {
+    mockSessions._set([makeSession({ recipeId: 'lamb' })]);
+    mockRecipes._set([{ ...emptyRecipe('lamb', NOW), title: 'Lamb' }]);
+    const call = heldLibrarian();
+    renderPage();
+    await openChatActions();
+
+    await fireEvent.click(screen.getByTestId('chat-apply-changes-btn'));
+
+    await waitFor(() =>
+      expect(toastSpy.live()).toEqual(['Reading the conversation to update the recipe…']),
+    );
+    call.settle(FAILED);
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe update.']));
+  });
+
+  // The early return that never starts a call must not leave one announced: the
+  // chat points at a recipe the library does not have, so the handler bails
+  // before the librarian is reached.
+  it('announces nothing when "Update recipe" finds no recipe to update', async () => {
+    mockSessions._set([makeSession({ recipeId: 'gone' })]);
+    mockRecipes._set([]);
+    renderPage();
+    await openChatActions();
+
+    await fireEvent.click(screen.getByTestId('chat-apply-changes-btn'));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Recipe not found.', 'destructive'));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(toastSpy.live()).toEqual(['Recipe not found.']);
   });
 });

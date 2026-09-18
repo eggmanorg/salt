@@ -18,9 +18,12 @@ const {
   mockDefaultListId,
   mockSessions,
   mockEquipment,
+  toastSpy,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
+  const { makeToastSpy } = await import('./support/toastSpy.js');
   return {
+    toastSpy: makeToastSpy(),
     mockRecipes: makeStore<readonly Recipe[]>([]),
     mockCanonItems: makeStore<readonly { id: string }[]>([]),
     mockGuidedPlan: makeStore<unknown>(null),
@@ -38,7 +41,10 @@ vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
   router: { querystring: '' },
 }));
-vi.mock('../src/lib/toastStore.js', () => ({ addToast: vi.fn() }));
+vi.mock('../src/lib/toastStore.js', () => ({
+  addToast: toastSpy.addToast,
+  dismissToast: toastSpy.dismissToast,
+}));
 vi.mock('../src/lib/auth.svelte.js', () => ({
   auth: { user: { uid: 'uid-1', email: 'cook@test' } },
 }));
@@ -229,6 +235,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  toastSpy.reset();
   vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
   mockCanonItems._set([]);
   mockIsLoading._set(false);
@@ -366,5 +373,58 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
     await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
     expect(saveRecipe).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+// The acknowledgement (issue #1439). The menu item that starts this closes itself
+// on click, so `disabled={sidebarIsSavingNew}` is applied to a control that is no
+// longer mounted — the page said nothing for the whole librarian call. Both
+// halves are asserted, because a `duration: 0` toast is cleared by nothing but
+// the helper's `finally`. See `support/toastSpy.ts`.
+describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
+  type LibrarianResult = Awaited<ReturnType<typeof authorRecipeTraced>>;
+
+  function heldLibrarian(): (v: LibrarianResult) => void {
+    let settle!: (v: LibrarianResult) => void;
+    vi.mocked(authorRecipeTraced).mockReturnValue(
+      new Promise<LibrarianResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    return (v) => settle(v);
+  }
+
+  it('acknowledges while the librarian runs, and clears it on success', async () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const settle = heldLibrarian();
+    renderPage();
+    await openChatActions();
+
+    await fireEvent.click(screen.getByTestId('sidebar-save-new-recipe-btn'));
+
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Writing the new recipe…']));
+    expect(toastSpy.addToast).toHaveBeenCalledWith('Writing the new recipe…', 'default', {
+      duration: 0,
+    });
+
+    settle({
+      kind: 'ok',
+      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+    } as LibrarianResult);
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
+    expect(toastSpy.live()).not.toContain('Writing the new recipe…');
+  });
+
+  it('clears the acknowledgement when the librarian fails', async () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const settle = heldLibrarian();
+    renderPage();
+    await openChatActions();
+
+    await fireEvent.click(screen.getByTestId('sidebar-save-new-recipe-btn'));
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Writing the new recipe…']));
+
+    settle({ kind: 'err', error: { kind: 'NetworkError', reason: 'offline' } } as LibrarianResult);
+    await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe.']));
   });
 });
