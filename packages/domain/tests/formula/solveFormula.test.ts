@@ -20,6 +20,7 @@ function coppa(): Formula {
       { ingredientId: SUGAR, percent: 0.5, inBasis: false },
     ],
     referenceYield: { kind: 'basis', grams: 1000 },
+    target: null,
     schemaVersion: 1,
   };
 }
@@ -120,6 +121,7 @@ describe('a solve that cannot be satisfied', () => {
         { ingredientId: 'ing-water', percent: 70, inBasis: false },
       ],
       referenceYield: basisYield(300),
+      target: null,
       schemaVersion: 1,
     };
     expect(
@@ -179,6 +181,7 @@ describe('the bound seam', () => {
         },
       ],
       referenceYield: { kind: 'basis', grams: 500 },
+      target: null,
       schemaVersion: 1,
     };
   }

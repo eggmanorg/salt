@@ -42,6 +42,7 @@ const FORMULA: Formula = {
     kind: 'target',
     shape: { count: 1, unitDoughGrams: 900 },
   },
+  target: null,
   schemaVersion: 1,
 };
 

@@ -47,6 +47,7 @@ function runningLoaf(): BatchDoc {
     recipeTitle: 'Overnight white tin',
     recipeKind: 'recipe',
     cureCategory: null,
+    target: null,
     state: 'running',
     abandonedAt: null,
     checkedIngredientIds: [],

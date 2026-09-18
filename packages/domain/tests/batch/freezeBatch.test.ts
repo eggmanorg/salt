@@ -489,3 +489,49 @@ describe('freezeBatch — where each stage happened', () => {
     );
   });
 });
+
+describe('freezeBatch — what the run is aiming at (issue #1407)', () => {
+  const COPPA_TARGET = { weightLossPercent: 35, phAtMost: null };
+
+  function freezeWithTarget(target: Formula['target']) {
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: { ...overnightWhiteTin(), target },
+      atYield: TWELVE_ROLLS,
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+    return result.batch;
+  }
+
+  it('copies the formula’s target onto the run', () => {
+    expect(freezeWithTarget(COPPA_TARGET).target).toEqual(COPPA_TARGET);
+  });
+
+  it('freezes it — editing the formula afterwards does not reach a running batch', () => {
+    // The whole reason the field is on the batch rather than read through. The
+    // formula object the run was frozen from is mutated out from under it here in
+    // the only way a pure test can express "somebody edited the formula next
+    // month": a new formula with a different target, which the already-frozen
+    // batch has no path back to.
+    const frozen = freezeWithTarget(COPPA_TARGET);
+    const edited: Formula = {
+      ...overnightWhiteTin(),
+      target: { weightLossPercent: 20, phAtMost: 5.3 },
+    };
+    expect(edited.target).not.toEqual(frozen.target);
+    expect(frozen.target).toEqual(COPPA_TARGET);
+  });
+
+  it('writes null for a formula that names no target, and parses as one', () => {
+    const batch = freezeWithTarget(null);
+    expect(batch.target).toBeNull();
+    // Not merely typed null — null on the document that gets written.
+    expect(BatchSchema.parse(batch).target).toBeNull();
+  });
+});

@@ -65,6 +65,7 @@ function running(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
     recipeKind: 'recipe',
+    target: null,
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',

@@ -19,6 +19,7 @@ const LOAF: Formula = {
     { ingredientId: 'yeast', percent: 1.2, inBasis: false },
   ],
   referenceYield: { kind: 'basis', grams: 500 },
+  target: null,
   schemaVersion: 1,
 };
 

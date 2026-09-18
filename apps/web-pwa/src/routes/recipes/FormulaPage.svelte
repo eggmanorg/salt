@@ -55,6 +55,7 @@
     DoughAmount,
     Formula,
     FormulaComponent,
+    FormulaTarget,
     ProcessStage,
     ProcessStageKind,
   } from '@salt/domain/schemas';
@@ -240,6 +241,14 @@
   // by an explicit mode choice, which is itself the declaring act. Reset by
   // `seed()`, because a re-seed is a fresh reading of the document.
   let tinCountTouched = $state(false);
+  // ─── What a run of this is aiming at (issue #1407) ───────────────────────────
+  //
+  // Two boxes, both optional, held as the RAW STRING being typed for the same
+  // reason `gramsText` is. A dry-cured coppa fills the first, a fermented salami
+  // fills both, and bacon leaves both empty — which is an ordinary answer rather
+  // than a gap.
+  let weightLossText = $state('');
+  let targetPhText = $state('');
   // Whether the working model holds changes the stored document does not. Guards
   // the re-seed below: an incoming snapshot never overwrites work in progress.
   let dirty = $state(false);
@@ -464,6 +473,13 @@
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
     // only two ways to get them are the extraction action and adding one by hand.
     stageRows = (stored?.process ?? []).map(stageRowFrom);
+
+    // The target, straight back into its two boxes (issue #1407). `null` on either
+    // half is an empty box, which is exactly what it meant.
+    weightLossText =
+      stored?.target?.weightLossPercent == null ? '' : String(stored.target.weightLossPercent);
+    targetPhText = stored?.target?.phAtMost == null ? '' : String(stored.target.phAtMost);
+
     dirty = false;
   }
 
@@ -864,6 +880,49 @@
       : `${formatMinutes(totalDuration.minMinutes)} – ${formatMinutes(totalDuration.maxMinutes)}`,
   );
 
+  // ─── What a run of this is aiming at (issue #1407) ────────────────────────────
+  //
+  // Both boxes parse the way every other box on this page does: blank is "not
+  // named", which is the ordinary answer, and text that is present but out of range
+  // is said ON THE FIELD rather than in a toast, because it is about the box you are
+  // in. The bounds are `FormulaTargetSchema`'s own — this is not a second opinion,
+  // it is the same one said early enough to be useful.
+
+  // Through `parsePositiveNumber`, with the ceiling applied on top — rather than a
+  // second copy of its four lines, which is exactly what `sharedHelperGuard` counts
+  // in this file (issue #1055).
+  const targetWeightLossPercent = $derived.by(() => {
+    const value = parsePositiveNumber(weightLossText);
+    return value !== null && value < 100 ? value : null;
+  });
+  const weightLossError = $derived(
+    weightLossText.trim() !== '' && targetWeightLossPercent === null
+      ? 'A percentage above 0 and below 100, or leave it blank.'
+      : '',
+  );
+
+  const targetPh = $derived.by(() => {
+    const raw = targetPhText.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;
+  });
+  const targetPhError = $derived(
+    targetPhText.trim() !== '' && targetPh === null ? 'A pH from 0 to 14, or leave it blank.' : '',
+  );
+
+  // EXACTLY ONE SPELLING OF "NO TARGET" — `null`, never an object of two nulls.
+  // Two spellings would mean every reader downstream handling both, and the second
+  // one arrives the first time a screen writes an object out of habit. This is the
+  // only place a `FormulaTarget` is ever constructed, and
+  // `tests/FormulaPageTarget.test.ts` is what goes red if it stops holding the line
+  // (CLAUDE.md rule 12).
+  const target = $derived<FormulaTarget | null>(
+    targetWeightLossPercent === null && targetPh === null
+      ? null
+      : { weightLossPercent: targetWeightLossPercent, phAtMost: targetPh },
+  );
+
   // ─── Save ─────────────────────────────────────────────────────────────────────
 
   // A declaration is REQUIRED — `shape` must resolve to something, and the default
@@ -872,10 +931,21 @@
   // has been touched, so the opening `'1'` no longer reads as a declaration
   // nobody made). Without one the formula has no reference yield worth the name,
   // and phase 02 would have nothing to solve a batch against.
-  const canSave = $derived(shape !== null && derivation.ok && !saving);
+  const canSave = $derived(
+    shape !== null &&
+      derivation.ok &&
+      // A figure the schema would refuse is not savable — a rail on the box, and
+      // deliberately not a judgement about the run: the target itself gates nothing
+      // anywhere (issue #1407).
+      weightLossError === '' &&
+      targetPhError === '' &&
+      !saving,
+  );
 
   const blockedReason = $derived.by(() => {
     if (shape === null) return 'Say what this makes before saving.';
+    if (weightLossError !== '' || targetPhError !== '')
+      return 'Fix the target before saving, or clear the box.';
     if (!derivation.ok) {
       switch (derivation.reason.kind) {
         case 'emptyFormula':
@@ -896,8 +966,13 @@
     // with no process carries no empty scaffolding, and `setDoc` writes the whole
     // document, so an absent key is how a process is cleared as well as how one
     // never existed.
+    // `target` is merged in here rather than authored by `deriveFormula`, which
+    // knows only about composition and writes `null` (issue #1407). `null` is a
+    // real answer and is written as one — `setDoc` writes the whole document, so
+    // clearing both boxes clears the target.
+    const withTarget: Formula = { ...derivation.formula, target };
     const result = await saveFormula(
-      stages.length > 0 ? { ...derivation.formula, process: stages } : derivation.formula,
+      stages.length > 0 ? { ...withTarget, process: stages } : withTarget,
     );
     saving = false;
     if (result.kind !== 'ok') {
@@ -1545,6 +1620,71 @@
                     Add a stage
                   </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- ─── What a run of this is aiming at (issue #1407) ─────────────────
+             ON EVERY FORMULA SCREEN, both boxes empty by default. Gating the card
+             on a cure category would be behaviour branching on kind, which
+             CLAUDE.md forbids outside `packages/domain` — and an empty card on a
+             bread formula costs nothing.
+
+             THE TARGET DECIDES NOTHING. Nothing downstream blocks, warns, confirms,
+             or declares a run finished on the strength of it: a batch stamps it at
+             start and every weighing says how far along the run is. Whether to take
+             a cure all the way, cut it short or leave it hanging another fortnight
+             is the cook's, and Salt records rather than polices.
+
+             DELIBERATELY NO ESTIMATE of when a run will reach either figure, here
+             or anywhere. It is done on feel, and a projected date would be a
+             confident number that is usually wrong. -->
+          <Card>
+            <CardHeader>
+              <CardTitle>What a run of this is aiming at</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div class="flex flex-col gap-3" data-testid="formula-target">
+                <p class="text-sm text-muted-foreground">
+                  A cure is finished when it has lost enough weight, or when it has dropped to a low
+                  enough pH. Fill in whichever applies — a dry-cured coppa wants the first, a
+                  fermented salami wants both, and most things want neither.
+                </p>
+
+                <div class="flex flex-wrap items-start gap-3">
+                  <TextField
+                    label="Weight loss (%)"
+                    inputmode="decimal"
+                    class="w-40"
+                    placeholder="optional"
+                    value={weightLossText}
+                    error={weightLossError === '' ? undefined : weightLossError}
+                    onValueChange={(v) => {
+                      weightLossText = v;
+                      touch();
+                    }}
+                    data-testid="formula-target-weight-loss"
+                  />
+
+                  <TextField
+                    label="pH at most"
+                    inputmode="decimal"
+                    class="w-40"
+                    placeholder="optional"
+                    value={targetPhText}
+                    error={targetPhError === '' ? undefined : targetPhError}
+                    onValueChange={(v) => {
+                      targetPhText = v;
+                      touch();
+                    }}
+                    data-testid="formula-target-ph"
+                  />
+                </div>
+
+                <p class="text-sm text-muted-foreground" data-testid="formula-target-note">
+                  Starting a batch stamps this onto that run. Editing it afterwards never changes
+                  what a run already going was aiming at.
+                </p>
               </div>
             </CardContent>
           </Card>

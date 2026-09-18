@@ -121,6 +121,17 @@ export interface LogObservationInput {
   /** Grams on the scale, or null when the entry is a note or a photo. */
   weightGrams: number | null;
   /**
+   * The pH reading, 0–14, or null when it was not taken (issue #1407).
+   *
+   * `BatchObservationSchema.ph` has carried the field since the log was built and
+   * was only ever missing a box; a fermented salami's weekly reading is a weight
+   * AND a pH, so the sheet grew one and this passes it on untouched. The sheet
+   * refuses an out-of-range figure on the field rather than handing one over, so
+   * nothing here re-checks it — the schema is the rail either way, exactly as it is
+   * for the humidity beside it.
+   */
+  ph: number | null;
+  /**
    * Degrees Celsius at the instant of the reading, or null when it was not taken
    * (issue #1286). Unbounded below zero — a garage in January is a real place a
    * batch sits.
@@ -162,10 +173,12 @@ export type PhotoOutcome =
  * a temperature and a humidity — so the sheet grew both boxes and this passes them
  * on untouched. Null still means "not measured", which is most bakes.
  *
- * `ph` IS still written null, and deliberately: it is a ferment's measurement rather
- * than a bake's or a cure's, and phase 03 of the epic is where it earns a control
- * (docs/formulas-schedules-batches.md). Null is what "not measured" is, so nothing
- * here has to be revisited when a screen does ask.
+ * `ph` JOINED THEM in issue #1407, for the same reason and by the same route: a
+ * fermented salami is finished when it has dropped below a pH, and a target nothing
+ * can be measured against is half a feature. It is asked for on EVERY run rather
+ * than only where the frozen target names a pH — the field has been on the document
+ * since the log was built, and hiding a measurement behind an intention is the wrong
+ * way round. Null still means "not measured", which is most bakes.
  */
 export async function logObservation(
   input: LogObservationInput,
@@ -192,7 +205,7 @@ export async function logObservation(
     at: new Date(at).toISOString(),
     stageId: input.stageId,
     weightGrams: input.weightGrams,
-    ph: null,
+    ph: input.ph,
     temperatureC: input.temperatureC,
     relativeHumidityPercent: input.relativeHumidityPercent,
     note: input.note,

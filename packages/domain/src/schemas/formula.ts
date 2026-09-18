@@ -75,6 +75,38 @@ export const ReferenceYieldSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('basis'), grams: z.number().positive() }),
 ]);
 
+// WHAT A RUN OF THIS IS AIMING AT (issue #1407, phase 04 of epic #778) — a cure is
+// finished when it has lost enough weight, or when it has dropped to a low enough
+// pH. Both OPTIONAL and independent: a dry-cured coppa names a weight loss and no
+// pH, a fermented salami names both, and bacon — like every cooked thing — names
+// neither, which is an ordinary answer rather than a gap.
+//
+// A NAMING COLLISION, NOTED SO NOBODY TRIPS ON IT. `ReferenceYieldSchema` above
+// already carries `kind: \'target\'`, and it means something else entirely — the
+// SOLVE DIRECTION, output known, solve for the basis. That one is a nested literal
+// inside a discriminated union; this is a sibling field on the formula. They never
+// appear in the same position and neither reads the other.
+//
+// A SINGLE PERCENTAGE, not a 30–40% band. A band renders as two thresholds and a
+// "correct window", which is a verdict wearing a range\'s clothes; and "nearing"
+// needs one number to be near. Whoever wants 35% types 35. Deliberately unlike
+// `StageDurationSchema`\'s range: that range is a claim the RECIPE made about a
+// duration the schedule must commit to, where this is a decision the cook makes on
+// the day and Salt must not pre-empt it.
+//
+// IT GATES NOTHING, at any layer. Nothing here or downstream blocks, warns,
+// confirms, or decides that a run is finished — see `targetProgress` in the batch
+// module, which computes the figure and nothing else.
+export const FormulaTargetSchema = z.object({
+  // Percent of the STARTING weight lost — 35 for a coppa. Bounded to what is
+  // physically possible: a run cannot lose all of itself, so a figure at or past
+  // 100 is a typo rather than an intention.
+  weightLossPercent: z.number().positive().lt(100).nullable(),
+  // "Below pH 5.3". Bounded to the scale that exists, exactly as
+  // `BatchObservationSchema.ph` is: a strip or a probe cannot read outside 0–14.
+  phAtMost: z.number().min(0).max(14).nullable(),
+});
+
 export const FormulaSchema = z.object({
   // Equal to the doc id at `formulas/{recipeId}` when this is eventually stored,
   // the same way `ShoppingDaySchema.date` is.
@@ -95,6 +127,20 @@ export const FormulaSchema = z.object({
   // minutes on the counter becoming twenty on the counter and eight in the fridge),
   // and what lands on the batch is the resolved schedule, never this.
   process: ProcessSchema.optional(),
+  // WHAT A RUN OF THIS IS AIMING AT, or nothing at all (issue #1407). See
+  // `FormulaTargetSchema` above for what it is and what it deliberately is not.
+  //
+  // `schemaVersion` STAYS AT 1, for the reason `process` above states: `formulas`
+  // is greenfield, and an added field with a read default needs no version bump and
+  // no migration. A document written before this field parses as a formula that
+  // named no target — which is what it meant.
+  //
+  // THERE IS EXACTLY ONE SPELLING OF "NO TARGET": `null` on this field, never an
+  // object of two nulls. Two spellings would mean every reader handling both, and
+  // the second one would arrive the first time a screen wrote an object out of
+  // habit. The write path is what has to hold that line, so it is pinned there —
+  // `apps/web-pwa/tests/FormulaPageTarget.test.ts` (CLAUDE.md rule 12).
+  target: FormulaTargetSchema.nullable().default(null),
   schemaVersion: z.literal(1).default(1),
 });
 
@@ -102,4 +148,5 @@ export type DensityClass = z.infer<typeof DensityClassSchema>;
 export type FormulaComponent = z.infer<typeof FormulaComponentSchema>;
 export type DoughAmount = z.infer<typeof DoughAmountSchema>;
 export type ReferenceYield = z.infer<typeof ReferenceYieldSchema>;
+export type FormulaTarget = z.infer<typeof FormulaTargetSchema>;
 export type Formula = z.infer<typeof FormulaSchema>;

@@ -53,6 +53,7 @@ function input(over: Partial<Parameters<typeof logObservation>[0]> = {}) {
     at: OBSERVED_AT,
     stageId: null,
     weightGrams: null,
+    ph: null,
     temperatureC: null,
     relativeHumidityPercent: null,
     note: '',
@@ -238,7 +239,7 @@ describe('batchObservationService — logging a reading', () => {
     expect(writtenObservation(0).id).not.toBe(writtenObservation(1).id);
   });
 
-  it('writes the fields it collects and nulls the two it does not', async () => {
+  it('writes the fields it collects and nulls the boxes nobody filled in', async () => {
     await logObservation(input({ weightGrams: 1440, note: 'open crumb' }));
 
     expect(writtenObservation()).toMatchObject({
@@ -247,13 +248,23 @@ describe('batchObservationService — logging a reading', () => {
       stageId: null,
       weightGrams: 1440,
       note: 'open crumb',
-      // No screen asks for these yet; null is what "not measured" is.
+      // Every box has a control now — pH was the last to get one (issue #1407).
+      // Null is what "not measured" is, which is most readings.
       ph: null,
       temperatureC: null,
       relativeHumidityPercent: null,
       // The photo never travels through the document — the callable stamps it on.
       image: null,
     });
+  });
+
+  // Issue #1407. `ph` was written null unconditionally until the sheet grew a box,
+  // and this is what goes red if that line ever comes back — a pH target with
+  // nothing able to reach the document is half a feature.
+  it('writes a pH reading through rather than nulling it', async () => {
+    await logObservation(input({ ph: 5.1 }));
+
+    expect(writtenObservation().ph).toBe(5.1);
   });
 
   it('writes the entry BEFORE attaching the photo', async () => {
