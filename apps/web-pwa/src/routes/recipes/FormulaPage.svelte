@@ -110,7 +110,14 @@
   //
   //   • EXTRACTION DOES NOT SAVE. It fills the review surface and marks the page
   //     dirty; Save is still the one write path, so the stages are seen before they
-  //     are stored.
+  //     are stored. That they can therefore be LOST is the design, not an oversight
+  //     (issue #1429): they live in `stageRows` here and nowhere else, so a reload,
+  //     a closed tab or a suspended phone takes them, exactly as it takes a
+  //     temperature corrected by hand in the same session — they are one field on a
+  //     document being authored, not a separable result. Why a Cloud Function must
+  //     not close that window instead, and the boundary of that claim, are at the
+  //     flow (`apps/cloud-functions/src/flows/extractProcessStages.ts`); the reason
+  //     turns on the next bullet.
   //   • RE-RUNNING REPLACES, and says so first. Whole-document LWW — there is no
   //     merge, and a re-run over hand corrections would silently discard them.
   //   • ADDING A STAGE BY HAND IS FIRST-CLASS. The spike swallowed one of four

@@ -4,26 +4,62 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { mockGenerate, mockGet, mockDoc, mockCollection, mockManifestGet, mockFlowModel } =
-  vi.hoisted(() => {
-    const mockGet = vi.fn();
-    const mockDoc = vi.fn(() => ({ get: mockGet }));
-    // The equipment manifest is a SECOND read on the same Firestore stub (issue
-    // #1281), so the collection has to dispatch — otherwise the manifest read
-    // gets handed a recipe and the places section silently disappears.
-    const mockManifestGet = vi.fn().mockResolvedValue({ exists: false });
-    const mockCollection = vi.fn((name: string) =>
-      name === 'equipmentManifest' ? { doc: () => ({ get: mockManifestGet }) } : { doc: mockDoc },
-    );
-    return {
-      mockGenerate: vi.fn(),
-      mockGet,
-      mockDoc,
-      mockCollection,
-      mockManifestGet,
-      mockFlowModel: vi.fn().mockResolvedValue('gemini-flash-lite-latest'),
-    };
+const {
+  mockGenerate,
+  mockGet,
+  mockDoc,
+  mockCollection,
+  mockManifestGet,
+  mockFlowModel,
+  mockWrite,
+  firestoreStub,
+} = vi.hoisted(() => {
+  // Issue #1429. Every mutating handle the Admin SDK offers, funnelled into ONE
+  // spy, so "did the flow write anything?" is a single assertion rather than a
+  // list of method names a new one could slip past. `where` is only for the
+  // failure message — what matters is that the spy was called at all.
+  const mockWrite = vi.fn();
+  const writeHandles = (where: string) => ({
+    set: (...args: unknown[]) => mockWrite(`${where}.set`, ...args),
+    create: (...args: unknown[]) => mockWrite(`${where}.create`, ...args),
+    update: (...args: unknown[]) => mockWrite(`${where}.update`, ...args),
+    delete: (...args: unknown[]) => mockWrite(`${where}.delete`, ...args),
   });
+  const mockGet = vi.fn();
+  const mockDoc = vi.fn((_id?: string) => ({ get: mockGet }));
+  // The equipment manifest is a SECOND read on the same Firestore stub (issue
+  // #1281), so the collection has to dispatch — otherwise the manifest read
+  // gets handed a recipe and the places section silently disappears.
+  const mockManifestGet = vi.fn().mockResolvedValue({ exists: false });
+  const mockCollection = vi.fn((name: string) => ({
+    doc: (id?: string) => ({
+      ...(name === 'equipmentManifest' ? { get: mockManifestGet } : mockDoc(id)),
+      ...writeHandles(`${name}/${id}`),
+    }),
+    add: (...args: unknown[]) => mockWrite(`${name}.add`, ...args),
+  }));
+  // The three ways past `collection()` into a write, given the same treatment.
+  // `runTransaction` and `bulkWriter` are counted as writes even though a
+  // transaction can read: this flow reads two documents with a plain `.get()`
+  // each, so reaching for either is a change that should stop this test anyway.
+  const firestoreStub = {
+    collection: mockCollection,
+    doc: (path?: string) => ({ get: mockGet, ...writeHandles(`${path}`) }),
+    batch: (...args: unknown[]) => mockWrite('batch()', ...args),
+    bulkWriter: (...args: unknown[]) => mockWrite('bulkWriter()', ...args),
+    runTransaction: (...args: unknown[]) => mockWrite('runTransaction()', ...args),
+  };
+  return {
+    mockGenerate: vi.fn(),
+    mockGet,
+    mockDoc,
+    mockCollection,
+    mockManifestGet,
+    mockWrite,
+    mockFlowModel: vi.fn().mockResolvedValue('gemini-flash-lite-latest'),
+    firestoreStub,
+  };
+});
 
 vi.mock('../../src/genkit.js', () => ({
   ai: {
@@ -33,7 +69,7 @@ vi.mock('../../src/genkit.js', () => ({
 }));
 
 vi.mock('firebase-admin/firestore', () => ({
-  getFirestore: () => ({ collection: mockCollection }),
+  getFirestore: () => firestoreStub,
 }));
 
 // Stub withAiTimeout to call op() directly — timeout/retry logic is tested elsewhere.
@@ -520,5 +556,68 @@ describe('extractProcessStages — the household places', () => {
     const result = await run({ recipeId: 'recipe-1' });
 
     expect(result.stages[0]!.environment!.equipmentId).toBeNull();
+  });
+});
+
+describe('extractProcessStages — nothing is written', () => {
+  // ISSUE #1429, CLAUDE.md hard rule 12. The flow header, the callable comment,
+  // `formulaService.ts` and the formula screen all now assert that this extraction
+  // deliberately persists nothing and that losing the stages to a locked phone is
+  // the right outcome. The CLIENT half of that claim was already pinned —
+  // `apps/web-pwa/tests/FormulaPageStages.test.ts` → "does NOT save what it found".
+  // The SERVER half was pinned by nothing: this file's Firestore stub offered reads
+  // only, so a flow that started writing would have passed every test in it.
+  //
+  // Verified red before it was green: adding
+  // `await getFirestore().collection('formulas').doc(recipeId).set({ stages });`
+  // to the flow fails both cases below, and removing it turns them green again.
+  //
+  // BOUNDARY: this guards the Admin SDK handle the flow is given — `collection()`,
+  // `doc()`, `batch()`, `bulkWriter()` and `runTransaction()` off `getFirestore()`.
+  // It does not, and cannot, see a write made some other way (an outbound HTTP call,
+  // an enqueued task), and it says nothing about whether the stages SHOULD be
+  // durable — that argument, and the condition under which it stops holding, are in
+  // the flow's header.
+
+  it('the guard would see a write — the spy is on the handle the flow holds', async () => {
+    // Anti-vacuity. Two green assertions below prove nothing if the stub's write
+    // methods are not where a write would actually land, so exercise the exact path
+    // a future `set` would take before asserting that nothing took it.
+    firestoreStub.collection('formulas').doc('recipe-1').set({ stages: [] });
+    expect(mockWrite).toHaveBeenCalledTimes(1);
+    firestoreStub.collection('formulas').add({ stages: [] });
+    firestoreStub.batch();
+    expect(mockWrite).toHaveBeenCalledTimes(3);
+  });
+
+  it('writes nothing on a normal run', async () => {
+    mockGenerate.mockResolvedValue({ output: AI_OUTPUT });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    // The run really happened, and really touched Firestore — for READS.
+    expect(result.stages).toHaveLength(4);
+    expect(mockGet).toHaveBeenCalled();
+    expect(
+      mockWrite,
+      `the flow wrote: ${JSON.stringify(mockWrite.mock.calls)}`,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the answer is an empty list either', async () => {
+    // The other return path. A method with nothing to wait for comes back empty,
+    // and "no process" is not a reason to go and record one.
+    mockGenerate.mockResolvedValue({
+      output: { stages: [stage({ label: 'Mix', kind: 'active', stepId: 'step-1' })] },
+    });
+
+    const result = await run({ recipeId: 'recipe-1' });
+
+    expect(result.stages).toEqual([]);
+    expect(mockGet).toHaveBeenCalled();
+    expect(
+      mockWrite,
+      `the flow wrote: ${JSON.stringify(mockWrite.mock.calls)}`,
+    ).not.toHaveBeenCalled();
   });
 });

@@ -25,6 +25,51 @@ import { requireRecipe } from './loadRecipe.js';
 // authors CONTENT ONLY — no stage ids, no timestamps, nothing persisted. The web
 // service mints ids and the user reviews the result before anything is saved.
 //
+// ─── AND LOSING THE STAGES TO A LOCKED PHONE IS CORRECT (issue #1429, epic #1417) ─
+//
+// The stages land in the formula screen's `stageRows` state and nowhere else, so a
+// reload, a closed tab or a phone suspended long enough to discard the page loses
+// them. Unlike the rest of this epic that window does not close when the call
+// returns — it runs until the user presses Save, which may be never. It is still NOT
+// an unfixed instance of #1416, where `generateGuidedPlan` SAVED a plan for the user
+// on a path with no human step in it at all. The distinction the epic asks this
+// file's sweep to preserve is whether the app SAVED IT FOR YOU or HANDED IT TO YOU TO
+// REVIEW, and three facts put this one in the second bucket:
+//
+//   • There is no document to write. `formulas/{recipeId}` requires `components` and
+//     `referenceYield` (`FormulaSchema`, @salt/domain/schemas), which are precisely
+//     the two things the formula screen exists to have a HUMAN declare — no machine
+//     knows which ingredients ARE the basis, or what a count-based line weighs. So
+//     there is no stages-only write, and writing the whole document would mean
+//     authoring a composition this flow has no business inventing.
+//   • On a first visit the app itself is refusing that write. `canSave` on the
+//     formula screen is false until a yield has been declared, so Save is disabled
+//     while the extract button beside it is not. A server write would be writing a
+//     document the client is, at that moment, deliberately declining to write.
+//   • Where a write IS possible it is destructive. Re-running over existing stages
+//     REPLACES them outright — whole-document LWW, no merge — which is why the screen
+//     asks first. Confirming is reversible today only because the fresh reading
+//     replaces what is on SCREEN: a user who prefers the old stages walks away and
+//     the stored ones are untouched. If this flow wrote, "Replace them" would destroy
+//     hand-corrected stages in Firestore before the user had seen the replacement,
+//     with no undo and no history — the formula document carries no timestamps, by
+//     design. Note which way the two invert: where the write would be safe it is
+//     impossible, and where it is possible it is destructive.
+//
+// What the loss costs is one tap. This is `lite`-tier transcription at temperature 0
+// over text the model is copying, so a re-run returns substantially the same stages,
+// and the person is sitting in front of the button (see the no-retry note below).
+//
+// BOUNDARY — this is not "the stages are never persisted server-side" as a timeless
+// rule, and must not be written as one. All three reasons are properties of `process`
+// living inside `formulas/{recipeId}` alongside the human's declaration. Move it into
+// a document a function can author alone — #1405 is the nearest open issue to that —
+// and the reasoning is void and the question reopens. The SERVER half of the claim is
+// pinned by `tests/flows/extractProcessStages.test.ts` → "nothing is written"; the
+// CLIENT half by `apps/web-pwa/tests/FormulaPageStages.test.ts` → "does NOT save what
+// it found". The decision is recorded in docs/formulas-schedules-batches.md →
+// "Process".
+//
 // TWO PROPERTIES ARE ENFORCED IN CODE RATHER THAN LEFT TO THE PROMPT, because both
 // are things the spike got wrong on real recipes and neither is worth a coin toss:
 // a stage citing a step the recipe does not have loses its citation, and a process

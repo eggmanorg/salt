@@ -92,13 +92,6 @@ export function initFormulaSync(recipeId: string): () => void {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 /**
- * Save a formula. THE ONLY WRITE PATH for `formulas/{recipeId}`.
- *
- * Optimistic: the store takes the new formula before the round trip, and keeps it
- * if the write fails, so a dropped connection never silently reverts the mapping
- * on screen. Whole-document LWW — a re-map replaces, it does not merge.
- */
-/**
  * Ask the AI for the stages a recipe's method describes (issue #806, phase 2).
  *
  * WRITES NOTHING, deliberately. The stages come back to the formula screen, which
@@ -106,6 +99,24 @@ export function initFormulaSync(recipeId: string): () => void {
  * write path, so nothing reaches Firestore until the user has seen it. That also
  * means a re-run costs nothing but the call — the previous stages are only replaced
  * once someone saves over them.
+ *
+ * AND THAT MEANS THEY CAN BE LOST, WHICH IS THE DESIGN (issue #1429, epic #1417).
+ * What comes back lives in the formula screen's own `stageRows` state and nowhere
+ * else, so a reload, a closed tab or a phone suspended long enough to discard the
+ * page takes the stages with it — silently, and with no time limit on the window,
+ * because it stays open until Save is pressed. They are not a separable result: they
+ * are one field on a document the user is halfway through authoring, and they are as
+ * unsaved as a temperature they corrected by hand in the same session.
+ *
+ * Closing that window server-side is what #1416 did for `generateGuidedPlan`, and it
+ * is wrong here: `formulas/{recipeId}` requires a composition only the user can
+ * declare, so there is no stages-only write; on a first visit `canSave` is false, so
+ * a server write would write a document this client is refusing to write; and where a
+ * write is possible it would destroy hand-corrected stages through the re-run
+ * confirmation before the user had seen the replacement. The argument and its
+ * boundary are at the flow (`apps/cloud-functions/src/flows/extractProcessStages.ts`)
+ * and the decision is in docs/formulas-schedules-batches.md → "Process". Hard rule 3
+ * rules out a browser-held draft in any case.
  *
  * A recipe whose method has nothing to wait for comes back with an EMPTY list. That
  * is the flow refusing to invent a proof, not a failure.
@@ -123,6 +134,13 @@ export async function extractProcessStages(
   );
 }
 
+/**
+ * Save a formula. THE ONLY WRITE PATH for `formulas/{recipeId}`.
+ *
+ * Optimistic: the store takes the new formula before the round trip, and keeps it
+ * if the write fails, so a dropped connection never silently reverts the mapping
+ * on screen. Whole-document LWW — a re-map replaces, it does not merge.
+ */
 export async function saveFormula(next: Formula): Promise<ReadResult<Formula, DomainError>> {
   _formula.set(next);
   pendingWrites += 1;
