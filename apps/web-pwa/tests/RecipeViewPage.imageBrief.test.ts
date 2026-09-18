@@ -141,6 +141,7 @@ const BRIEF = 'Served on a rustic wooden board in warm afternoon light, shot fro
 
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

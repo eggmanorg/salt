@@ -35,6 +35,7 @@ const GHEE = '2 tbsp ghee';
 // Stated as a document rather than typed into a form — the shape is what the
 // assertions below read back, and it is the same shape either way.
 const RECIPE: Recipe = {
+  cureCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',

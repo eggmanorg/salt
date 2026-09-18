@@ -399,6 +399,8 @@ const BATCH = {
   schemaVersion: 1 as const,
   recipeId: 'r-1',
   recipeTitle: 'Sourdough',
+  recipeKind: 'recipe' as const,
+  cureCategory: null,
   state: 'running' as const,
   abandonedAt: null,
   quantities: [],

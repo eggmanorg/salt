@@ -97,6 +97,7 @@ function ingredient(
 
 function recipeOf(items: IngredientGroup['items'], servings: number): Recipe {
   return {
+    cureCategory: null,
     image: null,
     createdBy: '',
     lastEditedBy: '',

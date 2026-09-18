@@ -31,7 +31,7 @@
   import { canonItems } from '../../lib/canonService.js';
   import { people } from '../../lib/membersService.js';
   import { recipes } from '../../lib/recipeService.js';
-  import { KIND_COPY, kindOf } from './recipeKind.js';
+  import { categoryOptions, KIND_COPY, kindOf, toCureCategory } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
   import RecipePhaseEditor from './RecipePhaseEditor.svelte';
 
@@ -177,7 +177,29 @@
     recipe.metadata.servings === null ? '' : String(recipe.metadata.servings),
   );
   const hasServings = $derived(showCooking && storedServesText !== '');
-  const hasFacts = $derived(Boolean(producesCanonName) || hasServings || Boolean(attribution));
+
+  // ─── Cure type (issue #1404) ────────────────────────────────────────────────
+  // Read off the kind's COPY, never off the kind: `KIND_COPY` declares a category
+  // vocabulary on exactly one kind, so four kinds get `null` here and render
+  // nothing — byte for byte how `tagsHint` reaches the tag zone below, and why no
+  // `.svelte` file in this app compares against `'cure'`.
+  const categoryCopy = $derived(KIND_COPY[kindOf(recipe)].categoryCopy ?? null);
+  const hasCategory = $derived(categoryCopy !== null && recipe.cureCategory !== null);
+  // Resolved to a string HERE rather than interpolated from a nullable inside a
+  // snippet, for the reason the two labels below give: an inline `{maybeNull}`
+  // compiles to a fallback no test could reach. The uncategorised wording is the
+  // copy's own — an entry nobody has categorised is a normal state, not an error.
+  const categoryLabel = $derived(
+    categoryCopy === null
+      ? ''
+      : recipe.cureCategory === null
+        ? categoryCopy.unsetLabel
+        : categoryCopy.options[recipe.cureCategory],
+  );
+
+  const hasFacts = $derived(
+    Boolean(producesCanonName) || hasServings || hasCategory || Boolean(attribution),
+  );
 
   // Both resolved to strings HERE rather than interpolated from a nullable inside
   // a snippet that only renders when they are set: an inline `{maybeNull}`
@@ -522,6 +544,64 @@
                  scaling base, so it reads as a plain pill exactly as it did
                  before the picker existed. -->
             <Chip variant="fact" tone="secondary" icon="Users">{storedServesLabel}</Chip>
+          {/if}
+
+          <!-- ── Cure type (issue #1404) ──────────────────────────────────────
+               A fact about the dish, so it sits in the fact row beside Makes and
+               Serves rather than in a section of its own, and it is corrected in
+               a tap: no confirmation, no gate. The category is a fact about the
+               food, never permission to do anything, and — unlike `kind` — a
+               wrong one has to have a route back, or a misclassification is a
+               permanent wrong answer.
+
+               Rendered off `categoryCopy`, which exactly one kind declares. The
+               kind is never compared here; a kind with no category vocabulary
+               simply has no zone, including its dashed empty slot. -->
+          {#if categoryCopy}
+            <EditableZone
+              {editing}
+              filled={recipe.cureCategory !== null}
+              label={categoryCopy.label}
+              slotLabel={categoryCopy.label}
+              testId="recipe-edit-cure-category"
+            >
+              {#snippet view()}
+                <Chip variant="fact" tone="secondary" icon="Ham" data-testid="recipe-cure-category">
+                  {categoryLabel}
+                </Chip>
+              {/snippet}
+              {#snippet edit(close)}
+                <div class="flex w-full items-center gap-2">
+                  <Select
+                    value={recipe.cureCategory ?? ''}
+                    onValueChange={(v) => onEdit({ ...recipe, cureCategory: toCureCategory(v) })}
+                  >
+                    <!-- The label is rendered here rather than left to the
+                         trigger's default, for the reason the Added-by picker
+                         below states: `SelectItem`s only exist while the listbox
+                         is open, so a closed Select has no registered item to
+                         resolve `displayLabel` from. -->
+                    <SelectTrigger
+                      aria-label={categoryCopy.label}
+                      data-testid="recipe-cure-category-select"
+                    >
+                      <span
+                        class={recipe.cureCategory ? 'text-foreground' : 'text-placeholder italic'}
+                      >
+                        {categoryLabel}
+                      </span>
+                      <Icon name="ChevronDown" size={16} class="text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {#each categoryOptions(categoryCopy) as option (option.value)}
+                        <SelectItem value={option.value}>{option.label}</SelectItem>
+                      {/each}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" onclick={close}>Done</Button>
+                </div>
+              {/snippet}
+            </EditableZone>
           {/if}
 
           <!-- Provenance is a fact about the document rather than about the dish,

@@ -48,6 +48,7 @@ function recipe(
   return {
     id,
     schemaVersion: 1 as const,
+    cureCategory: null,
     title,
     description: opts.description ?? null,
     ingredients:

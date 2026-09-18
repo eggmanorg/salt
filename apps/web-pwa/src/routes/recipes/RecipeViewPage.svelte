@@ -221,6 +221,13 @@
   // `isAuthorable` gains a kind (cocktails, #765) both items appear there with
   // no edit here.
   const canAuthor = $derived(recipe !== null && isAuthorable(kindOf(recipe)));
+  // What starting a run is CALLED for this entry (issue #1404). A loaf is baked;
+  // a coppa is hung, so "Bake a batch" is simply the wrong words on a cure. Read
+  // from `KIND_COPY` exactly as `createdToast` is, never from a comparison on the
+  // kind — and the sheet this item opens reads the same string.
+  const startBatchLabel = $derived(
+    recipe === null ? '' : KIND_COPY[kindOf(recipe)].startBatchLabel,
+  );
 
   // ─── The dishes this dinner is made of (issue #752) ─────────────────────────
   // Resolved HERE and handed to `RecipeMadeFromCard`, which reads them and — since
@@ -2157,7 +2164,7 @@
                 }}
                 data-testid="recipe-bake-batch-menu-item"
               >
-                Bake a batch
+                {startBatchLabel}
               </PopoverMenuItem>
               <PopoverMenuItem
                 icon="Percent"

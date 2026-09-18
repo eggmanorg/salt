@@ -70,6 +70,8 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
+    cureCategory: null,
+    recipeKind: 'recipe',
     id: 'batch-1',
     schemaVersion: 1,
     recipeId: 'recipe-1',
@@ -291,5 +293,127 @@ describe('BatchListPage — what each run was baked in (issue #1274)', () => {
     expect(screen.getByTestId('batch-card-yield')).toHaveTextContent(
       '12 × 120 g — 1.4 kg of dough',
     );
+  });
+});
+
+// ─── Narrowing to one kind of cure (issue #1404) ─────────────────────────────
+//
+// The question the freeze on the run exists to answer: "show me all my dry-cured
+// whole muscle", over finished and abandoned runs as well as in-flight ones.
+//
+// Every assertion reads the run's OWN frozen `cureCategory` — the page holds no
+// recipes and could not read through to one if it tried, which is the property
+// being demonstrated rather than merely stated.
+describe('BatchListPage — cure type', () => {
+  const coppa = makeBatch({
+    id: 'b-coppa',
+    recipeTitle: 'Coppa',
+    recipeKind: 'cure',
+    cureCategory: 'dry_cured_whole_muscle',
+  });
+  const bresaola = makeBatch({
+    id: 'b-bresaola',
+    recipeTitle: 'Bresaola',
+    recipeKind: 'cure',
+    cureCategory: 'dry_cured_whole_muscle',
+    state: 'abandoned',
+    abandonedAt: '2026-08-14T10:00:00.000Z',
+  });
+  const bacon = makeBatch({
+    id: 'b-bacon',
+    recipeTitle: 'Streaky bacon',
+    recipeKind: 'cure',
+    cureCategory: 'cooked_whole_muscle',
+  });
+  const loaf = makeBatch({ id: 'b-loaf' });
+
+  function categoryChips(): HTMLElement[] {
+    return screen.queryAllByTestId('batch-category-filter');
+  }
+
+  function titles(): string[] {
+    return screen.queryAllByTestId('batch-card-title').map((el) => (el.textContent ?? '').trim());
+  }
+
+  it('says what each run was, on the card', () => {
+    mockBatches._set([coppa, loaf]);
+    render(BatchListPage);
+
+    const labels = screen
+      .queryAllByTestId('batch-card-category')
+      .map((el) => el.textContent?.trim());
+    // One line, on the one run that has something to say. A loaf shows nothing
+    // rather than a dash — every card on this screen says one thing.
+    expect(labels).toEqual(['Dry-cured whole muscle']);
+  });
+
+  it('offers no filter row at all to a household that has only ever baked', () => {
+    // The chrome appears on the day there is something to filter, and never
+    // before — which is every household in production today.
+    mockBatches._set([loaf, makeBatch({ id: 'b-loaf-2' })]);
+    render(BatchListPage);
+
+    expect(screen.queryByTestId('batch-category-filters')).toBeNull();
+    expect(categoryChips()).toHaveLength(0);
+  });
+
+  it('offers one chip per category the runs actually carry, in the enum’s order', () => {
+    mockBatches._set([bacon, coppa, loaf]);
+    render(BatchListPage);
+
+    // "All" leads and is not a category — a filter row with two ways to say
+    // "everything" is a row that can contradict itself. The rest follow the
+    // stored enum's order rather than the order the runs happened to arrive in,
+    // so the row does not reshuffle as runs start and end.
+    expect(categoryChips().map((el) => el.getAttribute('data-category'))).toEqual([
+      '',
+      'dry_cured_whole_muscle',
+      'cooked_whole_muscle',
+    ]);
+    expect(categoryChips()[0]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('narrows to one category in a tap, over ended runs as well as running ones', async () => {
+    mockBatches._set([coppa, bresaola, bacon, loaf]);
+    render(BatchListPage);
+
+    expect(titles()).toHaveLength(4);
+
+    await fireEvent.click(
+      categoryChips().find((el) => el.getAttribute('data-category') === 'dry_cured_whole_muscle')!,
+    );
+
+    // The abandoned bresaola is in the answer. "The last three bresaola" is a
+    // question about history, so a filter that quietly dropped ended runs would
+    // answer a different question from the one asked.
+    await waitFor(() => expect(titles().sort()).toEqual(['Bresaola', 'Coppa']));
+  });
+
+  it('folds back to everything when All is tapped again', async () => {
+    mockBatches._set([coppa, bacon, loaf]);
+    render(BatchListPage);
+
+    await fireEvent.click(
+      categoryChips().find((el) => el.getAttribute('data-category') === 'cooked_whole_muscle')!,
+    );
+    await waitFor(() => expect(titles()).toEqual(['Streaky bacon']));
+
+    await fireEvent.click(categoryChips()[0]!);
+
+    await waitFor(() => expect(titles()).toHaveLength(3));
+  });
+
+  it('keeps the whole row offered while a category is selected', async () => {
+    // The row is derived from ALL runs, not from the shown ones. Derived from the
+    // shown set it would collapse to the one chip already pressed the moment it
+    // was used, stranding the person in a filter with no way back.
+    mockBatches._set([coppa, bacon, loaf]);
+    render(BatchListPage);
+
+    await fireEvent.click(
+      categoryChips().find((el) => el.getAttribute('data-category') === 'cooked_whole_muscle')!,
+    );
+
+    await waitFor(() => expect(categoryChips()).toHaveLength(3));
   });
 });

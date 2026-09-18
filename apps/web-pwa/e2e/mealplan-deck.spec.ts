@@ -76,6 +76,7 @@ function firstDayPutting(today: string, index: number) {
 // anchor. Any bundled image does; this one is the app icon.
 function recipeWithPhoto(id: string, title: string): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

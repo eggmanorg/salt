@@ -355,8 +355,8 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   photograph and a title; the Ask / amend affordance is capability-gated off both
   view pages, so the librarian is simply unreachable for either.
 - **Which kinds it may author is a named predicate** — `isAuthorable` in
-  `packages/domain/src/recipe/queries/capabilities.ts` (#763), `true` for `recipe`
-  and, since #765, for `cocktail`. The `cocktail` row was `false` only while
+  `packages/domain/src/recipe/queries/capabilities.ts` (#763), `true` for `recipe`,
+  since #765 for `cocktail`, and since #1404 for `cure`. The `cocktail` row was `false` only while
   `assembleRecipeDraft` hardcoded `kind: baseRecipe?.kind ?? 'recipe'`; flipping
   it was the whole change, and every consumer (the two ⋮ entry points, the flows,
   the list chip) inherited it untouched.

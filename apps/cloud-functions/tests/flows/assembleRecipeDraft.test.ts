@@ -476,6 +476,7 @@ describe('assembleRecipeDraft — canon keying', () => {
 // phase-strip suite at the foot of this file can reuse it (issue #1122).
 function baseRecipe(): RecipeDoc {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'cocktail',
@@ -990,5 +991,81 @@ describe('assembleRecipeDraft — what kind of entry it is', () => {
     const doc = await assembleRecipeDraft(parsed, { source: MANUAL });
 
     expect(doc.kind).toBe('recipe');
+  });
+});
+
+// ─── the cure category (issue #1404) ─────────────────────────────────────────
+//
+// Two claims, and each is what #1425's review found missing an assertion for:
+//
+//   1. `cureCategory` is correlated with the RESOLVED `kind` on this same
+//      draft, never stored beside a non-cure kind — whatever the model said
+//      about the category, and regardless of which operand decided `kind`.
+//   2. Within a cure, the base wins over a fresh model guess once it is set —
+//      the same base-wins shape `kind` itself uses above — so a category
+//      hand-corrected on the recipe page survives an unrelated chat amend.
+describe('assembleRecipeDraft — the cure category', () => {
+  it('never stores a category on a kind that is not cure, even when the model answers one', async () => {
+    const doc = await assembleRecipeDraft(rawOutput({ kind: 'recipe', cureCategory: 'semi_dry' }), {
+      source: MANUAL,
+    });
+
+    expect(doc.kind).toBe('recipe');
+    expect(doc.cureCategory).toBeNull();
+  });
+
+  it('drops the category when an edit-mode base overrides the model into a non-cure kind', async () => {
+    // The base is a cocktail (immutable, wins unconditionally per the kind
+    // precedence above) while the model — reading an amended, unrelated
+    // conversation — answers as though this were a cure. Correlated against
+    // the RESOLVED kind, not the model's, so the stray answer is dropped.
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'cure', cureCategory: 'cooked_whole_muscle' }),
+      { source: MANUAL, baseRecipe: { ...baseRecipe(), kind: 'cocktail', cureCategory: null } },
+    );
+
+    expect(doc.kind).toBe('cocktail');
+    expect(doc.cureCategory).toBeNull();
+  });
+
+  it('takes the model’s category for a freshly authored cure, with no base to protect', async () => {
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }),
+      { source: MANUAL },
+    );
+
+    expect(doc.kind).toBe('cure');
+    expect(doc.cureCategory).toBe('dry_cured_whole_muscle');
+  });
+
+  it('categorises an edit-mode cure that the base has not been categorised yet', async () => {
+    const base = { ...baseRecipe(), kind: 'cure' as const, cureCategory: null };
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'cure', cureCategory: 'fermented_dry_cured' }),
+      { source: MANUAL, baseRecipe: base },
+    );
+
+    expect(doc.cureCategory).toBe('fermented_dry_cured');
+  });
+
+  // The load-bearing one: a category hand-corrected on the recipe page (#1404's
+  // "there is no confirmation and no gate" editor) must survive a chat amend
+  // about something else entirely, even though — unlike the phase strip below
+  // — the model answers a FRESH, DIFFERING category on every single turn
+  // (`CURE_CATEGORY_RULES` forbids it refusing, and it is never shown the
+  // stored value). The base-wins floor is what makes that survival
+  // unconditional rather than dependent on the model happening to agree.
+  it('keeps a hand-corrected category through an amend that returns a different fresh guess', async () => {
+    const base = {
+      ...baseRecipe(),
+      kind: 'cure' as const,
+      cureCategory: 'fermented_dry_cured' as const,
+    };
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }),
+      { source: MANUAL, baseRecipe: base },
+    );
+
+    expect(doc.cureCategory).toBe('fermented_dry_cured');
   });
 });

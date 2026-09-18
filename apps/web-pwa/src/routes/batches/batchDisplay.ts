@@ -1,5 +1,8 @@
 import { currentStage, stageStatus } from '@salt/domain';
+import type { CureCategory } from '@salt/domain';
 import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
+import { CureCategorySchema } from '@salt/domain/schemas';
+import { KIND_COPY } from '../recipes/recipeKind.js';
 import { formatInstant } from '../../lib/dateFormat.js';
 import { formatMinutes, formatStatedDuration } from '../../lib/durationDisplay.js';
 import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
@@ -229,4 +232,88 @@ export function groupLogByDay<T extends { at: string }>(
     else days.push({ key, label: formatDate(entry.at), entries: [entry] });
   }
   return days;
+}
+
+// ─── What kind of cure a run was (issue #1404) ──────────────────────────────────
+//
+// Both of these read the run's OWN frozen `recipeKind` / `cureCategory`, never the
+// recipe's — which is the whole point of freezing them. A coppa whose recipe was
+// renamed, re-mapped or deleted last February still turns up under Dry-cured whole
+// muscle, and that is what makes "the last three bresaola" answerable a year later.
+//
+// The WORDS come from `KIND_COPY`, which is the library's vocabulary: a second set
+// of labels here is the drift this module's own header warns about, one screen
+// along. Nothing compares against a kind or a category literal — the copy table is
+// asked whether the kind has a category vocabulary at all.
+
+/**
+ * Whether this run's OWN kind declares a category vocabulary at all — the one
+ * gate `categoryLabel` and `categoriesPresent` must ask the same way (#1425
+ * review, should-fix 3). Before this, `categoryLabel` asked the copy table
+ * while `categoriesPresent` asked only "is `cureCategory` non-null?" — two
+ * different questions that agree everywhere a `cureCategory` can legitimately
+ * exist today, and disagree the moment one does not (a stray value on a kind
+ * whose copy has no category editor), which is exactly the case
+ * `categoryLabel`'s own test pins as reading nothing.
+ */
+function hasCategoryVocabulary(kind: BatchDoc['recipeKind']): boolean {
+  return KIND_COPY[kind].categoryCopy !== undefined;
+}
+
+/** How this run's category reads, or `null` when it has none to read. */
+export function categoryLabel(batch: BatchDoc): string | null {
+  if (!hasCategoryVocabulary(batch.recipeKind) || batch.cureCategory === null) return null;
+  return KIND_COPY[batch.recipeKind].categoryCopy!.options[batch.cureCategory];
+}
+
+/**
+ * The filter row: one entry per category these runs actually carry, with the words
+ * to put on its chip.
+ *
+ * The LABELS are resolved here rather than in the page, so `KIND_COPY` stays out of
+ * a Svelte file — and with it any temptation to reach for a category by name. A
+ * label is looked up through the same copy table the library uses, so the two
+ * screens cannot come to call the same category different things.
+ */
+export function categoryChips(
+  batches: readonly BatchDoc[],
+): { value: CureCategory; label: string }[] {
+  const copy = KIND_COPY.cure.categoryCopy;
+  return categoriesPresent(batches).map((value) => ({
+    value,
+    // `?? value` is unreachable while `cure` declares a vocabulary, and is here
+    // because the field is optional by design — four kinds have none. It degrades
+    // to the stored word rather than to an empty chip.
+    label: copy?.options[value] ?? value,
+  }));
+}
+
+/**
+ * The categories these runs actually carry, in the stored enum's order.
+ *
+ * DERIVED FROM THE RUNS, not from the enum, so a household that has never cured
+ * anything gets an empty list and no filter row at all — the screen grows chrome
+ * on the day it has something to filter, and never before. Ordered by the enum
+ * rather than by first appearance so the row does not reshuffle itself as runs
+ * start and end.
+ *
+ * Its boundary, stated: it can only see the runs it is handed. `/batches` holds
+ * the whole collection, so on that screen this is every category the household has
+ * ever run — but it is a property of the argument, not of Firestore.
+ *
+ * Gated through `hasCategoryVocabulary`, the same question `categoryLabel` asks —
+ * not merely "is `cureCategory` non-null?" A run whose `cureCategory` is set but
+ * whose `recipeKind` declares no vocabulary (unreachable on today's write path,
+ * see `assembleRecipeDraft`'s correlation, but not something this display module
+ * should assume forever) contributes no chip: `categoryLabel` already reads
+ * nothing for that same run, and a filter row must not offer to narrow to a
+ * category no card on the list will ever say it belongs to.
+ */
+export function categoriesPresent(batches: readonly BatchDoc[]): CureCategory[] {
+  const seen = new Set(
+    batches.flatMap((b) =>
+      hasCategoryVocabulary(b.recipeKind) && b.cureCategory !== null ? [b.cureCategory] : [],
+    ),
+  );
+  return CureCategorySchema.options.filter((category) => seen.has(category));
 }

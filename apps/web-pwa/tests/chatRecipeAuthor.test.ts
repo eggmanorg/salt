@@ -33,6 +33,7 @@ import { trackUsageEvent } from '@salt/observability';
 /** What the librarian hands back: a complete recipe with no timestamps of its own. */
 function draft(): RecipeDoc {
   return {
+    cureCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: '',

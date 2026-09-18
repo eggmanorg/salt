@@ -39,6 +39,7 @@
   import BatchObservationSheet from './BatchObservationSheet.svelte';
   import BatchReadingRow from './BatchReadingRow.svelte';
   import {
+    categoryLabel,
     formatDate,
     formatGrams,
     formatStatedDuration,
@@ -419,6 +420,17 @@
             {/snippet}
             Cook
           </Button>
+        {/if}
+
+        <!-- WHAT THIS RUN WAS (issue #1404), from the run's own frozen fields and
+             never read through to the recipe — which is the whole point of freezing
+             them: rename the dish, re-map its formula or delete it outright and this
+             line still says what was made. Absent entirely on a run with no
+             category, rather than a dash: the header says facts, not gaps. -->
+        {#if categoryLabel(run) !== null}
+          <p class="text-sm text-muted-foreground" data-testid="batch-detail-category">
+            {categoryLabel(run)}
+          </p>
         {/if}
 
         <p class="text-sm text-muted-foreground" data-testid="batch-detail-started">

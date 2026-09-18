@@ -33,6 +33,9 @@ export function emptyRecipe(id: string, now: string, kind: RecipeKind = 'recipe'
     notes: null,
     producesCanonId: null,
     componentRecipeIds: [],
+    // Uncategorised (issue #1404): nothing has said which kind of cure this is,
+    // and for the four kinds that are not cures there is nothing to say.
+    cureCategory: null,
     // No kit yet, and no `kitInferredAt` either (issue #882): a blank recipe has
     // no method to read, so the onRecipeWritten kit branch simply finds nothing to
     // work from and asks again on the save that gives it steps.
@@ -99,6 +102,9 @@ export function duplicateRecipe(source: Recipe, newId: string, now: string): Rec
     id: newId,
     schemaVersion: source.schemaVersion,
     kind: source.kind,
+    // Carried, unlike the image fields below and unlike attribution: the category
+    // is a fact about the FOOD, and a copy of a coppa is still a coppa (#1404).
+    cureCategory: source.cureCategory,
     title: `${source.title} (copy)`,
     description: source.description,
     ingredients: source.ingredients.map((group) => ({

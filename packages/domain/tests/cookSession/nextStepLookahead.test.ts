@@ -19,6 +19,7 @@ function step(id: string, text = `do ${id}`): StepDoc {
 
 function recipe(steps: StepDoc[]): Recipe {
   return {
+    cureCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

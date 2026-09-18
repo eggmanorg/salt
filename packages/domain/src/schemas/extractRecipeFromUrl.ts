@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { AuthoredRecipePhasesSchema, AuthoredTimingSummarySchema, RecipeSchema } from './recipe.js';
+import {
+  AuthoredRecipePhasesSchema,
+  AuthoredTimingSummarySchema,
+  CureCategorySchema,
+  RecipeSchema,
+} from './recipe.js';
 import { AUTHORABLE_RECIPE_KINDS } from '../recipe/queries/capabilities.js';
 
 // SSRF-hardened URL import (recipe URL import epic, Phase 1).
@@ -94,6 +99,21 @@ export const ExtractedStepSchema = z.object({
 // Cocktails can never be planned, so the fallback leans to the recoverable one.
 export const AuthoredRecipeKindSchema = z.enum(AUTHORABLE_RECIPE_KINDS).catch('recipe');
 
+// Which of the five kinds of cure the model says this is (issue #1404), on every
+// authoring path: both extractors and the librarian.
+//
+// `.nullish().catch(null)` is the SAME bargain `AuthoredRecipeKindSchema` above
+// strikes, one step softer. Absent (the model omitted it, or the entry is not a
+// cure at all) reads as `null`; anything the enum does not recognise — a typo, a
+// sixth category the model invented, a sentence — degrades to `null` rather than
+// failing the parse. A failed parse here is a failed import, and on the librarian
+// path there is no retry: throwing away a conversation over a field the person can
+// correct on the page in one tap would be the worst trade in this schema.
+//
+// Uncategorised is not an error state. It is what an entry looks like before
+// anybody has said, and the recipe page offers the correction either way.
+export const AuthoredCureCategorySchema = CureCategorySchema.nullish().catch(null);
+
 export const ExtractRecipeAIOutputSchema = z.object({
   // false when the page is not a recipe at all → maps to the not-a-recipe
   // failure. true with a populated recipe otherwise.
@@ -103,6 +123,13 @@ export const ExtractRecipeAIOutputSchema = z.object({
   // eat? It sits here because the two are read together — #739's reasoning about
   // a cocktail as the zero-cook-time case is the same page of the same argument.
   kind: AuthoredRecipeKindSchema,
+  // The THIRD classification (issue #1404), and only meaningful when `kind` came
+  // back `'cure'`: which of the five kinds of cure it is. Asked on every entry
+  // rather than gated on the kind, because the prompt is one block of rules and a
+  // conditional field is a second place the two can disagree; the assembler
+  // stores whatever comes back, and a non-cure carries `null` because the rules
+  // tell the model to answer null for one.
+  cureCategory: AuthoredCureCategorySchema,
   title: z.string(),
   description: z.string().nullable(),
   // A positive integer or null — null is the "not stated" sentinel, and is what an

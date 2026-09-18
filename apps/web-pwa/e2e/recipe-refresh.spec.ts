@@ -126,6 +126,7 @@ async function titleOf(page: Page, recipeId: string): Promise<string | undefined
 const DISH_ID = 'refresh-pilaf';
 
 const DISH_FIXTURE: Recipe = {
+  cureCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',

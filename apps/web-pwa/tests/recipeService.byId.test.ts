@@ -51,6 +51,7 @@ function nsId(id: string): string {
 
 function recipe(id: string, opts: { componentRecipeIds?: string[] } = {}): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

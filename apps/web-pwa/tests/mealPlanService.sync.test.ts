@@ -101,6 +101,7 @@ function weekWithNote(start: string, note: string, updatedAt: string): MealPlanW
 // takes the whole document because the expansion is a pure function of it.
 function recipe(id: string, componentRecipeIds: string[] = []): Recipe {
   return {
+    cureCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

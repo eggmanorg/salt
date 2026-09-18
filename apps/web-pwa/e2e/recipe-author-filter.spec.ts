@@ -34,6 +34,7 @@ const SEED_TIME = '2026-01-01T00:00:00.000Z'; // persistRecipe re-stamps updated
 // whoever is signed in on the seeding tab, which is the whole point.
 function buildRecipe(id: string, title: string, kind: RecipeKind = 'recipe'): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind,

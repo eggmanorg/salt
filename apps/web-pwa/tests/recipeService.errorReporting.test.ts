@@ -74,6 +74,7 @@ const CONFLICT_ERR: DomainError = { kind: 'ConflictError' };
 
 function makeRecipe(groups: IngredientGroup[] = []): Recipe {
   return {
+    cureCategory: null,
     createdBy: '',
     lastEditedBy: '',
     kind: 'recipe',

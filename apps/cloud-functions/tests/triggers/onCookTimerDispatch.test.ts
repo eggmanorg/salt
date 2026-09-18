@@ -186,6 +186,7 @@ function subDoc(sub: PushSubscriptionDoc) {
 // name it exactly as the in-app timer chip does.
 function makeRecipe(overrides: Partial<RecipeDoc> = {}): RecipeDoc {
   return {
+    cureCategory: null,
     id: 'recipe-1',
     schemaVersion: 1,
     kind: 'recipe',

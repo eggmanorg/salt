@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MessageSchema } from './chatSession.js';
 import { AuthoredRecipePhasesSchema, AuthoredTimingSummarySchema, RecipeSchema } from './recipe.js';
 import {
+  AuthoredCureCategorySchema,
   AuthoredRecipeKindSchema,
   ExtractedIngredientGroupSchema,
   ExtractedStepSchema,
@@ -83,6 +84,11 @@ export const LibrarianOutputSchema = z.object({
   // Load-bearing on THIS path specifically: the librarian has no retry, so a kind
   // the model got wrong must degrade rather than throw away the conversation.
   kind: AuthoredRecipeKindSchema,
+  // Which of the five kinds of cure (issue #1404) — the extractor's field again,
+  // for the extractor's reason, so `assembleRecipeDraft` reads one name off
+  // whichever shape it was handed. Degrades to `null` rather than throwing; see
+  // `AuthoredCureCategorySchema`.
+  cureCategory: AuthoredCureCategorySchema,
   description: z.string().nullable(),
   // The extractor's constraint, for the extractor's reason (issue #739): a recipe
   // that serves nobody is a model glitch, not an answer. It is also the one of

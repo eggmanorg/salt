@@ -27,7 +27,9 @@
  * in a comment, a DoD tick or a test name — is precisely the defect class
  * CLAUDE.md Rule 12 exists for, so the claim is made with its real boundary
  * instead: the known instances, named here with their reasons, and any other one
- * reds.
+ * reds. #1404 then added a THIRD, `AuthoredCureCategorySchema`, for the same
+ * AI-output reason — which is exactly the movement the paragraph above predicts,
+ * and the reason no number is asserted anywhere but in `ALLOWED` itself.
  *
  * ── Why entries name a SYMBOL, not a file (#1251) ──────────────────────────
  *
@@ -103,6 +105,13 @@ const ALLOWED = new Map([
     'An AI output, not a stored document (#765). The floor that makes a bad ' +
       '`kind` degrade to `recipe` rather than fail an import; the librarian path ' +
       'has no retry, so a throw costs a whole conversation.',
+  ],
+  [
+    'extractRecipeFromUrl.ts#AuthoredCureCategorySchema',
+    'An AI output, not a stored document (#1404). Same bargain as the kind ' +
+      'above, one step softer: an unknown or invented category degrades to ' +
+      '`null` — uncategorised, which is a normal state — rather than failing an ' +
+      'import over a field the person corrects on the recipe page in one tap.',
   ],
 ]);
 

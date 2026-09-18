@@ -33,6 +33,7 @@ const RECIPE = {
   id: 'recipe-1',
   schemaVersion: 1,
   kind: 'recipe',
+  cureCategory: null,
   title: 'Overnight white tin',
   description: null,
   ingredients: [
@@ -122,5 +123,44 @@ describe('startBatch — the vessel', () => {
     // how much, and a vessel inside them would be a second figure free to drift.
     expect(Object.keys(batch.totals)).toEqual(['basisGrams', 'totalGrams', 'usableGrams', 'units']);
     expect(batch.totals.units).toEqual({ count: 1, unitDoughGrams: 900 });
+  });
+});
+
+// ─── What the run WAS (issue #1404) ──────────────────────────────────────────
+//
+// `startBatch` is the ONLY place a batch is created, and the freeze is pure — it
+// holds no recipe and cannot read one. So the join lives here, exactly as the
+// title's does, and these are the tests that stop it being dropped.
+describe('startBatch — the kind and the category', () => {
+  it('freezes both off the recipe it was handed', async () => {
+    await startBatch({
+      recipe: {
+        ...RECIPE,
+        kind: 'cure',
+        title: 'Coppa',
+        cureCategory: 'dry_cured_whole_muscle',
+      } as unknown as typeof RECIPE,
+      formula: FORMULA,
+      anchor: ANCHOR,
+    });
+
+    const batch = written();
+    expect(batch.recipeKind).toBe('cure');
+    expect(batch.cureCategory).toBe('dry_cured_whole_muscle');
+    // Beside the title, and for the same reason: the run answers for itself
+    // afterwards, whatever happens to the dish.
+    expect(batch.recipeTitle).toBe('Coppa');
+  });
+
+  it('records a bread run as what it is, rather than leaving the fields out', async () => {
+    await startBatch({ recipe: RECIPE, formula: FORMULA, anchor: ANCHOR });
+
+    const batch = written();
+    expect(batch.recipeKind).toBe('recipe');
+    expect(batch.cureCategory).toBeNull();
+    // Written, not defaulted: the schema's read default is for documents stored
+    // before the fields existed, never for one being created now.
+    expect(Object.keys(batch)).toContain('recipeKind');
+    expect(Object.keys(batch)).toContain('cureCategory');
   });
 });

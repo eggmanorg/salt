@@ -120,6 +120,7 @@ function formIngredient(
 
 function makeRecipe(items: IngredientGroup['items']): Recipe {
   return {
+    cureCategory: null,
     image: null,
     createdBy: '',
     lastEditedBy: '',

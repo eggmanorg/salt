@@ -1,4 +1,5 @@
 import type {
+  CureCategoryDoc,
   RecipeDoc,
   RecipeKindDoc,
   RecipeMetadataDoc,
@@ -24,6 +25,13 @@ export type RecipePhase = RecipePhaseDoc;
 // (Svelte files import from the package root, never from `@salt/domain/schemas`).
 // Never switch on this outside the domain: use the capability predicates.
 export type RecipeKind = RecipeKindDoc;
+
+// Which of the five kinds of cure a `cure` entry is (issue #1404). Aliased here
+// for the same reason as `RecipeKind` above: Svelte files import from the package
+// root, never from `@salt/domain/schemas`, and the recipe page's category editor
+// needs the type to name the value it writes. Like the kind, it is never switched
+// on to decide what something can DO — it picks words and groupings.
+export type CureCategory = CureCategoryDoc;
 
 // One Firestore document at `recipes/{id}`. Whole-document last-write-wins on
 // `updatedAt` (Firestore-as-master; no tombstones, no revision counter).

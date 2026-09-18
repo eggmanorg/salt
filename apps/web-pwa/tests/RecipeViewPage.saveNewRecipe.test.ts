@@ -162,6 +162,7 @@ const RECIPE_ID = 'lamb';
 
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
+    cureCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

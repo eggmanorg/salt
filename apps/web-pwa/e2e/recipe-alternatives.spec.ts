@@ -35,6 +35,7 @@ const SEEDED_SPECIAL_ID = 'alternatives-planned-special';
 // not how it was written.
 function entry(id: string, title: string, kind: RecipeKind): Recipe {
   return {
+    cureCategory: null,
     id,
     schemaVersion: 1,
     kind,
