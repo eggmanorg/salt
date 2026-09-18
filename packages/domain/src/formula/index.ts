@@ -55,3 +55,15 @@ export {
 // `solveFormula` has enforced since #782 — there is no second bounds check.
 export { withComponentPercentScaled, LEAVENING_PERCENT_BOUNDS } from './adjustComponent.js';
 export type { ComponentPercentBounds } from './adjustComponent.js';
+// The curing salts and the window each one has to sit in (issue #1402). DATA and a
+// GUESS, in the species this module already holds two of: no validation here, no
+// second rail — `deriveFormula` stamps the window and `solveFormula` refuses it,
+// exactly as it has since #782. `cureSalt.ts`'s header states the rail's real
+// limits, which are narrower than "Salt prevents an unsafe cure".
+export {
+  CURE_SALT_PRODUCTS,
+  saltProductBounds,
+  ingoingNitritePpm,
+  guessSaltProduct,
+} from './cureSalt.js';
+export type { CureSaltProductInfo, SaltProductGuessEntry } from './cureSalt.js';

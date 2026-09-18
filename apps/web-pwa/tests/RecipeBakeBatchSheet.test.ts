@@ -698,3 +698,52 @@ describe('RecipeBakeBatchSheet — what does it weigh', () => {
     expect('atYield' in mockStartBatch.mock.calls[0]![0]).toBe(false);
   });
 });
+
+// ─── A cure salt outside its product's window (issue #1402, phase 2) ───────────
+//
+// `solveFormula` has refused a bound violation since #782, and until now this sheet
+// took the `default` branch for it — "This formula doesn't resolve into weights",
+// which says nothing about which window was missed. The wording is now the one
+// `lib/boundViolation.ts` holds, shared with the formula screen and with the
+// freeze's own refusal.
+describe('RecipeBakeBatchSheet — a refused window', () => {
+  // The coppa's cure salt at 1.2% of the basis, with cure #1 named: four times the
+  // top of its window. The bound is not on the document here — `deriveFormula`
+  // stamps it, and this fixture is what a stored formula looks like afterwards.
+  const OVERDOSED: Formula = {
+    recipeId: RECIPE_ID,
+    schemaVersion: 1,
+    components: [
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true },
+      { ingredientId: 'ing-salt', percent: 2.5, inBasis: false },
+      {
+        ingredientId: 'ing-water',
+        percent: 1.2,
+        inBasis: false,
+        saltProduct: 'cure1',
+        minPercent: 0.15,
+        maxPercent: 0.3,
+      },
+    ],
+    referenceYield: { kind: 'basis', grams: 1000 },
+  } as Formula;
+
+  it('refuses to start the run, naming the line, the figure and the window', async () => {
+    renderSheet(OVERDOSED);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-unsolvable')).toBeInTheDocument());
+
+    const said = (screen.getByTestId('bake-batch-unsolvable').textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    expect(said).toContain(
+      'That would put “350 g water” at 1.2% of the basis, outside the 0.15%–0.3% window it has to sit in.',
+    );
+    // The tail is this surface's own, and it is the one that was already here.
+    expect(said).toContain('Open the formula screen to sort it out.');
+
+    // And Start stays put. `canStart` consults the same solve, so there is nothing
+    // to tap past — the one place in Salt that says no.
+    expect(screen.getByTestId('bake-batch-confirm')).toBeDisabled();
+    expect(screen.queryByTestId('bake-batch-preview')).toBeNull();
+  });
+});

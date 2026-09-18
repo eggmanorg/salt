@@ -36,11 +36,13 @@
     extractProcessStages,
   } from '../../lib/formulaService.js';
   import {
+    CURE_SALT_PRODUCTS,
     basisYield,
     deriveFormula,
     flattenIngredients,
     gramsFromParsed,
     guessBasisIngredientIds,
+    guessSaltProduct,
     roundGrams,
     solveFormula,
     takesIngredients,
@@ -59,7 +61,10 @@
     ProcessStage,
     ProcessStageKind,
     ReferenceYield,
+    SaltProduct,
   } from '@salt/domain/schemas';
+  import { SaltProductSchema } from '@salt/domain/schemas';
+  import { describeBoundViolation } from '../../lib/boundViolation.js';
   import { equipment } from '../../lib/equipmentService.js';
   import { kindOf } from './recipeKind.js';
   import {
@@ -182,6 +187,12 @@
     exactGrams: number | null;
     included: boolean;
     inBasis: boolean;
+    // WHICH CURING SALT THIS LINE IS, or nothing at all (issue #1402). `null` is
+    // both the ordinary answer and what "this is not a curing salt" looks like —
+    // there is one spelling, because a second would be a state the person cannot
+    // tell apart on screen. The window that is actually enforced is recomputed from
+    // this on every derive; nothing here holds a bound.
+    saltProduct: SaltProduct | null;
   }
 
   // A stage as the review surface holds it: the real stage, plus the three numeric
@@ -433,6 +444,18 @@
         // hand-typed weight and a deliberate exclusion across a reload.
         included: stored ? component !== undefined && grams !== null : grams !== null,
         inBasis: stored ? (component?.inBasis ?? false) : guessed.has(ing.id),
+        // EXACTLY THE SHAPE `inBasis` ABOVE HAS, and for exactly its reason: a
+        // stored formula's answer wins, INCLUDING the answer "none". Re-guessing
+        // over a stored component would make clearing a product impossible to keep
+        // — you would tap it away and find it back on the next reload — and
+        // clearing it is what an ingredient that is not a curing salt looks like.
+        // The guess therefore only ever fires on a first visit.
+        saltProduct: stored
+          ? (component?.saltProduct ?? null)
+          : guessSaltProduct({
+              canonName: (ing.canonId ? canonNameById.get(ing.canonId) : null) ?? null,
+              rawText: ing.rawText,
+            }),
       };
     });
 
@@ -573,6 +596,29 @@
     patchRow(ingredientId, { inBasis });
   }
 
+  // Naming a curing salt changes which window this line has to sit in, so it
+  // restates: the figures on screen must be the ones a save would write, and a
+  // percentage the new product refuses must stop being offered as a weight.
+  //
+  // A FACT, NOT A SAFETY TOGGLE, and there is deliberately nothing between the tap
+  // and the change. Naming the wrong product is the only way to widen a window, and
+  // it changes what the ingredient IS — which is the sort of thing the person
+  // mapping a formula is looking straight at. No confirmation, no dismissible
+  // warning, no badge.
+  function setSaltProduct(ingredientId: string, product: SaltProduct | null): void {
+    patchRow(ingredientId, { saltProduct: product });
+    restateWeightsAtDeclaration();
+  }
+
+  // The picker's "not a curing salt" option. A Select cannot hold null, and there is
+  // one spelling of "none" — the same choice the stage picker's `NO_PLACE` makes.
+  const NO_SALT_PRODUCT = '';
+
+  function toSaltProduct(value: string): SaltProduct | null {
+    const parsed = SaltProductSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
+  }
+
   // ─── Stage interactions ───────────────────────────────────────────────────────
   //
   // Every one goes through a pure producer in `@salt/domain`'s process module, so
@@ -684,11 +730,24 @@
 
   // ─── The one piece of maths ───────────────────────────────────────────────────
 
+  // THE PRODUCT IS THE ONE NEW THING THIS CARRIES, and the bounds are deliberately
+  // not (issue #1402). This used to build inputs with no `minPercent`/`maxPercent`
+  // at all, so a stored bound was silently dropped on the next save; the fix is not
+  // to carry the bound but to carry the PRODUCT, because `deriveFormula` recomputes
+  // the window from it on every pass. A bound that is never carried cannot be lost,
+  // cannot drift from the table, and cannot be hand-edited away.
   function componentsFrom(from: readonly Row[]) {
     return from.flatMap((row) => {
       const grams = gramsOf(row);
       return row.included && grams !== null
-        ? [{ ingredientId: row.ingredientId, grams, inBasis: row.inBasis }]
+        ? [
+            {
+              ingredientId: row.ingredientId,
+              grams,
+              inBasis: row.inBasis,
+              ...(row.saltProduct === null ? {} : { saltProduct: row.saltProduct }),
+            },
+          ]
         : [];
     });
   }
@@ -806,6 +865,25 @@
       ? new Map(derivation.formula.components.map((c) => [c.ingredientId, c.percent]))
       : new Map<string, number>(),
   );
+
+  // THE SOLVE, WHICH IS WHERE THE RAIL LIVES (issue #1402).
+  //
+  // `deriveFormula` succeeds on an out-of-window cure salt — it stamps the bound and
+  // checks nothing — so `derivation.ok` alone is not enough to save. `solveFormula`
+  // is what refuses, and it has since #782; this is the page consulting that one
+  // answer rather than growing a second check of its own.
+  //
+  // At the formula's own reference yield, which IS the declaration: `derivation`
+  // built it from `shape`. So this solve is the same one `rowsRestatedAt` runs and
+  // the same one `freezeBatch` will run on the stored document.
+  const solved = $derived(derivation.ok ? solveFormula(derivation.formula) : null);
+
+  // The recipe's own words for a line, for the refusal's subject. The same join
+  // `startBatch` makes when it freezes labels onto a run, so the two surfaces name
+  // an ingredient identically.
+  function labelOf(ingredientId: string): string | undefined {
+    return rows.find((row) => row.ingredientId === ingredientId)?.rawText;
+  }
 
   // ─── The restate (issue #1325) ────────────────────────────────────────────────
   //
@@ -960,6 +1038,12 @@
   const canSave = $derived(
     shape !== null &&
       derivation.ok &&
+      // AND THE SOLVE HAS TO AGREE. This is the one place a cure salt outside its
+      // product's window stops the save, and it is not a check of its own: it reads
+      // `solveFormula`'s refusal (issue #1402). Cure salt is not seasoning, and
+      // this is the single place in Salt that says no — everywhere else a flag on
+      // the data is information and never permission.
+      solved?.ok === true &&
       // A figure the schema would refuse is not savable — a rail on the box, and
       // deliberately not a judgement about the run: the target itself gates nothing
       // anywhere (issue #1407).
@@ -988,6 +1072,14 @@
           return 'This formula does not add up yet.';
       }
     }
+    // A refused window, in the ONE wording the bake sheet and the freeze also use
+    // (issue #1402). The tail is this screen's own: you are already here, so there
+    // is nowhere to be sent — what there is to do is name the right product or fix
+    // the figure.
+    if (solved !== null && !solved.ok && solved.reason.kind === 'boundViolation') {
+      return `${describeBoundViolation(solved.reason, labelOf)} Name the product that is actually in the jar, or fix the percentage.`;
+    }
+    if (solved !== null && !solved.ok) return 'This formula does not add up yet.';
     return null;
   });
 
@@ -1124,6 +1216,49 @@
                       data-testid="formula-row-include"
                     />
                   </div>
+                  {#if row.included}
+                    <!-- WHICH CURING SALT THIS IS, on EVERY included row and not
+                       only on the rows the recogniser knows by name (issue #1402).
+                       That is the decision, and it is what keeps the keyword list
+                       off the safety path: a guess that GATED this control would
+                       mean an unrecognised curing salt could never be named and
+                       therefore never bounded, which is a missing guess costing a
+                       bound rather than a tap. A row with no weight is not a
+                       component and can carry no bound, so that is the only gate.
+
+                       A FACT ABOUT THE INGREDIENT, not a safety toggle. Clearing it
+                       is what "this is not a curing salt" looks like, and naming the
+                       wrong product is the only way to widen a window — both are
+                       plain choices in front of the person, and neither gets a
+                       confirmation or a dismissible warning. There is no box for the
+                       window itself: it is recomputed from this on every derive. -->
+                    <div class="flex flex-wrap items-end gap-3">
+                      <Select
+                        value={row.saltProduct ?? NO_SALT_PRODUCT}
+                        onValueChange={(v) =>
+                          setSaltProduct(row.ingredientId, toSaltProduct(v ?? NO_SALT_PRODUCT))}
+                      >
+                        <SelectTrigger
+                          class="w-60"
+                          aria-label={`Which curing salt is ${row.rawText}?`}
+                          data-testid="formula-row-salt-product"
+                          data-salt-product={row.saltProduct ?? ''}
+                        >
+                          {row.saltProduct === null
+                            ? 'Not a curing salt'
+                            : CURE_SALT_PRODUCTS[row.saltProduct].label}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_SALT_PRODUCT}>Not a curing salt</SelectItem>
+                          {#each SaltProductSchema.options as product (product)}
+                            <SelectItem value={product}>
+                              {CURE_SALT_PRODUCTS[product].label}
+                            </SelectItem>
+                          {/each}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  {/if}
                   {#if recipeSaid !== null}
                     <!-- THE COST, STATED. A declared yield rewrites round numbers —
                        500 g of flour becomes 510 g for a 900 g tin — and that is

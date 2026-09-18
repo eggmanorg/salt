@@ -129,3 +129,54 @@ describe('a formula document written before #1407', () => {
     }
   });
 });
+
+// Issue #1402 added an optional `saltProduct` to the component. Same argument again,
+// and the weakest of the three to state as an absolute — so state its boundary: an
+// added OPTIONAL field is read-compatible because a document that carries none reads
+// as a component that named none, which is what it meant. Production's bread
+// formulas carry none, `schemaVersion` stays 1, and there is no migration.
+describe('a formula component written before #1402', () => {
+  it('reads as a component that named no product, and therefore has no window', () => {
+    const parsed = FormulaSchema.parse(LEGACY_FORMULA);
+    for (const component of parsed.components) {
+      expect(component.saltProduct).toBeUndefined();
+      expect(component.minPercent).toBeUndefined();
+      expect(component.maxPercent).toBeUndefined();
+    }
+  });
+
+  it('carries a named product and its stamped window through unchanged', () => {
+    const parsed = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      components: [
+        ...LEGACY_FORMULA.components,
+        {
+          ingredientId: 'ing-cure',
+          percent: 0.25,
+          inBasis: false,
+          saltProduct: 'cure1',
+          minPercent: 0.15,
+          maxPercent: 0.3,
+        },
+      ],
+    });
+    expect(parsed.components[3]).toMatchObject({
+      saltProduct: 'cure1',
+      minPercent: 0.15,
+      maxPercent: 0.3,
+    });
+  });
+
+  it('refuses a product the enum does not know, rather than reading it as none', () => {
+    // A misspelling that parsed as "no product" would silently remove a window from
+    // a document that claimed one — which is the one failure mode an optional field
+    // could have had here.
+    const withJunk = {
+      ...LEGACY_FORMULA,
+      components: [
+        { ingredientId: 'ing-cure', percent: 0.25, inBasis: true, saltProduct: 'cure3' },
+      ],
+    };
+    expect(FormulaSchema.safeParse(withJunk).success).toBe(false);
+  });
+});

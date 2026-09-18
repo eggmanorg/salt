@@ -44,6 +44,7 @@
     type TrayBy,
   } from './doughAnswer.js';
   import { KIND_COPY, kindOf } from './recipeKind.js';
+  import { describeBoundViolation } from '../../lib/boundViolation.js';
   import { addToast } from '../../lib/toastStore.js';
   import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
 
@@ -430,6 +431,13 @@
         return 'This formula has no basis — nothing is marked as the 100%.';
       case 'basisNotNormalised':
         return "This formula's basis doesn't add up to 100%.";
+      case 'boundViolation':
+        // A cure salt outside its product's window, in the ONE wording the formula
+        // screen and the freeze's own refusal also use (issue #1402). It used to
+        // fall through to the `default` below, which said nothing about which window
+        // was missed. The tail is the template's and is unchanged: "Open the formula
+        // screen to sort it out."
+        return describeBoundViolation(solved.reason, (id) => labelById.get(id));
       default:
         return "This formula doesn't resolve into weights.";
     }

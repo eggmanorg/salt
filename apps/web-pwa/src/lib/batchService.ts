@@ -16,13 +16,7 @@ import type {
   ProposeScheduleOutput,
   ReferenceYield,
 } from '@salt/domain/schemas';
-import type {
-  BoundViolation,
-  FormulaFailure,
-  FreezeBatchFailure,
-  Recipe,
-  ScheduleAnchor,
-} from '@salt/domain';
+import type { FormulaFailure, FreezeBatchFailure, Recipe, ScheduleAnchor } from '@salt/domain';
 import {
   flattenIngredients,
   freezeBatch,
@@ -33,6 +27,7 @@ import {
   withStageSkipped,
   withStageStarted,
 } from '@salt/domain';
+import { describeBoundViolation } from './boundViolation.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 import { ErrorCode, failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { writable, get } from 'svelte/store';
@@ -332,33 +327,17 @@ function describeFreezeFailure(
   }
 }
 
-// Which window was missed, in the figures the rail itself declared.
+// Why the freeze could not resolve the formula into weights.
 //
-// `BoundViolation` reports BOTH ends when both were declared precisely so a caller
-// can show the window rather than the edge (see `formula/failure.ts`), and until
-// phase 2 nobody took it up on that: phase 1 could only reach a bound violation by
-// somebody hand-typing an out-of-range percent on the formula screen, where they
-// had just seen the number. A proposal's leavening opinion is the route that made
-// it ordinary — `withComponentPercentScaled` stamps LEAVENING_PERCENT_BOUNDS on the
-// component it adjusted and `solveFormula` refuses — so "the formula could not be
-// resolved into weights (boundViolation)" is no longer good enough.
+// The BOUND VIOLATION wording moved to `lib/boundViolation.ts` (issue #1402), where
+// the two screens can reach it: a cure salt outside its product's window refuses the
+// save AND the start, and one safety sentence with three copies is three sentences.
+// What stays here is the tail, which is genuinely this surface's — a bake sheet can
+// suggest asking for a different time, and the formula screen is already where you
+// would be sent.
 //
-// This is the ONE check. Nothing on the way here re-tests the bounds; the rail is
-// `solveFormula`'s and this only reads its answer out loud.
-function describeBoundWindow(violation: BoundViolation): string {
-  const { minPercent, maxPercent } = violation;
-  if (minPercent !== undefined && maxPercent !== undefined) {
-    return `outside the ${minPercent}%–${maxPercent}% window it has to sit in`;
-  }
-  if (violation.bound === 'min' && minPercent !== undefined) {
-    return `below the ${minPercent}% it has to stay above`;
-  }
-  if (violation.bound === 'max' && maxPercent !== undefined) {
-    return `above the ${maxPercent}% it has to stay under`;
-  }
-  return 'outside the window it has to sit in';
-}
-
+// Nothing on the way here re-tests the bounds; the rail is `solveFormula`'s and this
+// only reads its answer out loud.
 function describeUnsolvableFormula(
   reason: FormulaFailure,
   labels: Readonly<Record<string, string>>,
@@ -366,17 +345,7 @@ function describeUnsolvableFormula(
   if (reason.kind !== 'boundViolation') {
     return `The formula could not be resolved into weights (${reason.kind}).`;
   }
-  const violation = reason.violations[0];
-  if (violation === undefined) {
-    return 'One of the percentages is outside the window it has to sit in.';
-  }
-  // The recipe's own words for the line, when we still have them. An ingredient
-  // that has left the recipe gets the generic subject rather than its id — a blank
-  // reads as "we no longer know what this was", which is the same choice
-  // `freezeBatch` makes for a quantity's label.
-  const label = labels[violation.ingredientId];
-  const subject = label === undefined || label === '' ? 'one ingredient' : `“${label}”`;
-  return `That would put ${subject} at ${violation.percent}% of the basis, ${describeBoundWindow(violation)}. Ask for a different time, or set the percentages yourself on the formula screen.`;
+  return `${describeBoundViolation(reason, (id) => labels[id])} Ask for a different time, or set the percentages yourself on the formula screen.`;
 }
 
 /**

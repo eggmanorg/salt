@@ -388,13 +388,19 @@ export type {
 // Formula module (issue #782) — composition as ratios against a declared basis.
 // Written to `formulas/{recipeId}` since issue #806; the shape is unchanged from
 // #782, which landed the schema alongside the pure arithmetic typed against it.
-export { DoughAmountSchema, FormulaSchema, FormulaTargetSchema } from './formula.js';
+export {
+  DoughAmountSchema,
+  FormulaSchema,
+  FormulaTargetSchema,
+  SaltProductSchema,
+} from './formula.js';
 export type {
   DoughAmount,
   FormulaComponent,
   ReferenceYield,
   Formula,
   FormulaTarget,
+  SaltProduct,
 } from './formula.js';
 
 // Process (issue #806, phase 2) — the ordered stages hanging off a formula, and

@@ -27,6 +27,30 @@ import { ProcessSchema } from './process.js';
 // one. Values live in `formula/density.ts`.
 export const DensityClassSchema = z.enum(['waterLike', 'oil', 'syrup']);
 
+// WHICH SALT-BEARING PRODUCT THIS COMPONENT IS (issue #1402, phase 04 of epic
+// #778). A named class on the component, following `DensityClassSchema` above for
+// the same two reasons its header gives: not a raw figure, because the figure that
+// matters is a fact about the PRODUCT and would then need re-deriving wherever it
+// was read; and not a canon id, because canon ids are minted per environment and a
+// table keyed by them is empty everywhere but one.
+//
+// IT EXISTS BECAUSE "CURING SALT" NAMES TWO DIFFERENT THINGS. The concentrated
+// products — cure #1, cure #2 — go in at about 0.25% of the meat alongside ordinary
+// salt. The dilute European ones ARE the salt and go in at about 3%. Twelve times
+// the difference, both right, and no way to tell which is in the jar from the
+// percentage being checked. So the product is stored and the window is read off it;
+// `formula/cureSalt.ts` holds the table and states its limits.
+//
+// NAMED FOR THE PRODUCT, NOT FOR "CURE SALT", and that is deliberate: the phase
+// after this one adds `plain` to this enum, because a substitution has to be able to
+// find the ordinary salt it moves mass into. A second field for that would be one
+// field too many.
+//
+// OPTIONAL, and `schemaVersion` stays at 1 — an added optional field is
+// read-compatible and production's bread formulas carry none, exactly as `process`
+// and `target` below did.
+export const SaltProductSchema = z.enum(['cure1', 'cure2', 'nitritedCuringSalt', 'salvianda']);
+
 export const FormulaComponentSchema = z.object({
   // FK into the recipe's `ingredients[].id`.
   ingredientId: z.string(),
@@ -35,10 +59,20 @@ export const FormulaComponentSchema = z.object({
   percent: z.number().nonnegative(),
   inBasis: z.boolean(),
   density: DensityClassSchema.optional(),
+  // WHICH SALT-BEARING PRODUCT THIS IS, or nothing at all (issue #1402). See
+  // `SaltProductSchema` above. Absent is the ordinary answer and means exactly one
+  // thing: no window is read for this component, so the solve has nothing to refuse
+  // it against.
+  saltProduct: SaltProductSchema.optional(),
   // The bound seam. Declared per component and enforced generically by the
-  // solve, which REFUSES rather than extrapolates — phase 04's nitrite limits are
-  // the load-bearing customer, and that must not be a decision a screen can be
-  // talked out of. No bound VALUE is set anywhere in this phase.
+  // solve, which REFUSES rather than extrapolates — the nitrite limits #1402
+  // stamps here are the load-bearing customer, and that must not be a decision a
+  // screen can be talked out of.
+  //
+  // STAMPED AT DERIVE, NEVER HAND-EDITED AND NEVER CARRIED. `deriveFormula` reads
+  // the window off `saltProduct` on every pass, so a stored bound cannot drift from
+  // the table, cannot be lost on a re-save, and cannot be widened except by naming
+  // a different product — which changes what the ingredient IS.
   minPercent: z.number().nonnegative().optional(),
   maxPercent: z.number().positive().optional(),
 });
@@ -145,6 +179,7 @@ export const FormulaSchema = z.object({
 });
 
 export type DensityClass = z.infer<typeof DensityClassSchema>;
+export type SaltProduct = z.infer<typeof SaltProductSchema>;
 export type FormulaComponent = z.infer<typeof FormulaComponentSchema>;
 export type DoughAmount = z.infer<typeof DoughAmountSchema>;
 export type ReferenceYield = z.infer<typeof ReferenceYieldSchema>;

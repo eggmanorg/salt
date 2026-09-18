@@ -558,9 +558,36 @@ shipped with bread, in #1275 — they are not on that list.
 Settle the first before promising anything; the rest before the phase that needs
 them.
 
-- **Cure salt is a safety boundary, not a number.** Nitrite percentages carry hard
-  bounds in `domain`, and the scaler refuses rather than extrapolates. Settle
-  before any curing UI exists.
+- ~~**Cure salt is a safety boundary, not a number.**~~ **SETTLED — keyed by
+  PRODUCT** (issue #1402). There is no single cure-salt percentage, and a phrasing
+  that implied one was the dangerous part of this question: two families of product
+  are in ordinary use and their doses differ by more than tenfold. The
+  **concentrated** ones (cure #1, cure #2, ~6.25% sodium nitrite) go in at ~0.25% of
+  the meat _alongside_ ordinary salt; the **dilute** European ones (nitrited curing
+  salt, Salvianda, well under 1%) _are_ the salt, at ~3%. One window wide enough for
+  both permits a twelvefold overdose of the other.
+
+  So the component records **which product** it is (`SaltProductSchema`, a named
+  class following `DensityClassSchema` — never a canon id, never free text), a
+  checked-in table in `packages/domain/src/formula/cureSalt.ts` holds each product's
+  own window, `deriveFormula` stamps that window onto the component on every derive,
+  and `solveFormula`'s existing refusal is what refuses. **No second check anywhere**
+  — not a validator on the save path, not the adapter, not a Cloud Function. Names
+  only ever **propose** a product; the bound is read from the product recorded on the
+  component. This is the one place Salt says no.
+
+  **Its limits, which are narrower than "Salt prevents an unsafe cure":** no product
+  named means no bound; celery-powder "natural" cures are **absent by design**
+  (their nitrite content varies by brand, so a fixed figure would be a guess wearing
+  a safety rail's clothes); nothing checks the rest of the salt; nothing checks
+  **suitability** (whether a nitrite-only product is fit for a ninety-day dry is a
+  different question, and is deliberately unasked); and scaling is never the danger,
+  because percentages scale linearly. A formula that saves is therefore **not** a
+  formula Salt has pronounced safe. The rail earns its place catching a mis-typed
+  percentage, a basis mapped to the wrong ingredient, and a scraped recipe that
+  arrived wrong. `cureSalt.ts`'s header states all of this at the declaration, and
+  `packages/domain/tests/formula/cureSalt.test.ts` pins each claim.
+
 - **How good are the two AI passes.** The gate on everything: hand three real
   bread recipes to the cheap model and check the wait stages come out clean, then
   the same three to a better model with a target time and read the schedules. If
