@@ -18,6 +18,19 @@ import { PLACEHOLDER_TAG_VOCABULARY } from './placeholderVocabulary.js';
 // in step 6: those live in the method, and this is the only thing that reads them.
 // The brief then directs the image model in place of that guess-it-yourself clause.
 //
+// TWO HOSTS, AND THE SPLIT BETWEEN THEM IS THE DECISION (issue #1432, epic #1417).
+// The onRecipeWritten trigger runs this flow with no human present and PERSISTS the
+// result, in the same Firestore update as the image it directed. The
+// describeRecipeScene callable runs it for someone sitting in front of the
+// regenerate dialog and persists NOTHING — the paragraph goes back to the box, and
+// only the user's Regenerate writes it to `recipes/{id}.imageBrief`. Losing the
+// callable's result to a locked phone is therefore correct rather than an unfixed
+// #1416: the app HANDED IT OVER TO BE REVIEWED instead of SAVING IT FOR YOU, and on
+// the path where nobody could review it, it already saves it. The full argument, its
+// boundary and the tests that pin each half are at the callable (`src/index.ts`,
+// `describeRecipeScene`); the decision is in docs/recipe-module.md → "The scene
+// brief's two lives". Do not add a write here.
+//
 // SCOPE — the dish-specific half ONLY. This flow describes THIS dish: appearance,
 // plating, vessel, garnish, colour, texture, and the mood/season/cuisine it reads
 // as. It must NOT author house style or prohibitions ("photoreal", "soft window

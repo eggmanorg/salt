@@ -134,6 +134,41 @@ Key invariants:
   above that, the spoon has stopped being the useful way to read the amount, so
   `displayText` is `null` and the amount reads metric-only.
 
+### The scene brief's two lives — persisted by the trigger, transient from the dialog (issue #1432, epic #1417)
+
+`imageBrief` means one thing: **the art direction behind the photo currently on the
+recipe.** One flow writes briefs (`describeRecipeScene`) and it runs from two hosts,
+which is why the field looks inconsistently durable and is not:
+
+- **The `onRecipeWritten` trigger PERSISTS its brief**, in the same update as the
+  image it directed, so there is no in-flight window where a freshly generated hero
+  shows next to a stale brief. That is a guarantee about synchronisation, not
+  presence: the brief step can still return nothing (an empty result, or any throw),
+  in which case the image is written with no brief at all, same as an uploaded hero.
+  Nobody is watching that path, so saving whatever brief there is remains the only
+  sane outcome — this is the shape #1416 exists to enforce, already applied.
+- **The `describeRecipeScene` CALLABLE persists nothing.** It serves the regenerate
+  dialog, where the paragraph is handed back for a human to read; only their
+  Regenerate writes it, via `regenerateRecipeImage`. An unreviewed revision lives in
+  the page's component state and is discarded by the dialog's unconditional re-seed
+  on the next open — Cancel clears nothing, it only closes.
+
+**Why the split is right, and not an unfixed #1416:** writing an unreviewed revision
+to `imageBrief` would not merely be wasteful, it would be false — the recipe would
+claim art direction that no visible image was generated from, and the next Regenerate
+would inherit words the user walked away from, possibly describing a dish the recipe
+has since been edited away from. The field's meaning is the whole argument, which is
+also the boundary: change what `imageBrief` means and this decision is reopened.
+
+**Rejected:** a server-side write from the callable (that write _is_ the commit the
+review gate exists to withhold); a separate draft field or collection (a schema, a
+subscription, a rules clause and a cleanup lifecycle, to save a call costing a
+fraction of a penny); client-side persistence (CLAUDE.md hard rule 3 bars browser
+storage, and it would not survive an OS suspend regardless).
+
+The reasoning per fact, each with its own void condition and its own pinning test, is
+at the call site — `apps/cloud-functions/src/index.ts` → `describeRecipeScene`.
+
 ### The phase strip — what recipe timing BECOMES (issue #1122)
 
 `metadata.phases` is an ordered list of 3–6 `{ label, handsOnMinutes,

@@ -384,6 +384,15 @@ export async function redoRecipeKit(recipeId: string): Promise<ReadResult<void, 
 // is the whole economics of the feature — a brief costs a fraction of a cent, an
 // image costs orders of magnitude more, so you fix the art direction first and pay
 // for one render instead of three.
+//
+// And LOSING an unaccepted brief to a suspended phone is correct, not an unfixed
+// #1416 (issue #1432, epic #1417): this result is HANDED OVER TO BE REVIEWED, so the
+// page holds it in component state and the dialog's unconditional re-seed on the
+// NEXT OPEN is what discards it — Cancel itself clears nothing, it only closes. The
+// automatic half of the same flow, in the onRecipeWritten trigger, already persists
+// its own result server-side. The argument and its boundary are at the callable
+// (apps/cloud-functions/src/index.ts → describeRecipeScene); the decision is in
+// docs/recipe-module.md → "The scene brief's two lives".
 
 // Flatten a Recipe to the flow's input. Mirrors the trigger's own flattening
 // (onRecipeWritten.describeSceneOrNothing) so a brief authored from the dialog and
