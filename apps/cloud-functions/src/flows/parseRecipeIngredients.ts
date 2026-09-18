@@ -1,3 +1,31 @@
+// Text → structure, and NOTHING ELSE: this flow reads an ingredient line (or a
+// whole list) and returns parsed groups. IT DELIBERATELY PERSISTS NOTHING, and
+// that is load-bearing rather than an oversight (issue #1435, epic #1417).
+//
+// Two reasons, both of which must stay true for the sentence above to stay true:
+//
+//   1. IT CANNOT NAME A DOCUMENT. `ParseRecipeIngredientsInputSchema` is
+//      `{ rawText }` and nothing else — no recipe id, no group id, no ingredient
+//      id. Writing would take a wire-contract change, not a `getFirestore()` call.
+//   2. ITS IN-PROCESS CALLERS NEED IT PURE. Two files call this flow directly:
+//      `assembleRecipeDraft.ts`, itself reached by `extractRecipeFromUrl.ts`,
+//      `extractRecipeFromPhoto.ts` and `authorRecipe.ts` — every URL import, photo
+//      import and chat-authored recipe; and `scripts/rematch-ingredients.ts`. The
+//      three import paths already persist at the right moment, once and whole, via
+//      `persistImportedRecipe`, so a write here would fire mid-assembly, writing
+//      partial ingredient state for a recipe that does not exist yet. The script's
+//      default mode is deliberately read-only, and a write here would break that
+//      promise silently.
+//
+// The claim is PINNED, not merely asserted (CLAUDE.md rule 12): a source scan in
+// `tests/flows/parseRecipeIngredients.test.ts` fails if this file grows a
+// `firebase-admin` import, a `getFirestore` or a `firestore()`. Its boundary is
+// exactly that — it pins what this FILE imports, not what a helper it calls might
+// do, so keep the write out rather than routing it through a module.
+//
+// The browser-side consequence — the ✗ rematch on a recipe row persists in the
+// page, not here, and why that is right — is argued at the callable in
+// `../index.ts` and at `matchIngredient` in `web-pwa/src/lib/recipeService.ts`.
 import {
   ParseRecipeIngredientsInputSchema,
   ParseRecipeIngredientsAIOutputSchema,

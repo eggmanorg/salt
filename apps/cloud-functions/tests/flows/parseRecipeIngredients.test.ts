@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { READER_UNIT_PRINCIPLE } from '@salt/domain/prompts';
 
 const mockGenerate = vi.fn();
@@ -777,5 +780,52 @@ describe('parseRecipeIngredients — prompt construction', () => {
     // Poultry joints and egg parts are named as in-scope for the exception.
     expect(system).toContain('thighs');
     expect(system).toContain('whites');
+  });
+});
+
+// ─── The pin for "this flow persists nothing" (issue #1435, epic #1417) ───────
+//
+// The flow's header states that it deliberately writes nothing, and four
+// in-process callers depend on that: `assembleRecipeDraft` (reached by every URL
+// import, photo import and chat-authored recipe) and the read-only-by-default
+// `scripts/rematch-ingredients.ts`. Under CLAUDE.md rule 12 that sentence is
+// pinned, not merely asserted.
+//
+// It has to be a SOURCE SCAN rather than a mock: the flow imports no Firestore
+// module today, so there is nothing to mock and nothing a behavioural assertion
+// could observe — add `getFirestore()` to the flow and every test above still
+// passes. Same technique, same directory, as `unitPolicy.test.ts`'s PARSER_SRC.
+//
+// BOUNDARY: this pins what the flow's own file imports and calls. It does not
+// reach a write smuggled in through a helper module the flow calls, so keep the
+// write out rather than routing it through one.
+describe('parseRecipeIngredients — persists nothing, by construction', () => {
+  const FLOW_SRC = 'apps/cloud-functions/src/flows/parseRecipeIngredients.ts';
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
+  const source = readFileSync(join(repoRoot, FLOW_SRC), 'utf8');
+
+  // Comments argue about Firestore at length; code must not mention it at all.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+
+  it('imports nothing that can reach Firestore', () => {
+    expect(code).not.toMatch(/from\s+['"]firebase-admin/);
+    expect(code).not.toMatch(/from\s+['"]firebase-functions\/.*firestore/);
+    expect(code).not.toMatch(/from\s+['"]@google-cloud\/firestore['"]/);
+  });
+
+  it('calls no Firestore handle', () => {
+    expect(code).not.toMatch(/\bgetFirestore\b/);
+    expect(code).not.toMatch(/\bfirestore\s*\(/);
+    expect(code).not.toMatch(/\bFieldValue\b/);
+  });
+
+  // Guards the guard: if the flow file ever stops being readable from here the
+  // two cases above would pass vacuously on an empty string.
+  it('scanned the flow it claims to scan', () => {
+    expect(code).toContain('parseRecipeIngredientsFlow');
   });
 });

@@ -680,6 +680,25 @@
   // The unmatched indicator (✗) is the trigger: tapping it parses + canon-matches
   // that single ingredient and persists the recipe. Re-derives from the current
   // store copy and discards the result if the row changed mid-flight.
+  //
+  // THIS PAGE IS THE WRITER, AND THE LOSS WINDOW IS ACCEPTED (issue #1435, epic
+  // #1417). Both AI calls happen while the browser waits, so a locked phone, an
+  // app switch or a closed tab between the tap and `persistRecipe` below loses the
+  // result outright — and there is no Save here to blame it on: the write is
+  // unconditional on success. That is #1416's side of the line, so the reason this
+  // stays in the browser is spelled out at the callable
+  // (`cloud-functions/src/index.ts`) rather than assumed: neither callable's wire
+  // contract carries recipe identity, so neither can write the row, and a new
+  // callable that could would land a read-modify-write on `recipes/{id}` that a
+  // full-document `setDoc` from this very page can silently drop.
+  //
+  // What makes it acceptable is local and specific: the marker that REPORTS the
+  // loss is the control that RE-RUNS it. Nothing is half-written, nothing is
+  // corrupted, and the cost of a lost round trip is one `lite`-tier parse of one
+  // line plus a batch-of-one canon match, and a second tap, with the user still
+  // holding the phone. Do not "fix" it
+  // with a keep-alive or a `beforeunload` stash — CLAUDE.md hard rule 3 bars the
+  // storage, and neither survives an OS suspending the process anyway.
   let matchingIds = $state<Record<string, boolean>>({});
 
   async function handleRematch(group: IngredientGroup, ing: Ingredient): Promise<boolean> {

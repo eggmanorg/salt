@@ -275,7 +275,57 @@ export const populateEquipmentEntry = makeTracedCallable({
 });
 
 // Recipe lists are larger prompts than single-entry flows — allow 90s so the
-// 55s withAiTimeout has sufficient headroom within the function lifetime.
+// 55s withAiTimeout has sufficient headroom within the function lifetime. That
+// budget is a leftover: #1319 Phase 8 deleted the editor's paste-a-block "Parse
+// from text", so the only browser caller left sends ONE line.
+//
+// ─── AND THE BROWSER IS STILL THE WRITER, DELIBERATELY (issue #1435, epic #1417)
+//
+// This callable hands its result back for the browser to persist, and unlike the
+// review-gate call sites elsewhere in this file there is NO human step:
+// `handleRematch` (`RecipeViewPage.svelte`) writes unconditionally on success, so
+// a phone that locks mid-round-trip loses work the user was entitled to assume was
+// safe. On that axis it is #1416's side of the line, and the epic's sweep is right
+// to look twice. It is still not an unfixed #1416, for reasons that are this call
+// site's own rather than inherited from siblings #1428/#1429:
+//
+//   • THIS CALLABLE CANNOT BE THE WRITER. Its wire input is `{ rawText }` and
+//     nothing else (`schemas/parseRecipeIngredients.ts`) — no recipe id, no group
+//     id, no ingredient id. It cannot write into a document it cannot name, and
+//     giving it identity is a wire-contract change, not #1416's three lines of
+//     `persistImportedRecipe`.
+//   • ITS IN-PROCESS CALLERS REQUIRE IT PURE. `assembleRecipeDraft` calls the
+//     flow directly on the way in for every URL import, photo import and
+//     chat-authored recipe, and `scripts/rematch-ingredients.ts` is read-only by
+//     default. A writing parse flow would have to be inert for all of them, which
+//     is a writer that is not one. Pinned by the source scan in
+//     `tests/flows/parseRecipeIngredients.test.ts`; argued in the flow's header.
+//   • THE WRITE IS THE MATCH, NOT THE PARSE. `matchIngredient` chains this
+//     callable into `canonicaliseRecipeIngredients` and writes `parsed`, `canonId`
+//     and `matchState` in one go. Writing after the parse alone would store a
+//     parsed-but-unmatched row and re-arm the ✗ — worse than not writing. So the
+//     durable version is ONE new `{ recipeId, ingredientId }` callable covering
+//     both halves, and that is not this callable's decision to take alone.
+//   • WHAT A SERVER WRITE BUYS IS CAPPED. The target is `recipes/{id}`, which the
+//     page rewrites WHOLE on a sub-second debounce (`recipeWrites`, #1319). A
+//     server-side read-modify-write races that coalescer and can be dropped by the
+//     next in-place save from a client holding an older copy — document-level LWW,
+//     the contract and not a bug (CLAUDE.md → Data model). It would also lose a
+//     guard the server cannot have: `handleRematch` re-derives from the live store
+//     and replaces the row only if `rawText` still matches, so a line edited
+//     mid-flight is not overwritten with a match for its old text.
+//   • THE LOSS IS SELF-ANNOUNCING AND ONE TAP. One `lite`-tier parse of one line
+//     at `temperature: 0`, then a batch-of-one canon match — with the user holding
+//     the phone, and the ✗ that reports the loss the same ✗ that re-runs it.
+//     Compare the guided plan #1416 fixed: tens of seconds on `pro`, no human step
+//     at all, and you come back to no plan and no sign anything happened.
+//
+// THE BOUNDARY, because an unqualified "this match is never persisted server-side"
+// would go false the moment someone files the callable above: it holds while both
+// wire contracts on this path are identity-free. A per-row match callable carrying
+// `{ recipeId, ingredientId }` reopens it, and this row rides along with it. That
+// is one decision shared with the sibling half (`canonicaliseRecipeIngredients`),
+// not an independent one — docs/recipe-module.md records it.
 export const parseRecipeIngredients = onCallGenkit(
   {
     ...APP_CHECK_ENFORCEMENT,

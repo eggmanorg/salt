@@ -917,6 +917,27 @@ export async function canonicaliseIngredients(
 // Parse and canon-match a single ingredient line. Chains callParseRecipeIngredients
 // → callCanonicaliseRecipeIngredients (batch-of-one) and folds the result into the
 // ingredient. Operates on the in-memory draft; the caller must persist the result.
+//
+// THE CALLER PERSISTS IT, AND THAT IS THE DECISION (issue #1435, epic #1417), not
+// an unfixed #1416. What is persisted is the MATCH — `parsed`, `canonId` and
+// `matchState` written together after BOTH callables return — never the parse on
+// its own, which would store a parsed-but-unmatched row and re-arm the ✗. So the
+// write belongs to the pair, and neither callable can carry it: both wire contracts
+// are identity-free (`{ rawText }` here, `{ items: [{ rawName, rawText }] }` next
+// door), so neither can name the document it would write into.
+//
+// A server-side version is therefore one NEW `{ recipeId, ingredientId }` callable
+// replacing both calls below, not a write bolted onto either — and what it buys is
+// capped: `recipes/{id}` is rewritten WHOLE by `persistRecipe`/`recipeWrites`
+// above, so a server read-modify-write can be dropped by the next in-place save
+// from a client holding an older copy (document-level LWW), and it cannot see the
+// caller's mid-flight `rawText` guard. Against that, the loss is one `lite`-tier
+// parse of one line plus a batch-of-one canon match, with the user present and the
+// ✗ still on screen to re-run it.
+//
+// BOUNDARY: this holds while both wire contracts stay identity-free. The per-row
+// match callable above reopens it — one decision shared with
+// `canonicaliseRecipeIngredients`, recorded in docs/recipe-module.md.
 export async function matchIngredient(
   ing: Ingredient,
 ): Promise<ReadResult<Ingredient, DomainError>> {
