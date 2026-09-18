@@ -70,17 +70,35 @@
 
   // ─── How far along each run is (issue #1407, phase 2) ────────────────────────
   //
-  // ONLY THE RUNS THAT CARRY A TARGET get a log subscription — a household with
-  // nothing but bread opens not a single extra listener, which is what keeps this
-  // dark. `batchObservationService` explains why a per-run listener is the route
-  // rather than a collection-group query or a denormalised figure on the batch.
+  // ONLY RUNS IN FLIGHT THAT CARRY A WEIGHT-LOSS TARGET get a log subscription —
+  // a household with nothing but bread opens not a single extra listener, which
+  // is what keeps this dark. `batchObservationService` explains why a per-run
+  // listener is the route rather than a collection-group query or a denormalised
+  // figure on the batch.
+  //
+  // THE BOUND IS ENFORCED HERE, NOT ASSERTED (#1426 review, blocking 1). This
+  // used to filter `all` on `target !== null` alone — and `all` is every batch
+  // ever written (`subscribeBatches` carries no `where`/`limit`, and
+  // `orderBatches` keeps ended runs rather than dropping them), so a household
+  // years into curing opened one listener per cure it had ever logged, not per
+  // cure on the go. `nextAction(batch).kind === 'stage'` is the same "still
+  // waiting on something" test the card's own next-action line already computes,
+  // so a done or abandoned run — however long the target it carries — opens no
+  // listener here again; its figure is static and already on the run's own page.
+  // `target?.weightLossPercent != null` narrows further: `meterFor` below only
+  // ever reads the weight-loss half (see its own comment), so a pH-only target
+  // would open a listener the card never consults.
+  // `BatchListPage.test.ts` pins this gate directly — a done run, an abandoned
+  // run and a pH-only run each open no listener despite carrying a target.
   //
   // The effect reads the JOINED KEY and nothing else, so it re-subscribes when the
   // SET of targeted runs changes and not merely when the store hands back a new
   // array on every snapshot.
   const targetedIdKey = $derived(
     all
-      .filter((batch) => batch.target !== null)
+      .filter(
+        (batch) => nextAction(batch).kind === 'stage' && batch.target?.weightLossPercent != null,
+      )
       .map((batch) => batch.id)
       .sort()
       .join(','),

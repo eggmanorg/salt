@@ -367,10 +367,13 @@ export function phTargetText(progress: PhProgress): string {
 /**
  * THE CUE (issue #1407, phase 2) — the one place the three appearances are chosen.
  *
- * A COLOUR AND A WEIGHT, and not a word. Nothing here says "ready", "done",
- * "overdue" or anything else that reads as a verdict on a run: the whole of the cue
- * is that a coppa at 31% of a 35% target catches your eye going down the list and
- * one at 12% does not.
+ * A COLOUR, and not a word (#1426 review, should-fix 4 — this used to also claim
+ * "a weight", but the function returns three colour classes and nothing sets a
+ * font weight from the stance; the docstring is corrected to what the code does
+ * rather than the code being made to grow a fourth visual dimension). Nothing
+ * here says "ready", "done", "overdue" or anything else that reads as a verdict
+ * on a run: the whole of the cue is that a coppa at 31% of a 35% target catches
+ * your eye going down the list and one at 12% does not.
  *
  * The METER does the rest of the work and needs nothing from here: `Progress`
  * clamps its own value to its range (ui-spec-v02 §8.15), so a run past its target

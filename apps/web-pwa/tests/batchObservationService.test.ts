@@ -417,6 +417,22 @@ describe('batchObservationService — many runs at once (issue #1407)', () => {
     expect(unsubs[1]).toHaveBeenCalledTimes(1);
   });
 
+  it('clears the map on teardown too, so a re-mount cannot render stale readings first (#1426 review, should-fix 6)', () => {
+    // The reset on INIT stops a re-init leaving a departed run's readings behind
+    // (the test above). It used to be the only reset: the teardown only
+    // unsubscribed, so leaving `/batches` and coming straight back rendered the
+    // FIRST frame against whatever the previous visit last saw, before the new
+    // effect had a chance to reset and re-subscribe — a stale figure
+    // indistinguishable from a real one.
+    const teardown = initBatchObservationLogsSync(['coppa-1']);
+    fs.subscribeBatchObservations.mock.calls[0]![1]([entry('o-1', 1780)]);
+    expect(get(observationLogs).has('coppa-1')).toBe(true);
+
+    teardown();
+
+    expect(get(observationLogs).size).toBe(0);
+  });
+
   it('reports a subscription failure without throwing', () => {
     initBatchObservationLogsSync(['coppa-1']);
     const onError = fs.subscribeBatchObservations.mock.calls[0]![2];

@@ -87,10 +87,22 @@ export const observations: Readable<BatchObservationDoc[] | undefined> = _observ
 //     prevent.
 //
 // So: ONE `subscribeBatchObservations` PER RUN, reusing the adapter unchanged, and
-// **only for runs that carry a target**. A household with nothing but bread opens
-// not a single extra listener, which is also what keeps this feature genuinely
-// dark. The bound is the number of cures on the go — a handful — and each log is
-// tens of documents.
+// **only for runs that are IN FLIGHT and name a WEIGHT-LOSS target** — the two
+// conditions `BatchListPage` actually needs before it opens a listener. A
+// household with nothing but bread opens not a single extra listener, which is
+// also what keeps this feature genuinely dark.
+//
+// THE BOUND IS ENFORCED AT THE CALL SITE, NOT HERE (#1426 review, blocking 1).
+// This sentence used to say the bound was "the number of cures on the go — a
+// handful" while the caller filtered on `target !== null` alone, over the WHOLE
+// `batches` collection (`subscribeBatches` carries no `where`/`limit`) with ended
+// runs still in it (`orderBatches` keeps them). The true set was every batch ever
+// written that named a target, not the ones in flight — unbounded by history.
+// `BatchListPage.svelte`'s own comment states the narrower gate it applies before
+// calling in here, and `BatchListPage.test.ts` pins it: a done run, an abandoned
+// run and a pH-only run each open no listener despite carrying a target. This
+// module makes no assumption about the gate — see `initBatchObservationLogsSync`
+// below — so the bound lives at exactly one call site, not two.
 //
 // A MAP, keyed by batch id. A run whose key is absent has not loaded yet and shows
 // no figure; an empty array is loaded-and-nothing-recorded. Oldest first within
@@ -129,13 +141,18 @@ export function initBatchObservationsSync(batchId: string): () => void {
 /**
  * Subscribe to several runs' logs at once, and return the unsub for all of them.
  *
- * Idempotent in the sense that matters: the store is RESET first, so a re-init with
- * a different set of runs can never leave a departed run's readings behind for the
- * list to draw a meter from. That is the same reset `initBatchObservationsSync`
- * above does and for the same reason.
+ * Idempotent in the sense that matters: the store is RESET both on init AND on
+ * teardown, so a departed run's readings can never outlive it — across a re-init
+ * with a different set of runs, AND across a re-mount (#1426 review, should-fix
+ * 6: the teardown used to only unsubscribe, leaving the map exactly as the
+ * previous visit left it until the next effect ran, so the first render after
+ * re-entering `/batches` could draw a meter from readings taken before whatever
+ * was logged while the page was closed). That is the same reset
+ * `initBatchObservationsSync` above does on init and for the same reason.
  *
  * The caller decides which runs are worth a listener — see the note above: today
- * that is the runs carrying a target, and nothing here assumes it.
+ * that is the runs in flight with a weight-loss target, and nothing here assumes
+ * it.
  */
 export function initBatchObservationLogsSync(batchIds: readonly string[]): () => void {
   _logsByBatch.set(new Map());
@@ -154,6 +171,7 @@ export function initBatchObservationLogsSync(batchIds: readonly string[]): () =>
   );
   return () => {
     for (const unsub of unsubs) unsub();
+    _logsByBatch.set(new Map());
   };
 }
 

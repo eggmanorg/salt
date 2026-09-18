@@ -1747,8 +1747,8 @@ describe('BatchDetailPage — how far along the run is (issue #1407)', () => {
 
 describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
   // `makeBatch` freezes `basisGrams: 816`. 604 g is 26% lost and a long way off;
-  // 558 g is just over nine-tenths of the way to a 35% target (559 g is just
-  // under); 506 g is 38% lost, past it.
+  // 573 g is just over the nearing threshold — 85% of the way to a 35% target
+  // (574 g is just under); 506 g is 38% lost, past it.
   async function showCuring(weightGrams: number): Promise<void> {
     await showRun({ target: { weightLossPercent: 35, phAtMost: null } });
     mockObservations._set([observation({ weightGrams })]);
@@ -1763,8 +1763,8 @@ describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
     ).not.toBeNull();
   });
 
-  it('wears the nearing appearance nine-tenths of the way there', async () => {
-    await showCuring(558);
+  it('wears the nearing appearance at the nearing threshold', async () => {
+    await showCuring(573);
 
     await waitFor(() => expect(screen.getByTestId('batch-target-meter')).toBeInTheDocument());
     expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing');
@@ -1788,7 +1788,7 @@ describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
       expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('tracking'),
     );
 
-    mockObservations._set([observation({ id: 'obs-2', weightGrams: 558 })]);
+    mockObservations._set([observation({ id: 'obs-2', weightGrams: 573 })]);
 
     await waitFor(() =>
       expect(screen.getByTestId('batch-target-meter').getAttribute('data-stance')).toBe('nearing'),

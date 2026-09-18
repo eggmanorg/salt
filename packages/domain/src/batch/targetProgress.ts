@@ -42,22 +42,32 @@ import type { BatchDoc, BatchObservationDoc } from '../schemas/index.js';
 
 // ─── HOW CLOSE IS "CLOSE"? (issue #1407, phase 2) ─────────────────────────────
 //
-// NINE-TENTHS OF THE WAY THERE. One constant, in one place, with its boundary
-// stated beside it — the same posture `DOUGH_GRAMS_PER_ML` takes in
+// EIGHTY-FIVE HUNDREDTHS OF THE WAY THERE. One constant, in one place, with its
+// boundary stated beside it — the same posture `DOUGH_GRAMS_PER_ML` takes in
 // `formula/doughAmount.ts`.
 //
+// PINNED WITH MARGIN, NOT MERELY CLEARED (#1426 review, blocking 2). The issue's
+// own worked example is 31% of a 35% target reading as "nearing" beside 12% of
+// the same target. This constant used to be 0.9, which put 31% of 35% at a
+// fraction of 0.886 — itself BELOW the 90% starting line — so the issue's own
+// exemplar sat in `tracking`, identical in appearance to the 12% run it exists to
+// be told apart from, and the test that claimed to pin it fed the boundary
+// (31.5%) rather than the figure the issue names. At 0.85 the same exemplar sits
+// at 0.886 — clear of the line by a real margin rather than sitting on it — while
+// 12% of 35% (a fraction of 0.343) stays nowhere near either boundary.
+//
 // IT IS A DOMESTIC STARTING POINT, NOT A FACT. Nothing about curing says a coppa
-// becomes interesting at 31.5% of a 35% target rather than at 30% or 33%. It is
-// the figure that made the cue arrive at roughly the right moment on the runs it
-// was designed against, and it is a fraction rather than a fixed number of
-// percentage points so that it scales with the target: three points from 35% and
-// three points from 12% are very different distances.
+// becomes interesting at 85% of a target rather than at 80% or 90% — 0.85 is
+// chosen against the issue's exemplar, not against a fact about curing — and it
+// is a fraction rather than a fixed number of percentage points so that it
+// scales with the target: three points from 35% and three points from 12% are
+// very different distances.
 //
 // A FRACTION OF THE TARGET IS THE WHOLE OF WHAT IT MEANS. It has no relationship
 // to elapsed time, to the stages, or to how fast the run is losing weight — this
 // feature makes no claim about WHEN a target will be reached, and a constant that
 // mixed in a rate would be exactly that claim wearing a threshold's clothes.
-export const NEARING_FRACTION = 0.9;
+export const NEARING_FRACTION = 0.85;
 
 /**
  * How a run READS against its target, for a cue you catch out of the corner of

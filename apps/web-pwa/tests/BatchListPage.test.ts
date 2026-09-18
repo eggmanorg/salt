@@ -430,8 +430,9 @@ describe('BatchListPage — cure type', () => {
 });
 
 describe('BatchListPage — how far along each run is (issue #1407)', () => {
-  // A 2 400 g green weight aiming at 35% lost. 1 644 g is exactly nine-tenths of
-  // the way there; 2 200 g is a long way off; 1 488 g is past it.
+  // A 2 400 g green weight aiming at 35% lost. 1 656 g is the issue's own 31%
+  // exemplar; 1 686 g is exactly the nearing threshold (85% of the way there);
+  // 2 200 g is a long way off; 1 488 g is past it.
   const CURING: BatchDoc = makeBatch({
     id: 'coppa-1',
     recipeTitle: 'Coppa',
@@ -476,9 +477,29 @@ describe('BatchListPage — how far along each run is (issue #1407)', () => {
 
   it('looks different at a glance at 31% of a 35% target than at 12%', async () => {
     // THE OUTCOME, stated as the issue states it: without reading the numbers.
-    // Two runs, two stances, and the stance is what the appearance is chosen from.
+    // Two runs, two stances, and the stance is what the appearance is chosen
+    // from. 1 656 g is 31% lost EXACTLY — the issue's own figure, not a value
+    // borrowed from `NEARING_FRACTION`'s boundary (#1426 review, blocking 2: the
+    // boundary-derived 1 644 g used to sit here, which happened to be exactly
+    // where the OLD constant's boundary fell and so never went red when the
+    // constant put the real 31% figure in the wrong band).
     mockBatches._set([CURING, makeBatch({ ...CURING, id: 'coppa-2' })]);
-    mockLogs._set(new Map([reading('coppa-1', 1644), reading('coppa-2', 2112)]));
+    mockLogs._set(new Map([reading('coppa-1', 1656), reading('coppa-2', 2112)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(screen.getAllByTestId('batch-card-target')).toHaveLength(2));
+    const stances = screen
+      .getAllByTestId('batch-card-target')
+      .map((el) => el.getAttribute('data-stance'));
+    expect(stances).toEqual(['nearing', 'tracking']);
+  });
+
+  it('pins the nearing boundary itself, separately from the exemplar above', async () => {
+    // The boundary case the exemplar test must not collapse into: exactly
+    // `NEARING_FRACTION` (0.85) of the 35% target is nearing, and one gram short
+    // of it is tracking.
+    mockBatches._set([CURING, makeBatch({ ...CURING, id: 'coppa-2' })]);
+    mockLogs._set(new Map([reading('coppa-1', 1686), reading('coppa-2', 1687)]));
     render(BatchListPage);
 
     await waitFor(() => expect(screen.getAllByTestId('batch-card-target')).toHaveLength(2));
@@ -523,6 +544,44 @@ describe('BatchListPage — how far along each run is (issue #1407)', () => {
 
   it('subscribes to nothing at all when no run carries a target', async () => {
     mockBatches._set([makeBatch({ id: 'loaf-1' }), makeBatch({ id: 'loaf-2' })]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  // THE BOUND ITSELF (#1426 review, blocking 1 and should-fix 3). `all` is every
+  // batch this household has ever written — done and abandoned runs included,
+  // since `subscribeBatches` carries no `where`/`limit` and `orderBatches` keeps
+  // ended runs — so a target alone is not enough to earn a listener. These pin
+  // the narrower gate directly: a run that is not waiting on anything, or that
+  // names no weight-loss figure, must never open one, however long it carries a
+  // target.
+  it('opens no listener for a run that carries a target but has nothing left to do', async () => {
+    const done = makeBatch({
+      ...CURING,
+      id: 'coppa-done',
+      stages: [stage({ actualEndAt: '2026-08-14T12:00:00.000Z' })],
+    });
+    mockBatches._set([done]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  it('opens no listener for an abandoned run, however long its target', async () => {
+    mockBatches._set([makeBatch({ ...CURING, id: 'coppa-abandoned', state: 'abandoned' })]);
+    render(BatchListPage);
+
+    await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());
+    expect(mockInitLogsSync).toHaveBeenLastCalledWith([]);
+  });
+
+  it('opens no listener for a run whose target is pH-only — the card never reads it', async () => {
+    mockBatches._set([
+      makeBatch({ ...CURING, id: 'salami-ph', target: { weightLossPercent: null, phAtMost: 5.3 } }),
+    ]);
     render(BatchListPage);
 
     await waitFor(() => expect(mockInitLogsSync).toHaveBeenCalled());

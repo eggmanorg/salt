@@ -213,8 +213,9 @@ describe('targetProgress — the three appearances (issue #1407, phase 2)', () =
   //
   // 2 400 g green, aiming at 35% lost. The weights are stated rather than computed
   // from `NEARING_FRACTION`: a test that derives its own input from the constant
-  // under test moves with it and stops checking anything. 1 644 g IS exactly
-  // nine-tenths of the way (31.5 of 35), and 1 560 g is exactly at it.
+  // under test moves with it and stops checking anything. 1 686 g IS exactly the
+  // nearing threshold (29.75 of 35, i.e. 0.85), and 1 560 g is exactly at the
+  // target.
   function stanceAt(grams: number, target = LOST_35, basisGrams = GREEN_GRAMS) {
     return targetProgress(batch(target, basisGrams), [
       reading('2026-07-01T09:00:00.000Z', { weightGrams: grams }),
@@ -226,13 +227,24 @@ describe('targetProgress — the three appearances (issue #1407, phase 2)', () =
   });
 
   it('is tracking one gram short of the nearing boundary', () => {
-    expect(stanceAt(1645)?.stance).toBe('tracking');
+    expect(stanceAt(1687)?.stance).toBe('tracking');
   });
 
   it('is nearing AT the boundary, inclusively', () => {
-    const at = stanceAt(1644);
+    const at = stanceAt(1686);
     expect(at?.fractionOfTarget).toBe(NEARING_FRACTION);
     expect(at?.stance).toBe('nearing');
+  });
+
+  // THE ISSUE'S OWN EXEMPLAR (#1426 review, blocking 2) — not a boundary value,
+  // the actual figures #1407 names: 31% of a 35% target must read `nearing`
+  // beside 12% of the same target reading `tracking`. This is what the constant
+  // above exists to satisfy, pinned directly rather than only at its boundary,
+  // since a boundary-only suite is exactly what let the constant drift out from
+  // under the requirement it was chosen for undetected.
+  it('reads the issue’s own exemplar as nearing, and its contrast as tracking', () => {
+    expect(stanceAt(1656)?.stance).toBe('nearing'); // 31% lost, exactly.
+    expect(stanceAt(2112)?.stance).toBe('tracking'); // 12% lost, exactly.
   });
 
   it('is still nearing one gram short of the target', () => {
