@@ -106,7 +106,7 @@ export const remindBatchReadings = onSchedule(
       // by `recipeKind` (CLAUDE.md's never-branch-on-kind invariant). Bread's longest
       // wait is an overnight retard, so no bread run can qualify — which is why this
       // ships dark with every batch in production silent to it.
-      const byStarter = longRunsWantingReading(batches, now.toISOString());
+      const byStarter = longRunsWantingReading(batches, now.toISOString(), REMINDER_TIME_ZONE);
       if (byStarter.size === 0) return;
 
       // (c) VAPID material, exactly as `remindShoppingDay` resolves it. Missing keys

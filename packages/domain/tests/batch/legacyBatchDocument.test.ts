@@ -173,6 +173,8 @@ describe('a batch document written before #1406', () => {
     // bread's longest wait could never qualify anyway. A fallback to the household
     // would reintroduce the broadcast the per-starter audience replaced.
     const parsed = BatchSchema.parse(LEGACY_BATCH);
-    expect(longRunsWantingReading([parsed], '2026-09-15T09:00:00.000Z').size).toBe(0);
+    expect(longRunsWantingReading([parsed], '2026-09-15T09:00:00.000Z', 'Europe/London').size).toBe(
+      0,
+    );
   });
 });

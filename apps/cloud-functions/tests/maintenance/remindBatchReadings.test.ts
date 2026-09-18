@@ -104,7 +104,13 @@ function waitStage(overrides: Partial<BatchStageDoc> = {}): BatchStageDoc {
     label: 'Dry',
     kind: 'wait',
     environment: null,
-    duration: null,
+    // A DECLARED ninety-day dry — one of the two real shapes a long wait takes (the
+    // other is observational: `duration: null` with an `until` condition, pinned in
+    // `packages/domain/tests/batch/longRuns.test.ts`). `duration` and the planned
+    // span below always agree, which the PR's original fixture did not (#1449
+    // review finding 1): it paired `duration: null` with this same 90-day span, a
+    // shape `resolveSchedule` can never actually produce.
+    duration: { kind: 'fixed', minutes: 90 * 24 * 60 },
     until: null,
     stepId: null,
     optional: false,
@@ -156,6 +162,7 @@ function breadBatch(): BatchDoc {
       waitStage({
         id: 'retard',
         label: 'Overnight retard',
+        duration: { kind: 'fixed', minutes: 16 * 60 },
         plannedStartAt: '2026-09-17T21:00:00.000Z',
         plannedEndAt: '2026-09-18T13:00:00.000Z',
       }),
@@ -210,9 +217,11 @@ describe('remindBatchReadings', () => {
       // Keyed to the WEEK, in the zone the cron fires in.
       tag: 'batch-readings::2026-09-18',
       url: '/#/batches',
-      // Hung on the evening of the 7th, swept on the morning of the 18th: ten whole
-      // days elapsed, so day eleven.
-      title: 'Coppa — day 11',
+      // Hung on the evening of the 7th (Europe/London calendar date), swept on the
+      // morning of the 18th: eleven calendar dates apart, so day twelve (#1449 review
+      // finding 3 — counted by `dateInZone`/`daysBetween`, not raw 24-hour blocks off
+      // the two instants, which would answer eleven here).
+      title: 'Coppa — day 12',
       body: 'Weigh it and add a note.',
       renotify: false,
     });
@@ -273,8 +282,8 @@ describe('remindBatchReadings', () => {
         (call[2] as { title: string }).title,
       ]),
     );
-    expect(byEndpoint.get('https://push.example/a1')).toBe('Coppa — day 11');
-    expect(byEndpoint.get('https://push.example/b1')).toBe('Kraut — day 11');
+    expect(byEndpoint.get('https://push.example/a1')).toBe('Coppa — day 12');
+    expect(byEndpoint.get('https://push.example/b1')).toBe('Kraut — day 12');
   });
 
   it('SENDS NOTHING AT ALL when only bread is running — production today', async () => {
@@ -348,7 +357,7 @@ describe('remindBatchReadings', () => {
     await (remindBatchReadings as unknown as Function)();
 
     expect(mockSendWebPush).toHaveBeenCalledTimes(1);
-    expect((mockSendWebPush.mock.calls[0]?.[2] as { title: string }).title).toBe('Coppa — day 11');
+    expect((mockSendWebPush.mock.calls[0]?.[2] as { title: string }).title).toBe('Coppa — day 12');
   });
 
   it('skips an invalid subscription doc without stopping the rest', async () => {
