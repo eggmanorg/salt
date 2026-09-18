@@ -105,6 +105,15 @@ const BATCH_STAGE = {
   renotify: true,
 };
 
+const BATCH_READINGS = {
+  type: 'batch-readings',
+  tag: 'batch-readings::2026-09-18',
+  url: '/#/batches',
+  title: 'Coppa — day 12',
+  body: 'Weigh it and add a note.',
+  renotify: false,
+};
+
 const FOCUSED_CLIENT: FakeClient = { focused: true, visibilityState: 'visible' };
 
 beforeEach(() => {
@@ -185,6 +194,37 @@ describe('push-sw — push', () => {
     listeners.get('push')!(event);
     await settle();
     expect(showNotification.mock.calls[0]![0]).toBe('A batch stage is due');
+  });
+
+  it('shows the weekly drying nudge while a window is focused, and never re-buzzes', async () => {
+    // #1406: an ambient question about a whole week, with no in-app equivalent — so
+    // suppressing it on focus alone would lose it, and `renotify: false` plus the
+    // week-keyed tag is what lets a duplicate delivery replace it silently.
+    const { listeners, showNotification } = loadSw([FOCUSED_CLIENT]);
+    const { event, settle } = pushEvent(BATCH_READINGS);
+    listeners.get('push')!(event);
+    await settle();
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    const [title, opts] = showNotification.mock.calls[0]!;
+    expect(title).toBe('Coppa — day 12');
+    expect(opts).toBeDefined();
+    expect(opts!.tag).toBe('batch-readings::2026-09-18');
+    expect(opts!.renotify).toBe(false);
+    // The LIST, never a single run: each one there is already a tap from the sheet.
+    expect(opts!.data.url).toBe('/#/batches');
+  });
+
+  it('falls back to DRYING copy, not batch-stage or cook-timer copy, with no title', async () => {
+    // The whole reason #1406 added a fifth kind rather than reusing 'batch-stage': a
+    // weekly nudge that lost its payload must not announce itself as "A batch stage is
+    // due", because nothing is due.
+    const { listeners, showNotification } = loadSw([]);
+    const { event, settle } = pushEvent({ type: 'batch-readings', url: '/#/batches' });
+    listeners.get('push')!(event);
+    await settle();
+    const [title, opts] = showNotification.mock.calls[0]! as [string, ShownOptions];
+    expect(title).toBe('Something is drying');
+    expect(opts.body).toBe('Weigh it and add a note.');
   });
 
   it('falls back to SHOPPING copy, not cook-timer copy, for a shop push with no title', async () => {

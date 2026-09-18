@@ -593,9 +593,12 @@ Carries over whole: the formula model and its two-tier basis; the batch
 collection, snapshot and state machine; the in-flight surface; reminders on the
 Tasks path; diff review and the two model tiers; canon, shopping, images, search.
 
-Still to build at 03–04: stages carrying additions; reminders beyond the Tasks
-scheduling horizon; `authorFerment` and a ferment kind; vessel headspace and the
-cure-salt bounds.
+Still to build at 03–04: stages carrying additions; `authorFerment` and a ferment
+kind; vessel headspace and the cure-salt bounds.
+
+Off that list since: **reminders beyond the Tasks scheduling horizon** — shipped in
+#1406 as one weekly sweep, `remindBatchReadings`, asking whoever started a long run to
+weigh it. See the answered open question below for what it does and does not do.
 
 Off that list since: **the basis-driven solve direction** — shipped in #1402, where
 the formula screen gained "a weight of what goes in" and the bake sheet learned to
@@ -683,9 +686,42 @@ them.
   Bread's eighteen hours is nowhere near it, so nothing in phases 00–02 was
   affected — but the guard was added anyway (`CLOUD_TASKS_HORIZON_DAYS` in
   `apps/cloud-functions/src/triggers/batchStageTypes.ts`), and a stage beyond the
-  horizon is skipped with a logged warning rather than silently dropped. A 90-day
-  dry **will** exceed it, so phase 04 still owes a re-enqueue chain or a scheduled
-  sweep — it now finds a guard and a warning rather than a surprise.
+  horizon is skipped with a logged warning rather than silently dropped.
+
+  **What covers the stretch past it — ANSWERED: one weekly scheduled sweep** (issue
+  #1406). `apps/cloud-functions/src/maintenance/remindBatchReadings.ts` runs Friday
+  10:00 `Europe/London` and asks _what is drying_: one notification per person, for
+  the runs they started that are sitting in a `wait` of seven days or more. The
+  re-enqueue chain this row also offered was **rejected** — a per-stage state machine
+  whose failure mode is silence three months from now, which is the one failure
+  nobody would notice. A cron is one moving part with no state. Raising the horizon
+  was never an option; 30 days is Google's limit.
+
+  Three things about it are load-bearing:
+
+  - **The guard stays exactly as it is.** It answers a stage whose _start_ is beyond
+    30 days; the sweep answers readings _during_ a long stage. Different questions.
+  - **Selection is gated on the run's frozen kind, then by presence** (see _Kind
+    versus presence_ — this is that rule's "capabilities answer questions about the
+    kind" half, via the named predicate `isLongRunKind`, not an exception to it). A
+    bread batch and a cure can both carry an observational wait (`duration: null`,
+    an `until` condition, no planned span to measure) — the identical shape on the
+    document — so presence alone cannot tell them apart; only the run's kind can.
+    `isLongRunKind` answers **cures and ferments** (today, `recipeKind === 'cure'`;
+    a vegetable ferment has no kind of its own yet and is a stated gap, not a
+    silent one — see that predicate). A run that passes the kind gate still needs a
+    `wait` of seven days or more, which bread's overnight retard can never be — so
+    the sweep is silent to every batch in production today.
+  - **It is addressed to the run's starter**, via `batches.startedBy` — an
+    audit-style uid used to _address_ a notification, not to scope anything. `batches`
+    stays family-shared and `firestore.rules` gains no clause. The accepted limit: if
+    the starter is away, nobody else is nudged about their run. Full statement at
+    `BatchSchema.startedBy`.
+
+  It is a prompt, not a chase: it does not check whether a reading was already
+  entered, and it never appears twice in a week. A 90-day cure gets thirteen nudges
+  over its planned life, not ninety.
+
 - **Does a culture reuse `process`.** A maintenance rhythm is a repeating single
   stage, so it either reuses the model or is a simpler thing of its own. Decide
   when cultures land.

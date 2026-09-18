@@ -13,8 +13,9 @@ import type { BatchDoc, Formula } from '@salt/domain/schemas';
 // `startBatch` had no direct test before this; every other path into it is
 // covered through the sheet, which mocks the service out.
 
-const { mockSaveBatch } = vi.hoisted(() => ({
+const { mockSaveBatch, mockAuth } = vi.hoisted(() => ({
   mockSaveBatch: vi.fn(),
+  mockAuth: { user: { uid: 'uid-daniel' } } as { user: { uid: string } | null },
 }));
 
 vi.mock('@salt/firebase-sync', () => ({
@@ -26,6 +27,9 @@ vi.mock('@salt/firebase-sync', () => ({
 vi.mock('@salt/observability', () => ({
   createObservabilityErrorReportingAdapter: vi.fn(() => ({ reportError: vi.fn() })),
 }));
+// `startBatch` reads the signed-in uid for `startedBy` (issue #1406), so the service
+// now imports the auth store — which pulls in `firebase.ts` unless it is mocked.
+vi.mock('../src/lib/auth.svelte.js', () => ({ auth: mockAuth }));
 
 import { startBatch } from '../src/lib/batchService.js';
 
@@ -89,6 +93,7 @@ function written(): BatchDoc {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSaveBatch.mockResolvedValue({ kind: 'ok', value: undefined });
+  mockAuth.user = { uid: 'uid-daniel' };
 });
 
 describe('startBatch — the vessel', () => {
@@ -162,5 +167,54 @@ describe('startBatch — the kind and the category', () => {
     // before the fields existed, never for one being created now.
     expect(Object.keys(batch)).toContain('recipeKind');
     expect(Object.keys(batch)).toContain('cureCategory');
+  });
+});
+
+// ─── Who tapped Start (issue #1406) ──────────────────────────────────────────
+//
+// The other live fact the pure freeze cannot read for itself: the signed-in uid,
+// which is what the weekly "what is drying" nudge is addressed to. Same join, same
+// place, same reason as the kind above.
+describe('startBatch — who started the run', () => {
+  it('freezes the signed-in uid onto the run', async () => {
+    await startBatch({ recipe: RECIPE, formula: FORMULA, anchor: ANCHOR });
+
+    const batch = written();
+    expect(batch.startedBy).toBe('uid-daniel');
+    // Written, not defaulted, for the reason the kind above is.
+    expect(Object.keys(batch)).toContain('startedBy');
+  });
+
+  it('writes null rather than an empty string when nobody is signed in', async () => {
+    mockAuth.user = null;
+
+    await startBatch({ recipe: RECIPE, formula: FORMULA, anchor: ANCHOR });
+
+    // `null`, not `''` — unlike `shoppingDays.setBy`. "Nobody recorded a starter" is
+    // a real answer the nudge has to read, and a blank would be a second spelling
+    // of it that the selection rule would then have to know about.
+    expect(written().startedBy).toBeNull();
+  });
+
+  it('gates nothing — the document is otherwise identical either way', async () => {
+    // The convention half of the rule-12 statement at `BatchSchema.startedBy`: this
+    // uid is recorded and addressed to, never read to decide anything. Nothing else
+    // on the frozen document moves when it changes, and no rule mentions it.
+    await startBatch({ recipe: RECIPE, formula: FORMULA, anchor: ANCHOR });
+    const signedIn = written();
+
+    vi.clearAllMocks();
+    mockSaveBatch.mockResolvedValue({ kind: 'ok', value: undefined });
+    mockAuth.user = { uid: 'uid-someone-else' };
+    await startBatch({ recipe: RECIPE, formula: FORMULA, anchor: ANCHOR });
+    const otherPerson = written();
+
+    expect({ ...otherPerson, id: '', startedBy: null, createdAt: '', updatedAt: '' }).toEqual({
+      ...signedIn,
+      id: '',
+      startedBy: null,
+      createdAt: '',
+      updatedAt: '',
+    });
   });
 });

@@ -28,6 +28,9 @@ vi.mock('@salt/firebase-sync', () => ({
 vi.mock('@salt/observability', () => ({
   createObservabilityErrorReportingAdapter: vi.fn(() => ({ reportError: vi.fn() })),
 }));
+// `startBatch` reads the signed-in uid for `startedBy` (issue #1406), so the service
+// now imports the auth store — which pulls in `firebase.ts` unless it is mocked.
+vi.mock('../src/lib/auth.svelte.js', () => ({ auth: { user: { uid: 'uid-1' } } }));
 
 import { startBatch } from '../src/lib/batchService.js';
 

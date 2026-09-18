@@ -421,6 +421,7 @@ const BATCH = {
   ambientCelsius: null,
   checkedIngredientIds: [],
   completedStepIds: [],
+  startedBy: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

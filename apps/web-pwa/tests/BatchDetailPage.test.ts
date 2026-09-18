@@ -124,6 +124,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     abandonedAt: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     quantities: [
       { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 816 },
       { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571 },

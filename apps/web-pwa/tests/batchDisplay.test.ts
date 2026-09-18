@@ -68,6 +68,7 @@ function batch(over: Partial<BatchDoc> = {}): BatchDoc {
     abandonedAt: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     quantities: [],
     totals: { basisGrams: 816, totalGrams: 1440, usableGrams: 1440, units: null },
     stages: [stage()],

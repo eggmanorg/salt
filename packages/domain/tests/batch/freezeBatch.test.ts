@@ -92,6 +92,7 @@ function freezeTwelveRolls(
     recipeTitle: 'Overnight white tin',
     recipeKind: 'recipe',
     cureCategory: null,
+    startedBy: null,
     labels: LABELS,
     now: NOW,
   });
@@ -139,6 +140,7 @@ describe('freezeBatch — the quantities', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: withoutOil,
       now: NOW,
     });
@@ -177,6 +179,7 @@ describe('freezeBatch — the quantities', () => {
       recipeTitle: 'Coppa',
       recipeKind: 'cure',
       cureCategory: 'dry_cured_whole_muscle',
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -198,6 +201,30 @@ describe('freezeBatch — the quantities', () => {
     // And a plain bread run says so rather than saying nothing.
     expect(batch.recipeKind).toBe('recipe');
     expect(batch.cureCategory).toBeNull();
+  });
+
+  // ─── Who tapped Start (issue #1406) ─────────────────────────────────────────
+  it('freezes who started the run, explicitly, including when nobody did', () => {
+    // The uid the weekly nudge is addressed to. Written explicitly for the reason the
+    // kind above is, so the key is on the frozen object rather than supplied by the
+    // schema's read default — and `null` is a real answer, not a missing one.
+    const hung = freezeBatch({
+      id: 'batch-coppa-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Coppa',
+      recipeKind: 'cure',
+      cureCategory: 'dry_cured_whole_muscle',
+      startedBy: 'uid-daniel',
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!hung.ok) throw new Error(JSON.stringify(hung.reason));
+    expect(hung.batch.startedBy).toBe('uid-daniel');
+
+    const anonymous = freezeTwelveRolls();
+    expect(Object.keys(anonymous)).toContain('startedBy');
+    expect(anonymous.startedBy).toBeNull();
   });
 });
 
@@ -304,6 +331,7 @@ describe('freezeBatch — the document', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -322,6 +350,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Fresh sausage',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -345,6 +374,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -363,6 +393,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -399,6 +430,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       places: [null, CURING, null, PROOFER],
       now: NOW,
@@ -426,6 +458,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       places: [null, PROOFER],
       now: NOW,
@@ -445,6 +478,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -462,6 +496,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       ambientCelsius: 26,
       now: NOW,
@@ -473,6 +508,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       ambientCelsius: 14,
       now: NOW,
@@ -502,6 +538,7 @@ describe('freezeBatch — what the run is aiming at (issue #1407)', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });
@@ -550,6 +587,7 @@ describe('freezeBatch — the cure-salt substitution', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      startedBy: null,
       labels: LABELS,
       now: NOW,
     });

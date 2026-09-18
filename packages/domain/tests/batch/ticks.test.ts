@@ -51,6 +51,7 @@ function running(over: Partial<BatchDoc> = {}): BatchDoc {
     ambientCelsius: null,
     checkedIngredientIds: [],
     completedStepIds: [],
+    startedBy: null,
     createdAt: '2026-09-11T06:00:00.000Z',
     updatedAt: '2026-09-11T06:00:00.000Z',
     ...over,
