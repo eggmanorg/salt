@@ -363,8 +363,8 @@ describe('freezeBatch — what it refuses', () => {
       // Two basis members at 100% each: there is no single 100% to be a percentage
       // of, so no gram figure can be produced.
       components: [
-        { ingredientId: FLOUR, percent: 100, inBasis: true },
-        { ingredientId: WATER, percent: 100, inBasis: true },
+        { ingredientId: FLOUR, percent: 100, inBasis: true, stageId: null },
+        { ingredientId: WATER, percent: 100, inBasis: true, stageId: null },
       ],
     };
     const result = freezeBatch({

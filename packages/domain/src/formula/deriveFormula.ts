@@ -25,6 +25,17 @@ export type FormulaComponentInput = {
   // caller simply leaves them out.
   grams: number;
   inBasis: boolean;
+  // WHEN THIS GOES IN, carried through onto the derived component (issue #1405).
+  // Omitted or `null` is at the start, which is what every formula written before
+  // this meant.
+  //
+  // NOT ARITHMETIC, and deliberately not treated as any. Nothing below reads it:
+  // the basis, the percentages and the reconciliation are computed exactly as they
+  // were, and this rides along beside them the way `saltProduct` does. It is here
+  // rather than merged in by the screen because `FormulaComponent` requires the
+  // field, so this function — the only thing that ever constructs one — is the only
+  // place it can be set.
+  stageId?: string | null;
   density?: DensityClass;
   // WHICH SALT-BEARING PRODUCT THIS IS, carried through onto the derived component
   // (issue #1402). The screen has to be able to hand this back on a re-save, which
@@ -170,6 +181,10 @@ function componentsAgainst(
       // to reconcile it with.
       percent: reconciled.get(entry) ?? entry.percent,
       inBasis: component.inBasis,
+      // Written explicitly rather than left to the schema's read default, for the
+      // reason `target` and `schemaVersion` below are: this is a CONSTRUCTION, and a
+      // default is what a STORED document reads back as.
+      stageId: component.stageId ?? null,
       ...(component.density !== undefined ? { density: component.density } : {}),
       ...(component.saltProduct !== undefined ? { saltProduct: component.saltProduct } : {}),
       ...boundsOn(component),

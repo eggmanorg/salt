@@ -59,6 +59,40 @@ describe('FormulaComponentSchema', () => {
     ).toBe(true);
   });
 
+  it('reads a component with no stage named as one that goes in at the start', () => {
+    // Issue #1405. A READ DEFAULT rather than an optional field, so there is exactly
+    // one spelling of "at the start" for every reader downstream — `null`, never an
+    // absent key that each surface then has to coalesce for itself.
+    const bare = FormulaComponentSchema.parse({ ingredientId: 'i', percent: 2, inBasis: false });
+    expect(bare.stageId).toBeNull();
+  });
+
+  it('takes a stage id, and reads an explicit null as at the start', () => {
+    const assigned = FormulaComponentSchema.parse({
+      ingredientId: 'i',
+      percent: 2,
+      inBasis: false,
+      stageId: 'stage-wash',
+    });
+    expect(assigned.stageId).toBe('stage-wash');
+
+    // Validated by NOTHING: the stage lives on `process` on the same document and
+    // this schema cannot see it, so an id that resolves to no stage is a legal
+    // document. `stageAdditions` is what reads it as at the start.
+    expect(
+      FormulaComponentSchema.parse({
+        ingredientId: 'i',
+        percent: 2,
+        inBasis: false,
+        stageId: 'stage-that-was-deleted',
+      }).stageId,
+    ).toBe('stage-that-was-deleted');
+    expect(
+      FormulaComponentSchema.parse({ ingredientId: 'i', percent: 2, inBasis: false, stageId: null })
+        .stageId,
+    ).toBeNull();
+  });
+
   it('rejects a zero upper bound — a bound of nothing is a mistake, not a rail', () => {
     expect(
       FormulaComponentSchema.safeParse({

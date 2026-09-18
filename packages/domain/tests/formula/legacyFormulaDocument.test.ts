@@ -180,3 +180,50 @@ describe('a formula component written before #1402', () => {
     expect(FormulaSchema.safeParse(withJunk).success).toBe(false);
   });
 });
+
+// Issue #1405 added `stageId` to the component with a read default. The same
+// argument as `target`'s, and it is the strongest of the four to state, because the
+// default is not merely a safe filler: `null` is LITERALLY WHAT EVERY STORED
+// DOCUMENT ALREADY MEANT. Before this field, every gram of a formula went in at the
+// beginning, so "no key" and "at the start" are the same fact under two spellings.
+//
+// THE BOUNDARY, STATED: this says nothing about a document whose `stageId` names a
+// stage that is not on its `process`. That is a legal document by design (the schema
+// validates no FK, and a stage delete does not cascade), and what it renders as is
+// `stageAdditions`' claim, pinned in `tests/process/stageAdditions.test.ts`.
+describe('a formula component written before #1405', () => {
+  it('reads as an ingredient that goes in at the start, which is what it meant', () => {
+    const parsed = FormulaSchema.parse(LEGACY_FORMULA);
+    for (const component of parsed.components) {
+      expect(component.stageId).toBeNull();
+    }
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('solves to exactly the grams it did before the field existed', () => {
+    // The whole of "bread is untouched": a stage says WHEN an ingredient goes in and
+    // never how much, so the figures here are the same pasted ones the pre-#1274
+    // case above asserts.
+    const solved = solveFormula(FormulaSchema.parse(LEGACY_FORMULA));
+    expect(solved.ok).toBe(true);
+    if (!solved.ok) return;
+    expect(solved.solution.components.map((c) => c.grams)).toEqual([1047, 733, 21]);
+    expect(solved.solution.components.map((c) => c.stageId)).toEqual([null, null, null]);
+  });
+
+  it('carries an assignment through the parse and out through the solve', () => {
+    const parsed = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      components: [
+        { ingredientId: 'ing-flour', percent: 100, inBasis: true },
+        { ingredientId: 'ing-wine', percent: 2, inBasis: false, stageId: 'stage-wash' },
+      ],
+    });
+    expect(parsed.components.map((c) => c.stageId)).toEqual([null, 'stage-wash']);
+
+    const solved = solveFormula(parsed);
+    expect(solved.ok).toBe(true);
+    if (!solved.ok) return;
+    expect(solved.solution.components.map((c) => c.stageId)).toEqual([null, 'stage-wash']);
+  });
+});

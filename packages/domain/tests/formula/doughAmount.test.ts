@@ -26,8 +26,8 @@ describe('doughAmountGrams', () => {
     const formula: Formula = {
       recipeId: 'recipe-1',
       components: [
-        { ingredientId: 'flour', percent: 100, inBasis: true },
-        { ingredientId: 'water', percent: 70, inBasis: false },
+        { ingredientId: 'flour', percent: 100, inBasis: true, stageId: null },
+        { ingredientId: 'water', percent: 70, inBasis: false, stageId: null },
       ],
       referenceYield: { kind: 'target', shape: { count: 2, unitDoughGrams: 900 } },
       target: null,

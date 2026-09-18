@@ -112,8 +112,8 @@ function stored(target: Formula['target'] = null): Formula {
   return {
     recipeId: RECIPE_ID,
     components: [
-      { ingredientId: 'ing-meat', percent: 100, inBasis: true },
-      { ingredientId: 'ing-salt', percent: 2.75, inBasis: false },
+      { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null },
+      { ingredientId: 'ing-salt', percent: 2.75, inBasis: false, stageId: null },
     ],
     referenceYield: { kind: 'target', shape: { count: 1, unitDoughGrams: 2466 } },
     target,

@@ -45,6 +45,7 @@
     guessSaltProduct,
     roundGrams,
     solveFormula,
+    stageAdditions,
     takesIngredients,
     targetYield,
     totalDurationMinutes,
@@ -200,6 +201,13 @@
     // tell apart on screen. The window that is actually enforced is recomputed from
     // this on every derive; nothing here holds a bound.
     saltProduct: SaltProduct | null;
+    // WHEN THIS GOES IN (issue #1405) — the id of the stage below, or `null` for at
+    // the start. `null` is the default and it is what every existing formula means,
+    // so a bread formula opens with nothing new to answer.
+    //
+    // An id, never a label, and never an index: the stages reorder freely through
+    // the four producers and a positional reference would silently follow the move.
+    stageId: string | null;
   }
 
   // A stage as the review surface holds it: the real stage, plus the three numeric
@@ -470,6 +478,13 @@
                 canonName: (ing.canonId ? canonNameById.get(ing.canonId) : null) ?? null,
                 rawText: ing.rawText,
               }),
+        // The stored answer, or at the start (issue #1405). NOTHING IS GUESSED here
+        // and nothing ever will be from this screen: assigning an ingredient to a
+        // stage is the cook's call, and a wrong guess would put the cure rub in week
+        // three. An ingredient added to the recipe after the formula was mapped has
+        // no component and therefore goes in at the start, which is the right answer
+        // for it too.
+        stageId: component?.stageId ?? null,
       };
     });
 
@@ -628,6 +643,44 @@
   // one spelling of "none" — the same choice the stage picker's `NO_PLACE` makes.
   const NO_SALT_PRODUCT = '';
 
+  // WHEN AN INGREDIENT GOES IN (issue #1405). Deliberately does NOT restate: a stage
+  // says when, never how much, so the percentages, the basis and every gram figure
+  // on screen are untouched by it. That is the whole claim of this feature, and the
+  // absence of a `restateWeightsAtDeclaration()` call here is where it is made.
+  function setStage(ingredientId: string, stageId: string | null): void {
+    patchRow(ingredientId, { stageId });
+  }
+
+  // "At the start", the one spelling of it a Select can hold — same choice as
+  // `NO_PLACE` and `NO_SALT_PRODUCT` above, and for the same reason.
+  const AT_THE_START = '';
+
+  // The picker's value back to an assignment, the way `toSaltProduct` does it: the
+  // "At the start" option and an unset picker are the SAME answer, resolved here
+  // rather than at the call site so there is one spelling of it downstream.
+  function toStageId(value: string | undefined): string | null {
+    return value === undefined || value === AT_THE_START ? null : value;
+  }
+
+  /**
+   * The words for a stage assignment, in the ingredient rows' picker.
+   *
+   * A blank label is ordinary — a stage is added empty and named afterwards — so it
+   * is numbered rather than left nameless, which is what would otherwise make two
+   * new stages indistinguishable in the list.
+   *
+   * AND A DEAD ID READS AS AT THE START, the same answer `stageAdditions` gives it.
+   * The two must agree: a row whose stage was deleted is grouped at the start, so a
+   * picker still showing the departed stage's name would be the screen contradicting
+   * the list directly below it.
+   */
+  function stageNameOf(stageId: string | null): string {
+    const index = stageId === null ? -1 : stageRows.findIndex((s) => s.id === stageId);
+    const stage = index === -1 ? undefined : stageRows[index];
+    if (stage === undefined) return 'At the start';
+    return stage.label.trim() || `Stage ${index + 1}`;
+  }
+
   function toSaltProduct(value: string): SaltProduct | null {
     const parsed = SaltProductSchema.safeParse(value);
     return parsed.success ? parsed.data : null;
@@ -760,6 +813,13 @@
               grams,
               inBasis: row.inBasis,
               ...(row.saltProduct === null ? {} : { saltProduct: row.saltProduct }),
+              // WHEN IT GOES IN, carried the same way the product is (issue #1405) —
+              // through the derive, so the solved list the stage review reads and the
+              // document Save writes are the same one object, and there is no second
+              // merge on the way out for a reader to keep in step. Unlike a bound,
+              // this one IS carried: it is the cook's answer and nothing recomputes
+              // it.
+              stageId: row.stageId,
             },
           ]
         : [];
@@ -984,6 +1044,19 @@
   // ─── The stages, as they would be saved ───────────────────────────────────────
 
   const stages = $derived(stageRows.map(stageFrom));
+
+  // WHAT GOES IN AT EACH STAGE (issue #1405), through the one domain grouping rather
+  // than a `filter` per surface — `stageAdditions` also owns the rule that an
+  // ingredient whose stage has been deleted reads as at the start.
+  //
+  // OVER THE SOLVED COMPONENTS, which is what makes "the real scaled figures, from
+  // the same sum that scales everything else" literally true: these are the same
+  // `solved.solution.components` the weights above were restated from, so a stage's
+  // grams cannot disagree with its ingredient's row. A refused solve shows no
+  // additions rather than stale ones — `blockedReason` is already saying why.
+  const additions = $derived(
+    stageAdditions(stageRows, solved?.ok === true ? solved.solution.components : []),
+  );
 
   // A RANGE, never a collapsed midpoint — the domain helper refuses to flatten one
   // and so does the copy. Stages with no duration contribute nothing, which is the
@@ -1271,6 +1344,43 @@
                           {/each}
                         </SelectContent>
                       </Select>
+
+                      <!-- WHEN THIS GOES IN (issue #1405). Offered only once there
+                         are stages to choose between, exactly as the per-stage place
+                         picker is offered only once this household has described a
+                         place: with no process there is one possible answer, and a
+                         control with one option is a question nobody can answer.
+                         Adding a stage below makes it appear.
+
+                         "At the start" is the default and stays the default — the one
+                         thing every existing formula means. Nothing guesses it: which
+                         week the wine wash happens is the cook's call, and a wrong
+                         guess would put the cure rub in the wrong month.
+
+                         IT MOVES NO GRAMS, and the screen is where that is visible:
+                         picking a stage restates nothing, because the basis and the
+                         percentages do not know about it. -->
+                      {#if stageRows.length > 0}
+                        <Select
+                          value={row.stageId ?? AT_THE_START}
+                          onValueChange={(v) => setStage(row.ingredientId, toStageId(v))}
+                        >
+                          <SelectTrigger
+                            class="w-52"
+                            aria-label={`When does ${row.rawText} go in?`}
+                            data-testid="formula-row-stage"
+                            data-stage-id={row.stageId ?? ''}
+                          >
+                            {stageNameOf(row.stageId)}
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={AT_THE_START}>At the start</SelectItem>
+                            {#each stageRows as stage (stage.id)}
+                              <SelectItem value={stage.id}>{stageNameOf(stage.id)}</SelectItem>
+                            {/each}
+                          </SelectContent>
+                        </Select>
+                      {/if}
                     </div>
                   {/if}
                   {#if recipeSaid !== null}
@@ -1669,6 +1779,7 @@
                   </p>
                 {:else}
                   {#each stageRows as stage, index (stage.id)}
+                    {@const goesIn = additions.byStageId.get(stage.id) ?? []}
                     <div
                       role="group"
                       aria-label={stage.label || 'New stage'}
@@ -1776,6 +1887,33 @@
                           data-testid="formula-stage-until"
                         />
                       </div>
+
+                      <!-- WHAT GOES IN HERE (issue #1405) — the stage read as what it
+                         actually is: a description of what you do, with the things you
+                         need to do it, weighed.
+
+                         THE GRAMS ARE THE ORDINARY SCALED FIGURES, taken from the same
+                         solved list the weights above come from, so asking for a
+                         2.4 kg shoulder instead of a 1.8 kg one moves the wine with
+                         the meat. No sum of its own: a stage carries no basis, no
+                         total and no percentage, and printing one here is how it would
+                         acquire them.
+
+                         Absent when the stage takes nothing, which is every stage of
+                         every loaf — an empty line saying "nothing goes in here" is a
+                         field every reader has to skip for no one's benefit. -->
+                      {#if goesIn.length > 0}
+                        <div class="flex flex-col gap-1" data-testid="formula-stage-additions">
+                          {#each goesIn as component (component.ingredientId)}
+                            <p class="text-sm" data-testid="formula-stage-addition">
+                              {labelOf(component.ingredientId) ?? 'An ingredient'}
+                              <span class="text-muted-foreground tabular-nums">
+                                {formatGrams(component.grams)}
+                              </span>
+                            </p>
+                          {/each}
+                        </div>
+                      {/if}
 
                       <div class="flex items-center gap-2">
                         <Button

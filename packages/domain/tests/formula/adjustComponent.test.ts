@@ -13,10 +13,10 @@ import type { Formula } from '../../src/schemas/index.js';
 const LOAF: Formula = {
   recipeId: 'recipe-1',
   components: [
-    { ingredientId: 'flour', percent: 100, inBasis: true },
-    { ingredientId: 'water', percent: 70, inBasis: false },
-    { ingredientId: 'salt', percent: 2, inBasis: false },
-    { ingredientId: 'yeast', percent: 1.2, inBasis: false },
+    { ingredientId: 'flour', percent: 100, inBasis: true, stageId: null },
+    { ingredientId: 'water', percent: 70, inBasis: false, stageId: null },
+    { ingredientId: 'salt', percent: 2, inBasis: false, stageId: null },
+    { ingredientId: 'yeast', percent: 1.2, inBasis: false, stageId: null },
   ],
   referenceYield: { kind: 'basis', grams: 500 },
   target: null,
@@ -97,7 +97,15 @@ describe('withComponentPercentScaled', () => {
       },
     );
     const salt = next.components.find((c) => c.ingredientId === 'salt');
-    expect(salt).toEqual({ ingredientId: 'salt', percent: 3, inBasis: false, maxPercent: 4 });
+    // `stageId` rides through untouched, which is the point: scaling one component's
+    // percentage says nothing about when it goes in (issue #1405).
+    expect(salt).toEqual({
+      ingredientId: 'salt',
+      percent: 3,
+      inBasis: false,
+      maxPercent: 4,
+      stageId: null,
+    });
     expect(next.components.find((c) => c.ingredientId === 'yeast')).toEqual(
       LOAF.components.find((c) => c.ingredientId === 'yeast'),
     );
