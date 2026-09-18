@@ -443,6 +443,33 @@ export const extractProcessStages = onCallGenkit(
 // `solveFormula` computes the grams. PERSISTS NOTHING: the proposal is reviewed as
 // a diff and the user's Start is what freezes a batch.
 //
+// ─── AND LOSING IT TO A SLEEPING PHONE IS CORRECT (issue #1428, epic #1417) ─────
+//
+// This callable hands a long AI result back for the browser to hold, and the browser
+// holds it in component state only — so a suspend, a discarded tab or simply leaving
+// the recipe loses it silently. That is NOT an unfixed instance of #1416, where
+// `generateGuidedPlan`'s result went missing on a path with no human step in it at
+// all. The distinction the epic asks this file's sweep to preserve is whether the
+// app SAVED IT FOR YOU or HANDED IT TO YOU TO REVIEW, and three facts put this one
+// in the second bucket:
+//
+//   • Start is a gate, not a garnish. In `endAt` mode `canStart` requires a proposal
+//     on screen (`RecipeBakeBatchSheet.svelte`, pinned by
+//     `RecipeBakeBatchSheet.proposal.test.ts`), so nothing is frozen from a schedule
+//     nobody read. Losing it loses a suggestion, not work already committed for you.
+//   • There is nowhere to write it. `batches/{batchId}` holds frozen runs, so a
+//     draft there would appear on the in-flight surface as a run nobody started; a
+//     `scheduleProposals` collection buys a schema, a subscription, a cleanup
+//     lifecycle for proposals nobody accepted, and a `firestore.rules` clause —
+//     #1417's "the Admin SDK bypasses rules" simplification covers the server's
+//     write, never the browser's read, so it does not carry to a durable version.
+//   • What is lost is cheap and the person is present: one `pro` call, measured by
+//     the #778 spike at 19–31 s with the thinking budget capped. The 180 s below is
+//     a ceiling, not the expected wait, and the button that re-asks is on screen.
+//
+// The decision and its boundary live in docs/formulas-schedules-batches.md → "Review
+// a diff, store a snapshot". Making this durable reopens that, not just this comment.
+//
 // Plain onCallGenkit, same as its sibling above: one call from one tap, nothing to
 // unify across invocations, so `makeTracedCallable` would buy only a wire envelope
 // to maintain (apps/cloud-functions/CLAUDE.md, "New callable flows that don't need
