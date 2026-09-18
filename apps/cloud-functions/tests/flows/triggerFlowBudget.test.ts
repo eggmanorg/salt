@@ -69,7 +69,7 @@ const TRIGGER_ONLY_FLOWS = [
         description: null,
         ingredients: ['1kg floury potatoes'],
         steps: [{ id: 's1', text: 'Boil the potatoes until tender.' }],
-        equipment: '',
+        equipment: [],
       }),
   },
   {

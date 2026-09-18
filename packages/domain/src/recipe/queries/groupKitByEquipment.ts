@@ -1,5 +1,9 @@
 import { normaliseName } from '../../canon/index.js';
-import { namesItemItself, resolveEquipmentItem } from '../../equipment/index.js';
+import {
+  namesItemItself,
+  resolveEquipmentItem,
+  resolveKitEntryEquipment,
+} from '../../equipment/index.js';
 import type { EquipmentItem } from '../../equipment/index.js';
 import type { RecipeKitEntryDoc } from '../../schemas/index.js';
 
@@ -10,15 +14,39 @@ import type { RecipeKitEntryDoc } from '../../schemas/index.js';
 // spoon is the rice cooker's — it came in the box. This is the derivation that
 // puts the spoon under the cooker.
 //
-// DERIVED, NEVER STORED. A recipe's `kit` is free-text `{ label, stepIds }` and
-// stays that way (#882, `schemas/recipe.ts`): no `equipmentItemId`, no
-// `accessoryId`. The link this query needs already exists on the other side — the
-// manifest states which accessories belong to which appliance — so the grouping is
-// re-read every render from the words. Renaming an item in the manifest regroups
-// every recipe at once, and nothing has to be migrated for it.
+// ── THE LINK COMES FIRST (issue #1465) ───────────────────────────────────────
+//
+// A kit entry may now carry `equipment: { itemId, accessoryId }` — recorded by
+// the flow that wrote the label, which had the manifest in front of it. Where it
+// resolves, it is the answer, and none of the word passes below is consulted for
+// that entry. Three things follow, and they are the whole of the new behaviour:
+//
+//   - an entry linked to an item ITSELF heads that item's row, exactly as a label
+//     naming the item directly does;
+//   - an entry linked to an ACCESSORY of an `equipment`-kind item nests under that
+//     item's row when this kit also names the item, and otherwise stands as its
+//     own row — the same shape pass one already gives a prefixed accessory label;
+//   - an entry linked to a member of a `family` ALWAYS stands as its own row, and
+//     never anchors another entry beneath it. A family is not an appliance with
+//     parts: "frying pan" beside the All-Clad read "frying pan — with the All-Clad
+//     D3 10 inch frying pan", as if one pan were an attachment of the other, and
+//     that is the false statement this rule exists to refuse. `kind` is picking
+//     PRESENTATION here and nothing else (`equipmentManifest.ts` — it may never
+//     gate whether an entry resolves, has a picture, or exists).
+//
+// An entry with no link, or whose link no longer answers to anything, takes the
+// two word passes below unchanged. Phase 4 of #1465 deletes those passes once
+// every recipe in production has been re-run; until then both paths are live and
+// a recipe not yet redone looks exactly as it did.
+//
+// DERIVED FROM THE MANIFEST, STILL. The link says WHICH THING an entry means; the
+// manifest still says what belongs to what, and renaming an item regroups every
+// recipe at once with nothing migrated.
 //
 // PURE (CLAUDE.md rule 1), and in `domain` rather than the page for the reason
 // `kitByStep` is: it is derivation, not display.
+//
+// ── THE WORD PASSES, FOR UNLINKED ENTRIES ────────────────────────────────────
 //
 // TWO PASSES, AND THE SECOND IS DELIBERATELY NARROWER THAN THE FIRST.
 //
@@ -124,30 +152,56 @@ export function groupKitByEquipment(
   kit: readonly RecipeKitEntryDoc[],
   items: readonly EquipmentItem[],
 ): KitEquipmentGroup[] {
-  // Resolve every entry once, up front. Nothing below calls the resolver again.
-  const resolved = kit.map((entry) => resolveEquipmentItem(entry.label, items));
+  // Identify every entry once, up front, link first and words only as the
+  // fallback. Nothing below resolves anything again.
+  //
+  // Three parallel readings per entry, and every rule beneath is written against
+  // these rather than against a link or a label, so the two paths cannot disagree
+  // about what an entry IS:
+  //   `resolved`    — the owned item this entry means, or null;
+  //   `namesItem`   — does it name that item ITSELF (so it may head, and anchor,
+  //                   that item's row) rather than one of its parts;
+  //   `standsAlone` — must it keep its own row whatever else is in the kit. True
+  //                   only for a family member, for the reason in the header.
+  const resolved: (EquipmentItem | null)[] = [];
+  const namesItem: boolean[] = [];
+  const standsAlone: boolean[] = [];
+  for (const entry of kit) {
+    const link = resolveKitEntryEquipment(entry, items);
+    if (link) {
+      resolved.push(link.item);
+      namesItem.push(link.accessory === null);
+      standsAlone.push(link.accessory !== null && link.item.kind === 'family');
+      continue;
+    }
+    const item = resolveEquipmentItem(entry.label, items);
+    resolved.push(item);
+    namesItem.push(item ? namesItemItself(entry.label, item) : false);
+    standsAlone.push(false);
+  }
 
   // itemId → the index of the entry that HEADS that item's row, decided before any
   // row exists so that stored order cannot decide it. Only an entry naming the item
   // itself is eligible; among two that do, the earlier wins, which is the only place
   // position gets a say.
   const headIndexOfItem = new Map<string, number>();
-  kit.forEach((entry, index) => {
+  kit.forEach((_, index) => {
     const item = resolved[index];
     if (!item || headIndexOfItem.has(item.id)) return;
-    if (namesItemItself(entry.label, item)) headIndexOfItem.set(item.id, index);
+    if (namesItem[index]) headIndexOfItem.set(item.id, index);
   });
 
   // Pass one's whole new rule, stated once: an entry nests when it resolves to an
   // item ANOTHER entry names directly, and is not itself such a naming. A second
   // naming of the machine itself is a duplicate mention, not a part of the machine,
-  // and keeps its own row.
-  const nestsUnderItem: (string | null)[] = kit.map((entry, index) => {
+  // and keeps its own row — as does a family member, which is not a part of
+  // anything.
+  const nestsUnderItem: (string | null)[] = kit.map((_, index) => {
     const item = resolved[index];
-    if (!item) return null;
+    if (!item || standsAlone[index]) return null;
     const headIndex = headIndexOfItem.get(item.id);
     if (headIndex === undefined || headIndex === index) return null;
-    return namesItemItself(entry.label, item) ? null : item.id;
+    return namesItem[index] ? null : item.id;
   });
 
   // The rows themselves, in stored order. `headOfItem` then lets pass two ask "is
@@ -175,7 +229,7 @@ export function groupKitByEquipment(
       // nesting it) must never anchor another accessory beneath it — that would
       // claim one accessory owns another, the exact false relationship pass one's
       // own boundary above refuses to state.
-      if (!headOfItem.has(item.id) && namesItemItself(entry.label, item)) {
+      if (!headOfItem.has(item.id) && namesItem[index]) {
         headOfItem.set(item.id, head);
       }
     } else {

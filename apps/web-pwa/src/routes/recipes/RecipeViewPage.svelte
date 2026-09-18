@@ -2702,10 +2702,10 @@
                           data-testid="recipe-kit-row"
                         >
                           <div class="flex h-10 w-10 shrink-0 items-center justify-center">
-                            {#if $kitIcons.kitIconFor(group.entry.label)}
+                            {#if $kitIcons.kitIconFor(group.entry)}
                               <CanonIcon
-                                thumbnail={$kitIcons.kitIconFor(group.entry.label)}
-                                version={$kitIcons.kitIconVersionFor(group.entry.label)}
+                                thumbnail={$kitIcons.kitIconFor(group.entry)}
+                                version={$kitIcons.kitIconVersionFor(group.entry)}
                                 name={group.entry.label}
                                 size={40}
                               />

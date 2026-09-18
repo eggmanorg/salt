@@ -70,6 +70,28 @@ and free — every plan that already says "griddle pan" gains a picture with not
 migrated and nothing regenerated — and a name that matches nothing renders as words
 with no picture, which is the correct and complete answer to a miss.
 
+**Since #1465 a kit entry can RECORD which of your things it means, and that is
+read first.** `recipes[].kit[].equipment` is `{ itemId, accessoryId | null }`,
+written by the kit flow at the moment it had the manifest in front of it. Where it
+resolves it is authoritative and no word is read: the linked thing's picture, or
+none. It is what finally reaches a FAMILY member — "Tefal non-stick 28cm" carries
+no word of "Frying Pans", and no rule over the words could ever find it. A link to
+something since deleted resolves to nothing and the entry reads as words again, so
+the manifest needs no cleanup job and nothing is ever written back to a recipe.
+This NARROWS the words-only contract above; it does not repeal it. `kitchenTools`
+ids are still never written onto a recipe, because a vocabulary grows and an
+identity does not.
+
+**And a bare accessory name never borrows an unrelated object's drawing** (#1460).
+`kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, is what every kit
+surface goes through: a label that exactly names one of the manifest's accessories
+keeps a curated tool only when the vocabulary explains the NAME rather than a word
+inside it. The Magimix's sealed "Thermo Bowl" was drawn as a plain mixing bowl and
+the AMZCHEF's "Grill plate" as a dinner plate. Where a curation decision is needed
+("an egg whisk is an ordinary whisk"), it is made in the vocabulary, as a matcher
+— never inferred. The admin unresolved queue composes the identical function, so a
+label the renderer declines is visible there as the gap it is.
+
 **Since #954 a kit label is asked of TWO vocabularies, equipment first.** A label
 can now name a specific appliance this household owns — the kit flow is handed the
 manifest and writes the item's own name — and those already have better pictures of

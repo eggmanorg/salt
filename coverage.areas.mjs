@@ -623,11 +623,21 @@ export const coverageThresholds = {
   // unit test provoked. So the area both gained a well-covered file and lost the
   // uncovered copies, and the ratchet asked for the gain to be banked rather than
   // left as four points of hiding room. Measured by CI, pasted, not retyped.
+  // BANKED 78.89/71.91 → 79.74/73.13 in #1470 (equipment-kit-links, #1465's
+  // Phase 1). The branch ratio rose 1.22 points past the 1.00-point staleness
+  // tolerance, which is what tripped the gate — earned coverage sitting unbanked
+  // is exactly what a later PR could delete and still land green. Both uncovered
+  // COUNTS fell too (759 → 736 lines, 576 → 562 branches), which is what says
+  // this is coverage earned by new tests, not a denominator that shrank. All four
+  // figures pasted verbatim from `coverage:ratchet:check`'s own block on CI's
+  // `ubuntu-latest` run, not retyped and not re-measured on this machine — this
+  // repo has a known macOS/Linux v8 branch-count divergence, and CI is the
+  // platform the gate actually enforces against.
   'apps/web-pwa/src/lib/**': {
-    lines: 78.89,
-    branches: 71.91,
-    uncoveredLines: 759,
-    uncoveredBranches: 576,
+    lines: 79.74,
+    branches: 73.13,
+    uncoveredLines: 736,
+    uncoveredBranches: 562,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,

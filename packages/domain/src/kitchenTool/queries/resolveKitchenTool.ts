@@ -37,20 +37,50 @@ export function resolveKitchenTool(
   name: string,
   tools: readonly KitchenToolDoc[],
 ): KitchenToolDoc | null {
+  return resolveKitchenToolMatch(name, tools)?.tool ?? null;
+}
+
+/** A tool the lookup picked, and the normalised phrase it won on. */
+export interface KitchenToolMatch {
+  readonly tool: KitchenToolDoc;
+  /**
+   * The winning phrase, normalised — "mixing bowl" for "large mixing bowl", the
+   * bare "bowl" for "Thermo Bowl". How much of the name the vocabulary actually
+   * explained, which `resolveKitchenTool`'s answer alone cannot say.
+   */
+  readonly phrase: string;
+  /** The name itself, normalised — the other half of "how much did it explain?". */
+  readonly target: string;
+}
+
+/**
+ * The lookup above, with the winning phrase kept (issue #1465).
+ *
+ * Not a second resolver and not a second opinion on one: `resolveKitchenTool` is
+ * this function, and there is exactly one loop. It is split out because
+ * `kitchenToolForKitLabel` has to weigh how MUCH of a name the vocabulary
+ * explained, and a returned document cannot say. Nothing about the matching
+ * changed — same phrases, same token-aligned containment, same
+ * longest-normalised-phrase-wins.
+ */
+export function resolveKitchenToolMatch(
+  name: string,
+  tools: readonly KitchenToolDoc[],
+): KitchenToolMatch | null {
   const target = normaliseName(name);
   if (!target) return null;
   // Pad both sides so `includes` can only land on token boundaries.
   const padded = ` ${target} `;
   let best: KitchenToolDoc | null = null;
-  let bestLen = 0;
+  let bestPhrase = '';
   for (const tool of tools) {
     for (const phrase of [tool.label, ...tool.matchers]) {
       const p = normaliseName(phrase);
-      if (p && p.length > bestLen && padded.includes(` ${p} `)) {
+      if (p && p.length > bestPhrase.length && padded.includes(` ${p} `)) {
         best = tool;
-        bestLen = p.length;
+        bestPhrase = p;
       }
     }
   }
-  return best;
+  return best ? { tool: best, phrase: bestPhrase, target } : null;
 }

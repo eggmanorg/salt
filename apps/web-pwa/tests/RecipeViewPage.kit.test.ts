@@ -293,8 +293,8 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'large saucepan', stepIds: ['step-1'] },
-          { label: 'colander', stepIds: ['step-1'] },
+          { label: 'large saucepan', stepIds: ['step-1'], equipment: null },
+          { label: 'colander', stepIds: ['step-1'], equipment: null },
         ],
       }),
     ]);
@@ -314,9 +314,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'large saucepan', stepIds: ['step-1'] },
-          { label: 'colander', stepIds: ['step-1'] },
-          { label: 'potato masher', stepIds: ['step-1'] },
+          { label: 'large saucepan', stepIds: ['step-1'], equipment: null },
+          { label: 'colander', stepIds: ['step-1'], equipment: null },
+          { label: 'potato masher', stepIds: ['step-1'], equipment: null },
         ],
       }),
     ]);
@@ -334,8 +334,8 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'box grater', stepIds: ['step-1'] },
-          { label: 'Cosori 5L Rice Cooker', stepIds: ['step-1'] },
+          { label: 'box grater', stepIds: ['step-1'], equipment: null },
+          { label: 'Cosori 5L Rice Cooker', stepIds: ['step-1'], equipment: null },
         ],
       }),
     ]);
@@ -353,7 +353,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
         updatedAt: '2026-02-02T00:00:00.000Z',
       }),
     ]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'large saucepan', stepIds: [] }] })]);
+    mockRecipes._set([
+      makeEntry({ kit: [{ label: 'large saucepan', stepIds: [], equipment: null }] }),
+    ]);
     renderPage();
 
     const img = screen.getByTestId('canon-icon-img');
@@ -370,7 +372,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     // and still reads correctly; it simply has no drawing yet. Substituting the
     // saucepan's picture here would be a confident lie.
     setTools([tool({ id: 'saucepan', label: 'saucepan' })]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [] }] })]);
+    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [], equipment: null }] })]);
     renderPage();
 
     expect(kitLabels()).toEqual(['Tagine']);
@@ -381,7 +383,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
     // A cold load paints before the tools land, and the strip must be readable in
     // that window rather than a row of empty tiles. The lookup is a derived STORE
     // precisely so the pictures fill in when they arrive.
-    mockRecipes._set([makeEntry({ kit: [{ label: 'large saucepan', stepIds: [] }] })]);
+    mockRecipes._set([
+      makeEntry({ kit: [{ label: 'large saucepan', stepIds: [], equipment: null }] }),
+    ]);
     renderPage();
 
     expect(kitLabels()).toEqual(['Large saucepan']);
@@ -399,8 +403,8 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'large saucepan', stepIds: [] },
-          { label: 'box grater', stepIds: [] },
+          { label: 'large saucepan', stepIds: [], equipment: null },
+          { label: 'box grater', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -424,7 +428,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
         thumbnail: 'https://example.com/kit/pan.webp',
       }),
     ]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'large frying pan', stepIds: [] }] })]);
+    mockRecipes._set([
+      makeEntry({ kit: [{ label: 'large frying pan', stepIds: [], equipment: null }] }),
+    ]);
     renderPage();
 
     const strip = screen.getByTestId('recipe-kit-list');
@@ -468,7 +474,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
       }),
     ]);
     mockRecipes._set([
-      makeEntry({ kit: [{ label: 'Magimix Cocotte Slow Cook Pot', stepIds: [] }] }),
+      makeEntry({
+        kit: [{ label: 'Magimix Cocotte Slow Cook Pot', stepIds: [], equipment: null }],
+      }),
     ]);
     renderPage();
 
@@ -497,7 +505,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
         updatedAt: '2026-02-02T00:00:00.000Z',
       }),
     ]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'large frying pan', stepIds: [] }] })]);
+    mockRecipes._set([
+      makeEntry({ kit: [{ label: 'large frying pan', stepIds: [], equipment: null }] }),
+    ]);
     renderPage();
 
     expect(screen.getByTestId('canon-icon-img')).toHaveAttribute(
@@ -526,7 +536,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
         updatedAt: '2026-02-02T00:00:00.000Z',
       }),
     ]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'OXO Mandoline', stepIds: [] }] })]);
+    mockRecipes._set([
+      makeEntry({ kit: [{ label: 'OXO Mandoline', stepIds: [], equipment: null }] }),
+    ]);
     renderPage();
 
     expect(kitLabels()).toEqual(['OXO Mandoline']);
@@ -541,7 +553,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
       new Map([['eq-magimix', { thumbnail: 'https://example.com/eq/magimix.webp' }]]),
     );
     setTools([tool({ id: 'saucepan', label: 'saucepan' })]);
-    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [] }] })]);
+    mockRecipes._set([makeEntry({ kit: [{ label: 'tagine', stepIds: [], equipment: null }] })]);
     renderPage();
 
     expect(kitLabels()).toEqual(['Tagine']);
@@ -553,7 +565,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     // itself carrying ui-spec-v09 §8.23.8): the row is an `<li>` with no control in
     // it, so it is not reachable by Tab and is not announced as something to press.
     // The list states what the dish needs; it does not offer anything to do about it.
-    mockRecipes._set([makeEntry({ kit: [{ label: 'colander', stepIds: [] }] })]);
+    mockRecipes._set([makeEntry({ kit: [{ label: 'colander', stepIds: [], equipment: null }] })]);
     renderPage();
 
     const row = screen.getAllByTestId('recipe-kit-row')[0]!;
@@ -573,8 +585,8 @@ describe('RecipeViewPage — the Equipment tab', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'large saucepan', stepIds: [] },
-          { label: 'tagine', stepIds: [] },
+          { label: 'large saucepan', stepIds: [], equipment: null },
+          { label: 'tagine', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -597,7 +609,7 @@ describe('RecipeViewPage — the Equipment tab', () => {
     // plain `$state` — so without the reset the strip would be left with nothing
     // selected and the whole body blank. Rare (an editor save that clears the kit,
     // a Redo kit that comes back with nothing) and cheap to be right about.
-    mockRecipes._set([makeEntry({ kit: [{ label: 'colander', stepIds: [] }] })]);
+    mockRecipes._set([makeEntry({ kit: [{ label: 'colander', stepIds: [], equipment: null }] })]);
     renderPage();
 
     await openEquipmentTab();
@@ -645,9 +657,9 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'sieve', stepIds: [] },
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'Rice Spoon', stepIds: [] },
+          { label: 'sieve', stepIds: [], equipment: null },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'Rice Spoon', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -684,8 +696,8 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'Rice Spoon', stepIds: [] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'Rice Spoon', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -724,8 +736,8 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Magimix Cook Expert', stepIds: [] },
-          { label: 'Magimix Cocotte Slow Cook Pot', stepIds: [] },
+          { label: 'Magimix Cook Expert', stepIds: [], equipment: null },
+          { label: 'Magimix Cocotte Slow Cook Pot', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -761,9 +773,9 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'steam basket', stepIds: [] },
-          { label: 'rice spoon', stepIds: [] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'steam basket', stepIds: [], equipment: null },
+          { label: 'rice spoon', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -790,9 +802,9 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'small frying pan', stepIds: [] },
-          { label: 'Oven Sheet Pan', stepIds: [] },
-          { label: 'Wire Oven Rack', stepIds: [] },
+          { label: 'small frying pan', stepIds: [], equipment: null },
+          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
+          { label: 'Wire Oven Rack', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -812,8 +824,8 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'Rice Spoon', stepIds: [] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'Rice Spoon', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -842,9 +854,13 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'tall glass jar', stepIds: [] },
-          { label: 'Ninja Foodi 3-in-1 Hand Blender, Mixer & Chopper CI100UK', stepIds: [] },
-          { label: 'Hand Blender Attachment', stepIds: [] },
+          { label: 'tall glass jar', stepIds: [], equipment: null },
+          {
+            label: 'Ninja Foodi 3-in-1 Hand Blender, Mixer & Chopper CI100UK',
+            stepIds: [],
+            equipment: null,
+          },
+          { label: 'Hand Blender Attachment', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -880,8 +896,8 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'Rice Spoon', stepIds: [] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'Rice Spoon', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -922,10 +938,10 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [] },
-          { label: 'Rice Spoon', stepIds: [] },
-          { label: 'Anova Precision Oven', stepIds: [] },
-          { label: 'Oven Sheet Pan', stepIds: [] },
+          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
+          { label: 'Rice Spoon', stepIds: [], equipment: null },
+          { label: 'Anova Precision Oven', stepIds: [], equipment: null },
+          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -954,8 +970,8 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'small frying pan', stepIds: [] },
-          { label: 'Oven Sheet Pan', stepIds: [] },
+          { label: 'small frying pan', stepIds: [], equipment: null },
+          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
         ],
       }),
     ]);
@@ -1000,7 +1016,13 @@ describe('RecipeViewPage — kit under a method step', () => {
     mockRecipes._set([
       makeEntry({
         steps: steps('Heat the pan.', 'Brown.', 'Deglaze.', 'Simmer.', 'Rest.'),
-        kit: [{ label: 'frying pan', stepIds: ['step-1', 'step-2', 'step-3', 'step-4', 'step-5'] }],
+        kit: [
+          {
+            label: 'frying pan',
+            stepIds: ['step-1', 'step-2', 'step-3', 'step-4', 'step-5'],
+            equipment: null,
+          },
+        ],
       }),
     ]);
     renderPage();
@@ -1012,7 +1034,7 @@ describe('RecipeViewPage — kit under a method step', () => {
     mockRecipes._set([
       makeEntry({
         steps: steps('Mix.', 'Rest.', 'Chill.', 'Fold through.'),
-        kit: [{ label: 'mixing bowl', stepIds: ['step-1', 'step-4'] }],
+        kit: [{ label: 'mixing bowl', stepIds: ['step-1', 'step-4'], equipment: null }],
       }),
     ]);
     renderPage();
@@ -1032,7 +1054,7 @@ describe('RecipeViewPage — kit under a method step', () => {
     mockRecipes._set([
       makeEntry({
         steps: steps('Boil the potatoes.'),
-        kit: [{ label: 'large saucepan', stepIds: ['step-1'] }],
+        kit: [{ label: 'large saucepan', stepIds: ['step-1'], equipment: null }],
       }),
     ]);
     renderPage();
@@ -1050,7 +1072,10 @@ describe('RecipeViewPage — kit under a method step', () => {
   it('renders an unresolved label as words with NO picture', () => {
     setTools([tool({ id: 'saucepan', label: 'saucepan' })]);
     mockRecipes._set([
-      makeEntry({ steps: steps('Steam it.'), kit: [{ label: 'tagine', stepIds: ['step-1'] }] }),
+      makeEntry({
+        steps: steps('Steam it.'),
+        kit: [{ label: 'tagine', stepIds: ['step-1'], equipment: null }],
+      }),
     ]);
     renderPage();
 
@@ -1063,7 +1088,10 @@ describe('RecipeViewPage — kit under a method step', () => {
     // It still belongs on the Equipment tab — the tab lists what the dish needs,
     // and "used at no particular step" is not an answer the method can give.
     mockRecipes._set([
-      makeEntry({ steps: steps('Serve.'), kit: [{ label: 'oven glove', stepIds: [] }] }),
+      makeEntry({
+        steps: steps('Serve.'),
+        kit: [{ label: 'oven glove', stepIds: [], equipment: null }],
+      }),
     ]);
     renderPage();
 
@@ -1079,8 +1107,8 @@ describe('RecipeViewPage — kit under a method step', () => {
       makeEntry({
         steps: steps('Chop.', 'Fry.'),
         kit: [
-          { label: 'stick blender', stepIds: ['step-deleted'] },
-          { label: 'chopping board', stepIds: ['step-deleted', 'step-2'] },
+          { label: 'stick blender', stepIds: ['step-deleted'], equipment: null },
+          { label: 'chopping board', stepIds: ['step-deleted', 'step-2'], equipment: null },
         ],
       }),
     ]);

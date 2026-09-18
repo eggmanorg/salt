@@ -559,9 +559,33 @@ describe('RecipeSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.kit).toEqual([
-        { label: 'large frying pan', stepIds: ['step-1', 'step-2'] },
+        // `equipment` reads back as null — every kit entry in production was
+        // written before issue #1465 and carries no key at all, and the default is
+        // what keeps those recipes parsing rather than vanishing from the list.
+        { label: 'large frying pan', stepIds: ['step-1', 'step-2'], equipment: null },
       ]);
       expect(result.data.kitInferredAt).toBe(1_700_000_000_000);
+    }
+  });
+
+  it('round-trips a kit entry linked to one of the household’s things (#1465)', () => {
+    const result = RecipeSchema.safeParse({
+      ...messyRecipe(),
+      kit: [
+        {
+          label: 'steam basket',
+          stepIds: ['step-1'],
+          equipment: { itemId: 'i1', accessoryId: 'a1' },
+        },
+        { label: 'Magimix Cook Expert', stepIds: [], equipment: { itemId: 'i1' } },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kit[0]?.equipment).toEqual({ itemId: 'i1', accessoryId: 'a1' });
+      // `accessoryId` defaults to null: a link naming the item ITSELF is written
+      // with the one id, and every reader sees null rather than undefined.
+      expect(result.data.kit[1]?.equipment).toEqual({ itemId: 'i1', accessoryId: null });
     }
   });
 

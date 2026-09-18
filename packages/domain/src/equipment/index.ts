@@ -34,4 +34,13 @@ export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnviro
 
 export { equipmentIconAwaitingApproval } from './queries/equipmentIcon.js';
 export { resolveEquipmentItem, namesItemItself } from './queries/resolveEquipmentItem.js';
+// The LINK half of the same question (issue #1465) — which of your things a kit
+// entry recorded, read from an id rather than guessed from the words. Where a
+// link resolves it is authoritative; a dangling one answers null and the label
+// falls back to the word resolver above.
+export { resolveKitEntryEquipment } from './queries/resolveKitEntryEquipment.js';
+export type {
+  ResolvedKitEquipment,
+  KitEquipmentLinkSource,
+} from './queries/resolveKitEntryEquipment.js';
 export type { EditRuleInput } from './commands/editRule.js';
