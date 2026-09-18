@@ -372,10 +372,10 @@ describe('FormulaPage — the declared yield wins', () => {
     await fireEvent.click(getByTestId('formula-save-button'));
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveFormula).mock.calls[0]![0].components).toEqual([
-      { ingredientId: 'ing-flour', percent: 100, inBasis: true },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false },
-      { ingredientId: 'ing-salt', percent: 2, inBasis: false },
-      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false },
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
+      { ingredientId: 'ing-salt', percent: 2, inBasis: false, stageId: null },
+      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null },
     ]);
   });
 
@@ -444,10 +444,10 @@ describe('FormulaPage — the declared yield wins', () => {
     await fireEvent.click(getByTestId('formula-save-button'));
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveFormula).mock.calls[0]![0].components).toEqual([
-      { ingredientId: 'ing-white', percent: 33.3334, inBasis: true },
-      { ingredientId: 'ing-wholemeal', percent: 33.3333, inBasis: true },
-      { ingredientId: 'ing-rye-flour', percent: 33.3333, inBasis: true },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false },
+      { ingredientId: 'ing-white', percent: 33.3334, inBasis: true, stageId: null },
+      { ingredientId: 'ing-wholemeal', percent: 33.3333, inBasis: true, stageId: null },
+      { ingredientId: 'ing-rye-flour', percent: 33.3333, inBasis: true, stageId: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
     ]);
   });
 

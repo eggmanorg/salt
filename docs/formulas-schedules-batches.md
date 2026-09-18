@@ -20,11 +20,23 @@ point, is what stops an "add a formula" item putting baker's percentages in
 front of every weeknight curry to serve the three loaves. The typed URL remains
 the escape hatch for a loaf the guess misses.
 
-One thing about what `process/` holds today is a deliberate absence rather than a
-gap: a stage carries **no additions or removals** yet, because nothing produces or
-consumes them. What this doc requires is that the shape not preclude them, and a
+**Additions are built** (#1405, phase 04), and not as a field on the stage: a
+formula component carries `stageId`, the id of the stage it is added at, and `null`
+means at the start — which is what every formula written before it meant. An
+ingredient is added exactly once, so putting the assignment on the component makes
+that structural rather than a rule somebody has to enforce, and it leaves one list
+of ingredients on the formula, so the basis, the percentages, the solve and the
+rounding are untouched: a stage says **when** an ingredient goes in, never how much,
+and no stage carries a basis, a total or a percentage of its own. The assignment is
+frozen onto a run alongside the grams, and rewritten onto the new stage ids when an
+accepted schedule proposal restructures the process. A `stageId` naming a stage that
+has since been deleted reads as at the start — the ingredient is still there, still
+scaled, still on the shopping list.
+
+**Removals are still absent**, deliberately rather than as a gap: nothing produces
+or consumes one. What this doc requires is that the shape not preclude them, and a
 flat ordered array of stages with stable ids on an optional field of a greenfield
-collection does not. Phases 03/04 own that addition.
+collection does not. Phase 05 owns that.
 
 From #812 phase 2, the **proposal tier exists too**: `proposeSchedule` (the
 `pro`-tier callable that restructures a process to land at a target time, emitting
@@ -214,7 +226,9 @@ from the start:
 - **Stages can carry additions.** Bread adds everything at mix; a cure rubs at
   stage one, washes at stage two, cases at stage three; kefir's second ferment
   adds fruit to the already-strained liquid. Formula additions are therefore
-  assignable to a stage rather than all landing at mix.
+  assignable to a stage rather than all landing at mix. **Built in #1405** — the
+  assignment is `stageId` on the formula component, not an `additions` array on
+  the stage; see the note near the top of this doc for why and for its limits.
 - **Stages can remove or split off.** Kefir strains the grains back out,
   kombucha holds liquid back as next week's starter, sourdough discards. What is
   removed may go back to a culture (see below).
@@ -416,12 +430,12 @@ of. A durable version needs that clause, and reopens this decision.
 
 ## Documents
 
-| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------- | ------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process, and what a run of it aims at (`target` — a weight loss, a pH, both or neither)                                                                                                                                                                                                                           |
-| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, the kitchen temperature it was started at (`ambientCelsius`), the frozen place each stage ran in, what it is aiming at (`target`, frozen from the formula, null for a run aiming at nothing), and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed) |
-| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, humidity, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run). Every one of the six has a control on the sheet; `ph` was the last to get one (#1407)                                                                                                          |
-| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                                                                                                                                                                                                                   |
+| Doc           | Firestore path                        | Scope         | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------- | ------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Formula`     | `formulas/{recipeId}`                 | family-shared | Basis, percentages, reference yield (dough), reference process, and what a run of it aims at (`target` — a weight loss, a pH, both or neither)                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `Batch`       | `batches/{batchId}`                   | family-shared | One run: frozen quantities and schedule, current stage, state, vessel, the kitchen temperature it was started at (`ambientCelsius`), the frozen place each stage ran in, what it is aiming at (`target`, frozen from the formula, null for a run aiming at nothing), and when it was abandoned (`abandonedAt`, null while running and on runs stopped before it existed). Each quantity also carries the stage it goes on at (`stageId`, an FK into this run's own frozen `stages`; `null` = at the start, and so is an id the run no longer carries) |
+| `Observation` | `batches/{batchId}/observations/{id}` | family-shared | Append-only log — weight, pH, temperature, humidity, note, photo, and the stage it is about (`stageId`, an FK into the parent's frozen `stages`; `null` = the whole run). Every one of the six has a control on the sheet; `ph` was the last to get one (#1407)                                                                                                                                                                                                                                                                                       |
+| `Culture`     | `cultures/{cultureId}`                | family-shared | Deferred. Maintenance formula, rhythm, state, feed log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **Why `formulas` is its own collection, keyed by recipe id**, rather than fields
 on `RecipeSchema` — the same reasoning as `guidedPlans/{recipeId}`:
@@ -593,14 +607,15 @@ Carries over whole: the formula model and its two-tier basis; the batch
 collection, snapshot and state machine; the in-flight surface; reminders on the
 Tasks path; diff review and the two model tiers; canon, shopping, images, search.
 
-Still to build at 03–04: stages carrying additions; `authorFerment` and a ferment
-kind; vessel headspace and the cure-salt bounds.
+Still to build at 03–04: `authorFerment` and a ferment kind; vessel headspace and
+the cure-salt bounds.
 
 Off that list since: **reminders beyond the Tasks scheduling horizon** — shipped in
 #1406 as one weekly sweep, `remindBatchReadings`, asking whoever started a long run to
 weigh it. See the answered open question below for what it does and does not do.
-
-Off that list since: **the basis-driven solve direction** — shipped in #1402, where
+**Stages carrying additions** — shipped in #1405 as `stageId`
+on the formula component, frozen onto a run beside the grams. **The basis-driven
+solve direction** — shipped in #1402, where
 the formula screen gained "a weight of what goes in" and the bake sheet learned to
 ask a formula written that way what it weighs. **Projections that observations
 revise** — cut by #1407, not built: a run carries a target and every weighing says

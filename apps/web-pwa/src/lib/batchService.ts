@@ -334,6 +334,53 @@ function mintStage(stage: ProposedStage): ProcessStage {
   };
 }
 
+/**
+ * The formula a run started from an ACCEPTED PROPOSAL is actually frozen from: the
+ * proposed stages minted into real ones, and the components' stage assignments
+ * rewritten onto the new ids.
+ *
+ * WHY THE REWRITE EXISTS, and it is the one thing here that would fail silently
+ * (issue #1405). `mintStage` gives every stage a brand-new id, so a component's
+ * `stageId` — which names a stage of the REFERENCE process — points at nothing the
+ * moment a proposal is accepted. Without this, every addition would quietly land at
+ * the start on precisely the runs a cure is most likely to use, and it would be
+ * invisible: "at the start" is exactly what a formula that never assigned anything
+ * looks like. `tests/batchServiceStages.test.ts` is what goes red if this is removed.
+ *
+ * This USES `sourceStageId`; it does not freeze it. `mintStage`'s comment objects to
+ * storing a provenance claim on a run, and nothing about that objects to reading one
+ * during the write — the map is built and discarded here.
+ *
+ * THE FIRST CITATION WINS, and that is a real choice rather than a tidy-up.
+ * `ProposedStageSchema`'s header is explicit that two proposed stages may cite the
+ * same reference stage — a ninety-minute bulk becoming twenty on the counter and
+ * eight in the fridge — so the map is not one-to-one. An ingredient is added once, so
+ * it goes in at the EARLIEST of the stages that split out of the one it named, which
+ * is when the cook would actually add it. Pinned, not merely stated.
+ *
+ * A stage the restructure DROPPED maps to nothing, and the component reads as at the
+ * start — the same fallback as everywhere else in this feature.
+ */
+function restructured(formula: Formula, proposed: readonly ProposedStage[]): Formula {
+  const minted = proposed.map(mintStage);
+  const newIdBySourceId = new Map<string, string>();
+  proposed.forEach((stage, index) => {
+    const source = stage.sourceStageId;
+    if (source !== null && !newIdBySourceId.has(source)) {
+      newIdBySourceId.set(source, minted[index]!.id);
+    }
+  });
+  return {
+    ...formula,
+    process: minted,
+    components: formula.components.map((component) =>
+      component.stageId === null
+        ? component
+        : { ...component, stageId: newIdBySourceId.get(component.stageId) ?? null },
+    ),
+  };
+}
+
 // Why a run could not be started, in words. The typed reason stays in the domain
 // (`freezeBatch` returns it); what crosses to a screen is a ValidationError with a
 // sentence, because every one of these is something the user can act on and none of
@@ -417,7 +464,7 @@ export async function startBatch(
   const formula: Formula =
     input.proposedStages === undefined
       ? input.formula
-      : { ...input.formula, process: input.proposedStages.map(mintStage) };
+      : restructured(input.formula, input.proposedStages);
 
   // Resolved HERE, against the manifest, so what reaches the pure freeze is labels
   // and figures rather than ids to follow — the same split the ingredient labels

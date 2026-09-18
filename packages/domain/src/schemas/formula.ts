@@ -72,6 +72,36 @@ export const FormulaComponentSchema = z.object({
   // 100 by definition, so a 176.4% grand total is normal and correct.
   percent: z.number().nonnegative(),
   inBasis: z.boolean(),
+  // WHEN THIS GOES IN (issue #1405, phase 04 of epic #778) — the `id` of the
+  // process stage it is added at, or `null` for at the start. A cure rubs at stage
+  // one, washes at stage two and cases at stage three; bread adds everything at
+  // mix, which is what `null` says.
+  //
+  // IT CHANGES WHEN, NEVER HOW MUCH. There is still one basis and one set of
+  // percentages, so nothing about the solve, the rounding or the shopping list
+  // reads this field. A stage carries no basis, no total and no percentage of its
+  // own — `docs/formulas-schedules-batches.md` → "Process" is the contract, and that
+  // is the whole of what it asks for.
+  //
+  // A PLAIN FK, VALIDATED BY NOTHING, exactly as `ProcessStage.stepId` and
+  // `StageEnvironment.equipmentId` are. The stages live on `process` on this same
+  // document, so the join is document-local — but deleting a stage does NOT cascade
+  // into the components, so an id that no longer resolves is an ordinary state. THE
+  // LIMIT, STATED (CLAUDE.md rule 12): such an ingredient is still in the formula,
+  // still scaled and still on the shopping list — it reads as at the start. That
+  // GROUPING fallback lives in exactly one place, `stageAdditions` in
+  // `process/stageAdditions.ts`, and `tests/process/stageAdditions.test.ts` is what
+  // goes red if it ever becomes "the ingredient vanishes" — but `stageNameOf`
+  // (`FormulaPage.svelte`), `stageLabelById` (`batchDisplay.ts`) and `restructured`
+  // (`batchService.ts`) each answer the same question again on their own, and
+  // `FormulaPageStages.test.ts` is what holds the picker's copy in agreement.
+  //
+  // A READ DEFAULT, not `.optional()`: live `formulas/{recipeId}` documents were
+  // written without the key and must keep parsing (CLAUDE.md, production data
+  // back-compat), and `null` is what every one of them already meant. One spelling
+  // of "at the start", never two. `schemaVersion` stays at 1 and there is no
+  // migration; `tests/formula/legacyFormulaDocument.test.ts` pins it.
+  stageId: z.string().nullable().default(null),
   density: DensityClassSchema.optional(),
   // WHICH SALT-BEARING PRODUCT THIS IS, or nothing at all (issue #1402). See
   // `SaltProductSchema` above. Absent is the ordinary answer and means exactly one

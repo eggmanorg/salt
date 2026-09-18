@@ -41,3 +41,10 @@ export { stageTemperatureText } from './stageTemperature.js';
 // Whether a place covers what a stage asks for (issue #1286). A comparison, never a
 // conversion — it produces a note on the bake sheet and nothing else.
 export { placeReachesTemperature } from './placeReachability.js';
+// What goes in at each stage (issue #1405) — the ONE grouping of ingredients over an
+// ordered process, shared by the formula screen's solved components and the batch
+// pages' frozen quantities. Here rather than in `formula/` for the reason
+// `resolveSchedule` is: it is a fact about the shape of a PROCESS, and it groups
+// anything that names a stage.
+export { stageAdditions } from './stageAdditions.js';
+export type { StageAdditions } from './stageAdditions.js';

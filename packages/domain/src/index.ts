@@ -476,12 +476,14 @@ export {
   remindableStages,
   stageTemperatureText,
   placeReachesTemperature,
+  stageAdditions,
 } from './process/index.js';
 export type {
   ScheduleAnchor,
   ProcessStageDiffEntry,
   ProcessStageChange,
   ProcessDiff,
+  StageAdditions,
 } from './process/index.js';
 
 // Batch module (issue #812, epic #778) — one run of a formula: the freeze that

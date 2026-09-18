@@ -26,6 +26,15 @@ export const BASIS_PERCENT_TOLERANCE = 0.01;
 export type SolvedComponent = {
   ingredientId: string;
   percent: number;
+  // WHEN THIS GOES IN, or `null` for at the start (issue #1405). Rides along beside
+  // the grams exactly as `percent` does, and for the same reason: every caller that
+  // wants to group a solved list by stage — the formula screen, and `freezeBatch` on
+  // the way to a run — would otherwise need a second lookup back against the
+  // formula's own components to find it.
+  //
+  // THE SOLVE DOES NOT READ IT. It is copied through untouched: a stage says when an
+  // ingredient goes in, and the arithmetic above is unchanged by it.
+  stageId: string | null;
   // What you weigh, through the one rounding authority.
   grams: number;
   // The same figure unrounded, for anything that needs to compute rather than
@@ -169,6 +178,7 @@ export function solveFormula(
         return {
           ingredientId: component.ingredientId,
           percent: component.percent,
+          stageId: component.stageId,
           grams: roundGrams(exactGrams),
           exactGrams,
         };

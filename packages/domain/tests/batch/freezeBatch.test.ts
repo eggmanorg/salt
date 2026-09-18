@@ -126,6 +126,8 @@ describe('freezeBatch — the quantities', () => {
       label: '500g strong white bread flour',
       percent: 100,
       grams: 816,
+      // At the start, because the formula assigned it to no stage (issue #1405).
+      stageId: null,
     });
   });
 
@@ -363,8 +365,8 @@ describe('freezeBatch — what it refuses', () => {
       // Two basis members at 100% each: there is no single 100% to be a percentage
       // of, so no gram figure can be produced.
       components: [
-        { ingredientId: FLOUR, percent: 100, inBasis: true },
-        { ingredientId: WATER, percent: 100, inBasis: true },
+        { ingredientId: FLOUR, percent: 100, inBasis: true, stageId: null },
+        { ingredientId: WATER, percent: 100, inBasis: true, stageId: null },
       ],
     };
     const result = freezeBatch({
@@ -621,5 +623,80 @@ describe('freezeBatch — the cure-salt substitution', () => {
     const without = freezeWithSubstitution();
     expect(withSwap.quantities).toEqual(without.quantities);
     expect(withSwap.totals).toEqual(without.totals);
+  });
+});
+
+describe('freezeBatch — when each thing goes on (issue #1405)', () => {
+  it('freezes the assignment beside the grams, as the formula wrote it', () => {
+    const formula = overnightWhiteTin();
+    const withStages: Formula = {
+      ...formula,
+      components: formula.components.map((component) =>
+        component.ingredientId === OIL ? { ...component, stageId: 'shape' } : component,
+      ),
+    };
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: withStages,
+      atYield: TWELVE_ROLLS,
+      anchor: { kind: 'endAt', at: '2026-08-15T07:30:00.000Z' },
+      recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
+      startedBy: null,
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+
+    const byId = Object.fromEntries(
+      result.batch.quantities.map((q) => [q.ingredientId, q.stageId]),
+    );
+    expect(byId[OIL]).toBe('shape');
+    // Everything else at the start, which is what bread means and what the other
+    // four components say.
+    expect(byId[FLOUR]).toBeNull();
+    expect(byId[WATER]).toBeNull();
+    expect(byId[SALT]).toBeNull();
+    expect(byId[YEAST]).toBeNull();
+  });
+
+  it('puts every quantity at the start for a formula that assigns nothing', () => {
+    // The whole of "bread is untouched": the worked example gains a field that is
+    // null on all five rows, and no gram figure moves.
+    const run = freezeTwelveRolls();
+    expect(run.quantities.map((q) => q.stageId)).toEqual([null, null, null, null, null]);
+    expect(run.quantities.map((q) => q.grams)).toEqual([816, 571, 16, 11, 24]);
+  });
+
+  it('freezes an id the process no longer carries rather than silently dropping it', () => {
+    // The one-way reference, as far as the freeze is concerned: it copies what it is
+    // handed and validates no FK, exactly as `place` and `stepId` do. What such an id
+    // READS as is `stageAdditions`' claim, pinned in tests/process/stageAdditions.test.ts.
+    const formula = overnightWhiteTin();
+    const result = freezeBatch({
+      id: 'batch-1',
+      formula: {
+        ...formula,
+        components: formula.components.map((component) =>
+          component.ingredientId === OIL
+            ? { ...component, stageId: 'a-stage-that-is-not-in-this-process' }
+            : component,
+        ),
+      },
+      atYield: TWELVE_ROLLS,
+      anchor: { kind: 'endAt', at: '2026-08-15T07:30:00.000Z' },
+      recipeTitle: 'Overnight white tin',
+      recipeKind: 'recipe',
+      cureCategory: null,
+      startedBy: null,
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+
+    const oil = result.batch.quantities.find((q) => q.ingredientId === OIL)!;
+    expect(oil.stageId).toBe('a-stage-that-is-not-in-this-process');
+    expect(oil.grams).toBe(24);
   });
 });

@@ -126,11 +126,23 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     completedStepIds: [],
     startedBy: null,
     quantities: [
-      { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 816 },
-      { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571 },
-      { ingredientId: 'ing-salt', label: '10 g salt', percent: 2, grams: 16 },
-      { ingredientId: 'ing-yeast', label: '7 g instant yeast', percent: 1.4, grams: 11 },
-      { ingredientId: 'ing-oil', label: '15 g olive oil', percent: 3, grams: 24 },
+      {
+        ingredientId: 'ing-flour',
+        label: '500 g strong white flour',
+        percent: 100,
+        grams: 816,
+        stageId: null,
+      },
+      { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571, stageId: null },
+      { ingredientId: 'ing-salt', label: '10 g salt', percent: 2, grams: 16, stageId: null },
+      {
+        ingredientId: 'ing-yeast',
+        label: '7 g instant yeast',
+        percent: 1.4,
+        grams: 11,
+        stageId: null,
+      },
+      { ingredientId: 'ing-oil', label: '15 g olive oil', percent: 3, grams: 24, stageId: null },
     ],
     totals: {
       basisGrams: 816,
@@ -309,7 +321,7 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     renderPage();
     mockBatch._set(
       makeBatch({
-        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 17 }],
+        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 17, stageId: null }],
       }),
     );
 
@@ -1833,5 +1845,127 @@ describe('BatchDetailPage — the cue (issue #1407, phase 2)', () => {
 
     await waitFor(() => expect(screen.getByTestId('batch-log-entry')).toBeInTheDocument());
     expect(screen.queryByTestId('batch-target-meter')).toBeNull();
+  });
+});
+
+// ─── What goes on at each stage (issue #1405) ───────────────────────────────────
+//
+// What these pin:
+//
+//   1. THE STAGE READS AS WHAT IT IS — label and grams beside its times, from this
+//      run's own frozen quantities.
+//   2. IT SURVIVES THE RECIPE. Both halves are frozen on this document, so nothing
+//      here joins against `recipes` and a renamed or deleted dish changes nothing.
+//   3. A DEAD ASSIGNMENT DOES NOT VANISH — it reads as at the start, which on this
+//      page means it appears under no stage rather than being dropped.
+//   4. BREAD IS UNTOUCHED: every stage of a loaf takes nothing, and none of them
+//      grows a list.
+
+function additionsIn(stageId: string): string {
+  const stage = screen
+    .queryAllByTestId('batch-stage')
+    .find((el) => el.getAttribute('data-stage-id') === stageId);
+  return stage?.querySelector('[data-testid="batch-stage-additions"]')?.textContent ?? '';
+}
+
+describe('BatchDetailPage — what goes on at each stage', () => {
+  it('shows nothing on any stage of a loaf, where everything went in at the start', () => {
+    mockBatch._set(makeBatch());
+    renderPage();
+    expect(screen.queryAllByTestId('batch-stage-additions')).toHaveLength(0);
+  });
+
+  it('reads a stage as its own ingredients, weighed, beside its times', () => {
+    mockBatch._set(
+      makeBatch({
+        quantities: [
+          {
+            ingredientId: 'ing-meat',
+            label: '1.8 kg pork shoulder',
+            percent: 100,
+            grams: 1800,
+            stageId: null,
+          },
+          {
+            ingredientId: 'ing-wine',
+            label: '40 g red wine',
+            percent: 2.2,
+            grams: 40,
+            stageId: 'stage-2',
+          },
+          {
+            ingredientId: 'ing-bung',
+            label: '1 hog bung',
+            percent: 0.5,
+            grams: 9,
+            stageId: 'stage-2',
+          },
+        ],
+      }),
+    );
+    renderPage();
+
+    const text = additionsIn('stage-2');
+    expect(text).toContain('40 g red wine');
+    expect(text).toContain('40 g');
+    expect(text).toContain('1 hog bung');
+    // The meat went in at the start, so it is under no stage at all.
+    expect(text).not.toContain('pork shoulder');
+    expect(additionsIn('stage-1')).toBe('');
+  });
+
+  it('still reads correctly with no recipe in hand at all', () => {
+    // CLAIM 2, and it is the whole reason the freeze exists: this page never joins
+    // against `recipes`, so renaming or deleting the dish cannot move a word here.
+    mockBatch._set(
+      makeBatch({
+        recipeId: 'a-recipe-that-was-deleted',
+        quantities: [
+          {
+            ingredientId: 'ing-wine',
+            label: '40 g red wine',
+            percent: 2.2,
+            grams: 40,
+            stageId: 'stage-2',
+          },
+        ],
+      }),
+    );
+    renderPage();
+    expect(additionsIn('stage-2')).toContain('40 g red wine');
+  });
+
+  it('keeps an ingredient whose stage the run does not carry, reading it at the start', () => {
+    mockBatch._set(
+      makeBatch({
+        quantities: [
+          {
+            ingredientId: 'ing-wine',
+            label: '40 g red wine',
+            percent: 2.2,
+            grams: 40,
+            stageId: 'stage-that-is-gone',
+          },
+        ],
+      }),
+    );
+    renderPage();
+
+    // Under no stage — and still in the run's weigh-out above, which is what makes
+    // this a fallback rather than a loss.
+    expect(screen.queryAllByTestId('batch-stage-additions')).toHaveLength(0);
+    expect(gramsColumn()).toEqual(['40 g']);
+  });
+
+  it('says so honestly when the ingredient had already left the recipe at freeze time', () => {
+    mockBatch._set(
+      makeBatch({
+        quantities: [
+          { ingredientId: 'ing-gone', label: '', percent: 2, grams: 17, stageId: 'stage-2' },
+        ],
+      }),
+    );
+    renderPage();
+    expect(additionsIn('stage-2')).toContain('no longer in the recipe');
   });
 });

@@ -212,8 +212,8 @@ describe('FormulaPage — which curing salt is in the jar', () => {
     const existing: Formula = {
       recipeId: RECIPE_ID,
       components: [
-        { ingredientId: 'ing-meat', percent: 100, inBasis: true },
-        { ingredientId: 'ing-salt', percent: 2.5, inBasis: false },
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null },
+        { ingredientId: 'ing-salt', percent: 2.5, inBasis: false, stageId: null },
         // ing-cure has no stored component: it is new since this formula was saved.
       ],
       referenceYield: { kind: 'basis', grams: 1000 },

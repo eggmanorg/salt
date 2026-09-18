@@ -178,3 +178,42 @@ describe('a batch document written before #1406', () => {
     );
   });
 });
+
+// Issue #1405 added `stageId` to each frozen quantity, again with a read default and
+// again with no migration. The strongest of these to state, and for the same reason
+// the formula side's is: `null` is LITERALLY WHAT EVERY RUN ALREADY IN PRODUCTION
+// MEANT — before this field, every gram went in at the beginning.
+//
+// THE BOUNDARY: this says nothing about a run whose quantity names a stage the run
+// does not carry. That is a legal document by design (the schema validates no FK) and
+// what it renders as is `stageAdditions`' claim, pinned in
+// `tests/process/stageAdditions.test.ts`.
+describe('a batch document written before #1405', () => {
+  it('reads as a run where everything went in at the start', () => {
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.quantities.map((q) => q.stageId)).toEqual([null]);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('leaves the frozen weights exactly where they were', () => {
+    // A stage says WHEN, never how much — so an old run's grams are untouched.
+    expect(BatchSchema.parse(LEGACY_BATCH).quantities[0]?.grams).toBe(816);
+  });
+
+  it('carries an assignment through the parse when a run has one', () => {
+    const parsed = BatchSchema.parse({
+      ...LEGACY_BATCH,
+      quantities: [
+        ...LEGACY_BATCH.quantities,
+        {
+          ingredientId: 'ing-wine',
+          label: '40 g red wine',
+          percent: 2,
+          grams: 36,
+          stageId: 'bulk',
+        },
+      ],
+    });
+    expect(parsed.quantities.map((q) => q.stageId)).toEqual([null, 'bulk']);
+  });
+});

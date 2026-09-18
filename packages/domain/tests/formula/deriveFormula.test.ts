@@ -44,6 +44,8 @@ describe('deriveFormula', () => {
       inBasis: false,
       density: 'oil',
       maxPercent: 12,
+      // At the start, because nothing said otherwise (issue #1405).
+      stageId: null,
     });
   });
 
@@ -53,10 +55,15 @@ describe('deriveFormula', () => {
       components: [{ ingredientId: 'ing-flour', grams: 500, inBasis: true }],
     });
     if (!derived.ok) throw new Error(derived.reason.kind);
+    // `stageId` is present and null, which is not a counterexample to this claim but
+    // the other half of it: an OPTIONAL field left out stays out, while a field with
+    // a read default is constructed explicitly so the stored document says the one
+    // thing it means (issue #1405, and the same rule `target` follows).
     expect(Object.keys(derived.formula.components[0] ?? {}).sort()).toEqual([
       'inBasis',
       'ingredientId',
       'percent',
+      'stageId',
     ]);
   });
 

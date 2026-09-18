@@ -138,8 +138,8 @@ const SHAPE = {
 const STORED: Formula = {
   recipeId: RECIPE_ID,
   components: [
-    { ingredientId: 'ing-flour', percent: 100, inBasis: true },
-    { ingredientId: 'ing-water', percent: 70, inBasis: false },
+    { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
+    { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
   ],
   referenceYield: SHAPE,
   target: null,
@@ -533,6 +533,166 @@ describe('FormulaPage — stages and the document', () => {
     await waitFor(() =>
       expect(inputsIn(container, 'formula-stage-label')[0]!.value).toBe('Bulk ferment (cool room)'),
     );
+  });
+});
+
+// ─── When an ingredient goes in (issue #1405) ───────────────────────────────────
+//
+// What these pin, and it is deliberately not "the stage control works":
+//
+//   1. IT MOVES NO GRAMS AND NO PERCENTAGES. A stage says WHEN an ingredient goes
+//      in, never how much, and this is the whole promise the feature makes to every
+//      formula already in production. Asserted over the SAVED document, because the
+//      percentages are what a batch is solved from.
+//   2. AN ASSIGNMENT SURVIVES THE ROUND TRIP, which is what makes it worth making.
+//   3. A STAGE WITH ADDITIONS READS AS ONE, with the scaled grams beside each.
+//   4. A DEAD ASSIGNMENT READS AS AT THE START — on the row's picker and in the
+//      list — rather than naming a stage that is gone or dropping the ingredient.
+
+function savedComponents() {
+  return vi.mocked(saveFormula).mock.calls[0]![0].components;
+}
+
+describe('FormulaPage — when an ingredient goes in', () => {
+  it('offers no stage control until there are stages to choose between', async () => {
+    // Same call as the place picker above: with no process there is one possible
+    // answer, and a control with one option is a question nobody can answer.
+    const { queryAllByTestId } = await openWith(STORED);
+    expect(queryAllByTestId('formula-row-stage')).toHaveLength(0);
+  });
+
+  it('defaults every ingredient to the start, so a mapped loaf has nothing new to answer', async () => {
+    const { getAllByTestId } = await openWith({ ...STORED, process: [BULK, BAKE] });
+
+    const triggers = getAllByTestId('formula-row-stage');
+    expect(triggers).toHaveLength(2);
+    for (const trigger of triggers) expect(trigger.textContent).toContain('At the start');
+  });
+
+  it('picking a stage saves it, and moves no percentage at all', async () => {
+    const { getByTestId, getAllByTestId } = await openWith({ ...STORED, process: [BULK, BAKE] });
+
+    const user = userEvent.setup();
+    await user.click(getAllByTestId('formula-row-stage')[1]!);
+    await user.click(await screen.findByRole('option', { name: 'Bake' }));
+
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+
+    // CLAIM 1. The percentages are byte-identical to `STORED`'s; only `stageId`
+    // moved. Break the "it changes when, never how much" claim — by restating on a
+    // stage change, or by letting a stage acquire a basis — and this goes red.
+    expect(savedComponents()).toEqual([
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: 'stage-bake' },
+    ]);
+  });
+
+  it('puts an ingredient back at the start, which is how an assignment is undone', async () => {
+    // There is one spelling of "at the start" and it is reachable both ways: the
+    // option and a never-touched picker are the same answer, so undoing is choosing.
+    const { getByTestId, getAllByTestId } = await openWith({
+      ...STORED,
+      components: [STORED.components[0]!, { ...STORED.components[1]!, stageId: 'stage-bake' }],
+      process: [BULK, BAKE],
+    });
+
+    const user = userEvent.setup();
+    await user.click(getAllByTestId('formula-row-stage')[1]!);
+    await user.click(await screen.findByRole('option', { name: 'At the start' }));
+
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedComponents()[1]!.stageId).toBeNull();
+  });
+
+  it('numbers a stage nobody has named yet, rather than leaving it nameless', async () => {
+    // A stage is added blank and named afterwards, so two new stages would otherwise
+    // be indistinguishable in the picker.
+    const { getByTestId, getAllByTestId } = await openWith({ ...STORED, process: [BULK] });
+
+    await fireEvent.click(getByTestId('formula-stages-add'));
+
+    const user = userEvent.setup();
+    await user.click(getAllByTestId('formula-row-stage')[0]!);
+    expect(await screen.findByRole('option', { name: 'Stage 2' })).toBeTruthy();
+  });
+
+  it('shows no additions at all while the formula does not add up', async () => {
+    // Rather than stale ones. The list is read off the SOLVE, so a formula the solve
+    // refuses has no scaled grams to print — and `formula-blocked-reason` is already
+    // saying why, so an empty stage is not a mystery.
+    const { container, getByTestId, queryAllByTestId } = await openWith({
+      ...STORED,
+      components: [STORED.components[0]!, { ...STORED.components[1]!, stageId: 'stage-bulk' }],
+      process: [BULK],
+    });
+    expect(queryAllByTestId('formula-stage-additions')).toHaveLength(1);
+
+    // Every weight cleared: nothing is in the formula, so there is nothing to solve.
+    for (const box of inputsIn(container, 'formula-row-grams')) {
+      await fireEvent.input(box, { target: { value: '' } });
+    }
+
+    await waitFor(() => expect(getByTestId('formula-blocked-reason')).toBeTruthy());
+    expect(queryAllByTestId('formula-stage-additions')).toHaveLength(0);
+  });
+
+  it('brings a stored assignment back, named, on reopen', async () => {
+    // CLAIM 2.
+    const { getAllByTestId } = await openWith({
+      ...STORED,
+      components: [STORED.components[0]!, { ...STORED.components[1]!, stageId: 'stage-bulk' }],
+      process: [BULK, BAKE],
+    });
+
+    expect(getAllByTestId('formula-row-stage')[0]!.textContent).toContain('At the start');
+    expect(getAllByTestId('formula-row-stage')[1]!.textContent).toContain('Bulk ferment');
+  });
+
+  it('reads a stage as what goes in at it, with the scaled grams', async () => {
+    // CLAIM 3. 900 g of dough at a 170% grand total is 529 g of flour and 371 g of
+    // water, so the figure under the stage is the ordinary scaled one rather than
+    // the recipe's own 350 g.
+    const { getAllByTestId, queryAllByTestId } = await openWith({
+      ...STORED,
+      components: [STORED.components[0]!, { ...STORED.components[1]!, stageId: 'stage-bulk' }],
+      process: [BULK, BAKE],
+    });
+
+    const lists = getAllByTestId('formula-stage-additions');
+    // Only the stage that takes something gets a list — the bake gets none.
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.textContent).toContain('350 g water');
+    expect(lists[0]!.textContent).toContain('371 g');
+    // And the flour, which goes in at the start, is not under a stage.
+    expect(queryAllByTestId('formula-stage-addition')).toHaveLength(1);
+  });
+
+  it('reads an ingredient whose stage was DELETED as one that goes in at the start', async () => {
+    // CLAIM 4, and the one-way id rule it rests on: a stage delete does not cascade
+    // into the components, so the ingredient is still in the formula, still scaled,
+    // still bought — and the screen must not name a stage that is gone.
+    const { getAllByTestId, queryAllByTestId, getByTestId } = await openWith({
+      ...STORED,
+      components: [
+        STORED.components[0]!,
+        { ...STORED.components[1]!, stageId: 'stage-that-was-deleted' },
+      ],
+      process: [BULK, BAKE],
+    });
+
+    expect(getAllByTestId('formula-row-stage')[1]!.textContent).toContain('At the start');
+    expect(queryAllByTestId('formula-stage-additions')).toHaveLength(0);
+
+    // And it is still a component when the formula is saved, carrying the dead id
+    // rather than having it rewritten under the cook's feet.
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    expect(savedComponents()).toEqual([
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: 'stage-that-was-deleted' },
+    ]);
   });
 });
 

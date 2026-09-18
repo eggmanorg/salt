@@ -64,15 +64,15 @@ import { requireRecipe } from './loadRecipe.js';
 // rule, and must not be written as one, and the three reasons do not share a single
 // point of failure. Reason one is a property of `process` living inside
 // `formulas/{recipeId}` alongside the human's declaration — move it into a document a
-// function can author alone (#1405 is the nearest open issue to that) and reason one
-// goes void. Reason two is a property of `canSave` requiring a declared yield, a gate
-// that has already moved once (`FormulaPage.svelte:1046-1051` cites the #1325 review
-// for its current shape) and could move again without `process` going anywhere —
-// relax it and reason two goes void on its own. Reason three is a property of the
-// re-run confirmation existing at all, plus the formula document carrying no
-// timestamps or history — drop the dialog, or add history, and reason three goes void
-// on its own. Any one reason going void reopens the question for that reason alone;
-// only #1405 moving `process` voids all three at once. The SERVER half of the claim
+// function can author alone and reason one goes void. Reason two is a property of
+// `canSave` requiring a declared yield, a gate that has already moved once
+// (`FormulaPage.svelte:1046-1051` cites the #1325 review for its current shape) and
+// could move again without `process` going anywhere — relax it and reason two goes
+// void on its own. Reason three is a property of the re-run confirmation existing at
+// all, plus the formula document carrying no timestamps or history — drop the dialog,
+// or add history, and reason three goes void on its own. Any one reason going void
+// reopens the question for that reason alone; only moving `process` out of
+// `formulas/{recipeId}` voids all three at once. The SERVER half of the claim
 // is pinned by `tests/flows/extractProcessStages.test.ts` → "nothing is written"; the
 // CLIENT half by `apps/web-pwa/tests/FormulaPageStages.test.ts` → "does NOT save what
 // it found", with the confirmation gate itself at `:287-298` and the disabled-Save
@@ -141,10 +141,19 @@ Write British English. Temperatures in °C only.`;
 // cleanest duration signal in the whole document — a step that says "prove for an
 // hour" carries `[timer: 60 minutes]` and needs no re-reading of the prose.
 //
-// INGREDIENTS ARE DELIBERATELY NOT SHOWN. A stage is a fact about the method, and
-// an ingredient list in front of the model is an invitation to author an addition
-// schedule — which this phase does not model (see schemas/process.ts) and which
-// would come back as stages nobody asked for.
+// INGREDIENTS ARE DELIBERATELY NOT SHOWN, AND THE REASON HAS CHANGED (issue #1405).
+// Additions are now modelled — a formula component names the stage it goes in at —
+// so "this phase does not model them" is no longer why. The reason now is that
+// WHICH INGREDIENT GOES IN WHEN IS THE COOK'S CALL AND NOT THE MODEL'S: a cure has
+// three stages and a handful of additions, so assigning them is seconds of work on
+// the formula screen, where a model guessing it is a second extraction contract to
+// calibrate and a second thing to correct — and a wrong guess puts the cure rub in
+// week three. An ingredient list in front of the model is also still an invitation
+// to author stages nobody asked for.
+//
+// So this is not a gap awaiting the field that now exists. Anyone adding the
+// ingredients here needs a requirement of their own, and the output schema
+// (`ExtractProcessStagesAIOutputSchema`) would have to grow the assignment with it.
 function promptFor(recipe: RecipeDoc): string {
   const stepLines = recipe.steps.map((step, i) => {
     const timer = step.timer ? ` [timer: ${step.timer.durationMinutes} minutes]` : '';

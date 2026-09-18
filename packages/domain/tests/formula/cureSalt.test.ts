@@ -617,8 +617,14 @@ describe('withCureSaltSubstituted', () => {
       recipeId: 'recipe-1',
       schemaVersion: 1,
       components: [
-        { ingredientId: 'ing-meat', percent: 100, inBasis: true },
-        { ingredientId: 'ing-salt', percent: 0, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null },
+        {
+          ingredientId: 'ing-salt',
+          percent: 0,
+          inBasis: false,
+          saltProduct: 'plain',
+          stageId: null,
+        },
         {
           ingredientId: 'ing-cure',
           percent: 2.6,
@@ -626,6 +632,7 @@ describe('withCureSaltSubstituted', () => {
           saltProduct: 'nitritedCuringSalt',
           minPercent: 2,
           maxPercent: 3.15,
+          stageId: null,
         },
       ],
       referenceYield: { kind: 'basis', grams: 1000 },

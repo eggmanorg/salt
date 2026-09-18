@@ -79,6 +79,26 @@ export const BatchQuantitySchema = z.object({
   percent: z.number().nonnegative(),
   // What you weigh, through the formula module's one rounding authority.
   grams: z.number().nonnegative(),
+  // WHEN IT GOES ON, frozen from the formula component (issue #1405) — the `id` of
+  // a stage in THIS RUN's own `stages`, or `null` for at the start. Open the batch in
+  // week three and the stage in hand says what to put on the meat and how much.
+  //
+  // THE ID, NEVER A COPIED LABEL, and this is `BatchObservationSchema.stageId`'s
+  // argument verbatim: `stages` is frozen on this same document, so the join cannot
+  // go stale, and a copied string would be a second source of truth for something the
+  // freeze has already pinned. `stageLabelById` is the one join.
+  //
+  // IT IS THIS RUN'S ID AND NOT THE FORMULA'S. A run started from an accepted
+  // schedule proposal re-mints every stage id (`batchService.mintStage`), so the
+  // write path rewrites the assignments through `ProposedStage.sourceStageId` on the
+  // way in — see `startBatch`. An assignment whose stage the restructure dropped
+  // arrives here as `null`, which is the same at-the-start reading as everywhere else.
+  //
+  // A READ DEFAULT for the reason every other one on this document is: `batches`
+  // holds runs written before this field, every one of which put everything in at the
+  // start. `schemaVersion` stays at 1;
+  // `tests/batch/legacyBatchDocument.test.ts` pins it.
+  stageId: z.string().nullable().default(null),
 });
 
 // What the dough divides into, echoed from the solve so a batch can still say

@@ -54,7 +54,13 @@ function runningLoaf(): BatchDoc {
     completedStepIds: [],
     startedBy: null,
     quantities: [
-      { ingredientId: 'ing-flour', label: '500g strong white', percent: 100, grams: 816 },
+      {
+        ingredientId: 'ing-flour',
+        label: '500g strong white',
+        percent: 100,
+        grams: 816,
+        stageId: null,
+      },
     ],
     totals: {
       basisGrams: 816,

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
+import type { Recipe } from '@salt/domain';
+import type { BatchDoc, BatchStageDoc, Formula, ProposedStage } from '@salt/domain/schemas';
 
 // The three stage commands on `batchService` (issue #1275, extending #812 phase 3).
 //
@@ -38,6 +39,7 @@ import {
   setIngredientChecked,
   setStepDone,
   skipStage,
+  startBatch,
   startStage,
 } from '../src/lib/batchService.js';
 import { get } from 'svelte/store';
@@ -236,5 +238,189 @@ describe('the three commands share one write path', () => {
       expect(written().updatedAt).toBe(NOW);
       expect(get(batch)?.updatedAt).toBe(NOW);
     }
+  });
+});
+
+// ─── The assignments survive a restructured proposal (issue #1405) ──────────────
+//
+// THE ONE THING IN THIS FEATURE THAT WOULD FAIL SILENTLY. `mintStage` gives every
+// proposed stage a brand-new id, so a component's `stageId` — which names a stage of
+// the REFERENCE process — points at nothing the moment a proposal is accepted. The
+// failure is invisible: "at the start" is exactly what a formula that never assigned
+// anything looks like, and a cure is the most likely thing to use a proposal.
+//
+// So these are not tests of a mapping helper; they are the pin on that silence.
+// Delete the rewrite in `restructured` and the first two go red.
+
+const PROPOSAL_RECIPE = {
+  id: 'recipe-1',
+  schemaVersion: 1,
+  kind: 'recipe',
+  cureCategory: null,
+  title: 'Coppa',
+  description: null,
+  ingredients: [
+    {
+      id: 'grp-1',
+      name: null,
+      items: [
+        {
+          id: 'ing-meat',
+          rawText: '1.8 kg pork shoulder',
+          parsed: null,
+          canonId: null,
+          matchState: 'matched' as const,
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+        {
+          id: 'ing-wine',
+          rawText: '40 g red wine',
+          parsed: null,
+          canonId: null,
+          matchState: 'matched' as const,
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ],
+    },
+  ],
+  steps: [{ id: 'step-1', text: 'Rub.', timer: null, note: null }],
+  metadata: { servings: null, tags: [] },
+  source: null,
+  notes: null,
+  image: null,
+  createdAt: '2026-08-01T09:00:00.000Z',
+  updatedAt: '2026-08-01T09:00:00.000Z',
+} as unknown as Recipe;
+
+// The wine goes on at the WASH, which is the second reference stage.
+const CURE_FORMULA = {
+  recipeId: 'recipe-1',
+  schemaVersion: 1,
+  target: null,
+  components: [
+    { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null },
+    { ingredientId: 'ing-wine', percent: 2, inBasis: false, stageId: 'ref-wash' },
+  ],
+  referenceYield: { kind: 'basis', grams: 1800 },
+  process: [
+    {
+      id: 'ref-rub',
+      label: 'Rub and bag',
+      kind: 'active',
+      environment: null,
+      duration: { kind: 'fixed', minutes: 30 },
+      until: null,
+      stepId: null,
+      optional: false,
+    },
+    {
+      id: 'ref-wash',
+      label: 'Wash and case',
+      kind: 'wait',
+      environment: null,
+      duration: { kind: 'fixed', minutes: 4320 },
+      until: null,
+      stepId: null,
+      optional: false,
+    },
+  ],
+} as unknown as Formula;
+
+function proposed(sourceStageId: string | null, label: string, minutes: number) {
+  return {
+    label,
+    kind: 'wait' as const,
+    environment: null,
+    duration: { kind: 'fixed' as const, minutes },
+    until: null,
+    stepId: null,
+    optional: false,
+    sourceStageId,
+  } as unknown as ProposedStage;
+}
+
+const PROPOSAL_ANCHOR = { kind: 'startAt', at: '2026-08-14T20:00:00.000Z' } as const;
+
+function quantityFor(ingredientId: string): BatchDoc['quantities'][number] {
+  return written().quantities.find((q) => q.ingredientId === ingredientId)!;
+}
+
+describe('startBatch — a run from a restructured proposal', () => {
+  it('rewrites the assignment onto the new stage id rather than losing it', async () => {
+    await startBatch({
+      recipe: PROPOSAL_RECIPE,
+      formula: CURE_FORMULA,
+      anchor: PROPOSAL_ANCHOR,
+      proposedStages: [
+        proposed('ref-rub', 'Rub and bag', 30),
+        proposed('ref-wash', 'Wash and case', 5760),
+      ],
+    });
+
+    const run = written();
+    const wash = run.stages[1]!;
+    // A brand-new id, minted by the write path — the reference id is gone.
+    expect(wash.id).not.toBe('ref-wash');
+    expect(quantityFor('ing-wine').stageId).toBe(wash.id);
+    expect(quantityFor('ing-meat').stageId).toBeNull();
+    // And the provenance is USED, never frozen: nothing on the run cites the
+    // reference process.
+    expect(JSON.stringify(run)).not.toContain('sourceStageId');
+    expect(JSON.stringify(run)).not.toContain('ref-wash');
+  });
+
+  it('reads an assignment whose stage the restructure DROPPED as at the start', async () => {
+    // The stated fallback, and the alternative is worse: an id pointing at nothing
+    // renders as at the start anyway, so writing it would only leave a dangling
+    // reference for a later reader to chase.
+    await startBatch({
+      recipe: PROPOSAL_RECIPE,
+      formula: CURE_FORMULA,
+      anchor: PROPOSAL_ANCHOR,
+      proposedStages: [
+        proposed('ref-rub', 'Rub and bag', 30),
+        proposed(null, 'Cold rest the model added', 1440),
+      ],
+    });
+
+    expect(quantityFor('ing-wine').stageId).toBeNull();
+    // Still weighed, still on the run — dropping a stage does not drop an ingredient.
+    expect(quantityFor('ing-wine').grams).toBe(36);
+  });
+
+  it('puts an ingredient in at the EARLIEST of the stages its own split into', async () => {
+    // `ProposedStageSchema` is explicit that two proposed stages may cite one
+    // reference stage. An ingredient is added once, so it goes on at the first of
+    // them — which is when the cook would actually add it.
+    await startBatch({
+      recipe: PROPOSAL_RECIPE,
+      formula: CURE_FORMULA,
+      anchor: PROPOSAL_ANCHOR,
+      proposedStages: [
+        proposed('ref-rub', 'Rub and bag', 30),
+        proposed('ref-wash', 'Wash', 60),
+        proposed('ref-wash', 'Case and hang', 5760),
+      ],
+    });
+
+    const run = written();
+    expect(run.stages.map((s) => s.label)).toEqual(['Rub and bag', 'Wash', 'Case and hang']);
+    expect(quantityFor('ing-wine').stageId).toBe(run.stages[1]!.id);
+  });
+
+  it('leaves the assignments exactly as the formula wrote them when no proposal is used', async () => {
+    // The ordinary path, and the control for the three above: with no restructure
+    // there is no re-minting, so the reference ids ARE the run's ids.
+    await startBatch({
+      recipe: PROPOSAL_RECIPE,
+      formula: CURE_FORMULA,
+      anchor: PROPOSAL_ANCHOR,
+    });
+
+    expect(written().stages.map((s) => s.id)).toEqual(['ref-rub', 'ref-wash']);
+    expect(quantityFor('ing-wine').stageId).toBe('ref-wash');
+    expect(quantityFor('ing-meat').stageId).toBeNull();
   });
 });

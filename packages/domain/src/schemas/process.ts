@@ -9,16 +9,21 @@ import { z } from 'zod';
 // else today, and a wrapper is a container waiting for a tenant. `ProcessSchema`
 // exists as the alias so the noun has a name.
 //
-// WHAT IS DELIBERATELY NOT HERE YET. docs/formulas-schedules-batches.md says
-// stages must be able to carry ADDITIONS (a cure rubs at stage one, cases at stage
-// three) and REMOVALS (kefir strains its grains back out). Neither is modelled
-// here, and that is not an oversight: nothing in this phase produces or consumes
-// either, and empty scaffolding is a field every reader must handle for no one's
-// benefit. What the contract actually requires is that the shape not PRECLUDE
-// them, and a flat ordered array of stages with stable ids does not — adding
-// `additions?: …` later touches nothing, because `process` is an optional field on
-// a greenfield collection with no migration. Phase 03 (ferments) and phase 04
-// (cures) own that addition.
+// ADDITIONS HAVE ARRIVED, AND NOT AS A FIELD HERE (issue #1405, phase 04). A cure
+// rubs at stage one, washes at stage two and cases at stage three, and the way that
+// is expressed is `FormulaComponentSchema.stageId` — the component names the stage,
+// referencing the `id` below. This block used to promise `additions?: …` on the
+// stage, and the issue rejected it: an ingredient is added exactly once, so a field
+// on the COMPONENT makes that structural rather than a rule somebody enforces, and
+// it keeps one list of ingredients on the formula so the basis, the percentages, the
+// solve and the rounding are untouched. Read `stageId`'s header for the whole
+// argument and for the one-way-id limit it states.
+//
+// STILL NOT HERE: REMOVALS. Kefir strains its grains back out, kombucha holds liquid
+// back, sourdough discards. Nothing produces or consumes one, and empty scaffolding
+// is a field every reader must handle for no one's benefit. What the contract
+// requires is that the shape not PRECLUDE them, and a flat ordered array of stages
+// with stable ids does not. Phase 05 (cultures) owns it.
 //
 // Also not here, and not anywhere: scheduling, a clock, or any notion of "now".
 // A stage says how long it takes, never when it starts. Phase 02 of the epic owns
@@ -155,7 +160,9 @@ export const ProcessStageContentSchema = z.object({
 // that has neither.
 export const ProcessStageSchema = ProcessStageContentSchema.extend({
   // Document-local identity, minted by the write path. Load-bearing: it keys the
-  // review rows, and it is what a future `additions` array would reference.
+  // review rows, and it is what `FormulaComponentSchema.stageId` references to say
+  // when an ingredient goes in (issue #1405). Not a key anything validates against:
+  // a component naming a stage this process no longer has reads as at the start.
   id: z.string(),
 });
 

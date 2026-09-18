@@ -15,9 +15,9 @@ function coppa(): Formula {
   return {
     recipeId: 'coppa',
     components: [
-      { ingredientId: MEAT, percent: 100, inBasis: true },
-      { ingredientId: CURE_SALT, percent: 2.75, inBasis: false },
-      { ingredientId: SUGAR, percent: 0.5, inBasis: false },
+      { ingredientId: MEAT, percent: 100, inBasis: true, stageId: null },
+      { ingredientId: CURE_SALT, percent: 2.75, inBasis: false, stageId: null },
+      { ingredientId: SUGAR, percent: 0.5, inBasis: false, stageId: null },
     ],
     referenceYield: { kind: 'basis', grams: 1000 },
     target: null,
@@ -115,10 +115,10 @@ describe('a solve that cannot be satisfied', () => {
     const unnormalised: Formula = {
       recipeId: 'three-flours',
       components: [
-        { ingredientId: 'ing-a', percent: 33.3333, inBasis: true },
-        { ingredientId: 'ing-b', percent: 33.3333, inBasis: true },
-        { ingredientId: 'ing-c', percent: 33.3333, inBasis: true },
-        { ingredientId: 'ing-water', percent: 70, inBasis: false },
+        { ingredientId: 'ing-a', percent: 33.3333, inBasis: true, stageId: null },
+        { ingredientId: 'ing-b', percent: 33.3333, inBasis: true, stageId: null },
+        { ingredientId: 'ing-c', percent: 33.3333, inBasis: true, stageId: null },
+        { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
       ],
       referenceYield: basisYield(300),
       target: null,
@@ -170,14 +170,15 @@ describe('the bound seam', () => {
     return {
       recipeId: 'rail-loaf',
       components: [
-        { ingredientId: 'ing-flour', percent: 100, inBasis: true },
-        { ingredientId: 'ing-water', percent: 70, inBasis: false },
+        { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
+        { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
         {
           ingredientId: YEAST,
           percent: yeastPercent,
           inBasis: false,
           minPercent: 0.2,
           maxPercent: 2,
+          stageId: null,
         },
       ],
       referenceYield: { kind: 'basis', grams: 500 },
