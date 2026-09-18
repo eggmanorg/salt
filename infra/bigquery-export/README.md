@@ -46,7 +46,7 @@ do not:
   it), but it asserts no parent, so a later `observations` subcollection under
   something else would widen the export with nothing saying so. The wildcard
   form is the same query with the parent named.
-- `WILDCARD_IDS=yes` — adds a `path_params` column holding the captured
+- `WILDCARD_IDS=true` — adds a `path_params` column holding the captured
   `batchId` as a JSON string. Without it an observation row carries its own
   document id and no parent, and a reading cannot be traced to the run it came
   from.
@@ -68,10 +68,16 @@ SELECT
   CAST(JSON_VALUE(o.data, '$.relativeHumidityPercent') AS FLOAT64) AS rh_pct,
   JSON_VALUE(o.data, '$.note') AS note
 FROM `s2-prod-e46bd.firestore_export.batchObservations_raw_latest` o
-JOIN `s2-prod-e46bd.firestore_export.batches_raw_latest` b
+LEFT JOIN `s2-prod-e46bd.firestore_export.batches_raw_latest` b
   ON b.document_id = JSON_VALUE(o.path_params, '$.batchId')
 ORDER BY recipe, observed_at
 ```
+
+It is a `LEFT JOIN`, not an inner one: `batches` is delete-means-delete like
+every other collection here, so a run whose document has since been removed
+would otherwise silently drop its observation rows too. The changelog is the
+point of this export — an inner join would re-impose the deletion the export
+exists to survive, leaving `recipe` null for those rows instead.
 
 The numeric fields are each their own value on the document, so "how quickly did
 the last three bresaola dry" is an `AVG` over a column rather than a person
@@ -80,7 +86,7 @@ numbers null, so aggregate with `AVG`/`MIN`/`MAX`, which skip nulls, rather than
 dividing by `COUNT(*)`.
 
 Scope note on the join: `path_params` is written to the raw changelog by
-`WILDCARD_IDS=yes`, and the query above reads it from the `_raw_latest` view.
+`WILDCARD_IDS=true`, and the query above reads it from the `_raw_latest` view.
 That the view carries the column through is the extension's behaviour and not
 something this repo can assert — confirm it once against the real tables when
 the instances are installed, and fall back to `batchObservations_raw_changelog`
@@ -185,7 +191,7 @@ the table prefix matching `TABLE_ID`, and the collection-group flag **true**:
 
 The last four flags are not optional padding. `--non-interactive` suppresses the
 prompts but supplies no defaults, so omitting `--query-collection-group` is a
-hard `[ERROR] QueryCollectionGroup is not specified.` — including on the two
+hard `[ERROR] QueryCollectionGroup is not specified.` — including on all five
 root-collection runs, where the answer is simply `false`. And
 `--use-new-snapshot-query-syntax true` must mirror the extension's
 `USE_NEW_SNAPSHOT_QUERY_SYNTAX=yes` — the flag decides how the import rewrites
