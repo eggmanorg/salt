@@ -585,11 +585,20 @@ export const coverageThresholds = {
   // `takeImportedDraft`'s optional-id arm went; that one was inside tolerance, so
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
+  // PINNED FROM CI, NOT FROM A LAPTOP (issue #1465, Phase 3). CI's two runners
+  // agree with each other — `coverage-platforms` was green on the run that
+  // produced these — and both read 85.36/75.10 (1707/1736) where this Mac reads
+  // 85.28/75.08 (1704/1725). That is the boundary this file's own
+  // cross-platform paragraph states in as many words: the check covers
+  // `ubuntu-latest` against `macos-latest`, and "a developer's own machine is
+  // not one of them and never will be". The gate enforces against CI, so CI's
+  // figure is the one that goes here; a local `coverage:ratchet:check` reads
+  // fractionally below this floor and that is expected, not a regression.
   'apps/web-pwa/src/routes/**': {
-    lines: 85.28,
-    branches: 75.08,
-    uncoveredLines: 1704,
-    uncoveredBranches: 1725,
+    lines: 85.36,
+    branches: 75.1,
+    uncoveredLines: 1707,
+    uncoveredBranches: 1736,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
