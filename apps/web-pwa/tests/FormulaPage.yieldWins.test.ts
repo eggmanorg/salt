@@ -197,6 +197,11 @@ function weights(container: HTMLElement): string[] {
   return gramsInputs(container).map((input) => input.value);
 }
 
+/** An element's words with the template's own line breaks collapsed. */
+function cardText(el: HTMLElement): string {
+  return (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
 function weightSum(container: HTMLElement): number {
   return weights(container).reduce((sum, text) => sum + Number(text), 0);
 }
@@ -458,7 +463,7 @@ describe('FormulaPage — the declared yield wins', () => {
     await declareTin(container, 900);
     await waitFor(() => expect(weights(container)[0]).toBe('519'));
 
-    const card = getByTestId('formula-dough-total').textContent ?? '';
+    const card = cardText(getByTestId('formula-dough-total'));
     expect(card).toContain('900 g of dough');
     // Neither the recipe's old sum nor the restated boxes' sum appears beside it.
     expect(card).not.toContain('867');
@@ -692,5 +697,135 @@ describe('FormulaPage — the declared yield wins', () => {
     // then restate to the stored declaration.
     mockFormula._set(written);
     await waitFor(() => expect(weights(container)).toEqual(saved));
+  });
+});
+
+// ─── The other direction: a weight of what goes in (issue #1402) ───────────────
+//
+// Everything above declares what the formula MAKES and solves backwards for the
+// basis. A cure is asked the opposite question — you unwrap the shoulder, put it on
+// the scale, and that figure IS the 100%. The arithmetic has supported it since
+// #782; what was missing was a screen that asked.
+//
+// WHAT THESE PIN, and their boundary. The three claims below are about the
+// DECLARATION, not about safety: that the screen can express a basis yield, that it
+// restates and round-trips through the same two calls the target direction uses, and
+// that nothing on the card invents a count, a shape or a finished weight. No bound
+// is stamped and nothing is refused here — that is phase 2, and a formula that saves
+// on this screen is not one Salt has pronounced safe.
+describe('FormulaPage — a weight of what goes in', () => {
+  // A coppa: 2 400 g of trimmed shoulder as the basis, 2.5% salt, 0.25% cure #1.
+  // No flour anywhere, so `guessBasisIngredientIds` guesses nothing and the basis
+  // is a tap — which is the honest shape for every craft but bread.
+  const COPPA: IngredientSpec[] = [
+    {
+      id: 'ing-shoulder',
+      rawText: '2400 g pork shoulder, trimmed',
+      canonId: 'canon-shoulder',
+      grams: 2400,
+    },
+    { id: 'ing-salt', rawText: '60 g sea salt', canonId: 'canon-salt', grams: 60 },
+    { id: 'ing-cure', rawText: '6 g cure #1', canonId: 'canon-cure', grams: 6 },
+  ];
+
+  function coppa(): Recipe {
+    return {
+      ...emptyRecipe(RECIPE_ID, WRITTEN_AT),
+      title: 'Coppa',
+      ingredients: [{ ...emptyIngredientGroup('grp-1'), items: COPPA.map(weighed) }],
+      steps: [newStep('step-1', 'Rub and bag.')],
+      updatedAt: WRITTEN_AT,
+    };
+  }
+
+  async function pick(container: HTMLElement, label: string): Promise<void> {
+    const option = [...container.querySelectorAll('[role="radio"]')].find((el) =>
+      el.textContent?.includes(label),
+    );
+    if (option === undefined) throw new Error(`no answer labelled ${label}`);
+    await fireEvent.click(option);
+  }
+
+  /** Open a coppa with its shoulder in the basis, and nothing declared yet. */
+  async function openCoppa() {
+    mockRecipes._set([coppa()]);
+    const rendered = renderPage();
+    await ready(rendered.getByTestId);
+    await fireEvent.click(basisBoxes(rendered.container)[0]!);
+    return rendered;
+  }
+
+  it('declares a weight going in, and restates every row against it', async () => {
+    const { getByTestId, container } = await openCoppa();
+
+    await pick(container, 'A weight of what goes in');
+    await fireEvent.input(getByTestId('formula-basis-grams'), { target: { value: '2430' } });
+    await fireEvent.blur(getByTestId('formula-basis-grams'));
+
+    // The shoulder IS the basis, so it lands on exactly what was typed; 2.5% of
+    // 2 430 is 60.75 g and 0.25% is 6.075 g, both through `roundGrams`.
+    await waitFor(() => expect(weights(container)).toEqual(['2430', '61', '6.1']));
+    expect(cardText(getByTestId('formula-dough-total'))).toContain(
+      'This is for 2430 g of what goes in.',
+    );
+  });
+
+  it('invents no count, no shape and no finished weight', async () => {
+    // THE CLAIM, WITH ITS BOUNDARY: nothing the DECLARATION renders states a count,
+    // a per-unit weight or a projected finished weight. The radio group above still
+    // lists the four dough answers by name — they are the other answers to the same
+    // question, and hiding them would mean the screen deciding which direction this
+    // recipe solves in.
+    const { getByTestId, container } = await openCoppa();
+
+    await pick(container, 'A weight of what goes in');
+    await fireEvent.input(getByTestId('formula-basis-grams'), { target: { value: '2430' } });
+    await fireEvent.blur(getByTestId('formula-basis-grams'));
+
+    await waitFor(() => expect(weights(container)[0]).toBe('2430'));
+    const card = cardText(getByTestId('formula-dough-total'));
+    expect(card).not.toContain('×');
+    expect(card).not.toContain('dough');
+    expect(card).not.toContain('makes');
+    // One box, and no second figure beside it: no trim allowance, no green weight.
+    expect(container.querySelectorAll('[data-testid="formula-basis-grams"]')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="formula-pieces"]')).toBeNull();
+    expect(container.querySelector('[data-testid="formula-tin"]')).toBeNull();
+  });
+
+  it('shows, saves and reopens the one weight', async () => {
+    const { getByTestId, container } = await openCoppa();
+
+    await pick(container, 'A weight of what goes in');
+    await fireEvent.input(getByTestId('formula-basis-grams'), { target: { value: '2430' } });
+    await fireEvent.blur(getByTestId('formula-basis-grams'));
+    await waitFor(() => expect(weights(container)[0]).toBe('2430'));
+    const saved = weights(container);
+
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    );
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    const written = vi.mocked(saveFormula).mock.calls[0]![0];
+    expect(written.referenceYield).toEqual({ kind: 'basis', grams: 2430 });
+
+    // REOPENED. The document holds percentages and one weight, so this exercises
+    // the whole recovery path: anchor back to the recipe's own grams, then restate
+    // to the stored basis. The answer comes back as the one that can express it.
+    mockFormula._set(written);
+    await waitFor(() => expect(getByTestId('formula-basis-grams')).toHaveValue('2430'));
+    expect(weights(container)).toEqual(saved);
+  });
+
+  it('words the block for the question it actually asked', async () => {
+    // "Say what this makes" would point at a box that is not on this screen.
+    const { getByTestId, container } = await openCoppa();
+    await pick(container, 'A weight of what goes in');
+
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(true),
+    );
+    expect(getByTestId('formula-blocked-reason').textContent).toContain('Say what this is for');
   });
 });

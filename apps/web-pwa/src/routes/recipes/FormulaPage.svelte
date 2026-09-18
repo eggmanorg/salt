@@ -36,6 +36,7 @@
     extractProcessStages,
   } from '../../lib/formulaService.js';
   import {
+    basisYield,
     deriveFormula,
     flattenIngredients,
     gramsFromParsed,
@@ -52,19 +53,19 @@
   } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import type {
-    DoughAmount,
     Formula,
     FormulaComponent,
     FormulaTarget,
     ProcessStage,
     ProcessStageKind,
+    ReferenceYield,
   } from '@salt/domain/schemas';
   import { equipment } from '../../lib/equipmentService.js';
   import { kindOf } from './recipeKind.js';
   import {
     EMPTY_DOUGH_ANSWER,
     LOAF_TIN_CHIP_GRAMS,
-    doughAmountFrom,
+    referenceYieldFrom,
     seedDoughAnswer,
     suggestedTrayGrams,
     type DoughAnswerFields,
@@ -437,12 +438,14 @@
 
     // Recovering the declaration. There is nothing to match against any more — the
     // document holds `{ count, unitDoughGrams }` and nothing else — so the numbers
-    // come straight back into the boxes. Which of the three answers they land in
-    // is `seedDoughAnswer`'s call, and it is a presentation choice only: all three
+    // come straight back into the boxes. Which of the dough answers they land in
+    // is `seedDoughAnswer`'s call, and it is a presentation choice only: they all
     // save the identical document.
-    const seeded = seedDoughAnswer(
-      stored?.referenceYield.kind === 'target' ? stored.referenceYield.shape : null,
-    );
+    //
+    // A BASIS YIELD IS NOT A PRESENTATION CHOICE (issue #1402). It comes back as the
+    // one answer that can express it, into the one box that holds it — which is why
+    // a weighed formula reopens saying the weight it was saved at.
+    const seeded = seedDoughAnswer(stored?.referenceYield ?? null);
     answerMode = seeded.mode;
     answer = seeded.fields;
     // A re-seed is a fresh reading of the document, so the count box is untouched
@@ -717,6 +720,10 @@
   // to close. `pieces` is reached only by an explicit mode choice, which is itself
   // the declaring act, so it needs no gate. The bake sheet passes no anchor at
   // all; `doughAnswer.ts` says why.
+  // A WEIGHED BASIS TAKES NO ANCHOR either, and for a stronger reason than a tray
+  // does (issue #1402): the anchor answers "how much does each of N get out of this
+  // dough", and a weighed basis has no N and nothing to divide. It falls through to
+  // the `null` below rather than being named, exactly as `tray` and `weight` do.
   function anchorFor(mode: DoughAnswerMode, doughGrams: number): number | null {
     if (mode === 'pieces') return doughGrams;
     if (mode === 'tin') return tinCountTouched ? doughGrams : null;
@@ -745,16 +752,27 @@
   // yield anyone can bake to.
   //
   // A declaration that rounds away to nothing is no declaration: `DoughAmount` is
-  // strictly positive, and 100 pieces of a 1 g dough is not 100 × 0 g.
+  // strictly positive, and 100 pieces of a 1 g dough is not 100 × 0 g. `basis` is
+  // `z.number().positive()` for the same reason and gets the same treatment.
+  //
+  // EITHER DIRECTION, ONE FUNCTION (issue #1402). A `ReferenceYield` rather than a
+  // `DoughAmount`, so "12 × 120 g of dough" and "2,430 g of meat" are one kind of
+  // answer with one rounding rule and one null case — the alternative was a second
+  // declaration path with its own round, which is precisely the drift the round-2
+  // rework of #1325 removed.
   function declarationFrom(
     mode: DoughAnswerMode,
     fields: DoughAnswerFields,
     doughGrams: number,
-  ): DoughAmount | null {
-    const amount = doughAmountFrom(mode, fields, anchorFor(mode, doughGrams));
-    if (amount === null) return null;
-    const unitDoughGrams = roundGrams(amount.unitDoughGrams);
-    return unitDoughGrams > 0 ? { count: amount.count, unitDoughGrams } : null;
+  ): ReferenceYield | null {
+    const declared = referenceYieldFrom(mode, fields, anchorFor(mode, doughGrams));
+    if (declared === null) return null;
+    if (declared.kind === 'basis') {
+      const grams = roundGrams(declared.grams);
+      return grams > 0 ? basisYield(grams) : null;
+    }
+    const unitDoughGrams = roundGrams(declared.shape.unitDoughGrams);
+    return unitDoughGrams > 0 ? targetYield({ count: declared.shape.count, unitDoughGrams }) : null;
   }
 
   const shape = $derived(declarationFrom(answerMode, answer, asWrittenDoughGrams));
@@ -763,7 +781,11 @@
   // discoverable way back to "divide it for me" — and the card's sentence reads the
   // resolved declaration back anyway. It is `shape`'s own figure, rounded where
   // the declaration was, so the hint, the card and the document are one number.
-  const dividedUnitHint = $derived(shape === null ? null : String(shape.unitDoughGrams));
+  //
+  // Null for a weighed basis, which has no per-unit box to hint at.
+  const dividedUnitHint = $derived(
+    shape === null || shape.kind === 'basis' ? null : String(shape.shape.unitDoughGrams),
+  );
   // A PROPOSAL for the grams box, never a locked figure — the coefficient must not
   // become load-bearing on the scaling (`doughAmount.ts`).
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
@@ -775,7 +797,7 @@
     deriveFormula({
       recipeId,
       components: componentInputs,
-      ...(shape ? { referenceYield: targetYield(shape) } : {}),
+      ...(shape ? { referenceYield: shape } : {}),
     }),
   );
 
@@ -806,12 +828,16 @@
   // its fixed point is harmless. The callers are the commits: a yield box's
   // `onblur`, a tin chip, the answer-mode radio, the tray's Suggest button, an
   // ingredient weight box's `onblur`, and an include toggle.
-  function rowsRestatedAt(current: readonly Row[], target: DoughAmount | null): Row[] {
+  // BOTH DIRECTIONS, SAME STORY (issue #1402). `solveFormula` resolves a weighed
+  // basis into per-row grams exactly as it resolves a declared dough total, so
+  // nothing here branches: declare 2,430 g of meat and the cure salt restates to
+  // 6.1 g by the same two calls that turn a 900 g tin into 510 g of flour.
+  function rowsRestatedAt(current: readonly Row[], target: ReferenceYield | null): Row[] {
     if (target === null) return [...current];
     const derived = deriveFormula({
       recipeId,
       components: componentsFrom(current),
-      referenceYield: targetYield(target),
+      referenceYield: target,
     });
     if (!derived.ok) return [...current];
     const solved = solveFormula(derived.formula);
@@ -943,7 +969,13 @@
   );
 
   const blockedReason = $derived.by(() => {
-    if (shape === null) return 'Say what this makes before saving.';
+    // Worded for the question that was actually asked: a weighed formula is not
+    // asked what it makes, so telling its author to say so would point at a box
+    // that is not on their screen.
+    if (shape === null)
+      return answerMode === 'basis'
+        ? 'Say what this is for before saving.'
+        : 'Say what this makes before saving.';
     if (weightLossError !== '' || targetPhError !== '')
       return 'Fix the target before saving, or clear the box.';
     if (!derivation.ok) {
@@ -1144,10 +1176,15 @@
             </div>
           {/if}
 
-          <!-- ─── What it makes ──────────────────────────────────────────────── -->
+          <!-- ─── What it makes, or what it is for ───────────────────────────── -->
           <Card>
             <CardHeader>
-              <CardTitle>What this makes</CardTitle>
+              <!-- Follows the answer rather than the recipe's kind: the card's title
+                   and the sentence at its foot have to agree, and only one of the
+                   five answers declares a weight going in (issue #1402). -->
+              <CardTitle>
+                {answerMode === 'basis' ? 'What this is for' : 'What this makes'}
+              </CardTitle>
             </CardHeader>
             <CardContent class="flex flex-col gap-3">
               <!-- The same three answers the bake sheet asks, with different
@@ -1169,6 +1206,13 @@
                 <RadioGroupItem value="tray" label="A tray or dish" />
                 <RadioGroupItem value="pieces" label="A number of pieces" />
                 <RadioGroupItem value="weight" label="A weight of dough" />
+                <!-- THE OTHER DIRECTION (issue #1402). Every answer above says how
+                     much comes out; this one says what goes in, which is the only
+                     question a cure can answer — you weigh the shoulder. Offered
+                     on presence rather than on the recipe's kind: the radio is the
+                     same five options for a loaf and for a coppa, and the answer
+                     the person picks is what makes the formula one or the other. -->
+                <RadioGroupItem value="basis" label="A weight of what goes in" />
               </RadioGroup>
 
               {#if answerMode === 'tin'}
@@ -1369,6 +1413,33 @@
                     data-testid="formula-piece-grams"
                   />
                 </div>
+              {:else if answerMode === 'basis'}
+                <!-- ONE BOX, AND THERE IS NO SECOND ONE (issue #1402). No trim
+                     allowance and no green weight beside a usable weight: you
+                     weigh the meat you actually hang, after trimming, and that is
+                     the start of the run. Two figures here would mean "2.4 kg"
+                     meaning the untrimmed shoulder on one run and the trimmed
+                     muscle on the next, and comparing the drying curves is the
+                     whole point of the observation log. No vessel either — a
+                     chamber is a place (#1281), recorded per stage. -->
+                <div class="flex flex-wrap items-end gap-3" data-testid="formula-basis">
+                  <TextField
+                    label="Weight in (g)"
+                    inputmode="numeric"
+                    class="w-32"
+                    value={answer.basisGramsText}
+                    onValueChange={(v) => {
+                      answer = { ...answer, basisGramsText: v };
+                      touch();
+                    }}
+                    onblur={restateWeightsAtDeclaration}
+                    data-testid="formula-basis-grams"
+                  />
+                </div>
+                <p class="text-xs text-muted-foreground" data-testid="formula-basis-note">
+                  What goes on the scale — the trimmed meat, the shredded cabbage. Everything else
+                  is a percentage of it.
+                </p>
               {:else}
                 <div class="flex flex-wrap items-end gap-3" data-testid="formula-weight">
                   <TextField
@@ -1394,19 +1465,34 @@
                  screen asserting two totals again. With no declaration yet there is
                  only one figure to state, and it is the sum of the boxes. -->
               <div class="text-sm" data-testid="formula-dough-total">
-                {#if shape !== null}
+                {#if shape !== null && shape.kind === 'basis'}
+                  <!-- WHAT GOES IN, never what comes out (issue #1402). A weighed
+                     basis makes no claim about the finished weight, and inventing
+                     one — "so this makes about 1.6 kg" — would be a projection
+                     nobody asked for and a number nobody could check. -->
                   <p>
-                    This makes <span class="font-medium">{formatDoughAmount(shape)}</span>.
+                    This is for <span class="font-medium">{formatGrams(shape.grams)}</span> of what goes
+                    in.
+                  </p>
+                  <p class="text-muted-foreground" data-testid="formula-restate-note">
+                    The weights above are this recipe at that weight. Change it and they change with
+                    it — the percentages don't.
+                  </p>
+                {:else if shape !== null}
+                  <p>
+                    This makes <span class="font-medium">{formatDoughAmount(shape.shape)}</span>.
                   </p>
                   <p class="text-muted-foreground" data-testid="formula-restate-note">
                     The weights above are this recipe at that size. Change what it makes and they
                     change with it — the percentages don't.
                   </p>
                 {:else}
+                  <!-- No "of dough": this card is now the declaration for a cure as
+                     well as for a loaf, and the boxes above sum to the same figure
+                     either way. -->
                   <p>
                     As written, this weighs
-                    <span class="font-medium">{formatGrams(roundGrams(asWrittenDoughGrams))}</span> of
-                    dough.
+                    <span class="font-medium">{formatGrams(roundGrams(asWrittenDoughGrams))}</span>.
                   </p>
                 {/if}
               </div>
