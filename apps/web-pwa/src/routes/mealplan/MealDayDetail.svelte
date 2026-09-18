@@ -1,6 +1,8 @@
 <script lang="ts">
   import {
     Button,
+    Chip,
+    ChipGroup,
     Icon,
     Select,
     SelectContent,
@@ -28,13 +30,19 @@
     type Day,
     type Member,
     type Recipe,
-    type RecipeKind,
   } from '@salt/domain';
   import type { WeatherDaySummary } from '@salt/domain/schemas';
   import { onDestroy } from 'svelte';
   import { flushMealPlanWrites } from '../../lib/mealPlanService.js';
   import WeatherSummary from './WeatherSummary.svelte';
-  import { KIND_COPY, kindOf } from '../recipes/recipeKind.js';
+  import {
+    KIND_COPY,
+    LIST_SECTIONS,
+    SECTION_COPY,
+    kindOf,
+    sectionOf,
+    type ListSection,
+  } from '../recipes/recipeKind.js';
   import { recipeIndex, resolveRecipeIds } from '../../lib/attachedRecipes.js';
   import { quarterHourOptions } from '../../lib/timeOptions.js';
 
@@ -134,22 +142,56 @@
   // deliberately preserves duplicates rather than hiding that.
   const lookup = $derived(recipeIndex(recipesById, recipes));
   const attachedRecipes = $derived(resolveRecipeIds(day.recipeIds, lookup));
-  // Picker options exclude already-attached recipes so the same dish can't be
+  // Picker CANDIDATES exclude already-attached recipes so the same dish can't be
   // added twice, and anything that cannot occupy a dinner slot — a cocktail is
   // not dinner (issue #637). The gate is `isPlannable`, never a comparison
   // against a kind: a fourth kind decides whether it belongs here in the domain
-  // capability table, not in this file. Items are {value: id, label: title},
-  // matching the canon picker.
+  // capability table, not in this file.
+  //
+  // THIS PREDICATE IS THE WHOLE OF WHAT MAY BE ATTACHED, and the shelf chips
+  // below sit strictly on top of it (issue #1454): a chip decides what you are
+  // currently LOOKING at and can only ever narrow this set — it can never widen
+  // it, and never replaces any part of it. `MealDayEditor.recipePicker.test.ts`
+  // pins that as a property over every chip state, so an edit that lets a chip
+  // reach past this line goes red (CLAUDE.md rule 12).
+  const recipePickerCandidates = $derived(
+    recipes.filter((r) => isPlannable(kindOf(r)) && !day.recipeIds.includes(r.id)),
+  );
+  // The shelves this night actually has something to offer from, in the recipe
+  // list page's own order. Derived from the candidates rather than fixed, because
+  // a picker is not a browser: a chip that leads to "Nothing found" is a dead end
+  // in the middle of an action. One shelf needs no chips at all.
+  const pickerSections = $derived(
+    LIST_SECTIONS.filter((section) => recipePickerCandidates.some((r) => sectionOf(r) === section)),
+  );
+  let pickerSection = $state<ListSection | 'all'>('all');
+  // Accepted consequence of deriving the chips: attaching the last meal removes
+  // the `Meals` chip mid-edit, so the shelf you were standing on stops existing
+  // and the box falls back to `All`. A real reset rather than a derived guard, so
+  // it does not spring back if you then remove that meal again — you were sent
+  // back to `All` and you stay there until you choose otherwise.
+  $effect(() => {
+    if (pickerSection !== 'all' && !pickerSections.includes(pickerSection)) pickerSection = 'all';
+  });
+  // Items are {value: id, label: title}, matching the canon picker.
   const recipePickerItems: ComboboxItemType[] = $derived(
-    recipes
-      .filter((r) => isPlannable(kindOf(r)) && !day.recipeIds.includes(r.id))
+    recipePickerCandidates
+      .filter((r) => pickerSection === 'all' || sectionOf(r) === pickerSection)
       .map((r) => ({ value: r.id, label: r.title })),
   );
-  // Kind by id, so a picker row can wear the badge that says what it is. A
+  // SECTION by id, so a picker row can wear the badge that says what it is. A
   // separate projection because `ComboboxItemType` is the shared primitive's
   // contract ({value,label}) and must not grow a Salt-specific field — the badge
   // is composed here, in the app, out of the item's own `value`.
-  const kindById = $derived(new Map<string, RecipeKind>(recipes.map((r) => [r.id, kindOf(r)])));
+  //
+  // `sectionOf`, not `kindOf`: a meal is an ordinary `kind: 'recipe'` document
+  // that has gained components, so a kind-derived badge leaves the one entry the
+  // chips exist to help you find wearing nothing at all. The chip row and the
+  // badge have to answer the same question or a filtered list and an unfiltered
+  // one describe the same entries differently.
+  const sectionById = $derived(
+    new Map<string, ListSection>(recipes.map((r) => [r.id, sectionOf(r)])),
+  );
   function recipeFilter(input: string, item: ComboboxItemType): boolean {
     return item.label.toLowerCase().includes(input.trim().toLowerCase());
   }
@@ -357,10 +399,11 @@
       data-testid={`${testid}-note`}></textarea>
 
     <!-- Attached recipes (issue #17): the chosen recipes as thumbnail rows, then
-       a quiet "Add a recipe" picker at the foot. Selecting a recipe APPENDS its
-       id; the picker remounts (keyed) so its input clears, ready for the next
-       add. Rendered only in the week editor (onRecipesChange present); the
-       weekday template editor omits the prop and stays recipe-free. -->
+       a row of shelf chips (#1454) and a quiet "Add a recipe" picker at the
+       foot. Selecting a recipe APPENDS its id; the picker remounts (keyed) so
+       its input clears, ready for the next add. Rendered only in the week editor
+       (onRecipesChange present); the weekday template editor omits the prop and
+       stays recipe-free. -->
     {#if onRecipesChange}
       <div class="flex flex-col gap-1.5" data-testid={`${testid}-recipes`}>
         {#each attachedRecipes as r (r.id)}
@@ -438,6 +481,56 @@
             </Button>
           </div>
         {/each}
+        <!-- Shelf chips (issue #1454). The library is long enough that a meal or a
+             Chef's Special is hard to find among the recipes, so a row of chips
+             narrows the box to one shelf. Three things about it are load-bearing:
+
+             * It sits OUTSIDE the `{#key}` below. That key remounts the Combobox
+               after every add to clear its input; a chip row inside it would
+               reset the chosen shelf on each add, which is exactly when you want
+               it kept.
+             * Each chip prevents its mousedown default. `Combobox` closes its
+               popup on input blur and, being `restrict`ed, clears what you typed
+               with it — so without this a tap would cost you both the open list
+               and the letters you had typed.
+             * Every SHELF's word comes from `SECTION_COPY` and the order from
+               `LIST_SECTIONS`, so this row and the recipe list page cannot
+               disagree about what a shelf is called or where it sits. "All" is
+               the one literal here, and has to be: it names the absence of a
+               filter rather than a shelf, so there is no `SECTION_COPY` entry it
+               could come from and inventing one would put a non-section into the
+               vocabulary every section screen reads.
+
+             A stale keyboard cursor cannot select the wrong recipe when the list
+             narrows underneath it: `selectActive` bounds-checks its index and
+             `allowCustom` is off here. STATED BOUNDARY, not an absolute:
+             `aria-activedescendant` can briefly name an id that is no longer
+             rendered, until the next arrow key or close. Fixing that properly
+             means resetting `activeIndex` inside the primitive. -->
+        {#if pickerSections.length > 1}
+          <ChipGroup ariaLabel="Shelf" data-testid={`${testid}-recipe-section-filters`}>
+            <Chip
+              pressed={pickerSection === 'all'}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() => (pickerSection = 'all')}
+              data-testid={`${testid}-recipe-section-filter`}
+              data-section="all"
+            >
+              All
+            </Chip>
+            {#each pickerSections as section (section)}
+              <Chip
+                pressed={pickerSection === section}
+                onmousedown={(e) => e.preventDefault()}
+                onclick={() => (pickerSection = section)}
+                data-testid={`${testid}-recipe-section-filter`}
+                data-section={section}
+              >
+                {SECTION_COPY[section].label}
+              </Chip>
+            {/each}
+          </ChipGroup>
+        {/if}
         {#key recipePickerKey}
           <Combobox
             items={recipePickerItems}
@@ -454,13 +547,13 @@
             <ComboboxContent>
               {#snippet children({ filteredItems })}
                 {#each filteredItems as item, i (item.value)}
-                  {@const kind = kindById.get(item.value) ?? 'recipe'}
-                  <!-- A "Chef's Specials" option sits in the same list as the
-                       recipes and is told apart by a small quiet chip. The
-                       badge is COPY: `KIND_COPY[kind].label` names it, and
-                       `recipe` — the norm — wears nothing, so the picker
-                       looks exactly as it does today for anyone who never
-                       adds an alternative. The chip is inside the option, so
+                  {@const section = sectionById.get(item.value) ?? 'recipe'}
+                  <!-- A "Chef's Specials" option, or a meal, sits in the same
+                       list as the recipes and is told apart by a small quiet
+                       chip. The badge is COPY: `SECTION_COPY[section].label`
+                       names it, and `recipe` — the norm — wears nothing, so the
+                       picker looks exactly as it does today for anyone whose
+                       library is only recipes. The chip is inside the option, so
                        it is part of the option's accessible name too and a
                        screen reader hears "Takeaway — Indian, Chef's Specials".
                        `ComboboxItem`'s `children` snippet takes no arguments,
@@ -468,11 +561,11 @@
                   <ComboboxItem {item} index={i} class="gap-2">
                     {#snippet children()}
                       <span class="min-w-0 flex-1 truncate">{item.label}</span>
-                      {#if kind !== 'recipe'}
+                      {#if section !== 'recipe'}
                         <span
                           class="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
                         >
-                          {KIND_COPY[kind].label}
+                          {SECTION_COPY[section].label}
                         </span>
                       {/if}
                     {/snippet}

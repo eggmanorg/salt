@@ -6,7 +6,7 @@
  * picking a meal writes `[mealId, ...componentRecipeIds]` into the day, once, and
  * editing the meal afterwards never rewrites a night already planned.
  *
- * Two journeys, and between them they cover the whole promise:
+ * Three journeys, and between them they cover the whole promise:
  *
  *   1. Pick the meal, get the dinner. Four rows land from one tap, the day's note
  *      takes the meal's title and the day's card takes the meal's photograph —
@@ -18,9 +18,15 @@
  *      confirm button stays the FLAT number of review sheets that follow, which
  *      is the promise the queue keeps — so unticking one row has to drop four.
  *
+ *   3. Find the meal without scrolling past the dishes (#1454). The night's add
+ *      box carries a row of shelf chips; tapping `Meals` leaves the roast alone
+ *      in the list and picking it there plans exactly the dinner journey 1 plans.
+ *      The chips only narrow what you are LOOKING at, so the outcome is identical
+ *      — which is the whole assertion.
+ *
  * Recipes are bridge-seeded (NF-C4) rather than authored: a meal with three
  * components is four editor round-trips plus the "Made from" picker before the
- * thing under test begins, and none of that is what these two journeys are about.
+ * thing under test begins, and none of that is what these journeys are about.
  * No AI stub is needed — the `onRecipeWritten` hero trigger leaves a document that
  * already carries an `image` alone, and short-circuits under `FUNCTIONS_AI_FAKE`
  * regardless.
@@ -130,6 +136,31 @@ function weekWithDinner(startDate: string, recipeIds: readonly string[]): MealPl
   };
 }
 
+/**
+ * Open today's night on the current week, and hand back its testid prefix.
+ *
+ * Today is derived from the store, never guessed: it is the one day guaranteed
+ * to be both in the displayed week and on screen (the deck opens on it, #639).
+ */
+async function openTonight(page: Page): Promise<{ dayKey: string; testid: string }> {
+  await page.goto('/#/mealplan');
+  await expect(page.getByTestId('this-week')).toBeVisible({ timeout: SYNC_TIMEOUT });
+  await page.getByTestId('this-week').click();
+  await expect(page.getByTestId('week-range')).not.toHaveText('', { timeout: SYNC_TIMEOUT });
+
+  const dayKey = await page.evaluate(() => {
+    const days = window.__e2e!.getMealPlanSnapshot().days;
+    const today = new Date().toLocaleDateString('en-CA');
+    return today in days ? today : Object.keys(days).sort()[0]!;
+  });
+  expect(dayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const testid = `day-${dayKey}`;
+
+  await page.getByTestId(`${testid}-summary`).click();
+  await expect(page.getByTestId(`${testid}-detail`)).toBeVisible({ timeout: SYNC_TIMEOUT });
+  return { dayKey, testid };
+}
+
 /** What the plan document actually holds for one day — the store, not the DOM. */
 function readDay(page: Page, dateKey: string): Promise<{ recipeIds: string[]; note: string }> {
   return page.evaluate((key) => {
@@ -150,30 +181,16 @@ test.describe('meal planner — a night built from several dishes', () => {
     await seedTheRoast(page);
 
     // ── Anchor on a real day of the current week ─────────────────────────────
-    await page.goto('/#/mealplan');
-    await expect(page.getByTestId('this-week')).toBeVisible({ timeout: SYNC_TIMEOUT });
-    await page.getByTestId('this-week').click();
-    await expect(page.getByTestId('week-range')).not.toHaveText('', { timeout: SYNC_TIMEOUT });
-
-    // Derived from the store, never guessed: today is the one day guaranteed to
-    // be both in the displayed week and on screen (the deck opens on it, #639).
-    const dayKey = await page.evaluate(() => {
-      const days = window.__e2e!.getMealPlanSnapshot().days;
-      const today = new Date().toLocaleDateString('en-CA');
-      return today in days ? today : Object.keys(days).sort()[0]!;
-    });
-    expect(dayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    const testid = `day-${dayKey}`;
-
-    await page.getByTestId(`${testid}-summary`).click();
-    await expect(page.getByTestId(`${testid}-detail`)).toBeVisible({ timeout: SYNC_TIMEOUT });
+    const { dayKey, testid } = await openTonight(page);
 
     // ── One tap on the meal ──────────────────────────────────────────────────
     // The picker input is an unlabelled action affordance (NF-B2); the OPTION —
     // the content — is resolved accessibly. A meal is `kind: 'recipe'`, so it is
-    // offered exactly like anything else and wears no badge.
+    // offered exactly like anything else — but since #1454 it wears a `Meals`
+    // badge, which is part of the option's accessible name: the badge is the
+    // only thing in the list that says which of these is the whole dinner.
     await page.getByTestId(`${testid}-recipe-picker`).click();
-    const option = page.getByRole('option', { name: MEAL_TITLE });
+    const option = page.getByRole('option', { name: `${MEAL_TITLE} Meals` });
     await expect(option).toBeVisible({ timeout: SYNC_TIMEOUT });
     await option.click();
 
@@ -264,5 +281,55 @@ test.describe('meal planner — a night built from several dishes', () => {
     // The testid sits on the primitive's wrapper; the control it names is inside.
     await page.getByTestId(`shop-week-tick-${today}-${MEAL_ID}`).getByRole('checkbox').click();
     await expect(confirm).toHaveText('Review 1 recipe');
+  });
+
+  test('filter the add box to Meals, and the roast is the only thing in it', async ({
+    page,
+  }, testInfo) => {
+    // The shelf chips (#1454). Four seeded documents put two shelves in front of
+    // this night — three dishes on Recipes, the roast on Meals — and the chip row
+    // appears only because there is more than one.
+    test.setTimeout(90_000);
+    const email = uniqueEmail(testInfo.testId);
+    await gotoAndSignIn(page, email, '/', { admin: true });
+    await seedTheRoast(page);
+
+    const { dayKey, testid } = await openTonight(page);
+
+    await page.getByTestId(`${testid}-recipe-picker`).click();
+    await expect(page.getByRole('option', { name: `${MEAL_TITLE} Meals` })).toBeVisible({
+      timeout: SYNC_TIMEOUT,
+    });
+    // Four things to read past before the chips are touched.
+    await expect(page.getByRole('option')).toHaveCount(4);
+
+    // ── Tap `Meals` ──────────────────────────────────────────────────────────
+    // The chip row is `ChipGroup` + `Chip`, so the chip is a real button with its
+    // own accessible name — the copy comes from SECTION_COPY and is asserted as
+    // the user reads it, not by its data attribute.
+    const mealsChip = page
+      .getByTestId(`${testid}-recipe-section-filter`)
+      .filter({ hasText: 'Meals' });
+    await mealsChip.click();
+    await expect(mealsChip).toHaveAttribute('aria-pressed', 'true');
+
+    // The list stayed open underneath the tap, and the roast is alone in it.
+    await expect(page.getByRole('option')).toHaveCount(1);
+    const option = page.getByRole('option', { name: `${MEAL_TITLE} Meals` });
+    await expect(option).toBeVisible();
+
+    // ── …and picking it there plans exactly the dinner journey 1 plans ───────
+    await option.click();
+    await expect
+      .poll(() => readDay(page, dayKey), { timeout: SYNC_TIMEOUT })
+      .toEqual({
+        recipeIds: [MEAL_ID, ...COMPONENT_IDS],
+        note: MEAL_TITLE,
+      });
+
+    // The night now holds every dish, so Meals has nothing left to offer and its
+    // chip goes — the row falls back to the single shelf it started from, which
+    // means no row at all.
+    await expect(page.getByTestId(`${testid}-recipe-section-filters`)).toHaveCount(0);
   });
 });
