@@ -197,8 +197,14 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
     completedStepIds: [],
     startedBy: null,
     quantities: [
-      { ingredientId: 'ing-flour', label: '500 g strong white flour', percent: 100, grams: 597 },
-      { ingredientId: 'ing-water', label: '320 g water', percent: 64, grams: 382 },
+      {
+        ingredientId: 'ing-flour',
+        label: '500 g strong white flour',
+        percent: 100,
+        grams: 597,
+        stageId: null,
+      },
+      { ingredientId: 'ing-water', label: '320 g water', percent: 64, grams: 382, stageId: null },
     ],
     totals: { basisGrams: 597, totalGrams: 979, usableGrams: 979, units: null },
     stages: [
@@ -791,7 +797,7 @@ describe('the weigh-out, when the recipe has moved on', () => {
     // recipe. A blank reads as "we no longer know what this was", which is true.
     mockBatch._set(
       makeBatch({
-        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 12 }],
+        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 12, stageId: null }],
       }),
     );
     renderPage();
@@ -1430,5 +1436,122 @@ describe('what this page does not do', () => {
 
     await waitFor(() => expect(screen.getByTestId('batch-log-sheet')).toBeTruthy());
     expect(screen.getByTestId('batch-cook-page')).toBeTruthy();
+  });
+});
+
+// ─── What goes on at each stage, and the weigh-out (issue #1405) ────────────────
+//
+// What these pin, and the first is the one that matters most:
+//
+//   1. THE WEIGH-OUT DOES NOT MOVE. Same rows, same membership, same "N of M ready"
+//      — a row gains a muted stage NAME and nothing else. Hiding or partitioning by
+//      stage would silently change what the count means (`progressOver` counts the
+//      rows on screen), so membership and counting are behaviour and stay put.
+//   2. THE STAGE CARD CARRIES THE SAME LIST the batch page shows, frozen.
+//   3. A dead assignment names no stage and still weighs out.
+
+const CURE_QUANTITIES = [
+  {
+    ingredientId: 'ing-flour',
+    label: '500 g strong white flour',
+    percent: 100,
+    grams: 597,
+    stageId: null,
+  },
+  {
+    ingredientId: 'ing-water',
+    label: '320 g water',
+    percent: 64,
+    grams: 382,
+    stageId: 'stage-cool',
+  },
+];
+
+describe('when an ingredient goes on at a stage', () => {
+  it('leaves the weigh-out exactly as it was, and only names the stage', () => {
+    mockBatch._set(makeBatch({ quantities: CURE_QUANTITIES }));
+    renderPage();
+
+    const rows = screen.getAllByTestId('batch-cook-mise-row');
+    // CLAIM 1: both rows, in the same order, with the same grams — nothing hidden.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('597 g');
+    expect(rows[1]!.textContent).toContain('382 g');
+    // And the count is unchanged: two quantities plus the recipe-only tablet.
+    expect(screen.getByTestId('batch-cook-subtitle').textContent).toContain('0/3 ready');
+
+    // The stage name, on the row that has one and on neither of the others.
+    const named = screen.getAllByTestId('batch-cook-mise-stage');
+    expect(named).toHaveLength(1);
+    expect(named[0]!.textContent?.trim()).toBe('Cool the cobs');
+    expect(rows[0]!.querySelector('[data-testid="batch-cook-mise-stage"]')).toBeNull();
+  });
+
+  it('names no stage at all when everything goes in at the start', () => {
+    renderPage();
+    expect(screen.queryAllByTestId('batch-cook-mise-stage')).toHaveLength(0);
+  });
+
+  it('names no stage for an id this run does not carry, and still weighs the row out', () => {
+    mockBatch._set(
+      makeBatch({
+        quantities: [
+          {
+            ingredientId: 'ing-flour',
+            label: '500 g strong white flour',
+            percent: 100,
+            grams: 597,
+            stageId: 'stage-that-is-gone',
+          },
+        ],
+      }),
+    );
+    renderPage();
+
+    expect(screen.queryAllByTestId('batch-cook-mise-stage')).toHaveLength(0);
+    expect(screen.getAllByTestId('batch-cook-mise-row')[0]!.textContent).toContain('597 g');
+  });
+
+  it('carries the list on the stage card, with the frozen label and grams', async () => {
+    mockBatch._set(makeBatch({ quantities: CURE_QUANTITIES }));
+    renderPage();
+    await goToSteps();
+
+    const additions = screen.getByTestId('batch-cook-stage-additions');
+    expect(additions.textContent).toContain('320 g water');
+    expect(additions.textContent).toContain('382 g');
+    // The flour goes in at the start, so it is not on the card.
+    expect(additions.textContent).not.toContain('strong white');
+  });
+
+  it('shows nothing on a stage that takes nothing, which is every stage of a loaf', async () => {
+    renderPage();
+    await goToSteps();
+    expect(screen.queryAllByTestId('batch-cook-stage-additions')).toHaveLength(0);
+  });
+
+  it('still says what a SKIPPED stage would have taken', async () => {
+    // Deliberately outside the skipped guard that hides the times: a skipped stage's
+    // plan is meaningless, but what the wine was for is still the question somebody
+    // reading the run back is asking. Nothing here claims it went on.
+    mockBatch._set(
+      makeBatch({
+        quantities: CURE_QUANTITIES,
+        stages: [
+          stage(),
+          stage({
+            id: 'stage-cool',
+            stepId: null,
+            duration: null,
+            skipped: { at: '2026-09-11T09:05:00.000Z', note: '' },
+          }),
+        ],
+      }),
+    );
+    renderPage();
+    await goToSteps();
+
+    expect(screen.getByTestId('batch-cook-stage-skipped')).toBeTruthy();
+    expect(screen.getByTestId('batch-cook-stage-additions').textContent).toContain('320 g water');
   });
 });

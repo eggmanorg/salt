@@ -22,12 +22,16 @@ export type StageAdditions<T> = {
    */
   atStart: readonly T[];
   /**
-   * One entry per stage given, in the order given, so a caller can render a stage's
-   * additions without deciding what an absent key means. Empty where a stage takes
-   * nothing.
+   * What goes in at this stage, in the order the rows came in. EMPTY IS A REAL
+   * ANSWER and the only one for a stage that takes nothing — which is every stage of
+   * every loaf — so a caller never has to decide what a missing key means, and never
+   * writes a `?? []` no test can reach. An id this grouping was not given is empty
+   * too: it had nothing.
    */
-  byStageId: ReadonlyMap<string, readonly T[]>;
+  at: (stageId: string) => readonly T[];
 };
+
+const NOTHING: readonly never[] = [];
 
 /**
  * Group rows by the process stage they are added at.
@@ -56,5 +60,5 @@ export function stageAdditions<T extends { ingredientId: string; stageId: string
     else bucket.push(row);
   }
 
-  return { atStart, byStageId };
+  return { atStart, at: (stageId) => byStageId.get(stageId) ?? NOTHING };
 }

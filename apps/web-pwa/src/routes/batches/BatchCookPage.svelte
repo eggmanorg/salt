@@ -2,7 +2,13 @@
   import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { onDestroy } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { flattenIngredients, progressOver, recipeChangedSince, stageStatus } from '@salt/domain';
+  import {
+    flattenIngredients,
+    progressOver,
+    recipeChangedSince,
+    stageAdditions,
+    stageStatus,
+  } from '@salt/domain';
   import type { BatchStageDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
@@ -48,6 +54,7 @@
     formatTimeOfDay,
     formatWhen,
     isObservational,
+    stageLabelById,
   } from './batchDisplay.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
 
@@ -597,6 +604,15 @@
         </Button>
       </div>
     {:else}
+      <!-- WHAT GOES ON AT EACH STAGE (issue #1405), over this run's own frozen halves,
+         and declared here because this is where `run` is known to exist.
+
+         THE WEIGH-OUT ITSELF DOES NOT MOVE. `miseIds` above is unchanged and so is
+         what `progressOver` counts: every row is still on screen and "6 of 8 ready"
+         still means the same eight things. You may well want to buy and portion
+         everything at once, so a row gains a muted stage NAME — display — and never a
+         hiding rule, which would be behaviour. -->
+      {@const additions = stageAdditions(run.stages, run.quantities)}
       <header class="flex shrink-0 items-center gap-3 px-4 py-3 {showTimeline ? '' : 'border-b'}">
         <Button
           variant="ghost"
@@ -725,6 +741,7 @@
             {#each run.quantities as quantity (quantity.ingredientId)}
               {@const checked = checkedIds.has(quantity.ingredientId)}
               {@const live = ingredientById.get(quantity.ingredientId)}
+              {@const stageName = stageLabelById(run, quantity.stageId)}
               <button
                 type="button"
                 class="flex w-full items-center gap-3 rounded-lg border px-4 py-4 text-left transition-colors active:bg-muted {checked
@@ -758,6 +775,21 @@
                     <span class="italic text-muted-foreground">no longer in the recipe</span>
                   {:else}
                     {quantity.label}
+                  {/if}
+                  <!-- WHICH STAGE THIS ROW BELONGS TO (issue #1405) — so "40 g red
+                     wine" sitting in front of you on day one reads as week three's
+                     job rather than as something you forgot. A JOIN against this
+                     run's own frozen stages, never a word copied onto the quantity;
+                     an id that no longer resolves simply prints nothing, exactly as a
+                     reading's does. Absent for everything that goes in at the start,
+                     which is every row of every loaf. -->
+                  {#if stageName !== null}
+                    <span
+                      class="block text-xs text-muted-foreground"
+                      data-testid="batch-cook-mise-stage"
+                    >
+                      {stageName}
+                    </span>
                   {/if}
                 </span>
                 <!-- GRAMS LEAD, percent muted underneath: the figure you set the
@@ -928,6 +960,7 @@
             {#snippet stageFacts(stageDoc: BatchStageDoc)}
               {@const status = stageStatus(stageDoc)}
               {@const stated = formatStatedDuration(stageDoc.duration)}
+              {@const goesOn = additions.at(stageDoc.id)}
               <div class="flex flex-col gap-1 text-sm">
                 {#if stageDoc.skipped !== null}
                   {@const skip = stageDoc.skipped}
@@ -1017,6 +1050,37 @@
                     <span data-testid="batch-cook-stage-status">stage skipped</span>
                   {/if}
                 </div>
+                <!-- WHAT GOES ON HERE (issue #1405), frozen label and frozen grams.
+                   Inside `stageFacts` rather than on the stage card, so the band on a
+                   cited step and the card for an uncited stage carry the identical
+                   list — the same reason the skipped guard above lives here.
+
+                   OUTSIDE THE SKIPPED CHAIN, deliberately and unlike the times: a
+                   skipped stage's plan is meaningless, but what it would have taken is
+                   still the answer to "what was the wine for?" — and nothing here is a
+                   claim that it went on. Absent when the stage takes nothing. -->
+                {#if goesOn.length > 0}
+                  <ul class="flex flex-col gap-0.5" data-testid="batch-cook-stage-additions">
+                    {#each goesOn as quantity (quantity.ingredientId)}
+                      <li
+                        class="flex justify-between gap-3"
+                        data-testid="batch-cook-stage-addition"
+                      >
+                        <span class="min-w-0 flex-1">
+                          {#if quantity.label === ''}
+                            <span class="italic text-muted-foreground">no longer in the recipe</span
+                            >
+                          {:else}
+                            {quantity.label}
+                          {/if}
+                        </span>
+                        <span class="shrink-0 font-medium tabular-nums">
+                          {formatGrams(quantity.grams)}
+                        </span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
               </div>
             {/snippet}
 

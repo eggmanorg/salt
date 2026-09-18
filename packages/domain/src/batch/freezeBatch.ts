@@ -183,6 +183,16 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     label: labels[component.ingredientId] ?? '',
     percent: component.percent,
     grams: component.grams,
+    // WHEN IT GOES ON, copied straight off the solved component (issue #1405) —
+    // `solveFormula` carries it through, so there is no second lookup back against
+    // the formula here and no chance of the two disagreeing.
+    //
+    // THE ID AS THE CALLER GAVE IT. This function does not check that it names one
+    // of `process`'s stages, deliberately: it is the same one-way reference the
+    // formula uses, and an id that resolves to nothing reads as at the start
+    // wherever it is rendered (`stageAdditions`). What the caller MUST have done is
+    // rewrite the ids when it replaced the process — see `startBatch`.
+    stageId: component.stageId,
   }));
 
   const totals: BatchTotalsDoc = {

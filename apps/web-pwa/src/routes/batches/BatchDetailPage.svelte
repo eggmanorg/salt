@@ -34,7 +34,7 @@
     skipStage,
     startStage,
   } from '../../lib/batchService.js';
-  import { stageStatus, stageTemperatureText, targetProgress } from '@salt/domain';
+  import { stageAdditions, stageStatus, stageTemperatureText, targetProgress } from '@salt/domain';
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { addToast } from '../../lib/toastStore.js';
   import BatchObservationSheet from './BatchObservationSheet.svelte';
@@ -381,6 +381,16 @@
       <EmptyState title="Batch not found" description="It may have been deleted." />
     </div>
   {:else}
+    <!-- WHAT GOES ON AT EACH STAGE (issue #1405) — this run's own frozen quantities,
+       grouped over this run's own frozen stages by the one domain helper. Both halves
+       are on the same document, so the join cannot go stale however far the recipe has
+       moved since; a quantity whose stage the run does not carry reads as at the
+       start, which `stageAdditions` owns and this page does not re-decide.
+
+       HERE RATHER THAN IN THE SCRIPT because this is where `run` is known to exist:
+       a `$derived` above would have to coalesce two absent halves that no render can
+       reach, which is a fallback no test could hold. -->
+    {@const additions = stageAdditions(run.stages, run.quantities)}
     <DetailPage
       title={run.recipeTitle}
       subtitle={yieldSummary(run.totals)}
@@ -610,6 +620,7 @@
                 {@const stated = formatStatedDuration(stage.duration)}
                 {@const isCurrent = stage.id === currentStageId}
                 {@const status = stageStatus(stage)}
+                {@const goesOn = additions.at(stage.id)}
                 <li
                   class="flex flex-col gap-1 rounded border border-border p-3"
                   class:opacity-60={status === 'done' || status === 'skipped'}
@@ -746,6 +757,36 @@
                         <span data-testid="batch-stage-until">{stage.until}</span>
                       {/if}
                     </div>
+                  {/if}
+
+                  <!-- WHAT GOES ON HERE (issue #1405). The label and the grams were
+                     frozen when the run started, so this reads correctly weeks later
+                     even if the recipe has since been renamed, re-mapped or deleted —
+                     the same reason every other figure on this page is frozen.
+
+                     Absent when the stage takes nothing, which is every stage of
+                     every loaf: bread adds everything at mix, and a line saying so on
+                     six stages is noise. -->
+                  {#if goesOn.length > 0}
+                    <ul class="flex flex-col gap-0.5 text-sm" data-testid="batch-stage-additions">
+                      {#each goesOn as quantity (quantity.ingredientId)}
+                        <li class="flex justify-between gap-3" data-testid="batch-stage-addition">
+                          <span class="min-w-0 flex-1">
+                            {#if quantity.label === ''}
+                              <!-- Blank because the ingredient had already left the
+                                 recipe at freeze time — honest, where an id would be
+                                 gibberish. Worded exactly as the weigh-out words it. -->
+                              <span class="italic text-muted-foreground">
+                                no longer in the recipe
+                              </span>
+                            {:else}
+                              {quantity.label}
+                            {/if}
+                          </span>
+                          <span class="shrink-0 tabular-nums">{formatGrams(quantity.grams)}</span>
+                        </li>
+                      {/each}
+                    </ul>
                   {/if}
 
                   <!-- ─── The controls, on the stage in hand and nowhere else ─────

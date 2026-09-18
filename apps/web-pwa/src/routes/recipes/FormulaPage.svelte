@@ -1779,7 +1779,7 @@
                   </p>
                 {:else}
                   {#each stageRows as stage, index (stage.id)}
-                    {@const goesIn = additions.byStageId.get(stage.id) ?? []}
+                    {@const goesIn = additions.at(stage.id)}
                     <div
                       role="group"
                       aria-label={stage.label || 'New stage'}

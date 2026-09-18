@@ -10,6 +10,13 @@ const STAGES = [{ id: 'stage-rub' }, { id: 'stage-wash' }, { id: 'stage-case' }]
 
 const row = (ingredientId: string, stageId: string | null) => ({ ingredientId, stageId });
 
+/** Every row the grouping placed, wherever it put it. */
+function placed<T extends { ingredientId: string; stageId: string | null }>(
+  grouped: ReturnType<typeof stageAdditions<T>>,
+): readonly T[] {
+  return [...grouped.atStart, ...STAGES.flatMap((stage) => grouped.at(stage.id))];
+}
+
 describe('stageAdditions', () => {
   it('puts every row under the stage it names', () => {
     const grouped = stageAdditions(STAGES, [
@@ -19,16 +26,16 @@ describe('stageAdditions', () => {
     ]);
 
     expect(grouped.atStart).toEqual([]);
-    expect(grouped.byStageId.get('stage-rub')).toEqual([row('ing-salt', 'stage-rub')]);
-    expect(grouped.byStageId.get('stage-wash')).toEqual([row('ing-wine', 'stage-wash')]);
-    expect(grouped.byStageId.get('stage-case')).toEqual([row('ing-bung', 'stage-case')]);
+    expect(grouped.at('stage-rub')).toEqual([row('ing-salt', 'stage-rub')]);
+    expect(grouped.at('stage-wash')).toEqual([row('ing-wine', 'stage-wash')]);
+    expect(grouped.at('stage-case')).toEqual([row('ing-bung', 'stage-case')]);
   });
 
   it('reads a null stage as at the start — which is what every bread formula says', () => {
     const grouped = stageAdditions(STAGES, [row('ing-flour', null), row('ing-water', null)]);
 
     expect(grouped.atStart).toEqual([row('ing-flour', null), row('ing-water', null)]);
-    for (const stage of STAGES) expect(grouped.byStageId.get(stage.id)).toEqual([]);
+    for (const stage of STAGES) expect(grouped.at(stage.id)).toEqual([]);
   });
 
   it('carries an ingredient whose stage has been DELETED, reading it as at the start', () => {
@@ -43,11 +50,10 @@ describe('stageAdditions', () => {
     ]);
 
     expect(grouped.atStart).toEqual([row('ing-juniper', 'stage-that-was-deleted')]);
-    expect(grouped.byStageId.get('stage-rub')).toEqual([row('ing-salt', 'stage-rub')]);
+    expect(grouped.at('stage-rub')).toEqual([row('ing-salt', 'stage-rub')]);
 
     // And nothing is lost overall, which is the property the fallback exists for.
-    const placed = [...grouped.atStart, ...[...grouped.byStageId.values()].flat()];
-    expect(placed).toHaveLength(2);
+    expect(placed(grouped)).toHaveLength(2);
   });
 
   it('places a row exactly once, so no ingredient is weighed out twice', () => {
@@ -58,18 +64,24 @@ describe('stageAdditions', () => {
     ];
     const grouped = stageAdditions(STAGES, rows);
 
-    const placed = [...grouped.atStart, ...[...grouped.byStageId.values()].flat()];
-    expect(placed).toHaveLength(rows.length);
-    expect(new Set(placed.map((r) => r.ingredientId)).size).toBe(rows.length);
+    const all = placed(grouped);
+    expect(all).toHaveLength(rows.length);
+    expect(new Set(all.map((r) => r.ingredientId)).size).toBe(rows.length);
   });
 
-  it('gives an entry for every stage, including the ones that take nothing', () => {
-    // So a caller renders a stage's additions without having to decide what a
-    // missing key means.
+  it('answers every stage, including the ones that take nothing', () => {
+    // EMPTY IS A REAL ANSWER, so a caller never writes a fallback of its own — which
+    // is a fallback no test could reach and the second place this rule could drift to.
     const grouped = stageAdditions(STAGES, [row('ing-wine', 'stage-wash')]);
 
-    expect([...grouped.byStageId.keys()]).toEqual(['stage-rub', 'stage-wash', 'stage-case']);
-    expect(grouped.byStageId.get('stage-rub')).toEqual([]);
+    expect(grouped.at('stage-rub')).toEqual([]);
+    expect(grouped.at('stage-case')).toEqual([]);
+    expect(grouped.at('stage-wash')).toHaveLength(1);
+  });
+
+  it('answers a stage it was never given at all — with nothing, not with undefined', () => {
+    const grouped = stageAdditions(STAGES, [row('ing-wine', 'stage-wash')]);
+    expect(grouped.at('a-stage-nobody-mentioned')).toEqual([]);
   });
 
   it('keeps the order the rows came in, within each bucket', () => {
@@ -82,17 +94,14 @@ describe('stageAdditions', () => {
       row('ing-c', null),
     ]);
 
-    expect(grouped.byStageId.get('stage-rub')?.map((r) => r.ingredientId)).toEqual([
-      'ing-b',
-      'ing-a',
-    ]);
+    expect(grouped.at('stage-rub').map((r) => r.ingredientId)).toEqual(['ing-b', 'ing-a']);
     expect(grouped.atStart.map((r) => r.ingredientId)).toEqual(['ing-d', 'ing-c']);
   });
 
   it('handles a process with no stages at all — everything is at the start', () => {
     const grouped = stageAdditions([], [row('ing-flour', null), row('ing-salt', 'stage-rub')]);
 
-    expect(grouped.byStageId.size).toBe(0);
+    expect(grouped.at('stage-rub')).toEqual([]);
     expect(grouped.atStart.map((r) => r.ingredientId)).toEqual(['ing-flour', 'ing-salt']);
   });
 
@@ -103,7 +112,7 @@ describe('stageAdditions', () => {
       { ingredientId: 'ing-wine', stageId: 'stage-wash', grams: 40, label: 'red wine' },
     ]);
 
-    expect(grouped.byStageId.get('stage-wash')).toEqual([
+    expect(grouped.at('stage-wash')).toEqual([
       { ingredientId: 'ing-wine', stageId: 'stage-wash', grams: 40, label: 'red wine' },
     ]);
   });
