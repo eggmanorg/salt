@@ -65,6 +65,27 @@ describe('describeBoundViolation', () => {
     expect(describeBoundViolation(orphan, () => '')).toContain('one ingredient');
   });
 
+  it('names EVERY window that was missed, not just the first (#1442)', () => {
+    // `boundViolationsIn` walks all the components and returns everything it found.
+    // Wording only the first made the second invisible until the first was fixed:
+    // correct one percentage, get refused again, and never learn why. The claim is
+    // pinned on the SECOND subject appearing, which is the half that used to vanish.
+    const worded = describeBoundViolation(
+      {
+        violations: [
+          violation({ minPercent: 0.15, maxPercent: 0.3 }),
+          violation({ ingredientId: 'ing-salt', percent: 6, bound: 'max', maxPercent: 3.15 }),
+        ],
+      },
+      (id) =>
+        ({ 'ing-cure': '2.5 g cure #1', 'ing-salt': '60 g nitrited curing salt' })[id] ?? undefined,
+    );
+    expect(worded).toBe(
+      'That would put “2.5 g cure #1” at 1.2% of the basis, outside the 0.15%–0.3% window it has to sit in. ' +
+        'It would also put “60 g nitrited curing salt” at 6% of the basis, above the 3.15% it has to stay under.',
+    );
+  });
+
   it('words an empty violation list rather than breaking the screen', () => {
     // `boundViolationsIn` cannot produce one, but this is copy, and copy does not
     // get to be the thing that breaks a screen.

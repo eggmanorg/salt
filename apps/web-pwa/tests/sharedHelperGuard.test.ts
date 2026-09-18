@@ -88,6 +88,8 @@ const OWNERS: readonly { readonly path: string; readonly rule: string }[] = [
   { path: 'lib/attachedRecipes.ts', rule: "which recipes a day's ids point at" },
   { path: 'lib/timeOptions.ts', rule: 'the quarter-hour pickers' },
   { path: 'routes/recipes/unitCount.ts', rule: 'how many units a shape declares' },
+  // ── issue #1442 ──
+  { path: 'lib/phReading.ts', rule: 'a pH typed into a box, parsed and worded' },
 ];
 
 /**
@@ -344,6 +346,39 @@ const FORBIDDEN: readonly Shape[] = [
       "the library's document type scale was declared three times — page body, history preview, import preview — byte-identical and held that way by a comment asking the next author to keep them in step; #1394 moved the rules into the primitive, where the next change is made once",
     pattern: /\.salt-md\b[^;{}'"]*\{/,
   },
+
+  // ── issue #1442 ────────────────────────────────────────────────────────────
+  //
+  // The pH scale, which was written out FOUR times: twice in `@salt/domain`'s
+  // schemas and twice here, character-for-character, in the observation sheet's
+  // reading box and the formula screen's target box. Both component copies
+  // carried a comment asserting they were "not a second opinion" — which is
+  // exactly the prose-held-duplicate state this whole file exists to replace,
+  // and the third instance in this repo of a comment being asked to do a
+  // mechanism's job.
+  //
+  // TWO ROWS BECAUSE THE COPY HAD TWO HALVES, and either could have been
+  // re-typed alone: the BOUND and the SENTENCE said under the box. `PhSchema`
+  // now owns the first and `lib/phReading.ts` the second, and `phReading.ts` is
+  // an OWNER row above, so it is out of the scan surface and needs no `allowed`.
+  {
+    instead: 'parsePhReading(text) from lib/phReading.js',
+    because:
+      'the 0–14 bound belongs to PhSchema in @salt/domain and a screen that re-types it is a second opinion about what a pH is; a widened scale would have had to be found in four places',
+    // The lookahead, not `\b`, is what keeps a genuinely different ceiling out:
+    // `\b` matches between the `4` and the `.` of `14.5`, so it fired on a bound
+    // this row has no business touching (caught by the near-miss below rather
+    // than in production, which is the point of pinning both directions). The
+    // left-hand side is deliberately loose about the variable's name: the two
+    // deleted copies both called it `value`, and a third would not have to.
+    pattern: />=\s*0\s*&&\s*[\w$.]+\s*<=\s*14(?![\d.])/,
+  },
+  {
+    instead: 'phFieldError(text) from lib/phReading.js',
+    because:
+      'the sentence under the box was the other half of the copy, and a bound changed without its wording is a screen that refuses a number while telling you it is fine',
+    pattern: /A pH from 0 to 14/,
+  },
 ];
 
 // ─── Half three: the rule collapsed WITHIN one file ───────────────────────────
@@ -574,6 +609,25 @@ describe('display rules are declared once', () => {
     // it happened to end in `;`.
     expect(carries("  querySelectorAll('.salt-md-doc').forEach((el) => {", docScale)).toBe(false); // prettier-ignore
     expect(carries("  if (el.matches('.salt-md-doc')) {", docScale)).toBe(false);
+
+    // ── issue #1442: the pH scale, both halves of the copy ──
+    const phBound = shape('parsePhReading');
+    const phWords = shape('phFieldError');
+    // The two lines this issue deleted, verbatim from each component.
+    expect(carries('    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;', phBound)).toBe(true); // prettier-ignore
+    expect(carries('    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;', phBound)).toBe(true); // prettier-ignore
+    expect(carries("      ? 'A pH from 0 to 14, or leave it blank.'", phWords)).toBe(true);
+    expect(carries("phText.trim() !== '' && ph === null ? 'A pH from 0 to 14, or leave it blank.' : ''", phWords)).toBe(true); // prettier-ignore
+
+    // And the near-misses. The humidity box beside it is a DIFFERENT bound and
+    // must keep its own; so is any ceiling that merely starts with 14.
+    expect(carries('    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;', phBound)).toBe(false); // prettier-ignore
+    expect(carries('  const ok = n >= 0 && n <= 140;', phBound)).toBe(false);
+    expect(carries('  const ok = n >= 0 && n <= 14.5;', phBound)).toBe(false);
+    // Calling the owner, and saying something else about a pH, are both fine.
+    expect(carries('  const ph = $derived(parsePhReading(phText));', phBound)).toBe(false);
+    expect(carries("  'A humidity from 0 to 100%, or leave it blank.'", phWords)).toBe(false);
+    expect(carries('  <TextField label="pH" bind:value={phText} />', phWords)).toBe(false);
   });
 
   it('has no file outside its owning module re-declaring one of them', () => {

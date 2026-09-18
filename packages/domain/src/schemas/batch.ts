@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
-import { FormulaTargetSchema, SaltProductSchema } from './formula.js';
+import { FormulaTargetSchema, PhSchema, SaltProductSchema } from './formula.js';
 import { CureCategorySchema, RecipeKindSchema } from './recipe.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
@@ -513,9 +513,8 @@ export const BatchObservationSchema = z.object({
   // Grams on the scale — the cure's whole story, and the number a weight-loss
   // criterion would one day read. Null when the entry is a note or a photo.
   weightGrams: z.number().nonnegative().nullable(),
-  // Bounded to the scale that exists: a strip or a probe cannot read outside 0–14,
-  // so a value beyond it is a typo, not a measurement.
-  ph: z.number().min(0).max(14).nullable(),
+  // Bounded by `PhSchema`, which is where the 0–14 scale lives (#1442).
+  ph: PhSchema.nullable(),
   // Degrees Celsius, and DELIBERATELY unbounded below zero — a freezer, a garage in
   // January and a chamber at 12 °C are all real places a batch sits.
   //

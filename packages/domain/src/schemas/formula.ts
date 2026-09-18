@@ -175,14 +175,29 @@ export const ReferenceYieldSchema = z.discriminatedUnion('kind', [
 // IT GATES NOTHING, at any layer. Nothing here or downstream blocks, warns,
 // confirms, or decides that a run is finished — see `targetProgress` in the batch
 // module, which computes the figure and nothing else.
+/**
+ * A pH, bounded to the scale that exists — a strip or a probe cannot read outside
+ * 0–14, so a value beyond it is a typo rather than a measurement.
+ *
+ * ONE HOME FOR THE BOUND (#1442). It was written out four times: here, on
+ * `BatchObservationSchema.ph`, and character-for-character in two components, each of
+ * which asserted in a comment that it was "not a second opinion" — which is the
+ * prose-held-duplicate state `sharedHelperGuard` exists to replace. A figure kept in
+ * agreement by a request to the next author is not kept in agreement.
+ *
+ * NULLABILITY IS THE CALLER'S. A target pH and a measured pH are both optional, but
+ * for different reasons — "no target set" against "not measured this time" — so each
+ * field appends its own `.nullable()` rather than inheriting one.
+ */
+export const PhSchema = z.number().min(0).max(14);
+
 export const FormulaTargetSchema = z.object({
   // Percent of the STARTING weight lost — 35 for a coppa. Bounded to what is
   // physically possible: a run cannot lose all of itself, so a figure at or past
   // 100 is a typo rather than an intention.
   weightLossPercent: z.number().positive().lt(100).nullable(),
-  // "Below pH 5.3". Bounded to the scale that exists, exactly as
-  // `BatchObservationSchema.ph` is: a strip or a probe cannot read outside 0–14.
-  phAtMost: z.number().min(0).max(14).nullable(),
+  // "Below pH 5.3", on the same scale a reading is taken on.
+  phAtMost: PhSchema.nullable(),
 });
 
 export const FormulaSchema = z.object({

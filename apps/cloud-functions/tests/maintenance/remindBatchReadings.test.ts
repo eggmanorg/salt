@@ -12,8 +12,22 @@ import type { BatchDoc, BatchStageDoc, PushSubscriptionDoc } from '@salt/domain/
 // the household, and its B-gets-nothing half is also what pins the accepted limit:
 // starter away, nobody else nudged (CLAUDE.md rule 12).
 
+// THE MOCK KEEPS THE OPTIONS RATHER THAN DISCARDING THEM (#1462, CLAUDE.md rule 12).
+// "A ninety-day cure gets thirteen nudges, not ninety" is a claim about the CADENCE,
+// and `longRuns.test.ts` can only pin the half of it the domain owns — it steps its own
+// loop by seven days, which asserts the rule given a weekly firing rather than that the
+// firing is weekly. The other half lives in the `onSchedule` options, and a mock that
+// throws them away leaves the cron expression, the zone and `retryCount` asserted by
+// nothing: moving the sweep to daily or monthly would leave this suite green and Daniel's
+// phone the only thing that noticed.
+const { mockScheduleOptions } = vi.hoisted(() => ({
+  mockScheduleOptions: { current: undefined as Record<string, unknown> | undefined },
+}));
 vi.mock('firebase-functions/v2/scheduler', () => ({
-  onSchedule: (_opts: unknown, handler: unknown) => handler,
+  onSchedule: (opts: Record<string, unknown>, handler: unknown) => {
+    mockScheduleOptions.current = opts;
+    return handler;
+  },
 }));
 
 // Mutable so the not-provisioned case can be exercised: an environment with no VAPID
@@ -200,6 +214,31 @@ beforeEach(() => {
   mockSubsByUid = { 'uid-a': [subDoc(makeSub('a1', 'uid-a'))] };
   mockSendWebPush.mockResolvedValue('sent' as const);
   mockSecretValue.current = 'test-vapid-key';
+});
+
+describe('remindBatchReadings — the cadence itself (#1462)', () => {
+  // These are the deploy-time constants nothing else can reach. The handler cannot
+  // observe them, so no behavioural test can: they are asserted here or nowhere.
+  it('fires once a week, on Friday morning, in the zone the week key is built in', () => {
+    // '0 10 * * 5' — minute 0, hour 10, every day-of-month, every month, weekday 5.
+    // Spelt out rather than compared loosely, because every one of those fields is a
+    // way to turn thirteen nudges into ninety.
+    expect(mockScheduleOptions.current?.schedule).toBe('0 10 * * 5');
+    // The zone the cron fires in must be the zone `dateInZone` builds the week key in,
+    // or the notification tag and the firing day can disagree across a BST boundary.
+    expect(mockScheduleOptions.current?.timeZone).toBe('Europe/London');
+  });
+
+  it('never retries, because there is no exactly-once ledger behind it', () => {
+    // `retryCount: 0` is load-bearing, not tidiness: a retry would re-send an ambient
+    // weekly nudge with nothing to collapse it beyond the week-keyed tag, and the
+    // function deliberately carries no `timerDeliveries`-style ledger.
+    expect(mockScheduleOptions.current?.retryCount).toBe(0);
+  });
+
+  it('runs in europe-west2, like every other Salt function', () => {
+    expect(mockScheduleOptions.current?.region).toBe('europe-west2');
+  });
 });
 
 describe('remindBatchReadings', () => {

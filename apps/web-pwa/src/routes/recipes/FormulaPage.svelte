@@ -66,6 +66,7 @@
   } from '@salt/domain/schemas';
   import { SaltProductSchema } from '@salt/domain/schemas';
   import { describeBoundViolation } from '../../lib/boundViolation.js';
+  import { parsePhReading, phFieldError } from '../../lib/phReading.js';
   import { equipment } from '../../lib/equipmentService.js';
   import { kindOf } from './recipeKind.js';
   import {
@@ -1092,15 +1093,11 @@
       : '',
   );
 
-  const targetPh = $derived.by(() => {
-    const raw = targetPhText.trim();
-    if (raw === '') return null;
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;
-  });
-  const targetPhError = $derived(
-    targetPhText.trim() !== '' && targetPh === null ? 'A pH from 0 to 14, or leave it blank.' : '',
-  );
+  // Through `lib/phReading.js`, which runs `PhSchema` rather than restating it
+  // (#1442) — the same module the observation sheet's own pH box uses, so a target
+  // and a reading cannot come to disagree about what a pH is.
+  const targetPh = $derived(parsePhReading(targetPhText));
+  const targetPhError = $derived(phFieldError(targetPhText));
 
   // EXACTLY ONE SPELLING OF "NO TARGET" — `null`, never an object of two nulls.
   // Two spellings would mean every reader downstream handling both, and the second
