@@ -1538,6 +1538,19 @@
   // now on screen — the user's own edited text, not the original. A recipe with no
   // brief yet seeds '' and the dialog reads as it always did: an empty optional box,
   // no error, no spinner — omitting it lets the trigger author one.
+  //
+  // THE UNCONDITIONAL RE-SEED IS ALSO THE DISCARD (issue #1432, epic #1417), and it
+  // is the only one there is: Cancel clears nothing, it merely closes the dialog, so
+  // an abandoned revision survives in `regenBrief` until this line overwrites it on
+  // the next open. What that prevents is a revision the user walked away from
+  // resurfacing later and being committed to `imageBrief` by a Regenerate — words
+  // nobody accepted, possibly art-directing a dish the recipe has since been edited
+  // into something else. Seed this box from anything but the saved brief (a
+  // `pendingRevision` local, say) and that is exactly what you get, while the
+  // re-seed-after-commit test below stays green. Pinned by
+  // tests/RecipeViewPage.imageBrief.test.ts → "discards a revision the user
+  // abandoned"; the whole argument is at apps/cloud-functions/src/index.ts →
+  // describeRecipeScene, the decision in docs/recipe-module.md.
   function openRegenerate(): void {
     regenBrief = recipe?.imageBrief ?? '';
     regenHint = '';
@@ -1561,6 +1574,16 @@
   // The steer is deliberately NOT `imageHint` (retired, inert): it never touches
   // the wire as a persisted field, it is a one-shot instruction to the text model
   // that dies with the round trip. What persists is its RESULT, once, via the brief.
+  //
+  // So `regenBrief` below is where a revision lives and the ONLY place it lives
+  // (issue #1432, epic #1417) — component state on this page, gone when the page
+  // goes and overwritten on the next `openRegenerate`. That loss is the design, not
+  // an unfixed #1416: the app HANDED the paragraph OVER TO BE REVIEWED rather than
+  // saving it, and the half of the same flow that runs with nobody watching (the
+  // onRecipeWritten trigger) already saves its own result server-side. Do not make
+  // this durable — not a draft field, not a store, and hard rule 3 rules out browser
+  // storage anyway. The argument and its boundary are at
+  // apps/cloud-functions/src/index.ts → describeRecipeScene.
   let regenHint = $state('');
   let briefBusy = $state(false);
   let briefError = $state<string | null>(null);
@@ -3114,7 +3137,12 @@
       </div>
 
       <DialogFooter>
-        <Button variant="outline" onclick={() => (regenOpen = false)} disabled={imageBusy}>
+        <Button
+          variant="outline"
+          onclick={() => (regenOpen = false)}
+          disabled={imageBusy}
+          data-testid="recipe-image-regenerate-cancel"
+        >
           Cancel
         </Button>
         <!--
