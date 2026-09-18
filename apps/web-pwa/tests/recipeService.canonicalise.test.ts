@@ -32,7 +32,7 @@ vi.mock('../src/lib/canonService.js', () => ({
 }));
 
 import * as firebaseSync from '@salt/firebase-sync';
-import { canonicaliseIngredients } from '../src/lib/recipeService.js';
+import { canonicaliseIngredients, matchIngredient } from '../src/lib/recipeService.js';
 
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
 
@@ -75,6 +75,12 @@ const parsedIngredient = {
   displayText: '2 cups',
 };
 
+// The ingredient ids the one batch call carried, in order.
+function sentIds(): (string | undefined)[] {
+  const [payload] = fs.callCanonicaliseRecipeIngredients.mock.calls[0]!;
+  return payload.items.map((i) => i.ingredientId);
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -84,6 +90,12 @@ beforeEach(() => {
   mockGetCanonItemsSnapshot.mockReturnValue([]);
 });
 
+// WHAT THIS SUITE OWNS SINCE #1434: the SELECTION — which ingredient lines are
+// sent — and the fact that this function writes nothing at all. The per-item FOLD
+// (`canonId`/`matchState`, the `needs_approval` case, the errored slot) moved into
+// the Cloud Function with the write, and is pinned there by
+// `apps/cloud-functions/tests/flows/canonicaliseRecipeIngredients.persist.test.ts`.
+// Selection stayed here because it reads the BROWSER's live canon snapshot.
 describe('canonicaliseIngredients', () => {
   it('returns success immediately when no ingredients are canonisable', async () => {
     const recipe = makeRecipe([
@@ -107,7 +119,10 @@ describe('canonicaliseIngredients', () => {
     expect(fs.saveRecipe).not.toHaveBeenCalled();
   });
 
-  it('sets matched + canonId when batch returns a matched item', async () => {
+  it('writes nothing itself — the function it called records the match (#1434)', async () => {
+    // The defect this fixes: the write used to be the statement AFTER a
+    // two-minute await, so a tab that went away performed none of it. This
+    // asserts the browser write is GONE, not merely moved later.
     const canon = makeCanonItem('canon-flour', false);
     fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
       kind: 'ok',
@@ -128,27 +143,25 @@ describe('canonicaliseIngredients', () => {
       ]),
     ]);
 
-    await canonicaliseIngredients(recipe);
+    const result = await canonicaliseIngredients(recipe);
 
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    const ing = saved.ingredients[0]!.items[0]!;
-    expect(ing.canonId).toBe('canon-flour');
-    expect(ing.matchState).toBe('matched');
+    expect(result).toEqual({ kind: 'ok', value: undefined });
+    expect(fs.saveRecipe).not.toHaveBeenCalled();
   });
 
-  it('sets matched even when the returned canon item has needs_approval = true', async () => {
-    const canon = makeCanonItem('canon-novel', true);
+  it('sends the recipe id and the per-row ingredient id, so the function can name what it writes', async () => {
+    const canon = makeCanonItem('canon-butter', false);
     fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
       kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'created', item: canon } }],
+      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
     });
 
     const recipe = makeRecipe([
       makeGroup([
         {
           id: 'i1',
-          rawText: 'some novel ingredient',
-          parsed: { ...parsedIngredient, item: 'novel ingredient' },
+          rawText: '100g unsalted butter, melted',
+          parsed: { ...parsedIngredient, item: 'butter' },
           canonId: null,
           matchState: 'pending',
           isOptional: false,
@@ -159,38 +172,12 @@ describe('canonicaliseIngredients', () => {
 
     await canonicaliseIngredients(recipe);
 
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    const ing = saved.ingredients[0]!.items[0]!;
-    expect(ing.canonId).toBe('canon-novel');
-    expect(ing.matchState).toBe('matched');
-  });
-
-  it('sets failed + null canonId when the batch item slot returns an error', async () => {
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
-      kind: 'ok',
-      value: [{ kind: 'err', error: { kind: 'NetworkError', reason: 'transient' } }],
+    // `rawName` still comes from `parsed.item` and `rawText` from the line; the
+    // identity fields are the addition.
+    expect(fs.callCanonicaliseRecipeIngredients).toHaveBeenCalledWith({
+      recipeId: 'recipe-1',
+      items: [{ ingredientId: 'i1', rawName: 'butter', rawText: '100g unsalted butter, melted' }],
     });
-
-    const recipe = makeRecipe([
-      makeGroup([
-        {
-          id: 'i1',
-          rawText: '2 cups flour',
-          parsed: parsedIngredient,
-          canonId: null,
-          matchState: 'pending',
-          isOptional: false,
-          firstUsedInStepId: null,
-        },
-      ]),
-    ]);
-
-    await canonicaliseIngredients(recipe);
-
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    const ing = saved.ingredients[0]!.items[0]!;
-    expect(ing.canonId).toBeNull();
-    expect(ing.matchState).toBe('failed');
   });
 
   it('retries failed ingredients (matchState failed + parsed)', async () => {
@@ -217,8 +204,7 @@ describe('canonicaliseIngredients', () => {
     await canonicaliseIngredients(recipe);
 
     expect(fs.callCanonicaliseRecipeIngredients).toHaveBeenCalledOnce();
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    expect(saved.ingredients[0]!.items[0]!.matchState).toBe('matched');
+    expect(sentIds()).toEqual(['i1']);
   });
 
   it('skips ingredients whose canonId is live in the canon store', async () => {
@@ -272,37 +258,7 @@ describe('canonicaliseIngredients', () => {
     await canonicaliseIngredients(recipe);
 
     expect(fs.callCanonicaliseRecipeIngredients).toHaveBeenCalledOnce();
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    expect(saved.ingredients[0]!.items[0]!.canonId).toBe('canon-flour-new');
-    expect(saved.ingredients[0]!.items[0]!.matchState).toBe('matched');
-  });
-
-  it('calls the batch CF with rawName from parsed.item and rawText from ingredient', async () => {
-    const canon = makeCanonItem('canon-butter', false);
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
-      kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
-    });
-
-    const recipe = makeRecipe([
-      makeGroup([
-        {
-          id: 'i1',
-          rawText: '100g unsalted butter, melted',
-          parsed: { ...parsedIngredient, item: 'butter' },
-          canonId: null,
-          matchState: 'pending',
-          isOptional: false,
-          firstUsedInStepId: null,
-        },
-      ]),
-    ]);
-
-    await canonicaliseIngredients(recipe);
-
-    expect(fs.callCanonicaliseRecipeIngredients).toHaveBeenCalledWith({
-      items: [{ rawName: 'butter', rawText: '100g unsalted butter, melted' }],
-    });
+    expect(sentIds()).toEqual(['i1']);
   });
 
   it('handles multiple ingredients across groups in a single batch call', async () => {
@@ -352,8 +308,59 @@ describe('canonicaliseIngredients', () => {
     await canonicaliseIngredients(recipe);
 
     expect(fs.callCanonicaliseRecipeIngredients).toHaveBeenCalledOnce();
-    const saved = fs.saveRecipe.mock.calls[0]![0];
-    expect(saved.ingredients[0]!.items[0]!.canonId).toBe('canon-flour');
-    expect(saved.ingredients[1]!.items[0]!.canonId).toBe('canon-sugar');
+    // Both groups' rows go in one call, each carrying its own id so the function
+    // can tell them apart.
+    expect(sentIds()).toEqual(['i1', 'i2']);
+  });
+});
+
+// The per-row match is the OTHER caller of the same callable, and #1435 settled
+// that it stays a browser write until one `{ recipeId, ingredientId }` callable
+// replaces both of its calls. Now that the callable CAN be asked to write, that
+// decision needs a pin rather than a paragraph: sending `recipeId` from here would
+// stamp `canonId`/`matchState` onto a row whose `parsed` is still null in
+// Firestore, because the parse half of the pair is written by this function's
+// caller afterwards.
+describe('matchIngredient (per-row, still a browser write)', () => {
+  it('does not ask the function to write', async () => {
+    fs.callParseRecipeIngredients.mockResolvedValue({
+      kind: 'ok',
+      value: [
+        {
+          id: 'g1',
+          name: null,
+          items: [
+            {
+              id: 'i1',
+              rawText: '2 cups flour',
+              parsed: parsedIngredient,
+              canonId: null,
+              matchState: 'pending' as const,
+              isOptional: false,
+              firstUsedInStepId: null,
+            },
+          ],
+        },
+      ],
+    });
+    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+      kind: 'ok',
+      value: [{ kind: 'ok', value: { decision: 'matched', item: makeCanonItem('canon-flour') } }],
+    });
+
+    await matchIngredient({
+      id: 'i1',
+      rawText: '2 cups flour',
+      parsed: null,
+      canonId: null,
+      matchState: 'pending',
+      isOptional: false,
+      firstUsedInStepId: null,
+    });
+
+    const [payload] = fs.callCanonicaliseRecipeIngredients.mock.calls[0]!;
+    expect(payload.recipeId).toBeUndefined();
+    expect(payload.items[0]!.ingredientId).toBeUndefined();
+    expect(fs.saveRecipe).not.toHaveBeenCalled();
   });
 });
