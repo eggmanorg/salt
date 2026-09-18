@@ -124,6 +124,19 @@ export const firstDayOfWeek: Readable<Weekday> = derived(
   ($c) => $c?.firstDayOfWeek ?? DEFAULT_FIRST_DAY,
 );
 
+// Whether the config document has actually been read, as opposed to
+// `firstDayOfWeek` still answering its 'mon' fallback because nothing has
+// landed yet. The two are NOT the same fact: a household really settled on
+// Monday is indistinguishable from one still waiting on its config doc by
+// looking at `firstDayOfWeek` alone. A reader that merely lays out by
+// `firstDayOfWeek` doesn't care — Monday is a fine guess to render and correct
+// itself. A reader that KEYS a read on it does care: a read issued under the
+// fallback lands on a document that may not be the household's, and a
+// legitimate "no such document" answer for the wrong week must not be told
+// apart from "this week is genuinely empty" (issue #1448 review, finding 1 —
+// see `RecipeAddToPlannerSheet.svelte`'s `known` gate).
+export const mealPlanConfigLoaded: Readable<boolean> = derived(_config, ($c) => $c !== null);
+
 // The displayed week — falls back to an unsaved empty week (only persisted on
 // first edit / load-template) so the editor always has seven days to render.
 export const currentWeek: Readable<MealPlanWeek> = derived(
@@ -401,6 +414,44 @@ function currentTemplateObject(): MealPlanTemplate {
 // ever refresh.
 function weekIsKnown(start: string): boolean {
   return weekUnsubs.has(start) || get(_weeks)[start] !== undefined;
+}
+
+/**
+ * One week document, FOR DISPLAY ONLY — a snapshot, never cached (issue #1438).
+ *
+ * The recipe page's night picker shows what is already planned on each of about
+ * twenty nights, which spans two or three week documents the planner may be
+ * holding none of. This answers that, and nothing else:
+ *
+ *  - A week already in `_weeks` is handed straight back. Something has a live
+ *    subscription keeping it fresh, so it is strictly better than a read as well
+ *    as free.
+ *  - Anything else is read ONE-SHOT and returned. The result does **not** enter
+ *    `_weeks` or `latestWeekUpdatedAt`, and no subscription is opened for it.
+ *    Nothing would be listening to a week read this way, so nothing would ever
+ *    refresh it, yet its mere presence in `_weeks` would make `weekIsKnown`
+ *    answer true and let a much later full-document write be built on a snapshot
+ *    that had since moved on. That is the rule `applyWeekOptimistically` states
+ *    for the write path's own one-shot read; obeying it here means keeping this
+ *    read out of the cache entirely rather than remembering to evict it.
+ *
+ * The consequence is the property worth naming: **a display read is never the
+ * write path's evidence.** `addRecipeToDay` for a date this has displayed still
+ * performs its own read-before-write, because nothing this function does can
+ * widen `weekIsKnown`. `tests/mealPlanService.sync.test.ts` → _"a display read is
+ * not the write path's evidence"_ goes red the day that stops being true.
+ *
+ * `null` is a real answer — an unplanned week, with no document. A `Failure` is
+ * the caller's to degrade from quietly: a display read that fails is not
+ * reported (CLAUDE.md § _Observability_), and the row it would have filled stays
+ * pickable because the write path reads for itself regardless.
+ */
+export function loadWeekForDisplay(
+  startDate: string,
+): Promise<ReadResult<MealPlanWeek | null, DomainError>> {
+  const held = get(_weeks)[startDate];
+  if (held !== undefined) return Promise.resolve(success(held));
+  return loadMealPlanWeek(startDate);
 }
 
 /**
