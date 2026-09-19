@@ -102,38 +102,19 @@ export function resolveEquipmentItem(
   return match;
 }
 
-// PART 2 OF THE RULE, WRITTEN ONCE (issue #1196). Does the item's own name carry
-// every word the label carries? Both the loop above and `namesItemItself` below
-// need exactly this test, and they had a copy each — nothing tied them together
-// but the header claiming they agreed, so either could have been loosened alone.
-// Takes tokens rather than strings because the caller above already has both
-// sides folded and must not fold them twice per item.
+// PART 2 OF THE RULE. Does the item's own name carry every word the label carries?
+// Takes tokens rather than strings because the caller above already has both sides
+// folded and must not fold them twice per item.
+//
+// It was factored out of the loop by issue #1196 because `namesItemItself` — the
+// "does this label name the machine rather than one of its parts?" test
+// `groupKitByEquipment` asked before it grouped on the link alone — needed the
+// identical membership rule and had a copy of it. That second caller went with
+// #1465's word passes, so this is private again and there is nothing left to
+// drift from.
 function ownNameExplains(labelTokens: Iterable<string>, own: ReadonlySet<string>): boolean {
   for (const word of labelTokens) {
     if (!own.has(word)) return false;
   }
   return true;
-}
-
-/**
- * Is this label spelled out of the item's OWN name, rather than out of one of its
- * accessories?
- *
- * Not a resolver and not a second opinion on one: the caller has already
- * established that `label` names `item` — `resolveEquipmentItem` returned it — and
- * this asks the one thing that return value cannot say, which half of the two-part
- * rule got it there. The item is a given, never searched for, so loosening or
- * tightening this cannot make a label resolve to something it otherwise would not.
- *
- * The membership test is the resolver's own (`ownNameExplains`), not a copy of it,
- * and both sides fold through the same `normaliseName` — so the two cannot disagree
- * about which words count, nor about case, punctuation, plurals or model numbers.
- * `groupKitByEquipment` is the caller; see its header for what it does with the
- * answer.
- */
-export function namesItemItself(label: string, item: EquipmentItem): boolean {
-  return ownNameExplains(
-    normaliseName(label).split(' ').filter(Boolean),
-    new Set(normaliseName(item.name).split(' ').filter(Boolean)),
-  );
 }

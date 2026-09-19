@@ -52,11 +52,12 @@
   // 28cm looks like the generic frying pan" is a fact about the pan, written
   // onto the manifest as a BORROWED PICTURE — a reference, so redrawing the
   // source reaches every pan borrowing it. That includes a row with no recorded
-  // link at all whose label already names one of your things by words — every
-  // unlinked stored recipe reaches this dialog that way until Phase 4 re-runs
-  // them — because `resolveKitEntryItem` is the exact function `kitIcons.ts`
-  // renders through, and a row this dialog opened on "no picture" cannot be
-  // answered by a different, narrower question than the one that put it here.
+  // link at all whose label already names one of your things by words, which the
+  // 2026-09-19 production re-run left two of (both `"frying pan"`, both reaching
+  // the Frying Pans family) and which any never-inferred kit produces again —
+  // because `resolveKitEntryItem` is the exact function `kitIcons.ts` renders
+  // through, and a row this dialog opened on "no picture" cannot be answered by a
+  // different, narrower question than the one that put it here.
   //
   // A row that resolves to nothing is ORDINARY WORDS, and words are vocabulary:
   // "this 'heatproof bowl' means the mixing bowl you already draw" is a MATCHER
@@ -81,11 +82,11 @@
    * Which of the household's things this row names — the link where it has
    * one, the words where it does not — or null for ordinary words. The SAME
    * question `kitIcons.ts` asks to decide what to render, through the same
-   * function: a row the strip already draws as "one of your things" (an
-   * unlinked recipe whose label resolves by name, which is every stored kit
-   * until Phase 4 re-runs it) must take the linked branch here too, or this
-   * dialog writes a matcher the renderer never reaches and "draw new" mints a
-   * duplicate, instance-named tool (#956).
+   * function: a row the strip already draws as "one of your things" — including
+   * an unlinked label that resolves by name, of which production still holds two
+   * — must take the linked branch here too, or this dialog writes a matcher the
+   * renderer never reaches and "draw new" mints a duplicate, instance-named tool
+   * (#956).
    */
   const linked = $derived(resolveKitEntryItem(entry, items));
 

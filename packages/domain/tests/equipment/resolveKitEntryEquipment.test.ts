@@ -143,9 +143,10 @@ describe('resolveKitEntryItem', () => {
   // The composed answer to "which of your things is this row" — the link,
   // falling back to the words. Review of #1482 (issue #1465): the picker was
   // branching on the link alone, so a row that names one of your things ONLY by
-  // words — every unlinked stored recipe, until Phase 4 re-runs them — took the
-  // "ordinary words" act although `kitIcons.ts` was already rendering it as one
-  // of your things. This is the one function both now read through.
+  // words took the "ordinary words" act although `kitIcons.ts` was already
+  // rendering it as one of your things. This is the one function both now read
+  // through — and the word half is still live, for the two production lines the
+  // case below names.
 
   it('prefers the link, exactly as resolveKitEntryEquipment does', () => {
     const got = resolveKitEntryItem(
@@ -176,6 +177,18 @@ describe('resolveKitEntryItem', () => {
 
   it('answers null when neither the link nor the words resolve', () => {
     expect(resolveKitEntryItem({ label: 'a wooden spoon' }, MANIFEST)).toBeNull();
+  });
+
+  it('still reaches an owned record by WORDS ALONE — the two lines production rests on', () => {
+    // #1465's Phase 4 deleted `groupKitByEquipment`'s word passes, and it is this
+    // fallback that made that safe rather than lossy. The production assessment of
+    // 2026-09-19 measured exactly two of 451 stored kit lines still resolving to an
+    // owned record without a link — `"frying pan"` in `Paneer Makhanwala…` and in
+    // `Potatoes Boulangère`, both landing on the Frying Pans family and drawing its
+    // picture through here. Delete this branch and those two rows go blank.
+    const got = resolveKitEntryItem({ label: 'frying pan' }, MANIFEST);
+    expect(got?.item.id).toBe('pans');
+    expect(got?.accessory).toBeNull();
   });
 
   it('still answers null for a family member no rule over the words could find', () => {

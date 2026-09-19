@@ -665,14 +665,20 @@ describe('RecipeViewPage — the Equipment tab', () => {
 // design says it: on the appliance's OWN row, as a "with the …" tail, with no second
 // tile, no second hairline and no row of its own.
 //
-// It was an indented row until the pictures made that unreadable: since #1182 a
-// prefixed accessory resolves to its owning item, so the nested row drew the
+// It was an indented row until the pictures made that unreadable: a prefixed
+// accessory resolves to its owning item (#1182), so the nested row drew the
 // appliance's picture at 40px directly under the appliance's picture at 40px. The
 // tests below are written so that re-introducing a second row fails them.
+//
+// EVERY KIT BELOW CARRIES ITS LINK, because since #1465's Phase 4 the link is the
+// only thing that groups anything. These fixtures are what the production re-run
+// of 2026-09-19 left behind; the same words with `equipment: null` are a flat list,
+// and that is asserted too.
 
 describe('RecipeViewPage — accessories under their appliance', () => {
   it('says an accessory on the appliance own row, never as a row of its own', () => {
-    // Staging's real kit: `['sieve', 'Cosori 5L Rice Cooker', 'Rice Spoon']`.
+    // Staging's real kit: `['sieve', 'Cosori 5L Rice Cooker', 'Rice Spoon']`, as the
+    // re-run leaves it — the two owned lines linked, the sieve ordinary words.
     mockEquipment._set({
       items: [
         {
@@ -689,8 +695,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
       makeEntry({
         kit: [
           { label: 'sieve', stepIds: [], equipment: null },
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'Rice Spoon', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'Rice Spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
         ],
       }),
     ]);
@@ -727,8 +741,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'Rice Spoon', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'Rice Spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
         ],
       }),
     ]);
@@ -741,13 +763,13 @@ describe('RecipeViewPage — accessories under their appliance', () => {
   });
 
   it('folds a PREFIXED accessory in rather than repeating the appliance picture (issue #1182)', () => {
-    // The case that broke the indented design, and the reason this file changed. A
-    // label spelled with the owner's leading word ("Magimix Cocotte Slow Cook Pot")
-    // is one `resolveEquipmentItem` ACCEPTS, resolving it to the owning item — so
-    // asking the shared `$kitIcons` lookup for it returns the APPLIANCE'S OWN
-    // picture. Drawn on a row of its own that was one 40px pictogram directly under
-    // an identical 40px pictogram, separated by a hairline: the layout said "part
-    // of", the artwork said "another one of these", and the artwork won.
+    // The case that broke the indented design, and the reason this file changed. An
+    // entry that names one of an appliance's parts — here "Magimix Cocotte Slow Cook
+    // Pot", linked to the pot — draws the APPLIANCE'S OWN picture from the shared
+    // `$kitIcons` lookup, because the pot has no drawing of its own. On a row of its
+    // own that was one 40px pictogram directly under an identical 40px pictogram,
+    // separated by a hairline: the layout said "part of", the artwork said "another
+    // one of these", and the artwork won.
     //
     // Folded in, there is one row, one picture, and the words carry the rest.
     mockEquipment._set({
@@ -767,8 +789,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Magimix Cook Expert', stepIds: [], equipment: null },
-          { label: 'Magimix Cocotte Slow Cook Pot', stepIds: [], equipment: null },
+          {
+            label: 'Magimix Cook Expert',
+            stepIds: [],
+            equipment: { itemId: 'eq-magimix', accessoryId: null },
+          },
+          {
+            label: 'Magimix Cocotte Slow Cook Pot',
+            stepIds: [],
+            equipment: { itemId: 'eq-magimix', accessoryId: 'acc-cocotte' },
+          },
         ],
       }),
     ]);
@@ -804,9 +834,21 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'steam basket', stepIds: [], equipment: null },
-          { label: 'rice spoon', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'steam basket',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-basket' },
+          },
+          {
+            label: 'rice spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
         ],
       }),
     ]);
@@ -834,8 +876,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
       makeEntry({
         kit: [
           { label: 'small frying pan', stepIds: [], equipment: null },
-          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
-          { label: 'Wire Oven Rack', stepIds: [], equipment: null },
+          {
+            label: 'Oven Sheet Pan',
+            stepIds: [],
+            equipment: { itemId: 'eq-anova', accessoryId: 'acc-pan' },
+          },
+          {
+            label: 'Wire Oven Rack',
+            stepIds: [],
+            equipment: { itemId: 'eq-anova', accessoryId: 'acc-rack' },
+          },
         ],
       }),
     ]);
@@ -855,8 +905,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'Rice Spoon', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'Rice Spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
         ],
       }),
     ]);
@@ -889,9 +947,13 @@ describe('RecipeViewPage — accessories under their appliance', () => {
           {
             label: 'Ninja Foodi 3-in-1 Hand Blender, Mixer & Chopper CI100UK',
             stepIds: [],
-            equipment: null,
+            equipment: { itemId: 'eq-ninja', accessoryId: null },
           },
-          { label: 'Hand Blender Attachment', stepIds: [], equipment: null },
+          {
+            label: 'Hand Blender Attachment',
+            stepIds: [],
+            equipment: { itemId: 'eq-ninja', accessoryId: 'acc-att' },
+          },
         ],
       }),
     ]);
@@ -927,8 +989,16 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'Rice Spoon', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'Rice Spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
         ],
       }),
     ]);
@@ -969,10 +1039,26 @@ describe('RecipeViewPage — accessories under their appliance', () => {
     mockRecipes._set([
       makeEntry({
         kit: [
-          { label: 'Cosori 5L Rice Cooker', stepIds: [], equipment: null },
-          { label: 'Rice Spoon', stepIds: [], equipment: null },
-          { label: 'Anova Precision Oven', stepIds: [], equipment: null },
-          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
+          {
+            label: 'Cosori 5L Rice Cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'Rice Spoon',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-spoon' },
+          },
+          {
+            label: 'Anova Precision Oven',
+            stepIds: [],
+            equipment: { itemId: 'eq-anova', accessoryId: null },
+          },
+          {
+            label: 'Oven Sheet Pan',
+            stepIds: [],
+            equipment: { itemId: 'eq-anova', accessoryId: 'acc-pan' },
+          },
         ],
       }),
     ]);
@@ -1002,7 +1088,11 @@ describe('RecipeViewPage — accessories under their appliance', () => {
       makeEntry({
         kit: [
           { label: 'small frying pan', stepIds: [], equipment: null },
-          { label: 'Oven Sheet Pan', stepIds: [], equipment: null },
+          {
+            label: 'Oven Sheet Pan',
+            stepIds: [],
+            equipment: { itemId: 'eq-anova', accessoryId: 'acc-pan' },
+          },
         ],
       }),
     ]);

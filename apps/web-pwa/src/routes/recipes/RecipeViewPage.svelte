@@ -2666,10 +2666,13 @@
 
                  AN ACCESSORY IS NOT A ROW. It is said on the appliance's own row,
                  as a second line under the name: "Cosori 5L Rice Cooker / with the
-                 steam basket and rice spoon". `groupKitByEquipment` still decides
-                 what belongs to what — a pure query, so the page never guesses, and
-                 it never nests an accessory whose appliance this recipe did not ask
+                 steam basket and rice spoon". `groupKitByEquipment` decides what
+                 belongs to what — a pure query, so the page never guesses, and it
+                 never nests an accessory whose appliance this recipe did not ask
                  for — but what it returns is now rendered as ONE line per group.
+                 Since #1465 Phase 4 it reads the entry's recorded LINK and nothing
+                 else, so a kit written before that run lists its parts flat until
+                 "Redo kit" is pressed.
 
                  It used to be its own `<li>`, indented `pl-12` and muted, drawing
                  through the same `$kitIcons` lookup as the head row. That lookup is
@@ -2697,8 +2700,9 @@
                  and leaves "Cosori 5L Rice Cooker" and "OXO Mandoline" untouched;
                  `titleCase` would rewrite both. The accessory line under the name
                  opens "with the …" and is left alone — it is a continuation, not a
-                 row. `groupKitByEquipment` still keys on the stored label, so the
-                 capital is a rendering and nothing downstream sees it.
+                 row. `groupKitByEquipment` reads the stored entry rather than the
+                 rendered text, so the capital is a rendering and nothing downstream
+                 sees it.
 
                  The tab's count follows the LINES, `kitGroups.length`, exactly as
                  Ingredients counts the lines you will read rather than the groups
