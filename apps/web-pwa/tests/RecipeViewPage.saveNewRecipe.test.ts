@@ -102,6 +102,7 @@ vi.mock('@salt/observability', () => ({
   // nothing here asserts on it, but the whole-module mock must supply it.
   BREAD_FLAG_KEY: 'bread',
   LIBRARY_FLAG_KEY: 'library',
+  CHAT_SAVE_FLAG_KEY: 'chat-save',
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   sessions: mockSessions,
@@ -212,6 +213,7 @@ function makeSession(messages: ChatSessionDoc['messages']): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-01-15T00:00:00.000Z',
   };
 }

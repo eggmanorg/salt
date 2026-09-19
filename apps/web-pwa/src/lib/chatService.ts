@@ -281,6 +281,7 @@ function newSession(
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: ts, // saveChatSession will overwrite with the real expiry
   };
 }
@@ -336,6 +337,46 @@ export async function claimRecipe(
   const session = get(_sessions).find((s) => s.id === sessionId);
   if (!session || session.recipeId !== null) return success(undefined);
   return persistSession({ ...session, recipeId });
+}
+
+// Which recorded save requests this tab has already taken (issue #1480), keyed
+// `sessionId:messageId` so two requests in one conversation are two entries.
+//
+// IN MEMORY, AND THAT IS THE RIGHT SCOPE. The durable half of "only once" is the
+// clear below, which every tab and every reload reads; this set exists for the
+// window between taking the request and that clear landing on the subscription,
+// during which the store still holds the old document and an effect watching it
+// would fire again. A reload legitimately empties it — by then the field is
+// either cleared (nothing to take) or still set because the clear failed, in
+// which case firing again is the recovery, not a bug.
+const takenSaveIntents = new Set<string>();
+
+/**
+ * Take the save request the chef recorded on this conversation, if there is one
+ * (issue #1480). True means the caller now owns it and should run the save.
+ *
+ * CLEARED BEFORE THE SAVE RUNS, not after. A save that fails, or a page that goes
+ * away mid-flight, then costs one button press — where clearing afterwards would
+ * leave the request on the document and re-run the save on the next reload, which
+ * is the one outcome worth engineering against: an unasked-for write is how this
+ * issue came to exist.
+ *
+ * THE BOUNDARY (CLAUDE.md Rule 12): "exactly once" holds per request per browser,
+ * not globally. The clear is an ordinary LWW write, so two devices sitting in the
+ * same conversation when the chef records a request can each take it before the
+ * other's clear arrives, and each will save. That is two recipes to delete, and
+ * it is the same exposure the floppy-disc button has had all along — not a
+ * reason for a transaction, which would still not make a second device's save
+ * impossible, only slightly harder.
+ */
+export async function consumeSaveIntent(session: ChatSessionDoc): Promise<boolean> {
+  const messageId = session.pendingSaveIntent;
+  if (messageId === null) return false;
+  const token = `${session.id}:${messageId}`;
+  if (takenSaveIntents.has(token)) return false;
+  takenSaveIntents.add(token);
+  await persistSession({ ...session, pendingSaveIntent: null });
+  return true;
 }
 
 // "Make read-write" (issue #1270): restart the two-day clock from now. An

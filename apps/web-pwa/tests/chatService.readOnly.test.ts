@@ -50,6 +50,7 @@ function quietSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     createdAt: new Date(Date.now() - CHAT_READ_ONLY_AFTER_MS - 1000).toISOString(),
     updatedAt: new Date(Date.now() - CHAT_READ_ONLY_AFTER_MS - 1000).toISOString(),
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: new Date(Date.now() + 1000).toISOString(),
     ...overrides,
   };

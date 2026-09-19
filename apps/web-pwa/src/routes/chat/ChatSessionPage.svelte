@@ -11,7 +11,13 @@
   } from '@salt/ui-components';
   import { push, router } from 'svelte-spa-router';
   import { goBack } from '../../lib/nav.js';
-  import { sessions, isLoadingSessions, claimRecipe } from '../../lib/chatService.js';
+  import {
+    sessions,
+    isLoadingSessions,
+    claimRecipe,
+    consumeSaveIntent,
+  } from '../../lib/chatService.js';
+  import { chatSaveGate } from '../../lib/featureGate.js';
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
   import { recipes, attachComponentToMeal } from '../../lib/recipeService.js';
@@ -210,6 +216,39 @@
     addToast(KIND_COPY[kindOf(saved)].createdToast, 'success');
     push(`/recipes/${saved.id}`);
   }
+
+  // ─── Asking the chef to save it (issue #1480) ───────────────────────────────
+  //
+  // The second door onto "Save as recipe", and it opens onto the SAME handler:
+  // say "create a recipe from this" and what runs is `handleSaveAsRecipe` below,
+  // line for line, so the recipe, the claim, the toast and the landing page
+  // cannot differ from the button's. That is the point of the issue — a recipe
+  // saved by asking is indistinguishable from one saved by tapping.
+  //
+  // The chef RECOGNISES; it does not save. `chefChat`'s `saveRecipe` tool writes
+  // nothing and only lets the flow record the request on the chat document
+  // (`pendingSaveIntent`), which arrives here on the subscription the page is
+  // already running. So a model that mishears costs an unwanted recipe somebody
+  // can delete, never a dish quietly rewritten.
+  //
+  // GENERAL CHATS ONLY, for now. An attached chat has two things the ask could
+  // mean — fold it into this dish, or keep it as a separate one — and choosing
+  // between them is issue #1480's phase 2. Until then an attached chat ignores a
+  // recorded request entirely, and the floppy-disc menu is the only route there.
+  // The intent is left ON the document rather than cleared, so nothing is thrown
+  // away before the surface that can use it exists.
+  $effect(() => {
+    const current = session;
+    if (!current || current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
+    if (current.recipeId !== null) return;
+    void (async () => {
+      // Clears the request before saving, and answers false if another effect
+      // run, or another surface, already took this one — see `consumeSaveIntent`.
+      if (!(await consumeSaveIntent(current))) return;
+      await handleSaveAsRecipe();
+    })();
+  });
 
   // Save as new recipe — the attached-chat counterpart (issue #798). You asked
   // what would go with the dish and want to keep the answer as its own recipe.

@@ -68,6 +68,7 @@ function storedSession(overrides: Partial<ChatSessionDoc> = {}): Record<string, 
     createdAt: '2026-09-17T08:00:00.000Z',
     updatedAt: '2026-09-17T08:00:00.000Z',
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-10-01T08:00:00.000Z',
     ...overrides,
   };

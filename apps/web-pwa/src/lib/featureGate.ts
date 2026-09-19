@@ -5,6 +5,7 @@ import {
   onObservabilityFeatureFlags,
   BREAD_FLAG_KEY,
   LIBRARY_FLAG_KEY,
+  CHAT_SAVE_FLAG_KEY,
 } from '@salt/observability';
 
 // The one place in the app that knows how to ask "is this feature on for me?"
@@ -33,7 +34,7 @@ import {
  * a typo is a compile error instead of a feature that silently stays hidden
  * forever (a misspelled flag reads as "off" and looks exactly like a working gate).
  */
-export type FeatureKey = 'bread' | 'library';
+export type FeatureKey = 'bread' | 'library' | 'chatSave';
 
 // Feature key → PostHog flag key. Separate from the union so the flag can be
 // renamed in PostHog without touching every call site, and so the app's word for
@@ -57,6 +58,12 @@ const FLAG_KEY: Record<FeatureKey, string> = {
   // gate now has a server half (`chefChat.ts`) and a literal in each place would
   // be a rename waiting to go half-done.
   library: LIBRARY_FLAG_KEY,
+  // Both halves from the start (#1480): the SERVER half decides whether the chef
+  // is given the `saveRecipe` tool at all, and is what actually withholds the
+  // feature; this browser half decides whether a recorded request is ever acted
+  // on, which is what stops one recorded during a deploy window running a save
+  // this bundle was never told about.
+  chatSave: CHAT_SAVE_FLAG_KEY,
 };
 
 export interface FeatureGate {
@@ -114,3 +121,6 @@ export const breadGate = featureGate('bread');
 
 /** The library — the kitchen facts that are not recipes (epic #1372). */
 export const libraryGate = featureGate('library');
+
+/** Asking the chef to save a recipe, rather than tapping the icon (issue #1480). */
+export const chatSaveGate = featureGate('chatSave');

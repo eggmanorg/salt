@@ -84,6 +84,7 @@ function makeSession(): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: ts,
   };
 }

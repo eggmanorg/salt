@@ -249,6 +249,7 @@ function makeSession(messages: ChatSessionDoc['messages']): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-01-15T00:00:00.000Z',
   };
 }

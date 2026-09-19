@@ -69,6 +69,40 @@ foundation (#179).
    (fetched on demand through a tool, not ambient), and a different feature (epic
    #1372) entirely; they only rhyme in name.
 
+   **`saveRecipe` is the seventh (#1480), and it is the first tool that asks for
+   something rather than doing it.** The chef can now be told "save this as a
+   recipe" and the recipe gets saved — the same save, the same document, as
+   tapping the floppy-disc icon. The tool itself **writes nothing at all**: its
+   handler is a constant, it takes no `db`, and all it leaves behind is a
+   `toolRequest` in the turn's own message history, which the flow reads and
+   records on the chat document it was already writing since #1430
+   (`ChatSessionSchema.pendingSaveIntent`). The SAVE runs in the browser, through
+   `chatRecipeAuthor.ts` — the one create implementation — so a recipe saved by
+   asking is indistinguishable from one saved by tapping, and no Firebase or
+   recipe-write path is added to `cloud-functions` (which could not import
+   `@salt/firebase-sync` anyway, CLAUDE.md Rule 2). That asymmetry is the safety
+   property: recognition never writes, so a model that mishears costs a recipe
+   somebody can delete rather than a dish quietly rewritten;
+   `chefChat.saveIntent.test.ts` goes red if the handler ever reaches Firestore.
+   Gated server-side, per caller, on the `chat-save` PostHog flag
+   (`CHAT_SAVE_FLAG_KEY`, shared via `@salt/observability`), with a browser half
+   in `featureGate.ts` — outside the flag there is no seventh tool and no saving
+   section in the prompt.
+
+   **The output-schema half of this principle is untouched by it, and that is why
+   a tool was chosen.** `ChefChatOutputSchema` is still `z.string()`,
+   `generateStream` still gets no `output` option, and the wire contract has not
+   moved — which is what makes #1303's failure impossible to repeat here. #1299
+   carried the chef's structured signal back beside the prose by splitting
+   `outputSchema` from `streamSchema`; a browser on the older bundle wrote the
+   whole `{ text, offered }` object into `message.text`, and every later read
+   failed `text: z.string()` and dropped the conversation from the chat list for
+   good (`unwrapWrappedReply` still repairs those documents). The cost objection
+   #1310 raised does not transfer either: `declareOffer` ran an extra pro-tier
+   pass on EVERY turn, and this runs one on the handful of turns where somebody
+   actually asks to save — turns on which a librarian call is about to be paid
+   anyway.
+
 2. **Small and fixed stays ambient; large and growing gets a tool.** Household
    favourites and kitchen memory go straight into the chef's system prompt. Equipment
    does too, but only its NAMES — see the split below. No retrieval tool for what is

@@ -37,6 +37,7 @@ vi.mock('@salt/observability', () => ({
   trackUsageEvent: vi.fn(),
   BREAD_FLAG_KEY: 'bread',
   LIBRARY_FLAG_KEY: 'library',
+  CHAT_SAVE_FLAG_KEY: 'chat-save',
   isObservabilityFeatureEnabled: () => false,
   areObservabilityFeatureFlagsSettled: () => true,
   onObservabilityFeatureFlags: () => () => {},
@@ -100,6 +101,7 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-01-15T00:00:00.000Z',
     ...overrides,
   };

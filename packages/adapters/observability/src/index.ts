@@ -60,4 +60,4 @@ export type { CanonMatchEventProps, CanonMatchPath } from './shared/matchOutcome
 export { isReportableCategory } from './shared/reportableCategory.js';
 // PostHog feature-flag keys — shared with the /server subpath so both halves of
 // a gate cannot spell the same flag differently (issue #1054).
-export { BREAD_FLAG_KEY, LIBRARY_FLAG_KEY } from './shared/featureFlagKeys.js';
+export { BREAD_FLAG_KEY, LIBRARY_FLAG_KEY, CHAT_SAVE_FLAG_KEY } from './shared/featureFlagKeys.js';

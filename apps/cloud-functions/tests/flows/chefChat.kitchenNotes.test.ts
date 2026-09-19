@@ -64,7 +64,14 @@ vi.mock('firebase-admin/firestore', () => ({ getFirestore: () => mockGetFirestor
 // would break its bindings for no gain.
 // `vi.hoisted` because the mock factory below is hoisted above this file's own
 // imports, and one of those imports pulls in the very module being mocked.
-const { mockFlagEnabled } = vi.hoisted(() => ({ mockFlagEnabled: vi.fn(async () => true) }));
+//
+// KEY-AWARE since #1480, which put a SECOND gated tool on the same mock. Every
+// assertion below is about the `library` flag, so this answers for that one and
+// refuses everything else — which is also what keeps "all six tools" exact now
+// that a seventh exists behind its own flag.
+const { mockFlagEnabled } = vi.hoisted(() => ({
+  mockFlagEnabled: vi.fn(async (key: string) => key === 'library'),
+}));
 vi.mock('@salt/observability/server', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   isServerFeatureEnabled: mockFlagEnabled,
@@ -87,7 +94,7 @@ beforeEach(() => {
   mockWarn.mockClear();
   mockGenerateStream.mockReset();
   mockFlagEnabled.mockClear();
-  mockFlagEnabled.mockResolvedValue(true);
+  mockFlagEnabled.mockImplementation(async (key: string) => key === LIBRARY_FLAG_KEY);
 });
 
 // ─── A Firestore holding libraryPages, and nothing else ──────────────────────

@@ -25,6 +25,7 @@ vi.mock('@salt/observability', () => ({
   // make them agree with themselves and prove nothing.
   BREAD_FLAG_KEY: 'bread',
   LIBRARY_FLAG_KEY: 'library',
+  CHAT_SAVE_FLAG_KEY: 'chat-save',
 }));
 
 // Module state (the memoised store map, the shared revision store) is per-import,

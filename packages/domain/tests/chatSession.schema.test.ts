@@ -95,6 +95,54 @@ describe('ChatSessionSchema.reopenedAt', () => {
   });
 });
 
+// `pendingSaveIntent` (issue #1480): the chef was asked, on the turn named here,
+// to save this conversation as a recipe. Third field on this document to carry a
+// `.default(null)` for the same reason — the realtime subscription SKIPS a
+// document that fails validation, so a required field empties the chat list of
+// everything written before it shipped.
+//
+// It is also what makes the deploy window safe the other way round: a browser on
+// an older bundle reading a newer document has Zod strip a key it does not know,
+// so it misses the prompt rather than losing the conversation the way #1303 did.
+describe('ChatSessionSchema.pendingSaveIntent', () => {
+  const preExistingDoc = {
+    id: 'sess-1',
+    schemaVersion: 1,
+    ownerUid: 'uid-1',
+    recipeId: null,
+    title: 'New chat',
+    messages: [],
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    expiresAt: '2026-09-15T00:00:00.000Z',
+  };
+
+  it('parses a chat written before the field existed, defaulting it to null', () => {
+    const result = ChatSessionSchema.safeParse(preExistingDoc);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.pendingSaveIntent).toBe(null);
+  });
+
+  it('carries the id of the assistant turn the request came from', () => {
+    const result = ChatSessionSchema.safeParse({ ...preExistingDoc, pendingSaveIntent: 'msg-9' });
+    expect(result.success && result.data.pendingSaveIntent).toBe('msg-9');
+  });
+
+  it('refuses a wrong value rather than laundering it into the default', () => {
+    expect(
+      ChatSessionSchema.safeParse({ ...preExistingDoc, pendingSaveIntent: true }).success,
+    ).toBe(false);
+  });
+
+  it('strips an unknown key instead of failing, which is the deploy-window case', () => {
+    // An older browser reading a document a newer flow wrote. Zod's default
+    // object behaviour, asserted because the whole channel choice rests on it.
+    const result = ChatSessionSchema.safeParse({ ...preExistingDoc, somethingNewer: 'x' });
+    expect(result.success).toBe(true);
+    expect(result.success && 'somethingNewer' in result.data).toBe(false);
+  });
+});
+
 // A conversation with history, shared by the two suites below.
 const legacySession = {
   id: 'sess-2',

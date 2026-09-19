@@ -186,6 +186,7 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '9999-12-31T23:59:59.999Z',
     ...overrides,
   };

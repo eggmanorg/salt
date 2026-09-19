@@ -37,3 +37,21 @@ export const BREAD_FLAG_KEY = 'bread' as const;
  * feature, in the browser and in the chef's tool surface at once.
  */
 export const LIBRARY_FLAG_KEY = 'library' as const;
+
+/**
+ * The PostHog flag gating the chef-triggered recipe save (issue #1480) — asking
+ * the chef to save a recipe instead of tapping the floppy-disc icon.
+ *
+ * TWO HALVES FROM THE START, unlike `LIBRARY_FLAG_KEY`, which only grew a server
+ * half once the chef could read a page. The server half decides whether the
+ * `saveRecipe` tool goes into the `tools:` array at all — so a caller outside the
+ * flag gets a prompt byte for byte identical to today's and a chef that cannot
+ * recognise the ask. The browser half decides whether a recorded intent is ever
+ * acted on. The server half is what actually withholds the feature; the browser
+ * half is what stops an intent recorded during a deploy window, or by a browser
+ * whose flags disagree, from running a save nobody asked this bundle for.
+ *
+ * The VALUE is what PostHog knows — changing the string here changes who sees the
+ * feature, in the browser and in the chef's tool surface at once.
+ */
+export const CHAT_SAVE_FLAG_KEY = 'chat-save' as const;
