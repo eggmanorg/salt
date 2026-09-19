@@ -325,7 +325,7 @@ photo is REQUEST-SCOPED: it goes to Gemini as a media prompt part and is never
 written anywhere — no Storage object, no Firestore field, no trace on the item —
 only the sentence it produces persists, and only once **Draw** is pressed.
 
-### A missing picture says so, and is counted (#1458, Phase 1)
+### A missing picture says so, where it can be closed (#1458, Phase 1)
 
 Production held 22 equipment records and 20 drawings on 2026-09-18. Both undrawn
 records rendered as the same pale placeholder tile a record whose art is still
@@ -343,18 +343,27 @@ for months. The fix is a sentence and a number, not a pipeline.
   row, not a warning. Draw is a one-press route to the record's page, where the
   description is shown and #877's gate holds; see the boundary paragraph under
   #877 above.
-- **The Admin nav badge gains a third summand** (`apps/web-pwa/src/lib/pictureGaps.ts`),
-  beside canon's and product forms' `needs_approval` counts: undrawn records plus
-  `unresolvedKitLabels`' rows. The two can never name the same thing, because that
-  query already excludes a label resolving to one of the household's records.
+- **The Admin nav badge does NOT count them**, and a third summand that did was
+  removed the week it reached production. #1458 added undrawn records plus
+  `unresolvedKitLabels`' rows to the badge beside canon's and product forms'
+  `needs_approval` counts. In staging and then in production it read **76** against
+  **zero** pending canon items and **zero** pending product forms — a number whose
+  only plausible reading, on a badge whose other two summands are approvals, was an
+  approval backlog that did not exist. Two further things made it unactionable:
+  `/admin` badges its **Catalog** tile and nothing else, so the count had no tile to
+  land on; and the two kinds of gap are closed on two different pages, neither of
+  them the one the badge points at.
+- **A picture gap is stated beside the thing it describes, not counted at the top
+  level.** "Not drawn yet" sits on the equipment list row with **Draw** next to it,
+  and the unresolved vocabulary queue is the list on `/admin/kitchen-tools`. Both
+  were what #1458 Phase 1 was actually for; the badge was the part that could not
+  say what it meant.
 
-**The badge is a floor, not a total**, and deliberately. `unresolvedKitLabels` also
-reads a guided plan's two free-text container fields, and `/admin/kitchen-tools`
-hands it those from a whole-collection read it performs once on arrival. The badge is
-computed on every admin's boot from stores the app already subscribes to, and buying
-a collection read there to find the labels that appear in a plan and in no recipe is
-not worth it. A plan-only gap is real, is listed on that page, and is not in the
-count.
+**If the badge ever regains a picture summand, it needs a tile and a word first.**
+The arithmetic was never wrong — `undrawnEquipment` and `unresolvedKitLabels` can
+never name the same thing, because that query already excludes a label resolving to
+one of the household's records. What was wrong was putting a count of drawings in a
+place that means approvals, with no route from the number to the work.
 
 ### The description's two lives (#1433)
 
