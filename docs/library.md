@@ -30,12 +30,22 @@ Merging the first two would put the jar dimensions into every prompt. That is
 the whole reason the collection exists separately, and it is the test to apply
 to anything proposed for either one.
 
-**The model never sees the word "library" for these pages.** `LIBRARY_FRAMING`
-in `chefChat.ts` already spends that word on the household's saved _recipes_,
-and two things under one name in one system prompt is a collision for the model
-and for the next reader. Tool names, tool descriptions and framing all say
-**notes**. The collection, the schema and the app's routes keep their `library`
-names. Do not "fix" the inconsistency in either direction.
+**The model calls these pages the Library, and calls `recipes` recipes** — the
+words `nav.ts` puts on screen. Only one of the two surfaces may hold "library"
+in one system prompt, and #1377 originally gave it to the _recipes_ side,
+renaming these pages "kitchen notes". Issue #1476 reversed that: neither "Recipe
+Library" nor "Kitchen Notes" is a surface anyone can find in Salt, and the chef
+duly told Daniel his recipe was not in his "Recipe Library" in the same breath
+as writing it to the Library — he read it as a refusal and saved the dish twice.
+The collision is still real; the word just belongs to the pages.
+
+Tool **identifiers** (`findKitchenNotes`, `readKitchenNote`, `writeKitchenNote`)
+kept their #1377 names — they never reach a user, and renaming them is churn.
+So is the collection, the schema, the feature key and the routes. Do not "fix"
+that inconsistency in either direction. What is pinned, in
+`chefChat.kitchenNotes.test.ts`, is the assembled system prompt: it contains
+neither "recipe library" nor "kitchen note" in either gate state, and carries
+`## Their Library` and `## Their own recipes`.
 
 ## The parts
 

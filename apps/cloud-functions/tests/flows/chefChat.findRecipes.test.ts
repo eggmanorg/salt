@@ -387,14 +387,14 @@ describe('chefChat — the tool in the flow', () => {
     expect(Object.keys(options)).not.toContain('output');
   });
 
-  it('tells the chef to link every saved dish it names, and never to read the library back as a list', async () => {
+  it('tells the chef to link every saved dish it names, and never to list their recipes back', async () => {
     const options = await runTurn();
     const system = String(options['system']);
     expect(system).toContain('(#/recipes/');
-    expect(system).toContain('NEVER READ THE LIBRARY BACK AS A LIST');
+    expect(system).toContain('NEVER READ THEIR RECIPES BACK AS A LIST');
     // And that reading a dish is a separate, deliberate act (phase 2).
     expect(system).toMatch(/Search to FIND a dish; read one when/);
-    // The FAVOURITES_FRAMING lesson, restated for the library: "something
+    // The FAVOURITES_FRAMING lesson, restated for their recipes: "something
     // different" must not be answered with what they already own.
     expect(system).toMatch(/something DIFFERENT/);
     expect(system).toMatch(/steer AWAY/);

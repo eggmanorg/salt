@@ -14,7 +14,7 @@ foundation (#179).
    negotiable.
 
    **The "and no tools" half was overturned in #840, deliberately.** The chef can
-   search the recipe library and read a saved dish, because a chef that cannot name
+   search the household's recipes and read a saved dish, because a chef that cannot name
    one of the household's own fifty-nine recipes is not a kitchen assistant. What the
    original principle was protecting is real and survives as a constraint rather than
    a prohibition: a model with tools reaches for them, and every turn spent searching
@@ -55,9 +55,12 @@ foundation (#179).
    on the same `library` PostHog flag the browser already gates on (`LIBRARY_FLAG_KEY`,
    shared via `@salt/observability`) — a page written under the flag must not reach a
    household member the feature is hidden from through an answer no browser gate can
-   reach (#831). The prompt calls these pages **notes**, never "library": that word
-   is already spent above on the household's saved recipes, and a collision there is
-   a collision for the model. Do not confuse this with Kitchen memory (§4 below) —
+   reach (#831). The prompt calls these pages **the Library** and calls the recipes
+   collection **recipes**, matching `nav.ts` — #1377 had it the other way round and
+   #1476 reversed it, because a chef naming surfaces the app does not have sends
+   people nowhere (see [docs/library.md](library.md)). Only one of the two may hold
+   the word "library" in one prompt, and it is the pages; a vocabulary test over the
+   assembled prompt keeps it that way. Do not confuse this with Kitchen memory (§4 below) —
    different collection (`libraryPages`, not `kitchenMemories`), different shape
    (fetched on demand through a tool, not ambient), and a different feature (epic
    #1372) entirely; they only rhyme in name.
@@ -68,8 +71,8 @@ foundation (#179).
    ambient, nothing the model feels obliged to call, and the assistant is never
    _bound_ to the user's equipment.
 
-   **This is a SIZE test, not a matter of taste** — which is why the recipe library
-   is on the other side of it (#840). The library fails the test in both directions:
+   **This is a SIZE test, not a matter of taste** — which is why the household's own
+   recipes are on the other side of it (#840). They fail the test in both directions:
    it was 59 dishes after two months of real use and grows without bound, so an
    ambient index is paid on every single turn forever; and an index can only ever
    carry a summary line per dish, so the moment the chef needs the ingredients or the
@@ -290,7 +293,7 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   in. There is deliberately no mode flag, no wire field, and no chat UI for it.
   Absent or empty counts omit the section entirely, so the chef behaves exactly
   as it did before the feature existed.
-- It searches the **recipe library** on the turns that need it (issue #840), via the
+- It searches the **household's own recipes** on the turns that need it (issue #840), via the
   `findRecipes` tool rather than an ambient index — principle #2 says why. The tool
   is one projected Firestore read (`title`, `description`, `kind`, `metadata`, so a
   search never pulls a recipe's ingredients or method off the wire) wrapped around
@@ -315,8 +318,8 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   entry's note, the record's own note, and the **not-owned entries, marked**. A
   Firestore failure degrades to `{ found: false }` and never fails the turn.
 - **For a caller behind the `library` flag** (issue #1377), three more tools reach
-  the `libraryPages` collection — the household's own reference notes, not their
-  recipes (see design principle #1 above for why the naming is kept apart). The
+  the `libraryPages` collection — the household's Library of reference pages, not
+  their recipes (see design principle #1 above for why the naming is kept apart). The
   gate (`kitchenNotesEnabled` in `chefChat.ts`) is evaluated from the verified
   caller's uid off the Genkit action context, never off the request body, and
   **fails closed** on a missing uid — the opposite of `isServerFeatureEnabled`'s own

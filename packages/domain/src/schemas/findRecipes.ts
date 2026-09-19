@@ -22,7 +22,7 @@ export const FindRecipesInputSchema = z.object({
       'Words that would appear in the dish you are looking for — its name, what is in it, ' +
         'how it is cooked. Turn the vibe into keywords first: "something warming for a cold ' +
         'night" is a search for words like "stew braise soup roast". ' +
-        'LEAVE THIS OUT ENTIRELY to browse the whole library, which is what you want when ' +
+        'LEAVE THIS OUT ENTIRELY to browse all of their recipes, which is what you want when ' +
         'asked to plan a week or to see what is saved.',
     ),
   kind: RecipeKindSchema.optional().describe(
@@ -49,7 +49,7 @@ export const FindRecipesInputSchema = z.object({
     .optional()
     .describe(
       'How many dishes to return. Leave it out: a search defaults to the best 25 and a ' +
-        'browse returns the whole library. Anything above 60 is capped at 60.',
+        'browse returns every recipe they have. Anything above 60 is capped at 60.',
     ),
 });
 
@@ -79,11 +79,11 @@ export const FindRecipesMatchSchema = z.object({
 export const FindRecipesOutputSchema = z.object({
   matches: z.array(FindRecipesMatchSchema),
   /**
-   * How many entries the library holds in total, before the query narrowed it.
+   * How many recipes the household has saved in total, before the query narrowed it.
    *
    * Free (the handler has the array in hand) and load-bearing: it is how the chef
    * tells "we have nothing like that" from "we have almost nothing", which is what
-   * "propose a week out of what exists, and invent where the library is thin"
+   * "propose a week out of what exists, and invent where the collection is thin"
    * needs to know.
    */
   totalInLibrary: z.number(),
