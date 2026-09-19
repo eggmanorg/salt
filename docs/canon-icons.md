@@ -191,25 +191,23 @@ canon shape rather than variations on it:
   `iconNeedsGeneration` precisely because it writes back to the document it watches.
   `onEquipmentManifestWritten` never writes the manifest, so it can just ask the
   honest question — does this item's brief match this item's name? — with no nonce.
-- **No image is generated until a person presses Draw.** The trigger authors an
-  appliance description (`describeEquipmentSubject`, `'fast'` tier) and stops; the
-  image is drawn only when someone presses **Draw**, by the `drawEquipmentIcon`
-  callable, which runs the image flow and `sharp` inline. Canon's fully-automatic
-  model is right for groceries — "a bag of frozen peas" has one obvious rendering —
-  but a make and model is exactly where fidelity is won or lost, and a brief is a
-  sentence you can correct where a wrong picture is only a re-roll. Only the
-  description is ever shown or editable; the style anchors stay in code.
+- **A human reads the description before any image is generated.** The trigger
+  authors an appliance description (`describeEquipmentSubject`, `'fast'` tier) and
+  stops; the image is drawn only when someone presses **Draw**, by the
+  `drawEquipmentIcon` callable, which runs the image flow and `sharp` inline. Canon's
+  fully-automatic model is right for groceries — "a bag of frozen peas" has one
+  obvious rendering — but a make and model is exactly where fidelity is won or lost,
+  and a brief is a sentence you can correct where a wrong picture is only a re-roll.
+  Only the description is ever shown or editable; the style anchors stay in code.
 
-  **The boundary, stated rather than implied (#1458).** This used to read "a human
-  reads the description before any image is generated", and since the equipment
-  list gained a Draw button that is no longer true. What the gate guarantees is the
-  press, not the reading: from the list, Draw sends the record's **stored**
-  description unchanged, and the person may never have looked at it. Reading it,
-  correcting it, re-authoring it from the name or from a photograph all still
-  happen in exactly one place — the record's own page — and that remains the only
-  host for that panel, which is also what #1465 relies on when its picker hands
-  "draw one for it" over to it. A picture drawn from an unread sentence is
-  redrawn there like any other.
+  **The equipment list's Draw button (#1458) does not bypass this.** It is a
+  one-press route TO this panel, `push('/equipment/{id}')`, never a second place
+  that draws. #1458 asks for one press from the list to close a different gap —
+  finding which record has no picture — and Daniel's ruling on the review that
+  first tried to also draw in place is that the friction being removed is the
+  hunting, never this reading. #1465's `KitPicturePicker.svelte` hands a
+  pictureless row noticed on a recipe to this same route for the same reason:
+  there is deliberately only one host for this panel, and only one gate.
 
 ### An entry may have a picture of its own (#1465, Phase 2)
 
@@ -330,8 +328,9 @@ for months. The fix is a sentence and a number, not a pipeline.
   automatically, and ~140 of them would be a badge that never falls).
 - **The equipment list says "Not drawn yet"** on a marked row and offers **Draw**
   beside it, at the same rung as the accessory and rule counters — a fact about the
-  row, not a warning. Draw sends the stored description; see the boundary paragraph
-  under #877 above.
+  row, not a warning. Draw is a one-press route to the record's page, where the
+  description is shown and #877's gate holds; see the boundary paragraph under
+  #877 above.
 - **The Admin nav badge gains a third summand** (`apps/web-pwa/src/lib/pictureGaps.ts`),
   beside canon's and product forms' `needs_approval` counts: undrawn records plus
   `unresolvedKitLabels`' rows. The two can never name the same thing, because that

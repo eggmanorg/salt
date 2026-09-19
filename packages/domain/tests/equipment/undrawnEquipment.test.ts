@@ -5,8 +5,10 @@ import type { EquipmentIconDoc } from '../../src/schemas/equipmentIcon.js';
 
 // The backlog half of `equipmentIcons` (issue #1458, Phase 1): which records have
 // no picture at all. Every case here is one of the four states the header
-// enumerates — nothing drawn, drawn, hidden, borrowed — plus the one boundary it
-// admits to.
+// enumerates — nothing drawn, drawn, hidden, borrowed — plus the boundary it
+// admits to: a borrow is a reference, never resolved, so a record pointed at a
+// drawing that is hidden (the reachable trigger) or gone (the merely possible
+// one) reads as "has a picture" here regardless.
 
 function item(overrides: Partial<EquipmentItem> = {}): EquipmentItem {
   return {
@@ -84,9 +86,9 @@ describe('undrawnEquipment', () => {
 
   // THE STATED BOUNDARY, pinned as behaviour rather than asserted as a property.
   // A borrow is read as the presence of a reference, never resolved — so a record
-  // pointed at a drawing that has since been deleted shows no picture and is not
-  // reported. If this ever goes red, the query gained a resolution path and the
-  // header's boundary paragraph is the thing to re-read.
+  // pointed at an id nothing owns any more shows no picture and is not reported.
+  // If this ever goes red, the query gained a resolution path and the header's
+  // boundary paragraph is the thing to re-read.
   it('does NOT report a record whose borrowed picture no longer exists', () => {
     expect(
       undrawnEquipment(
@@ -94,6 +96,29 @@ describe('undrawnEquipment', () => {
         icons({ 'eq-1': icon() }),
       ),
     ).toEqual([]);
+  });
+
+  // THE REACHABLE FORM OF THE SAME BOUNDARY. There is no delete-a-drawing
+  // command, but Hide is reachable, and `hideEquipmentIconFor` withdraws only
+  // the borrow HELD BY the record being hidden — never the borrows POINTING AT
+  // it. This query reads only `item.borrowedPicture`'s presence, so a borrower
+  // of a now-hidden drawing still reads as "has a picture" here.
+  it('does NOT report a record whose borrowed picture points at a now-hidden drawing', () => {
+    expect(
+      undrawnEquipment(
+        [item({ borrowedPicture: { family: 'equipment', id: 'eq-hidden-source' } })],
+        icons({ 'eq-1': icon(), 'eq-hidden-source': icon({ thumbnail: 'hidden' }) }),
+      ),
+    ).toEqual([]);
+  });
+
+  // AND IT IS NOT "ONE ROW": every borrower of the same hidden source goes
+  // unreported at once, which is the header's corrected claim, not the original
+  // "under-reports by one row".
+  it('under-reports every borrower of a hidden source at once, not just one row', () => {
+    const a = item({ id: 'a', borrowedPicture: { family: 'equipment', id: 'source' } });
+    const b = item({ id: 'b', borrowedPicture: { family: 'equipment', id: 'source' } });
+    expect(undrawnEquipment([a, b], icons({ source: icon({ thumbnail: 'hidden' }) }))).toEqual([]);
   });
 
   // ~140 entries exist and nothing is ever drawn for one automatically. A record
