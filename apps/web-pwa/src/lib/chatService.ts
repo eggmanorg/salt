@@ -10,6 +10,7 @@ import { parseChatCommand, isChatReadOnly } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
 import { rememberNote } from './kitchenMemoryService.js';
 import { currentMember } from './membersService.js';
+import { isFeatureEnabled } from './featureGate.js';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import { success, failure, ErrorCode } from '@salt/shared-types';
@@ -339,44 +340,78 @@ export async function claimRecipe(
   return persistSession({ ...session, recipeId });
 }
 
-// Which recorded save requests this tab has already taken (issue #1480), keyed
+// Which recorded save requests this TAB has already taken (issue #1480), keyed
 // `sessionId:messageId` so two requests in one conversation are two entries.
 //
-// IN MEMORY, AND THAT IS THE RIGHT SCOPE. The durable half of "only once" is the
-// clear below, which every tab and every reload reads; this set exists for the
-// window between taking the request and that clear landing on the subscription,
-// during which the store still holds the old document and an effect watching it
-// would fire again. A reload legitimately empties it — by then the field is
-// either cleared (nothing to take) or still set because the clear failed, in
-// which case firing again is the recovery, not a bug.
+// IN MEMORY, AND THAT IS THE RIGHT SCOPE — PER TAB, not per device (CLAUDE.md
+// Rule 12, narrowed in review of #1490). It is a plain module-level `Set`, so it
+// lives exactly as long as this one JS module instance: two tabs on the SAME
+// device are two instances, not one, same as two different devices. See the
+// boundary stated on `consumeSaveIntent`.
+//
+// The durable half of "only once" is the clear, which every tab and every
+// reload reads; this set exists for the window between taking the request and
+// that clear landing on the subscription, during which the store still holds
+// the old document and an effect watching it would fire again. A reload
+// legitimately empties it — by then the field is either cleared (nothing to
+// take) or still armed because the clear failed, and a failed clear now also
+// means the save never ran (`consumeSaveIntent` answers `false` on it), so
+// firing again on reload is the recovery, not a bug — EXCEPT the one failure
+// mode `consumeSaveIntent` cannot see: a clear that queues while offline
+// resolves `ok` immediately, runs the save, and can still be rejected later on
+// reconnect. There a re-fire is a genuine duplicate, the same exposure any
+// offline Firestore write has, not one particular to this feature.
 const takenSaveIntents = new Set<string>();
 
 /**
  * Take the save request the chef recorded on this conversation, if there is one
  * (issue #1480). True means the caller now owns it and should run the save.
  *
- * CLEARED BEFORE THE SAVE RUNS, not after. A save that fails, or a page that goes
- * away mid-flight, then costs one button press — where clearing afterwards would
- * leave the request on the document and re-run the save on the next reload, which
- * is the one outcome worth engineering against: an unasked-for write is how this
- * issue came to exist.
+ * THE ONE SEAM EVERY SURFACE GOES THROUGH (review of #1490). The `chatSave`
+ * feature flag is read IN HERE, not at the call site — a browser left on an
+ * older bundle, or one where the flag disagrees, answers `false` and runs
+ * nothing, request left armed for a build that can act on it. A new surface
+ * that calls this function and acts only on `true` gets the flag check for
+ * free; do not add a second `isFeatureEnabled('chatSave')` / `chatSaveGate`
+ * check beside the call, which is how the two would drift.
  *
- * THE BOUNDARY (CLAUDE.md Rule 12): "exactly once" holds per request per browser,
- * not globally. The clear is an ordinary LWW write, so two devices sitting in the
- * same conversation when the chef records a request can each take it before the
- * other's clear arrives, and each will save. That is two recipes to delete, and
- * it is the same exposure the floppy-disc button has had all along — not a
- * reason for a transaction, which would still not make a second device's save
- * impossible, only slightly harder.
+ * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER WAS PRESENT FOR THE REQUEST.
+ * A request already sitting on the document the first time a page observes it
+ * is one nobody was there to take, and MUST be cleared without being acted on —
+ * that is the caller's job (see the mount-tracking in `ChatSessionPage.svelte`
+ * and `RecipeViewPage.svelte`), not this function's; this one only takes and
+ * clears whatever it is handed.
+ *
+ * THE CLEAR IS ATTEMPTED BEFORE THE SAVE RUNS, and only a clear that actually
+ * lands answers `true`. A clear that fails outright (a `permission-denied`, a
+ * `StorageError`) answers `false`, so the caller runs no save and the request
+ * survives on the document for the next attempt — a page that goes away
+ * mid-flight, or a failed clear, then costs one retry rather than a duplicate
+ * recipe. NOT COVERED: a clear that queues while offline resolves `ok`
+ * immediately — this answers `true` and the save runs — and can still be
+ * rejected once it replays on reconnect, past the point anything here can
+ * still say no. That is the one path left where a later re-fire can duplicate
+ * the save; it is the ordinary hazard of an offline Firestore write, not
+ * specific to this function.
+ *
+ * THE BOUNDARY (CLAUDE.md Rule 12): "exactly once" holds per request per TAB,
+ * not globally — `takenSaveIntents` above is why. The clear is an ordinary LWW
+ * write, so two tabs sitting in the same conversation when the chef records a
+ * request — the same device open twice, or two different devices — can each
+ * take it before the other's clear arrives, and each will save. That is two
+ * recipes to delete, and it is the same exposure the floppy-disc button has had
+ * all along — not a reason for a transaction, which would still not make a
+ * second tab's save impossible, only slightly harder.
  */
 export async function consumeSaveIntent(session: ChatSessionDoc): Promise<boolean> {
   const messageId = session.pendingSaveIntent;
   if (messageId === null) return false;
+  if (!isFeatureEnabled('chatSave')) return false;
   const token = `${session.id}:${messageId}`;
   if (takenSaveIntents.has(token)) return false;
   takenSaveIntents.add(token);
-  await persistSession({ ...session, pendingSaveIntent: null });
-  return true;
+  const cleared = await persistSession({ ...session, pendingSaveIntent: null });
+  return cleared.kind === 'ok';
 }
 
 // "Make read-write" (issue #1270): restart the two-day clock from now. An

@@ -450,9 +450,17 @@ describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
 // phone drawer are two surfaces of one conversation and can be mounted at once,
 // so a copy in each would ask twice.
 describe('RecipeViewPage — a save the chef was asked for', () => {
+  // A request already on the document the first time this page ever shows a
+  // chat as its `activeSession` is one nobody was here to take (issue #1490
+  // review, Finding 1) and must not open the ask — see the dedicated pinning
+  // test below. So the ask tests here render on an UNARMED chat first, let
+  // that first snapshot land, and only THEN arm it — the shape of a real
+  // request arriving on the subscription while the page is mounted.
   async function askAndWait() {
-    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
     const rendered = renderPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
     return rendered;
   }
@@ -519,5 +527,23 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(consumeSaveIntent).not.toHaveBeenCalled();
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+
+  // Finding 1 (review of #1490): a request already armed the FIRST time this
+  // page ever shows the chat — landing on this recipe with an un-taken request
+  // sitting on its newest conversation from days ago — must be cleared and
+  // never acted on. Before the fix this opened "Save which one?" with nobody
+  // standing in front of it; this is the test that goes red without the fix.
+  it('clears, but does not ask about, a request already recorded when the page opens', async () => {
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+
+    renderPage();
+
+    // The clear still runs — an armed request left on the document forever is
+    // its own bug — but the ask never opens.
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
   });
 });

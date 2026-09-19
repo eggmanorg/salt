@@ -78,12 +78,18 @@ export const ChatSessionSchema = z.object({
   // floppy-disc button's does. So a model that mishears an ordinary sentence
   // costs at worst an unwanted recipe somebody can delete.
   //
-  // IT IS CLEARED FROM BOTH ENDS, because an intent that outlives its turn would
-  // re-fire on every reload. The flow rewrites it on EVERY turn — to the new
-  // assistant message id, or back to null — so a stale one survives at most until
-  // the next thing anybody says; and the browser clears it as it takes it
-  // (`consumeSaveIntent` in `web-pwa`'s `chatService.ts`), before the save runs,
-  // so a save that fails loses the intent rather than repeating it.
+  // IT IS CLEARED FROM THREE ENDS, because an intent that outlives its turn would
+  // re-fire unprompted. The flow rewrites it on EVERY turn — to the new assistant
+  // message id, or back to null — so a stale one survives at most until the next
+  // thing anybody says; the browser attempts the clear as it takes it
+  // (`consumeSaveIntent` in `web-pwa`'s `chatService.ts`) before the save runs,
+  // answering false (and running no save) if that clear does not land; and a
+  // request already on the document the FIRST time a page observes it — the
+  // finished conversation nobody comes back to for a turn, reopened days later —
+  // is cleared without ever being acted on (the mount-tracking beside each
+  // page's `consumeSaveIntent` call). That third path is the one that actually
+  // bounds a conversation with no next turn: without it, "next thing anybody
+  // says" is not a bound at all on a chat nobody is talking in.
   //
   // WHY AN ID RATHER THAN A BOOLEAN: it names the turn. Two intents in a row are
   // two different values, so a browser that has already acted on one can tell the

@@ -39,7 +39,7 @@
   // package. They are still sent from here, as ordinary user turns, unchanged.
   import { OPTIMISE_FOR_KITCHEN_PROMPT, REFRESH_PROMPT } from '@salt/domain/prompts';
   import { goBack } from '../../lib/nav.js';
-  import { breadGate, chatSaveGate } from '../../lib/featureGate.js';
+  import { breadGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
   import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
@@ -1488,15 +1488,35 @@
   // take it. It is left on that document rather than cleared.
   let saveChoiceOpen = $state(false);
 
+  // A request already sitting on a chat the FIRST time this page shows it as
+  // `activeSession` is one nobody was here to take (issue #1490 review, Finding
+  // 1) — landing on this recipe, or switching to a different one of its chats,
+  // must not pop "Save which one?" over a conversation that has been sitting
+  // there for days. Keyed per session id, not a single flag, because
+  // `activeSession` can change more than once in this page's lifetime (picking
+  // a different chat from the list) and each one gets its own "was this page
+  // here when the request arrived" answer. A session already in this set has
+  // been observed before on this page — a request recorded on it since is a
+  // live arrival and IS actionable; one seen for the first time is cleared
+  // without asking, same reasoning as `ChatSessionPage.svelte`'s
+  // `sawFirstSnapshot`.
+  const seenActiveSaveIntentSessions = new Set<string>();
+
   $effect(() => {
     const current = activeSession;
-    if (!current || current.pendingSaveIntent === null) return;
-    if (!$chatSaveGate.enabled) return;
+    if (!current) return;
+    const isFirstObservation = !seenActiveSaveIntentSessions.has(current.id);
+    seenActiveSaveIntentSessions.add(current.id);
+    if (current.pendingSaveIntent === null) return;
     void (async () => {
       // Taken as the QUESTION is asked, not as it is answered — see
-      // `consumeSaveIntent`. A question you dismissed has been answered, and a
-      // request left on the document would re-ask on every reload.
-      if (await consumeSaveIntent(current)) saveChoiceOpen = true;
+      // `consumeSaveIntent`, the one seam this and every other surface goes
+      // through (it also gates on the feature key). A question you dismissed
+      // has been answered, and a request left on the document would re-ask on
+      // every reload.
+      const taken = await consumeSaveIntent(current);
+      if (isFirstObservation || !taken) return;
+      saveChoiceOpen = true;
     })();
   });
 

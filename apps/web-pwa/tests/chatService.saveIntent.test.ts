@@ -1,7 +1,7 @@
 /**
  * Taking the save request the chef recorded (issue #1480) — `consumeSaveIntent`.
  *
- * Three claims, each of which is a real defect if it is wrong:
+ * Five claims, each of which is a real defect if it is wrong:
  *
  *  1. IT CLEARS BEFORE IT ANSWERS. The caller runs the save on `true`, so the
  *     write that clears the request has to have happened by the time that `true`
@@ -13,12 +13,22 @@
  *  3. A SECOND, GENUINELY NEW REQUEST IS NOT THE ECHO OF THE FIRST. Asking twice
  *     in one conversation saves twice, which is why the field carries the turn's
  *     id rather than a boolean.
+ *  4. A CLEAR THAT FAILS ANSWERS FALSE (review of #1490, Finding 2). Answering
+ *     `true` regardless of whether the clearing write landed lets the save run
+ *     while the request stays armed on the document — the next tab or reload
+ *     takes it again and writes a second recipe. Answering `false` costs one
+ *     retry and removes the duplicate.
+ *  5. THE FEATURE KEY IS READ HERE, not at each call site (review of #1490,
+ *     Finding 3) — this is the one seam every surface goes through, so a
+ *     recorded request is inert end to end while the key is off, with nothing
+ *     cleared and nothing saved.
  *
  * THE BOUNDARY, stated because "exactly once" would be too strong: this holds per
- * request per browser. The clear is an ordinary LWW write, so two devices sitting
- * in the same conversation can each take the same request before the other's
- * clear arrives — two recipes to delete, the same exposure the Save button has
- * always had.
+ * request per TAB (Finding 4 — narrower than "browser": two tabs on the SAME
+ * device are two independent takers too, not just two different devices). The
+ * clear is an ordinary LWW write, so two tabs sitting in the same conversation
+ * can each take the same request before the other's clear arrives — two recipes
+ * to delete, the same exposure the Save button has always had.
  */
 import { describe, it, expect, beforeEach, vi, type Mocked } from 'vitest';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
@@ -48,6 +58,14 @@ vi.mock('../src/lib/membersService.js', () => ({
       return () => {};
     },
   },
+}));
+
+// The `chatSave` gate `consumeSaveIntent` now reads directly (Finding 3).
+// `true` by default so the pre-existing behavioural tests below stay about
+// taking/clearing, not about the gate; the gate's own tests flip it.
+const isFeatureEnabledMock = vi.fn((_feature: string) => true);
+vi.mock('../src/lib/featureGate.js', () => ({
+  isFeatureEnabled: (feature: string) => isFeatureEnabledMock(feature),
 }));
 
 import * as firebaseSync from '@salt/firebase-sync';
@@ -86,6 +104,7 @@ function lastWritten(): ChatSessionDoc | undefined {
 beforeEach(() => {
   vi.clearAllMocks();
   fs.saveChatSession.mockResolvedValue({ kind: 'ok', value: undefined });
+  isFeatureEnabledMock.mockReturnValue(true);
 });
 
 describe('consumeSaveIntent', () => {
@@ -131,5 +150,40 @@ describe('consumeSaveIntent', () => {
     expect(written?.basedOnRecipeId).toBe('base-1');
     expect(written?.title).toBe('Pilaf');
     expect(written?.messages).toEqual(asked.messages);
+  });
+
+  // Finding 2 (review of #1490): answering `true` regardless of whether the
+  // clearing write landed is how a save could run while the request stayed
+  // armed on the document — the next tab or reload would take it again and
+  // write a second recipe.
+  it('says no, and leaves the request takeable again, when the clearing write fails', async () => {
+    fs.saveChatSession.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'unavailable' },
+    });
+    const asked = session({ pendingSaveIntent: 'm2' });
+
+    await expect(consumeSaveIntent(asked)).resolves.toBe(false);
+    // Attempted, not skipped — the clear is still tried before answering.
+    expect(fs.saveChatSession).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 3 (review of #1490): the `chatSave` feature key is read inside
+  // `consumeSaveIntent`, the one seam every surface goes through, rather than at
+  // each call site — so a caller that only checks the return value still gets
+  // the gate, and a recorded request is inert end to end while the key is off.
+  describe('the chatSave feature key', () => {
+    it('says no, and writes nothing, while the key is off', async () => {
+      isFeatureEnabledMock.mockReturnValue(false);
+
+      await expect(consumeSaveIntent(session({ pendingSaveIntent: 'm2' }))).resolves.toBe(false);
+      expect(fs.saveChatSession).not.toHaveBeenCalled();
+    });
+
+    it('is asked about the chatSave key specifically', async () => {
+      await consumeSaveIntent(session({ pendingSaveIntent: 'm2' }));
+
+      expect(isFeatureEnabledMock).toHaveBeenCalledWith('chatSave');
+    });
   });
 });
