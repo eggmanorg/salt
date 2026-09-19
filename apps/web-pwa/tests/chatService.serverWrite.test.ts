@@ -77,6 +77,7 @@ function makeSession(overrides: Partial<ChatSessionDoc> = {}): ChatSessionDoc {
     createdAt: CLIENT_NOW.toISOString(),
     updatedAt: CLIENT_NOW.toISOString(),
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-10-03T10:00:00.000Z',
     ...overrides,
   };

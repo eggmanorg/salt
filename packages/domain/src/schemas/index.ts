@@ -283,6 +283,13 @@ export type { ReadKitchenNoteInput, ReadKitchenNoteOutput } from './readKitchenN
 export { WriteKitchenNoteInputSchema, WriteKitchenNoteOutputSchema } from './writeKitchenNote.js';
 export type { WriteKitchenNoteInput, WriteKitchenNoteOutput } from './writeKitchenNote.js';
 
+// saveRecipe (issue #1480) — the tool that records that someone asked for this
+// conversation to be saved as a recipe, and writes nothing. The save runs in the
+// browser, through the one create implementation; read the header before
+// reaching for a server-side write here.
+export { SaveRecipeInputSchema, SaveRecipeOutputSchema } from './saveRecipe.js';
+export type { SaveRecipeInput, SaveRecipeOutput } from './saveRecipe.js';
+
 // identifyRecipeKit (issue #882) — "what do I need to get out?", inferred from the
 // whole stored recipe. Labels are FREE TEXT on purpose; read the header before
 // reaching for an enum over the drawn vocabulary.

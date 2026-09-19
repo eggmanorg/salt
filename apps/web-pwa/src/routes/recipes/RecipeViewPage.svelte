@@ -39,7 +39,7 @@
   // package. They are still sent from here, as ordinary user turns, unchanged.
   import { OPTIMISE_FOR_KITCHEN_PROMPT, REFRESH_PROMPT } from '@salt/domain/prompts';
   import { goBack } from '../../lib/nav.js';
-  import { breadGate } from '../../lib/featureGate.js';
+  import { breadGate, chatSaveGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
   import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
@@ -67,6 +67,7 @@
   import RecipeBakeBatchSheet from './RecipeBakeBatchSheet.svelte';
   import IngredientMatchSheet from './IngredientMatchSheet.svelte';
   import RecipeChangeSummary from './RecipeChangeSummary.svelte';
+  import SaveIntentChoice from '../chat/SaveIntentChoice.svelte';
   import RecipeIdentityCard from './RecipeIdentityCard.svelte';
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
@@ -137,7 +138,7 @@
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
   import { auth } from '../../lib/auth.svelte.js';
-  import { createChatSession, sessions } from '../../lib/chatService.js';
+  import { createChatSession, consumeSaveIntent, sessions } from '../../lib/chatService.js';
   import ImagePromptDialog from '../../components/ImagePromptDialog.svelte';
   import ChatThread from '../chat/ChatThread.svelte';
   import { createChatThread } from '../chat/chatThreadState.svelte.js';
@@ -1467,6 +1468,56 @@
     addToast(KIND_COPY[kindOf(result.value)].createdToast, 'success');
     push(`/recipes/${result.value.id}`);
   }
+
+  // ─── Asking the chef to save it (issue #1480) ──────────────────────────────
+  //
+  // Every chat on this page is attached to the dish on this page, so there are
+  // always two things the ask could mean — fold it into this dish, or keep it as
+  // a dish of its own. `SaveIntentChoice` asks in the menu's own two words and
+  // routes each answer into the handler that already exists above; nothing is
+  // written until one is picked, and "Update recipe" still goes through
+  // `RecipeChangeSummary` and its Apply.
+  //
+  // ONE EFFECT AND ONE DIALOG FOR THE WHOLE PAGE, not one per chat surface. The
+  // docked column and the phone drawer are two surfaces of one conversation and
+  // can be mounted at once (the column is `hidden` below `lg`, not unmounted), so
+  // a copy in each would take the request twice and ask twice.
+  //
+  // `activeSession` and no other: a request recorded on a chat you are not
+  // looking at is not yours to answer here, and the full `/chat/:id` page will
+  // take it. It is left on that document rather than cleared.
+  let saveChoiceOpen = $state(false);
+
+  // A request already sitting on a chat the FIRST time this page shows it as
+  // `activeSession` is one nobody was here to take (issue #1490 review, Finding
+  // 1) — landing on this recipe, or switching to a different one of its chats,
+  // must not pop "Save which one?" over a conversation that has been sitting
+  // there for days. Keyed per session id, not a single flag, because
+  // `activeSession` can change more than once in this page's lifetime (picking
+  // a different chat from the list) and each one gets its own "was this page
+  // here when the request arrived" answer. A session already in this set has
+  // been observed before on this page — a request recorded on it since is a
+  // live arrival and IS actionable; one seen for the first time is cleared
+  // without asking, same reasoning as `ChatSessionPage.svelte`'s
+  // `sawFirstSnapshot`.
+  const seenActiveSaveIntentSessions = new Set<string>();
+
+  $effect(() => {
+    const current = activeSession;
+    if (!current) return;
+    const isFirstObservation = !seenActiveSaveIntentSessions.has(current.id);
+    seenActiveSaveIntentSessions.add(current.id);
+    if (current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
+    void (async () => {
+      // Taken as the QUESTION is asked, not as it is answered — see
+      // `consumeSaveIntent`. A question you dismissed has been answered, and a
+      // request left on the document would re-ask on every reload.
+      const taken = await consumeSaveIntent(current);
+      if (isFirstObservation || !taken) return;
+      saveChoiceOpen = true;
+    })();
+  });
 
   // ─── Delete ─────────────────────────────────────────────────────────────────
   let deleteOpen = $state(false);
@@ -3127,6 +3178,15 @@
   applying={sidebarIsApplying}
   onApply={handleSidebarApplyChanges}
   onDiscard={handleSidebarDiscardChanges}
+/>
+
+<!-- "You asked me to save this — which did you mean?" (issue #1480). One for the
+     page, covering the docked column and the drawer alike; "Update recipe" opens
+     the gate above. -->
+<SaveIntentChoice
+  bind:open={saveChoiceOpen}
+  onUpdate={() => void handleSidebarReviewChanges()}
+  onSaveNew={() => void handleSaveAsNewRecipe()}
 />
 
 <!-- Regenerate image dialog: the editable scene brief (issue #148) -->

@@ -20,14 +20,13 @@
   import { toasts, dismissToast } from './lib/toastStore.js';
   import { canonItems, initCanonSync } from './lib/canonService.js';
   import { productForms, initProductFormSync } from './lib/productFormService.js';
-  import { kitchenTools, initKitchenToolSync } from './lib/kitchenToolService.js';
-  import { equipment, equipmentIcons, initEquipmentSync } from './lib/equipmentService.js';
-  import { pictureGapCount } from './lib/pictureGaps.js';
+  import { initKitchenToolSync } from './lib/kitchenToolService.js';
+  import { initEquipmentSync } from './lib/equipmentService.js';
   import { initShoppingListSync } from './lib/shoppingListService.svelte.js';
   import { currentMember, initMembersSync } from './lib/membersService.js';
   import { initMealPlanSync } from './lib/mealPlanService.js';
   import { initShoppingDaySync } from './lib/shoppingDayService.js';
-  import { recipes, initRecipeSync } from './lib/recipeService.js';
+  import { initRecipeSync } from './lib/recipeService.js';
   import { initChatSync } from './lib/chatService.js';
   import { initDevSettingsSync } from './lib/devSettingsService.js';
   import { initAppSettingsSync } from './lib/appSettingsService.js';
@@ -114,17 +113,19 @@
   // (issue #500, Phase 3) share the same review affordance, so their pending count
   // sums into the one Admin badge alongside canon's.
   //
-  // A THIRD SUMMAND, for the same reason (issue #1458): open picture gaps — a
-  // record of your own kit with nothing drawn for it, and a name our content uses
-  // that the drawn vocabulary cannot answer. Both were findable only by going to
-  // look, which is why production sat on two undrawn records for months. The
-  // arithmetic and what it deliberately leaves out are in `pictureGaps.ts`; it
-  // reads only stores this app is already subscribed to, so the badge costs no
-  // extra Firestore read.
+  // TWO SUMMANDS, AND NO THIRD. #1458 added open picture gaps — undrawn equipment
+  // records plus `unresolvedKitLabels`' rows — as a third, and it was removed the
+  // week it reached production: the number it produced (76 in both staging and
+  // prod, against zero pending canon items and zero pending product forms) read as
+  // an approval backlog and was not one, and no tile on `/admin` carried it, so
+  // clicking the badge landed on a page with nothing to action. THIS BADGE COUNTS
+  // WHAT `needs_approval` MARKS, and nothing else. A picture gap is still stated
+  // where it can be closed — "Not drawn yet" on the equipment list row, the
+  // unresolved queue on `/admin/kitchen-tools` — which is a fact beside the thing
+  // it describes rather than a count with nowhere to go.
   const reviewCount = $derived(
     $canonItems.filter((i) => i.needs_approval).length +
-      $productForms.filter((f) => f.needs_approval).length +
-      pictureGapCount($equipment?.items ?? [], $equipmentIcons, $recipes, $kitchenTools),
+      $productForms.filter((f) => f.needs_approval).length,
   );
   // Admin joins the overflow rather than the four primary tabs. The BottomNav sums
   // the overflow badges onto its "More" tab, so the review count still surfaces

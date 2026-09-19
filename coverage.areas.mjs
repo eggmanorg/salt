@@ -453,11 +453,18 @@ export const coverageThresholds = {
   // which is what made the ratchet ask) and both uncovered COUNTS hold EXACTLY at 368
   // and 347: nothing untested was added. Measured by `pnpm test:coverage` on this
   // branch and pasted from the ratchet's own block.
+  // Banked by #1480: the e2e fake-model seam (`ai/fakeModel.ts`) had never been
+  // unit-tested at all — it runs only under `FUNCTIONS_AI_FAKE`, so an e2e spec
+  // was the only thing that ever reached it — and the tool-call stub this issue
+  // added there is a shape decision worth holding. `fakeModelToolStub.test.ts`
+  // drives the runner directly, which covers the whole stub-reading body rather
+  // than only the lines #1480 wrote, hence a move larger than the diff. Measured
+  // on a full local run; the pre-existing CI figure was 88.37/81.81.
   'apps/cloud-functions/src/**': {
-    lines: 87.96,
-    branches: 81.35,
-    uncoveredLines: 368,
-    uncoveredBranches: 347,
+    lines: 88.59,
+    branches: 82.52,
+    uncoveredLines: 367,
+    uncoveredBranches: 346,
   },
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one
   // (the role cards' job lists are generated from the registry, and that claim

@@ -200,10 +200,11 @@ describe('readEquipmentDetailForChef', () => {
 describe('the chef cannot write equipment', () => {
   // CLAIM 3, part one. The list is enumerated rather than checked for the
   // absence of one name, because a writer could arrive called anything:
-  // `saveEquipment`, `addPan`, `updateKit`. Six now, not three — #1377 added the
-  // kitchen-notes pair and, later, `writeKitchenNote` — and this still notices an
-  // ungoverned seventh arriving without its own issue.
-  it('declares exactly these six tools', () => {
+  // `saveEquipment`, `addPan`, `updateKit`. Seven now, not three — #1377 added
+  // the kitchen-notes pair and, later, `writeKitchenNote`, and #1480 added
+  // `saveRecipe` — and this still notices an ungoverned eighth arriving without
+  // its own issue.
+  it('declares exactly these seven tools', () => {
     expect(defineToolCalls.map((c) => c.name)).toEqual([
       'findRecipes',
       'readRecipe',
@@ -211,6 +212,7 @@ describe('the chef cannot write equipment', () => {
       'findKitchenNotes',
       'readKitchenNote',
       'writeKitchenNote',
+      'saveRecipe',
     ]);
     expect(readEquipmentDetailTool).toMatchObject({ __tool: 'readEquipmentDetail' });
   });

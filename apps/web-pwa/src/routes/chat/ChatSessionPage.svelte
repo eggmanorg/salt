@@ -11,7 +11,13 @@
   } from '@salt/ui-components';
   import { push, router } from 'svelte-spa-router';
   import { goBack } from '../../lib/nav.js';
-  import { sessions, isLoadingSessions, claimRecipe } from '../../lib/chatService.js';
+  import {
+    sessions,
+    isLoadingSessions,
+    claimRecipe,
+    consumeSaveIntent,
+  } from '../../lib/chatService.js';
+  import { chatSaveGate } from '../../lib/featureGate.js';
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
   import { recipes, attachComponentToMeal } from '../../lib/recipeService.js';
@@ -26,6 +32,7 @@
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import { KIND_COPY, kindOf } from '../recipes/recipeKind.js';
   import RecipeChangeSummary from '../recipes/RecipeChangeSummary.svelte';
+  import SaveIntentChoice from './SaveIntentChoice.svelte';
   import ChatThread from './ChatThread.svelte';
   import { createChatThread } from './chatThreadState.svelte.js';
 
@@ -210,6 +217,64 @@
     addToast(KIND_COPY[kindOf(saved)].createdToast, 'success');
     push(`/recipes/${saved.id}`);
   }
+
+  // ─── Asking the chef to save it (issue #1480) ───────────────────────────────
+  //
+  // The second door onto "Save as recipe", and it opens onto the SAME handler:
+  // say "create a recipe from this" and what runs is `handleSaveAsRecipe` below,
+  // line for line, so the recipe, the claim, the toast and the landing page
+  // cannot differ from the button's. That is the point of the issue — a recipe
+  // saved by asking is indistinguishable from one saved by tapping.
+  //
+  // The chef RECOGNISES; it does not save. `chefChat`'s `saveRecipe` tool writes
+  // nothing and only lets the flow record the request on the chat document
+  // (`pendingSaveIntent`), which arrives here on the subscription the page is
+  // already running. So a model that mishears costs an unwanted recipe somebody
+  // can delete, never a dish quietly rewritten.
+  //
+  // A CHAT ATTACHED TO A DISH IS ASKED, a general one is not — there is only one
+  // thing the ask can mean here, and asking anyway would not be "exactly the same
+  // as pressing the save button". Standing on a dish there are two, so
+  // `SaveIntentChoice` offers the menu's own two names and neither handler runs
+  // until one is picked.
+  let saveChoiceOpen = $state(false);
+
+  // A request already sitting on the document the FIRST time this page observes
+  // it is one nobody was here to take (issue #1490 review, Finding 1) — a
+  // conversation you finished, closed, and reopened days later carries exactly
+  // this shape, and firing the save unprompted on that reopen is the bug. A
+  // legitimate request always arrives at a MOUNTED page through the realtime
+  // subscription, i.e. as a snapshot after the first one, so gating on "is this
+  // the first snapshot" costs only the case where the browser reloads between
+  // the flow recording the request and the subscription delivering it — and
+  // losing a request there is safe (the person asks again), where firing
+  // unprompted is not.
+  let sawFirstSnapshot = false;
+
+  $effect(() => {
+    const current = session;
+    if (!current) return;
+    const isFirstSnapshot = !sawFirstSnapshot;
+    sawFirstSnapshot = true;
+    if (current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
+    void (async () => {
+      // Clears the request before anything happens, and answers false if another
+      // effect run, or another surface, already took this one — see
+      // `consumeSaveIntent`. Taken when the QUESTION is asked, not when it is
+      // answered: a question you dismissed has been answered, and leaving the
+      // request on the document would re-ask it on every reload.
+      const taken = await consumeSaveIntent(current);
+      // A first-snapshot request is cleared above and stops here regardless of
+      // `taken` — it is not this page's to act on, only to stop re-arming.
+      if (isFirstSnapshot || !taken) return;
+      if (current.recipeId !== null) {
+        saveChoiceOpen = true;
+        return;
+      }
+      await handleSaveAsRecipe();
+    })();
+  });
 
   // Save as new recipe — the attached-chat counterpart (issue #798). You asked
   // what would go with the dish and want to keep the answer as its own recipe.
@@ -429,5 +494,13 @@
     applying={isApplying}
     onApply={handleApplyChanges}
     onDiscard={handleDiscardChanges}
+  />
+
+  <!-- "You asked me to save this — which did you mean?" (issue #1480). Only ever
+       raised on an attached chat; "Update recipe" opens the gate above. -->
+  <SaveIntentChoice
+    bind:open={saveChoiceOpen}
+    onUpdate={() => void handleReviewChanges()}
+    onSaveNew={() => void handleSaveAsNewRecipe()}
   />
 {/if}

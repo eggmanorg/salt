@@ -67,6 +67,42 @@ export const ChatSessionSchema = z.object({
   // required field would empty the chat list of every session written before
   // this shipped.
   reopenedAt: z.string().nullable().default(null),
+  // The chef was asked, on the turn named here, to save this conversation as a
+  // recipe (issue #1480). The id of the ASSISTANT message the flow wrote for that
+  // turn, or null for every turn nobody asked on.
+  //
+  // A REQUEST, NEVER A RESULT. `chefChat`'s `saveRecipe` tool writes nothing; it
+  // only lets the flow set this field on the document it was already writing
+  // (`writeChefChatTurn`). The save itself runs in the browser through
+  // `chatRecipeAuthor.ts`, the one create implementation, exactly as the
+  // floppy-disc button's does. So a model that mishears an ordinary sentence
+  // costs at worst an unwanted recipe somebody can delete.
+  //
+  // IT IS CLEARED FROM THREE ENDS, because an intent that outlives its turn would
+  // re-fire unprompted. The flow rewrites it on EVERY turn — to the new assistant
+  // message id, or back to null — so a stale one survives at most until the next
+  // thing anybody says; the browser attempts the clear as it takes it
+  // (`consumeSaveIntent` in `web-pwa`'s `chatService.ts`) before the save runs,
+  // answering false (and running no save) if that clear does not land; and a
+  // request already on the document the FIRST time a page observes it — the
+  // finished conversation nobody comes back to for a turn, reopened days later —
+  // is cleared without ever being acted on (the mount-tracking beside each
+  // page's `consumeSaveIntent` call). That third path is the one that actually
+  // bounds a conversation with no next turn: without it, "next thing anybody
+  // says" is not a bound at all on a chat nobody is talking in.
+  //
+  // WHY AN ID RATHER THAN A BOOLEAN: it names the turn. Two intents in a row are
+  // two different values, so a browser that has already acted on one can tell the
+  // next one apart from the echo of its own.
+  //
+  // `.default(null)` for the same reason as `basedOnRecipeId` and `reopenedAt`
+  // above: the realtime subscription SKIPS a document that fails `safeParse`, so
+  // a required field would empty the chat list of every session written before
+  // this shipped. It is also what makes the deploy window safe in the other
+  // direction — an older browser reading a newer document has Zod strip a key it
+  // does not know, and simply misses the prompt (issue #1310 measured exactly
+  // that when it removed `MessageSchema.offered`).
+  pendingSaveIntent: z.string().nullable().default(null),
   // ISO-8601 here, but a Firestore `Timestamp` on the wire (issue #1008 — the
   // TTL machinery acts on nothing else). firebase-sync converts in both
   // directions at the boundary, so the domain stays Firebase-free (Hard rule 1).

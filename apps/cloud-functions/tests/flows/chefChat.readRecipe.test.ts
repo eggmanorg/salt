@@ -250,9 +250,11 @@ describe('the chef’s tool surface', () => {
     // The constraint the rewritten design principle #1 states. A new tool is a new
     // issue with its own justification, and this is what notices one arriving
     // without it — #840 justified the recipe pair, #1373 justified
-    // readEquipmentDetail (read-only, permanently), and #1377 the kitchen-notes
-    // pair. A WRITE tool for equipment is refused outright, which
-    // `chefChat.readEquipmentDetail.test.ts` pins separately.
+    // readEquipmentDetail (read-only, permanently), #1377 the kitchen-notes
+    // pair, and #1480 `saveRecipe` — which records a request and writes nothing,
+    // the save itself staying in the browser. A WRITE tool for equipment is
+    // refused outright, which `chefChat.readEquipmentDetail.test.ts` pins
+    // separately.
     expect(defineToolCalls.map((c) => c.name)).toEqual([
       'findRecipes',
       'readRecipe',
@@ -260,6 +262,7 @@ describe('the chef’s tool surface', () => {
       'findKitchenNotes',
       'readKitchenNote',
       'writeKitchenNote',
+      'saveRecipe',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
     expect(readRecipeTool).toMatchObject({ __tool: 'readRecipe' });
