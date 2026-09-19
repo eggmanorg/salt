@@ -188,17 +188,15 @@ async function seedDish(page: Page): Promise<string> {
 }
 
 /** ⋮ → Ask/amend, then one turn of conversation. Returns the session id. */
-async function talkAboutTheDish(page: Page): Promise<string> {
+async function talkAboutTheDish(page: Page, message: string = USER_MESSAGE): Promise<string> {
   await page.getByTestId('recipe-actions-overflow').click();
   await page.getByTestId('recipe-ask-amend-menu-item').click();
 
-  await page.getByTestId('chat-input').fill(USER_MESSAGE);
+  await page.getByTestId('chat-input').fill(message);
   await page.getByTestId('chat-send-btn').click();
-  await expect(page.getByTestId('chat-message-user').filter({ hasText: USER_MESSAGE })).toBeVisible(
-    {
-      timeout: SYNC_TIMEOUT,
-    },
-  );
+  await expect(page.getByTestId('chat-message-user').filter({ hasText: message })).toBeVisible({
+    timeout: SYNC_TIMEOUT,
+  });
   // The assistant turn is what unlocks "Review changes" on both surfaces.
   await expect(
     page.getByTestId('chat-message-assistant').filter({ hasText: STUB_REPLY }),
@@ -333,5 +331,67 @@ test.describe('recipes — the chat review gate', () => {
     // And the dish is still attached — `assembleRecipeDraft`'s carry-through, which
     // every amend would otherwise erase.
     expect(saved.componentRecipeIds).toEqual([COMPONENT_DISH.id]);
+  });
+});
+
+/**
+ * Asking the chef to save it, on a chat attached to a dish (issue #1480, Phase 2).
+ *
+ * The general-chat leg is covered in `chat.spec.ts`, where one thing can be meant
+ * and the save just runs. Here two things can, so the app ASKS — and what this
+ * drives is the half no unit test can reach: the request is recorded by the real
+ * `chefChat` callable, travels on the real `chatSessions` write, and arrives at
+ * the browser on the real subscription.
+ *
+ *   stubAi('chefChat', { tool: 'saveRecipe', then: … }) — the tool-call stub
+ *     → the chef's `saveRecipe` tool runs and writes nothing
+ *       → the flow records the request on the chat document
+ *         → the recipe page asks which was meant, having written nothing
+ *           → "Update recipe" opens the SAME change summary the menu opens,
+ *             and still writes nothing until Apply
+ *
+ * BOTH FEATURE GATES ARE OPEN HERE because there is no PostHog key in the
+ * emulator build, and "unconfigured means ungated" on both sides. The flag-OFF
+ * path is a unit concern, pinned in `chefChat.saveIntent.test.ts` and
+ * `RecipeViewPage.saveNewRecipe.test.ts`.
+ *
+ * Desktop default, so the chat docks as a column. The drawer below `lg` shows the
+ * SAME dialog — it is rendered once for the page, not once per surface — so it is
+ * covered here and not driven separately, the same reasoning the tests above give.
+ */
+test.describe('recipes — asking the chef to save, on a chat about a dish', () => {
+  test('asks which was meant, and "Update recipe" still goes through the change summary', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await gotoAndSignIn(page, uniqueEmail(testInfo.testId), '/', { admin: true });
+    await page.evaluate((r) => window.__e2e!.stubAi('chefChat', r), {
+      tool: 'saveRecipe',
+      then: STUB_REPLY,
+    });
+    await page.evaluate((t) => window.__e2e!.stubAi('generateChatTitle', t), STUB_CHAT_TITLE);
+    await page.evaluate((a) => window.__e2e!.stubAi('authorRecipe', a), STUB_AUTHOR);
+
+    const recipeId = await seedDish(page);
+    const sessionId = await talkAboutTheDish(page, 'save this as a recipe');
+
+    // Nobody touched the floppy-disc menu. The question arrives because the chef
+    // was asked and the flow recorded it.
+    await expect(page.getByTestId('chat-save-intent-dialog')).toBeVisible({ timeout: 30_000 });
+    // And the request has been TAKEN, so a reload cannot ask again.
+    await expect
+      .poll(
+        async () => (await getSessions(page)).find((s) => s.id === sessionId)?.pendingSaveIntent,
+      )
+      .toBeNull();
+
+    await page.getByTestId('chat-save-intent-update').click();
+    await expectNoMetadataRemovalProposed(page);
+    // Nothing has been written yet — the dish is still what was seeded.
+    expect((await getRecipes(page)).find((r) => r.id === recipeId)?.title).toBe(DISH);
+
+    await page.getByTestId('recipe-change-apply').click();
+    const saved = await savedRecipeAfterApply(page, recipeId);
+    expect(saved.metadata).toEqual(SEEDED_METADATA);
   });
 });

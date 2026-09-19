@@ -32,6 +32,7 @@
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import { KIND_COPY, kindOf } from '../recipes/recipeKind.js';
   import RecipeChangeSummary from '../recipes/RecipeChangeSummary.svelte';
+  import SaveIntentChoice from './SaveIntentChoice.svelte';
   import ChatThread from './ChatThread.svelte';
   import { createChatThread } from './chatThreadState.svelte.js';
 
@@ -231,21 +232,28 @@
   // already running. So a model that mishears costs an unwanted recipe somebody
   // can delete, never a dish quietly rewritten.
   //
-  // GENERAL CHATS ONLY, for now. An attached chat has two things the ask could
-  // mean — fold it into this dish, or keep it as a separate one — and choosing
-  // between them is issue #1480's phase 2. Until then an attached chat ignores a
-  // recorded request entirely, and the floppy-disc menu is the only route there.
-  // The intent is left ON the document rather than cleared, so nothing is thrown
-  // away before the surface that can use it exists.
+  // A CHAT ATTACHED TO A DISH IS ASKED, a general one is not — there is only one
+  // thing the ask can mean here, and asking anyway would not be "exactly the same
+  // as pressing the save button". Standing on a dish there are two, so
+  // `SaveIntentChoice` offers the menu's own two names and neither handler runs
+  // until one is picked.
+  let saveChoiceOpen = $state(false);
+
   $effect(() => {
     const current = session;
     if (!current || current.pendingSaveIntent === null) return;
     if (!$chatSaveGate.enabled) return;
-    if (current.recipeId !== null) return;
     void (async () => {
-      // Clears the request before saving, and answers false if another effect
-      // run, or another surface, already took this one — see `consumeSaveIntent`.
+      // Clears the request before anything happens, and answers false if another
+      // effect run, or another surface, already took this one — see
+      // `consumeSaveIntent`. Taken when the QUESTION is asked, not when it is
+      // answered: a question you dismissed has been answered, and leaving the
+      // request on the document would re-ask it on every reload.
       if (!(await consumeSaveIntent(current))) return;
+      if (current.recipeId !== null) {
+        saveChoiceOpen = true;
+        return;
+      }
       await handleSaveAsRecipe();
     })();
   });
@@ -468,5 +476,13 @@
     applying={isApplying}
     onApply={handleApplyChanges}
     onDiscard={handleDiscardChanges}
+  />
+
+  <!-- "You asked me to save this — which did you mean?" (issue #1480). Only ever
+       raised on an attached chat; "Update recipe" opens the gate above. -->
+  <SaveIntentChoice
+    bind:open={saveChoiceOpen}
+    onUpdate={() => void handleReviewChanges()}
+    onSaveNew={() => void handleSaveAsNewRecipe()}
   />
 {/if}

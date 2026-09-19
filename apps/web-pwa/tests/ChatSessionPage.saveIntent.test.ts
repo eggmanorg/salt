@@ -16,9 +16,8 @@
  *     itself.
  *  4. THE FEATURE KEY IS A REAL GATE on this side too: with it off, a document
  *     carrying a request is ignored entirely.
- *  5. AN ATTACHED CHAT IGNORES IT, and leaves it on the document. Two things
- *     could be meant there and choosing between them is phase 2; nothing is
- *     thrown away before the surface that can use it exists.
+ *  5. AN ATTACHED CHAT IS ASKED, in the menu's own two words, and neither handler
+ *     runs until one is picked. Dismissing writes nothing.
  *
  * A separate file from `ChatSessionPage.test.ts` because that suite mocks the
  * feature gate OFF wholesale, which is exactly the state four of these five
@@ -31,7 +30,7 @@
  * "what did it say" is a question the store itself answers.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import { emptyRecipe } from '@salt/domain';
@@ -88,9 +87,14 @@ vi.mock('../src/lib/recipeAmend.js', () => ({
 
 import ChatSessionPage from '../src/routes/chat/ChatSessionPage.svelte';
 import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
+import { proposeRecipeAmendment } from '../src/lib/recipeAmend.js';
 import { authorRecipeTraced } from '../src/lib/recipeService.js';
 import { toasts } from '../src/lib/toastStore.js';
 import { push } from 'svelte-spa-router';
+
+// The propose leg is not this suite's subject — that it is REACHED is. A failure
+// is the cheapest answer that proves the call happened and leaves nothing open.
+const OFFLINE = { kind: 'NetworkError', reason: 'offline' } as const;
 
 const SAVED: Recipe = {
   ...emptyRecipe('recipe-new', '2026-09-19T00:00:00.000Z'),
@@ -131,6 +135,7 @@ beforeEach(() => {
   mockRecipes._set([]);
   mockRouter.querystring = undefined;
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
+  vi.mocked(proposeRecipeAmendment).mockResolvedValue({ kind: 'err', error: OFFLINE });
   vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: SAVED });
   window.history.replaceState(null, '', '#/');
 });
@@ -199,17 +204,80 @@ describe('ChatSessionPage — a save the chef was asked for', () => {
     expect(consumeSaveIntent).not.toHaveBeenCalled();
     expect(authorRecipeTraced).not.toHaveBeenCalled();
   });
+});
 
-  it('leaves an attached chat alone, request and all — that is phase 2', async () => {
-    // Two things could be meant on a dish, so this page does not guess. It also
-    // does not CLEAR the request: nothing is thrown away before the surface that
-    // can offer the choice exists.
+describe('ChatSessionPage — a save the chef was asked for, on a chat about a dish', () => {
+  // Two things could be meant standing on a dish, so the app asks instead of
+  // guessing — in the same two words the floppy-disc menu uses (#1310).
+  async function askAndWait() {
+    // The dish the chat is attached to has to be in the store: "Update recipe"
+    // proposes against the recipe it finds there and says "Recipe not found"
+    // otherwise, which is a different path from the one under test.
+    mockRecipes._set([{ ...emptyRecipe('recipe-1', '2026-09-19T00:00:00.000Z'), title: 'Lamb' }]);
+    mockSessions._set([makeSession({ recipeId: 'recipe-1', pendingSaveIntent: 'm2' })]);
+    const rendered = renderPage();
+    await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+    return rendered;
+  }
+
+  it('asks which was meant, and writes nothing while it is asking', async () => {
+    await askAndWait();
+
+    expect(screen.getByTestId('chat-save-intent-update').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('chat-save-intent-new').textContent).toContain('Save as new recipe');
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(proposeRecipeAmendment).not.toHaveBeenCalled();
+  });
+
+  it('routes "Update recipe" into the existing review gate, not into a write', async () => {
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-update'));
+
+    // `proposeRecipeAmendment` produces a PENDING proposal; `applyRecipeAmendment`
+    // is what writes, and the change summary's Apply is what calls it. Reaching
+    // the first without the second is exactly the gate the menu route has.
+    await waitFor(() => expect(proposeRecipeAmendment).toHaveBeenCalled());
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+  });
+
+  it('routes "Save as new recipe" into an independent dish, with no base and no claim', async () => {
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-new'));
+
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
+    // `null`, even though this chat is attached: an accompaniment is not a
+    // variation of the dish it accompanies, and a base would drag that dish's
+    // ingredients into it.
+    expect(vi.mocked(authorRecipeTraced).mock.calls[0]?.[0]).toMatchObject({
+      basedOnRecipeId: null,
+    });
+    // And the conversation stays listed on the dish it is attached to.
+    expect(claimRecipe).not.toHaveBeenCalled();
+    expect(proposeRecipeAmendment).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the question is dismissed unanswered', async () => {
+    const { container } = await askAndWait();
+
+    await fireEvent.keyDown(container.ownerDocument, { key: 'Escape' });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('chat-save-intent-dialog')).not.toBeInTheDocument(),
+    );
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(proposeRecipeAmendment).not.toHaveBeenCalled();
+  });
+
+  it('does not ask at all with the feature key off', async () => {
+    flagOn.value = false;
     mockSessions._set([makeSession({ recipeId: 'recipe-1', pendingSaveIntent: 'm2' })]);
 
     renderPage();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(consumeSaveIntent).not.toHaveBeenCalled();
-    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });

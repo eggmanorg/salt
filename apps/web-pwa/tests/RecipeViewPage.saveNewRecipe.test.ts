@@ -109,6 +109,9 @@ vi.mock('../src/lib/chatService.js', () => ({
   createChatSession: vi.fn(),
   sendMessage: vi.fn(),
   claimRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // Issue #1480: taking the save request the chef recorded. Its own contract —
+  // clear first, answer once — is pinned in `chatService.saveIntent.test.ts`.
+  consumeSaveIntent: vi.fn().mockResolvedValue(true),
 }));
 vi.mock('../src/lib/equipmentService.js', () => ({
   equipment: mockEquipment,
@@ -164,7 +167,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { authorRecipeTraced, stashImportedDraft } from '../src/lib/recipeService.js';
-import { claimRecipe } from '../src/lib/chatService.js';
+import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
 import { saveRecipe } from '@salt/firebase-sync';
 import { push } from 'svelte-spa-router';
 
@@ -242,6 +245,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   toastSpy.reset();
   vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  vi.mocked(consumeSaveIntent).mockResolvedValue(true);
   mockCanonItems._set([]);
   mockIsLoading._set(false);
   mockRecipes._set([makeRecipe()]);
@@ -435,5 +439,85 @@ describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
 
     settle({ kind: 'err', error: { kind: 'NetworkError', reason: 'offline' } } as LibrarianResult);
     await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe.']));
+  });
+});
+
+// Asking the chef to save, on the page every chat is attached to (issue #1480,
+// Phase 2). Both things the ask could mean apply here, so the app asks — and
+// neither existing handler runs until one is picked.
+//
+// ONE dialog for the page, not one per chat surface: the docked column and the
+// phone drawer are two surfaces of one conversation and can be mounted at once,
+// so a copy in each would ask twice.
+describe('RecipeViewPage — a save the chef was asked for', () => {
+  async function askAndWait() {
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+    const rendered = renderPage();
+    await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+    return rendered;
+  }
+
+  it('asks which was meant, in the menu’s own two words, and writes nothing yet', async () => {
+    await askAndWait();
+
+    expect(screen.getByTestId('chat-save-intent-update').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('chat-save-intent-new').textContent).toContain('Save as new recipe');
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(saveRecipe).not.toHaveBeenCalled();
+  });
+
+  it('takes the request as it asks, so a reload cannot ask again', async () => {
+    await askAndWait();
+
+    expect(consumeSaveIntent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(consumeSaveIntent).mock.calls[0]?.[0]).toMatchObject({ id: 'session-1' });
+  });
+
+  it('routes "Save as new recipe" into a create with no base, leaving the dish alone', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+    } as never);
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-new'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
+    expect(vi.mocked(authorRecipeTraced).mock.calls[0]?.[0]).toMatchObject({
+      basedOnRecipeId: null,
+    });
+    // The lamb is not written to, and the conversation stays listed on it.
+    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(claimRecipe).not.toHaveBeenCalled();
+  });
+
+  it('routes "Update recipe" into the review gate, and writes nothing on the way', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-update'));
+
+    // `proposeRecipeAmendment` is the real module here, so what proves the update
+    // leg was taken is the librarian being asked ABOUT THIS RECIPE — the create
+    // leg names no `recipeId` — and nothing being saved.
+    await waitFor(() =>
+      expect(vi.mocked(authorRecipeTraced).mock.calls[0]?.[0]).toMatchObject({
+        recipeId: RECIPE_ID,
+      }),
+    );
+    expect(saveRecipe).not.toHaveBeenCalled();
+  });
+
+  it('never asks on a chat that carries no request', async () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+
+    renderPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consumeSaveIntent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });

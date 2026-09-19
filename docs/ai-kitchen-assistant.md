@@ -87,7 +87,9 @@ foundation (#179).
    Gated server-side, per caller, on the `chat-save` PostHog flag
    (`CHAT_SAVE_FLAG_KEY`, shared via `@salt/observability`), with a browser half
    in `featureGate.ts` — outside the flag there is no seventh tool and no saving
-   section in the prompt.
+   section in the prompt. The chef RECOGNISES and never chooses: on a chat
+   attached to a dish two things could be meant, so the app asks in the menu's own
+   two words and the model has no say in which is taken.
 
    **The output-schema half of this principle is untouched by it, and that is why
    a tool was chosen.** `ChefChatOutputSchema` is still `z.string()`,

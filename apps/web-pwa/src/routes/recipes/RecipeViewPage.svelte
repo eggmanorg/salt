@@ -39,7 +39,7 @@
   // package. They are still sent from here, as ordinary user turns, unchanged.
   import { OPTIMISE_FOR_KITCHEN_PROMPT, REFRESH_PROMPT } from '@salt/domain/prompts';
   import { goBack } from '../../lib/nav.js';
-  import { breadGate } from '../../lib/featureGate.js';
+  import { breadGate, chatSaveGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
   import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
@@ -67,6 +67,7 @@
   import RecipeBakeBatchSheet from './RecipeBakeBatchSheet.svelte';
   import IngredientMatchSheet from './IngredientMatchSheet.svelte';
   import RecipeChangeSummary from './RecipeChangeSummary.svelte';
+  import SaveIntentChoice from '../chat/SaveIntentChoice.svelte';
   import RecipeIdentityCard from './RecipeIdentityCard.svelte';
   import EditableZone from './EditableZone.svelte';
   import RecipeNotesCard from './RecipeNotesCard.svelte';
@@ -137,7 +138,7 @@
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
   import { auth } from '../../lib/auth.svelte.js';
-  import { createChatSession, sessions } from '../../lib/chatService.js';
+  import { createChatSession, consumeSaveIntent, sessions } from '../../lib/chatService.js';
   import ImagePromptDialog from '../../components/ImagePromptDialog.svelte';
   import ChatThread from '../chat/ChatThread.svelte';
   import { createChatThread } from '../chat/chatThreadState.svelte.js';
@@ -1467,6 +1468,37 @@
     addToast(KIND_COPY[kindOf(result.value)].createdToast, 'success');
     push(`/recipes/${result.value.id}`);
   }
+
+  // ─── Asking the chef to save it (issue #1480) ──────────────────────────────
+  //
+  // Every chat on this page is attached to the dish on this page, so there are
+  // always two things the ask could mean — fold it into this dish, or keep it as
+  // a dish of its own. `SaveIntentChoice` asks in the menu's own two words and
+  // routes each answer into the handler that already exists above; nothing is
+  // written until one is picked, and "Update recipe" still goes through
+  // `RecipeChangeSummary` and its Apply.
+  //
+  // ONE EFFECT AND ONE DIALOG FOR THE WHOLE PAGE, not one per chat surface. The
+  // docked column and the phone drawer are two surfaces of one conversation and
+  // can be mounted at once (the column is `hidden` below `lg`, not unmounted), so
+  // a copy in each would take the request twice and ask twice.
+  //
+  // `activeSession` and no other: a request recorded on a chat you are not
+  // looking at is not yours to answer here, and the full `/chat/:id` page will
+  // take it. It is left on that document rather than cleared.
+  let saveChoiceOpen = $state(false);
+
+  $effect(() => {
+    const current = activeSession;
+    if (!current || current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
+    void (async () => {
+      // Taken as the QUESTION is asked, not as it is answered — see
+      // `consumeSaveIntent`. A question you dismissed has been answered, and a
+      // request left on the document would re-ask on every reload.
+      if (await consumeSaveIntent(current)) saveChoiceOpen = true;
+    })();
+  });
 
   // ─── Delete ─────────────────────────────────────────────────────────────────
   let deleteOpen = $state(false);
@@ -3123,6 +3155,15 @@
   applying={sidebarIsApplying}
   onApply={handleSidebarApplyChanges}
   onDiscard={handleSidebarDiscardChanges}
+/>
+
+<!-- "You asked me to save this — which did you mean?" (issue #1480). One for the
+     page, covering the docked column and the drawer alike; "Update recipe" opens
+     the gate above. -->
+<SaveIntentChoice
+  bind:open={saveChoiceOpen}
+  onUpdate={() => void handleSidebarReviewChanges()}
+  onSaveNew={() => void handleSaveAsNewRecipe()}
 />
 
 <!-- Regenerate image dialog: the editable scene brief (issue #148) -->
