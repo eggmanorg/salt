@@ -430,10 +430,24 @@ describe('chefChat — whose chat gets the notes tools', () => {
   // the "Recipe Library", and saved a second time by hand.
   //
   // Asserted on the ASSEMBLED system prompt rather than on the constants,
-  // because the constants are only half of it: a phrase reintroduced in
-  // CHEF_SYSTEM_BASE, the equipment framing or a future section would be just as
-  // visible to the model and invisible to a per-constant check. Both gate states
-  // are covered because the Library sections only exist in one of them.
+  // because a phrase reintroduced in CHEF_SYSTEM_BASE, LIBRARY_FRAMING or
+  // KITCHEN_NOTES_FRAMING would be just as visible to the model and invisible to
+  // a per-constant check. Both gate states are covered because the Library
+  // sections only exist in one of them.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12 — a claim nothing guarantees is not the claim
+  // to make): this reaches only those two unconditional sections, and only the
+  // two exact bigrams below — not the bare word "library". `dbWith` above throws
+  // for every collection but `libraryPages`, so every GATED section (the
+  // equipment framing, favourites, kitchen memory, `## Current recipe`,
+  // variation framing) degrades to `''` in this fixture and never reaches
+  // `options['system']` at all — a phrase reintroduced in any of them is
+  // invisible here, not caught, whatever an earlier version of this comment
+  // claimed. Nor does `options['system']` cover tool descriptions, which ride
+  // separately in `options['tools']`: the Library side's two are pinned by the
+  // per-description assertions below; the recipes side's are not pinned by
+  // anything, and neither are the four schema `.describe()` files under
+  // `packages/domain/src/schemas`. See `docs/library.md`'s Rule 12 ledger.
   //
   // The tool IDENTIFIERS survive this deliberately: `findKitchenNotes` and
   // `readKitchenNote` carry no space, so "kitchen note" does not match them.

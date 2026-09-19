@@ -86,7 +86,9 @@ export const FindRecipesOutputSchema = z.object({
    * "propose a week out of what exists, and invent where the collection is thin"
    * needs to know.
    */
-  totalInLibrary: z.number(),
+  totalInLibrary: z
+    .number()
+    .describe('How many recipes they have saved in total, before your query narrowed it.'),
 });
 
 export type FindRecipesOutput = z.infer<typeof FindRecipesOutputSchema>;

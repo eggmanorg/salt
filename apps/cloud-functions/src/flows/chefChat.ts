@@ -295,6 +295,12 @@ export const findRecipesTool = ai.defineTool(
 // This section is about the RECIPES collection, which the app calls Recipes; the
 // constant keeps its `LIBRARY_` name only because that is the name every comment
 // in this file already refers to it by.
+//
+// UNLIKE THE LIBRARY TOOLS BELOW, NOTHING PINS THIS (CLAUDE.md Rule 12):
+// `chefChat.findRecipes.test.ts` asserts `DO NOT CALL IT` and the technique/
+// substitution guidance, never vocabulary, so a reinstated "recipe library" in
+// `FIND_RECIPES_DESCRIPTION` above or in this framing would ship green. Stated
+// here rather than fixed, per `docs/library.md`'s Rule 12 ledger.
 const LIBRARY_FRAMING = `## Their own recipes
 This household has its own saved recipes. findRecipes searches them and readRecipe opens one in \
 full. They are the dishes this family chose to keep, so reaching for one is often a better answer \
@@ -514,7 +520,11 @@ export const readEquipmentDetailTool = ai.defineTool(
 // Library — he read it as a refusal and saved the dish a second time by hand.
 // The fix is to name what the navigation names. DO NOT RESTORE "kitchen notes"
 // or "recipe library" here: `chefChat.kitchenNotes.test.ts` asserts the assembled
-// system prompt contains neither, in both gate states, so a revival goes red.
+// system prompt contains neither, in both gate states, so a revival in this
+// section goes red. That coverage stops at this section's boundary — it says
+// nothing about `FIND_RECIPES_DESCRIPTION` below, which carries no equivalent
+// assertion (see the note there), nor about the four schema `.describe()` files
+// under `packages/domain/src/schemas`, which carry none at all.
 //
 // Only the words the model reads changed. The collection, the schema, the feature
 // key, the app's routes and the tool identifiers (`findKitchenNotes`,

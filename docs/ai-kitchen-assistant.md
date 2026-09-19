@@ -58,9 +58,13 @@ foundation (#179).
    reach (#831). The prompt calls these pages **the Library** and calls the recipes
    collection **recipes**, matching `nav.ts` — #1377 had it the other way round and
    #1476 reversed it, because a chef naming surfaces the app does not have sends
-   people nowhere (see [docs/library.md](library.md)). Only one of the two may hold
-   the word "library" in one prompt, and it is the pages; a vocabulary test over the
-   assembled prompt keeps it that way. Do not confuse this with Kitchen memory (§4 below) —
+   people nowhere (see [docs/library.md](library.md)). Only one of the two may say
+   "recipe library" or "kitchen note" in the assembled system prompt, and it is
+   neither — a test over that assembled prompt holds those two exact bigrams out,
+   in both gate states. That test does not reach every section, every tool
+   description or the schema files' own prompt text; see
+   [docs/library.md](library.md)'s Rule 12 ledger for the boundary. Do not confuse
+   this with Kitchen memory (§4 below) —
    different collection (`libraryPages`, not `kitchenMemories`), different shape
    (fetched on demand through a tool, not ambient), and a different feature (epic
    #1372) entirely; they only rhyme in name.
