@@ -27,6 +27,10 @@ vi.mock('../src/lib/recipeService.js', () => ({
 // Not imported by the module under test — which is the point. If the create leg
 // ever grows a claim, this mock stops being unused and the last test fails.
 vi.mock('../src/lib/chatService.js', () => ({
+  // Issue #1480: the recipe page and the full chat page read the save request
+  // the chef recorded. Never fires here — no fixture carries one — but the
+  // whole-module mock has to carry every export the page names.
+  consumeSaveIntent: vi.fn().mockResolvedValue(false),
   claimRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 
