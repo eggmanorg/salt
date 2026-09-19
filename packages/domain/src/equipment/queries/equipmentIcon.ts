@@ -28,3 +28,33 @@ export function equipmentIconAwaitingApproval(icon: EquipmentIconDoc | null | un
   if (!icon) return false;
   return icon.sourceName !== icon.briefSourceName;
 }
+
+/** The shape `equipmentIconOwnerIds` reads — a full `EquipmentItemDoc` satisfies it. */
+export interface IconOwner {
+  readonly id: string;
+  readonly accessories?: readonly { readonly id: string }[];
+}
+
+/**
+ * Every document id an `equipmentIcons` collection may legitimately hold, for one
+ * manifest (issue #1465, Phase 2).
+ *
+ * THIS IS A DELETE LIST'S COMPLEMENT, which is why it is a named query rather
+ * than an inline `.map()`. `onEquipmentManifestWritten` deletes every icon
+ * document whose id is not in this set, on every manifest write, so an id missing
+ * here is a picture destroyed — and before this existed the set was the items
+ * alone, which would have taken every entry's picture with it the first time
+ * anybody ticked a checkbox.
+ *
+ * `?? []` for the same reason `resolveKitEntryEquipment` carries it: this is pure
+ * and takes whatever a caller hands it, and a partial item must read as "no
+ * entries" rather than throw on the path that does the deleting.
+ */
+export function equipmentIconOwnerIds(items: readonly IconOwner[]): Set<string> {
+  const ids = new Set<string>();
+  for (const item of items) {
+    ids.add(item.id);
+    for (const accessory of item.accessories ?? []) ids.add(accessory.id);
+  }
+  return ids;
+}

@@ -121,7 +121,7 @@ async function readRecipeContext(
   }
 }
 
-// ─── The recipe library, as a tool (issue #840) ──────────────────────────────
+// ─── The household's own recipes, as a tool (issue #840) ─────────────────────
 //
 // The chef's FIRST tool, and it overturns half of design principle #1
 // (`docs/ai-kitchen-assistant.md`): "no structured output schema" survives, "no
@@ -166,7 +166,7 @@ type SearchRow = RecipeSearchCandidate & {
 };
 
 /**
- * Searches the recipe library for the chef.
+ * Searches the household's saved recipes for the chef.
  *
  * The I/O half of `findRecipes`, and deliberately nothing more: it projects,
  * validates, hands the rows to the pure `searchRecipes` in `@salt/domain` and
@@ -245,7 +245,7 @@ export async function findRecipesInLibrary(
 // is real: a chef with a tool reaches for it, and every turn spent searching is a
 // turn not spent being a chef. Two tools is the whole surface, and this is where
 // the discipline is written.
-const FIND_RECIPES_DESCRIPTION = `Search this household's OWN saved recipe library — the dishes they have chosen to keep.
+const FIND_RECIPES_DESCRIPTION = `Search this household's OWN saved recipes — the dishes they have chosen to keep.
 
 CALL THIS when the answer depends on what they have saved:
 - planning nights ("what shall we have this week?") — leave query out entirely and browse
@@ -255,8 +255,8 @@ CALL THIS when the answer depends on what they have saved:
 
 DO NOT CALL IT for anything you can simply answer yourself. A technique question, a substitution, \
 a conversion, "how do I know when it's done", "why did my sauce split", how long to rest a joint, \
-or an idea for a dish they do not have — none of those live in the library, and searching for them \
-spends the turn without helping. When in doubt, just answer.
+or an idea for a dish they do not have — none of those are among their recipes, and searching for \
+them spends the turn without helping. When in doubt, just answer.
 
 Turn a vibe into keywords BEFORE calling: search for the words a recipe would actually contain, \
 not the mood. "Something warming for a cold night" is a search for "stew braise soup roast".
@@ -286,10 +286,22 @@ export const findRecipesTool = ai.defineTool(
 // How the chef is told to USE what comes back. The tool description governs when
 // to call; this governs what to do with the answer, and it exists as its own
 // section because two of its four rules are lessons already paid for elsewhere:
-// the FAVOURITES_FRAMING "something different" rule below, restated for the
-// library, and "never read it back as a list", which is the same instinct that
+// the FAVOURITES_FRAMING "something different" rule below, restated for their
+// recipes, and "never read it back as a list", which is the same instinct that
 // makes an index feel like an index.
-const LIBRARY_FRAMING = `## Their own recipe library
+//
+// THE WORD "LIBRARY" IS NOT SPENT HERE, and that is issue #1476 reversing issue
+// #1377's call — see the section comment on the Library tools below for why.
+// This section is about the RECIPES collection, which the app calls Recipes; the
+// constant keeps its `LIBRARY_` name only because that is the name every comment
+// in this file already refers to it by.
+//
+// UNLIKE THE LIBRARY TOOLS BELOW, NOTHING PINS THIS (CLAUDE.md Rule 12):
+// `chefChat.findRecipes.test.ts` asserts `DO NOT CALL IT` and the technique/
+// substitution guidance, never vocabulary, so a reinstated "recipe library" in
+// `FIND_RECIPES_DESCRIPTION` above or in this framing would ship green. Stated
+// here rather than fixed, per `docs/library.md`'s Rule 12 ledger.
+const LIBRARY_FRAMING = `## Their own recipes
 This household has its own saved recipes. findRecipes searches them and readRecipe opens one in \
 full. They are the dishes this family chose to keep, so reaching for one is often a better answer \
 than inventing something — it is already theirs, and they already know they like it.
@@ -298,19 +310,20 @@ Search to FIND a dish; read one when you are going to reason about what is actua
 Building a dinner out of two saved dishes means reading both — you cannot say what clashes for \
 the oven or what to prep the night before from a title.
 
-ALWAYS LINK A SAVED DISH. Every library entry you name is written as a Markdown link built from \
+ALWAYS LINK A SAVED DISH. Every saved recipe you name is written as a Markdown link built from \
 the id the search returned: [Roast chicken traybake](#/recipes/abc123). Never name a saved dish \
 without its link, and never write a link for a dish that did not come back from a search — you do \
 not know its id, and a guessed one goes nowhere.
 
-NEVER READ THE LIBRARY BACK AS A LIST. You are a chef who has read their cookbook, not an index of \
-it. Say what you would cook and why, in your own words, and link the dishes as they come up.
+NEVER READ THEIR RECIPES BACK AS A LIST. You are a chef who has read their cookbook, not an index \
+of it. Say what you would cook and why, in your own words, and link the dishes as they come up.
 
 Say plainly when nothing saved fits, then cook something new. Never present a dish you invented as \
 one they already have.
 
-When they ask for something DIFFERENT, their library is part of what they already own — the same \
-rule the section on what they buy states. Use it to know what to steer AWAY from, not what to offer.`;
+When they ask for something DIFFERENT, their saved recipes are part of what they already own — the \
+same rule the section on what they buy states. Use it to know what to steer AWAY from, not what to \
+offer.`;
 
 /**
  * Reads one saved dish in full for the chef.
@@ -345,11 +358,11 @@ export async function readRecipeForChef(
 }
 
 // The SECOND tool, and the last one. Its description has to answer a question
-// findRecipes's does not: not just when to reach for the library, but when the
+// findRecipes's does not: not just when to reach for their recipes, but when the
 // shallow line is already enough — a chef that reads three dishes in full to
 // suggest one of them has spent the turn on reading rather than on cooking.
-const READ_RECIPE_DESCRIPTION = `Read ONE saved dish in full — every ingredient, every step, the timings, the notes, and the \
-dishes it is built from if it is a meal. Takes the id findRecipes returned.
+const READ_RECIPE_DESCRIPTION = `Read ONE saved dish in full — every ingredient, every step, the timings, the recipe's own notes, \
+and the dishes it is built from if it is a meal. Takes the id findRecipes returned.
 
 CALL THIS when you need what is actually IN the dish or how it is actually made:
 - building a meal out of two saved dishes — what clashes for the oven, what to prep the night \
@@ -405,10 +418,10 @@ export const readRecipeTool = ai.defineTool(
 // framings for flows that have no tools at all, and its header is explicit that
 // the four must not drift into each other.
 //
-// GATED ON THE KIT LIST, unlike LIBRARY_FRAMING. The library's size is unknown
-// until the tool has been called, so its framing is unconditional; the kit list
-// is right there in the prompt, and with no manifest this tool can only ever
-// miss. A household with no equipment gets exactly the prompt it got before.
+// GATED ON THE KIT LIST, unlike LIBRARY_FRAMING. How many recipes are saved is
+// unknown until the tool has been called, so its framing is unconditional; the
+// kit list is right there in the prompt, and with no manifest this tool can only
+// ever miss. A household with no equipment gets exactly the prompt it got before.
 const KITCHEN_DETAIL_FRAMING = `## Looking their kit up
 The list above is names and household rules. There is more behind it that you are NOT being shown \
 every turn: what each accessory or family member is actually like, and what the household has \
@@ -483,22 +496,40 @@ export const readEquipmentDetailTool = ai.defineTool(
   (input) => readEquipmentDetailForChef(getFirestore(), input),
 );
 
-// ─── The household's own kitchen notes (epic #1372, issue #1377) ─────────────
+// ─── The household's own Library (epic #1372, issue #1377) ───────────────────
 //
 // The THIRD and FOURTH tools, and the point at which the standing two-tool limit
 // recorded above was deliberately lifted — Daniel's call on 2026-09-14, made with
-// the cost in front of him: the library is where his proven answers live and the
+// the cost in front of him: the Library is where his proven answers live and the
 // chat is where he asks the questions, so a chef that cannot reach it answers from
 // generic advice while the right answer sits two taps away. The mitigation is the
 // SHAPE, and it is the one findRecipes/readRecipe already use — a cheap search
 // returning a summary per match, and a full read only when the detail matters.
 //
-// WHAT THESE PAGES ARE CALLED, everywhere the model can see: notes. Tool names,
-// tool descriptions, framing section. `LIBRARY_FRAMING` above already spends the
-// word "library" on the household's saved RECIPES, and two things under one name
-// in one system prompt is a collision for the model and for the next reader. The
-// collection, the schema and the app's own routes keep the `library` names they
-// have; only the words the model reads change.
+// WHAT THESE PAGES ARE CALLED, everywhere the model can see: the Library, and a
+// page in it. The recipes collection is "their recipes" and never "their library".
+//
+// THIS REVERSES #1377's CALL, which is why it is spelled out (issue #1476). #1377
+// saw the collision — one system prompt cannot use "the library" for two things —
+// and resolved it by renaming THESE pages to "kitchen notes", leaving
+// `LIBRARY_FRAMING` holding "their recipe library". The collision was real; the
+// premise was not. The app had already assigned the word: `nav.ts` labels
+// `#/library` "Library" and it opens these pages, while `#/recipes` is Recipes.
+// So the chef was taught two names no user can see, and told Daniel his recipe
+// was not in his "Recipe Library" in the same breath as writing it to the
+// Library — he read it as a refusal and saved the dish a second time by hand.
+// The fix is to name what the navigation names. DO NOT RESTORE "kitchen notes"
+// or "recipe library" here: `chefChat.kitchenNotes.test.ts` asserts the assembled
+// system prompt contains neither, in both gate states, so a revival in this
+// section goes red. That coverage stops at this section's boundary — it says
+// nothing about `FIND_RECIPES_DESCRIPTION` below, which carries no equivalent
+// assertion (see the note there), nor about the four schema `.describe()` files
+// under `packages/domain/src/schemas`, which carry none at all.
+//
+// Only the words the model reads changed. The collection, the schema, the feature
+// key, the app's routes and the tool identifiers (`findKitchenNotes`,
+// `readKitchenNote`, `writeKitchenNote`) keep the names they have — they never
+// reach the user, and renaming them is churn for no user-visible gain.
 //
 // GATED SERVER-SIDE, per caller — see `kitchenNotesEnabled`. The moment the chef
 // can read a page, content written under the `library` flag reaches a household
@@ -577,9 +608,10 @@ export async function findKitchenNotesForChef(
   }
 }
 
-const FIND_KITCHEN_NOTES_DESCRIPTION = `Search the notes this household has written down for itself — the kitchen facts that are NOT recipes. \
-Their own proven numbers: sous vide times and temperatures they have tested, the jars and tins in the cupboard \
-and what each one holds, settings that work in THIS kitchen, a table lifted off a website and kept.
+const FIND_KITCHEN_NOTES_DESCRIPTION = `Search this household's Library — the pages they have written down for themselves, the kitchen facts \
+that are NOT recipes. Their own proven numbers: sous vide times and temperatures they have tested, the jars and \
+tins in the cupboard and what each one holds, settings that work in THIS kitchen, a table lifted off a website \
+and kept.
 
 CALL THIS when their own answer would beat a general one, or when they ask for theirs:
 - a time, a temperature or a setting they are likely to have proven for themselves
@@ -588,16 +620,16 @@ CALL THIS when their own answer would beat a general one, or when they ask for t
 - anything they say is written down somewhere
 
 DO NOT CALL IT for ordinary cooking knowledge you already have. A technique, a substitution, a conversion, why a \
-sauce split, how long to rest a joint — none of that lives in their notes, and looking spends the turn without \
+sauce split, how long to rest a joint — none of that is in their Library, and looking spends the turn without \
 helping. Do not search to check an answer you are already sure of, and when in doubt, just answer.
 
-What comes back is SHALLOW — a title, its tags and the opening of the note. That is very often the whole answer: \
-if the summary already gives the number they asked for, use it and say which note it came from. Open a note with \
+What comes back is SHALLOW — a title, its tags and the opening of the page. That is very often the whole answer: \
+if the summary already gives the number they asked for, use it and say which page it came from. Open a page with \
 readKitchenNote only when the detail you need is further in.
 
-If ok comes back false, the search itself could not run — a lookup problem, not an empty set of notes. Say \
-plainly that you could not check their notes just now; never say they have written nothing about it, and never \
-answer as though totalNotes were the true count.`;
+If ok comes back false, the search itself could not run — a lookup problem, not an empty Library. Say plainly \
+that you could not check their Library just now; never say they have written nothing about it, and never answer \
+as though totalNotes were the true count.`;
 
 export const findKitchenNotesTool = ai.defineTool(
   {
@@ -639,17 +671,18 @@ export async function readKitchenNoteForChef(
   }
 }
 
-const READ_KITCHEN_NOTE_DESCRIPTION = `Read ONE note in full, exactly as the household wrote it. Takes the id findKitchenNotes returned.
+const READ_KITCHEN_NOTE_DESCRIPTION = `Read ONE Library page in full, exactly as the household wrote it. Takes the id findKitchenNotes \
+returned.
 
 CALL THIS when the summary is not enough and being wrong would matter:
 - a table you need one specific row out of
 - a method you are going to follow or adapt step by step
 - anything where the number matters and the summary only hints at it
 
-DO NOT CALL IT when the line from findKitchenNotes already answers the question, and never open several notes to \
-write one paragraph. Reading three notes to quote one line is a turn spent reading instead of cooking.
+DO NOT CALL IT when the line from findKitchenNotes already answers the question, and never open several pages to \
+write one paragraph. Reading three pages to quote one line is a turn spent reading instead of cooking.
 
-If found comes back false you could not open that note — it may have been deleted, or the read may simply have \
+If found comes back false you could not open that page — it may have been deleted, or the read may simply have \
 failed. Say plainly that you cannot open it and carry on; never state that it has been deleted, and never invent \
 its contents.`;
 
@@ -841,27 +874,27 @@ export async function writeKitchenNoteForChef(
   }
 }
 
-const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a note into the household's notes, or replace one that is already there. Use it to put something \
-down where they will find it again: a table you worked out together, the settings for a piece of kit, a list of \
-what they own.
+const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a page into the household's Library, or replace one that is already there. Use it to put \
+something down where they will find it again: a table you worked out together, the settings for a piece of kit, a \
+list of what they own.
 
 CALL THIS ONLY WHEN THEY HAVE ASKED YOU TO WRITE ONE. "Write that up", "make me a note of this", "add it to my \
-jar note", "save this somewhere" — an instruction, in their words, in this conversation.
+jar page", "save this somewhere" — an instruction, in their words, in this conversation.
 
 DO NOT CALL IT for anything else, ever. Not because a conversation covered ground worth keeping, not to tidy a \
-note you have just read, not to record what you have decided, and not to save your own answer. A long chat about \
-jars is not permission to rewrite the jar note. If you think something is worth writing down, SAY SO and let them \
+page you have just read, not to record what you have decided, and not to save your own answer. A long chat about \
+jars is not permission to rewrite the jar page. If you think something is worth writing down, SAY SO and let them \
 ask.
 
-To ADD to an existing note, read it first with readKitchenNote, then send its whole text back with your addition \
-in it and its id here. The body you send REPLACES everything the note held — sending only the new part throws \
+To ADD to an existing page, read it first with readKitchenNote, then send its whole text back with your addition \
+in it and its id here. The body you send REPLACES everything the page held — sending only the new part throws \
 the rest away.
 
-You cannot delete a note and you cannot empty one. If they ask you to, say plainly that deleting is theirs to do, \
-on the note's own page.
+You cannot delete a page and you cannot empty one. If they ask you to, say plainly that deleting is theirs to do, \
+on the page itself.
 
 Check saved before you say anything. When it is false, problem says why in plain words: repeat it and do not \
-claim the note was written.`;
+claim the page was written.`;
 
 export const writeKitchenNoteTool = ai.defineTool(
   {
@@ -873,33 +906,33 @@ export const writeKitchenNoteTool = ai.defineTool(
   (input) => writeKitchenNoteForChef(getFirestore(), input),
 );
 
-// How the chef is told to USE the notes, beside LIBRARY_FRAMING and in the same
+// How the chef is told to USE the Library, beside LIBRARY_FRAMING and in the same
 // shape: the tool descriptions govern when to call, this governs what to do with
 // the answer. Its own section rather than a paragraph bolted onto LIBRARY_FRAMING
 // precisely because the two must not blur — see the heading's last rule.
-const KITCHEN_NOTES_FRAMING = `## Their own kitchen notes
-This household writes things down — the kitchen facts that are not recipes. findKitchenNotes searches those \
-notes and readKitchenNote opens one in full. They are what this kitchen has actually proven, so where a note \
-answers the question it beats anything you would say from general knowledge.
+const KITCHEN_NOTES_FRAMING = `## Their Library
+This household writes things down — the kitchen facts that are not recipes. Their Library is where those pages \
+live; findKitchenNotes searches it and readKitchenNote opens one page in full. They are what this kitchen has \
+actually proven, so where a page answers the question it beats anything you would say from general knowledge.
 
-LOOK FIRST, READ SECOND. A search gives you the opening of each note, and that is usually the whole answer. \
-Open a note in full only when the detail you need is deeper in it.
+LOOK FIRST, READ SECOND. A search gives you the opening of each page, and that is usually the whole answer. \
+Open a page in full only when the detail you need is deeper in it.
 
-SAY WHICH NOTE YOU USED, by its title, in your own words — "your sous vide table has chuck at 65 °C for 24 \
-hours". Never read a note back as a wall of text, and never present something you worked out yourself as \
+SAY WHICH PAGE YOU USED, by its title, in your own words — "your sous vide table has chuck at 65 °C for 24 \
+hours". Never read a page back as a wall of text, and never present something you worked out yourself as \
 something they had written down.
 
-WRITING ONE IS SOMETHING THEY ASK FOR. writeKitchenNote puts a note into their notes, and you reach for it when \
-they tell you to and at no other time. A conversation that covered good ground is not an instruction, and \
-neither is a note you have just read being out of date. If something is worth writing down, say so and let them \
-ask. To add to a note, read it first and send its whole text back with your addition in it — the body you send \
-replaces what was there. You cannot delete a note; that is theirs to do on the note's own page.
+WRITING ONE IS SOMETHING THEY ASK FOR. writeKitchenNote puts a page into their Library, and you reach for it \
+when they tell you to and at no other time. A conversation that covered good ground is not an instruction, and \
+neither is a page you have just read being out of date. If something is worth writing down, say so and let them \
+ask. To add to a page, read it first and send its whole text back with your addition in it — the body you send \
+replaces what was there. You cannot delete a page; that is theirs to do on the page itself.
 
-THESE ARE NOT THEIR RECIPES. Their saved dishes are a different thing with a different pair of tools, described \
-above. A note is a reference page: a table, a list of kit, a set of numbers.
+THE LIBRARY IS NOT THEIR RECIPES. Their saved recipes are a different thing with a different pair of tools, \
+described above. A Library page is a reference page: a table, a list of kit, a set of numbers.
 
 Say plainly when they have written nothing about it, then answer as you normally would. That is different from \
-findKitchenNotes failing to run at all — see its own description for what to say then. Their notes are one more \
+findKitchenNotes failing to run at all — see its own description for what to say then. Their Library is one more \
 thing you can reach, not a place you have to go first.`;
 
 /**
@@ -1085,14 +1118,14 @@ function buildSystemPrompt(
   // FIRST after the base, and unconditional. It is a capability statement — how
   // this chef answers at all — not a piece of context about tonight, so it sits
   // with the base rather than among the situational sections that follow. There
-  // is nothing to gate it on either: the library's size is only known once the
-  // tool has been called, and a read to find out would cost every turn the very
-  // thing the tool exists to avoid paying.
+  // is nothing to gate it on either: how many recipes are saved is only known
+  // once the tool has been called, and a read to find out would cost every turn
+  // the very thing the tool exists to avoid paying.
   const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING];
 
   // Beside LIBRARY_FRAMING, and ONLY when this caller actually has the tools
-  // (issue #1377). A chef told about notes it cannot reach would offer to look
-  // them up and then be unable to — worse than never mentioning them. Empty for
+  // (issue #1377). A chef told about a Library it cannot reach would offer to
+  // look in it and then be unable to — worse than never mentioning it. Empty for
   // everyone outside the flag, so their prompt is byte for byte today's.
   if (kitchenNotesFraming) sections.push(kitchenNotesFraming);
 
@@ -1219,7 +1252,7 @@ interface ChefChatTurn {
  * drained. A phone that locked, or a tab that closed, performed none of that: the
  * function completed, the tokens were paid for, and both the chef's reply AND the
  * user's own typed sentence were gone with no error and nothing on screen. Same
- * fault and same fix as `persistImportedRecipe` (#616) and `generateGuidedPlan`
+ * fault and same fix as `persistAuthoredRecipe` (#616) and `generateGuidedPlan`
  * (#1416).
  *
  * READ-THEN-`.set()`, NEVER REBUILT FROM `input.messages`. The history on the wire
@@ -1247,7 +1280,7 @@ interface ChefChatTurn {
  * conversation. `chatExpiresAt` from `@salt/domain` is the one home for the two
  * durations; only the `Timestamp` conversion is ours.
  *
- * IT NEVER THROWS (Rule 10, and `persistImportedRecipe`'s reasoning): a Firestore
+ * IT NEVER THROWS (Rule 10, and `persistAuthoredRecipe`'s reasoning): a Firestore
  * hiccup must not throw away a completed, already-paid-for turn. The callable
  * still returns the reply, the browser still paints it, and the failure is logged.
  * The boundary, because "the turn is never lost" would be too strong: when this

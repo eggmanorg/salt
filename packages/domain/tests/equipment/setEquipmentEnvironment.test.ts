@@ -19,6 +19,7 @@ function manifestWith(environment: EquipmentEnvironmentDoc | null): EquipmentMan
         name: 'Curing chamber',
         kind: 'equipment',
         accessories: [],
+        borrowedPicture: null,
         rules: ['Wine fridge with a heat mat and a reptile fogger'],
         note: '',
         environment,

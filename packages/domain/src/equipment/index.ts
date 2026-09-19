@@ -30,8 +30,34 @@ export type { EditEquipmentNoteInput } from './commands/editEquipmentNote.js';
 export { setEquipmentKind } from './commands/setEquipmentKind.js';
 export type { SetEquipmentKindInput } from './commands/setEquipmentKind.js';
 export { setEquipmentEnvironment } from './commands/setEquipmentEnvironment.js';
+// Point one of your things at a picture that already exists (issue #1465, Phase
+// 3) — a reference, never a copied URL, so redrawing the source updates
+// everything borrowing it.
+export { setBorrowedPicture } from './commands/setBorrowedPicture.js';
+export type { SetBorrowedPictureInput } from './commands/setBorrowedPicture.js';
 export type { SetEquipmentEnvironmentInput } from './commands/setEquipmentEnvironment.js';
 
-export { equipmentIconAwaitingApproval } from './queries/equipmentIcon.js';
-export { resolveEquipmentItem, namesItemItself } from './queries/resolveEquipmentItem.js';
+export { equipmentIconAwaitingApproval, equipmentIconOwnerIds } from './queries/equipmentIcon.js';
+export type { IconOwner } from './queries/equipmentIcon.js';
+// The records with no picture at all (issue #1458) — nothing drawn, nothing
+// borrowed, not hidden. Its header states which of those three it can check
+// exactly and which it reads as a reference only.
+export { undrawnEquipment } from './queries/undrawnEquipment.js';
+// The words ONE ENTRY's picture is described from (issue #1465, Phase 2) — the
+// entry's own name for a family member, qualified by the appliance for a part.
+export { equipmentEntrySubjectName } from './queries/equipmentEntrySubject.js';
+export { resolveEquipmentItem } from './queries/resolveEquipmentItem.js';
+// The LINK half of the same question (issue #1465) — which of your things a kit
+// entry recorded, read from an id rather than guessed from the words. Where a
+// link resolves it is authoritative; a dangling one answers null and the label
+// falls back to the word resolver above.
+export {
+  resolveKitEntryEquipment,
+  resolveKitEntryItem,
+} from './queries/resolveKitEntryEquipment.js';
+export type {
+  ResolvedKitEquipment,
+  KitEquipmentLinkSource,
+  KitEntryEquipmentSource,
+} from './queries/resolveKitEntryEquipment.js';
 export type { EditRuleInput } from './commands/editRule.js';

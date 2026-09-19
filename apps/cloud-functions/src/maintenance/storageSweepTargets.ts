@@ -17,10 +17,14 @@ export const SWEEPS = [
   // icon identically, and the join is the same join.
   { prefix: 'product-form-icons/', collection: 'productForms' },
   // Equipment pictograms (issue #877). Same deterministic-id shape as canon
-  // icons: `equipment-icons/{itemId}.webp` beside `equipmentIcons/{itemId}`.
+  // icons: `equipment-icons/{docId}.webp` beside `equipmentIcons/{docId}`.
   // This pass only works because `onEquipmentManifestWritten` deletes the icon
-  // DOC when its item leaves the manifest — otherwise the join below would find
+  // DOC when its owner leaves the manifest — otherwise the join below would find
   // the doc still present and correctly conclude the object is not orphaned.
+  // Since #1465 Phase 2 that doc id is an equipment ITEM id or one of its
+  // ENTRIES' accessory ids; both are uuids from the same generator and unique
+  // across the manifest, so this row needs no change — the reconcile pass's live
+  // set is what had to learn about entries.
   { prefix: 'equipment-icons/', collection: 'equipmentIcons' },
   // Generic kitchen-tool pictograms (issue #882). Same deterministic keying
   // again — `kit-icons/{toolId}.webp` beside `kitchenTools/{toolId}` — so

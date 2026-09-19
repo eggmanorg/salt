@@ -140,6 +140,9 @@ vi.mock('../src/lib/recipeService.js', () => ({
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   stashImportedDraft: vi.fn(),
   authorRecipeTraced: vi.fn(),
+  // The name `chatRecipeAuthor` sends so the flow can attribute the recipe it
+  // writes (issue #1431). `stashImportedDraft` above is the other half.
+  currentMemberName: vi.fn(() => 'Daniel'),
   // Identity — attribution (#845) has its own suite; this one is about the page.
   stampRecipeAttribution: <T>(recipe: T) => recipe,
   // The write-ordering seams `applyRecipeAmendment` uses (issue #1330). Identity
@@ -159,7 +162,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { authorRecipeTraced } from '../src/lib/recipeService.js';
+import { authorRecipeTraced, stashImportedDraft } from '../src/lib/recipeService.js';
 import { claimRecipe } from '../src/lib/chatService.js';
 import { saveRecipe } from '@salt/firebase-sync';
 import { push } from 'svelte-spa-router';
@@ -352,9 +355,13 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
     expect(input.recipeId).toBeUndefined();
     expect(input.basedOnRecipeId).toBeNull();
 
-    // The dish on the page is never written to — the only save is the new one.
-    expect(saveRecipe).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(saveRecipe).mock.calls[0]![0].id).toBe('salad');
+    // The dish on the page is never written to, and neither is the new one from
+    // here: since issue #1431 the flow writes what it authored, and the browser
+    // only stashes it so this page can paint before the listener catches up.
+    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(stashImportedDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'salad', title: 'Fennel Salad' }),
+    );
     // The conversation stays listed on the lamb; the salad has no chat of its own.
     expect(claimRecipe).not.toHaveBeenCalled();
   });

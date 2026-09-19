@@ -443,7 +443,22 @@
                  The tile is decorative; the NAME beside it is the accessible
                  content. A label the drawn vocabulary does not know renders its
                  words with no picture — never `CanonIcon`'s bare placeholder tile,
-                 which reads as a broken image, and never another tool's drawing. -->
+                 which reads as a broken image.
+
+                 AND NEVER ANOTHER TOOL'S DRAWING, with the boundary that claim
+                 actually has (issues #1460, #1465, CLAUDE.md rule 12). This rail
+                 has no grouping pass: it hands the stored `kit[]` entry straight
+                 to `$kitIcons`, one at a time, with no siblings. What is
+                 guaranteed there is that an entry carrying a LINK draws the thing
+                 it is linked to or nothing at all, and that an unlinked label
+                 spelled exactly like one of the manifest's accessories ("Thermo
+                 Bowl") is refused a generic object's picture — the case that used
+                 to draw a plain mixing bowl here unconditionally. Both are pinned
+                 by `kitIcons.test.ts`, whose answers ARE what this rail renders.
+                 What is NOT guaranteed is anything about a free word that merely
+                 resembles a curated tool: "meat plate" still draws a plate, by
+                 design (#882). Pass the ENTRY here, never `entry.label` — the
+                 label alone throws the link away. -->
             {#if stepKit.length > 0}
               <ul
                 class="flex flex-wrap items-center gap-1.5"
@@ -456,11 +471,11 @@
                     title={entry.label}
                     data-testid="recipe-view-step-kit-item"
                   >
-                    {#if $kitIcons.kitIconFor(entry.label)}
+                    {#if $kitIcons.kitIconFor(entry)}
                       <span class="flex" aria-hidden="true">
                         <CanonIcon
-                          thumbnail={$kitIcons.kitIconFor(entry.label)}
-                          version={$kitIcons.kitIconVersionFor(entry.label)}
+                          thumbnail={$kitIcons.kitIconFor(entry)}
+                          version={$kitIcons.kitIconVersionFor(entry)}
                           name={entry.label}
                           size={32}
                         />

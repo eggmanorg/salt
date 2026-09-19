@@ -4,6 +4,7 @@ import {
   EquipmentIconSchema,
   EQUIPMENT_ICONS_COLLECTION,
   type EquipmentIconDoc,
+  type AuthorEntryIconBriefInput,
   type DrawEquipmentIconInput,
   type DescribeEquipmentSubjectInput,
   type DescribeEquipmentSubjectOutput,
@@ -46,8 +47,10 @@ export function subscribeEquipmentIcons(
       path: [EQUIPMENT_ICONS_COLLECTION],
       schema: EquipmentIconSchema,
       label: 'EquipmentIconSchema',
-      // Keyed by the DOCUMENT id — the equipment item it belongs to, which the
-      // icon document itself does not carry as a field.
+      // Keyed by the DOCUMENT id — the equipment item it belongs to, or since
+      // #1465 Phase 2 the accessory id of one of that item's entries. The icon
+      // document carries neither as a field, which is why the key comes from the
+      // id: one map, and a caller looks up whichever id it is holding.
       project: (icon, id): [string, EquipmentIconDoc] => [id, icon],
     },
     (entries) => onIcons(new Map(entries)),
@@ -89,6 +92,50 @@ export async function callDrawEquipmentIcon(
       'failed-precondition': {
         kind: 'ValidationError',
         code: ErrorCode.EQUIPMENT_ICON_NOT_DRAWABLE,
+      },
+    },
+  });
+}
+
+/**
+ * Write one ENTRY's description, so it can be drawn (issue #1465, Phase 2).
+ *
+ * The item path never needs this — the manifest trigger authors an item's brief
+ * automatically — but an entry's is authored only on request, so this is what
+ * puts the `equipmentIcons/{accessoryId}` document there before Draw can refuse
+ * for want of one. It takes the PAIR rather than the accessory id because the
+ * words a brief is authored from depend on both: an appliance's part is
+ * qualified by its appliance, a family member stands alone.
+ *
+ * Unlike `callDescribeEquipmentSubject` it persists, and returns nothing: the
+ * description arrives through the `equipmentIcons` subscription, which is what
+ * makes the words on screen the words on the document.
+ *
+ * Never throws (Rule 10): every failure crosses the boundary as
+ * `Failure<DomainError>`. `not-found` and `failed-precondition` are expected
+ * states with a friendly message — the entry was deleted from another device, or
+ * the manifest could not be read — so both cross as `ValidationError` and are
+ * deliberately not reported.
+ */
+export async function callAuthorEntryIconBrief(
+  input: AuthorEntryIconBriefInput,
+): Promise<ReadResult<void, DomainError>> {
+  return callFunction<AuthorEntryIconBriefInput, { ok: true }, void>({
+    name: 'authorEntryIconBrief',
+    input,
+    // The function declares 90 s, sized around the flow's own 55 s
+    // `withAiTimeout`, exactly as `describeEquipmentSubject` does. 70 — the
+    // callable client's default — would have given up first.
+    timeoutMs: 90_000,
+    project: () => undefined,
+    overrides: {
+      'not-found': {
+        kind: 'ValidationError',
+        code: ErrorCode.EQUIPMENT_BRIEF_NOT_WRITABLE,
+      },
+      'failed-precondition': {
+        kind: 'ValidationError',
+        code: ErrorCode.EQUIPMENT_BRIEF_NOT_WRITABLE,
       },
     },
   });

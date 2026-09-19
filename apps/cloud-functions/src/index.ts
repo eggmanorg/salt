@@ -293,7 +293,7 @@ export const populateEquipmentEntry = makeTracedCallable({
 //     nothing else (`schemas/parseRecipeIngredients.ts`) — no recipe id, no group
 //     id, no ingredient id. It cannot write into a document it cannot name, and
 //     giving it identity is a wire-contract change, not #1416's three lines of
-//     `persistImportedRecipe`.
+//     `persistAuthoredRecipe`.
 //   • ITS IN-PROCESS CALLERS REQUIRE IT PURE. `assembleRecipeDraft` calls the
 //     flow directly on the way in for every URL import, photo import and
 //     chat-authored recipe, and `scripts/rematch-ingredients.ts` is read-only by
@@ -1012,6 +1012,13 @@ export { setObservationImageUpload } from './callables/setObservationImageUpload
 // (`equipment-icons/`), which storage.rules must be deployed for before the icons
 // will render.
 export { drawEquipmentIcon } from './callables/drawEquipmentIcon.js';
+// One ENTRY's description, written on request (issue #1465, Phase 2). The manifest
+// trigger above stays ITEM-ONLY on purpose — ~140 entries would be ~140 text calls
+// per manifest save for descriptions nobody asked to read — so this is what puts
+// an `equipmentIcons/{accessoryId}` document there before Draw can refuse for want
+// of one. Unlike `describeEquipmentSubject` it persists, because there is no
+// occupied field for a sentence to clobber until it does.
+export { authorEntryIconBrief } from './callables/authorEntryIconBrief.js';
 export { listPushoverDevices } from './callables/listPushoverDevices.js';
 export { beforeMemberCreated } from './auth/beforeMemberCreated.js';
 export { sweepOrphanedStorage } from './maintenance/sweepOrphanedStorage.js';

@@ -106,13 +106,37 @@ export {
   editEquipmentNote,
   setEquipmentKind,
   setEquipmentEnvironment,
+  setBorrowedPicture,
   equipmentIconAwaitingApproval,
+  // The words one ENTRY's own picture is described from (issue #1465, Phase 2),
+  // and the set of ids the icon collection may hold — which is the complement of
+  // what the manifest trigger DELETES, so it is a named query, not a `.map()`.
+  equipmentEntrySubjectName,
+  equipmentIconOwnerIds,
+  // …and which records have no picture at all (issue #1458) — the backlog half
+  // of the same collection. Read by the equipment list's "Not drawn yet" marker
+  // and by the Admin badge, so a gap arrives rather than waiting to be found.
+  undrawnEquipment,
   // The display-time join from a free-text kit label to the item this household
   // actually owns (issue #954) — the specific half of the question
   // `resolveKitchenTool` answers generically. Tried FIRST by the callers of both:
   // a branded name contains generic tokens ("…Slow Cook Pot"), so the tool
   // vocabulary would otherwise claim it.
   resolveEquipmentItem,
+  // …and the LINK that replaced the guessing for anything a kit flow wrote since
+  // issue #1465. Read first by every kit surface: an id the flow recorded beats a
+  // rule over the words, which is what finally reaches a family member.
+  resolveKitEntryEquipment,
+  // …and the two composed into the one answer every kit surface must agree on:
+  // the link where it resolves, the words where it does not. `kitIcons.ts` and
+  // `KitPicturePicker.svelte` both read through this rather than each picking an
+  // order of their own.
+  resolveKitEntryItem,
+} from './equipment/index.js';
+export type {
+  ResolvedKitEquipment,
+  KitEquipmentLinkSource,
+  KitEntryEquipmentSource,
 } from './equipment/index.js';
 
 // Shopping list module — published surface.
@@ -270,6 +294,10 @@ export {
   pickPlaceholder,
   PLACEHOLDER_MOODS,
   PLACEHOLDER_CONDITION_TAGS,
+  // The one attribution stamp (issue #1431) — `recipeService` in the browser and
+  // the `authorRecipe` flow in Cloud Functions both apply it, so the fill-once
+  // `createdBy` rule cannot come to mean two things.
+  stampAttribution,
 } from './recipe/index.js';
 export type { RecipeSearchCandidate, RecipeSearchFilters } from './recipe/index.js';
 export type { RecipePhaseTotals } from './recipe/index.js';
@@ -363,6 +391,12 @@ export { pushSubscriptionId } from './pushSubscription/index.js';
 // — `kitchenToolSlug` is the one `createKitchenTool` already mints with.
 export {
   resolveKitchenTool,
+  resolveKitchenToolMatch,
+  // The kit surfaces' entry point (issues #1460, #1465): `resolveKitchenTool`
+  // with the accessory-name rule in front of it, so a machine part named on its
+  // own never borrows an unrelated object's drawing.
+  kitchenToolForKitLabel,
+  namesManifestAccessory,
   unresolvedKitLabels,
   suggestKitchenToolParent,
   instanceNamedKitchenTools,
@@ -374,6 +408,11 @@ export type {
   CreateKitchenToolInput,
   UpdateKitchenToolInput,
   InstanceNamedKitchenTool,
+  KitchenToolMatch,
+  // What `unresolvedKitLabels` reads off a recipe. Named here so a caller that
+  // only counts the queue (the Admin badge, issue #1458) can type its argument
+  // without pulling in the whole `Recipe`.
+  KitLabelSource,
 } from './kitchenTool/index.js';
 
 // Shopping-day module (issue #629) — pure helpers over `shoppingDays/{date}`:

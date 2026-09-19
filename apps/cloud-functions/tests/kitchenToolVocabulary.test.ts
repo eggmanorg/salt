@@ -259,9 +259,23 @@ describe('the seeded kitchen-tool vocabulary', () => {
     // because that runs on every admin edit and would silently delete a phrase a
     // curator deliberately typed.
     //
-    // EMPTY, and it ships that way. A future entry needs a reason beside it, in
-    // the idiom of `DELIBERATELY_UNRESOLVED` above.
-    const DELIBERATELY_REDUNDANT: readonly string[] = [];
+    // A future entry needs a reason beside it, in the idiom of
+    // `DELIBERATELY_UNRESOLVED` above.
+    const DELIBERATELY_REDUNDANT: readonly string[] = [
+      // Redundant under CONTAINMENT and load-bearing under the accessory rule
+      // (issue #1465). `kitchenToolForKitLabel` refuses a single-word match for a
+      // label that exactly names one of the manifest's accessories, and "Egg
+      // Whisk" is one of the Magimix's — so the bare label "Whisk" no longer
+      // answers for it and this phrase is what does. Rule 2's justification is
+      // that a redundant matcher can out-length a sibling and steal a label; this
+      // one can only ever win "egg whisk", which no other row claims.
+      'whisk: egg whisk',
+      // Same mechanism, same reason: the Cosori's owned accessory is named
+      // exactly "Soup Ladle", and the bare label "Ladle" no longer answers for it
+      // once a label names a manifest accessory exactly (#1460's case table).
+      // This phrase can only ever win "soup ladle".
+      'ladle: soup ladle',
+    ];
 
     const covers = (phrase: string, by: string) => ` ${phrase} `.includes(` ${by} `);
     // Every violation found, exempt or not. Filtering the allow-list out inside

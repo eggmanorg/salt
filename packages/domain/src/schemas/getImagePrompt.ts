@@ -32,7 +32,9 @@ export type ImagePromptFamily = (typeof IMAGE_PROMPT_FAMILIES)[number];
 export const GetImagePromptInputSchema = z.object({
   family: z.enum(IMAGE_PROMPT_FAMILIES),
   // The document id within that family's collection. For `equipment` this is the
-  // equipment ITEM id (equipmentIcons is keyed by it), not a separate icon id.
+  // `equipmentIcons` document id, not a separate icon id — an equipment ITEM id,
+  // or since #1465 Phase 2 the accessory id of one of its ENTRIES, which owns a
+  // document in that same collection.
   id: z.string().min(1),
 });
 

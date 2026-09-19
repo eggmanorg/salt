@@ -13,6 +13,7 @@ vi.mock('@salt/firebase-sync', () => ({
   // in its own cases below.
   subscribeEquipmentIcons: vi.fn(() => () => {}),
   callDrawEquipmentIcon: vi.fn(),
+  callAuthorEntryIconBrief: vi.fn().mockResolvedValue({ kind: 'ok' as const, value: undefined }),
 }));
 
 import * as firebaseSync from '@salt/firebase-sync';
@@ -35,6 +36,9 @@ import {
   editEquipmentItemNote,
   setEquipmentItemKind,
   setEquipmentEnvironmentFor,
+  authorEntryIconBrief,
+  setBorrowedPictureFor,
+  hideEquipmentIconFor,
   memEquipmentManifestStore,
   __resetEquipmentServiceForTest,
 } from '../src/lib/equipmentService.js';
@@ -228,6 +232,7 @@ describe('equipmentService — mutations after hydration', () => {
       rules: [],
       note: '',
       environment: null,
+      borrowedPicture: null,
       updatedAt: '2026-05-12T00:00:00.000Z',
     };
     emit(makeManifest([existing]));
@@ -422,6 +427,40 @@ describe('equipmentService — notes and kind', () => {
     cleanup();
   });
 
+  it('writes the reference onto the entry and saves the whole manifest', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const accessoryId = get(equipment)!.items[0]!.accessories[0]!.id;
+    const result = await setBorrowedPictureFor(itemId, accessoryId, {
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    expect(result.kind).toBe('ok');
+    const saved = fs.saveEquipmentManifest.mock.calls[0]![0];
+    expect(saved.items[0]!.accessories[0]!.borrowedPicture).toEqual({
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    cleanup();
+  });
+
+  it('refuses before the manifest has hydrated, rather than writing over it', async () => {
+    wireSubscription();
+    const cleanup = initEquipmentSync();
+    expect((await setBorrowedPictureFor('eq', null, null)).kind).toBe('err');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('passes a refusal from the command straight back', async () => {
+    const { cleanup, itemId } = await hydrateWithItem();
+    const result = await setBorrowedPictureFor(itemId, 'acc-gone', {
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    expect(result.kind).toBe('err');
+    cleanup();
+  });
+
   it('every one of the three refuses before the manifest has hydrated', async () => {
     wireSubscription();
     const cleanup = initEquipmentSync();
@@ -430,5 +469,192 @@ describe('equipmentService — notes and kind', () => {
     expect((await setEquipmentItemKind('eq', 'family')).kind).toBe('err');
     expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
     cleanup();
+  });
+});
+
+// ─── hideEquipmentIconFor (review of #1482, issue #1465) ────────────────────
+// A hide and a borrow write two different documents — `equipmentIcons` via a
+// callable, the manifest directly — so nothing keeps them in step but this
+// function. Without it, hiding a record or an entry that already borrows a
+// picture leaves every recipe naming it still showing the borrowed picture
+// while the equipment page shows the hidden tile.
+
+describe('equipmentService — hideEquipmentIconFor', () => {
+  beforeEach(() => {
+    __resetEquipmentServiceForTest();
+    vi.clearAllMocks();
+    fs.saveEquipmentManifest.mockResolvedValue({ kind: 'ok' as const, value: undefined });
+    fs.callDrawEquipmentIcon.mockResolvedValue({ kind: 'ok' as const, value: undefined });
+  });
+
+  afterEach(() => {
+    __resetEquipmentServiceForTest();
+  });
+
+  const ITEM_ID = 'eq-pans';
+  const ACCESSORY_ID = 'acc-tefal';
+
+  function hydrateWithBorrow(): { cleanup: () => void } {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(
+      makeManifest([
+        {
+          id: ITEM_ID,
+          schemaVersion: 1,
+          name: 'Frying Pans',
+          kind: 'family',
+          accessories: [
+            {
+              id: ACCESSORY_ID,
+              name: 'Tefal non-stick 28cm',
+              owned: true,
+              included: false,
+              note: '',
+              borrowedPicture: { family: 'kitchenTool', id: 'frying-pan' },
+            },
+          ],
+          rules: [],
+          note: '',
+          environment: null,
+          borrowedPicture: { family: 'kitchenTool', id: 'frying-pan' },
+          updatedAt: '2026-05-13T00:00:00.000Z',
+        },
+      ]),
+    );
+    return { cleanup };
+  }
+
+  it("withdraws the RECORD's existing borrow when the record is hidden", async () => {
+    const { cleanup } = hydrateWithBorrow();
+    const result = await hideEquipmentIconFor(ITEM_ID, null);
+    expect(result.kind).toBe('ok');
+    expect(fs.callDrawEquipmentIcon).toHaveBeenCalledWith({ action: 'hide', itemId: ITEM_ID });
+    expect(fs.saveEquipmentManifest).toHaveBeenCalledTimes(1);
+    expect(get(equipment)!.items[0]!.borrowedPicture).toBeNull();
+    cleanup();
+  });
+
+  it("withdraws an ENTRY's existing borrow when the entry is hidden, leaving its record's alone", async () => {
+    const { cleanup } = hydrateWithBorrow();
+    const result = await hideEquipmentIconFor(ITEM_ID, ACCESSORY_ID);
+    expect(result.kind).toBe('ok');
+    expect(fs.callDrawEquipmentIcon).toHaveBeenCalledWith({
+      action: 'hide',
+      itemId: ACCESSORY_ID,
+    });
+    expect(fs.saveEquipmentManifest).toHaveBeenCalledTimes(1);
+    const saved = get(equipment)!.items[0]!;
+    expect(saved.accessories[0]!.borrowedPicture).toBeNull();
+    // Hiding one entry never touches its record's own borrow.
+    expect(saved.borrowedPicture).toEqual({ family: 'kitchenTool', id: 'frying-pan' });
+    cleanup();
+  });
+
+  it('writes only the hide, nothing to the manifest, when there is no borrow to withdraw', async () => {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(
+      makeManifest([
+        {
+          id: ITEM_ID,
+          schemaVersion: 1,
+          name: 'Frying Pans',
+          kind: 'family',
+          accessories: [],
+          rules: [],
+          note: '',
+          environment: null,
+          borrowedPicture: null,
+          updatedAt: '2026-05-13T00:00:00.000Z',
+        },
+      ]),
+    );
+    const result = await hideEquipmentIconFor(ITEM_ID, null);
+    expect(result.kind).toBe('ok');
+    expect(fs.callDrawEquipmentIcon).toHaveBeenCalledOnce();
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('surfaces a failure from hiding the icon without touching the borrow', async () => {
+    const { cleanup } = hydrateWithBorrow();
+    fs.callDrawEquipmentIcon.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'transient' },
+    });
+    const result = await hideEquipmentIconFor(ITEM_ID, null);
+    expect(result.kind).toBe('err');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    // The borrow the hide never reached is still there.
+    expect(get(equipment)!.items[0]!.borrowedPicture).toEqual({
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    cleanup();
+  });
+
+  it('writes only the hide for an ENTRY with no borrow of its own, even on a record that has one', async () => {
+    const { emit } = wireSubscription();
+    const cleanup = initEquipmentSync();
+    emit(
+      makeManifest([
+        {
+          id: ITEM_ID,
+          schemaVersion: 1,
+          name: 'Frying Pans',
+          kind: 'family',
+          accessories: [
+            {
+              id: ACCESSORY_ID,
+              name: 'Tefal non-stick 28cm',
+              owned: true,
+              included: false,
+              note: '',
+              borrowedPicture: null,
+            },
+          ],
+          rules: [],
+          note: '',
+          environment: null,
+          borrowedPicture: { family: 'kitchenTool', id: 'frying-pan' },
+          updatedAt: '2026-05-13T00:00:00.000Z',
+        },
+      ]),
+    );
+    const result = await hideEquipmentIconFor(ITEM_ID, ACCESSORY_ID);
+    expect(result.kind).toBe('ok');
+    expect(fs.saveEquipmentManifest).not.toHaveBeenCalled();
+    // The record's own borrow is untouched — only the entry was hidden.
+    expect(get(equipment)!.items[0]!.borrowedPicture).toEqual({
+      family: 'kitchenTool',
+      id: 'frying-pan',
+    });
+    cleanup();
+  });
+
+  it('surfaces a failure from withdrawing the borrow, after the icon is already hidden', async () => {
+    const { cleanup } = hydrateWithBorrow();
+    fs.saveEquipmentManifest.mockResolvedValueOnce({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'transient' },
+    });
+    const result = await hideEquipmentIconFor(ITEM_ID, null);
+    expect(result.kind).toBe('err');
+    expect(fs.callDrawEquipmentIcon).toHaveBeenCalledOnce();
+    cleanup();
+  });
+});
+
+describe("equipmentService — one entry's description (issue #1465, Phase 2)", () => {
+  it('asks for it with the PAIR, because the subject name depends on both', async () => {
+    const result = await authorEntryIconBrief('eq-cosori', 'acc-steam-basket');
+    expect(result.kind).toBe('ok');
+    // The accessory id alone would not say which appliance the part belongs to,
+    // and "a steam basket" is half a subject.
+    expect(fs.callAuthorEntryIconBrief).toHaveBeenCalledWith({
+      itemId: 'eq-cosori',
+      accessoryId: 'acc-steam-basket',
+    });
   });
 });

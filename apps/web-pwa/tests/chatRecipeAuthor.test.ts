@@ -4,19 +4,25 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 // The one create leg behind every "save this conversation as a recipe" button
 // (issue #798). Three surfaces call in here — the full `/chat/:id` page and the
 // recipe page's chat column and drawer — so what these tests pin is that the
-// saved document does not depend on which door was used: always the create path,
-// always stamped, always one `recipe.created`, and never a claim.
+// recipe does not depend on which door was used: always the create path, always
+// attributed, always one `recipe.created`, and never a claim.
+//
+// Since issue #1431 they pin one more thing, and it is the sharpest: **this leg
+// writes nothing.** The flow writes the recipe it authored, because the browser
+// was not reliably alive to do it — so `saveRecipe` is mocked below purely so
+// that a write creeping back in fails a test rather than shipping.
 
 vi.mock('@salt/firebase-sync', () => ({
   saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('@salt/observability', () => ({ trackUsageEvent: vi.fn() }));
-// `stampRecipeAttribution` is the identity here: who saved it is the real
-// service's business (and has its own suite, #845) — what these tests pin is the
-// document, which must not change shape because a name was or wasn't available.
+// `currentMemberName` is who is signed in, and since #1431 that name goes over
+// the WIRE rather than into a stamp applied here — so it is a real input to pin,
+// not something to stub to identity.
 vi.mock('../src/lib/recipeService.js', () => ({
   authorRecipeTraced: vi.fn(),
-  stampRecipeAttribution: <T>(recipe: T) => recipe,
+  currentMemberName: vi.fn(() => ''),
+  stashImportedDraft: vi.fn(),
 }));
 // Not imported by the module under test — which is the point. If the create leg
 // ever grows a claim, this mock stops being unused and the last test fails.
@@ -25,19 +31,26 @@ vi.mock('../src/lib/chatService.js', () => ({
 }));
 
 import { authorRecipeFromChat } from '../src/lib/chatRecipeAuthor.js';
-import { authorRecipeTraced } from '../src/lib/recipeService.js';
+import {
+  authorRecipeTraced,
+  currentMemberName,
+  stashImportedDraft,
+} from '../src/lib/recipeService.js';
 import { claimRecipe } from '../src/lib/chatService.js';
 import { saveRecipe } from '@salt/firebase-sync';
 import { trackUsageEvent } from '@salt/observability';
 
-/** What the librarian hands back: a complete recipe with no timestamps of its own. */
-function draft(): RecipeDoc {
+/**
+ * What the flow hands back: the complete recipe it has ALREADY WRITTEN, carrying
+ * the server's id, the server's clock and the server's attribution stamp.
+ */
+function written(): RecipeDoc {
   return {
     cureCategory: null,
     componentRecipeIds: [],
     kit: [],
-    createdBy: '',
-    lastEditedBy: '',
+    createdBy: 'Daniel',
+    lastEditedBy: 'Daniel',
     id: 'salad',
     schemaVersion: 1,
     kind: 'recipe',
@@ -53,8 +66,8 @@ function draft(): RecipeDoc {
     notes: null,
     producesCanonId: null,
     image: null,
-    createdAt: '',
-    updatedAt: '',
+    createdAt: '2026-09-18T10:00:05.000Z',
+    updatedAt: '2026-09-18T10:00:05.000Z',
   };
 }
 
@@ -74,18 +87,18 @@ const MESSAGES = [
 ];
 
 function ok() {
-  vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: draft() } as Awaited<
+  vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: written() } as Awaited<
     ReturnType<typeof authorRecipeTraced>
   >);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  vi.mocked(currentMemberName).mockReturnValue('Daniel');
 });
 
 describe('authorRecipeFromChat — the happy path', () => {
-  it('authors in create mode, stamps the clock, saves and reports the created recipe', async () => {
+  it('authors in create mode and reports the recipe the flow wrote', async () => {
     ok();
 
     const result = await authorRecipeFromChat({
@@ -94,22 +107,68 @@ describe('authorRecipeFromChat — the happy path', () => {
       basedOnRecipeId: null,
     });
 
-    // Create mode is the whole safety argument: no `recipeId` means the flow
-    // assembles with no base recipe, so nothing existing can be returned or written.
+    // Create mode is the whole safety argument, on both sides now: no `recipeId`
+    // means the flow assembles with no base recipe AND that its own write is
+    // armed — an edit-mode call is a proposal and writes nothing.
     const input = vi.mocked(authorRecipeTraced).mock.calls[0]![0];
     expect(input.recipeId).toBeUndefined();
     expect(input.basedOnRecipeId).toBeNull();
     expect(input.existingTags).toEqual(['midweek']);
 
+    // Handed back exactly as it came, so the caller navigates to the document
+    // that is actually in Firestore.
     expect(result.kind).toBe('ok');
-    const saved = vi.mocked(saveRecipe).mock.calls[0]![0];
-    expect(saved.title).toBe('Fennel, Orange & Olive Salad');
-    // Both stamps set, to the same instant — the librarian has no clock.
-    expect(saved.createdAt).not.toBe('');
-    expect(saved.createdAt).toBe(saved.updatedAt);
-    // The caller gets back exactly the document that was written, so it can
-    // navigate to it without re-reading the store.
-    expect(result.kind === 'ok' && result.value).toEqual(saved);
+    expect(result.kind === 'ok' && result.value).toEqual(written());
+  });
+
+  it('writes nothing from the browser — the flow is the writer (#1431)', async () => {
+    ok();
+
+    await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    // The regression. This `setDoc` was the statement after the `await`, so a
+    // phone that locked during the minute the librarian took performed none of
+    // it. Bringing it back would also write `recipes/{id}` twice and fire
+    // `onRecipeWritten` twice — two hero images for one recipe.
+    expect(saveRecipe).not.toHaveBeenCalled();
+  });
+
+  it('re-stamps neither timestamp, so the copy it returns matches Firestore', async () => {
+    ok();
+
+    const result = await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    expect(result.kind === 'ok' && result.value.createdAt).toBe('2026-09-18T10:00:05.000Z');
+    expect(result.kind === 'ok' && result.value.updatedAt).toBe('2026-09-18T10:00:05.000Z');
+  });
+
+  it('sends the signed-in name so the flow can attribute what it writes', async () => {
+    ok();
+
+    await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    expect(vi.mocked(authorRecipeTraced).mock.calls[0]![0].authorName).toBe('Daniel');
+  });
+
+  it('sends no name when the roster has not resolved a member', async () => {
+    ok();
+    vi.mocked(currentMemberName).mockReturnValue('');
+
+    await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    // Undefined, never '' and never a placeholder: the flow then leaves both
+    // attribution fields alone rather than recording somebody called "Someone".
+    expect(vi.mocked(authorRecipeTraced).mock.calls[0]![0].authorName).toBeUndefined();
+  });
+
+  it('stashes the recipe for the page it is about to navigate to', async () => {
+    ok();
+
+    await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    // A server-written document only arrives on the listener's round trip, so
+    // without this the recipe page can paint "Recipe not found."
+    expect(stashImportedDraft).toHaveBeenCalledWith(written());
   });
 
   it('forwards a base recipe when the caller asks for one (the variation path)', async () => {
@@ -135,7 +194,7 @@ describe('authorRecipeFromChat — the happy path', () => {
 });
 
 describe('authorRecipeFromChat — when it does not land', () => {
-  it('reports the AUTHOR stage and writes nothing when the librarian fails', async () => {
+  it('returns the failure and neither stashes nor reports when the librarian fails', async () => {
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
@@ -144,25 +203,13 @@ describe('authorRecipeFromChat — when it does not land', () => {
     const result = await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
 
     expect(result.kind).toBe('err');
-    // The stage is what lets every surface say "could not generate" rather than
-    // the wrong half of the story.
-    expect(result.kind === 'err' && result.error.stage).toBe('author');
+    // The error crosses unchanged. There is no `stage` any more: the flow's write
+    // is best-effort and never fails the call, so "it was written but not kept"
+    // is not an outcome this side can be told about (#1431).
+    expect(result.kind === 'err' && result.error.kind).toBe('NetworkError');
+    expect(stashImportedDraft).not.toHaveBeenCalled();
+    expect(trackUsageEvent).not.toHaveBeenCalled();
     expect(saveRecipe).not.toHaveBeenCalled();
-    expect(trackUsageEvent).not.toHaveBeenCalled();
-  });
-
-  it('reports the SAVE stage, and does not claim a recipe was created', async () => {
-    ok();
-    vi.mocked(saveRecipe).mockResolvedValue({
-      kind: 'err',
-      error: { kind: 'StorageError', reason: 'unavailable' },
-    } as Awaited<ReturnType<typeof saveRecipe>>);
-
-    const result = await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
-
-    expect(result.kind === 'err' && result.error.stage).toBe('save');
-    // Telemetry follows the write, not the intent — a failed save is not a created recipe.
-    expect(trackUsageEvent).not.toHaveBeenCalled();
   });
 });
 

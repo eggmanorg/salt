@@ -7,11 +7,52 @@ import { z } from 'zod';
 export const EQUIPMENT_MANIFEST_COLLECTION = 'equipmentManifest';
 export const EQUIPMENT_MANIFEST_DOC_ID = 'current';
 
+// ─── A picture BORROWED from something else (issue #1465, Phase 3) ───────────
+//
+// A thing you own can be given a picture without anything being drawn for it:
+// "this Tefal 28cm looks like the generic frying pan" points at a drawing that
+// already exists, and every recipe naming that pan gains it at once.
+//
+// A REFERENCE, NEVER A COPIED URL, and that is the whole reason this is two
+// fields rather than one string. Every icon family reuses its Storage object
+// path on a redraw and writes the bytes `immutable` (see `kitIcons.ts` and
+// ui-spec-v04 §14.4), so a copied URL is stale the first time the source is
+// redrawn — and the cache-bust nonce it would need lives on the SOURCE document,
+// which a copy cannot see. Reading through the id means redrawing the frying pan
+// updates every pan borrowing it, on the same subscription that updates the
+// frying pan itself.
+//
+// `family` because the two vocabularies are two collections: `kitchenTool` is a
+// `kitchenTools` document (its picture is a field on it), `equipment` is an
+// `equipmentIcons` document (keyed by an item id or an entry id). There is no
+// third family here on purpose — canon items and product forms are ingredients,
+// and nothing in a kit list should ever draw one.
+export const BorrowedPictureSchema = z.object({
+  family: z.enum(['equipment', 'kitchenTool']),
+  id: z.string().min(1),
+});
+
+export type BorrowedPictureDoc = z.infer<typeof BorrowedPictureSchema>;
+
+// The borrowed picture, for an item or an entry. `.nullable().default(null)` —
+// the additive-field pattern every other field here follows, so the ~19 records
+// and ~140 entries already written read as "borrows nothing", which is what they
+// do.
+//
+// NO `.refine` couples it to anything, and that is deliberate for the reason
+// `EquipmentEnvironmentSchema` states two fields below: the manifest is ONE
+// document, so a refine failing on one stale reference takes the WHOLE equipment
+// list down. A reference whose target has since been deleted is therefore
+// perfectly valid on read and simply resolves to nothing at display time — the
+// same degradation a dangling kit link gets.
+const borrowedPictureField = BorrowedPictureSchema.nullable().default(null);
+
 export const AccessorySchema = z.object({
   id: z.string(),
   name: z.string(),
   owned: z.boolean(),
   included: z.boolean(),
+  borrowedPicture: borrowedPictureField,
   // What the household knows about THIS ONE THING and no other — "the 28cm cast
   // iron is the only one that goes in the oven", "the XL dough hook needs the
   // upgraded firmware" (issue #1373).
@@ -133,6 +174,11 @@ export const EquipmentItemSchema = z.object({
   // place", which is what it is, instead of failing validation and taking the
   // manifest down.
   environment: EquipmentEnvironmentSchema.nullable().default(null),
+  // See `borrowedPictureField` above. An ITEM borrows for the same reason an
+  // entry does, and the whole family then shows it: "Frying Pans" is a category
+  // nobody will ever draw a portrait of, and the generic frying pan is the right
+  // picture for it.
+  borrowedPicture: borrowedPictureField,
   updatedAt: z.string(),
 });
 

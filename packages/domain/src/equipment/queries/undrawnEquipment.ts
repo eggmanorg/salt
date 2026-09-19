@@ -1,0 +1,89 @@
+import { isCanonIconRenderable } from '../../canon/index.js';
+import type { EquipmentItem } from '../entities/EquipmentItem.js';
+import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
+
+// Which of the household's records have no picture at all? (Issue #1458,
+// Phase 1.)
+//
+// The gap this answers is a VISIBILITY one, not a rendering one. Production held
+// 22 records and 20 drawings on 2026-09-18, and both undrawn records rendered as
+// the same pale placeholder tile a record whose art is still generating renders —
+// so the only way to find one was to go looking. Nothing counted them, and
+// nothing said so.
+//
+// ─── What counts as a gap, and what deliberately does not ───────────────────
+//
+//   • NOTHING DRAWN — no icon document, or one whose `thumbnail` is `null`. This
+//     is the ordinary case: `onEquipmentManifestWritten` authors a description
+//     the moment a record appears and stops there, because #877 puts a person
+//     between the description and the drawing. A record sits here from the
+//     moment it is added until somebody presses Draw.
+//   • HIDDEN IS NOT A GAP. `"hidden"` is the user saying "no picture on this
+//     row", which is an answer, not an omission. Counting it would make the
+//     badge un-clearable by design.
+//   • A BORROWED PICTURE IS NOT A GAP EITHER (issue #1465, Phase 3). A record can
+//     be POINTED AT a drawing that already exists rather than given one of its
+//     own, and a row that shows a picture is not missing one. "Undrawn" is
+//     therefore the wrong word for the whole predicate and the right word for
+//     half of it — the name is the deliverable's, and this paragraph is what it
+//     means.
+//   • ENTRIES ARE NOT COUNTED. An accessory or a family member may carry its own
+//     drawing, but nothing is ever drawn OR described for one automatically
+//     (docs/canon-icons.md § "An entry may have a picture of its own"): there are
+//     ~140 of them and most are never named in a recipe. Counting the undrawn
+//     ones would report ~140 gaps on day one and never fall, which is a badge
+//     that says nothing. An entry's picture is asked for where it is wanted, and
+//     its absence is not a backlog.
+//
+// ─── The boundary this claim actually has ───────────────────────────────────
+// A borrowed picture is read as the PRESENCE OF A REFERENCE, never resolved to
+// the drawing it points at. Resolving one means reading the equipment icons AND
+// the tool vocabulary in a fixed order, and that order already exists exactly
+// once, in `kitIcons.ts` — a second copy here that answered differently is the
+// defect round-1 review on #1482 called blocking, and it is not worth buying to
+// close what that leaves unresolved: a record pointed at a drawing that is not
+// (or is no longer) renderable shows no picture here and is not reported.
+//
+// THE REACHABLE TRIGGER IS HIDE, NOT DELETION. There is no delete-a-drawing
+// command, so "a drawing that has since been deleted" describes a case nothing
+// in the app can reach. Hide is reachable, ships on two surfaces, and
+// `hideEquipmentIconFor` (`equipmentService.ts`) withdraws only the borrow HELD
+// BY the record being hidden — never the borrows POINTING AT it. So hiding one
+// drawing silently un-pictures every record and kitchenTool that borrows it, in
+// one press, none of them counted here or offered Draw. That is under-reporting
+// by however many things point at what got hidden, not "one case" and not "one
+// row" — both absolutes this paragraph used to state were wrong. It is still the
+// safe direction for a badge — it can never invent a gap that is not there, only
+// miss a real one — and `undrawnEquipment.test.ts` pins that behaviour rather
+// than an absolute nobody can check.
+//
+// PURE, and takes the two plain structures a caller already holds. The icons
+// arrive as a Map rather than an array because an `EquipmentIconDoc` does not
+// carry its own id — the id is the key, and here it is the record's.
+
+/**
+ * The records with no picture: nothing drawn for them, nothing borrowed, and not
+ * deliberately hidden.
+ *
+ * Input order is preserved, so a caller that sorted its manifest keeps its sort.
+ *
+ * @param items The manifest's records.
+ * @param icons `equipmentIcons` by document id. Only the item-level ids are read
+ *   — see the header on why an entry's missing drawing is not a gap.
+ */
+export function undrawnEquipment(
+  items: readonly EquipmentItem[],
+  icons: ReadonlyMap<string, EquipmentIconDoc>,
+): EquipmentItem[] {
+  return items.filter((item) => {
+    const thumbnail = icons.get(item.id)?.thumbnail ?? null;
+    if (isCanonIconRenderable(thumbnail)) return false;
+    // The sentinel, caught by what it is NOT: "hidden" and "not drawn yet" are
+    // both unrenderable above, and only one of them is a gap. Anything that is
+    // neither null nor renderable is a value this query has no opinion on, and
+    // treating it as a gap would put a row on the badge that pressing Draw
+    // might not clear.
+    if (thumbnail !== null) return false;
+    return !item.borrowedPicture;
+  });
+}

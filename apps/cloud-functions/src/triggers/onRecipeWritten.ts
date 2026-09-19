@@ -10,7 +10,7 @@ import { describeRecipeSceneFlow } from '../flows/describeRecipeScene.js';
 import { identifyRecipeKitFlow } from '../flows/identifyRecipeKit.js';
 import { estimateRecipeTimesFlow } from '../flows/estimateRecipeTimes.js';
 import { readComponentContext } from '../flows/componentContext.js';
-import { readEquipmentContext } from '../flows/equipmentContext.js';
+import { readEquipmentItems } from '../flows/equipmentContext.js';
 import { encodeHeroImage } from '../imaging/encodeHeroImage.js';
 import { buildStorageDownloadUrl } from '../imaging/storageDownloadUrl.js';
 import { AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS, withAiTimeout } from '../adapters/withAiTimeout.js';
@@ -278,11 +278,15 @@ async function maybeInferKit(
   try {
     // What the household actually owns (issue #954), read only once every cheap
     // guard above has passed so a recipe that will not be inferred costs no read.
-    // The SAME reader chefChat and authorRecipe use, and it is fail-open by
-    // construction: a missing doc, a failed `safeParse` or a thrown read all return
-    // '', which the flow treats as "no manifest" and answers exactly as it did
-    // before. Kit context is an enhancement, never a precondition (Rule 10).
-    const equipment = await readEquipmentContext(getFirestore(), 'identifyRecipeKit');
+    // The ITEMS rather than their rendering since issue #1465 — the flow renders
+    // them itself, with a handle per item and per owned entry, because it has to
+    // answer with which one it meant. `readEquipmentItems` is the same reader
+    // `readEquipmentContext` folds through for chefChat and authorRecipe, and it
+    // is fail-open by construction: a missing doc, a failed `safeParse` or a
+    // thrown read all return `[]`, which the flow treats as "no manifest" and
+    // answers exactly as it did before. Kit context is an enhancement, never a
+    // precondition (Rule 10).
+    const equipment = await readEquipmentItems(getFirestore(), 'identifyRecipeKit');
 
     // No `withAiTimeout` wrapper HERE, following `describeSceneOrNothing` below
     // rather than the image branch above: the flow owns its own deadline
@@ -299,7 +303,7 @@ async function maybeInferKit(
       // Steps carry their ids — the flow has to answer with the ids this document
       // actually holds, and the sanitiser inside it drops anything else.
       steps: recipe.steps.map((s) => ({ id: s.id, text: s.text })),
-      equipment,
+      equipment: [...equipment],
     });
     // Partial `.update()`, never a whole-document set: a full write from here would
     // clobber whatever a concurrent client save had just put on the document.

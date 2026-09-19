@@ -281,13 +281,40 @@ export const CureCategorySchema = z.enum([
   'cooked_emulsified',
 ]);
 
-// One piece of kit a recipe calls for (issue #882). A free-text LABEL and the
-// steps that use it — never a `kitchenTools` id, and that is the load-bearing
-// choice of the whole feature: the recipe keeps the words a cook would say, and
-// the drawn vocabulary is resolved against those words at DISPLAY time. A label
+// Which of the household's OWN things a kit entry means (issue #1465).
+//
+// `itemId` names an `equipmentManifest` item; `accessoryId`, when set, names one
+// of that item's `accessories` — an accessory of an appliance, or a member of a
+// family of kit. Both are ids the manifest already carries.
+//
+// A DANGLING LINK IS NOT AN ERROR. Delete the item, or the entry, and the link
+// stops resolving; the recipe then renders exactly as an unlinked label does. No
+// `.refine`, no cleanup job, and no write to recipes when the manifest is edited
+// — `resolveKitEntryEquipment` is the one place that decides what a link nothing
+// answers to means.
+export const RecipeKitEquipmentLinkSchema = z.object({
+  itemId: z.string(),
+  // `.default(null)` rather than `.optional()`: every reader sees `null` or an
+  // id, never `undefined`.
+  accessoryId: z.string().nullable().default(null),
+});
+
+// One piece of kit a recipe calls for (issue #882). A free-text LABEL, the steps
+// that use it, and — since issue #1465 — an optional record of WHICH OF YOUR
+// THINGS it meant.
+//
+// NO `kitchenTools` ID IS EVER WRITTEN HERE. #1465 NARROWS that rule; it does not
+// repeal it. The curated tool vocabulary is a VOCABULARY: it grows and shrinks,
+// and every recipe that already said the word gains a picture for free when it
+// does — so resolving those words at DISPLAY time is right, and stays. A label
 // nothing in the vocabulary matches renders as words with no picture, which is a
-// normal outcome rather than a fault, and it means the vocabulary can grow (or
-// shrink) without a single recipe being rewritten.
+// normal outcome rather than a fault.
+//
+// Equipment is IDENTITY, not vocabulary, and that is the difference. The flow
+// that wrote the label had the manifest in front of it and knew which of your
+// things it meant; discarding that and re-deriving it from the words afterwards
+// is what failed for families — "Tefal non-stick 28cm" carries no word of
+// "Frying Pans", and no token rule can find it.
 export const RecipeKitEntrySchema = z.object({
   // What a cook would call it, and specific enough to reach for: "large frying
   // pan", not "pan"; "box grater", not "grater". The specificity is the feature —
@@ -303,6 +330,19 @@ export const RecipeKitEntrySchema = z.object({
   // Ids are step ids from the SAME document, exactly as `firstUsedInStepId` is —
   // document-local, so a duplicate that copies steps verbatim keeps every link.
   stepIds: z.array(z.string()),
+  // Which of the household's things this line names, when the flow knew (issue
+  // #1465). `.nullable().default(null)` — additive and back-compat on read, the
+  // same shape `environment` takes on the manifest: every kit entry written
+  // before #1465 has no key here, and the default reads that absence as what it
+  // is, "nobody recorded which one", rather than failing validation and taking
+  // the recipe out of the list.
+  //
+  // `label` stays the displayed words even when this resolves. The flow writes
+  // prose ("steam basket") out of an inventory ("Steam Basket") deliberately
+  // (`EQUIPMENT_KIT_FRAMING`), and rendering the manifest's name here would undo
+  // that. The cost, accepted: after a rename the recipe shows the old words until
+  // its kit is redone.
+  equipment: RecipeKitEquipmentLinkSchema.nullable().default(null),
 });
 
 export const RecipeSchema = z.object({
@@ -536,5 +576,6 @@ export type RecipeSourceDoc = z.infer<typeof RecipeSourceSchema>;
 export type RecipeImageDoc = z.infer<typeof RecipeImageSchema>;
 export type RecipeKindDoc = z.infer<typeof RecipeKindSchema>;
 export type CureCategoryDoc = z.infer<typeof CureCategorySchema>;
+export type RecipeKitEquipmentLinkDoc = z.infer<typeof RecipeKitEquipmentLinkSchema>;
 export type RecipeKitEntryDoc = z.infer<typeof RecipeKitEntrySchema>;
 export type RecipeDoc = z.infer<typeof RecipeSchema>;

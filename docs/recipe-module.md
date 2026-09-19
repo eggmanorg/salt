@@ -783,6 +783,21 @@ card above the tab strip until issue #1140): `kit: RecipeKitEntry[]`
 `kitRequestedAt?: number`. All three back-compat on read for the usual reason —
 a required field would empty the list of recipes written before this shipped.
 
+- **`RecipeKitEntry` carries a LABEL and, since #1465, an optional LINK.**
+  `equipment: { itemId, accessoryId | null } | null` (`.default(null)`) records
+  which of the household's own things the line means — an appliance, one of its
+  accessories, or a member of a family of kit. It is read before any word, which
+  is the only way a family member is ever recognised. A link to something deleted
+  resolves to nothing and the entry reads as an unlinked label; nothing is written
+  back to recipes when the manifest changes. **Since #1465 Phase 4 the link is the
+  only thing `groupKitByEquipment` reads** — an unlinked entry is a flat row,
+  whatever its words say, so a recipe whose kit predates the 2026-09-19 re-run
+  lists an appliance's parts flat until **Redo kit** is pressed. The words still
+  decide the PICTURE, through `resolveKitEntryItem`; `docs/canon-icons.md`
+  § "The fourth family" states how much of the library still rests on that.
+  This narrows the rule below rather
+  than repealing it: **no `kitchenTools` id is ever written onto a recipe.**
+  Equipment is identity; the tool vocabulary is a vocabulary.
 - **`RecipeKitEntry` stores a LABEL, never an id.** `{ label, stepIds }` —
   "large frying pan", not a `kitchenTools` document id. The vocabulary that
   turns a label into a picture is resolved at DISPLAY time by
@@ -922,20 +937,24 @@ Where each field is stamped — every write path, and nothing else writes them:
 | Write path                                                                                                                                                                   | `createdBy`                                                                                                      | `lastEditedBy`                                                                                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `persistRecipe` (`recipeService.ts`) — every in-place edit, ingredient re-match, review-clear, `attachComponentToMeal`, the e2e seed hook                                    | filled if blank, never re-pointed                                                                                | re-stamped on every write                                                                          |
-| `authorRecipeFromChat` (`chatRecipeAuthor.ts`) — writes via `saveRecipeDoc`, not `persistRecipe`                                                                             | filled (a new dish)                                                                                              | stamped                                                                                            |
+| `authorRecipe` (CF, create mode, #1431) — the flow writes the recipe it authors; `chatRecipeAuthor` sends the member's name on the wire and writes nothing itself            | filled (a new dish), blank when no name was sent                                                                 | stamped, blank when no name was sent                                                               |
 | `applyRecipeAmendment` (`recipeAmend.ts`) — confirming a chat amend or a ⋮ → Refresh IS the human edit                                                                       | carried from the base recipe, untouched                                                                          | stamped with the amender                                                                           |
 | `duplicateRecipe` (domain)                                                                                                                                                   | blank — a copy belongs to whoever copied it, not to the original's author                                        | blank                                                                                              |
 | `assembleRecipeDraft` (CF)                                                                                                                                                   | carried from `baseRecipe`, `''` on a create                                                                      | carried from `baseRecipe`, `''` on a create                                                        |
-| `persistImportedRecipe` (CF, #616)                                                                                                                                           | **unattributed on purpose** — the client stamps it on the first edit made to the recipe the import lands on      | unattributed                                                                                       |
+| `persistAuthoredRecipe` (CF, #616) — the shared write, called by the two importers with a draft that was never stamped                                                       | **unattributed on purpose** — the client stamps it on the first edit made to the recipe the import lands on      | unattributed                                                                                       |
 | `onRecipeWritten` (CF)                                                                                                                                                       | never                                                                                                            | **never** — a generated hero is not an edit                                                        |
 | The "Added by" roster picker — the identity card's fact pill (`RecipeIdentityCard.svelte`), the one user-editable surface since #1319 Phase 8 removed the editor's own field | set to the picked roster name, which then survives the write because `stampRecipeAttribution` only fills a blank | untouched by the picker; re-stamped by the write that follows, like any other edit                 |
 | `scripts/backfill-recipe-attribution.mjs` — the one-off #845 pass                                                                                                            | filled if blank, by field-level `PATCH`                                                                          | **never** — nobody knows who last edited a pre-#845 recipe, and inventing it is worse than silence |
 
-All three client stamps go through the one `stampRecipeAttribution` helper in
-`recipeService.ts`, which fills `createdBy` only when it is empty and rewrites
-`lastEditedBy` every time. When no name is available — the roster has not synced,
-or the signed-in email is not on it — it leaves **both** fields exactly as they
-were: a placeholder ("Unknown") reads as a person, and clobbering a real creator
+Every stamp above, on both sides of the callable boundary, is the one
+`stampAttribution` function in `@salt/domain` (moved there by #1431, when the
+chat-authoring write moved server-side). In the browser it is reached through
+`stampRecipeAttribution` in `recipeService.ts`, which adds the only thing the
+domain cannot know — who is signed in; in Cloud Functions the `authorRecipe` flow
+applies it directly to the name on its wire input. It fills `createdBy` only when
+it is empty and rewrites `lastEditedBy` every time. When no name is available —
+the roster has not synced, the signed-in email is not on it, or an older bundle
+sent no name at all — it leaves **both** fields exactly as they were: a placeholder ("Unknown") reads as a person, and clobbering a real creator
 because a store had not settled is worse than recording nothing. The domain
 builders stay identity-free for the same reason they read no clock.
 
@@ -1059,7 +1078,7 @@ through the `canonicaliseRecipeIngredients` callable (issue #187):
   write is a read-modify-write in a **transaction** on `recipes/{recipeId}`,
   folding results onto rows by `ingredientId`, skipping ids the document no
   longer has, stamping `updatedAt`, and never throwing — a failure is logged and
-  reported and the results still return (Rule 10, `persistImportedRecipe`'s
+  reported and the results still return (Rule 10, `persistAuthoredRecipe`'s
   shape). The client applies nothing optimistically and registers no
   `latestLocalEdit`: a local-edit stamp for a write it is not making would make
   `applySnapshot` discard the server's own result.

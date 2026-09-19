@@ -18,7 +18,7 @@ import { addItemToDefaultList, deleteItemFromList } from './shoppingListService.
 // copies is two places the cache-bust rule (`iconRequestedAt ?? updatedAt`,
 // ui-spec-v04 §14.4), the form fallback, or the toast wording can drift — and the
 // drift would be invisible, because a cook only ever sees one screen at a time.
-// This is the same call kitchenToolService's `toolIcons` makes for the tool
+// This is the same call kitchenToolService's `toolPicture` makes for the tool
 // pictograms, for the same reason. Do not add a third private copy to a page.
 //
 // It is a DERIVED STORE OF A LOOKUP rather than plain functions, and that is

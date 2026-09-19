@@ -381,6 +381,84 @@ export function equipmentSectionForLibrarian(equipmentContext: string): string {
   return `${EQUIPMENT_LIBRARIAN_FRAMING}\n\n${equipmentContext}`;
 }
 
+// ─── Handles, for the kit flow only (issue #1465) ────────────────────────────
+//
+// The kit flow is the one flow that has to ANSWER with which thing it meant, not
+// merely read about it, so it gets its own rendering of the manifest with a short
+// handle in front of every item and every owned entry. The other four flows read
+// `renderEquipmentManifest`, which is untouched and must stay so: four prompts
+// would change for a feature none of them is part of.
+//
+// SHORT PER-CALL HANDLES, NOT UUIDS. `k3`, `k3.2`. A manifest id is 36 characters
+// of noise a model has to copy exactly; a handle is two or three, and it is
+// mapped back to `{ itemId, accessoryId }` server-side by the same function that
+// emitted it — so the two cannot drift, and a handle the model invents resolves
+// to nothing and is dropped rather than writing a link to a thing that is not
+// there.
+//
+// ONLY OWNED ENTRIES GET A HANDLE, matching what `renderEquipmentManifest` shows
+// every other flow: an entry marked not-owned is not in the kitchen, so it is not
+// something a recipe can be told to get out.
+//
+// NO NOTES, NO RULES, NO ENVIRONMENT. Everything `renderEquipmentManifest` omits
+// is omitted here for the reasons its header gives; what is added is the handle
+// and nothing else. `rules` stays because the kit flow already sees it and
+// removing it would change what the flow knows.
+
+const KIT_HANDLE_FRAMING = `Each line below starts with a HANDLE in brackets — [k1], [k1.2]. When a kit entry \
+you return names one of these things, copy its handle EXACTLY into that entry's \`ref\` field. Use the \
+handle of the most specific line that fits: the entry's own handle when the cook reaches for that \
+particular part or pan, the item's handle when they reach for the whole machine. For anything not on \
+this list — an ordinary pan, bowl, knife or spoon — \`ref\` is null. Never invent a handle, and never \
+put anything but a handle from this list in \`ref\`. The handle decides which of their things Salt shows \
+a picture of; it never changes the WORDS you write in \`label\`.`;
+
+/** One item or owned entry, keyed by the handle the prompt shows for it. */
+export interface KitEquipmentHandles {
+  /** The rendered list, handles included — '' when there is nothing to show. */
+  readonly rendered: string;
+  /** handle → the manifest ids it stands for. Never leaves the server. */
+  readonly byHandle: ReadonlyMap<string, { itemId: string; accessoryId: string | null }>;
+}
+
+/**
+ * Render the manifest for the kit flow, with a handle per item and owned entry.
+ *
+ * The text and the map are built in one pass, on purpose: a handle printed but
+ * not mapped writes no link, and a handle mapped but not printed can never be
+ * returned — both failures are impossible while one loop produces both.
+ */
+export function renderEquipmentManifestForKit(
+  items: readonly EquipmentItemDoc[],
+): KitEquipmentHandles {
+  const byHandle = new Map<string, { itemId: string; accessoryId: string | null }>();
+  if (items.length === 0) return { rendered: '', byHandle };
+
+  const blocks = items.map((item, i) => {
+    const handle = `k${i + 1}`;
+    byHandle.set(handle, { itemId: item.id, accessoryId: null });
+    const parts = [`- [${handle}] ${item.name}`, ...renderEquipmentEnvironment(item)];
+    const owned = item.accessories.filter((a) => a.owned);
+    if (owned.length > 0) {
+      const label = item.kind === 'family' ? 'contains' : 'accessories';
+      const entries = owned.map((accessory, j) => {
+        const entryHandle = `${handle}.${j + 1}`;
+        byHandle.set(entryHandle, { itemId: item.id, accessoryId: accessory.id });
+        return `    - [${entryHandle}] ${accessory.name}`;
+      });
+      parts.push(`  ${label}:`, ...entries);
+    }
+    if (item.rules.length > 0) {
+      parts.push(
+        `  household rules (override your own product knowledge): ${item.rules.join('; ')}`,
+      );
+    }
+    return parts.join('\n');
+  });
+
+  return { rendered: blocks.join('\n'), byHandle };
+}
+
 /**
  * The kit flow's equipment section, or '' when there is no manifest to show.
  *
@@ -388,7 +466,7 @@ export function equipmentSectionForLibrarian(equipmentContext: string): string {
  * it was before #954, so a missing or corrupt manifest degrades to today's generic
  * labels and never to a failed inference.
  */
-export function equipmentSectionForKit(equipmentContext: string): string {
-  if (!equipmentContext) return '';
-  return `${EQUIPMENT_KIT_FRAMING}\n\n${equipmentContext}`;
+export function equipmentSectionForKit(rendered: string): string {
+  if (!rendered) return '';
+  return `${EQUIPMENT_KIT_FRAMING}\n\n${KIT_HANDLE_FRAMING}\n\n${rendered}`;
 }

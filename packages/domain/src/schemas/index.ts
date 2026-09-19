@@ -110,6 +110,7 @@ export {
   EquipmentHumiditySchema,
   EquipmentStandingSettingSchema,
   EquipmentEnvironmentSchema,
+  BorrowedPictureSchema,
   EQUIPMENT_MANIFEST_COLLECTION,
   EQUIPMENT_MANIFEST_DOC_ID,
 } from './equipmentManifest.js';
@@ -120,14 +121,20 @@ export type {
   EquipmentHumidityDoc,
   EquipmentStandingSettingDoc,
   EquipmentEnvironmentDoc,
+  BorrowedPictureDoc,
 } from './equipmentManifest.js';
 
 export {
   EquipmentIconSchema,
   DrawEquipmentIconInputSchema,
+  AuthorEntryIconBriefInputSchema,
   EQUIPMENT_ICONS_COLLECTION,
 } from './equipmentIcon.js';
-export type { EquipmentIconDoc, DrawEquipmentIconInput } from './equipmentIcon.js';
+export type {
+  EquipmentIconDoc,
+  DrawEquipmentIconInput,
+  AuthorEntryIconBriefInput,
+} from './equipmentIcon.js';
 
 export { ShoppingListSchema } from './shoppingList.js';
 export type { ShoppingListDoc } from './shoppingList.js';
@@ -281,10 +288,11 @@ export type { WriteKitchenNoteInput, WriteKitchenNoteOutput } from './writeKitch
 // reaching for an enum over the drawn vocabulary.
 export {
   IdentifyRecipeKitInputSchema,
+  IdentifyRecipeKitAIEntrySchema,
   IdentifyRecipeKitAIOutputSchema,
   IdentifyRecipeKitOutputSchema,
 } from './identifyRecipeKit.js';
-export type { IdentifyRecipeKitInput } from './identifyRecipeKit.js';
+export type { IdentifyRecipeKitInput, IdentifyRecipeKitAIEntry } from './identifyRecipeKit.js';
 
 // estimateRecipeTimes (issue #952, phase 2) — "how long does this ACTUALLY take?",
 // re-asked of a recipe already in the library against the definition phase 1 put
@@ -370,6 +378,8 @@ export {
   // that field alone (issue #1434) — parsing the whole `RecipeSchema` there
   // would make an unrelated field's drift silently skip the fold.
   IngredientGroupSchema,
+  RecipeKitEntrySchema,
+  RecipeKitEquipmentLinkSchema,
   // The way-IN phase gate (issue #1122) — the librarian, both extractors and the
   // re-estimator constrain their `phases` output against these, and #1202's row
   // editor needs `MAX_RECIPE_PHASES` to cap "add a phase" against the same bound.
@@ -385,6 +395,7 @@ export type {
   StepTimerDoc,
   StepDoc,
   RecipeSourceDoc,
+  RecipeKitEquipmentLinkDoc,
   RecipeKitEntryDoc,
   RecipePhaseDoc,
   RecipeDoc,

@@ -1,9 +1,8 @@
 import type { Recipe } from '@salt/domain';
 import type { AuthorRecipeInput } from '@salt/domain/schemas';
-import { saveRecipe as saveRecipeDoc } from '@salt/firebase-sync';
 import { trackUsageEvent } from '@salt/observability';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
-import { authorRecipeTraced, stampRecipeAttribution } from './recipeService.js';
+import { authorRecipeTraced, currentMemberName, stashImportedDraft } from './recipeService.js';
 
 // Authoring a NEW recipe out of a conversation — the create leg (issues #696,
 // #763, #798).
@@ -15,25 +14,28 @@ import { authorRecipeTraced, stampRecipeAttribution } from './recipeService.js';
 // recipe" in the recipe page's docked chat column and its drawer — so the saved
 // document must not depend on which one you came through.
 //
-// The division of labour is `recipeAmend`'s: this module decides what gets
-// written and writes it. A page owns its own busy state, its toasts, where it
-// navigates afterwards, and whether the conversation goes on to claim the recipe
-// it produced. **Claiming is deliberately not in here.** A general chat claims
-// (the conversation now belongs to the dish it invented); a chat attached to a
-// recipe does not (it belongs to the dish it is attached to and stays listed
-// there, and the new recipe has no origin chat).
-
-/**
- * Which leg failed. Both are worth different words on screen — "the chef could
- * not write it" is a retry, "it was written but not kept" is not the same news —
- * and every surface phrases them the same way because they all read this.
- */
-export type ChatAuthorStage = 'author' | 'save';
-
-export interface ChatAuthorFailure {
-  stage: ChatAuthorStage;
-  error: DomainError;
-}
+// The division of labour moved in #1431, and this module ended up on the thin
+// side of it: it decides what is ASKED FOR — always the create path, grounded on
+// the base the caller names, attributed to whoever is signed in — and the
+// `authorRecipe` flow decides what the document is and WRITES it. **Nothing here
+// goes to Firestore.** It used to: the write was the statement after the `await`,
+// which is exactly the statement a locked phone, a backgrounded PWA or a closed
+// tab never runs, so a minute of librarian, parse and canon work was thrown away
+// with no error and nothing on screen.
+//
+// A page still owns its own busy state, its toasts, where it navigates afterwards,
+// and whether the conversation goes on to claim the recipe it produced.
+// **Claiming is deliberately not in here.** A general chat claims (the
+// conversation now belongs to the dish it invented); a chat attached to a recipe
+// does not (it belongs to the dish it is attached to and stays listed there, and
+// the new recipe has no origin chat).
+//
+// There is no longer a failure `stage`. There were two — "the chef could not write
+// it" and "it was written but not kept" — and the second leg no longer exists on
+// this side: the flow's write is best-effort and deliberately does not fail the
+// call (see `persistAuthoredRecipe`), so a save failure is not something this
+// module can observe, let alone report. Every surface says one thing because
+// there is one thing to say.
 
 export interface AuthorRecipeFromChatInput {
   /** The transcript. The base recipe of an attached chat is NOT in here — it is
@@ -55,47 +57,60 @@ export interface AuthorRecipeFromChatInput {
 }
 
 /**
- * Author a brand-new recipe from a conversation and save it.
+ * Author a brand-new recipe from a conversation. The flow saves it.
  *
  * Always the CREATE path — no `recipeId` is ever sent, so the flow assembles with
  * no base recipe and the result is an independent dish with its own title, its
  * own hero (`image: null`, so the trigger generates one from the new content),
- * `source: manual` and no `producesCanonId`. Nothing existing is written to.
+ * `source: manual` and no `producesCanonId`. Nothing existing is written to. That
+ * is also what arms the flow's own write: `recipeId` is the gate it gets right or
+ * wrong, and this leg never sends one.
  *
- * `createdAt`/`updatedAt` are stamped here rather than at the call sites: the
- * librarian has no clock, and three surfaces stamping their own would be three
- * chances to forget one.
+ * `createdAt`/`updatedAt` are the ASSEMBLER's (issue #1431). It stamps both to one
+ * instant as it mints the document and that exact document is what is written, so
+ * a second stamp here would hand the caller a copy disagreeing with Firestore. The
+ * librarian still has no clock; it is simply no longer this module's to supply.
  */
 export async function authorRecipeFromChat(
   input: AuthorRecipeFromChatInput,
-): Promise<ReadResult<Recipe, ChatAuthorFailure>> {
+): Promise<ReadResult<Recipe, DomainError>> {
   // No title hint: the dish being authored has no name yet, and the only title in
   // reach on the recipe page is the WRONG dish's. The span stays 'Author recipe'.
   const result = await authorRecipeTraced({
     messages: input.messages,
     existingTags: input.existingTags,
     basedOnRecipeId: input.basedOnRecipeId ?? null,
+    // Attribution rides with the call now, for the same reason the clock does not
+    // (issue #845, moved by #1431): the librarian knows no more about who you are
+    // than it does about what time it is, and the browser is no longer around
+    // when the document is written. A chat-authored recipe is yours — you had the
+    // conversation — so it is `createdBy` you, exactly as if you had typed it in.
+    //
+    // `undefined` when the roster has not loaded or the signed-in email is not on
+    // it, and the flow then leaves both fields blank rather than inventing a name.
+    // Same degradation as the browser's own stamp, which is the same function.
+    authorName: currentMemberName() || undefined,
   });
-  if (result.kind !== 'ok') return failure({ stage: 'author', error: result.error });
+  if (result.kind !== 'ok') return failure(result.error);
 
-  const now = new Date().toISOString();
-  // Attribution rides with the clock and for the same reason (issue #845): the
-  // librarian knows no more about who you are than it does about what time it is,
-  // and this path writes through `saveRecipeDoc` rather than `persistRecipe`, so
-  // it stamps here or not at all. A chat-authored recipe is yours — you had the
-  // conversation — so it is `createdBy` you, exactly as if you had typed it in.
-  const saved: Recipe = stampRecipeAttribution({
-    ...result.value,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const saved: Recipe = result.value;
 
-  const saveResult = await saveRecipeDoc(saved);
-  if (saveResult.kind !== 'ok') return failure({ stage: 'save', error: saveResult.error });
+  // The write happened on the SERVER, so the local Firestore cache has no echo to
+  // hand back synchronously and the page can arrive before the listener does. The
+  // stash is what stops it painting "Recipe not found." — id-keyed, single-use,
+  // and a fallback that the store beats the moment it has the document. The exact
+  // arrangement the two imports have used since #616, reused rather than copied;
+  // its recovery properties and their limits are written out once, at
+  // `persistAuthoredRecipe`.
+  stashImportedDraft(saved);
 
   // Fired here, once, so a fourth door cannot arrive without its telemetry.
   // `recipe_method: 'chat'` is what this is on every surface — the taxonomy is a
   // deliberately small closed set and does not grow a value per button.
+  //
+  // It follows the AUTHORING rather than a save, because there is no longer a save
+  // on this side. It stays a browser usage event (issue #1431): a suspend now
+  // loses the event and keeps the recipe, which is the right way round.
   trackUsageEvent('recipe.created', {
     recipe_id: saved.id,
     recipe_kind: saved.kind,

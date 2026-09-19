@@ -195,6 +195,47 @@ describe('attachComponentToMeal', () => {
     expect(result.kind).toBe('err');
   });
 
+  it('ranks a dish the store has not heard about yet by the elapsed time passed in, not as "no timing"', async () => {
+    // Issue #1431 review, blocking. The chat and import doors call this in the
+    // very next statement after the SERVER write settles — before the listener
+    // can have delivered the new document back into the store — so `dishId`
+    // below is deliberately absent from `seedRecipes`. Without the third
+    // argument, `insertComponentByElapsedTime`'s lookup misses, reads as "no
+    // strip" (Infinity) and sorts first regardless of how long the dish actually
+    // takes; that is the bug, and it is what gets WRITTEN to the meal.
+    const mealId = nsId('roast');
+    const gravy = nsId('gravy');
+    const chicken = nsId('chicken');
+    seedRecipes([
+      recipe(mealId, { componentRecipeIds: [gravy] }),
+      recipe(gravy, { elapsedMinutes: 20 }),
+      // `chicken` is NOT seeded — it stands in for the just-written dish the
+      // store has not caught up with.
+    ]);
+    const justWritten = recipe(chicken, { elapsedMinutes: 5 });
+
+    await attachComponentToMeal(mealId, chicken, justWritten);
+
+    // 5 minutes is shorter than the already-attached 20-minute gravy, so the new
+    // dish ranks AFTER it — not first, which is where a dangling lookup would
+    // have put it.
+    expect(saved().componentRecipeIds).toEqual([gravy, chicken]);
+  });
+
+  it('does not double-count a dish the store already holds', async () => {
+    // A caller can pass `justWritten` defensively even once the listener has
+    // caught up; the store's own copy is authoritative and nothing is appended
+    // twice into the ranking list.
+    const mealId = nsId('roast');
+    const dishId = nsId('gravy');
+    const already = recipe(dishId, { elapsedMinutes: 20 });
+    seedRecipes([recipe(mealId), already]);
+
+    await attachComponentToMeal(mealId, dishId, already);
+
+    expect(saved().componentRecipeIds).toEqual([dishId]);
+  });
+
   it('keeps every other field on the meal — the write is the same document', async () => {
     const mealId = nsId('roast');
     const dishId = nsId('gravy');

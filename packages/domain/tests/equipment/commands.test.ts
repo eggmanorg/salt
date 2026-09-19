@@ -13,6 +13,7 @@ import {
   editAccessoryNote,
   editEquipmentNote,
   setEquipmentKind,
+  setBorrowedPicture,
 } from '@salt/domain';
 import type { EquipmentManifest } from '@salt/domain';
 import type { IdGenerator } from '../../src/equipment/ports/IdGenerator.js';
@@ -51,6 +52,7 @@ function makeItem(
     rules: [],
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: NOW,
     ...overrides,
   };
@@ -60,7 +62,15 @@ function makeAccessory(
   id: string,
   overrides: Partial<{ name: string; owned: boolean; included: boolean; note: string }> = {},
 ) {
-  return { id, name: 'Dough Hook', owned: true, included: true, note: '', ...overrides };
+  return {
+    id,
+    name: 'Dough Hook',
+    owned: true,
+    included: true,
+    note: '',
+    borrowedPicture: null,
+    ...overrides,
+  };
 }
 
 // ── addEquipment ─────────────────────────────────────────────────────────────
@@ -692,5 +702,77 @@ describe('setEquipmentKind', () => {
     expect(result.kind).toBe('err');
     if (result.kind !== 'err') return;
     expect(result.error).toEqual({ kind: 'NotFound', resource: 'equipment', id: 'no-such' });
+  });
+});
+
+// ── setBorrowedPicture (issue #1465, Phase 3) ────────────────────────────────
+
+describe('setBorrowedPicture', () => {
+  const PICTURE = { family: 'kitchenTool' as const, id: 'frying-pan' };
+
+  it('points the record itself at a picture', () => {
+    const result = setBorrowedPicture(manifestWith([makeItem('eq-1')]), {
+      equipmentId: 'eq-1',
+      accessoryId: null,
+      picture: PICTURE,
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.borrowedPicture).toEqual(PICTURE);
+    expect(result.value.items[0]!.updatedAt).toBe(NOW2);
+  });
+
+  it('points ONE entry and leaves its siblings and its record alone', () => {
+    const manifest = manifestWith([
+      makeItem('eq-1', { accessories: [makeAccessory('acc-1'), makeAccessory('acc-2')] }),
+    ]);
+    const result = setBorrowedPicture(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: 'acc-2',
+      picture: PICTURE,
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    const item = result.value.items[0]!;
+    expect(item.accessories.map((a) => a.borrowedPicture)).toEqual([null, PICTURE]);
+    expect(item.borrowedPicture).toBeNull();
+  });
+
+  it('stops borrowing when handed null', () => {
+    const manifest = manifestWith([makeItem('eq-1', { borrowedPicture: PICTURE })]);
+    const result = setBorrowedPicture(manifest, {
+      equipmentId: 'eq-1',
+      accessoryId: null,
+      picture: null,
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value.items[0]!.borrowedPicture).toBeNull();
+  });
+
+  it('refuses an entry that is not on that record', () => {
+    const result = setBorrowedPicture(manifestWith([makeItem('eq-1')]), {
+      equipmentId: 'eq-1',
+      accessoryId: 'acc-gone',
+      picture: PICTURE,
+      now: NOW2,
+    });
+    expect(result.kind).toBe('err');
+  });
+
+  // The target is deliberately NOT validated here: this is pure and holds only
+  // the manifest, and the target can be deleted a second after the write anyway.
+  // A dangling reference resolves to nothing at display time.
+  it('accepts a reference to something this manifest cannot see', () => {
+    const result = setBorrowedPicture(manifestWith([makeItem('eq-1')]), {
+      equipmentId: 'eq-1',
+      accessoryId: null,
+      picture: { family: 'equipment', id: 'eq-somebody-elses' },
+      now: NOW2,
+    });
+    expect(result.kind).toBe('ok');
   });
 });

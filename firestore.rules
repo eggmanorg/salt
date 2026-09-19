@@ -110,8 +110,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     // Equipment pictograms (issue #877) — one server-written doc per equipment
-    // item, holding the appliance description and the generated icon. Written
-    // ONLY by the brief trigger and the Draw callable via the Admin SDK (which
+    // item, holding the appliance description and the generated icon. Since
+    // #1465 Phase 2 an ACCESSORY may own one too, keyed by its own uuid, which
+    // this wildcard already matches — the id is a document id, never asserted to
+    // be an item's. Written ONLY by the brief trigger, the on-request entry-brief
+    // callable and the Draw callable via the Admin SDK (which
     // bypasses these rules); the client reads them to render the list and the
     // detail page, and reaches every mutation through the authenticated
     // `drawEquipmentIcon` callable. So unlike `canonEmbeddings` above — which is

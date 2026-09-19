@@ -328,7 +328,7 @@ describe('generateGuidedPlan — the flow writes the document', () => {
   });
 
   it('still returns the plan when the write fails, rather than binning the call', async () => {
-    // `persistImportedRecipe`'s shape: a generation that has already been paid for
+    // `persistAuthoredRecipe`'s shape: a generation that has already been paid for
     // is never thrown away over a write error. The editor paints it and the cook's
     // Save writes it — and THAT is the boundary, because the recovery takes a Save.
     mockPlanSet.mockRejectedValue(new Error('unavailable'));

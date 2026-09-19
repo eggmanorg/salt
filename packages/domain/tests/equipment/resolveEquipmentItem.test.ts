@@ -18,7 +18,7 @@ import type { EquipmentItem, Accessory } from '../../src/index.js';
 // resolver returned null in production for both labels the issue named.
 
 function accessory(name: string, owned = true): Accessory {
-  return { id: `acc-${name}`, name, owned, included: owned, note: '' };
+  return { id: `acc-${name}`, name, owned, included: owned, note: '', borrowedPicture: null };
 }
 
 function item(name: string, accessories: Accessory[] = []): EquipmentItem {
@@ -31,6 +31,7 @@ function item(name: string, accessories: Accessory[] = []): EquipmentItem {
     rules: [],
     note: '',
     environment: null,
+    borrowedPicture: null,
     updatedAt: '2026-08-01T00:00:00.000Z',
   };
 }

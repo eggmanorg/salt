@@ -28,7 +28,16 @@ export function addAccessory(
         ...item.accessories,
         // Nothing is said about an entry until someone says it (#1373) —
         // `editAccessoryNote` is the only thing that writes here.
-        { id: ids.newAccessoryId(), name, owned: input.owned, included: input.included, note: '' },
+        {
+          id: ids.newAccessoryId(),
+          name,
+          owned: input.owned,
+          included: input.included,
+          note: '',
+          // Nothing is borrowed until somebody points this at a drawing
+          // (#1465 Phase 3).
+          borrowedPicture: null,
+        },
       ],
     });
   });

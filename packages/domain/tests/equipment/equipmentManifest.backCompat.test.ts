@@ -73,9 +73,58 @@ describe('EquipmentManifestSchema back-compat (issue #1373)', () => {
     const parsed = EquipmentManifestSchema.safeParse(PRE_CHANGE_DOCUMENT);
     if (!parsed.success) throw new Error('fixture must parse');
     expect(parsed.data.items[0]!.accessories).toEqual([
-      { id: 'acc-1', name: 'Thermo Bowl', owned: true, included: true, note: '' },
-      { id: 'acc-2', name: 'XL Steamer Attachment', owned: false, included: false, note: '' },
+      {
+        id: 'acc-1',
+        name: 'Thermo Bowl',
+        owned: true,
+        included: true,
+        note: '',
+        borrowedPicture: null,
+      },
+      {
+        id: 'acc-2',
+        name: 'XL Steamer Attachment',
+        owned: false,
+        included: false,
+        note: '',
+        borrowedPicture: null,
+      },
     ]);
+  });
+
+  // Issue #1465 Phase 3. The field lands on ~19 records and ~140 entries that
+  // have never heard of it, in ONE document — so a default that failed here would
+  // not lose one row's picture, it would take the whole equipment list down.
+  it('reads a missing borrowed picture — on the item and on every entry — as borrowing nothing', () => {
+    const parsed = EquipmentManifestSchema.safeParse(PRE_CHANGE_DOCUMENT);
+    if (!parsed.success) throw new Error('fixture must parse');
+    expect(parsed.data.items.map((i) => i.borrowedPicture)).toEqual([null, null]);
+    expect(parsed.data.items[0]!.accessories.map((a) => a.borrowedPicture)).toEqual([null, null]);
+  });
+
+  // NO `.refine` couples the reference to anything it points at, deliberately: a
+  // target deleted afterwards must leave the manifest parsing, or one stale
+  // reference takes the whole list down. It resolves to nothing at display time
+  // and the row falls back, exactly as a dangling kit link does.
+  it('parses a borrowed picture whose target no longer exists', () => {
+    const parsed = EquipmentManifestSchema.safeParse({
+      ...PRE_CHANGE_DOCUMENT,
+      items: [
+        {
+          ...PRE_CHANGE_DOCUMENT.items[0],
+          borrowedPicture: { family: 'kitchenTool', id: 'retired-tool' },
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('refuses a picture family it does not know rather than inventing one', () => {
+    const parsed = EquipmentManifestSchema.safeParse({
+      ...PRE_CHANGE_DOCUMENT,
+      items: [{ ...PRE_CHANGE_DOCUMENT.items[0], borrowedPicture: { family: 'canon', id: 'c-1' } }],
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it('leaves the #1281 place fields untouched', () => {

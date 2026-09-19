@@ -14,7 +14,7 @@ const STEPS: Step[] = ['s-1', 's-2', 's-3', 's-4', 's-5', 's-6'].map((id, i) =>
 );
 
 function entry(label: string, stepIds: string[]): RecipeKitEntryDoc {
-  return { label, stepIds };
+  return { label, stepIds, equipment: null };
 }
 
 /** The labels drawn at one step, in the order the row would render them. */

@@ -15,7 +15,7 @@ import { setActiveSpanName } from '@salt/observability/server';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
-import { persistImportedRecipe } from './persistImportedRecipe.js';
+import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 
@@ -145,7 +145,7 @@ export const extractRecipeFromPhotoFlow = ai.defineFlow(
     // recipe exists the moment the extraction finishes, whatever the client does
     // next — which matters more here than anywhere, since the user has just been
     // holding a phone over a book and the page photos are gone.
-    await persistImportedRecipe(recipe, 'extractRecipeFromPhoto');
+    await persistAuthoredRecipe(recipe, 'extractRecipeFromPhoto');
     return recipe;
   },
 );

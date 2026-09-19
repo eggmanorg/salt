@@ -585,11 +585,20 @@ export const coverageThresholds = {
   // `takeImportedDraft`'s optional-id arm went; that one was inside tolerance, so
   // the ratchet did not ask for it then. It has since been banked in its own
   // right — see the note on that area's pin below.
+  // PINNED FROM CI, NOT FROM A LAPTOP (issue #1465, Phase 3). CI's two runners
+  // agree with each other — `coverage-platforms` was green on the run that
+  // produced these — and both read 85.36/75.10 (1707/1736) where this Mac reads
+  // 85.28/75.08 (1704/1725). That is the boundary this file's own
+  // cross-platform paragraph states in as many words: the check covers
+  // `ubuntu-latest` against `macos-latest`, and "a developer's own machine is
+  // not one of them and never will be". The gate enforces against CI, so CI's
+  // figure is the one that goes here; a local `coverage:ratchet:check` reads
+  // fractionally below this floor and that is expected, not a regression.
   'apps/web-pwa/src/routes/**': {
-    lines: 84.78,
-    branches: 74.03,
-    uncoveredLines: 1704,
-    uncoveredBranches: 1721,
+    lines: 85.36,
+    branches: 75.1,
+    uncoveredLines: 1707,
+    uncoveredBranches: 1736,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the
@@ -623,21 +632,28 @@ export const coverageThresholds = {
   // unit test provoked. So the area both gained a well-covered file and lost the
   // uncovered copies, and the ratchet asked for the gain to be banked rather than
   // left as four points of hiding room. Measured by CI, pasted, not retyped.
-  // RE-PINNED 78.89/71.91 → 79.81/73.01 in #1474, and NONE OF IT WAS EARNED BY
-  // THAT PR, which is the whole reason it is worth a note. #1468 (the chef flow
-  // writing the turn it streamed) and #1475 (the canon function recording which
-  // ingredient matched what) landed between two CI runs of #1474, adding five test
-  // files — `chatService.serverWrite.test.ts` among them — and widening three
-  // existing web-pwa suites. #1474 was simply the first PR to be measured against
-  // the merged result, so the ratchet asked it to bank a gain it had not made.
-  // Banking is still right: an unbanked 1.10 points is 1.10 points of room for a
-  // later PR to delete those tests and land green. Measured by CI, reproduced
-  // locally after rebasing onto main, pasted, not retyped.
+  // BANKED 78.89/71.91 → 79.74/73.13 in #1470 (equipment-kit-links, #1465's
+  // Phase 1). The branch ratio rose 1.22 points past the 1.00-point staleness
+  // tolerance, which is what tripped the gate — earned coverage sitting unbanked
+  // is exactly what a later PR could delete and still land green. Both uncovered
+  // COUNTS fell too (759 → 736 lines, 576 → 562 branches), which is what says
+  // this is coverage earned by new tests, not a denominator that shrank. All four
+  // figures pasted verbatim from `coverage:ratchet:check`'s own block on CI's
+  // `ubuntu-latest` run, not retyped and not re-measured on this machine — this
+  // repo has a known macOS/Linux v8 branch-count divergence, and CI is the
+  // platform the gate actually enforces against.
+  // RE-PINNED again in #1474, and NONE OF IT WAS EARNED BY THAT PR — #1468 (the
+  // chef flow writing the turn it streamed) and #1475 (the canon function
+  // recording which ingredient matched what) landed between two CI runs of #1474,
+  // adding five test files and widening three existing web-pwa suites. #1474 was
+  // simply the first PR measured against the merged result. Banking is still
+  // right: unbanked headroom is room for a later PR to delete those tests and
+  // land green.
   'apps/web-pwa/src/lib/**': {
-    lines: 79.81,
-    branches: 73.01,
+    lines: 79.84,
+    branches: 73.43,
     uncoveredLines: 736,
-    uncoveredBranches: 565,
+    uncoveredBranches: 561,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
@@ -657,10 +673,10 @@ export const coverageThresholds = {
   // reason: the type only proves the OTHER two disjuncts, `busy` still has to
   // be re-checked in case a click and the busy flip land in the same tick.
   'apps/web-pwa/src/components/**': {
-    lines: 61.22,
-    branches: 46.02,
-    uncoveredLines: 114,
-    uncoveredBranches: 95,
+    lines: 77.89,
+    branches: 58.52,
+    uncoveredLines: 65,
+    uncoveredBranches: 73,
   },
 };
 

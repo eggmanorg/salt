@@ -1,8 +1,9 @@
 import { normaliseName } from '../../canon/index.js';
-import { resolveEquipmentItem } from '../../equipment/index.js';
+import { resolveEquipmentItem, resolveKitEntryEquipment } from '../../equipment/index.js';
 import type { EquipmentItem } from '../../equipment/index.js';
-import { resolveKitchenTool } from './resolveKitchenTool.js';
+import { kitchenToolForKitLabel } from './kitchenToolForKitLabel.js';
 import type { KitchenToolDoc } from '../../schemas/kitchenTool.js';
+import type { RecipeKitEquipmentLinkDoc } from '../../schemas/recipe.js';
 
 // Which words has our own content already used that the drawn vocabulary cannot
 // name? (Issue #882, Phase 4.)
@@ -37,7 +38,11 @@ import type { KitchenToolDoc } from '../../schemas/kitchenTool.js';
 
 /** The shape this query reads off a recipe — a full `Recipe` satisfies it. */
 export interface KitLabelSource {
-  readonly kit: readonly { readonly label: string }[];
+  readonly kit: readonly {
+    readonly label: string;
+    /** The recorded link, when the flow knew which of your things it meant (#1465). */
+    readonly equipment?: RecipeKitEquipmentLinkDoc | null;
+  }[];
 }
 
 /** The shape this query reads off a guided plan — a full `GuidedPlanDoc` satisfies it. */
@@ -68,7 +73,16 @@ export function unresolvedKitLabels(
 ): UnresolvedKitLabel[] {
   const mentions: string[] = [];
   for (const recipe of recipes) {
-    for (const entry of recipe.kit) mentions.push(entry.label);
+    for (const entry of recipe.kit) {
+      // A LINKED entry is not a gap in the vocabulary (issue #1465). It names one
+      // of the household's own things and draws through `equipmentIcons`, exactly
+      // as a resolved equipment label does below — offering it here would invite
+      // someone to mint a `kitchenTools` cartoon that no surface would ever show.
+      // A link that no longer resolves falls through and is counted, which is
+      // right: the row IS words with no picture again.
+      if (resolveKitEntryEquipment(entry, equipment)) continue;
+      mentions.push(entry.label);
+    }
   }
   for (const plan of plans) {
     // Both free-text container fields, on equal terms. A prep job's container and
@@ -98,8 +112,16 @@ export function unresolvedKitLabels(
     // Equipment first, and in the same order the renderer tries them — a branded
     // name contains generic tokens ("…Slow Cook Pot"), so asking the tool
     // vocabulary first would answer for a label the strip never shows a tool for.
+    //
+    // AND THROUGH THE SAME TOOL LOOKUP THE RENDERER USES (issues #1460, #1465).
+    // `kitchenToolForKitLabel`, not the bare `resolveKitchenTool`: a label that
+    // exactly names one of the manifest's accessories is refused an unrelated
+    // object's drawing, and a queue asking the plain resolver would drop that row
+    // as "already drawn" while the page showed nothing. The queue and the renderer
+    // answer with one function, for the reason the header states above — if the
+    // two disagreed by so much as a plural, the queue would hide a real gap.
     if (resolveEquipmentItem(name, equipment)) continue;
-    if (resolveKitchenTool(name, tools)) continue;
+    if (kitchenToolForKitLabel(name, tools, equipment)) continue;
     let group = groups.get(key);
     if (!group) {
       group = { spellings: new Map(), count: 0 };

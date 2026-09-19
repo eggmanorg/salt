@@ -17,6 +17,13 @@
  *  4. A CORRUPT PAGE IS SKIPPED, NOT THROWN ON, and an unreadable one is reported
  *     as "could not open" rather than "deleted".
  *
+ * A fifth arrived with issue #1476, which reversed #1377's naming call:
+ *
+ *  5. THE CHEF USES THE APP'S OWN WORDS. The assembled system prompt says neither
+ *     "recipe library" nor "kitchen note" — neither is a surface in Salt — in
+ *     either gate state, and the two headings match `nav.ts`. Prompt text again,
+ *     so a content assertion is the only thing that can hold it.
+ *
  * The summary and the filter are not tested here: both are pure and live in
  * `@salt/domain`, pinned by `pageSummary.test.ts` and `searchLibraryPages.test.ts`.
  */
@@ -284,12 +291,15 @@ describe('the kitchen-notes tools the model is shown', () => {
     });
   });
 
-  it('never calls these pages a library, in either description', () => {
-    // `LIBRARY_FRAMING` already spends that word on the household's saved
-    // RECIPES. Two things under one name in one prompt is a collision for the
-    // model, and this is what notices the word creeping back in.
-    expect(find?.description).not.toMatch(/library/i);
-    expect(read?.description).not.toMatch(/library/i);
+  it('calls these pages the Library, in both descriptions', () => {
+    // The reverse of what this test asserted before issue #1476: the word belongs
+    // to THESE pages, because `nav.ts` labels `#/library` "Library" and it opens
+    // them. Only one of the two surfaces may hold it — the recipes side is now
+    // "their recipes" — so this is what notices the collision coming back.
+    expect(find?.description).toMatch(/\bLibrary\b/);
+    expect(read?.description).toMatch(/\bLibrary\b/);
+    expect(find?.description).not.toMatch(/kitchen note/i);
+    expect(read?.description).not.toMatch(/kitchen note/i);
   });
 
   it('tells the model when NOT to call each of them', () => {
@@ -382,7 +392,7 @@ describe('chefChat — whose chat gets the notes tools', () => {
     expect(mockFlagEnabled).toHaveBeenCalledWith(LIBRARY_FLAG_KEY, 'u-2', undefined);
   });
 
-  it('gives a caller inside the flag all six tools and the notes section', async () => {
+  it('gives a caller inside the flag all six tools and the Library section', async () => {
     const { tools, system } = await runTurn(signedIn);
 
     expect(tools).toEqual([
@@ -393,10 +403,10 @@ describe('chefChat — whose chat gets the notes tools', () => {
       readKitchenNoteTool,
       writeKitchenNoteTool,
     ]);
-    expect(system).toContain('## Their own kitchen notes');
+    expect(system).toContain('## Their Library');
   });
 
-  it('gives a caller OUTSIDE the flag neither tool and no mention of notes', async () => {
+  it('gives a caller OUTSIDE the flag neither tool and no mention of the Library', async () => {
     // The #831 leak this gate exists to close: a page written under the flag must
     // not reach a household member the feature is hidden from, through an answer
     // no browser gate can see.
@@ -404,11 +414,63 @@ describe('chefChat — whose chat gets the notes tools', () => {
     const { tools, system } = await runTurn(signedIn);
 
     expect(tools).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
-    expect(system).not.toContain('## Their own kitchen notes');
+    expect(system).not.toContain('## Their Library');
     expect(system).not.toMatch(/findKitchenNotes/);
-    // And so cannot cause a note to be WRITTEN either — the write tool rides the
+    // And so cannot cause a page to be WRITTEN either — the write tool rides the
     // same gate rather than carrying one of its own.
     expect(tools).not.toContain(writeKitchenNoteTool);
+  });
+
+  // ─── The vocabulary, in both gate states (issue #1476) ─────────────────────
+  //
+  // The mechanism for the claim "the chef uses the app's own words". Neither
+  // "Recipe Library" nor "Kitchen Notes" is a surface anyone can find in Salt,
+  // and a chef that names them sends people nowhere — which is exactly what
+  // happened in production: a recipe written to the Library, reported as NOT in
+  // the "Recipe Library", and saved a second time by hand.
+  //
+  // Asserted on the ASSEMBLED system prompt rather than on the constants,
+  // because a phrase reintroduced in CHEF_SYSTEM_BASE, LIBRARY_FRAMING or
+  // KITCHEN_NOTES_FRAMING would be just as visible to the model and invisible to
+  // a per-constant check. Both gate states are covered because the Library
+  // sections only exist in one of them.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12 — a claim nothing guarantees is not the claim
+  // to make): this reaches only those two unconditional sections, and only the
+  // two exact bigrams below — not the bare word "library". `dbWith` above throws
+  // for every collection but `libraryPages`, so every GATED section (the
+  // equipment framing, favourites, kitchen memory, `## Current recipe`,
+  // variation framing) degrades to `''` in this fixture and never reaches
+  // `options['system']` at all — a phrase reintroduced in any of them is
+  // invisible here, not caught, whatever an earlier version of this comment
+  // claimed. Nor does `options['system']` cover tool descriptions, which ride
+  // separately in `options['tools']`: the Library side's two are pinned by the
+  // per-description assertions below; the recipes side's are not pinned by
+  // anything, and neither are the four schema `.describe()` files under
+  // `packages/domain/src/schemas`. See `docs/library.md`'s Rule 12 ledger.
+  //
+  // The tool IDENTIFIERS survive this deliberately: `findKitchenNotes` and
+  // `readKitchenNote` carry no space, so "kitchen note" does not match them.
+  it.each([
+    ['inside the flag', true],
+    ['outside the flag', false],
+  ])('never says "recipe library" or "kitchen note" to the model — %s', async (_label, inFlag) => {
+    mockFlagEnabled.mockResolvedValue(inFlag);
+    const { system } = await runTurn(signedIn);
+
+    expect(system).not.toMatch(/recipe library/i);
+    expect(system).not.toMatch(/kitchen note/i);
+  });
+
+  it('names the two surfaces as the app names them', async () => {
+    const { system } = await runTurn(signedIn);
+
+    // `nav.ts` labels `#/library` "Library"; `#/recipes` is Recipes. The two
+    // headings the chef reads have to match, or the reply points at nothing.
+    expect(system).toContain('## Their Library');
+    expect(system).toContain('## Their own recipes');
+    // And the separation #1377 built stays load-bearing under the new names.
+    expect(system).toContain('THE LIBRARY IS NOT THEIR RECIPES');
   });
 
   it('fails CLOSED, and asks PostHog nothing, when no verified caller reached the flow', async () => {

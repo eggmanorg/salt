@@ -816,6 +816,7 @@ const PROOFER = {
     humidity: null,
     standing: null,
   },
+  borrowedPicture: null,
   updatedAt: WRITTEN_AT,
 };
 
@@ -828,6 +829,7 @@ const KNIFE = {
   rules: [],
   note: '',
   environment: null,
+  borrowedPicture: null,
   updatedAt: WRITTEN_AT,
 };
 

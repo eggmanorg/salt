@@ -37,8 +37,8 @@
     <li class="shrink-0 max-w-full">
       <PictogramPill
         label={entry.label}
-        thumbnail={$kitIcons.kitIconFor(entry.label)}
-        version={$kitIcons.kitIconVersionFor(entry.label)}
+        thumbnail={$kitIcons.kitIconFor(entry)}
+        version={$kitIcons.kitIconVersionFor(entry)}
         data-testid="cook-step-kit-chip"
       />
     </li>

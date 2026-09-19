@@ -415,8 +415,15 @@ export async function assembleRecipeDraft(
     // `baseRecipe` and `mergeAmendedRecipe` spreads that draft over the existing
     // recipe, so omitting these two lines would silently erase the recipe's
     // creator every time someone amended it by chat. Neither the librarian nor
-    // the extractor knows who anyone is; on a create there is no one to credit
-    // yet, so both go out blank and the client stamps them on save.
+    // the extractor knows who anyone is, so on a create both go out BLANK from
+    // here and are stamped, if at all, by whoever writes the document:
+    //   * `authorRecipe` in create mode stamps them itself, from the name on its
+    //     wire input, because since issue #1431 it also WRITES the document;
+    //   * the two import flows leave them blank on purpose — an import is
+    //     attributed by the first in-place edit made to it;
+    //   * an edit-mode draft is carried through here and stamped in the browser
+    //     by whoever applies the amendment.
+    // The rule every one of them applies is `stampAttribution` in `@salt/domain`.
     createdBy: baseRecipe?.createdBy ?? '',
     lastEditedBy: baseRecipe?.lastEditedBy ?? '',
     // Spread, not `needs_approval: needsApproval` — the field is optional and

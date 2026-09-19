@@ -3,10 +3,12 @@ import {
   IdentifyRecipeKitAIOutputSchema,
   IdentifyRecipeKitOutputSchema,
   type IdentifyRecipeKitInput,
+  type IdentifyRecipeKitAIEntry,
   type RecipeKitEntryDoc,
+  type RecipeKitEquipmentLinkDoc,
 } from '@salt/domain/schemas';
 import { AI_TRIGGER_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
-import { equipmentSectionForKit } from './equipmentContext.js';
+import { equipmentSectionForKit, renderEquipmentManifestForKit } from './equipmentContext.js';
 import { ai } from '../genkit.js';
 import { flowModel } from '../ai/fakeModel.js';
 
@@ -73,6 +75,11 @@ For each piece of kit, list the ids of the steps that actually use it — every 
 A frying pan used at the start and returned to later belongs to both steps. Use ONLY step ids from the list you \
 are given; never invent one, and never use a step number in place of an id.
 
+## Which of their things
+Every entry has a \`ref\` field. It is null unless you are given a list of this household's own kit with \
+handles in brackets, in which case you copy the handle of the thing the entry names. It is a separate \
+question from the words: \`label\` stays what a cook would say out loud either way.
+
 Return one entry per distinct piece of kit — no duplicates. A short, honest list beats a long one: if a dish \
 needs a pan and a spoon, return a pan and a spoon.`;
 
@@ -91,12 +98,35 @@ needs a pan and a spoon, return a pan and a spoon.`;
  *     whitespace-insensitively, keeping the FIRST label's spelling and merging
  *     both step lists. The model asked for "Large frying pan" and "large frying
  *     pan" means one pan, and the strip must not show it twice.
+ *   - a `ref` that is not a handle from THIS call's kitchen list is dropped, and
+ *     the entry and its words are kept (issue #1465). Same posture as the step
+ *     ids above: an invented or stale handle costs the line its link, never its
+ *     existence. This is the trust boundary doing its job — a returned link is
+ *     untrusted, exactly as a returned step id is.
+ *
+ * @param handles The handle→ids map `renderEquipmentManifestForKit` built for
+ *   this same call. Empty (no manifest) means no `ref` can survive, which is the
+ *   correct reading: nothing was offered, so nothing can have been named.
  */
 export function sanitiseRecipeKit(
-  kit: readonly RecipeKitEntryDoc[],
+  kit: readonly IdentifyRecipeKitAIEntry[],
   stepIds: readonly string[],
+  handles: ReadonlyMap<string, { itemId: string; accessoryId: string | null }> = new Map(),
 ): RecipeKitEntryDoc[] {
   const realSteps = new Set(stepIds);
+  const linkFor = (ref: string | null): RecipeKitEquipmentLinkDoc | null => {
+    if (!ref) return null;
+    // The prompt SHOWS the handle in brackets — `[k3.2] Steam Basket` — but the
+    // map is keyed on the bare handle `renderEquipmentManifestForKit` minted, so a
+    // model that (plausibly, reading "copy its handle EXACTLY") answers back
+    // `ref: "[k3.2]"` must still resolve, or the link is dropped silently. Harmless
+    // for the bracket-free answer, which is the common case.
+    const trimmed = ref.trim();
+    const key =
+      trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1).trim() : trimmed;
+    const ids = handles.get(key);
+    return ids ? { itemId: ids.itemId, accessoryId: ids.accessoryId } : null;
+  };
   // Insertion-ordered, so the kit stays in the order the model listed it —
   // which, asked to read a method top to bottom, is roughly the order it is
   // needed in.
@@ -106,14 +136,21 @@ export function sanitiseRecipeKit(
     if (!label) continue;
     const key = label.toLowerCase().replace(/\s+/g, ' ');
     const steps = entry.stepIds.filter((id) => realSteps.has(id));
+    const equipment = linkFor(entry.ref);
     const existing = byKey.get(key);
     if (existing) {
       // Merge rather than replace: the two mentions may each know a different
-      // half of where the thing is used.
+      // half of where the thing is used — and, since #1465, one of them may be
+      // the only one that said which of your things it is. The FIRST surviving
+      // link wins, matching the first label's spelling winning above.
       const merged = new Set([...existing.stepIds, ...steps]);
-      byKey.set(key, { label: existing.label, stepIds: [...merged] });
+      byKey.set(key, {
+        label: existing.label,
+        stepIds: [...merged],
+        equipment: existing.equipment ?? equipment,
+      });
     } else {
-      byKey.set(key, { label, stepIds: [...new Set(steps)] });
+      byKey.set(key, { label, stepIds: [...new Set(steps)], equipment });
     }
   }
   return [...byKey.values()];
@@ -150,7 +187,12 @@ export const identifyRecipeKitFlow = ai.defineFlow(
     // it does for the chef and the librarian — it is policy about the kitchen, not
     // part of the recipe being read. '' (no manifest, or an unreadable one) leaves
     // the system prompt byte-for-byte what it was before #954.
-    const equipmentSection = equipmentSectionForKit(equipment);
+    // The rendering and the handle map, from one pass over the same items (issue
+    // #1465): the model is shown `[k3.2] Steam Basket` and answers `ref: "k3.2"`,
+    // and only this map turns that back into manifest ids. It never leaves the
+    // server, so a handle the model invents resolves to nothing.
+    const { rendered, byHandle } = renderEquipmentManifestForKit(equipment);
+    const equipmentSection = equipmentSectionForKit(rendered);
     const system = equipmentSection
       ? `${IDENTIFY_KIT_SYSTEM}\n\n${equipmentSection}`
       : IDENTIFY_KIT_SYSTEM;
@@ -185,6 +227,7 @@ export const identifyRecipeKitFlow = ai.defineFlow(
       kit: sanitiseRecipeKit(
         parsed.data.kit,
         steps.map((s) => s.id),
+        byHandle,
       ),
     };
   },

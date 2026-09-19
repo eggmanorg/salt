@@ -26,6 +26,25 @@ export const AuthorRecipeInputSchema = z.object({
   // than force-preserved. `recipeId` wins if both are somehow set; a variation
   // chat has no `recipeId` until it claims the recipe it produced.
   basedOnRecipeId: z.string().nullable().optional(),
+  // Who is saving it, as a display NAME (issue #1431). The flow writes the recipe
+  // it authors on the create path, so the attribution has to travel with the call:
+  // `createdBy`/`lastEditedBy` used to be stamped in the browser on the statement
+  // after the `await`, which is precisely the statement a locked phone never runs.
+  // Applied through `stampAttribution` from `@salt/domain`, the same function the
+  // browser applies to every other recipe write.
+  //
+  // A name, never a uid: uids appear nowhere in the family-shared data model, and
+  // both fields are snapshots of `Member.name`. It GRANTS NOTHING — `recipes` is
+  // family-shared, every member can already write any `createdBy` they like
+  // straight to `recipes/{id}`, and the field is audit only: never checked on a
+  // read, never pinned on an update, never a gate.
+  //
+  // OPTIONAL, and that is load-bearing for the same reason `speaker` is on
+  // `ChefChatInputSchema`: a browser left on an older bundle after a deploy sends
+  // no name and must get a working recipe rather than a rejected call. Absent —
+  // and equally when the roster has not loaded — both fields are left exactly as
+  // the assembler produced them (blank on a create), never a placeholder.
+  authorName: z.string().optional(),
 });
 
 export type AuthorRecipeInput = z.infer<typeof AuthorRecipeInputSchema>;

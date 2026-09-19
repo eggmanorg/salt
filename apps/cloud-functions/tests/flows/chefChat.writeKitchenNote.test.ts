@@ -454,17 +454,22 @@ describe('the write tool the model is shown', () => {
     expect(tool?.description).toMatch(/not permission to rewrite/i);
   });
 
-  it('tells the model that the body REPLACES the note, and that it cannot delete', () => {
+  it('tells the model that the body REPLACES the page, and that it cannot delete', () => {
     // A description assertion, kept because it is still a true, useful claim —
     // but it is prompt text, not a behaviour guarantee, and the blank-body test
     // above is what actually pins "cannot empty one" rather than merely the
     // sentence asserting it.
-    expect(tool?.description).toMatch(/REPLACES everything the note held/);
-    expect(tool?.description).toMatch(/cannot delete a note/i);
+    expect(tool?.description).toMatch(/REPLACES everything the page held/);
+    expect(tool?.description).toMatch(/cannot delete a page/i);
   });
 
-  it('never calls these pages a library', () => {
-    expect(tool?.description).not.toMatch(/library/i);
+  it('calls these pages the Library, and never "kitchen notes"', () => {
+    // The reverse of what this asserted before issue #1476. "Kitchen Notes" is
+    // not a surface anyone can find in Salt; `nav.ts` calls `#/library`
+    // "Library", and the chef has to say what the user can tap. Terminology
+    // only — every guarantee this file pins is untouched by it.
+    expect(tool?.description).toMatch(/\bLibrary\b/);
+    expect(tool?.description).not.toMatch(/kitchen note/i);
   });
 });
 

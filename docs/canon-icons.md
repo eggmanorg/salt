@@ -70,6 +70,40 @@ and free — every plan that already says "griddle pan" gains a picture with not
 migrated and nothing regenerated — and a name that matches nothing renders as words
 with no picture, which is the correct and complete answer to a miss.
 
+**Since #1465 a kit entry can RECORD which of your things it means, and that is
+read first.** `recipes[].kit[].equipment` is `{ itemId, accessoryId | null }`,
+written by the kit flow at the moment it had the manifest in front of it. Where it
+resolves it is authoritative and no word is read: the linked thing's picture, or
+none. It is what finally reaches a FAMILY member — "Tefal non-stick 28cm" carries
+no word of "Frying Pans", and no rule over the words could ever find it. A link to
+something since deleted resolves to nothing and the entry reads as words again, so
+the manifest needs no cleanup job and nothing is ever written back to a recipe.
+This NARROWS the words-only contract above; it does not repeal it. `kitchenTools`
+ids are still never written onto a recipe, because a vocabulary grows and an
+identity does not.
+
+**The link is now the only thing that GROUPS a kit** (#1465 Phase 4).
+`groupKitByEquipment` used to carry two further passes that read the words to decide
+what nested under what; the production re-run of 2026-09-19 relinked all 66 recipes
+and replaying the query over the live manifest showed no recipe grouping differently
+without them, so they were deleted. An entry with no resolving link is a flat row.
+**The words still decide the PICTURE, though, and not in the abstract:** every kit
+surface reads `resolveKitEntryItem` — the link, then `resolveEquipmentItem` — and the
+same measurement found two stored lines (`"frying pan"`, twice, both reaching the
+Frying Pans family) that carry no link and draw that family's picture through the
+word half. Remove it and those two rows go blank; `apps/web-pwa/tests/kitIcons.test.ts`
+pins them.
+
+**And a bare accessory name never borrows an unrelated object's drawing** (#1460).
+`kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, is what every kit
+surface goes through: a label that exactly names one of the manifest's accessories
+keeps a curated tool only when the vocabulary explains the NAME rather than a word
+inside it. The Magimix's sealed "Thermo Bowl" was drawn as a plain mixing bowl and
+the AMZCHEF's "Grill plate" as a dinner plate. Where a curation decision is needed
+("an egg whisk is an ordinary whisk"), it is made in the vocabulary, as a matcher
+— never inferred. The admin unresolved queue composes the identical function, so a
+label the renderer declines is visible there as the gap it is.
+
 **Since #954 a kit label is asked of TWO vocabularies, equipment first.** A label
 can now name a specific appliance this household owns — the kit flow is handed the
 manifest and writes the item's own name — and those already have better pictures of
@@ -159,7 +193,7 @@ document.** The whole kit is ONE doc, `equipmentManifest/current`, holding an
 array. A `thumbnail` on an array element would mean ticking one accessory's checkbox
 could wipe the icons off every item, and the trigger re-firing on its own writes.
 
-So equipment's icons live in a **sibling collection**, `equipmentIcons/{itemId}` —
+So equipment's icons live in a **sibling collection**, `equipmentIcons/{docId}` —
 the `canonEmbeddings` move (#410) and the `guidedPlans` move: when a field and its
 host document have different owners and different read audiences, the field gets its
 own collection. Two further consequences follow, and both are departures from the
@@ -178,6 +212,110 @@ canon shape rather than variations on it:
   and a brief is a sentence you can correct where a wrong picture is only a re-roll.
   Only the description is ever shown or editable; the style anchors stay in code.
 
+  **The equipment list's Draw button (#1458) does not bypass this.** It is a
+  one-press route TO this panel, `push('/equipment/{id}')`, never a second place
+  that draws. #1458 asks for one press from the list to close a different gap —
+  finding which record has no picture — and Daniel's ruling on the review that
+  first tried to also draw in place is that the friction being removed is the
+  hunting, never this reading. #1465's `KitPicturePicker.svelte` hands a
+  pictureless row noticed on a recipe to this same route for the same reason:
+  there is deliberately only one host for this panel, and only one gate.
+
+### An entry may have a picture of its own (#1465, Phase 2)
+
+An accessory or a family member — the steam basket, the Lodge skillet — can carry
+its own drawing, and the document id is the **accessory's uuid**. That is the whole
+of the mechanism: accessory ids come from the same generator as item ids and are
+unique across the manifest, so `firestore.rules`'s `{itemId}` wildcard, the orphan
+sweep's `equipment-icons/ → equipmentIcons` join, `drawEquipmentIcon`,
+`setIconUpload` and `getImagePrompt` all carry over untouched. #1460 priced this as
+"probably an epic" on the assumption of a second keying scheme; there isn't one.
+
+Two things did **not** carry over, both in `onEquipmentManifestWritten`:
+
+- **The reconcile pass deletes every icon doc outside a live set it is handed**, and
+  that set was the items alone — so the first manifest write after entries could own
+  pictures would have deleted all of them. It now asks `equipmentIconOwnerIds`
+  (`packages/domain/src/equipment/queries/equipmentIcon.ts`), and
+  `tests/triggers/onEquipmentManifestWritten.test.ts` goes red if it stops.
+- **The brief-authoring loop stays item-only.** There are ~140 entries, most never
+  named in a recipe; authoring each a description would be ~140 text calls on every
+  manifest save for words nobody asked to read. **Nothing is ever drawn or described
+  for an entry automatically.** The first act is a press — the `authorEntryIconBrief`
+  callable, from the entry's row on the equipment page — and after that the entry is
+  the item flow unchanged: read the description, correct it, Draw.
+
+`authorEntryIconBrief` is the one callable here that **persists** what it authors,
+unlike `describeEquipmentSubject` below, and for a reason that does not generalise:
+there is no document yet, so there is no occupied caption for an unaccepted sentence
+to overwrite. It is idempotent on the subject name, so a second press costs nothing
+until the entry or its record has been renamed.
+
+The words a brief is authored from are `equipmentEntrySubjectName`'s, and they are
+not always the entry's own: a family member stands alone ("De Buyer Mineral B Carbon
+Steel 28cm"), while an appliance's part is qualified by its appliance ("Steam Basket
+(Cosori 5L Rice Cooker)") — a steam basket for _what_ is the difference between a
+specific drawing and a generic one. Nothing displays that string; every heading and
+row shows the entry's own name.
+
+At display time `kitIcons.ts` prefers the entry's picture over its record's, and a
+**hidden** entry picture stops the fall from the entry to the record — "hidden" is
+the answer for that row, and the record's picture would be answering a different
+question. It does **not** stop the fall from the entry's own picture to that same
+entry's _borrowed_ one (below): a borrow is not a different question, it is the
+same row pointed at a different drawing, and it can be set after a hide. Blocking
+that too would make the write permanent and silent. An entry described but not yet
+drawn falls back the same way, which is what keeps the ~140 undrawn entries free.
+
+### A picture can be borrowed, and asked for where the miss is noticed (#1465, Phase 3)
+
+A thing you own can be **pointed at a drawing that already exists** instead of
+being given one: `borrowedPicture: { family: 'equipment' | 'kitchenTool', id }` on
+`EquipmentItemSchema` and `AccessorySchema`, `.default(null)` and with **no
+refine** — the manifest is one document, so a refine on a reference whose target
+was later deleted would take the whole equipment list down. A dangling reference
+resolves to nothing at display time and the row falls back, exactly as a dangling
+kit link does.
+
+**A reference, never a copied URL.** Every icon family reuses its Storage object
+path on a redraw and writes the bytes `immutable`, and the cache-bust nonce lives
+on the _source_ document — so a copied URL is stale the moment the source is
+redrawn and has no nonce to fix it. Reading through the id is what makes
+"redraw the frying pan" reach every pan borrowing it. `kitIcons.ts` owns the
+reading, and the order is: entry's own → entry's borrowed → record's own →
+record's borrowed → none.
+
+**The picker is on the recipe page, and that overturns a decision.** #1458
+rejected "a per-recipe one-tap add at the point of the miss"; #1465 reverses it,
+because the miss is noticed on the recipe and sending the person to Admin is the
+friction that leaves gaps open. #1458's concern — one-row-at-a-time minting is how
+#956's near-duplicates arose — is answered by **order**, not by removal:
+`suggestKitchenToolParent` leads — filtered to a tool that actually has a
+drawing, the same filter the searchable list beside it applies, since the query
+itself ranks on shared words alone and does not read `thumbnail` — the
+searchable list of existing drawings comes next, and "draw a new one" sits
+under both.
+
+**Two rows, two different acts**, and they are indistinguishable on screen. Which
+one a row gets is decided by `resolveKitEntryItem` — the recorded link, falling
+back to the words where there is none — the same function `kitIcons.ts` renders
+through, so a row the strip already draws as "one of your things" cannot take the
+other act just because this dialog asked a narrower question:
+
+- a row that **resolves to one of your things** gets a borrowed picture on the
+  manifest — a fact about that object. "Draw one for it" hands over to the
+  equipment record's page, where #877's read-the-description gate already lives;
+  there is deliberately no second host for that panel.
+- a row that resolves to nothing is **ordinary words**, so choosing writes a
+  **matcher** on the chosen tool (every recipe that already says them lights up,
+  nothing migrated) and drawing mints a tool named after them. Equipment pictures
+  are not offered there: a record has no matchers, so there would be nothing for
+  the words to be taught to.
+
+What this does **not** do is re-point the recipe's link. "This 'large frying pan'
+is my Tefal 28cm" is a per-recipe edit of what the line _means_, which is a
+different act, and the issue leaves it out.
+
 **The description may also be authored from a photograph (#947).** `describeEquipmentSubject`
 gained a third mode alongside authoring-from-name and revising-from-a-correction:
 **Use a photo** on the item page sends a reference photo of the actual appliance, and
@@ -186,6 +324,37 @@ with a picture", discarding whatever was in the box exactly as Start over does. 
 photo is REQUEST-SCOPED: it goes to Gemini as a media prompt part and is never
 written anywhere — no Storage object, no Firestore field, no trace on the item —
 only the sentence it produces persists, and only once **Draw** is pressed.
+
+### A missing picture says so, and is counted (#1458, Phase 1)
+
+Production held 22 equipment records and 20 drawings on 2026-09-18. Both undrawn
+records rendered as the same pale placeholder tile a record whose art is still
+generating renders, so the only way to find one was to go looking — and nobody did,
+for months. The fix is a sentence and a number, not a pipeline.
+
+- **`undrawnEquipment`** (`packages/domain/src/equipment/queries/undrawnEquipment.ts`)
+  is the predicate, and its header is where the definition lives. Three things are
+  **not** gaps: a `"hidden"` thumbnail (the user's answer for that row), a
+  **borrowed** picture (#1465 — a row showing a picture is not missing one), and an
+  **entry's** missing drawing (nothing is ever drawn or described for one
+  automatically, and ~140 of them would be a badge that never falls).
+- **The equipment list says "Not drawn yet"** on a marked row and offers **Draw**
+  beside it, at the same rung as the accessory and rule counters — a fact about the
+  row, not a warning. Draw is a one-press route to the record's page, where the
+  description is shown and #877's gate holds; see the boundary paragraph under
+  #877 above.
+- **The Admin nav badge gains a third summand** (`apps/web-pwa/src/lib/pictureGaps.ts`),
+  beside canon's and product forms' `needs_approval` counts: undrawn records plus
+  `unresolvedKitLabels`' rows. The two can never name the same thing, because that
+  query already excludes a label resolving to one of the household's records.
+
+**The badge is a floor, not a total**, and deliberately. `unresolvedKitLabels` also
+reads a guided plan's two free-text container fields, and `/admin/kitchen-tools`
+hands it those from a whole-collection read it performs once on arrival. The badge is
+computed on every admin's boot from stores the app already subscribes to, and buying
+a collection read there to find the labels that appear in a plan and in no recipe is
+not worth it. A plan-only gap is real, is listed on that page, and is not in the
+count.
 
 ### The description's two lives (#1433)
 

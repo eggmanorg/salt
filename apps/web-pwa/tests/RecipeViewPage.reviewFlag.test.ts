@@ -1030,7 +1030,7 @@ describe('RecipeViewPage — a just-imported recipe', () => {
   });
 
   // ─── The pre-#616 rescue, and what is left of it (#1319 Phase 8) ────────────
-  // `persistImportedRecipe` (CF) does NOT fail an import when its Firestore write
+  // `persistAuthoredRecipe` (CF) does NOT fail an import when its Firestore write
   // fails: the callable still returns the recipe, the client stashes it, and the
   // page paints it. That used to degrade to "the user saves it themselves" in the
   // editor — a surface Phase 8 deleted.
@@ -1048,7 +1048,7 @@ describe('RecipeViewPage — a just-imported recipe', () => {
   // `recipeService.coalescedEdit.test.ts`, not restated here — two halves, each
   // pinned where it lives.
   //
-  // Pinned at all because `persistImportedRecipe.ts` now ASSERTS this recovery in
+  // Pinned at all because `persistAuthoredRecipe.ts` now ASSERTS this recovery in
   // prose. Left unpinned it is the exact shape CLAUDE.md rule 12 is about: a
   // promise that two unrelated pieces of code happen to keep, either of which
   // could move without anything objecting.
@@ -1077,7 +1077,7 @@ describe('RecipeViewPage — a just-imported recipe', () => {
   });
 
   it('writes nothing if the cook only reads it — the boundary, not a bug', () => {
-    // The honest half of the claim above, and the reason `persistImportedRecipe`
+    // The honest half of the claim above, and the reason `persistAuthoredRecipe`
     // states a boundary rather than "it recovers". Reading a rescued import and
     // walking away loses it, and nothing on screen says so.
     vi.mocked(takeImportedDraft).mockReturnValue(makeRecipe({ title: 'Never Written' }));
