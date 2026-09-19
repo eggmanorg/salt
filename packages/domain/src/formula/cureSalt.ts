@@ -152,6 +152,11 @@ export type CureSaltProductInfo = {
    * Matched with word boundaries over text normalised by `normalise` below, so
    * "cure #1", "Cure No. 1" and "cure 1" are one keyword and no compound word can
    * match by accident.
+   *
+   * WORD BOUNDARIES ARE NOT ENOUGH ON THEIR OWN, because two of these keywords end
+   * in a bare digit and English puts a duration in exactly that slot: "cure 2 days"
+   * is a step, not a product. `DURATION_WORDS` below is the second half of the
+   * guard — see `guessSaltProduct`.
    */
   keywords: readonly string[];
 };
@@ -269,6 +274,71 @@ function normalise(text: string): string {
     .trim()} `;
 }
 
+/**
+ * The words that turn a keyword's trailing digit into a COUNT rather than a name.
+ *
+ * "cure 2" is a product and "cure 2 days" is a step, and word-boundary matching alone
+ * cannot tell them apart: ' cure 2 ' is a genuine, boundary-respecting occurrence
+ * inside ' cure 2 days ' (#1442, PR #1427 review). Both digit-ending keywords —
+ * `cure 1` and `cure 2` — sit in the one slot English also uses for a duration, so a
+ * step or a note wording can make the recogniser propose the wrong jar.
+ *
+ * DELIBERATELY A SHORT BLOCKLIST rather than a grammar, and applied to every keyword
+ * rather than only the digit-ending ones: "salvianda weeks" is not a phrase anyone
+ * writes, so the uniform rule costs nothing and has no second branch to drift. Its
+ * real boundary, stated rather than hidden (CLAUDE.md rule 12): it catches the
+ * duration that FOLLOWS the keyword and nothing else — "cure 2 d", an abbreviation
+ * not listed here, still proposes. That is the same bargain the keyword list itself
+ * makes, and it costs a tap either way, never a bound.
+ */
+const DURATION_WORDS: readonly string[] = [
+  'min',
+  'mins',
+  'minute',
+  'minutes',
+  'hr',
+  'hrs',
+  'hour',
+  'hours',
+  'day',
+  'days',
+  'night',
+  'nights',
+  'week',
+  'weeks',
+  'month',
+  'months',
+  'year',
+  'years',
+];
+
+/**
+ * Does this keyword occur in the text as a NAME rather than as a count?
+ *
+ * Every occurrence is considered, not just the first, so "cure 2 days in cure 2"
+ * still finds the product on the second pass. `normalise` leaves the needle
+ * space-delimited on both sides, so the text immediately after a match begins at the
+ * next word.
+ */
+function occursAsName(text: string, keyword: string): boolean {
+  const needle = normalise(keyword);
+  for (let from = 0; ; from += 1) {
+    const at = text.indexOf(needle, from);
+    if (at === -1) return false;
+    // Sliced at the next space rather than `split(' ')[0] ?? ''`: under
+    // `noUncheckedIndexedAccess` that spelling needs a `??` whose right-hand side
+    // `split` can never produce, which is an untestable branch — and the coverage
+    // ratchet is right to refuse one. Both arms here are real: a match at the very
+    // end of the text has no following space (`2.5 g cure #1`), and a match with a
+    // word after it does (`cure 2 days`).
+    const rest = text.slice(at + needle.length);
+    const space = rest.indexOf(' ');
+    const nextWord = space === -1 ? rest : rest.slice(0, space);
+    if (!DURATION_WORDS.includes(nextWord)) return true;
+    from = at;
+  }
+}
+
 /** An ingredient as the recogniser sees it — text the CALLER has already resolved. */
 export type SaltProductGuessEntry = {
   /**
@@ -299,7 +369,7 @@ export type SaltProductGuessEntry = {
 export function guessSaltProduct(entry: SaltProductGuessEntry): SaltProduct | null {
   const text = normalise(entry.canonName ?? entry.rawText);
   for (const [product, info] of Object.entries(CURE_SALT_PRODUCTS)) {
-    if (info.keywords.some((keyword) => text.includes(normalise(keyword)))) {
+    if (info.keywords.some((keyword) => occursAsName(text, keyword))) {
       return product as SaltProduct;
     }
   }

@@ -43,29 +43,56 @@ export function describeBoundWindow(violation: BoundViolation): string {
 }
 
 /**
- * A refused solve, worded — the subject, its percentage and the window it missed.
+ * The subject a violation is about, in the recipe's own words where it still has any.
  *
- * `label` is the recipe's own words for the line, looked up by the caller. An
- * ingredient that has left the recipe gets the generic subject rather than its id: a
- * blank reads as "we no longer know what this was", which is the same choice
+ * An ingredient that has left the recipe gets the generic subject rather than its id:
+ * a blank reads as "we no longer know what this was", which is the same choice
  * `freezeBatch` makes for a quantity's label, where an id reads as gibberish.
+ */
+function subjectOf(
+  violation: BoundViolation,
+  label: (ingredientId: string) => string | undefined,
+): string {
+  const named = label(violation.ingredientId);
+  return named === undefined || named === '' ? 'one ingredient' : `“${named}”`;
+}
+
+/**
+ * A refused solve, worded — every subject, its percentage and the window it missed.
  *
- * The sentence ends in a full stop and carries no advice. Each surface appends its
- * own next step.
+ * `label` is the recipe's own words for the line, looked up by the caller.
+ *
+ * EVERY VIOLATION, NOT MERELY THE FIRST (#1442, PR #1427 review). `boundViolationsIn`
+ * walks all the components and returns everything it found, so a formula that misses
+ * two windows at once arrives here with two. Wording only `violations[0]` made the
+ * second invisible until the first was fixed — a person would correct one percentage,
+ * be refused again, and have no way to know a second problem had been there all along.
+ * A refusal that hides half of what it is refusing for is worse than a long one.
+ *
+ * The first clause's wording is unchanged from the single-violation case that shipped,
+ * because that is the overwhelmingly common one and it reads well; the rest are added
+ * as their own sentences rather than folded into a list, so no sentence gets long.
+ *
+ * It ends in a full stop and carries no advice. Each surface appends its own next step.
  */
 export function describeBoundViolation(
   reason: { readonly violations: readonly BoundViolation[] },
   label: (ingredientId: string) => string | undefined,
 ): string {
-  const violation = reason.violations[0];
-  if (violation === undefined) {
+  const [first, ...rest] = reason.violations;
+  if (first === undefined) {
     // A `boundViolation` with an empty list cannot be produced by
     // `boundViolationsIn`, which only returns the reason when it found one. Worded
     // anyway rather than thrown: this is copy, and copy does not get to be the thing
     // that breaks a screen.
     return 'One of the percentages is outside the window it has to sit in.';
   }
-  const named = label(violation.ingredientId);
-  const subject = named === undefined || named === '' ? 'one ingredient' : `“${named}”`;
-  return `That would put ${subject} at ${violation.percent}% of the basis, ${describeBoundWindow(violation)}.`;
+  const sentences = [
+    `That would put ${subjectOf(first, label)} at ${first.percent}% of the basis, ${describeBoundWindow(first)}.`,
+    ...rest.map(
+      (violation) =>
+        `It would also put ${subjectOf(violation, label)} at ${violation.percent}% of the basis, ${describeBoundWindow(violation)}.`,
+    ),
+  ];
+  return sentences.join(' ');
 }

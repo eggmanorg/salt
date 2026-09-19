@@ -19,6 +19,7 @@
   } from '@salt/ui-components';
   import type { BatchDoc } from '@salt/domain/schemas';
   import { logObservation } from '../../lib/batchObservationService.js';
+  import { parsePhReading, phFieldError } from '../../lib/phReading.js';
   import { defaultObservationStageId } from './batchDisplay.js';
   import { addToast } from '../../lib/toastStore.js';
 
@@ -212,19 +213,16 @@
 
   // BOUNDED 0–14, and refused HERE, on the field, while the number is still being
   // typed (issue #1407). A strip or a probe cannot read outside that, so a value
-  // beyond it is a typo rather than a measurement. `BatchObservationSchema.ph`
-  // carries the same bound as the rail behind it; this is not a second opinion, it
-  // is the same one said early enough to be useful — exactly the posture the
-  // humidity below already takes.
-  const ph = $derived.by(() => {
-    const raw = phText.trim();
-    if (raw === '') return null;
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0 && value <= 14 ? value : null;
-  });
-  const phError = $derived(
-    phText.trim() !== '' && ph === null ? 'A pH from 0 to 14, or leave it blank.' : '',
-  );
+  // beyond it is a typo rather than a measurement.
+  //
+  // THROUGH `lib/phReading.js`, which runs `PhSchema` rather than restating it
+  // (#1442). This box and the formula screen's target box used to carry the same four
+  // lines and the same sentence twice over, each asserting in a comment that it was
+  // not a second opinion — which is what `sharedHelperGuard` exists to stop. It still
+  // is not a second opinion; it is now the rail's own bound, said early enough to be
+  // useful, exactly the posture the humidity below takes.
+  const ph = $derived(parsePhReading(phText));
+  const phError = $derived(phFieldError(phText));
 
   // The same parse-and-say-it-on-the-field shape as the weight above, twice
   // (issue #1286). Blank is "not measured", which is most readings.

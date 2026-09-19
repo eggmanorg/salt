@@ -649,6 +649,13 @@ export const coverageThresholds = {
   // `ubuntu-latest` run, not retyped and not re-measured on this machine — this
   // repo has a known macOS/Linux v8 branch-count divergence, and CI is the
   // platform the gate actually enforces against.
+  // RE-PINNED again in #1474, and NONE OF IT WAS EARNED BY THAT PR — #1468 (the
+  // chef flow writing the turn it streamed) and #1475 (the canon function
+  // recording which ingredient matched what) landed between two CI runs of #1474,
+  // adding five test files and widening three existing web-pwa suites. #1474 was
+  // simply the first PR measured against the merged result. Banking is still
+  // right: unbanked headroom is room for a later PR to delete those tests and
+  // land green.
   'apps/web-pwa/src/lib/**': {
     lines: 79.84,
     branches: 73.43,

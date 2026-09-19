@@ -415,6 +415,10 @@ export {
   DoughAmountSchema,
   FormulaSchema,
   FormulaTargetSchema,
+  // The 0–14 pH scale, in the one place it is written (#1442). Exported because the
+  // screens that ask for a pH refuse it on the field, and they must refuse it against
+  // this bound rather than a copy of it.
+  PhSchema,
   SaltProductSchema,
 } from './formula.js';
 export type {

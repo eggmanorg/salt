@@ -401,6 +401,35 @@ describe('guessSaltProduct', () => {
     expect(guessSaltProduct({ canonName: null, rawText: 'manicure 1' })).toBeNull();
   });
 
+  it('reads a trailing digit as a COUNT when a duration follows it (#1442)', () => {
+    // WORD BOUNDARIES DO NOT SETTLE THIS ONE. ' cure 2 ' is a genuine,
+    // boundary-respecting occurrence inside ' cure 2 days ', so the guard that stops
+    // "manicure 1" does nothing here — and a step or a note wording would have made
+    // the recogniser propose Cure #2 on a line that names no product at all.
+    for (const text of [
+      'cure 2 days',
+      'cure 1 day in the fridge',
+      'cure 2 weeks, then hang',
+      'cure 1 hour',
+      'cure 2 months',
+      'cure 1 night',
+    ]) {
+      expect(guessSaltProduct({ canonName: null, rawText: text })).toBeNull();
+    }
+  });
+
+  it('still proposes when the words after the digit are not a duration', () => {
+    // The guard is narrow on purpose: it must not cost the common case. A digit
+    // followed by anything that is not a time unit is still the product's name.
+    expect(guessSaltProduct({ canonName: null, rawText: 'cure 2 for the salami' })).toBe('cure2');
+    expect(guessSaltProduct({ canonName: null, rawText: '2.5 g cure #1' })).toBe('cure1');
+    // And every occurrence is considered, not merely the first — a line that says it
+    // both ways still finds the product.
+    expect(guessSaltProduct({ canonName: null, rawText: 'cure 2 days using cure 2' })).toBe(
+      'cure2',
+    );
+  });
+
   it('proposes nothing for the ordinary ingredients of a loaf', () => {
     for (const text of ['500 g strong white flour', '350 g water', '10 g salt', '7 g yeast']) {
       expect(guessSaltProduct({ canonName: null, rawText: text })).toBeNull();

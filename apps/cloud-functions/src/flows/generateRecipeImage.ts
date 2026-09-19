@@ -243,6 +243,28 @@ export const PLACEHOLDER_SCENE_FALLBACK = `First read the MOOD this picture is f
 // STAGE is a subject decision and belongs to the brief, while the anchors hold
 // style and prohibitions. So these reference what the direction above leads with.
 //
+// ─── AND THE BRIEF IS NOT YET TOLD IT IS A CURE (#1442) ───────────────────────
+//
+// THE PARAGRAPH ABOVE DESCRIBES THE INTENDED DIVISION OF LABOUR; IT IS NOT A
+// GUARANTEE THIS FLOW CURRENTLY GIVES, and the difference is stated here rather
+// than left as an unqualified absolute (CLAUDE.md rule 12).
+// `describeRecipeScene` has no `cure` arm — a cure falls through its `default`
+// case to the ordinary recipe prompt, which asks for "how it is plated and in
+// what vessel". So on the common path, where a recipe HAS a stored scene brief,
+// the "direction above" these anchors defer the stage to was written by a prompt
+// that believed it was looking at a plated dinner, while the anchors below go on
+// to say "do NOT plate it as a dinner". The two pull against each other, and the
+// anchors win only because they are appended last.
+//
+// WHERE THE CLAIM IS TRUE TODAY is the no-brief path: `CURE_SCENE_FALLBACK` just
+// below IS cure-aware and reads the kind of cure before choosing a stage. That
+// fallback is the only cure-shaped direction this flow has.
+//
+// LEFT AS IS DELIBERATELY. #1404 pre-authorised leaving `describeRecipeScene`
+// alone, and whether it grows a fifth arm is a spec call rather than a tidy-up:
+// it changes what every cure's stored brief says. Until that call is made, this
+// comment states the boundary instead of asserting the guarantee.
+//
 // The one prohibition of its own is restaurant plating: a charcuterie board
 // styled by a stylist is a picture of a restaurant, and what is being recorded
 // here is something somebody made and is keeping.
