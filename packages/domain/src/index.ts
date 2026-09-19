@@ -113,6 +113,10 @@ export {
   // what the manifest trigger DELETES, so it is a named query, not a `.map()`.
   equipmentEntrySubjectName,
   equipmentIconOwnerIds,
+  // …and which records have no picture at all (issue #1458) — the backlog half
+  // of the same collection. Read by the equipment list's "Not drawn yet" marker
+  // and by the Admin badge, so a gap arrives rather than waiting to be found.
+  undrawnEquipment,
   // The display-time join from a free-text kit label to the item this household
   // actually owns (issue #954) — the specific half of the question
   // `resolveKitchenTool` answers generically. Tried FIRST by the callers of both:
@@ -405,6 +409,10 @@ export type {
   UpdateKitchenToolInput,
   InstanceNamedKitchenTool,
   KitchenToolMatch,
+  // What `unresolvedKitLabels` reads off a recipe. Named here so a caller that
+  // only counts the queue (the Admin badge, issue #1458) can type its argument
+  // without pulling in the whole `Recipe`.
+  KitLabelSource,
 } from './kitchenTool/index.js';
 
 // Shopping-day module (issue #629) — pure helpers over `shoppingDays/{date}`:
