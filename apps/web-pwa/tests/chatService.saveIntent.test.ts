@@ -1,7 +1,7 @@
 /**
  * Taking the save request the chef recorded (issue #1480) — `consumeSaveIntent`.
  *
- * Five claims, each of which is a real defect if it is wrong:
+ * Four claims, each of which is a real defect if it is wrong:
  *
  *  1. IT CLEARS BEFORE IT ANSWERS. The caller runs the save on `true`, so the
  *     write that clears the request has to have happened by the time that `true`
@@ -18,10 +18,10 @@
  *     while the request stays armed on the document — the next tab or reload
  *     takes it again and writes a second recipe. Answering `false` costs one
  *     retry and removes the duplicate.
- *  5. THE FEATURE KEY IS READ HERE, not at each call site (review of #1490,
- *     Finding 3) — this is the one seam every surface goes through, so a
- *     recorded request is inert end to end while the key is off, with nothing
- *     cleared and nothing saved.
+ *
+ * `consumeSaveIntent` does not gate on the `chatSave` feature key — that check
+ * lives at each call site (`ChatSessionPage.svelte`, `RecipeViewPage.svelte`);
+ * see the doc comment on the function itself.
  *
  * THE BOUNDARY, stated because "exactly once" would be too strong: this holds per
  * request per TAB (Finding 4 — narrower than "browser": two tabs on the SAME
@@ -60,14 +60,6 @@ vi.mock('../src/lib/membersService.js', () => ({
   },
 }));
 
-// The `chatSave` gate `consumeSaveIntent` now reads directly (Finding 3).
-// `true` by default so the pre-existing behavioural tests below stay about
-// taking/clearing, not about the gate; the gate's own tests flip it.
-const isFeatureEnabledMock = vi.fn((_feature: string) => true);
-vi.mock('../src/lib/featureGate.js', () => ({
-  isFeatureEnabled: (feature: string) => isFeatureEnabledMock(feature),
-}));
-
 import * as firebaseSync from '@salt/firebase-sync';
 import { consumeSaveIntent } from '../src/lib/chatService.js';
 
@@ -104,7 +96,6 @@ function lastWritten(): ChatSessionDoc | undefined {
 beforeEach(() => {
   vi.clearAllMocks();
   fs.saveChatSession.mockResolvedValue({ kind: 'ok', value: undefined });
-  isFeatureEnabledMock.mockReturnValue(true);
 });
 
 describe('consumeSaveIntent', () => {
@@ -166,24 +157,5 @@ describe('consumeSaveIntent', () => {
     await expect(consumeSaveIntent(asked)).resolves.toBe(false);
     // Attempted, not skipped — the clear is still tried before answering.
     expect(fs.saveChatSession).toHaveBeenCalledTimes(1);
-  });
-
-  // Finding 3 (review of #1490): the `chatSave` feature key is read inside
-  // `consumeSaveIntent`, the one seam every surface goes through, rather than at
-  // each call site — so a caller that only checks the return value still gets
-  // the gate, and a recorded request is inert end to end while the key is off.
-  describe('the chatSave feature key', () => {
-    it('says no, and writes nothing, while the key is off', async () => {
-      isFeatureEnabledMock.mockReturnValue(false);
-
-      await expect(consumeSaveIntent(session({ pendingSaveIntent: 'm2' }))).resolves.toBe(false);
-      expect(fs.saveChatSession).not.toHaveBeenCalled();
-    });
-
-    it('is asked about the chatSave key specifically', async () => {
-      await consumeSaveIntent(session({ pendingSaveIntent: 'm2' }));
-
-      expect(isFeatureEnabledMock).toHaveBeenCalledWith('chatSave');
-    });
   });
 });

@@ -17,6 +17,7 @@
     claimRecipe,
     consumeSaveIntent,
   } from '../../lib/chatService.js';
+  import { chatSaveGate } from '../../lib/featureGate.js';
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
   import { recipes, attachComponentToMeal } from '../../lib/recipeService.js';
@@ -256,11 +257,11 @@
     const isFirstSnapshot = !sawFirstSnapshot;
     sawFirstSnapshot = true;
     if (current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
     void (async () => {
       // Clears the request before anything happens, and answers false if another
-      // effect run, or another surface, already took this one, or the feature
-      // key is off — see `consumeSaveIntent`, the one seam this and every other
-      // surface goes through. Taken when the QUESTION is asked, not when it is
+      // effect run, or another surface, already took this one — see
+      // `consumeSaveIntent`. Taken when the QUESTION is asked, not when it is
       // answered: a question you dismissed has been answered, and leaving the
       // request on the document would re-ask it on every reload.
       const taken = await consumeSaveIntent(current);

@@ -14,28 +14,26 @@
  *     save starts, so a second surface, a re-render or a reload cannot run it
  *     again — and a save that fails costs a button press rather than repeating
  *     itself.
- *  4. A REQUEST ALREADY ON THE DOCUMENT THE FIRST TIME THIS PAGE SEES IT is one
+ *  4. THE FEATURE KEY IS A REAL GATE on this side too: with it off, a document
+ *     carrying a request is ignored entirely — `consumeSaveIntent` is never even
+ *     called, so nothing is cleared either.
+ *  5. A REQUEST ALREADY ON THE DOCUMENT THE FIRST TIME THIS PAGE SEES IT is one
  *     nobody was here to take (review of #1490, Finding 1) — cleared, never
  *     acted on. Only a request that arrives on a LATER snapshot, while the page
  *     is mounted, is eligible to fire. Without this, reopening a finished
  *     conversation days later writes a recipe with no interaction at all.
- *  5. AN ATTACHED CHAT IS ASKED, in the menu's own two words, and neither handler
+ *  6. AN ATTACHED CHAT IS ASKED, in the menu's own two words, and neither handler
  *     runs until one is picked. Dismissing writes nothing.
  *
- * The `chatSave` feature key itself is no longer this page's concern to gate —
- * it moved inside `consumeSaveIntent` (review of #1490, Finding 3), the one seam
- * every surface goes through, and is unit-tested there
- * (`chatService.saveIntent.test.ts`). `consumeSaveIntent` is fully mocked in
- * this file, so a mocked `false` return stands in for "the key was off" exactly
- * as it stands in for "another surface already took it" — both are the same
- * observable behaviour from this page's point of view.
+ * A separate file from `ChatSessionPage.test.ts` because that suite mocks the
+ * feature gate OFF wholesale, which is exactly the state five of these six
+ * cases are not about.
  *
- * The seams are narrower than `ChatSessionPage.test.ts`'s, and deliberately
- * (UT-B1): mocking `recipeAmend` — which this page reaches only through the
- * update leg, untouched here — takes `@salt/firebase-sync` and
- * `guidedPlanService` out of the import graph with it, and the REAL toast store
- * is read rather than spied, because "what did it say" is a question the store
- * itself answers.
+ * The seams are narrower than that suite's, and deliberately (UT-B1): mocking
+ * `recipeAmend` — which this page reaches only through the update leg, untouched
+ * here — takes `@salt/firebase-sync` and `guidedPlanService` out of the import
+ * graph with it, and the REAL toast store is read rather than spied, because
+ * "what did it say" is a question the store itself answers.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
@@ -44,19 +42,30 @@ import type { ChatSessionDoc } from '@salt/domain/schemas';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 
-const { mockSessions, mockIsLoading, mockRecipes, mockRouter } = await vi.hoisted(async () => {
-  const { makeStore } = await import('./support/testStore.js');
-  return {
-    mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
-    mockIsLoading: makeStore<boolean>(false),
-    mockRecipes: makeStore<readonly Recipe[]>([]),
-    mockRouter: { querystring: undefined as string | undefined },
-  };
-});
+const { mockSessions, mockIsLoading, mockRecipes, mockRouter, flagOn } = await vi.hoisted(
+  async () => {
+    const { makeStore } = await import('./support/testStore.js');
+    return {
+      mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
+      mockIsLoading: makeStore<boolean>(false),
+      mockRecipes: makeStore<readonly Recipe[]>([]),
+      mockRouter: { querystring: undefined as string | undefined },
+      // The `chat-save` flag, switchable per test. Everything under `featureGate`
+      // reads through this one function.
+      flagOn: { value: true },
+    };
+  },
+);
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), pop: vi.fn(), router: mockRouter }));
 vi.mock('@salt/observability', () => ({
   trackUsageEvent: vi.fn(),
+  BREAD_FLAG_KEY: 'bread',
+  LIBRARY_FLAG_KEY: 'library',
+  CHAT_SAVE_FLAG_KEY: 'chat-save',
+  isObservabilityFeatureEnabled: (key: string) => key === 'chat-save' && flagOn.value,
+  areObservabilityFeatureFlagsSettled: () => true,
+  onObservabilityFeatureFlags: () => () => {},
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   sessions: mockSessions,
@@ -127,6 +136,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  flagOn.value = true;
   mockIsLoading._set(false);
   mockRecipes._set([]);
   mockRouter.querystring = undefined;
@@ -193,6 +203,17 @@ describe('ChatSessionPage — a save the chef was asked for', () => {
     // The half of Rule 12 that stops "it only fires when asked" being a sentence
     // nothing can falsify.
     mockSessions._set([makeSession()]);
+
+    renderPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consumeSaveIntent).not.toHaveBeenCalled();
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+  });
+
+  it('ignores a recorded request entirely with the feature key off', async () => {
+    flagOn.value = false;
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2' })]);
 
     renderPage();
 
@@ -298,6 +319,18 @@ describe('ChatSessionPage — a save the chef was asked for, on a chat about a d
 
     await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+
+  it('does not ask at all with the feature key off', async () => {
+    flagOn.value = false;
+    mockRecipes._set([{ ...emptyRecipe('recipe-1', '2026-09-19T00:00:00.000Z'), title: 'Lamb' }]);
+    mockSessions._set([makeSession({ recipeId: 'recipe-1', pendingSaveIntent: 'm2' })]);
+
+    renderPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consumeSaveIntent).not.toHaveBeenCalled();
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 

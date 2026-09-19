@@ -39,7 +39,7 @@
   // package. They are still sent from here, as ordinary user turns, unchanged.
   import { OPTIMISE_FOR_KITCHEN_PROMPT, REFRESH_PROMPT } from '@salt/domain/prompts';
   import { goBack } from '../../lib/nav.js';
-  import { breadGate } from '../../lib/featureGate.js';
+  import { breadGate, chatSaveGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
   import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
@@ -1508,12 +1508,11 @@
     const isFirstObservation = !seenActiveSaveIntentSessions.has(current.id);
     seenActiveSaveIntentSessions.add(current.id);
     if (current.pendingSaveIntent === null) return;
+    if (!$chatSaveGate.enabled) return;
     void (async () => {
       // Taken as the QUESTION is asked, not as it is answered — see
-      // `consumeSaveIntent`, the one seam this and every other surface goes
-      // through (it also gates on the feature key). A question you dismissed
-      // has been answered, and a request left on the document would re-ask on
-      // every reload.
+      // `consumeSaveIntent`. A question you dismissed has been answered, and a
+      // request left on the document would re-ask on every reload.
       const taken = await consumeSaveIntent(current);
       if (isFirstObservation || !taken) return;
       saveChoiceOpen = true;

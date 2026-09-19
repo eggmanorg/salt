@@ -10,7 +10,6 @@ import { parseChatCommand, isChatReadOnly } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
 import { rememberNote } from './kitchenMemoryService.js';
 import { currentMember } from './membersService.js';
-import { isFeatureEnabled } from './featureGate.js';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import { success, failure, ErrorCode } from '@salt/shared-types';
@@ -367,13 +366,16 @@ const takenSaveIntents = new Set<string>();
  * Take the save request the chef recorded on this conversation, if there is one
  * (issue #1480). True means the caller now owns it and should run the save.
  *
- * THE ONE SEAM EVERY SURFACE GOES THROUGH (review of #1490). The `chatSave`
- * feature flag is read IN HERE, not at the call site — a browser left on an
- * older bundle, or one where the flag disagrees, answers `false` and runs
- * nothing, request left armed for a build that can act on it. A new surface
- * that calls this function and acts only on `true` gets the flag check for
- * free; do not add a second `isFeatureEnabled('chatSave')` / `chatSaveGate`
- * check beside the call, which is how the two would drift.
+ * THIS FUNCTION DOES NOT GATE ON THE `chatSave` FEATURE FLAG (CLAUDE.md Rule
+ * 12: state the real boundary). Consolidating the check in here (review of
+ * #1490) was reverted — the eager `featureGate.ts` import it added changed
+ * Rollup's chunking enough to tip the boot bundle over
+ * `check-boot-payload.mjs`'s ceiling, and raising that ceiling needs sign-off
+ * this change didn't have. The check lives back at each call site
+ * (`ChatSessionPage.svelte`'s and `RecipeViewPage.svelte`'s `chatSaveGate`
+ * reads) instead. A NEW SURFACE MUST GATE ITSELF before calling this — this
+ * function will happily take, clear and report success on a request
+ * regardless of whether the flag is on for the caller.
  *
  * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER WAS PRESENT FOR THE REQUEST.
  * A request already sitting on the document the first time a page observes it
@@ -406,7 +408,6 @@ const takenSaveIntents = new Set<string>();
 export async function consumeSaveIntent(session: ChatSessionDoc): Promise<boolean> {
   const messageId = session.pendingSaveIntent;
   if (messageId === null) return false;
-  if (!isFeatureEnabled('chatSave')) return false;
   const token = `${session.id}:${messageId}`;
   if (takenSaveIntents.has(token)) return false;
   takenSaveIntents.add(token);
