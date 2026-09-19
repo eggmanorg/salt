@@ -82,6 +82,18 @@ This NARROWS the words-only contract above; it does not repeal it. `kitchenTools
 ids are still never written onto a recipe, because a vocabulary grows and an
 identity does not.
 
+**The link is now the only thing that GROUPS a kit** (#1465 Phase 4).
+`groupKitByEquipment` used to carry two further passes that read the words to decide
+what nested under what; the production re-run of 2026-09-19 relinked all 66 recipes
+and replaying the query over the live manifest showed no recipe grouping differently
+without them, so they were deleted. An entry with no resolving link is a flat row.
+**The words still decide the PICTURE, though, and not in the abstract:** every kit
+surface reads `resolveKitEntryItem` — the link, then `resolveEquipmentItem` — and the
+same measurement found two stored lines (`"frying pan"`, twice, both reaching the
+Frying Pans family) that carry no link and draw that family's picture through the
+word half. Remove it and those two rows go blank; `apps/web-pwa/tests/kitIcons.test.ts`
+pins them.
+
 **And a bare accessory name never borrows an unrelated object's drawing** (#1460).
 `kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, is what every kit
 surface goes through: a label that exactly names one of the manifest's accessories

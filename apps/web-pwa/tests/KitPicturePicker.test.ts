@@ -155,9 +155,10 @@ describe('KitPicturePicker — one of your things', () => {
 
 describe('KitPicturePicker — resolved by words alone (review of #1482)', () => {
   // A row with NO recorded link whose label already names one of your things by
-  // WORDS — every unlinked stored recipe reaches this dialog exactly this way
-  // until Phase 4 re-runs them (`resolveEquipmentItem` is asked before tools in
-  // `kitIcons.ts`, so the strip already draws this row as "one of your things").
+  // WORDS. The 2026-09-19 production re-run left two of them, and a kit that has
+  // never been inferred produces more (`resolveEquipmentItem` is asked before
+  // tools in `kitIcons.ts`, so the strip already draws such a row as "one of your
+  // things").
   // Before the fix the picker asked "is there a *recorded* link?" and answered
   // no, so choosing wrote a matcher `kitIcons.ts` could never reach, and "draw
   // new" minted a duplicate, instance-named `kitchenTools` document — the exact

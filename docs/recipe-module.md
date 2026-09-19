@@ -789,7 +789,13 @@ a required field would empty the list of recipes written before this shipped.
   accessories, or a member of a family of kit. It is read before any word, which
   is the only way a family member is ever recognised. A link to something deleted
   resolves to nothing and the entry reads as an unlinked label; nothing is written
-  back to recipes when the manifest changes. This narrows the rule below rather
+  back to recipes when the manifest changes. **Since #1465 Phase 4 the link is the
+  only thing `groupKitByEquipment` reads** — an unlinked entry is a flat row,
+  whatever its words say, so a recipe whose kit predates the 2026-09-19 re-run
+  lists an appliance's parts flat until **Redo kit** is pressed. The words still
+  decide the PICTURE, through `resolveKitEntryItem`; `docs/canon-icons.md`
+  § "The fourth family" states how much of the library still rests on that.
+  This narrows the rule below rather
   than repealing it: **no `kitchenTools` id is ever written onto a recipe.**
   Equipment is identity; the tool vocabulary is a vocabulary.
 - **`RecipeKitEntry` stores a LABEL, never an id.** `{ label, stepIds }` —

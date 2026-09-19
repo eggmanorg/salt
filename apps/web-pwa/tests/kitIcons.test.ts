@@ -154,6 +154,25 @@ describe('kitIcons — the order', () => {
     ).toBe('https://example.test/pans.webp');
   });
 
+  it('still draws an owned record reached by WORDS ALONE, not the generic tool', () => {
+    // THE PIN ON THE SURVIVING WORD FALLBACK (issue #1465, Phase 4). Deleting
+    // `groupKitByEquipment`'s two word passes was measured safe on 2026-09-19 only
+    // because `resolveEquipmentItem` survives and `kitIcons` still reaches it
+    // through `resolveKitEntryItem`. Two stored lines in production — `"frying
+    // pan"` in `Paneer Makhanwala…` and in `Potatoes Boulangère` — carry no link
+    // and reach the Frying Pans family by words alone. This is their picture.
+    //
+    // It goes RED two ways, which is the point: strip the word fallback out of
+    // `resolveKitEntryItem` (or delete `resolveEquipmentItem`) and the vocabulary
+    // answers with the GENERIC pan instead, and reorder equipment behind tools and
+    // it does the same.
+    expect(iconFor(entry('frying pan'))).toBe('https://example.test/pans.webp');
+    // …and the generic tool it did NOT draw is genuinely there to be drawn, so the
+    // assertion above is a preference and not an absence.
+    mockEquipment.set(null);
+    expect(iconFor(entry('frying pan'))).toBe('https://example.test/pan.webp');
+  });
+
   it('lets the link beat the words, whatever the words would have said', () => {
     // A linked entry never consults the vocabulary, so a label that WOULD have
     // drawn a generic bowl draws the machine it actually belongs to.

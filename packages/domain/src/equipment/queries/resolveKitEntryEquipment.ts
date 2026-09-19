@@ -80,18 +80,28 @@ export interface KitEntryEquipmentSource extends KitEquipmentLinkSource {
  * THE ONE PLACE "WHICH OF YOUR THINGS IS THIS ROW" IS ANSWERED. `kitIcons.ts`
  * asks this to decide what to render; `KitPicturePicker.svelte` must ask the
  * SAME question to decide what to write, or the two disagree about a row that
- * resolves by words alone — every unlinked stored recipe, until Phase 4 re-runs
- * them. A picker that branched on the link alone answered "is there a link?"
- * where the row was offered on "is there a picture?", so a row naming one of
- * your things by words took the ordinary-words act: a matcher the renderer
- * never reaches, and "draw new" minting an appliance-named `kitchenTools`
- * document — the exact instance-named row #956 exists to prevent.
+ * resolves by words alone. A picker that branched on the link alone answered
+ * "is there a link?" where the row was offered on "is there a picture?", so a
+ * row naming one of your things by words took the ordinary-words act: a matcher
+ * the renderer never reaches, and "draw new" minting an appliance-named
+ * `kitchenTools` document — the exact instance-named row #956 exists to
+ * prevent.
  *
  * `resolveKitEntryEquipment` (the link) first, `resolveEquipmentItem` (the
  * words) as the fallback — never the other way, and never a second caller
  * re-deciding the order. A word match never names a specific accessory, so
  * `accessory` is null on that branch, the same reading a bare item-level link
  * gets.
+ *
+ * THE WORD FALLBACK IS NOT VESTIGIAL, AND ITS SIZE IS MEASURED. #1465's Phase 4
+ * re-ran every production recipe, so almost every line now carries a link — but
+ * of 451 stored kit lines on 2026-09-19, two still reach an owned record by
+ * words alone: `"frying pan"` in `Paneer Makhanwala…` and in `Potatoes
+ * Boulangère`, both landing on the Frying Pans family and drawing its picture
+ * through this function. Remove this branch and those two rows go blank. It
+ * also still answers for anything written before a future manifest rename, and
+ * for a recipe whose kit has never been inferred. Pinned by
+ * `apps/web-pwa/tests/kitIcons.test.ts` and by this file's own suite.
  */
 export function resolveKitEntryItem(
   entry: KitEntryEquipmentSource,

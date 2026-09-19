@@ -202,8 +202,9 @@ describe('kitchenToolForKitLabel — #1460’s case table', () => {
   });
 
   it('matches an accessory name exactly, never by containment', () => {
-    // Mirrors `groupKitByEquipment`'s pass-two condition 2: "Sheet Pan" is not
-    // "Oven Sheet Pan", so it is an ordinary label and keeps the ordinary answer.
+    // "Sheet Pan" is not "Oven Sheet Pan" — `namesManifestAccessory` is exact on
+    // the normalised name, never a prefix or substring match, so this is an
+    // ordinary label and keeps the ordinary answer.
     expect(drawn('Sheet Pan')).toBe('baking-tray');
     // …and normalisation still folds case, punctuation and plurals, so a
     // carelessly typed accessory name is still recognised as one.

@@ -61,9 +61,12 @@ import { resolveKitchenToolMatch } from './resolveKitchenTool.js';
 /**
  * Is this label, exactly, the name of an accessory on the manifest?
  *
- * Exact on the NORMALISED name — never containment and never a prefix, mirroring
- * `groupKitByEquipment`'s pass-two condition 2, so "Sheet Pan" does not find
- * "Oven Sheet Pan". Both sides fold through canon's `normaliseName`, the same
+ * Exact on the NORMALISED name — never containment and never a prefix, so "Sheet
+ * Pan" does not find "Oven Sheet Pan". `groupKitByEquipment` read the words the
+ * same way until #1465's Phase 4 deleted its word passes; this is now the only
+ * place a kit label is measured against an accessory's stored name, and the
+ * exactness is its own guard rather than a mirror of anything. Both sides fold
+ * through canon's `normaliseName`, the same
  * fold every resolver here uses, so case, punctuation, hyphens, plurals and model
  * numbers cannot split a match.
  */
