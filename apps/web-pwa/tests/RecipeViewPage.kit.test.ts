@@ -672,8 +672,9 @@ describe('RecipeViewPage — the Equipment tab', () => {
 //
 // EVERY KIT BELOW CARRIES ITS LINK, because since #1465's Phase 4 the link is the
 // only thing that groups anything. These fixtures are what the production re-run
-// of 2026-09-19 left behind; the same words with `equipment: null` are a flat list,
-// and that is asserted too.
+// of 2026-09-19 left behind; the same words with `equipment: null` are a flat
+// list, and that is pinned in `packages/domain/tests/recipe/groupKitByEquipment.test.ts`,
+// not here.
 
 describe('RecipeViewPage — accessories under their appliance', () => {
   it('says an accessory on the appliance own row, never as a row of its own', () => {

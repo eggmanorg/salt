@@ -18,8 +18,8 @@ import type { RecipeKitEntryDoc } from '../../schemas/index.js';
 //
 //   - an entry linked to an item ITSELF heads that item's row;
 //   - an entry linked to an ACCESSORY of an `equipment`-kind item nests under that
-//     item's row when this kit also names the item, and otherwise stands as its
-//     own row;
+//     item's row when some other entry in this kit links the item itself, and
+//     otherwise stands as its own row;
 //   - an entry linked to a member of a `family` ALWAYS stands as its own row, and
 //     never anchors another entry beneath it. A family is not an appliance with
 //     parts: "frying pan" beside the All-Clad read "frying pan — with the All-Clad

@@ -155,9 +155,9 @@ folds such a label under its appliance.
 `kit[].equipment: { itemId, accessoryId }` at the moment it has the manifest in front
 of it, and that recorded id is the only thing `groupKitByEquipment` reads: an entry
 linked to one of an appliance's parts nests under that appliance when — and only when —
-the appliance heads a row in the same recipe's kit, and an entry with no link that still
-resolves is a flat row whatever its words say. The two word-based passes that used to
-fold `Rice Spoon` under the Cosori are gone (#1465 Phase 4, after the 2026-09-19
+some other entry in the same recipe's kit links the appliance itself, and an entry with
+no link that still resolves is a flat row whatever its words say. The two word-based
+passes that used to fold `Rice Spoon` under the Cosori are gone (#1465 Phase 4, after the 2026-09-19
 production re-run relinked all 66 recipes and no recipe grouped differently without
 them). So a recipe whose kit has never been inferred, or was written before that run,
 lists its accessories flat until it is re-run or **Redo kit** is pressed — which is what
