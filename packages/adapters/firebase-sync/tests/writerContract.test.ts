@@ -350,6 +350,7 @@ const CHAT_SESSION = {
   createdAt: NOW,
   updatedAt: NOW,
   reopenedAt: null,
+  pendingSaveIntent: null,
   expiresAt: NOW,
 };
 

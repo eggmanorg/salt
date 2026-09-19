@@ -313,9 +313,11 @@ describe('findRecipes — the tool the model is shown', () => {
     // Exact, and it stays exact: a tool arriving without its own issue should turn
     // this red. Issue #840 set the surface at two, #1373 added readEquipmentDetail
     // (read-only, permanently — see the comment at its declaration), and #1377
-    // added the kitchen-notes pair with its own justification — the notes pair is
-    // GATED into the request's `tools:` array (see `chefChat.kitchenNotes.test.ts`),
-    // but every tool is DEFINED at module load, so all five are registered here.
+    // added the kitchen-notes pair with its own justification, and #1480 added
+    // `saveRecipe`, which writes nothing at all — the notes trio and the save are
+    // GATED into the request's `tools:` array (see `chefChat.kitchenNotes.test.ts`
+    // and `chefChat.saveIntent.test.ts`), but every tool is DEFINED at module
+    // load, so all seven are registered here.
     // The same list is asserted from the readRecipe and readEquipmentDetail sides
     // in their own suites.
     expect(defineToolCalls.map((c) => c.config.name)).toEqual([
@@ -325,6 +327,7 @@ describe('findRecipes — the tool the model is shown', () => {
       'findKitchenNotes',
       'readKitchenNote',
       'writeKitchenNote',
+      'saveRecipe',
     ]);
     expect(findRecipesTool).toMatchObject({ __tool: 'findRecipes' });
   });

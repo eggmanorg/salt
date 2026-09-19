@@ -98,6 +98,10 @@ vi.mock('@salt/firebase-sync', () => ({
   subscribeBatches: vi.fn(() => vi.fn()),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
+  // Issue #1480: the recipe page and the full chat page read the save request
+  // the chef recorded. Never fires here — no fixture carries one — but the
+  // whole-module mock has to carry every export the page names.
+  consumeSaveIntent: vi.fn().mockResolvedValue(false),
   sessions: mockSessions,
   createChatSession: vi.fn(),
   sendMessage: vi.fn(),

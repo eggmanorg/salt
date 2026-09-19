@@ -19,6 +19,7 @@ const {
   mockSessions,
   mockEquipment,
   toastSpy,
+  flagOn,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   const { makeToastSpy } = await import('./support/toastSpy.js');
@@ -31,6 +32,10 @@ const {
     mockDefaultListId: makeStore<string | null>('list-1'),
     mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
     mockEquipment: makeStore<unknown>(null),
+    // The `chat-save` flag, switchable per test — see
+    // `ChatSessionPage.saveIntent.test.ts` for the same harness on the other
+    // call site.
+    flagOn: { value: true },
   };
 });
 
@@ -95,19 +100,25 @@ vi.mock('@salt/firebase-sync', () => ({
 // gated, and this suite's subject is unaffected.
 vi.mock('@salt/observability', () => ({
   trackUsageEvent: vi.fn(),
-  isObservabilityFeatureEnabled: () => true,
+  // `chatSaveGate` reads through this key (issue #1480); every other gate this
+  // suite touches stays hard-on, matching the pre-existing comment below.
+  isObservabilityFeatureEnabled: (key: string) => (key === 'chat-save' ? flagOn.value : true),
   areObservabilityFeatureFlagsSettled: () => true,
   onObservabilityFeatureFlags: () => () => {},
   // `featureGate.ts` reads the PostHog flag key from the adapter (issue #1054);
   // nothing here asserts on it, but the whole-module mock must supply it.
   BREAD_FLAG_KEY: 'bread',
   LIBRARY_FLAG_KEY: 'library',
+  CHAT_SAVE_FLAG_KEY: 'chat-save',
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   sessions: mockSessions,
   createChatSession: vi.fn(),
   sendMessage: vi.fn(),
   claimRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  // Issue #1480: taking the save request the chef recorded. Its own contract —
+  // clear first, answer once — is pinned in `chatService.saveIntent.test.ts`.
+  consumeSaveIntent: vi.fn().mockResolvedValue(true),
 }));
 vi.mock('../src/lib/equipmentService.js', () => ({
   equipment: mockEquipment,
@@ -163,7 +174,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { authorRecipeTraced, stashImportedDraft } from '../src/lib/recipeService.js';
-import { claimRecipe } from '../src/lib/chatService.js';
+import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
 import { saveRecipe } from '@salt/firebase-sync';
 import { push } from 'svelte-spa-router';
 
@@ -212,6 +223,7 @@ function makeSession(messages: ChatSessionDoc['messages']): ChatSessionDoc {
     createdAt: ts,
     updatedAt: ts,
     reopenedAt: null,
+    pendingSaveIntent: null,
     expiresAt: '2026-01-15T00:00:00.000Z',
   };
 }
@@ -239,7 +251,9 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   toastSpy.reset();
+  flagOn.value = true;
   vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  vi.mocked(consumeSaveIntent).mockResolvedValue(true);
   mockCanonItems._set([]);
   mockIsLoading._set(false);
   mockRecipes._set([makeRecipe()]);
@@ -433,5 +447,127 @@ describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
 
     settle({ kind: 'err', error: { kind: 'NetworkError', reason: 'offline' } } as LibrarianResult);
     await waitFor(() => expect(toastSpy.live()).toEqual(['Failed to generate recipe.']));
+  });
+});
+
+// Asking the chef to save, on the page every chat is attached to (issue #1480,
+// Phase 2). Both things the ask could mean apply here, so the app asks — and
+// neither existing handler runs until one is picked.
+//
+// ONE dialog for the page, not one per chat surface: the docked column and the
+// phone drawer are two surfaces of one conversation and can be mounted at once,
+// so a copy in each would ask twice.
+describe('RecipeViewPage — a save the chef was asked for', () => {
+  // A request already on the document the first time this page ever shows a
+  // chat as its `activeSession` is one nobody was here to take (issue #1490
+  // review, Finding 1) and must not open the ask — see the dedicated pinning
+  // test below. So the ask tests here render on an UNARMED chat first, let
+  // that first snapshot land, and only THEN arm it — the shape of a real
+  // request arriving on the subscription while the page is mounted.
+  async function askAndWait() {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    const rendered = renderPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+    await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+    return rendered;
+  }
+
+  it('asks which was meant, in the menu’s own two words, and writes nothing yet', async () => {
+    await askAndWait();
+
+    expect(screen.getByTestId('chat-save-intent-update').textContent).toContain('Update recipe');
+    expect(screen.getByTestId('chat-save-intent-new').textContent).toContain('Save as new recipe');
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(saveRecipe).not.toHaveBeenCalled();
+  });
+
+  it('takes the request as it asks, so a reload cannot ask again', async () => {
+    await askAndWait();
+
+    expect(consumeSaveIntent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(consumeSaveIntent).mock.calls[0]?.[0]).toMatchObject({ id: 'session-1' });
+  });
+
+  it('routes "Save as new recipe" into a create with no base, leaving the dish alone', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+    } as never);
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-new'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
+    expect(vi.mocked(authorRecipeTraced).mock.calls[0]?.[0]).toMatchObject({
+      basedOnRecipeId: null,
+    });
+    // The lamb is not written to, and the conversation stays listed on it.
+    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(claimRecipe).not.toHaveBeenCalled();
+  });
+
+  it('routes "Update recipe" into the review gate, and writes nothing on the way', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NetworkError', reason: 'offline' },
+    } as never);
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-update'));
+
+    // `proposeRecipeAmendment` is the real module here, so what proves the update
+    // leg was taken is the librarian being asked ABOUT THIS RECIPE — the create
+    // leg names no `recipeId` — and nothing being saved.
+    await waitFor(() =>
+      expect(vi.mocked(authorRecipeTraced).mock.calls[0]?.[0]).toMatchObject({
+        recipeId: RECIPE_ID,
+      }),
+    );
+    expect(saveRecipe).not.toHaveBeenCalled();
+  });
+
+  // The feature key is a real gate on this side too (mirrors
+  // `ChatSessionPage.saveIntent.test.ts`'s equivalent case): with it off, a
+  // request sitting on the document is ignored entirely — `consumeSaveIntent`
+  // is never even called, so nothing is cleared or asked either.
+  it('ignores a recorded request entirely with the feature key off', async () => {
+    flagOn.value = false;
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+
+    renderPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consumeSaveIntent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+  });
+
+  it('never asks on a chat that carries no request', async () => {
+    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+
+    renderPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consumeSaveIntent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+
+  // Finding 1 (review of #1490): a request already armed the FIRST time this
+  // page ever shows the chat — landing on this recipe with an un-taken request
+  // sitting on its newest conversation from days ago — must be cleared and
+  // never acted on. Before the fix this opened "Save which one?" with nobody
+  // standing in front of it; this is the test that goes red without the fix.
+  it('clears, but does not ask about, a request already recorded when the page opens', async () => {
+    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
+
+    renderPage();
+
+    // The clear still runs — an armed request left on the document forever is
+    // its own bug — but the ask never opens.
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
   });
 });

@@ -128,13 +128,62 @@ export function aiFakeEnabled(): boolean {
 // id through generate().
 const fakeModels = new Map<AiFlowId, ModelAction>();
 
+/**
+ * A stub that asks for a TOOL before it answers (issue #1480).
+ *
+ * `{ tool: 'saveRecipe', then: 'Saving that now.' }` makes the fake model do what
+ * a real one does on a turn somebody asked to save on: request the tool, take the
+ * result, then speak. `tools: false` in `supports` above was set when #1310
+ * removed the last tool-driven spec, and nothing tool-shaped could be driven from
+ * an e2e spec while it stood.
+ *
+ * ONE ROUND TRIP, decided from the REQUEST rather than from any state this
+ * process holds: a second model turn arrives with the tool's own response already
+ * in its history, and that is what tells the runner to stop asking and answer.
+ * Without that test the loop would re-request the same tool until Genkit's
+ * `maxTurns` gave up — the fake would be stubbed once and called five times.
+ */
+export interface ToolCallStub {
+  readonly tool: string;
+  readonly input?: Record<string, unknown>;
+  readonly then: string;
+}
+
+/**
+ * The stub as a tool call, or null for the ordinary string/object stubs.
+ *
+ * Exported for its own unit test: the runner below only ever runs under
+ * `FUNCTIONS_AI_FAKE`, so an e2e spec is the only thing that reaches it, and a
+ * shape decision with no unit test behind it is exactly the kind that rots.
+ */
+export function asToolCallStub(response: unknown): ToolCallStub | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const candidate = response as Partial<ToolCallStub>;
+  return typeof candidate.tool === 'string' && typeof candidate.then === 'string'
+    ? (candidate as ToolCallStub)
+    : null;
+}
+
+/** Has a tool already answered in this request's history? Exported to be tested. */
+export function historyHasToolResponse(request: unknown): boolean {
+  const messages = (request as { messages?: unknown } | null)?.messages;
+  if (!Array.isArray(messages)) return false;
+  return messages.some((message: unknown) => {
+    const content = (message as { content?: unknown } | null)?.content;
+    return Array.isArray(content) && content.some((part) => 'toolResponse' in (part ?? {}));
+  });
+}
+
 function defineFakeModel(flowId: AiFlowId): ModelAction {
   return ai.defineModel(
     {
       name: `e2e-fake/${flowId}`,
-      supports: { multiturn: true, tools: false, systemRole: true, output: ['text', 'json'] },
+      // `tools: true` since #1480 — see `ToolCallStub` above. It is a declaration
+      // of what this fake can DO, not a promise that any given stub uses tools: a
+      // plain string stub behaves exactly as it always has.
+      supports: { multiturn: true, tools: true, systemRole: true, output: ['text', 'json'] },
     },
-    async () => {
+    async (request) => {
       const snap = await getFirestore().collection(E2E_AI_STUB_COLLECTION).doc(flowId).get();
 
       if (!snap.exists) {
@@ -151,6 +200,18 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
       const response = snap.data()?.['response'];
       logger.info('e2e fake model: returning stubbed answer', { flowId });
 
+      // A tool-call stub, on the first pass only (issue #1480).
+      const toolStub = asToolCallStub(response);
+      if (toolStub !== null && !historyHasToolResponse(request)) {
+        return {
+          finishReason: 'stop',
+          message: {
+            role: 'model',
+            content: [{ toolRequest: { name: toolStub.tool, input: toolStub.input ?? {} } }],
+          },
+        };
+      }
+
       // Emit the canned answer as the model's text content.
       //
       //   • Structured-output flows (z.object/array — parseRecipeIngredients,
@@ -165,7 +226,10 @@ function defineFakeModel(flowId: AiFlowId): ModelAction {
       //
       // Keying-by-flow contract is unchanged; only the text encoding adapts to the
       // stub's runtime type, matching what a real model would emit for each schema.
-      const text = typeof response === 'string' ? response : JSON.stringify(response);
+      //   • A TOOL-CALL stub has already had its request emitted above, so what
+      //     is left for this pass is `then` — the prose the chef says afterwards.
+      const answer = toolStub !== null ? toolStub.then : response;
+      const text = typeof answer === 'string' ? answer : JSON.stringify(answer);
       return {
         finishReason: 'stop',
         message: {

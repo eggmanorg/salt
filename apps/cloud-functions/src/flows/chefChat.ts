@@ -44,6 +44,8 @@ import type {
   WriteKitchenNoteOutput,
   LibraryPageDoc,
 } from '@salt/domain/schemas';
+import { SaveRecipeInputSchema, SaveRecipeOutputSchema } from '@salt/domain/schemas';
+import type { SaveRecipeOutput } from '@salt/domain/schemas';
 import {
   chatExpiresAt,
   libraryPageSummary,
@@ -55,7 +57,11 @@ import {
 import type { LibraryPageCandidate, RecipeSearchCandidate } from '@salt/domain';
 // The SERVER subpath, never the default one: the default wraps posthog-js and
 // cannot run in Node (CLAUDE.md Rule 5).
-import { LIBRARY_FLAG_KEY, isServerFeatureEnabled } from '@salt/observability/server';
+import {
+  CHAT_SAVE_FLAG_KEY,
+  LIBRARY_FLAG_KEY,
+  isServerFeatureEnabled,
+} from '@salt/observability/server';
 import {
   AI_TEXT_FLOW_TIMEOUT,
   withAiStreamTimeout,
@@ -906,6 +912,138 @@ export const writeKitchenNoteTool = ai.defineTool(
   (input) => writeKitchenNoteForChef(getFirestore(), input),
 );
 
+// ─── Asking for the conversation to be saved as a recipe (issue #1480) ───────
+//
+// The tool the chef calls when somebody asks it to save a recipe, and the whole
+// of what the server does about it.
+
+/**
+ * The tool's name, as the model sees it and as the reply is scanned for.
+ *
+ * One constant rather than two literals: the declaration below and
+ * `turnRequestedRecipeSave` have to agree or the intent is recorded by nobody,
+ * silently.
+ */
+export const SAVE_RECIPE_TOOL_NAME = 'saveRecipe';
+
+const SAVE_RECIPE_DESCRIPTION = `Save the dish this conversation has arrived at as one of their recipes — the same save as the \
+button in the app, producing the same recipe, in the same place.
+
+CALL THIS ONLY WHEN THEY HAVE ASKED FOR IT. "Save this as a recipe", "create a recipe from this", "add that to my \
+recipes", "keep that one" — a request, in their words, in this conversation.
+
+DO NOT CALL IT for anything else. Not because they liked the sound of something, not because you think a dish is \
+worth keeping, and not to round off an answer you are pleased with. Enthusiasm is not an instruction. If you think \
+something is worth saving, SAY SO and let them ask.
+
+It takes no arguments and you do not write the recipe: the app reads the conversation and writes it, and it will \
+take them to the finished recipe. Never write the dish out as a page in their Library instead — that is a \
+different thing entirely, and it is not what they asked for.
+
+Say one short line afterwards. They are about to watch the page change, so do not list the recipe back out, do not \
+invent a title for it, and never claim to have written it yourself.`;
+
+/**
+ * The one tool here that records a request and performs no write.
+ *
+ * THE HANDLER IS A CONSTANT, and that is the safety property this whole feature
+ * rests on (CLAUDE.md Rule 12). It takes no `db`, closes over nothing, and
+ * returns the same object every time — so recognising a save intent cannot itself
+ * change anything, however wrong the model is about what was meant. What the
+ * model's call actually does is leave a `toolRequest` part in the turn's own
+ * message history, which `turnRequestedRecipeSave` below reads and
+ * `writeChefChatTurn` records on the chat document. The SAVE then runs in the
+ * browser, through `chatRecipeAuthor.ts` — the one create implementation.
+ *
+ * A SERVER-SIDE SAVE IS FORBIDDEN, not merely unbuilt. `cloud-functions` cannot
+ * import `@salt/firebase-sync` (Rule 2), and a second create path is the exact
+ * drift `chatRecipeAuthor.ts` and `recipeAmend.ts` were consolidated to end
+ * (#791). If this handler ever grows a body, that decision is being reversed —
+ * `chefChat.saveIntent.test.ts` goes red first.
+ *
+ * Contrast `writeKitchenNoteTool` above, which does write: a Library page is a
+ * document with a visible revision history, so a wrong write there is noticeable
+ * and reversible. A recipe written by a mishearing is the same — deletable — but
+ * there is no reason to move the write to reach it, so it does not move.
+ */
+export const saveRecipeTool = ai.defineTool(
+  {
+    name: SAVE_RECIPE_TOOL_NAME,
+    description: SAVE_RECIPE_DESCRIPTION,
+    inputSchema: SaveRecipeInputSchema,
+    outputSchema: SaveRecipeOutputSchema,
+  },
+  // `async` only because Genkit's tool signature demands a promise; there is
+  // nothing here to await, and nothing to await is the point.
+  async (): Promise<SaveRecipeOutput> => ({ requested: true }),
+);
+
+// How the chef is told the save exists at all, beside LIBRARY_FRAMING and in the
+// same shape as KITCHEN_NOTES_FRAMING: the tool description governs when to call,
+// this governs how to talk about it. Present only for a caller inside the flag,
+// so everyone else's prompt is byte for byte what it was.
+const SAVE_RECIPE_FRAMING = `## Saving one of their recipes
+They can keep this conversation as one of their own recipes. There is a save control in the app, and now there is \
+you: saveRecipe does exactly what that control does, so "save this as a recipe" is something you can simply do \
+rather than something you have to explain.
+
+ASKED, NOT ASSUMED. Reach for it when they ask, in this conversation, in their own words. A dish they are keen on \
+is not a request, and neither is your own feeling that something is worth keeping — offer, and let them answer.
+
+YOU DO NOT WRITE IT. The app reads the whole conversation and writes the recipe itself, and then shows it to them. \
+So do not compose the recipe into your reply first, do not name it, and do not describe what you have saved: one \
+short line is the right answer, because the recipe is about to be on screen.
+
+IT IS NOT A PAGE. If they ask for a recipe, they mean a recipe. Writing the dish out as a page instead is the one \
+mistake worth naming here, and it is not a near miss — it puts the thing they asked for somewhere they will not \
+look for it.`;
+
+/**
+ * Did the model ask for a save on this turn?
+ *
+ * READ OFF THE TURN'S OWN MESSAGE HISTORY, because `toolRequests` is the LAST
+ * model message's alone and the last message of a tool turn is the prose that
+ * follows the call. `GenerateResponse.messages` is the accumulated request plus
+ * that final message, and Genkit's tool loop carries the model message holding
+ * the `toolRequest` forward into every subsequent request
+ * (`@genkit-ai/ai@1.42.0`, `lib/generate/action.js` — `messages` is rebuilt as
+ * `[...rawRequest.messages, generatedMessage]` before it recurses, and
+ * `generate.js` keeps `response.request ?? request`). So the call is still in
+ * there when the turn finishes.
+ *
+ * THE BOUNDARY: that is a property of a pinned dependency's source, not an
+ * observation in production, and a Genkit change could take it away. When it
+ * does, this returns false — a missed prompt and a button press, never a wrong
+ * write — and `chefChat.saveIntent.test.ts` pins the shape this reads so the
+ * parsing itself cannot rot unnoticed. `messages` also THROWS when the response
+ * carries no request reference (an aggregate we never see in practice, and every
+ * test double), hence the catch.
+ *
+ * Structural rather than typed: the parts come back through Genkit's own schemas
+ * and narrowing them here would buy a cast, not a check.
+ */
+export function turnRequestedRecipeSave(response: unknown): boolean {
+  let messages: unknown;
+  try {
+    messages = (response as { messages?: unknown } | null | undefined)?.messages;
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(messages)) return false;
+  return messages.some((message: unknown) => {
+    const content = (message as { content?: unknown } | null)?.content;
+    if (!Array.isArray(content)) return false;
+    return content.some((part: unknown) => {
+      const name = (part as { toolRequest?: { name?: unknown } } | null)?.toolRequest?.name;
+      if (typeof name !== 'string') return false;
+      // A plugin-registered tool arrives namespaced (`plugin/tool`); this one is
+      // defined locally and does not, but matching both costs a suffix test and
+      // removes a way for the signal to go quiet after a refactor.
+      return name === SAVE_RECIPE_TOOL_NAME || name.endsWith(`/${SAVE_RECIPE_TOOL_NAME}`);
+    });
+  });
+}
+
 // How the chef is told to USE the Library, beside LIBRARY_FRAMING and in the same
 // shape: the tool descriptions govern when to call, this governs what to do with
 // the answer. Its own section rather than a paragraph bolted onto LIBRARY_FRAMING
@@ -973,11 +1111,13 @@ export function verifiedCaller(context: ActionContext | undefined): VerifiedCall
 }
 
 /**
- * Whether this caller's chat gets the kitchen-notes tools at all (issue #831).
+ * Whether one PostHog flag is on for this caller — the kitchen-notes tools
+ * (`library`, issue #831) and the recipe save (`chat-save`, issue #1480) alike.
  *
- * The gate decides WHICH TOOLS GO INTO THE `tools:` ARRAY for this request, not
- * what a tool does once called — the tools themselves are defined at module load,
- * as Genkit requires, and the array is passed by value.
+ * The gate decides WHICH TOOLS GO INTO THE `tools:` ARRAY for this request, and
+ * which framing sections reach the prompt — not what a tool does once called: the
+ * tools themselves are defined at module load, as Genkit requires, and the array
+ * is passed by value.
  *
  * FAILS CLOSED on a missing uid, where `isServerFeatureEnabled` would fail OPEN on
  * a deployment with no PostHog key ("unconfigured means ungated"). The two
@@ -986,10 +1126,10 @@ export function verifiedCaller(context: ActionContext | undefined): VerifiedCall
  * something is wrong, and a gate that opens when it cannot identify anybody is not
  * a gate.
  */
-async function kitchenNotesEnabled(caller: VerifiedCaller | null): Promise<boolean> {
+async function callerInFlag(flagKey: string, caller: VerifiedCaller | null): Promise<boolean> {
   if (caller === null) return false;
   return isServerFeatureEnabled(
-    LIBRARY_FLAG_KEY,
+    flagKey,
     caller.uid,
     caller.email === undefined ? undefined : { email: caller.email },
   );
@@ -1114,6 +1254,7 @@ function buildSystemPrompt(
   memoryContext: string,
   speaker: string | undefined,
   kitchenNotesFraming: string,
+  saveRecipeFraming: string,
 ): string {
   // FIRST after the base, and unconditional. It is a capability statement — how
   // this chef answers at all — not a piece of context about tonight, so it sits
@@ -1122,6 +1263,13 @@ function buildSystemPrompt(
   // once the tool has been called, and a read to find out would cost every turn
   // the very thing the tool exists to avoid paying.
   const sections: string[] = [CHEF_SYSTEM_BASE, LIBRARY_FRAMING];
+
+  // Immediately after the recipes framing it belongs to, and ONLY for a caller
+  // inside the `chat-save` flag (issue #1480) — same rule as the Library section
+  // below, for the same reason: a chef told it can save a recipe, holding no tool
+  // that says so, would offer and then be unable to. Empty for everyone outside
+  // the flag, so their prompt is byte for byte today's.
+  if (saveRecipeFraming) sections.push(saveRecipeFraming);
 
   // Beside LIBRARY_FRAMING, and ONLY when this caller actually has the tools
   // (issue #1377). A chef told about a Library it cannot reach would offer to
@@ -1241,6 +1389,14 @@ interface ChefChatTurn {
   readonly askedAt: Date;
   /** When the reply finished — the assistant turn's `createdAt`, and the write's. */
   readonly repliedAt: Date;
+  /**
+   * Whether the model called `saveRecipe` on this turn (issue #1480) — i.e.
+   * whether somebody asked for this conversation to be kept as a recipe.
+   *
+   * OPTIONAL because it is a request, not a fact about the turn: absent reads as
+   * "nobody asked", which is what every caller that predates this meant.
+   */
+  readonly saveRequested?: boolean;
 }
 
 /**
@@ -1279,6 +1435,12 @@ interface ChefChatTurn {
  * value forward lets a fortnight-old chat expire in the middle of an active
  * conversation. `chatExpiresAt` from `@salt/domain` is the one home for the two
  * durations; only the `Timestamp` conversion is ours.
+ *
+ * IT ALSO CARRIES THE SAVE REQUEST (issue #1480), and that is the whole of the
+ * channel: `pendingSaveIntent` rides the write this function was already making,
+ * so the wire contract does not move and #1303's deploy-skew corruption cannot
+ * recur. This is still not a save — see `saveRecipeTool` — it records that one
+ * was asked for, and the browser does the rest.
  *
  * IT NEVER THROWS (Rule 10, and `persistAuthoredRecipe`'s reasoning): a Firestore
  * hiccup must not throw away a completed, already-paid-for turn. The callable
@@ -1325,6 +1487,8 @@ export async function writeChefChatTurn(
     }
 
     const repliedAt = turn.repliedAt.toISOString();
+    // Minted here so the save intent below can name the turn it belongs to.
+    const assistantMessageId = randomUUID();
     const updated: ChatSessionDoc = {
       ...session,
       messages: [
@@ -1335,9 +1499,17 @@ export async function writeChefChatTurn(
           text: turn.userText,
           createdAt: turn.askedAt.toISOString(),
         },
-        { id: randomUUID(), role: 'assistant', text: turn.replyText, createdAt: repliedAt },
+        { id: assistantMessageId, role: 'assistant', text: turn.replyText, createdAt: repliedAt },
       ],
       updatedAt: repliedAt,
+      // SET ON EVERY TURN, to the new assistant message id or back to null — one
+      // half of the clearing rule the field's declaration describes (issue
+      // #1480). Carrying the stored value forward instead would leave a request
+      // nobody acted on sitting on the document, re-firing on every reload until
+      // somebody deleted the chat; this way a stale one survives at most until
+      // the next thing anybody says. The browser clears it as it takes it, which
+      // is the half that stops it firing twice in one conversation.
+      pendingSaveIntent: turn.saveRequested === true ? assistantMessageId : null,
       expiresAt: chatExpiresAt(session, turn.repliedAt).toISOString(),
     };
     await ref.set({
@@ -1383,6 +1555,7 @@ export const chefChatFlow = ai.defineFlow(
         variationContext,
         memoryContext,
         notesEnabled,
+        saveEnabled,
       ] = await Promise.all([
         readEquipmentContext(db, 'chefChat'),
         input.recipeId ? readRecipeContext(db, input.recipeId) : Promise.resolve(''),
@@ -1401,7 +1574,12 @@ export const chefChatFlow = ai.defineFlow(
         // round-trip, so it joins the existing Promise.all rather than adding a
         // serial one — and it resolves false without any network call at all for
         // a request that carried no verified uid.
-        kitchenNotesEnabled(caller),
+        callerInFlag(LIBRARY_FLAG_KEY, caller),
+        // Whose chef can be asked to save a recipe (issue #1480). A second
+        // PostHog round-trip on the same connection, in the same batch, resolved
+        // without a network call at all for a caller the gate has already
+        // refused.
+        callerInFlag(CHAT_SAVE_FLAG_KEY, caller),
       ]);
 
       const systemPrompt = buildSystemPrompt(
@@ -1412,6 +1590,7 @@ export const chefChatFlow = ai.defineFlow(
         memoryContext,
         input.speaker,
         notesEnabled ? KITCHEN_NOTES_FRAMING : '',
+        saveEnabled ? SAVE_RECIPE_FRAMING : '',
       );
 
       // Convert Message[] history to Genkit MessageData format. Our domain role is
@@ -1426,19 +1605,34 @@ export const chefChatFlow = ai.defineFlow(
 
       // Pro-tier model for conversational quality (design principle #3, issue #206).
       const chatModel = await flowModel('chefChat');
+
+      // Built rather than ternaried, because there are now two independent gates
+      // over one array and a nested conditional would answer neither clearly. The
+      // ORDER is the read tools, then the Library's three, then the save — the
+      // order the tools arrived in, and the order the tests name them in.
+      const tools = [
+        findRecipesTool,
+        readRecipeTool,
+        readEquipmentDetailTool,
+        ...(notesEnabled ? [findKitchenNotesTool, readKitchenNoteTool, writeKitchenNoteTool] : []),
+        ...(saveEnabled ? [saveRecipeTool] : []),
+      ];
+
       const { stream, response } = ai.generateStream({
         model: chatModel,
         system: systemPrompt,
         messages: history,
         prompt: input.newMessage,
-        // The chef's tools. Three for everyone (issues #840, #1373) — findRecipes,
-        // readRecipe and readEquipmentDetail, the last of which is READ-ONLY,
-        // permanently ("No, and not ever": see the comment at
-        // `readEquipmentDetailTool`) — plus the three kitchen-notes tools for a
-        // caller inside the `library` flag (issue #1377). That is what this array
-        // varying per request is for, and it is the whole of the gate: the tools
-        // themselves are defined at module load, as Genkit requires, and what
-        // changes is the array passed BY VALUE here.
+        // The chef's tools, assembled just above. Three for everyone (issues
+        // #840, #1373) — findRecipes, readRecipe and readEquipmentDetail, the
+        // last of which is READ-ONLY, permanently ("No, and not ever": see the
+        // comment at `readEquipmentDetailTool`) — plus the three kitchen-notes
+        // tools for a caller inside the `library` flag (issue #1377), plus
+        // `saveRecipe` for one inside `chat-save` (issue #1480), which writes
+        // nothing at all. That is what this array varying per request is for, and
+        // it is the whole of both gates: the tools themselves are defined at
+        // module load, as Genkit requires, and what changes is the array passed
+        // BY VALUE here.
         //
         // Genkit runs the tool loop inside this call and keeps streaming across
         // it, so the reply still arrives in fragments; the gaps while tools run are
@@ -1451,16 +1645,7 @@ export const chefChatFlow = ai.defineFlow(
         // Note what is still absent: no `output` option, and none is coming. Half
         // of design principle #1 survives intact — the chef returns prose, and
         // structure stays the librarian's job at save time.
-        tools: notesEnabled
-          ? [
-              findRecipesTool,
-              readRecipeTool,
-              readEquipmentDetailTool,
-              findKitchenNotesTool,
-              readKitchenNoteTool,
-              writeKitchenNoteTool,
-            ]
-          : [findRecipesTool, readRecipeTool, readEquipmentDetailTool],
+        tools,
       });
 
       // The DRAIN is what needs the deadline, not what follows it (issue #915).
@@ -1498,6 +1683,14 @@ export const chefChatFlow = ai.defineFlow(
       // and an empty reply is worse than a duplicated one.
       const reply = streamedText || finalResponse.text;
 
+      // Was this one of the handful of turns where somebody asked for a recipe to
+      // be saved (issue #1480)? Read off the finished turn, and GATED AGAIN here
+      // rather than trusted from the tool's presence alone — the array above is
+      // the only way the tool can be reached, so this second test is belt and
+      // braces, and it is what makes "outside the flag, nothing is recorded" true
+      // of this line on its own rather than of two lines read together.
+      const saveRequested = saveEnabled && turnRequestedRecipeSave(finalResponse);
+
       // The turn is stored EXACTLY as it is returned, and only on a turn that got
       // this far: a stream that times out or errors throws into the catch below
       // and writes nothing, as it always has (the client rolls its optimistic
@@ -1515,6 +1708,7 @@ export const chefChatFlow = ai.defineFlow(
           replyText: reply,
           askedAt,
           repliedAt: new Date(),
+          saveRequested,
         });
       }
 
