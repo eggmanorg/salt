@@ -143,13 +143,20 @@ const fakeModels = new Map<AiFlowId, ModelAction>();
  * Without that test the loop would re-request the same tool until Genkit's
  * `maxTurns` gave up — the fake would be stubbed once and called five times.
  */
-interface ToolCallStub {
+export interface ToolCallStub {
   readonly tool: string;
   readonly input?: Record<string, unknown>;
   readonly then: string;
 }
 
-function asToolCallStub(response: unknown): ToolCallStub | null {
+/**
+ * The stub as a tool call, or null for the ordinary string/object stubs.
+ *
+ * Exported for its own unit test: the runner below only ever runs under
+ * `FUNCTIONS_AI_FAKE`, so an e2e spec is the only thing that reaches it, and a
+ * shape decision with no unit test behind it is exactly the kind that rots.
+ */
+export function asToolCallStub(response: unknown): ToolCallStub | null {
   if (typeof response !== 'object' || response === null) return null;
   const candidate = response as Partial<ToolCallStub>;
   return typeof candidate.tool === 'string' && typeof candidate.then === 'string'
@@ -157,8 +164,8 @@ function asToolCallStub(response: unknown): ToolCallStub | null {
     : null;
 }
 
-/** Has a tool already answered in this request's history? */
-function historyHasToolResponse(request: unknown): boolean {
+/** Has a tool already answered in this request's history? Exported to be tested. */
+export function historyHasToolResponse(request: unknown): boolean {
   const messages = (request as { messages?: unknown } | null)?.messages;
   if (!Array.isArray(messages)) return false;
   return messages.some((message: unknown) => {

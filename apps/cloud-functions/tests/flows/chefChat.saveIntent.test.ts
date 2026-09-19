@@ -345,6 +345,30 @@ describe('turnRequestedRecipeSave', () => {
     };
     expect(turnRequestedRecipeSave(throwing)).toBe(false);
     expect(turnRequestedRecipeSave(undefined)).toBe(false);
+    expect(turnRequestedRecipeSave(null)).toBe(false);
     expect(turnRequestedRecipeSave({ text: 'hello' })).toBe(false);
+    expect(turnRequestedRecipeSave({ messages: 'nonsense' })).toBe(false);
+  });
+
+  it('walks past a message it cannot read rather than stopping at it', () => {
+    // A history is Genkit's to build, and this reads it structurally. A part or a
+    // message that is not the shape expected must cost the scan that entry, never
+    // the whole turn — a throw here would lose a paid-for reply.
+    expect(
+      turnRequestedRecipeSave({
+        messages: [
+          null,
+          { role: 'model' },
+          { role: 'model', content: 'nonsense' },
+          { role: 'model', content: [null, { text: 'hm' }] },
+          { role: 'model', content: [{ toolRequest: { name: SAVE_RECIPE_TOOL_NAME } }] },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      turnRequestedRecipeSave({
+        messages: [null, { role: 'model', content: [null, { toolRequest: {} }] }],
+      }),
+    ).toBe(false);
   });
 });
