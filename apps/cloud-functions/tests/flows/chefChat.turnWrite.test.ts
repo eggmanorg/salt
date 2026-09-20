@@ -131,6 +131,15 @@ describe('writeChefChatTurn — the turn reaches Firestore', () => {
       },
     ]);
     expect(doc['updatedAt']).toBe(REPLIED_AT.toISOString());
+    // The full `.set()` replaces the whole document (claim 2's ownership check
+    // and claim 3's `expiresAt` bump both depend on that), so anything the read
+    // brought back that this write doesn't touch has to be carried forward
+    // explicitly. A later edit that dropped one of these would do it silently —
+    // `reopenedAt` in particular would flip a reopened chat back to read-only.
+    expect(doc['title']).toBe('New chat');
+    expect(doc['createdAt']).toBe('2026-09-17T08:00:00.000Z');
+    expect(doc['reopenedAt']).toBeNull();
+    expect(doc['basedOnRecipeId']).toBeNull();
   });
 
   it('appends to the STORED transcript, not to the history that was on the wire', async () => {

@@ -1445,11 +1445,18 @@ interface ChefChatTurn {
  * IT NEVER THROWS (Rule 10, and `persistAuthoredRecipe`'s reasoning): a Firestore
  * hiccup must not throw away a completed, already-paid-for turn. The callable
  * still returns the reply, the browser still paints it, and the failure is logged.
- * The boundary, because "the turn is never lost" would be too strong: when this
- * write fails, the turn is lost exactly as it was before this issue — the browser
- * no longer persists on the send path, so there is no second writer to fall back
- * on. What this removes is the loss caused by the PAGE going away, which was 100%
- * of the occurrences; a failed write is a different and much rarer one.
+ *
+ * THE BOUNDARY, stated rather than the comfortable version of it: a failed write
+ * here does not just lose the one turn — it HOLES the stored transcript. This
+ * function reads `messages`, appends the pair, and writes the whole array back;
+ * if that write fails, the next turn's call reads the array without this one's
+ * pair and appends onto that, so the gap sits in the MIDDLE of the transcript,
+ * not at the end. Nothing detects or repairs a prior missed turn — there is no
+ * marker, no retry, no re-check against what the browser thinks it sent. This is
+ * accepted, not unnoticed: what this function removes is the loss caused by the
+ * PAGE going away, which was 100% of the occurrences; a failed write is a
+ * different and much rarer one, and building retry/refusal/gap-marking for it is
+ * a deliberate non-goal for now (issue #1478).
  */
 export async function writeChefChatTurn(
   db: ReturnType<typeof getFirestore>,

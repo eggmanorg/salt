@@ -98,10 +98,17 @@ const latestLocalEdit = new Map<string, string>();
 // longer the only copy of anything.
 //
 // `arrived` is what `sendMessage` awaits before applying a generated title, so
-// the title is composed onto the flow's document rather than racing it. It never
-// resolves if the flow's write failed — deliberately: the title is then dropped,
-// the chat keeps its seed name, and that is the cosmetic loss #1430 names and
-// leaves open, not a lost turn.
+// the title is composed onto the flow's document rather than racing it. It
+// never resolves if the flow's write failed — and the entry never expires, so
+// `applySnapshot` above keeps this session `stillAwaitingFlowWrite` and skips
+// EVERY incoming snapshot for it, not only the title's: new messages, a rename,
+// whatever else changes the document next, all held back behind the optimistic
+// copy. That is wider than the cosmetic title loss #1430 names — a session can
+// go quiet and stop tracking the server entirely until either another
+// `sendMessage` on it replaces the entry (and gets stuck the same way if that
+// write also never lands) or the page reloads, which drops this in-memory map
+// and lets the next snapshot through unconditionally. Accepted as a known
+// quirk, not fixed with a timeout here.
 interface ServerWriteWait {
   readonly landed: Promise<void>;
   readonly arrived: () => void;
