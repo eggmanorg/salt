@@ -371,6 +371,54 @@ never name the same thing, because that query already excludes a label resolving
 one of the household's records. What was wrong was putting a count of drawings in a
 place that means approvals, with no route from the number to the work.
 
+### Salt proposes, a person writes (#1458, Phase 2)
+
+Every **Not drawn yet** row on `/admin/kitchen-tools` carries a sentence saying what
+Salt thinks the word is. The rows themselves are #1489 Phase 3's; this is a sentence
+added to them, and it takes no verb away and adds none.
+
+- **`proposeKitchenTools`** (`apps/cloud-functions/src/flows/proposeKitchenTools.ts`)
+  answers one of three things per word — another name for a tool that already draws,
+  a new tool with a suggested name, or not a piece of kit at all.
+- **One call for the whole group, once per arrival.** The judgement worth paying a
+  model for is grouping — that "large mixing bowl" and "Large Bowls" are the bowl we
+  already draw — and a model shown one word at a time cannot make it. It also keeps
+  opening the page to a single `fast` call.
+- **The pure head-noun suggestion still leads.** `suggestKitchenToolParent` paints
+  every row before the call is made and stays there if the answer never comes; the
+  proposal replaces it in place when it arrives. Nothing spins and nothing is
+  disabled while waiting, and a model that is unavailable costs the page a sentence
+  and nothing else.
+- **Nothing is written without a press,** and the presses are the ones the row
+  already had: the one-click alias, or the pre-filled Add dialog where #956's
+  near-duplicate warning lives. There is no accept button of its own, and no
+  dismiss — a word this page cannot name is the library's own content, and there is
+  nowhere honest to record that somebody disagreed with a suggestion.
+
+**What stops the vocabulary bloating, stated rather than overstated.** One thing is
+mechanical: `sanitiseKitchenToolProposals` refuses to propose a **new** tool where
+the vocabulary can already name the name the MODEL suggested for it, through
+`resolveKitchenTool`. It deliberately does **not** check the requested word itself
+against `resolveKitchenTool` — `kitIcons.ts` (every surface that draws a kit label)
+renders through `kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, and every
+word this flow is ever asked about already failed that gate (`unresolvedKitLabels`
+applies the same lookup before a word joins the queue). So `resolveKitchenTool(word,
+tools)` is non-null only when `kitchenToolForKitLabel`'s accessory rule (#1460)
+deliberately refused that word — e.g. "Thermo Bowl" naming the Magimix's sealed
+accessory rather than an ordinary mixing bowl — and checking it would rewrite that
+refusal back into the very alias #1460 exists to prevent, on the row's own leading
+press. It is pinned by
+`apps/cloud-functions/tests/flows/proposeKitchenTools.test.ts`. The ceiling in
+`apps/cloud-functions/tests/kitchenToolVocabulary.test.ts` is unchanged and green.
+
+One thing is **not** guaranteed, and no test can make it so: a person may always
+confirm a `new` proposal that should have been an alias; that is the design — Salt
+records, it does not police. Nor does this guard stop the flow proposing an alias
+onto a word `kitchenToolForKitLabel` already refused — the model may answer `alias`
+outright, or a `new` whose `suggestedLabel` resolves to that same refused tool, and
+either still reaches the row's leading press; the guard only prevents minting a
+duplicate, not aliasing onto one.
+
 ### The description's two lives (#1433)
 
 The same flow runs on two paths with opposite durability, and that is the decision

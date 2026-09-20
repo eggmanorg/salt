@@ -195,9 +195,18 @@ export const violationCeilings = {
   // inside a dialog only commits while its layer is topmost, and vitest's
   // isolation is per FILE. Folding it into a file that opens another dialog is
   // what makes it silently stop asserting.
+  //
+  // UT-B1 47 → 48 (issue #1458 Phase 2). `KitchenToolsPage.proposal.test.ts`, the
+  // same sanctioned case a third time: it mounts the same admin route and needs
+  // the same eight seams, one of which — `@salt/firebase-sync` — is the very
+  // thing under test here, since the proposal arrives through a callable and the
+  // path that matters most is the one where it never arrives at all. It is its
+  // own file rather than rows in `KitchenToolsPage.test.ts` because the answer is
+  // set per test on a hoisted sink the module mock reads, and a file-wide default
+  // of "no proposal" is what every assertion in that file was written against.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 47,
+    'UT-B1': 48,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,

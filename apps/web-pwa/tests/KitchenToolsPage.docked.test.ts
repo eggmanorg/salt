@@ -65,6 +65,13 @@ vi.mock('@salt/firebase-sync', () => ({
   }),
   upsertKitchenTool: vi.fn(async () => ({ kind: 'ok' as const, value: undefined })),
   deleteKitchenTool: vi.fn(async () => ({ kind: 'ok', value: undefined })),
+  // Salt's proposal per undrawn word (#1458 Phase 2). Answering nothing is the
+  // no-proposal state, which is what every assertion in this file was written
+  // against: each gap row keeps `suggestKitchenToolParent`'s head-noun suggestion.
+  callProposeKitchenTools: vi.fn(async () => ({
+    kind: 'ok' as const,
+    value: { proposals: [] },
+  })),
 }));
 
 import { push } from 'svelte-spa-router';
