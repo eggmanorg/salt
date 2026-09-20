@@ -168,6 +168,26 @@ export async function addKitchenToolMatcher(
   return editKitchenTool(tool, { label: tool.label, matchers: [...tool.matchers, phrase] });
 }
 
+/**
+ * Drop one phrase a tool answers to — the twin of `addKitchenToolMatcher`, and
+ * here for the same reason it is: both the expanded list row and the editor offer
+ * Remove on a name (issue #1489), so the one write has one spelling.
+ *
+ * Matched on the STORED phrase, not on a normalised form: the list shows what is
+ * stored, so the phrase the reader pressed Remove beside is the phrase that goes.
+ * A `matchers` array that somehow held two entries normalising the same would lose
+ * only the one that was pressed, which is the honest reading of that press.
+ */
+export async function removeKitchenToolMatcher(
+  tool: KitchenToolDoc,
+  phrase: string,
+): Promise<Result<KitchenToolDoc, DomainError>> {
+  return editKitchenTool(tool, {
+    label: tool.label,
+    matchers: tool.matchers.filter((m) => m !== phrase),
+  });
+}
+
 export async function removeKitchenTool(id: string): Promise<Result<void, DomainError>> {
   return reportIfFailed(getErrorReporter(), await deleteKitchenToolDoc(id));
 }

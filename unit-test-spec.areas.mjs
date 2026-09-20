@@ -178,9 +178,18 @@ export const violationCeilings = {
   // in `RecipeIdentityCard.test.ts` and `RecipeViewPage.matchMarkers.test.ts`)
   // breach nothing new — the new file mounts one component and needs no mocks at
   // all, and the two extended suites were already counted.
+  // UT-B1 45 → 46 (issue #1489 Phase 1). ONE new file,
+  // `KitchenToolsPage.docked.test.ts`, and the raise is the sanctioned case
+  // rather than drift: it is the sibling of `CatalogPage.docked.test.ts` — which
+  // is already on this list — and it mounts a whole admin route, so its eight
+  // `vi.mock` calls are that route's service seams (router, toasts, auth,
+  // members, recipes, guided plans, observability, firebase-sync) and not one of
+  // them is avoidable by writing the test differently. The alternative was to
+  // leave the page's docked/phone gate untested, which is the failure #933 wrote
+  // `CatalogPage.docked.test.ts` to stop.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 45,
+    'UT-B1': 46,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,

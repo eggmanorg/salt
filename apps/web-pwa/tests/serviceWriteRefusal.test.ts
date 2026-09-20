@@ -114,6 +114,7 @@ import {
   hideKitchenToolIcon,
   initKitchenToolSync,
   regenerateKitchenToolIcon,
+  removeKitchenToolMatcher,
   __resetKitchenToolServiceForTest,
 } from '../src/lib/kitchenToolService.js';
 import {
@@ -429,6 +430,11 @@ const rows: Row[] = [
         label: 'Mandoline',
         matchers: ['mandoline', 'slicer'],
       }),
+  },
+  {
+    name: 'kitchenToolService.removeKitchenToolMatcher',
+    writer: 'upsertKitchenTool',
+    run: () => removeKitchenToolMatcher(makeTool('t1', 'Mandoline'), 'slicer'),
   },
   {
     name: 'kitchenToolService.regenerateKitchenToolIcon',
