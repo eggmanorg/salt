@@ -396,6 +396,13 @@ code exists, and nothing checks it afterwards — `board.mjs check` does not tes
 What it buys is a sense of the budget the work will be built against, and a way for
 triage to compare two issues.
 
+**`L` has no headroom, by construction.** Its top edge _is_ `--max-diff` — the same
+2000 lines `/salt-run` refuses to carry past a phase boundary. So a correctly
+estimated `L` sits exactly on the wall, and any estimation error at all crosses it.
+That is why **a `/salt-run` split on an `L` issue is the expected outcome rather than
+an estimation failure**: the mechanism below is what `L` is sized to invoke, not a
+penalty for getting the number wrong. Read a split as the design working.
+
 **There is no size above `L`, because nothing needs one.** A spec that expects to
 exceed 2000 lines is not too large to build and is not refused: it is a **multi-PR
 issue**. `/salt-run` cuts a PR at the phase boundary where the ceiling is crossed

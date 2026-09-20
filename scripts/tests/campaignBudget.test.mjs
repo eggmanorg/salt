@@ -14,6 +14,11 @@
 // number appears everywhere it must, and the file never again asks the harness
 // to start a sleep it cannot start (a Bash `timeout` is capped at 600000 ms,
 // which is why the per-worker watchdog sleep had to go).
+//
+// From #1521 Phase 2 the same number lives in five files that never import each
+// other — the campaign command that hands it out, the three spec commands that
+// size phases against it, and `salt-run.md`'s CI figure. `guidedPlanTimeoutBudget`
+// pins a three-part budget for the same reason; this is that shape at five.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -75,5 +80,41 @@ describe('salt-campaign.md — the mechanism that enforces it', () => {
   it('requires re-arming on every wake, including an agent-return wake', () => {
     expect(src).toMatch(/including a wake caused by an agent returning/);
     expect(src).toMatch(/re-arm the heartbeat before you end the turn/);
+  });
+});
+
+describe('the spec commands size a phase against the budget', () => {
+  const SPEC_COMMANDS = ['salt-spec.md', 'salt-defect.md', 'salt-refactor.md'];
+
+  // The number is only useful to a spec author if it reaches the list they are
+  // actually consulting when they draw a boundary. Pinning its presence in the
+  // file is not enough — before #1521 all three files scored zero for the word
+  // "minute" anywhere at all, and the failure was that the criterion did not
+  // exist, not that it sat in the wrong section.
+  const phasesSection = (file) => {
+    const src = read(file);
+    const start = src.indexOf('## Phases');
+    if (start === -1) throw new Error(`no "## Phases" heading in ${file}`);
+    const next = src.indexOf('\n## ', start + 1);
+    return src.slice(start, next === -1 ? undefined : next);
+  };
+
+  it.each(SPEC_COMMANDS)('%s states the 90-minute build budget in its Phases section', (file) => {
+    expect(phasesSection(file)).toMatch(/\*\*90 minutes\*\* per phase/);
+  });
+
+  it.each(SPEC_COMMANDS)('%s names the CI wait the budget has to absorb', (file) => {
+    expect(phasesSection(file)).toMatch(/about 10 of those/);
+  });
+});
+
+describe('the CI wait is one number, not one per file', () => {
+  // salt-run.md said "5-7 minutes" while this campaign's own calibration said
+  // otherwise; two numbers for one thing, in two files an agent reads in the
+  // same run. Measured p50 is 10 minutes over successful `pull_request` runs.
+  it('salt-run.md carries the measured figure and not the stale one', () => {
+    const src = read('salt-run.md');
+    expect(src).toMatch(/A run takes about 10 minutes/);
+    expect(src).not.toMatch(/5–7 minutes|5-7 minutes/);
   });
 });

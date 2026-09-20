@@ -267,7 +267,7 @@ sleep 20 && gh pr checks --watch --fail-fast      # Bash tool, run_in_background
 
 The `sleep` is not padding: GitHub takes a few seconds to register the run, and `gh pr checks` exits straight away with _"no checks reported"_ if none exist yet — which arrives looking exactly like a finished CI. If the watch does return within seconds, that is what happened; re-issue it rather than reading it as a result.
 
-A run takes 5–7 minutes and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
+A run takes about 10 minutes — measured p50 over successful `ci.yml` runs on `pull_request` events, range 8–15 — and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
 
 Stop there. **Do not start implementing N+1 until you have read phase N's CI result** (step 8): building on a red phase turns one rework into two.
 

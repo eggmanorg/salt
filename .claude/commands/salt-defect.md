@@ -179,7 +179,11 @@ Split only where there is a reason to:
 - **an unresolved fork** — the fix rests on something in Open Questions the user should judge first;
 - **data remediation** — a migration or backfill is its own phase, and only if Step 3 chose to remediate;
 - **a changed behavior contract** — docs or callers needing updating can be their own phase;
-- **too large to validate as one diff** — a multi-bug fix the reviewer can't reliably judge in one pass.
+- **too large to validate as one diff** — a multi-bug fix the reviewer can't reliably judge in one pass; or
+- **too large to build inside the budget** — a worker gets **90 minutes** per phase, and about 10 of those
+  are the CI wait at the boundary rather than building. A fix that cannot be built, gated and pushed through
+  CI inside that is two phases — which for a defect usually means the remediation is the one that splits off,
+  not the fix and its regression test.
 
 **A phase boundary is also a PR boundary**, so even a wide multi-bug fix never has to fit in one PR: `/salt-run`
 cuts one where its diff ceiling is crossed with phases still unbuilt ([docs/issue-board.md](../../docs/issue-board.md)
