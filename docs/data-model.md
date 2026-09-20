@@ -117,12 +117,18 @@ LWW-clobbering — the dish, and a recipe with no plan carries no empty scaffold
 **Two writers, split by who is waiting** (issue #1416). A GENERATION is written
 server-side by the `generateGuidedPlan` flow through the Admin SDK, which is what
 makes it survive a phone locking during the one-to-three-minute call; the callable
-returns the document it wrote, and the client only paints it. A HUMAN SAVE, edit or
-discard is written client-side by `guidedPlanService`. Whole-document LWW as
-everywhere else, so the hazard is not the two writers but the control fields
+returns the document it wrote, and the client only paints it. On the human side,
+`guidedPlanService` writes three ways: a SAVE/Approve (`saveGuidedPlan`), a
+per-line EDIT with no Save step at all (`editGuidedPlan`, issue #1453 — every
+changed line writes the moment it changes), and a DISCARD. Whole-document LWW as
+everywhere else, so the hazard is not the writers but the control fields
 disagreeing: `needs_approval` is set **only** by the flow and dropped **only** by
-`saveGuidedPlan`, and `recipeUpdatedAtAtSave` is stamped by both, each against the
-recipe it actually read. Both halves are pinned by tests — see the header of
+`saveGuidedPlan` — an edit carries it through untouched, because correcting a line
+is not the claim that the whole plan has been read. `recipeUpdatedAtAtSave` is
+stamped by the flow and by `saveGuidedPlan`, each against the recipe it actually
+read, but **not** by `editGuidedPlan` — a plan edited against a recipe that has
+since moved on keeps showing the stale banner until Approve re-stamps it. All
+three are pinned by tests — see the header of
 `apps/web-pwa/src/lib/guidedPlanService.ts`.
 
 No `firestore.rules` clause covers the server write and none should: an Admin SDK
