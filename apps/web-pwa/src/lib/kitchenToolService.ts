@@ -188,6 +188,94 @@ export async function removeKitchenToolMatcher(
   });
 }
 
+/**
+ * Give one of a tool's other names a picture of its own (issue #1489).
+ *
+ * THE OPPOSITE TRADE TO `addKitchenToolMatcher` above, and it says so at its own
+ * declaration because the pair is easy to mistake for one verb: that one exists
+ * precisely to draw NO second pictogram, and this one mints a document and spends
+ * one Gemini image, because `onKitchenToolWritten` draws on the create. It is the
+ * expensive half and never the one that leads.
+ *
+ * THE COLLISION IS CAUGHT BEFORE ANY WRITE. `createKitchenTool` is pure and takes
+ * the whole current vocabulary; a phrase whose slug already belongs to a tool
+ * fails here with nothing written at all.
+ *
+ * THE GAINING WRITE GOES FIRST, the trim second — the same ordering, for the same
+ * reason, as `canonService.ts`'s `splitMostRecentSynonym`: if the second write is
+ * refused the phrase is DUPLICATED rather than lost, which is the recoverable
+ * half. A person's typing is never destroyed by a half-completed command.
+ *
+ * STATED BOUNDARY, NOT AN INVARIANT. In the window where the new tool has landed
+ * and the parent's trim has not, the phrase sits on two documents, and
+ * `resolveKitchenToolMatch` breaks a length tie by array order (the `>` at
+ * `resolveKitchenTool.ts:66-90` is strict). WHICH picture the word shows during
+ * that window is therefore unspecified. Do not write a sentence anywhere claiming
+ * a phrase can only live on one tool, and do not "fix" this by reordering the
+ * writes — trim-first destroys what somebody typed. The caller answers a refused
+ * trim with a destructive toast naming the exact repair.
+ */
+export async function promoteKitchenToolMatcher(
+  parent: KitchenToolDoc,
+  phrase: string,
+): Promise<Result<KitchenToolDoc, DomainError>> {
+  const now = new Date().toISOString();
+  const created = createKitchenTool(
+    { label: phrase, matchers: [] },
+    getKitchenToolsSnapshot(),
+    now,
+  );
+  if (created.kind !== 'ok') return created;
+  const trimmed = updateKitchenTool(
+    parent,
+    { label: parent.label, matchers: parent.matchers.filter((m) => m !== phrase) },
+    now,
+  );
+  if (trimmed.kind !== 'ok') return trimmed;
+  const wroteCreated = await commitKitchenTool(created.value);
+  if (wroteCreated.kind === 'err') return wroteCreated;
+  const wroteTrimmed = await commitKitchenTool(trimmed.value);
+  if (wroteTrimmed.kind === 'err') return wroteTrimmed;
+  return created;
+}
+
+/**
+ * Move one name from one tool to another (issue #1489).
+ *
+ * COSTS NOTHING. The phrase is a plain string in `matchers` and nothing anywhere
+ * stores a tool id, so the move changes which picture the word draws and rewrites
+ * no recipe, no plan and no image.
+ *
+ * Gaining write first — append to the destination, then trim the source — with
+ * the same reasoning and the same stated boundary as
+ * `promoteKitchenToolMatcher` above; read it there rather than trusting a
+ * summary here.
+ */
+export async function moveKitchenToolMatcher(
+  from: KitchenToolDoc,
+  to: KitchenToolDoc,
+  phrase: string,
+): Promise<Result<KitchenToolDoc, DomainError>> {
+  const now = new Date().toISOString();
+  const appended = updateKitchenTool(
+    to,
+    { label: to.label, matchers: [...to.matchers, phrase] },
+    now,
+  );
+  if (appended.kind !== 'ok') return appended;
+  const trimmed = updateKitchenTool(
+    from,
+    { label: from.label, matchers: from.matchers.filter((m) => m !== phrase) },
+    now,
+  );
+  if (trimmed.kind !== 'ok') return trimmed;
+  const wroteAppended = await commitKitchenTool(appended.value);
+  if (wroteAppended.kind === 'err') return wroteAppended;
+  const wroteTrimmed = await commitKitchenTool(trimmed.value);
+  if (wroteTrimmed.kind === 'err') return wroteTrimmed;
+  return appended;
+}
+
 export async function removeKitchenTool(id: string): Promise<Result<void, DomainError>> {
   return reportIfFailed(getErrorReporter(), await deleteKitchenToolDoc(id));
 }

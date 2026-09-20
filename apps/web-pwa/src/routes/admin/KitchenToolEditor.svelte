@@ -34,6 +34,8 @@
     variant,
     onDelete,
     onClose,
+    onPromoteName,
+    onMoveName,
     onRemoveName,
   }: {
     tool: KitchenToolDoc;
@@ -42,6 +44,8 @@
     onDelete: () => void;
     /** Back / dismissed — returns to wherever the reader came from. */
     onClose: () => void;
+    onPromoteName: (tool: KitchenToolDoc, phrase: string) => void;
+    onMoveName: (tool: KitchenToolDoc, phrase: string) => void;
     onRemoveName: (tool: KitchenToolDoc, phrase: string) => void;
   } = $props();
 
@@ -234,6 +238,8 @@
               {phrase}
               toolLabel={tool.label}
               testidPrefix="kitchen-tool-editor-name"
+              onPromote={() => onPromoteName(tool, phrase)}
+              onMove={() => onMoveName(tool, phrase)}
               onRemove={() => onRemoveName(tool, phrase)}
             />
           {/each}

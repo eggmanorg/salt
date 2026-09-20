@@ -25,6 +25,8 @@
     onToggle,
     open,
     onOpen,
+    onPromoteName,
+    onMoveName,
     onRemoveName,
   }: {
     tool: KitchenToolDoc;
@@ -33,6 +35,8 @@
     /** Is the editor on this tool, so the row reads as the active one. */
     open: boolean;
     onOpen: (id: string) => void;
+    onPromoteName: (tool: KitchenToolDoc, phrase: string) => void;
+    onMoveName: (tool: KitchenToolDoc, phrase: string) => void;
     onRemoveName: (tool: KitchenToolDoc, phrase: string) => void;
   } = $props();
 
@@ -105,6 +109,8 @@
           {phrase}
           toolLabel={tool.label}
           testidPrefix="kitchen-tool-list-name"
+          onPromote={() => onPromoteName(tool, phrase)}
+          onMove={() => onMoveName(tool, phrase)}
           onRemove={() => onRemoveName(tool, phrase)}
         />
       {/each}

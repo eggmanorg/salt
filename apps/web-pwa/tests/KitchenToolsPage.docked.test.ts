@@ -56,7 +56,7 @@ vi.mock('../src/lib/guidedPlanService.js', () => ({
   loadAllGuidedPlansForCuration: vi.fn(async () => ({ kind: 'ok', value: [] })),
 }));
 vi.mock('@salt/observability', () => ({
-  createObservabilityErrorReportingAdapter: () => ({ reportError: vi.fn() }),
+  createObservabilityErrorReportingAdapter: () => ({ report: vi.fn() }),
 }));
 vi.mock('@salt/firebase-sync', () => ({
   subscribeKitchenTools: vi.fn((onTools: (tools: readonly unknown[]) => void) => {

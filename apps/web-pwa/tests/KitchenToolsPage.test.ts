@@ -65,7 +65,7 @@ vi.mock('../src/lib/guidedPlanService.js', () => ({
   loadAllGuidedPlansForCuration: vi.fn(async () => ({ kind: 'ok', value: plansResult.value })),
 }));
 vi.mock('@salt/observability', () => ({
-  createObservabilityErrorReportingAdapter: () => ({ reportError: vi.fn() }),
+  createObservabilityErrorReportingAdapter: () => ({ report: vi.fn() }),
 }));
 vi.mock('@salt/firebase-sync', () => ({
   subscribeKitchenTools: vi.fn((onTools: (tools: readonly unknown[]) => void) => {
@@ -305,7 +305,9 @@ describe('KitchenToolsPage — the vocabulary list', () => {
     await waitFor(() => expect(toolRows()).toHaveLength(1));
     await userEvent.click(screen.getByTestId('kitchen-tool-row-disclosure-wide'));
     const body = await screen.findByTestId('kitchen-tool-row-body');
-    await userEvent.click(within(body).getAllByTestId('kitchen-tool-list-name-remove')[0]!);
+    // Remove is one of the three verbs behind the row's overflow menu.
+    await userEvent.click(within(body).getAllByTestId('kitchen-tool-list-name-menu')[0]!);
+    await userEvent.click(await screen.findByTestId('kitchen-tool-list-name-remove'));
 
     await waitFor(() => expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(1));
     const written = vi.mocked(upsertKitchenTool).mock.calls[0]![0];
@@ -567,7 +569,8 @@ describe('KitchenToolsPage — the editor', () => {
 
     const rows = await screen.findAllByTestId('kitchen-tool-editor-name-row');
     expect(rows.map((r) => r.getAttribute('data-kit-matcher'))).toEqual(['masher', 'ricer']);
-    await userEvent.click(screen.getAllByTestId('kitchen-tool-editor-name-remove')[1]!);
+    await userEvent.click(screen.getAllByTestId('kitchen-tool-editor-name-menu')[1]!);
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-remove'));
 
     await waitFor(() => expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(1));
     expect(vi.mocked(upsertKitchenTool).mock.calls[0]![0].matchers).toEqual(['masher']);
@@ -595,6 +598,105 @@ describe('KitchenToolsPage — the editor', () => {
     opts.action.onClick();
     await waitFor(() => expect(toolRows()).toHaveLength(1));
     expect(vi.mocked(deleteKitchenTool)).not.toHaveBeenCalled();
+  });
+});
+
+describe('KitchenToolsPage — the three verbs on a name', () => {
+  const MASHER = tool({
+    id: 'potato-masher',
+    label: 'Potato masher',
+    matchers: ['ricer'],
+  });
+
+  it('puts them in one menu, cheapest first, with full sentences and no glyph-only rows', async () => {
+    setTools([MASHER]);
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+
+    // Moving costs nothing; promoting spends one Gemini image and the label says
+    // so rather than a confirmation asking.
+    const move = await screen.findByTestId('kitchen-tool-editor-name-move');
+    const promote = screen.getByTestId('kitchen-tool-editor-name-promote');
+    expect(move).toHaveTextContent('Move to another tool…');
+    expect(promote).toHaveTextContent('Give it its own picture — draws a new one');
+    expect(screen.getByTestId('kitchen-tool-editor-name-remove')).toHaveTextContent('Remove');
+    // Cheapest leads.
+    expect(move.compareDocumentPosition(promote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('promoting mints the tool, says what it did, and lands the editor on it', async () => {
+    setTools([MASHER]);
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-promote'));
+
+    // Two writes, gaining first — the ordering itself is pinned in
+    // `kitchenToolMatcherMoves.test.ts`; here it is the consequence on screen.
+    await waitFor(() => expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(upsertKitchenTool).mock.calls[0]![0]).toMatchObject({ id: 'ricer' });
+    await waitFor(() => expect(vi.mocked(push)).toHaveBeenCalledWith('/admin/kitchen-tools/ricer'));
+    // No "are you sure?" anywhere in that — it says what it spent instead.
+    expect(vi.mocked(addToast).mock.calls.at(-1)![0]).toContain('Drawing its picture');
+  });
+
+  it('a refused trim says exactly what to repair, naming both tools', async () => {
+    // The duplicate window made loud. The phrase is on two documents until
+    // somebody fixes it, and the toast is the only thing that says so.
+    setTools([MASHER]);
+    vi.mocked(upsertKitchenTool)
+      .mockResolvedValueOnce({ kind: 'ok' as const, value: undefined })
+      .mockResolvedValueOnce({
+        kind: 'err' as const,
+        error: { kind: 'StorageError', reason: 'unavailable' },
+      });
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-promote'));
+
+    await waitFor(() => expect(vi.mocked(addToast)).toHaveBeenCalled());
+    expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(2);
+    const [message, variant] = vi.mocked(addToast).mock.calls.at(-1)!;
+    expect(variant).toBe('destructive');
+    expect(message).toContain('ricer');
+    expect(message).toContain('Potato masher');
+    expect(message).toContain('remove it there');
+  });
+
+  it('a colliding slug is refused by name, with nothing written', async () => {
+    setTools([MASHER, tool({ id: 'ricer', label: 'Ricer' })]);
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-promote'));
+
+    await waitFor(() => {
+      const last = vi.mocked(addToast).mock.calls.at(-1);
+      expect(last?.[0]).toContain('already in the list');
+    });
+    expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+  });
+
+  it('“Move to another tool…” opens a dialog naming the phrase and offering the others', async () => {
+    setTools([MASHER, tool({ id: 'whisk', label: 'Whisk' })]);
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-move'));
+
+    const dialog = await screen.findByTestId('kitchen-tool-move-dialog');
+    expect(dialog).toHaveTextContent('Move “ricer” to…');
+    // Nothing is written by opening it, and the destination is a choice rather
+    // than a guess.
+    expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
+
+    // Closed on the way out — a bits-ui dialog torn down while open leaves its
+    // layer on the library's global stack and swallows the next test's clicks.
+    await userEvent.click(screen.getByText('Cancel'));
+    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-move-dialog')).toBeNull());
   });
 });
 

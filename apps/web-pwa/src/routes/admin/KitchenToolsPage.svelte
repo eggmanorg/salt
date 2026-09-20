@@ -34,6 +34,8 @@
     isLoadingKitchenTools,
     addKitchenTool,
     addKitchenToolMatcher,
+    moveKitchenToolMatcher,
+    promoteKitchenToolMatcher,
     removeKitchenTool,
     removeKitchenToolMatcher,
   } from '../../lib/kitchenToolService.js';
@@ -161,7 +163,7 @@
     openId === null ? null : ($kitchenTools.find((t) => t.id === openId) ?? null),
   );
 
-  function openTool_(id: string): void {
+  function openToolById(id: string): void {
     if (docked) openId = id;
     else push(`/admin/kitchen-tools/${id}`);
   }
@@ -225,7 +227,7 @@
     if (result.kind === 'ok') {
       showAdd = false;
       addToast('Added. Drawing its picture…', 'success');
-      openTool_(result.value.id);
+      openToolById(result.value.id);
       return;
     }
     // The two refusals say different things and want different next moves, so
@@ -238,12 +240,76 @@
 
   // ─── The names a tool answers to ──────────────────────────────────────────────
   //
-  // Both the expanded list row and the editor offer Remove, so the write lives
-  // here once and both sites call it.
+  // The expanded list row and the editor offer the same three verbs, so each
+  // write lives here once and both sites call it — one command, one call path.
 
   async function handleRemoveName(tool: KitchenToolDoc, phrase: string): Promise<void> {
     const result = await removeKitchenToolMatcher(tool, phrase);
     if (result.kind !== 'ok') addToast('Failed to remove the name.', 'destructive');
+  }
+
+  /**
+   * Give a name a picture of its own. The expensive verb: it mints a document and
+   * spends one Gemini image. No gate in front of it — Salt records rather than
+   * polices — but it says what it did, and a refused second write says exactly
+   * what to repair rather than "something went wrong".
+   */
+  async function handlePromoteName(tool: KitchenToolDoc, phrase: string): Promise<void> {
+    const result = await promoteKitchenToolMatcher(tool, phrase);
+    if (result.kind === 'ok') {
+      addToast(`“${phrase}” is a tool of its own now. Drawing its picture…`, 'success');
+      openToolById(result.value.id);
+      return;
+    }
+    if (result.kind === 'err' && result.error.kind === 'ConflictError') {
+      // Nothing was written: `createKitchenTool` refuses a slug collision before
+      // the first write, so the honest message names the tool in the way.
+      addToast(`A tool called “${phrase}” is already in the list.`, 'destructive');
+      return;
+    }
+    // The duplicate window, made loud. See `promoteKitchenToolMatcher`'s header
+    // for why the phrase is on two documents here and why that is the recoverable
+    // half rather than a bug to reorder away.
+    addToast(
+      `“${phrase}” is a tool now, but ${tool.label} still answers to it — remove it there.`,
+      'destructive',
+    );
+  }
+
+  // Which name is being moved, and where to. The dialog is the page's because the
+  // choice is over the whole vocabulary, which only the page holds.
+  let moveTarget = $state<{ tool: KitchenToolDoc; phrase: string } | null>(null);
+  let moveToId = $state('');
+  let moveBusy = $state(false);
+
+  function openMove(tool: KitchenToolDoc, phrase: string): void {
+    moveTarget = { tool, phrase };
+    moveToId = '';
+  }
+
+  // Every tool but the one the phrase is already on.
+  const moveChoices = $derived(
+    sortedTools
+      .filter((t) => t.id !== moveTarget?.tool.id)
+      .map((t) => ({ value: t.id, label: t.label })),
+  );
+
+  async function handleMoveName(): Promise<void> {
+    const target = moveTarget;
+    const to = $kitchenTools.find((t) => t.id === moveToId);
+    if (!target || !to) return;
+    moveBusy = true;
+    const result = await moveKitchenToolMatcher(target.tool, to, target.phrase);
+    moveBusy = false;
+    moveTarget = null;
+    if (result.kind === 'ok') {
+      addToast(`“${target.phrase}” now shows the ${to.label}.`, 'success');
+      return;
+    }
+    addToast(
+      `${to.label} answers to “${target.phrase}” now, but ${target.tool.label} still does too — remove it there.`,
+      'destructive',
+    );
   }
 
   // ─── Delete ───────────────────────────────────────────────────────────────────
@@ -331,6 +397,8 @@
         variant="page"
         onClose={closeTool}
         onDelete={() => handleDelete(tool)}
+        onPromoteName={handlePromoteName}
+        onMoveName={openMove}
         onRemoveName={handleRemoveName}
       />
     </div>
@@ -463,7 +531,9 @@
                     expanded={expandedRows.has(tool.id)}
                     onToggle={() => toggleRow(tool.id)}
                     open={openId === tool.id}
-                    onOpen={openTool_}
+                    onOpen={openToolById}
+                    onPromoteName={handlePromoteName}
+                    onMoveName={openMove}
                     onRemoveName={handleRemoveName}
                   />
                 {:else}
@@ -485,6 +555,8 @@
                 variant="pane"
                 onClose={closeTool}
                 onDelete={() => handleDelete(tool)}
+                onPromoteName={handlePromoteName}
+                onMoveName={openMove}
                 onRemoveName={handleRemoveName}
               />
             {:else}
@@ -596,6 +668,65 @@
           data-testid="kitchen-tool-alias-confirm"
         >
           Add as another name
+        </Button>
+      </DialogFooter>
+    </div>
+  </DialogContent>
+</Dialog>
+
+<!-- Move one name from the tool it is on to a different one. Two writes, no
+     image, no cost — `moveKitchenToolMatcher` states the ordering and its one
+     stated boundary. -->
+<Dialog
+  open={moveTarget !== null}
+  onOpenChange={(v) => {
+    if (!v) moveTarget = null;
+  }}
+>
+  <DialogContent>
+    <div class="flex flex-col gap-4" data-testid="kitchen-tool-move-dialog">
+      <DialogHeader>
+        <DialogTitle>Move “{moveTarget?.phrase}” to…</DialogTitle>
+        <DialogDescription>
+          It stops being one of {moveTarget?.tool.label}'s names and becomes one of theirs. Nothing
+          new is drawn.
+        </DialogDescription>
+      </DialogHeader>
+      <div data-testid="kitchen-tool-move-select">
+        <Combobox
+          items={moveChoices}
+          value={moveToId}
+          onValueChange={(v) => (moveToId = v)}
+          placeholder="Search tools…"
+          restrict
+        >
+          <ComboboxField>
+            <ComboboxInput />
+            <ComboboxTrigger />
+          </ComboboxField>
+          <ComboboxContent>
+            {#snippet children({ filteredItems })}
+              {#each filteredItems as cbItem, i (cbItem.value)}
+                <ComboboxItem item={cbItem} index={i} />
+              {/each}
+              {#if filteredItems.length === 0}
+                <ComboboxEmpty>No tools match.</ComboboxEmpty>
+              {/if}
+            {/snippet}
+          </ComboboxContent>
+        </Combobox>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onclick={() => (moveTarget = null)} disabled={moveBusy}>
+          Cancel
+        </Button>
+        <Button
+          onclick={handleMoveName}
+          loading={moveBusy}
+          disabled={moveBusy || !moveToId}
+          data-testid="kitchen-tool-move-confirm"
+        >
+          Move it
         </Button>
       </DialogFooter>
     </div>
