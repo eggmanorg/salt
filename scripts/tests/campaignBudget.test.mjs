@@ -118,3 +118,24 @@ describe('the CI wait is one number, not one per file', () => {
     expect(src).not.toMatch(/5–7 minutes|5-7 minutes/);
   });
 });
+
+describe('the Finish step closes the calibration loop', () => {
+  // Every spec command writes a `Size` and nothing had ever read one back, so
+  // no estimate had ever been corrected. The loop closes in prose — a line in
+  // the ledger's closing comment — which means it can be dropped in a rewrite
+  // without anything noticing. Hence this.
+  const src = read('salt-campaign.md');
+
+  it('names both halves of the comparison in the closing template', () => {
+    expect(src).toMatch(/\*\*Estimated vs actual:\*\*/);
+  });
+
+  it('says where each half comes from — the board for the estimate, the PR for the actual', () => {
+    expect(src).toMatch(/board\.mjs show <issue>/);
+    expect(src).toMatch(/gh pr view <pr> --json additions,deletions/);
+  });
+
+  it('keeps it a record rather than a gate', () => {
+    expect(src).toMatch(/nothing gates on the gap/);
+  });
+});
