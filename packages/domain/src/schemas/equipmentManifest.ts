@@ -58,8 +58,8 @@ export const AccessorySchema = z.object({
   // upgraded firmware" (issue #1373).
   //
   // NEVER AMBIENT. No note, here or on the item, is rendered into any AI PROMPT,
-  // and none is ever shown on screen; the chef reaches one only by looking a
-  // record up with its tool. That is the whole point — a note is what refines a
+  // and the chef never volunteers one unprompted; it reaches one only by looking
+  // a record up with its tool. That is the whole point — a note is what refines a
   // choice the chef is already weighing, and there are enough of them across
   // twelve pans to double the prompt if they rode along on every call. A standing
   // fact that must reach the chef whether or not it stops to look is a `rules`
@@ -71,8 +71,9 @@ export const AccessorySchema = z.object({
   // flow's declared input and from there into Genkit's Cloud Function trace logs
   // — deliberately. The data is family-shared and the logs are project-internal,
   // and stripping notes at that boundary was judged not worth the plumbing. Read
-  // "never ambient" as a claim about prompts and screens; it is not a claim about
-  // what a CF trace can see.
+  // "never ambient" as a claim about the AI's prompts and unprompted replies; it
+  // is not a claim about what a CF trace can see, nor about the equipment editor,
+  // which of course shows a note back to whoever wrote it.
   //
   // `.default('')` for the same reason `environment` defaults below: every
   // accessory already written has no `note` key, and absence means "nothing said

@@ -271,5 +271,16 @@ describe('rerun-recipe-kits — blocking findings from PR #1483', () => {
     const lastReport = writeFileMock.mock.calls.at(-1)?.[1] as string;
     expect(lastReport).toContain('Alpha Dish');
     expect(lastReport).toContain('Beta Dish');
+
+    // Write-then-rename (PR #1485 line 5): every report write targets the `.tmp`
+    // path, never `outPath` directly, and each is followed by a rename onto the
+    // real `outPath` — a regression back to `writeFile(outPath, ...)` in place
+    // would still satisfy every assertion above, since they only inspect content.
+    expect(renameMock.mock.calls.length).toBe(writeFileMock.mock.calls.length);
+    for (const [i, call] of writeFileMock.mock.calls.entries()) {
+      const tmpPath = call[0] as string;
+      expect(tmpPath).toBe('./kit-rerun-test.md.tmp');
+      expect(renameMock.mock.calls[i]).toEqual([tmpPath, './kit-rerun-test.md']);
+    }
   });
 });
