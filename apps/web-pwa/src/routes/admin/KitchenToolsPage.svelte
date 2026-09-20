@@ -156,17 +156,23 @@
     }),
   );
 
-  // ASKED ONCE, NOT RE-ASKED. `askedProposals` latches, so curating a row does not
-  // spend a second call: the rows that remain keep the answers they already have,
-  // and a row that is resolved simply disappears. The wait for `plansLoaded` is
-  // what makes the one question the whole question — the plan-side words are not
-  // in `queue` until that lands.
+  // ASKED ONCE, NOT RE-ASKED. `askedProposals` latches only once a call is
+  // actually SENT, so curating a row does not spend a second one: the rows that
+  // remain keep the answers they already have, and a row that is resolved simply
+  // disappears. The wait for `plansLoaded` AND `!$isLoadingKitchenTools` is what
+  // makes the one question the whole question — the plan-side words are not in
+  // `queue` until plans land, and a not-yet-loaded vocabulary would send
+  // `tools: []`, under which every word comes back `new` (the guard cannot fire
+  // with nothing to check against) and every row loses its free alias press.
   $effect(() => {
-    if (askedProposals || !plansLoaded) return;
-    // Untracked: the labels and the vocabulary are the QUESTION, read once. Left
-    // tracked they would make this effect re-run on the answer it is about to
-    // write, and on every curation press after it.
-    const labels = untrack(() => queue.map((row) => row.label));
+    if (askedProposals || !plansLoaded || $isLoadingKitchenTools) return;
+    // TRACKED, deliberately, unlike the labels the ask itself is built from below.
+    // An empty queue must not latch: a gap row can arrive after both stores have
+    // already settled (a recipe saved a new kit word while this page sat open),
+    // and reading `queue` here is what re-arms this effect for it. Reading it
+    // does not risk a second call once one has actually been sent — `askedProposals`
+    // is checked first, above, and returns before anything below re-runs.
+    const labels = queue.map((row) => row.label);
     if (labels.length === 0) return;
     askedProposals = true;
     const tools = getKitchenToolsSnapshot();
@@ -285,8 +291,18 @@
   let formError = $state('');
   let saving = $state(false);
 
-  function openCreate(label = ''): void {
+  // The gap word the dialog was opened FOR, when it differs from the pre-filled
+  // label — i.e. a `new` proposal renamed it ("cocotte" → "Casserole dish").
+  // `handleAdd` carries it into the new tool's `matchers` so the created document
+  // answers to the word that opened this dialog, not only to Salt's suggested
+  // name: minting a tool that still leaves its own gap row open is the defect
+  // (#1458 review, blocking finding 2). `null` for the plain "Add" button and for
+  // a gap row Salt did not rename, where the pre-filled label already IS the word.
+  let formMatchWord = $state<string | null>(null);
+
+  function openCreate(label = '', matchWord: string | null = null): void {
     formLabel = label;
+    formMatchWord = matchWord;
     formError = '';
     showAdd = true;
   }
@@ -307,7 +323,12 @@
   async function handleAdd(): Promise<void> {
     formError = '';
     saving = true;
-    const result = await addKitchenTool({ label: formLabel, matchers: [] });
+    // The word that opened this dialog rides along as a matcher when a `new`
+    // proposal renamed it. `createKitchenTool`'s own `normaliseMatchers` already
+    // drops anything that folds the same as the label, so there is nothing left
+    // to fold here.
+    const matchers = formMatchWord ? [formMatchWord] : [];
+    const result = await addKitchenTool({ label: formLabel, matchers });
     saving = false;
     if (result.kind === 'ok') {
       showAdd = false;
@@ -601,7 +622,11 @@
                         if (row.suggestion) void acceptSuggestion(row.label, row.suggestion);
                       }}
                       proposal={row.proposal}
-                      onMakeTool={() => openCreate(row.createLabel)}
+                      onMakeTool={() =>
+                        openCreate(
+                          row.createLabel,
+                          row.createLabel === row.label ? null : row.label,
+                        )}
                       onAlias={() => openMove(null, row.label)}
                     />
                   {:else}

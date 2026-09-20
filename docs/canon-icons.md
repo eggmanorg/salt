@@ -397,20 +397,23 @@ added to them, and it takes no verb away and adds none.
 
 **What stops the vocabulary bloating, stated rather than overstated.** One thing is
 mechanical: `sanitiseKitchenToolProposals` refuses to propose a **new** tool where
-the vocabulary can already name the word, checking both the word itself and the name
-the model suggested for it, through `resolveKitchenTool` — the same lookup every
-surface renders through, so the guard cannot disagree with the renderer about what is
-already drawn. It is pinned by `apps/cloud-functions/tests/flows/proposeKitchenTools.test.ts`.
-The ceiling in `apps/cloud-functions/tests/kitchenToolVocabulary.test.ts` is unchanged
-and green.
+the vocabulary can already name the name the MODEL suggested for it, through
+`resolveKitchenTool`. It deliberately does **not** check the requested word itself
+against `resolveKitchenTool` — `kitIcons.ts` (every surface that draws a kit label)
+renders through `kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, and every
+word this flow is ever asked about already failed that gate (`unresolvedKitLabels`
+applies the same lookup before a word joins the queue). So `resolveKitchenTool(word,
+tools)` is non-null only when `kitchenToolForKitLabel`'s accessory rule (#1460)
+deliberately refused that word — e.g. "Thermo Bowl" naming the Magimix's sealed
+accessory rather than an ordinary mixing bowl — and checking it would rewrite that
+refusal back into the very alias #1460 exists to prevent, on the row's own leading
+press. It is pinned by
+`apps/cloud-functions/tests/flows/proposeKitchenTools.test.ts`. The ceiling in
+`apps/cloud-functions/tests/kitchenToolVocabulary.test.ts` is unchanged and green.
 
-Two things are **not** guaranteed, and no test can make them so. A person may always
+One thing is **not** guaranteed, and no test can make it so: a person may always
 confirm a `new` proposal that should have been an alias; that is the design — Salt
-records, it does not police. And the guard is a preference rather than a truth: for a
-word like "Thermo Bowl", which `kitchenToolForKitLabel`'s accessory rule (#1460)
-deliberately refuses to let borrow the bowl's drawing, the guard will still propose
-the alias that rule rejected. The row's menu overrides it in one press, which is the
-accepted cost of putting the bloat defence first.
+records, it does not police.
 
 ### The description's two lives (#1433)
 

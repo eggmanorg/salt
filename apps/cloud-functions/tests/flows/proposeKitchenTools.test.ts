@@ -139,19 +139,13 @@ describe('sanitiseKitchenToolProposals — the trust boundary', () => {
 });
 
 describe('the alias-over-new guard (Rule 12)', () => {
-  // THE PINNED CLAIM: a word containing an existing tool's whole name,
-  // token-aligned, is never proposed as a new tool. Verified RED by deleting the
-  // `resolveKitchenTool` lookup in `sanitiseKitchenToolProposals` — all three
-  // cases below go red, and the fourth (the control) stays green.
-  it('turns a new tool into an alias when the WORD already names one', () => {
-    const out = sanitiseKitchenToolProposals(
-      [said('large mixing bowl', 'new', { suggestedLabel: 'Large mixing bowl' })],
-      ['large mixing bowl'],
-      VOCABULARY,
-    );
-    expect(out).toEqual([{ kind: 'alias', label: 'large mixing bowl', toolId: 'mixing-bowl' }]);
-  });
-
+  // THE PINNED CLAIM: a `new` proposal whose model-suggested name contains an
+  // existing tool's whole name, token-aligned, is never proposed as new. Verified
+  // RED by deleting the `resolveKitchenTool(rawSuggestedLabel, tools)` lookup in
+  // `sanitiseKitchenToolProposals` — the two cases below go red, and the third
+  // (the control) stays green. There is deliberately no case checking the
+  // REQUESTED word — see the next test and the guard's own header for why that
+  // check has no input it can ever fire correctly on.
   it('turns a new tool into an alias when the SUGGESTED NAME already names one', () => {
     // A duplicate by a different route: nothing in "spud smasher" matches, but
     // minting a second document called "Potato masher" is the same #956 defect.
@@ -179,6 +173,25 @@ describe('the alias-over-new guard (Rule 12)', () => {
       VOCABULARY,
     );
     expect(out).toEqual([{ kind: 'new', label: 'tagine dish', suggestedLabel: 'Tagine' }]);
+  });
+
+  it('leaves a `new` proposal alone even where the WORD itself would resolve — #1525 blocking finding 1', () => {
+    // "Thermo Bowl" is `kitchenToolForKitLabel`'s own example of a manifest
+    // accessory (#1460): the WORD resolves via `resolveKitchenTool` ('bowl' is a
+    // matcher on Mixing bowl), which is exactly why the accessory rule refuses it
+    // a picture and exactly why a row for it can reach this queue at all — every
+    // `label` this function sees already failed that gate. Checking the word here
+    // would rewrite that refusal into the very alias #1460 exists to prevent, on
+    // the row's own leading press. Only the model's OWN suggested name is
+    // checked, so a genuinely distinct name leaves the row `new`.
+    const out = sanitiseKitchenToolProposals(
+      [said('Thermo Bowl', 'new', { suggestedLabel: 'Thermal blending vessel' })],
+      ['Thermo Bowl'],
+      VOCABULARY,
+    );
+    expect(out).toEqual([
+      { kind: 'new', label: 'Thermo Bowl', suggestedLabel: 'Thermal blending vessel' },
+    ]);
   });
 
   it('does not touch a not-kit answer — the guard is about MINTING, not about naming', () => {

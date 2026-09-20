@@ -214,6 +214,36 @@ describe('KitchenToolsPage — Salt proposes an answer for each undrawn word', (
     expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
   });
 
+  it('carries the word into matchers when a new proposal renamed it, so accepting it closes the gap row — #1525 blocking finding 2', async () => {
+    // A `new` proposal that renames ("cocotte" → "Casserole dish") used to mint a
+    // document under the SUGGESTED name alone: the create dialog has no matchers
+    // field, so `resolveKitchenTool('cocotte', ...)` still answered null after the
+    // write and the gap row it was minted from never closed. The word the dialog
+    // was opened for rides along as a matcher instead.
+    proposalSink.answer = {
+      kind: 'ok',
+      value: {
+        proposals: [{ kind: 'new', label: 'cocotte', suggestedLabel: 'Casserole dish' }],
+      },
+    };
+    mockRecipes._set([recipeWithKit('r1', 'cocotte')]);
+    setTools([MIXING]);
+    render(KitchenToolsPage);
+
+    const row = await screen.findByTestId('kitchen-tool-gap-row');
+    await within(row).findByTestId('kitchen-tool-gap-proposal');
+    await userEvent.click(within(row).getByTestId('kitchen-tool-gap-new'));
+
+    const dialog = await screen.findByTestId('kitchen-tool-add-dialog');
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Casserole dish');
+    await userEvent.click(within(dialog).getByTestId('kitchen-tool-save'));
+
+    await waitFor(() => expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(1));
+    const written = vi.mocked(upsertKitchenTool).mock.calls[0]![0];
+    expect(written.label).toBe('Casserole dish');
+    expect(written.matchers).toEqual(['cocotte']);
+  });
+
   it('says so when a word is not kit at all, and still leaves the row actionable', async () => {
     proposalSink.answer = {
       kind: 'ok',
@@ -281,6 +311,48 @@ describe('KitchenToolsPage — Salt proposes an answer for each undrawn word', (
     await screen.findByTestId('kitchen-tool-list');
     await waitFor(() => expect(screen.queryByTestId('kitchen-tool-gap-row')).toBeNull());
     expect(vi.mocked(callProposeKitchenTools)).not.toHaveBeenCalled();
+  });
+
+  it('waits for the vocabulary to finish loading before it asks — #1525 should-fix 3', async () => {
+    // A not-yet-loaded `$kitchenTools` sends the model `tools: []`, under which
+    // every word comes back `new` and every row loses its free alias press. The
+    // tool subscription has not delivered when the page first mounts here (it is
+    // never told to, unlike every other test in this file), so the effect must
+    // not ask yet even once the plans promise has settled.
+    mockRecipes._set([recipeWithKit('r1', 'potato masher')]);
+    render(KitchenToolsPage);
+
+    // `ListPage` shows its own loading state while `$isLoadingKitchenTools` is
+    // true, so the row itself is not in the DOM yet either — the list and the
+    // effect are both waiting on the same store.
+    await screen.findByRole('status', { name: 'Loading' });
+    expect(vi.mocked(callProposeKitchenTools)).not.toHaveBeenCalled();
+
+    // The vocabulary arrives. Salad bowl names nothing about "potato masher", so
+    // the row stays a gap and the effect re-evaluates now loading has cleared.
+    setTools([SALAD]);
+    await waitFor(() => expect(vi.mocked(callProposeKitchenTools)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(callProposeKitchenTools).mock.calls[0]![0].labels).toEqual(['potato masher']);
+  });
+
+  it('re-arms when a gap row arrives after the queue was first found empty — #1525 should-fix 3', async () => {
+    // Nothing unresolved when the page's queue is first computed: no recipe holds
+    // a kit label at all. The empty-queue return must not latch `askedProposals`,
+    // or a kit word saved onto a recipe while this page sits open would never be
+    // asked about.
+    mockRecipes._set([]);
+    setTools([MIXING, SALAD]);
+    render(KitchenToolsPage);
+
+    await screen.findByTestId('kitchen-tool-list');
+    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-gap-row')).toBeNull());
+    expect(vi.mocked(callProposeKitchenTools)).not.toHaveBeenCalled();
+
+    // A gap word arrives on the live `$recipes` subscription.
+    mockRecipes._set([recipeWithKit('r1', 'tagine dish')]);
+    await screen.findByTestId('kitchen-tool-gap-row');
+    await waitFor(() => expect(vi.mocked(callProposeKitchenTools)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(callProposeKitchenTools).mock.calls[0]![0].labels).toEqual(['tagine dish']);
   });
 
   it('asks once for the whole group, and does not ask again after a row is curated', async () => {

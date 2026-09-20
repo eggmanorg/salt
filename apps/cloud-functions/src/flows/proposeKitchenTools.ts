@@ -87,30 +87,31 @@ function renderVocabulary(tools: readonly KitchenToolDoc[]): string {
  *   - a `new` with a blank or whitespace-only `suggestedLabel` falls back to the
  *     word itself. That is what the row's own "Make it a tool" would have
  *     pre-filled, so nothing is lost and no answer is thrown away.
- *   - **a `new` whose words the vocabulary can ALREADY name becomes an `alias` to
- *     the tool that names them.** See below.
+ *   - **a `new` whose model-suggested name the vocabulary can ALREADY name
+ *     becomes an `alias` to the tool that names it.** See below.
  *
  * ── THE ALIAS-OVER-NEW GUARD, AND ITS BOUNDARY (Rule 12) ─────────────────────
  *
- * THE CLAIM: a word containing an existing tool's whole name, token-aligned, is
- * never proposed as a new tool. It is pinned by
- * `tests/flows/proposeKitchenTools.test.ts`, verified red by removing the guard.
- * The check is `resolveKitchenTool` — the same lookup the strip, the mise card
- * and the admin page all draw through — so the guard can never disagree with the
- * renderer about what the vocabulary already names, and there is no second notion
- * of "matched" anywhere in this file. Both the word and the model's own
- * `suggestedLabel` are checked: proposing a new tool called "Mixing bowl" beside
- * the Mixing bowl is the same duplicate by a different route.
+ * THE CLAIM: a `new` proposal whose `suggestedLabel` names an existing tool,
+ * token-aligned, is never proposed as new. It is pinned by
+ * `tests/flows/proposeKitchenTools.test.ts`, verified red by removing the check.
+ * The lookup is `resolveKitchenTool` — but only against the model's own
+ * `suggestedLabel`, never against the requested `label` (the row's original
+ * word). It cannot be checked against `label`: every `label` reaching this
+ * function already failed `unresolvedKitLabels`' own `kitchenToolForKitLabel`
+ * gate (`kitIcons.ts` renders kit words through that lookup, not through the bare
+ * `resolveKitchenTool`), so `resolveKitchenTool(label, tools)` is non-null *only*
+ * when `kitchenToolForKitLabel`'s accessory rule (#1460) deliberately refused the
+ * word — e.g. "Thermo Bowl" naming the Magimix's sealed accessory rather than an
+ * ordinary mixing bowl. Checking the word would rewrite exactly those refusals
+ * back into the alias #1460 exists to prevent, on the row's own leading press.
+ * Proposing a new tool called "Mixing bowl" beside the Mixing bowl is still
+ * caught, because that duplicate comes from what the MODEL calls it, not from the
+ * word that failed to resolve.
  *
  * WHAT IT DOES NOT CLAIM. The vocabulary cannot be guaranteed not to bloat, and
  * this does not guarantee it: a person may always confirm a `new` that should
- * have been an alias, and no test can stop them. Nor is the guard always RIGHT —
- * it is a preference, not a truth. `kitchenToolForKitLabel`'s accessory rule
- * (#1460) deliberately refuses to let "Thermo Bowl" borrow the bowl's drawing,
- * and for such a word this guard will still propose the alias that rule rejected.
- * That is the accepted cost of putting #956's bloat defence first: the row's menu
- * still offers "Give it its own picture" in one press, and a proposal is a
- * sentence rather than a gate.
+ * have been an alias, and no test can stop them.
  */
 export function sanitiseKitchenToolProposals(
   proposals: readonly KitchenToolProposalAI[],
@@ -140,9 +141,13 @@ export function sanitiseKitchenToolProposals(
       answered.set(label, { kind: 'alias', label, toolId });
       continue;
     }
-    // `new` — but only where the vocabulary genuinely cannot already name it.
-    const suggestedLabel = proposal.suggestedLabel?.trim() || label;
-    const existing = resolveKitchenTool(label, tools) ?? resolveKitchenTool(suggestedLabel, tools);
+    // `new` — but only where the vocabulary genuinely cannot already name what
+    // the MODEL called it. Checked against `suggestedLabel` alone, never against
+    // `label` — see the guard's header above for why the word-side check has no
+    // input it can ever fire correctly on.
+    const rawSuggestedLabel = proposal.suggestedLabel?.trim();
+    const suggestedLabel = rawSuggestedLabel || label;
+    const existing = rawSuggestedLabel ? resolveKitchenTool(rawSuggestedLabel, tools) : null;
     answered.set(
       label,
       existing
