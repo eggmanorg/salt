@@ -10,6 +10,14 @@
 			"env": {
 				"GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_PERSONAL_ACCESS_TOKEN}"
 			}
+		},
+		"appmap": {
+			"type": "stdio",
+			"command": "${userHome}/.appmap/bin/appmap",
+			"args": [
+				"query",
+				"mcp"
+			]
 		}
 	}
 }
