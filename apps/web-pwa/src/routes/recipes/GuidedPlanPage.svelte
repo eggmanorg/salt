@@ -1,21 +1,5 @@
 <script lang="ts">
-  import {
-    Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-    DetailPage,
-    EmptyState,
-    Icon,
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    Spinner,
-    Textarea,
-    TextField,
-  } from '@salt/ui-components';
+  import { Button, CanonIcon, DetailPage, EmptyState, Icon, Spinner } from '@salt/ui-components';
   import { goBack } from '../../lib/nav.js';
   import { recipes, isLoadingRecipes } from '../../lib/recipeService.js';
   import {
@@ -23,34 +7,67 @@
     initGuidedPlanSync,
     generateGuidedPlan,
     saveGuidedPlan,
+    editGuidedPlan,
   } from '../../lib/guidedPlanService.js';
   import {
-    flattenIngredients,
-    guidedContainerProblems,
+    firstUseByStep,
+    guidedPrepBoard,
     hasRecipeChanged,
     isCookable,
+    looseIngredientsForStep,
+    prepEntryForContainer,
+    prepEntryIngredients,
   } from '@salt/domain';
-  import type { GuidedPlanDoc } from '@salt/domain/schemas';
+  import type { GuidedPlanDoc, GuidedStepNoteDoc } from '@salt/domain/schemas';
   import { kindOf } from './recipeKind.js';
   import { addToast } from '../../lib/toastStore.js';
+  import { ingredientIcons, ingredientLabel } from '../../lib/cookIngredientIcons.js';
+  import { kitIcons } from '../../lib/kitIcons.js';
+  import IngredientText from './IngredientText.svelte';
+  import GuidedPlanLine from './GuidedPlanLine.svelte';
+  import GuidedStepNotes from './GuidedStepNotes.svelte';
+  import GuidedStepLookahead from './GuidedStepLookahead.svelte';
 
-  // The guided-plan editor (issue #751, Phase 1) — `/recipes/:id/guided`.
+  // READ THE PLAN THE WAY YOU WILL COOK IT (issue #1453) — `/recipes/:id/guided`.
   //
-  // An ordinary AppShell route, deliberately NOT full-viewport: this is desk work,
-  // not a hands-full single-task mode, and it is somewhere you arrive from the
-  // recipe and leave again.
+  // An ordinary AppShell route, deliberately NOT full-viewport (ui-spec-v05 §2.1
+  // names this page as the one that must never be added to that list): this is
+  // desk work, not a hands-full single-task mode, and it is somewhere you arrive
+  // from the recipe and leave again.
   //
-  // What it is FOR: a plan is AI-written and then READ BY A HUMAN. Every line is
-  // editable because the review is the point — the model is a first draft that
-  // gets the shape right and will get some cue or container wrong, and the person
-  // who cooks this dish knows which. Saving IS the review: it drops the "not
-  // checked yet" flag and re-stamps the plan against the recipe as it now stands.
+  // What it is FOR: a plan is AI-written and then READ BY A HUMAN. It used to ask
+  // for that reading as a form — five labelled text boxes per step, most of them
+  // blank and wearing a placeholder that read like advice. This screen asks for it
+  // as a READING: the bench first (the bowls the cook will fetch, as the guided
+  // cook screen draws them), then one step per screen, with whatever the plan adds
+  // drawn by the same component the cook deck draws it with. Tap a line to change
+  // it.
+  //
+  // THERE IS NO SAVE. Every change is written the moment it is made, the way
+  // editing a recipe in place already works — `editGuidedPlan`, which carries the
+  // "not checked yet" flag through untouched. What replaces Save is APPROVE, which
+  // is `saveGuidedPlan`: the claim that a person has read this plan against the
+  // recipe as it now stands, which is the only thing that drops the flag and
+  // re-stamps the plan.
+  //
+  // THE BOUNDARY OF "EXACTLY AS THE COOK WILL SEE IT", stated rather than implied
+  // (CLAUDE.md rule 12): `GuidedStepNotes` and `GuidedStepLookahead` are literally
+  // the components the cook deck renders, so the plan's own lines cannot drift.
+  // The recipe's step text, the timer and the step chrome around them are this
+  // page's own, and the cook deck's are richer — the claim covers the plan's
+  // lines, not the whole screen.
+  //
+  // APPROVE IS NEVER DISABLED. A warning is information, never permission (Salt
+  // records, never polices). That includes a reminder set past the end of its
+  // timer, which used to block the save: with per-line writes there is no save to
+  // block, the runtime already ignores a reminder it cannot fire, and issue #1453
+  // Phase 2 puts the fix on the step it belongs to.
 
   let { params }: { params?: { id?: string } } = $props();
 
   const recipeId = $derived(params?.id ?? '');
   const recipe = $derived($recipes.find((r) => r.id === recipeId) ?? null);
-  const ingredients = $derived(recipe ? flattenIngredients(recipe) : []);
+  const plan = $derived($guidedPlan ?? null);
 
   // Subscribe to this recipe's plan for as long as the page is open. Re-runs when
   // the id changes; the service resets its store on every init so a plan from a
@@ -60,283 +77,199 @@
     return initGuidedPlanSync(recipeId);
   });
 
-  // ─── The editing model ────────────────────────────────────────────────────────
+  // ─── Where you are ────────────────────────────────────────────────────────────
   //
-  // Deliberately NOT the document shape. Two differences, both so the fields
-  // behave like fields: an absent value is `''` here rather than `null` (a text
-  // box's empty state is an empty string, and mapping at the seam beats sprinkling
-  // `?? ''` through the template), and a check-in's minutes are the RAW STRING the
-  // user is typing. Keeping minutes as a number would mean re-rendering the box
-  // from the parsed value, so clearing it to type a new number would snap it back
-  // to whatever it last parsed as.
-  interface CheckInDraft {
-    // Local render key only. Check-ins have no identity in the document — they are
-    // a list of reminders — but Svelte needs a stable key to keep an input's DOM
-    // node (and its cursor) attached to the row while the list is edited.
-    key: string;
-    atMinutes: string;
-    text: string;
-  }
-  interface NoteDraft {
-    stepId: string;
-    container: string;
-    setup: string;
-    cue: string;
-    checkIns: CheckInDraft[];
-    lookahead: string;
-    getAhead: string;
-  }
-  interface PrepDraft {
-    id: string;
-    text: string;
-    container: string;
-    ingredientIds: string[];
+  // The bench, or the index of the step being read. LOCAL, and stored NOWHERE:
+  // "Looks right" is navigation, not a verdict. No per-step "seen" state exists in
+  // the document or anywhere else, and the dots are for orientation rather than
+  // compliance.
+  let screen = $state<'bench' | number>('bench');
+
+  const steps = $derived(recipe?.steps ?? []);
+  const stepIndex = $derived(typeof screen === 'number' ? Math.min(screen, steps.length - 1) : -1);
+  const step = $derived(stepIndex >= 0 ? (steps[stepIndex] ?? null) : null);
+
+  // ─── Writing ──────────────────────────────────────────────────────────────────
+  //
+  // There is no draft document and no dirty flag — the only draft that exists is
+  // the one line currently open, and it lives inside `GuidedPlanLine`. Every
+  // command below reads the plan the store holds, returns the next one, and hands
+  // it straight to the service, whose optimistic store paints it on the next
+  // frame.
+
+  function apply(next: (current: GuidedPlanDoc) => GuidedPlanDoc): void {
+    const current = plan;
+    if (!current) return;
+    void editGuidedPlan(next(current)).then((result) => {
+      if (result.kind !== 'ok') addToast("Couldn't save that change.", 'destructive');
+    });
   }
 
-  let prepDraft = $state<PrepDraft[]>([]);
-  let noteDrafts = $state<NoteDraft[]>([]);
-  // Whether the drafts hold edits the store does not. Guards the re-seed below.
-  let dirty = $state(false);
-  // The exact document version the drafts were seeded from, `${id}:${updatedAt}`.
-  // A VERSION, not an id: the seed effect must be able to answer "have I already
-  // taken these drafts from this exact document?" — answering with the id alone
-  // would re-seed on every effect run and answering with nothing would loop.
-  let seededStamp = $state<string | null>(null);
-
-  function stampOf(plan: GuidedPlanDoc): string {
-    return `${plan.id}:${plan.updatedAt}`;
-  }
-
-  function seed(plan: GuidedPlanDoc): void {
-    prepDraft = plan.prep.map((p) => ({
-      id: p.id,
-      text: p.text,
-      container: p.container ?? '',
-      ingredientIds: [...p.ingredientIds],
-    }));
-    noteDrafts = plan.stepNotes.map((n) => ({
-      stepId: n.stepId,
-      container: n.container ?? '',
-      setup: n.setup ?? '',
-      cue: n.cue ?? '',
-      checkIns: n.checkIns.map((c) => ({
-        key: crypto.randomUUID(),
-        atMinutes: String(c.atMinutes),
-        text: c.text,
-      })),
-      lookahead: n.lookahead ?? '',
-      getAhead: n.getAhead ?? '',
-    }));
-    dirty = false;
-    seededStamp = stampOf(plan);
-  }
-
-  // Seed from the store on arrival, and re-seed when a NEW version of the document
-  // lands — but never over unsaved edits to the version already in hand. A remote
-  // save from the other member while someone is mid-sentence would otherwise wipe
-  // the sentence; leaving the draft alone means the local save wins on LWW, which
-  // is the same answer every other surface in the app gives.
-  $effect(() => {
-    const plan = $guidedPlan;
-    if (plan === undefined) return; // still loading — nothing to seed from yet
-    if (plan === null) {
-      if (seededStamp !== null) {
-        prepDraft = [];
-        noteDrafts = [];
-        dirty = false;
-        seededStamp = null;
-      }
-      return;
-    }
-    // Already seeded from exactly this version. The early return is what stops the
-    // effect looping: `seed` writes state this effect reads.
-    if (seededStamp === stampOf(plan)) return;
-    // Unsaved edits to THIS plan win over an incoming version. A different plan
-    // (the id changed) always re-seeds — those edits belong to another recipe.
-    if (dirty && seededStamp?.startsWith(`${plan.id}:`)) return;
-    seed(plan);
-  });
-
-  function touch(): void {
-    dirty = true;
-  }
-
-  // ─── Prep list ────────────────────────────────────────────────────────────────
-
-  function addPrepEntry(): void {
-    prepDraft = [
-      ...prepDraft,
-      { id: crypto.randomUUID(), text: '', container: '', ingredientIds: [] },
-    ];
-    touch();
-  }
-
-  function removePrepEntry(id: string): void {
-    prepDraft = prepDraft.filter((p) => p.id !== id);
-    touch();
-  }
-
-  function setPrepField(id: string, field: 'text' | 'container', value: string): void {
-    prepDraft = prepDraft.map((p) => (p.id === id ? { ...p, [field]: value } : p));
-    touch();
-  }
-
-  function detachIngredient(prepId: string, ingredientId: string): void {
-    prepDraft = prepDraft.map((p) =>
-      p.id === prepId
-        ? { ...p, ingredientIds: p.ingredientIds.filter((i) => i !== ingredientId) }
-        : p,
+  // A note that says nothing is not kept. Every authored field has to be listed
+  // here — one left out is a note that survives as a husk, and a step that was
+  // merely tapped on would leave one behind.
+  function saysSomething(note: GuidedStepNoteDoc): boolean {
+    return Boolean(
+      note.container ||
+      note.setup ||
+      note.cue ||
+      note.lookahead ||
+      note.getAhead ||
+      note.checkIns.length > 0,
     );
-    touch();
   }
 
-  // Attach an unassigned ingredient to a job. Also removes it from anywhere else,
-  // so "exactly once" holds by construction and the only way to end up with a
-  // duplicate is to hand-edit the document.
-  function attachIngredient(prepId: string, ingredientId: string): void {
-    if (!prepId) return;
-    prepDraft = prepDraft.map((p) => ({
-      ...p,
-      ingredientIds:
-        p.id === prepId
-          ? [...p.ingredientIds.filter((i) => i !== ingredientId), ingredientId]
-          : p.ingredientIds.filter((i) => i !== ingredientId),
-    }));
-    touch();
+  function noteFor(stepId: string): GuidedStepNoteDoc | null {
+    return plan?.stepNotes.find((n) => n.stepId === stepId) ?? null;
   }
 
-  const ingredientLabels = $derived(new Map(ingredients.map((i) => [i.id, i.rawText])));
-
-  // THE WARNING THIS PAGE EXISTS TO SHOW. In guided mode the prep list REPLACES the
-  // ingredient checklist, so an ingredient named in no prep job is one the cook
-  // never sees — it silently vanishes from the dish. The prompt demands every id
-  // appears exactly once; this is the check that the plan in front of you actually
-  // does, whether it was written by the model or by hand.
-  const assignedIds = $derived(new Set(prepDraft.flatMap((p) => p.ingredientIds)));
-  const unassigned = $derived(ingredients.filter((i) => !assignedIds.has(i.id)));
-
-  // ─── Step notes ───────────────────────────────────────────────────────────────
-
-  // The note for a step, or a blank one. Notes are looked up BY STEP ID and the
-  // list is rendered from the RECIPE, which is what makes a note whose step no
-  // longer exists render as nothing: it is never found, never displayed, and never
-  // shown against a neighbouring step. It is also not deleted — a step that came
-  // back would find its note waiting.
-  function noteFor(stepId: string): NoteDraft {
-    return (
-      noteDrafts.find((n) => n.stepId === stepId) ?? {
+  function updateNote(stepId: string, patch: Partial<GuidedStepNoteDoc>): void {
+    apply((current) => {
+      const at = current.stepNotes.findIndex((n) => n.stepId === stepId);
+      const before: GuidedStepNoteDoc = current.stepNotes[at] ?? {
         stepId,
-        container: '',
-        setup: '',
-        cue: '',
+        container: null,
+        setup: null,
+        cue: null,
         checkIns: [],
-        lookahead: '',
-        getAhead: '',
+        lookahead: null,
+        getAhead: null,
+      };
+      const after = { ...before, ...patch };
+      if (at === -1) {
+        return saysSomething(after)
+          ? { ...current, stepNotes: [...current.stepNotes, after] }
+          : current;
       }
-    );
-  }
-
-  function updateNote(stepId: string, patch: Partial<NoteDraft>): void {
-    const existing = noteDrafts.find((n) => n.stepId === stepId);
-    noteDrafts = existing
-      ? noteDrafts.map((n) => (n.stepId === stepId ? { ...n, ...patch } : n))
-      : [...noteDrafts, { ...noteFor(stepId), ...patch }];
-    touch();
-  }
-
-  function addCheckIn(stepId: string): void {
-    updateNote(stepId, {
-      checkIns: [
-        ...noteFor(stepId).checkIns,
-        { key: crypto.randomUUID(), atMinutes: '', text: '' },
-      ],
+      // Edited IN PLACE rather than moved to the end: the document's order is the
+      // only thing a diff of two saves has to read, and churning it on every typed
+      // word would make every edit look like a rewrite.
+      return {
+        ...current,
+        stepNotes: saysSomething(after)
+          ? current.stepNotes.map((n, i) => (i === at ? after : n))
+          : current.stepNotes.filter((_, i) => i !== at),
+      };
     });
   }
 
-  function removeCheckIn(stepId: string, key: string): void {
-    updateNote(stepId, { checkIns: noteFor(stepId).checkIns.filter((c) => c.key !== key) });
-  }
-
-  function setCheckInField(
-    stepId: string,
-    key: string,
-    field: 'atMinutes' | 'text',
-    value: string,
-  ): void {
-    updateNote(stepId, {
-      checkIns: noteFor(stepId).checkIns.map((c) => (c.key === key ? { ...c, [field]: value } : c)),
-    });
-  }
-
-  // A check-in is armed off its step's timer, so "at 20 minutes" into a 15-minute
-  // timer is a reminder that can never fire. The schema cannot see the timer — it
-  // holds no recipe — so this cross-check lives here, where the recipe is in hand,
-  // and it BLOCKS THE SAVE rather than warning: an unfirable reminder is not a
-  // matter of taste. (Phase 3 owns the runtime side; nothing here arms anything.)
-  function checkInError(value: string, durationMinutes: number): string | undefined {
-    const trimmed = value.trim();
-    if (trimmed === '') return 'Say when.';
-    const minutes = Number(trimmed);
-    if (!Number.isFinite(minutes) || minutes <= 0) return 'Minutes must be a number above 0.';
-    if (minutes >= durationMinutes) {
-      return `Must be under ${durationMinutes} min — the timer already covers the end.`;
-    }
-    return undefined;
-  }
-
-  // Every check-in the editor can SEE is valid. Check-ins on a note whose step is
-  // gone are deliberately excluded: they are not rendered, so they cannot be fixed
-  // here, and blocking the save on an invisible row would be a dead end.
-  const hasCheckInError = $derived(
-    (recipe?.steps ?? []).some((step) =>
-      step.timer
-        ? noteFor(step.id).checkIns.some(
-            (c) => checkInError(c.atMinutes, step.timer!.durationMinutes) !== undefined,
-          )
-        : false,
-    ),
+  // ─── The bench ────────────────────────────────────────────────────────────────
+  //
+  // The same shape, from the same function, that the guided cook screen's prep
+  // stage is drawn from — bowls first, with the jobs that fill them hanging under
+  // each. Without the ticks: nothing is being done here, it is being read.
+  const board = $derived.by(() =>
+    recipe && plan ? guidedPrepBoard(recipe, plan.prep) : { cards: [], alsoGetOut: [] },
   );
 
-  // ─── Container names (issue #761) ─────────────────────────────────────────────
-  //
-  // The plan's two halves join on the container NAME and nothing else: a step note
-  // says "onion bowl" and the job that filled the onion bowl is where that step's
-  // amounts come from. Two ways an author breaks it — the same name on two jobs
-  // (the step reaches the first one, and is shown the wrong contents) and a name no
-  // job fills (the step shows no contents at all).
-  //
-  // Both WARN and neither BLOCKS, which is the opposite call to `hasCheckInError`
-  // above and for a reason worth stating: an unfirable check-in is a promise the
-  // app cannot keep, while a mis-named bowl only costs a line of guidance from a
-  // plan that is otherwise correct and perfectly cookable. Refusing to save it
-  // would strand every hand-edit made alongside it. The save gate is unchanged.
-  //
-  // Computed off the DRAFTS, not the stored plan, so the warning appears as the
-  // problem is created and clears the moment it is fixed. Only notes for steps the
-  // recipe still has are asked about: a note for a deleted step renders nowhere, so
-  // a warning about it would be one nobody could act on.
-  const containerProblems = $derived(
-    guidedContainerProblems(
-      prepDraft,
-      (recipe?.steps ?? []).map((s) => noteFor(s.id)),
-    ),
-  );
-  const prepNumbers = $derived(new Map(prepDraft.map((p, i) => [p.id, i + 1])));
-  const stepNumbers = $derived(new Map((recipe?.steps ?? []).map((s, i) => [s.id, i + 1])));
+  // The card a new job is being written into, or null. Local, like every other
+  // half-made line on this page: a job is written only once it has words, so
+  // opening "+ job" and thinking better of it leaves nothing behind.
+  let addingJobTo = $state<{ key: string; container: string | null } | null>(null);
 
-  // ─── Drift ────────────────────────────────────────────────────────────────────
+  function addJob(container: string | null, text: string): void {
+    if (text === '') return;
+    apply((current) => ({
+      ...current,
+      // The editor mints the id, as the schema's comment says it does: the flow
+      // mints them on a generation, whoever writes the document mints them here.
+      prep: [...current.prep, { id: crypto.randomUUID(), text, container, ingredientIds: [] }],
+    }));
+  }
+
+  function setJobText(jobId: string, text: string): void {
+    apply((current) => ({
+      ...current,
+      prep: current.prep.map((p) => (p.id === jobId ? { ...p, text } : p)),
+    }));
+  }
+
+  function deleteJob(jobId: string): void {
+    apply((current) => ({ ...current, prep: current.prep.filter((p) => p.id !== jobId) }));
+  }
+
+  function detachIngredient(jobId: string, ingredientId: string): void {
+    apply((current) => ({
+      ...current,
+      prep: current.prep.map((p) =>
+        p.id === jobId
+          ? { ...p, ingredientIds: p.ingredientIds.filter((i) => i !== ingredientId) }
+          : p,
+      ),
+    }));
+  }
+
+  // File a stray ingredient into a bowl. Removed from everywhere else on the way
+  // in, so "named in exactly one job" holds by construction — the invariant the
+  // whole tray exists to protect, since in guided mode the prep list REPLACES the
+  // ingredient checklist and an ingredient in no job is one the cook never sees.
   //
-  // The saved stamp against the live recipe (the same comparison cook mode makes
-  // against its session). Read off the STORE, not the draft: the question is
-  // whether the plan as SAVED was written against this recipe.
+  // A bowl may be filled by several jobs; the ingredient joins the FIRST of them.
+  // The tray's question is "which bowl does this go in", and asking it as a list
+  // of sentences instead would be asking the reader to pick between two jobs whose
+  // result ends up in the same bowl anyway.
+  function fileIngredient(jobId: string, ingredientId: string): void {
+    apply((current) => ({
+      ...current,
+      prep: current.prep.map((p) => ({
+        ...p,
+        ingredientIds:
+          p.id === jobId
+            ? [...p.ingredientIds.filter((i) => i !== ingredientId), ingredientId]
+            : p.ingredientIds.filter((i) => i !== ingredientId),
+      })),
+    }));
+  }
+
+  // ─── One step ─────────────────────────────────────────────────────────────────
+
+  const firstUse = $derived(firstUseByStep(recipe?.ingredients ?? []));
+  const prepEntries = $derived(plan?.prep ?? []);
+  const note = $derived(step ? noteFor(step.id) : null);
+  const containerContents = $derived(
+    recipe
+      ? prepEntryIngredients(recipe, prepEntryForContainer(prepEntries, note?.container ?? null))
+      : [],
+  );
+  const loose = $derived(
+    step ? looseIngredientsForStep(firstUse.get(step.id) ?? [], prepEntries, note) : [],
+  );
+  // Reminders hang off the step's timer, so a step without one has none — shown
+  // or offered — exactly as on the cook deck.
+  const checkIns = $derived(step?.timer ? (note?.checkIns ?? []) : []);
+
+  // ─── Drift, and the two flags ─────────────────────────────────────────────────
+  //
+  // Read off the STORE rather than any draft: the question is whether the plan AS
+  // WRITTEN was reviewed against this recipe.
   const recipeChanged = $derived(
-    hasRecipeChanged($guidedPlan?.recipeUpdatedAtAtSave ?? null, recipe?.updatedAt ?? null),
+    hasRecipeChanged(plan?.recipeUpdatedAtAtSave ?? null, recipe?.updatedAt ?? null),
   );
+
+  // ─── The summary in the bar ───────────────────────────────────────────────────
+  //
+  // What the plan actually contains, in the reader's words. Counted off the live
+  // document, so it moves as lines are added.
+  function count(n: number, one: string, many: string): string {
+    return `${n} ${n === 1 ? one : many}`;
+  }
+  const summary = $derived.by(() => {
+    if (!plan) return '';
+    const bowls = board.cards.filter((c) => c.name !== null).length;
+    const cues = plan.stepNotes.filter((n) => n.cue).length;
+    const reminders = plan.stepNotes.reduce((n, note) => n + note.checkIns.length, 0);
+    return [
+      count(bowls, 'bowl', 'bowls'),
+      count(steps.length, 'step', 'steps'),
+      count(cues, 'cue', 'cues'),
+      count(reminders, 'reminder', 'reminders'),
+    ].join(' · ');
+  });
 
   // ─── Commands ─────────────────────────────────────────────────────────────────
 
   let writing = $state(false);
-  let saving = $state(false);
+  let approving = $state(false);
 
   async function handleWrite(): Promise<void> {
     if (!recipe || writing) return;
@@ -347,58 +280,21 @@
       addToast("Couldn't write the plan. Try again.", 'destructive');
       return;
     }
-    // A re-run REPLACES the plan, so the drafts must come from the new document
-    // rather than survive as "unsaved edits" to the one it replaced. Dropping the
-    // dirty flag is all it takes: the store already holds the new version, and the
-    // seed effect re-seeds from it the moment nothing is being protected.
-    dirty = false;
+    // A re-run REPLACES the plan, so the reading starts again at the bench.
+    screen = 'bench';
     addToast('Plan written. Give it a read.', 'success');
   }
 
-  async function handleSave(): Promise<void> {
-    const plan = $guidedPlan;
-    if (!recipe || !plan || saving || hasCheckInError) return;
-    saving = true;
-    const result = await saveGuidedPlan(
-      {
-        ...plan,
-        prep: prepDraft.map((p) => ({
-          id: p.id,
-          text: p.text.trim(),
-          container: p.container.trim() || null,
-          ingredientIds: p.ingredientIds,
-        })),
-        stepNotes: noteDrafts
-          .map((n) => ({
-            stepId: n.stepId,
-            container: n.container.trim() || null,
-            setup: n.setup.trim() || null,
-            cue: n.cue.trim() || null,
-            checkIns: n.checkIns
-              .filter((c) => c.atMinutes.trim() !== '')
-              .map((c) => ({ atMinutes: Number(c.atMinutes), text: c.text.trim() })),
-            lookahead: n.lookahead.trim() || null,
-            getAhead: n.getAhead.trim() || null,
-          }))
-          // An empty note carries nothing. Dropping them keeps the document to what
-          // was actually said, and stops a step that was merely tapped on from
-          // leaving a husk behind. EVERY authored field has to be listed here — one
-          // left out is one silently discarded on save, and the cook would never
-          // learn which.
-          .filter(
-            (n) =>
-              n.container || n.setup || n.cue || n.lookahead || n.getAhead || n.checkIns.length > 0,
-          ),
-      },
-      recipe,
-    );
-    saving = false;
+  async function handleApprove(): Promise<void> {
+    if (!recipe || !plan || approving) return;
+    approving = true;
+    const result = await saveGuidedPlan(plan, recipe);
+    approving = false;
     if (result.kind !== 'ok') {
-      addToast("Couldn't save the plan.", 'destructive');
+      addToast("Couldn't approve the plan.", 'destructive');
       return;
     }
-    dirty = false;
-    addToast('Plan saved.', 'success');
+    addToast('Plan approved.', 'success');
   }
 
   const loading = $derived($isLoadingRecipes || $guidedPlan === undefined);
@@ -426,35 +322,26 @@
     subtitle={recipe.title}
     onBack={() => goBack(`/recipes/${recipe.id}`)}
     backLabel="Back"
+    fill
     class="p-4 sm:p-6"
   >
     {#snippet actions()}
-      {#if $guidedPlan}
+      {#if plan}
         <Button
           size="sm"
           variant="outline"
           onclick={handleWrite}
           loading={writing}
-          disabled={writing || saving}
+          disabled={writing || approving}
           data-testid="guided-plan-rerun-button"
         >
           {#snippet leading()}<Icon name="RefreshCw" size={16} />{/snippet}
           Re-run
         </Button>
-        <Button
-          size="sm"
-          onclick={handleSave}
-          loading={saving}
-          disabled={saving || writing || hasCheckInError}
-          data-testid="guided-plan-save-button"
-        >
-          {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
-          Save
-        </Button>
       {/if}
     {/snippet}
 
-    {#if !$guidedPlan}
+    {#if !plan}
       <!-- No plan yet. `$guidedPlan === null` specifically, never `undefined` —
            the store's three states are what keep this prompt from flashing over a
            plan that is still a frame away from arriving. -->
@@ -478,11 +365,7 @@
                  in the flow). The button's own spinner is 16px inside a control
                  whose label never changes, which at ten seconds reads as slow and
                  at ninety reads as broken. This line is the difference between
-                 waiting and giving up, so it says the work is happening AND
-                 roughly how long it runs. No percentage and no countdown: the
-                 call is a single round trip with no progress to report, and a
-                 fake one would be a lie told to a person deciding whether to
-                 reload the page. -->
+                 waiting and giving up. -->
             {#if writing}
               <p class="text-sm text-muted-foreground" data-testid="guided-plan-writing-note">
                 Writing the plan — this takes up to a couple of minutes for a long recipe. You can
@@ -493,303 +376,347 @@
         </EmptyState>
       </div>
     {:else}
-      <div class="flex flex-col gap-4" data-testid="guided-plan-editor">
-        {#if $guidedPlan.needs_approval}
-          <!-- Used-but-flagged, exactly as on a recipe: informational, never a gate.
-               Saving is what clears it — there is no separate "mark reviewed",
-               because reading the plan and correcting it IS the review. -->
-          <div
-            class="flex items-center gap-2 rounded border border-review/40 bg-review/10 px-3 py-2 text-sm text-review-text"
-            data-testid="guided-plan-unreviewed-chip"
-          >
-            <Icon name="TriangleAlert" size={16} />
-            Written by AI — not checked yet. Read it through and save.
-          </div>
-        {/if}
-
-        {#if recipeChanged}
-          <!-- The recipe moved under the plan. The plan is NOT deleted and NOT
-               regenerated: it may be several hand-corrections deep, and throwing
-               that away to chase an edit to one step would be a bad trade. Two ways
-               out, both the user's call — re-run for a fresh plan, or reconcile by
-               hand and save (a save re-stamps, so the banner clears either way). -->
-          <div
-            class="flex flex-wrap items-center gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2"
-            data-testid="guided-plan-stale-banner"
-          >
-            <p class="flex-1 text-sm text-warning-text">
-              The recipe has changed since this plan was written.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              onclick={handleWrite}
-              loading={writing}
-              disabled={writing || saving}
-              data-testid="guided-plan-stale-rerun-button"
-            >
-              Write it again
-            </Button>
-          </div>
-        {/if}
-
-        {#if unassigned.length > 0}
-          <div
-            class="flex flex-col gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-3"
-            data-testid="guided-plan-unassigned-warning"
-          >
-            <p class="text-sm text-warning-text">
-              {unassigned.length === 1
-                ? 'One ingredient is'
-                : `${unassigned.length} ingredients are`}
-              in no prep step. While cooking, the prep list is the only ingredient list — anything missing
-              here is never shown at all.
-            </p>
-            {#each unassigned as ing (ing.id)}
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="flex-1 text-sm text-warning-text">{ing.rawText}</span>
-                <Select value="" onValueChange={(v) => attachIngredient(v, ing.id)}>
-                  <SelectTrigger
-                    class="h-8 w-56"
-                    aria-label={`Add ${ing.rawText} to a prep step`}
-                    data-testid="guided-plan-assign-select"
-                  >
-                    Add to a prep step…
-                  </SelectTrigger>
-                  <SelectContent>
-                    {#each prepDraft as p, i (p.id)}
-                      <SelectItem value={p.id}>{p.text.trim() || `Prep step ${i + 1}`}</SelectItem>
-                    {/each}
-                  </SelectContent>
-                </Select>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if containerProblems.duplicates.length > 0}
-          <!-- Two jobs, one name. While cooking, a step that asks for that name
-               reaches the FIRST job in the list and shows its contents — so the
-               other bowl's are shown to nobody, and the step is confidently wrong.
-               A warning, never a gate: the plan still cooks. -->
-          <div
-            class="flex flex-col gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-3"
-            data-testid="guided-plan-duplicate-container-warning"
-          >
-            <p class="text-sm text-warning-text">
-              Two prep steps can't share a container name — a step that asks for it only ever gets
-              the first one. Name each for what's in it: "onion bowl", "sugar bowl".
-            </p>
-            {#each containerProblems.duplicates as dup (dup.name)}
-              <p class="text-sm text-warning-text">
-                <span class="font-medium">{dup.name}</span>
-                — prep steps {dup.prepIds.map((id) => prepNumbers.get(id) ?? '?').join(', ')}
-              </p>
-            {/each}
-          </div>
-        {/if}
-
-        {#if containerProblems.dangling.length > 0}
-          <!-- A step reaching for a bowl nothing fills. It still cooks — the step
-               simply shows no contents, and its ingredients stay in the loose list
-               — so this warns and nothing more. Usually a word apart from a real
-               container name ("the onion bowl" vs "onion bowl"). -->
-          <div
-            class="flex flex-col gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-3"
-            data-testid="guided-plan-dangling-container-warning"
-          >
-            <p class="text-sm text-warning-text">
-              A step wants a container no prep step fills, so it can't show what's in it. Copy the
-              name from the prep step exactly, word for word.
-            </p>
-            {#each containerProblems.dangling as miss (miss.stepId + miss.name)}
-              <p class="text-sm text-warning-text">
-                Step {stepNumbers.get(miss.stepId) ?? '?'} wants
-                <span class="font-medium">{miss.name}</span>
-              </p>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- ─── Prep ─────────────────────────────────────────────────────────── -->
-        <Card>
-          <CardHeader>
-            <CardTitle>Prep</CardTitle>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-4">
-            {#each prepDraft as entry, i (entry.id)}
+      <div class="flex min-h-0 flex-1 flex-col gap-4" data-testid="guided-plan-editor">
+        <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+          {#if screen === 'bench'}
+            {#if plan.needs_approval}
+              <!-- Used-but-flagged, exactly as on a recipe: informational, never a
+                   gate. Approving is what clears it — reading the plan through and
+                   correcting it IS the review, and an edit alone is not. -->
               <div
-                class="flex flex-col gap-2 rounded border p-3"
-                data-testid="guided-plan-prep-entry"
+                class="flex items-center gap-2 rounded border border-review/40 bg-review/10 px-3 py-2 text-sm text-review-text"
+                data-testid="guided-plan-unreviewed-chip"
               >
-                <div class="flex items-start gap-2">
-                  <Textarea
-                    label={`Prep step ${i + 1}`}
-                    rows={2}
-                    autoresize
-                    placeholder="e.g. Dice the carrots, onion and celery into 5mm pieces"
-                    value={entry.text}
-                    onValueChange={(v) => setPrepField(entry.id, 'text', v)}
-                    class="flex-1"
-                    data-testid="guided-plan-prep-text"
-                  />
-                  <button
-                    type="button"
-                    class="mt-7 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={`Delete prep step ${i + 1}`}
-                    onclick={() => removePrepEntry(entry.id)}
-                    data-testid="guided-plan-prep-delete"
-                  >
-                    <Icon name="Trash2" size={16} />
-                  </button>
-                </div>
-                <TextField
-                  label="Into"
-                  placeholder="onion bowl — leave blank if nothing is set aside"
-                  value={entry.container}
-                  onValueChange={(v) => setPrepField(entry.id, 'container', v)}
-                  data-testid="guided-plan-prep-container"
-                />
-                <div class="flex flex-wrap gap-1">
-                  {#each entry.ingredientIds as ingId (ingId)}
-                    <!-- An id whose ingredient is gone from the recipe still shows,
-                         as the id, so it can be removed. Hiding it would leave a
-                         phantom holding an ingredient slot nobody can find. -->
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-xs hover:bg-destructive/10"
-                      onclick={() => detachIngredient(entry.id, ingId)}
-                      aria-label={`Remove ${ingredientLabels.get(ingId) ?? ingId} from this prep step`}
-                      data-testid="guided-plan-prep-ingredient-chip"
-                    >
-                      {ingredientLabels.get(ingId) ?? ingId}
-                      <Icon name="X" size={12} />
-                    </button>
-                  {/each}
-                </div>
+                <Icon name="TriangleAlert" size={16} />
+                Written by AI — not checked yet. Read it through and approve it.
               </div>
-            {/each}
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                onclick={addPrepEntry}
-                data-testid="guided-plan-add-prep-button"
+            {/if}
+
+            {#if recipeChanged}
+              <!-- The recipe moved under the plan. The plan is NOT deleted and NOT
+                   regenerated: it may be several hand-corrections deep. Two ways
+                   out, both the user's call — write it again, or reconcile by hand
+                   and approve (approving re-stamps, so the banner clears either
+                   way). -->
+              <div
+                class="flex flex-wrap items-center gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2"
+                data-testid="guided-plan-stale-banner"
               >
-                {#snippet leading()}<Icon name="Plus" size={16} />{/snippet}
-                Add a prep step
+                <p class="flex-1 text-sm text-warning-text">
+                  The recipe has changed since this plan was written.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onclick={handleWrite}
+                  loading={writing}
+                  disabled={writing || approving}
+                  data-testid="guided-plan-stale-rerun-button"
+                >
+                  Write it again
+                </Button>
+              </div>
+            {/if}
+
+            {#if board.alsoGetOut.length > 0}
+              <!-- THE ONE WARNING THE BENCH KEEPS. In guided mode the prep list
+                   REPLACES the ingredient checklist, so an ingredient in no bowl is
+                   one the cook never sees — it silently vanishes from the dish.
+                   Filing it is one tap, which is why this is a tray of things to
+                   put away rather than a banner about them. -->
+              <div
+                class="flex flex-col gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-3"
+                data-testid="guided-plan-unassigned-warning"
+              >
+                <p class="text-sm text-warning-text">
+                  Not in any bowl yet — the cook will never see these.
+                </p>
+                {#each board.alsoGetOut as ingredient (ingredient.id)}
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="flex-1 text-sm text-warning-text">{ingredient.rawText}</span>
+                    {#each board.cards as card (card.key)}
+                      {@const firstJob = card.jobs[0]}
+                      {#if firstJob}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onclick={() => fileIngredient(firstJob.id, ingredient.id)}
+                          data-testid="guided-plan-file-button"
+                        >
+                          {card.name ?? 'Just get out'}
+                        </Button>
+                      {/if}
+                    {/each}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            <!-- ─── The bench ─────────────────────────────────────────────── -->
+            <ul class="flex flex-col gap-3" data-testid="guided-plan-bench">
+              {#each board.cards as card (card.key)}
+                <li
+                  class="overflow-hidden rounded-xl border-l-[3px] border-l-secondary/60 bg-card shadow-ambient"
+                  data-testid="guided-plan-bench-card"
+                  data-container-key={card.key}
+                >
+                  <div
+                    class="flex w-full items-center gap-2.5 border-b border-border/50 px-4 py-3.5"
+                  >
+                    {#if card.name !== null}
+                      <!-- The vessel itself, drawn (issue #882) and resolved from
+                           the plan's own words at display time — the same tile the
+                           cook screen's card header shows. -->
+                      <CanonIcon
+                        thumbnail={$kitIcons.kitIconFor(card.name)}
+                        version={$kitIcons.kitIconVersionFor(card.name)}
+                        name={card.name}
+                        size={32}
+                      />
+                    {/if}
+                    <span
+                      class="min-w-0 flex-1 truncate text-base font-semibold"
+                      data-testid="guided-plan-bench-card-name"
+                    >
+                      {card.name ?? 'Just get out'}
+                    </span>
+                  </div>
+                  <ul class="flex flex-col gap-2 px-3 py-4">
+                    {#each card.jobs as job (job.id)}
+                      <li data-testid="guided-plan-job" data-prep-id={job.id}>
+                        <div class="flex items-start gap-2">
+                          <GuidedPlanLine
+                            class="min-w-0 flex-1 px-2 py-1 text-base"
+                            value={job.text}
+                            ariaLabel="this job's words"
+                            placeholder="Dice the carrots, onion and celery"
+                            multiline
+                            onCommit={(v) => setJobText(job.id, v)}
+                          >
+                            <span class="whitespace-pre-wrap">{job.text}</span>
+                          </GuidedPlanLine>
+                          <button
+                            type="button"
+                            class="flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Delete this job"
+                            onclick={() => deleteJob(job.id)}
+                            data-testid="guided-plan-job-delete"
+                          >
+                            <Icon name="Trash2" size={16} />
+                          </button>
+                        </div>
+                        <!-- HOW MUCH. The job's sentence carries no quantities by
+                             design, so these are what say there is one onion —
+                             the same rows, from the same amounts, the cook screen
+                             shows under the job. Tap one to take it out of the
+                             bowl; it reappears in the tray above. -->
+                        <ul class="mt-0.5 flex flex-col gap-0.5 pl-4">
+                          {#each job.rows as row (row.id)}
+                            {@const ingredient = row.ingredient}
+                            {#if ingredient}
+                              <li>
+                                <button
+                                  type="button"
+                                  class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-destructive/10"
+                                  onclick={() => detachIngredient(job.id, row.id)}
+                                  aria-label="Take {ingredientLabel(ingredient)} out of this job"
+                                  data-testid="guided-plan-job-ingredient"
+                                >
+                                  <CanonIcon
+                                    thumbnail={$ingredientIcons.thumbnailFor(ingredient)}
+                                    name={ingredientLabel(ingredient)}
+                                    version={$ingredientIcons.iconVersionFor(ingredient)}
+                                    size={32}
+                                  />
+                                  <span class="min-w-0 flex-1 text-base">
+                                    <IngredientText {ingredient} />
+                                  </span>
+                                  <Icon name="X" size={14} class="shrink-0 text-muted-foreground" />
+                                </button>
+                              </li>
+                            {/if}
+                          {/each}
+                        </ul>
+                      </li>
+                    {/each}
+                    <li>
+                      {#if addingJobTo?.key === card.key}
+                        <GuidedPlanLine
+                          class="w-full px-2 py-1 text-base"
+                          value=""
+                          ariaLabel="the new job's words"
+                          placeholder="Dice the carrots, onion and celery"
+                          multiline
+                          startOpen
+                          onCommit={(v) => addJob(card.name, v)}
+                          onClose={() => (addingJobTo = null)}
+                        >
+                          <span></span>
+                        </GuidedPlanLine>
+                      {:else}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onclick={() => (addingJobTo = { key: card.key, container: card.name })}
+                          data-testid="guided-plan-add-job"
+                        >
+                          {#snippet leading()}<Icon name="Plus" size={14} />{/snippet}
+                          job
+                        </Button>
+                      {/if}
+                    </li>
+                  </ul>
+                </li>
+              {/each}
+              {#if board.cards.length === 0}
+                <!-- A plan with no jobs at all. The flow always writes some, so
+                     this is a hand-emptied plan — it still needs a way back to
+                     having one, or the bench is a dead end. -->
+                <li>
+                  {#if addingJobTo}
+                    <GuidedPlanLine
+                      class="w-full px-2 py-1 text-base"
+                      value=""
+                      ariaLabel="the new job's words"
+                      placeholder="Dice the carrots, onion and celery"
+                      multiline
+                      startOpen
+                      onCommit={(v) => addJob(null, v)}
+                      onClose={() => (addingJobTo = null)}
+                    >
+                      <span></span>
+                    </GuidedPlanLine>
+                  {:else}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={() => (addingJobTo = { key: '', container: null })}
+                      data-testid="guided-plan-add-job"
+                    >
+                      {#snippet leading()}<Icon name="Plus" size={14} />{/snippet}
+                      Add a job
+                    </Button>
+                  {/if}
+                </li>
+              {/if}
+            </ul>
+          {:else if step}
+            <!-- ─── One step ──────────────────────────────────────────────── -->
+            <div class="flex flex-col gap-4" data-testid="guided-plan-step">
+              <p class="text-lg" data-testid="guided-plan-step-text">
+                <span class="mr-1 font-medium text-muted-foreground">{stepIndex + 1}.</span
+                >{step.text}
+                {#if step.timer}
+                  <span class="ml-1 text-xs text-muted-foreground"
+                    >({step.timer.durationMinutes} min timer)</span
+                  >
+                {/if}
+              </p>
+              {#if step.note}
+                <!-- The recipe's own warning, in the recipe's own vocabulary and
+                     read-only: the plan never edits the dish. Shown because the
+                     cook screen shows it, and a step read without it is not the
+                     step the cook will meet. -->
+                <div
+                  class="flex items-start gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-warning-text"
+                  data-testid="guided-plan-step-note"
+                >
+                  <Icon name="TriangleAlert" size={16} class="mt-1 shrink-0" />
+                  <span class="whitespace-pre-wrap text-sm">{step.note}</span>
+                </div>
+              {/if}
+              <GuidedStepNotes
+                {note}
+                {containerContents}
+                {loose}
+                {checkIns}
+                edit={{
+                  timerMinutes: step.timer?.durationMinutes ?? null,
+                  onSetContainer: (v) => updateNote(step.id, { container: v }),
+                  onSetSetup: (v) => updateNote(step.id, { setup: v }),
+                  onSetCue: (v) => updateNote(step.id, { cue: v }),
+                  onSetCheckIn: (i, checkIn) =>
+                    updateNote(step.id, {
+                      checkIns: checkIns.map((c, at) => (at === i ? checkIn : c)),
+                    }),
+                  onAddCheckIn: (checkIn) =>
+                    updateNote(step.id, { checkIns: [...checkIns, checkIn] }),
+                  onRemoveCheckIn: (i) =>
+                    updateNote(step.id, { checkIns: checkIns.filter((_, at) => at !== i) }),
+                }}
+              />
+              <GuidedStepLookahead
+                lookahead={note?.lookahead ?? ''}
+                getAhead={note?.getAhead ?? ''}
+                nextNumber={stepIndex + 2 <= steps.length ? stepIndex + 2 : null}
+                edit={{
+                  onSetLookahead: (v) => updateNote(step.id, { lookahead: v }),
+                  onSetGetAhead: (v) => updateNote(step.id, { getAhead: v }),
+                }}
+              />
+            </div>
+          {/if}
+        </div>
+
+        <!-- ─── The bar ───────────────────────────────────────────────────── -->
+        <div class="flex flex-col gap-3 border-t pt-3">
+          {#if screen === 'bench'}
+            <div class="flex justify-end">
+              <Button
+                onclick={() => (screen = 0)}
+                disabled={steps.length === 0}
+                data-testid="guided-plan-start-reading"
+              >
+                Start reading
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <!-- ─── Step notes ───────────────────────────────────────────────────── -->
-        <Card>
-          <CardHeader>
-            <CardTitle>Notes on the steps</CardTitle>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-5">
-            {#each recipe.steps as step, i (step.id)}
-              {@const note = noteFor(step.id)}
-              <div class="flex flex-col gap-2" data-testid="guided-plan-step-note">
-                <!-- The step's own words, READ-ONLY and unstyled as an input. The
-                     plan never edits the recipe — it only ever adds lines below. -->
-                <p class="text-sm">
-                  <span class="mr-1 font-medium text-muted-foreground">{i + 1}.</span>{step.text}
-                  {#if step.timer}
-                    <span class="ml-1 text-xs text-muted-foreground"
-                      >({step.timer.durationMinutes} min timer)</span
-                    >
-                  {/if}
-                </p>
-                <div class="flex flex-col gap-2 border-l-2 pl-3">
-                  <TextField
-                    label="Wants"
-                    placeholder="onion bowl — exactly as the prep step names it"
-                    value={note.container}
-                    onValueChange={(v) => updateNote(step.id, { container: v })}
-                    data-testid="guided-plan-note-container"
-                  />
-                  <TextField
-                    label="Setup"
-                    placeholder="e.g. small hob burner, medium-low"
-                    value={note.setup}
-                    onValueChange={(v) => updateNote(step.id, { setup: v })}
-                    data-testid="guided-plan-note-setup"
-                  />
-                  <TextField
-                    label="Cue"
-                    placeholder="a very gentle sizzle, not a crackle — leave blank if there's no real test"
-                    value={note.cue}
-                    onValueChange={(v) => updateNote(step.id, { cue: v })}
-                    data-testid="guided-plan-note-cue"
-                  />
-                  <!-- The two fields read a step EARLY (issue #769). They are edited
-                       here, against the step they describe, and shown to the cook on
-                       the step BEFORE — so the labels have to say so, or they read as
-                       two more things to print underneath. -->
-                  <TextField
-                    label="Coming up"
-                    placeholder="the sauce reduces by half — shown while they're still on the step before"
-                    value={note.lookahead}
-                    onValueChange={(v) => updateNote(step.id, { lookahead: v })}
-                    data-testid="guided-plan-note-lookahead"
-                  />
-                  <TextField
-                    label="Get ahead"
-                    placeholder="preheat the oven to 200°C — only if it has to start during the previous step"
-                    value={note.getAhead}
-                    onValueChange={(v) => updateNote(step.id, { getAhead: v })}
-                    data-testid="guided-plan-note-get-ahead"
-                  />
-                  {#if step.timer}
-                    {#each note.checkIns as ci (ci.key)}
-                      <div class="flex items-start gap-2" data-testid="guided-plan-check-in">
-                        <TextField
-                          label="At (min)"
-                          inputmode="numeric"
-                          class="w-28"
-                          value={ci.atMinutes}
-                          error={checkInError(ci.atMinutes, step.timer.durationMinutes)}
-                          onValueChange={(v) => setCheckInField(step.id, ci.key, 'atMinutes', v)}
-                          data-testid="guided-plan-check-in-minutes"
-                        />
-                        <TextField
-                          label="Reminder"
-                          class="flex-1"
-                          placeholder="e.g. give it a stir, or the bottom will catch"
-                          value={ci.text}
-                          onValueChange={(v) => setCheckInField(step.id, ci.key, 'text', v)}
-                          data-testid="guided-plan-check-in-text"
-                        />
-                        <button
-                          type="button"
-                          class="mt-7 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Delete this check-in"
-                          onclick={() => removeCheckIn(step.id, ci.key)}
-                          data-testid="guided-plan-check-in-delete"
-                        >
-                          <Icon name="Trash2" size={16} />
-                        </button>
-                      </div>
-                    {/each}
-                    <div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onclick={() => addCheckIn(step.id)}
-                        data-testid="guided-plan-add-check-in-button"
-                      >
-                        {#snippet leading()}<Icon name="BellPlus" size={14} />{/snippet}
-                        Add a check-in
-                      </Button>
-                    </div>
-                  {/if}
-                </div>
+          {:else}
+            <div class="flex items-center justify-between gap-3">
+              <Button
+                variant="ghost"
+                onclick={() => (screen = stepIndex === 0 ? 'bench' : stepIndex - 1)}
+                data-testid="guided-plan-back"
+              >
+                {#snippet leading()}<Icon name="ArrowLeft" size={16} />{/snippet}
+                Back
+              </Button>
+              <!-- Where you are, and nothing more. No tick, no count of steps
+                   "done": a dot is orientation, and recording which steps someone
+                   looked at would be policing a reading. -->
+              <div class="flex flex-wrap items-center justify-center gap-1.5">
+                {#each steps as s, i (s.id)}
+                  <button
+                    type="button"
+                    class="h-2 w-2 rounded-full {i === stepIndex
+                      ? 'bg-primary'
+                      : 'bg-muted-foreground/30'}"
+                    aria-label="Step {i + 1}"
+                    aria-current={i === stepIndex ? 'step' : undefined}
+                    onclick={() => (screen = i)}
+                    data-testid="guided-plan-dot"
+                  ></button>
+                {/each}
               </div>
-            {/each}
-          </CardContent>
-        </Card>
+              <Button
+                onclick={() => (screen = stepIndex + 1 < steps.length ? stepIndex + 1 : 'bench')}
+                data-testid="guided-plan-looks-right"
+              >
+                {stepIndex + 1 < steps.length ? 'Looks right' : 'Done reading'}
+              </Button>
+            </div>
+          {/if}
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-muted-foreground" data-testid="guided-plan-summary">{summary}</p>
+            <Button
+              onclick={handleApprove}
+              loading={approving}
+              data-testid="guided-plan-approve-button"
+            >
+              {#snippet leading()}<Icon name="Check" size={16} />{/snippet}
+              Approve the plan
+            </Button>
+          </div>
+        </div>
       </div>
     {/if}
   </DetailPage>
