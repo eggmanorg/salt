@@ -20,6 +20,7 @@
   import {
     CURE_SALT_PRODUCTS,
     LEAVENING_PERCENT_BOUNDS,
+    cureSaltFitness,
     diffProcess,
     flattenIngredients,
     isCuringSalt,
@@ -440,6 +441,28 @@
 
   const substitution = $derived.by(() =>
     substituteTo === null ? null : withCureSaltSubstituted(formula, { to: substituteTo }),
+  );
+
+  /**
+   * Is the jar being chosen the right SORT for this cure (issue #1473)?
+   *
+   * READ AGAINST THE PRODUCT THE PERSON HAS ACTUALLY PICKED, not the recipe's — this
+   * is the sheet where the cupboard has its say, and the answer has to move as the
+   * buttons are tapped. `substituteTo ?? namedCuringSalt` is the same expression the
+   * preview and the frozen payload already read from, so the note cannot disagree
+   * with the weights below it about which jar is going on.
+   *
+   * IT IS NOT ON `canStart` AND MUST NEVER JOIN IT. The substitution REFUSAL above
+   * disables Start, deliberately, because the person asked for a swap that cannot be
+   * done; this is a different thing entirely and blocks nothing. Keeping them apart
+   * is the whole point — merge them and Salt starts policing a cure it was only
+   * asked to record.
+   */
+  const cureSaltNote = $derived(
+    cureSaltFitness({
+      product: substituteTo ?? namedCuringSalt,
+      category: recipe.cureCategory,
+    }),
   );
   /**
    * A refused substitution, in words, or null when there is nothing to refuse.
@@ -1245,6 +1268,28 @@
             </div>
           {/each}
         </div>
+      {/if}
+
+      {#if cureSaltNote.kind === 'nitriteOnlyForLongDry'}
+        <!-- THE SORT OF SALT, ABOVE START (issue #1473), because this is the moment
+             the jar is actually named — the formula can say Cure #2 and the cupboard
+             can still hand over Cure #1.
+
+             DELIBERATELY NOT THE REFUSAL ABOVE, which is tinted, blocking, and
+             disables Start. This is the muted note the place picker already uses for
+             the same job: a fact stated where it still matters, with no control and
+             no consequence. Start is enabled underneath it in every state. -->
+        <p
+          class="text-xs text-muted-foreground"
+          data-testid="bake-batch-cure-salt-note"
+          data-nitrate-bearing={cureSaltNote.nitrateBearing}
+        >
+          {CURE_SALT_PRODUCTS[cureSaltNote.product].label} is nitrite only — there is no nitrate behind
+          it to keep working through a long dry, so the protection runs out partway.
+          {CURE_SALT_PRODUCTS[cureSaltNote.nitrateBearing].label} is the same strength and carries one.
+          Neither jar offered above is it: a swap here changes concentration, never what the cure is fit
+          for. Start is not blocked — go ahead if this is what you have.
+        </p>
       {/if}
 
       {#if startError !== null}
