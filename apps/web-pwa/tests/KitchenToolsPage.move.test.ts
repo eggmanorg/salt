@@ -171,4 +171,59 @@ describe('KitchenToolsPage — moving a name to another tool', () => {
       expect(screen.queryByTestId('kitchen-tool-move-dialog')).not.toBeInTheDocument(),
     );
   });
+
+  it('a refused append says nothing landed, and does not send the operator to repair anything', async () => {
+    // Mirrors `KitchenToolsPage.test.ts`'s promote case: `moveKitchenToolMatcher`
+    // writes the destination first, so a refusal there means `ricer` never
+    // reached the Whisk and the source still answers to it alone. Following the
+    // destructive "remove it there" instruction would send the operator hunting
+    // for a duplicate that does not exist.
+    vi.mocked(upsertKitchenTool).mockResolvedValueOnce({
+      kind: 'err' as const,
+      error: { kind: 'StorageError', reason: 'unavailable' },
+    });
+    const dialog = await openMoveDialog();
+    await userEvent.click(within(dialog).getByRole('combobox'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Whisk' }));
+
+    const confirm = screen.getByTestId('kitchen-tool-move-confirm');
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(vi.mocked(addToast)).toHaveBeenCalled());
+    // Only the refused append is attempted — the source's trim is never reached.
+    expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(1);
+    const [message, variant] = vi.mocked(addToast).mock.calls.at(-1)!;
+    expect(variant).toBe('destructive');
+    expect(message).toContain('Could not move');
+    expect(message).not.toContain('remove it there');
+  });
+
+  it('a refused trim says exactly what to repair, naming both tools', async () => {
+    // The append landed — the Whisk now answers to "ricer" too — but the
+    // source's trim was refused, so the phrase is duplicated until somebody
+    // fixes it. This is the one refusal shape where the destructive toast is
+    // honest, same as promote's equivalent case.
+    vi.mocked(upsertKitchenTool)
+      .mockResolvedValueOnce({ kind: 'ok' as const, value: undefined })
+      .mockResolvedValueOnce({
+        kind: 'err' as const,
+        error: { kind: 'StorageError', reason: 'unavailable' },
+      });
+    const dialog = await openMoveDialog();
+    await userEvent.click(within(dialog).getByRole('combobox'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Whisk' }));
+
+    const confirm = screen.getByTestId('kitchen-tool-move-confirm');
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(vi.mocked(addToast)).toHaveBeenCalled());
+    expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(2);
+    const [message, variant] = vi.mocked(addToast).mock.calls.at(-1)!;
+    expect(variant).toBe('destructive');
+    expect(message).toContain('ricer');
+    expect(message).toContain('Whisk');
+    expect(message).toContain('remove it there');
+  });
 });
