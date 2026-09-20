@@ -1,3 +1,4 @@
+import type { CureCategoryDoc } from '../schemas/recipe.js';
 import type { Formula, FormulaComponent, SaltProduct } from '../schemas/formula.js';
 import { boundsPatch, type ComponentPercentBounds } from './adjustComponent.js';
 import { roundPercent } from './rounding.js';
@@ -34,9 +35,13 @@ import { roundPercent } from './rounding.js';
 //     least does not tell anyone their dose is fine.
 //   • NOTHING HERE CHECKS THE REST OF THE SALT. A window says the nitrite dose is
 //     plausible; it says nothing about whether the formula is otherwise right.
-//   • NOTHING HERE CHECKS SUITABILITY. Whether a nitrite-only product is fit for a
-//     ninety-day dry is a different question from whether its dose is safe, and it
-//     is not asked anywhere.
+//   • NOTHING HERE CHECKS SUITABILITY, AND THE WINDOW STILL DOES NOT. Whether a
+//     nitrite-only product is fit for a ninety-day dry is a different question from
+//     whether its dose is safe, and since #1473 it IS asked — by
+//     `cureSaltFitness` at the foot of this file, which is a SENTENCE THE SCREEN
+//     PRINTS and gates nothing. No window moves because of it, no solve refuses
+//     because of it, and a formula whose salt it disapproves of saves exactly as
+//     before. Read its own declaration for how narrow it is.
 //   • SCALING IS NEVER THE DANGER FOR THE STORED PERCENTAGE. Percentages scale
 //     linearly, so a dose that is safe at 500 g is safe at 5 kg AS A PERCENTAGE.
 //     This stops holding for the PRINTED weight below roughly 70 g of basis: a
@@ -75,9 +80,14 @@ import { roundPercent } from './rounding.js';
 //     nitrate-bearing with nitrate-bearing (`CURE_SALT_PAIRS`), because crossing
 //     changes what the cure is FIT FOR rather than merely its concentration. Which
 //     product suits which cure is the suitability question above, and a converter
-//     that crossed the line would answer it by accident.
+//     that crossed the line would answer it by accident. `cureSaltFitness` answers
+//     it in WORDS instead, and the two must not be confused: it proposes no swap
+//     and this still crosses nothing.
 //   • IT SAYS NOTHING ABOUT WHETHER THE SUBSTITUTE IS THE RIGHT PRODUCT for what
-//     is being made. It says the nitrite dose is the same one.
+//     is being made. It says the nitrite dose is the same one. That remains true of
+//     a SUBSTITUTION and is not weakened by #1473: `cureSaltFitness` reads a
+//     product and a cure category, never a swap, so a substituted formula is no
+//     more (and no less) pronounced-upon than the one it came from.
 
 /** One product, as the jar and the reference literature describe it. */
 export type CureSaltProductInfo = {
@@ -397,9 +407,11 @@ export function isCuringSalt(product: SaltProduct): boolean {
  * Nitrite-only swaps with nitrite-only (cure #1 ↔ nitrited curing salt) and
  * nitrate-bearing with nitrate-bearing (cure #2 ↔ Salvianda). Crossing changes what
  * the cure is FIT FOR rather than merely its concentration — nitrite alone depletes
- * over a long dry with no reservoir behind it — and that suitability question is
- * deliberately unasked anywhere in Salt. A converter that crossed the line would
- * answer it by accident.
+ * over a long dry with no reservoir behind it. A converter that crossed the line
+ * would answer that suitability question by accident, which is why this one may
+ * not. Since #1473 the question is asked OUT LOUD instead, by `cureSaltFitness`
+ * below: it returns a fact for the screen to word, proposes no swap, and moves
+ * nothing here. A substitution still never crosses a pair.
  *
  * The pairing is not merely asserted here: each pair's members must agree about
  * whether they carry nitrate, checked against `nitratePercent` in
@@ -599,4 +611,132 @@ export function withCureSaltSubstituted(
       }),
     },
   };
+}
+
+// ─── Is this the right SORT of salt for this cure? (issue #1473) ──────────────
+//
+// THE SUITABILITY QUESTION, ASKED AT LAST, AND IT GATES NOTHING. Everything above
+// is about the DOSE of a named product; this is about whether that product's
+// chemistry suits the cure at all. Nitrite depletes; a long dry outlasts it unless
+// there is nitrate behind it as a slow reservoir. Cure #1 on a ninety-day coppa is
+// the case, and Salt said nothing about it until now.
+//
+// A SENTENCE, NEVER A GATE. Nothing here refuses, disables, clamps or writes.
+// `solveFormula`'s bound violation remains the one and only place Salt says no, and
+// this returns FACTS rather than words — the screen does the wording, which is the
+// convention `CureSaltSubstitutionFailure` already states above.
+//
+// AND IT BRANCHES ON `cureCategory`, WHICH IS THE SANCTIONED SHAPE rather than an
+// exception to it. `isLongRunKind` (`batch/longRuns.ts:95`) is the precedent: a
+// single named pure predicate in `packages/domain`, never an inline comparison at a
+// call site. `docs/formulas-schedules-batches.md` → *Kind versus presence* is the
+// rule both sit under — a category picks WORDS, PICTURES AND GROUPINGS and answers
+// no capability question, and a warning sentence is words. There is no new column on
+// `capabilities.ts` and there must not be.
+
+/**
+ * The cure categories whose safety mechanism is DRYING OVER TIME, and therefore the
+ * ones a nitrite-only salt runs out partway through.
+ *
+ * Read against `CureCategorySchema` (`schemas/recipe.ts`), which splits the five by
+ * exactly that mechanism. The two omitted — `cooked_whole_muscle` (bacon, gammon)
+ * and `cooked_emulsified` (mortadella, frankfurters) — are cooked, are nitrite-only
+ * territory by ordinary practice, and a note on bacon would be wrong and would teach
+ * people to stop reading notes.
+ *
+ * `semi_dry` is included on the conservative reading: it is rapid acidification plus
+ * only PARTIAL drying and is often refrigerated, so nitrite-only is defensible
+ * practice there. Since the note gates nothing, the cost runs one way — an
+ * over-inclusive set costs a sentence somebody dismisses, an under-inclusive one
+ * costs the whole point. Dropping it is a one-line edit here plus a test case.
+ */
+export const LONG_DRY_CURE_CATEGORIES: readonly CureCategoryDoc[] = [
+  'dry_cured_whole_muscle',
+  'fermented_dry_cured',
+  'semi_dry',
+];
+
+/** What a cure's salt is, as far as this question goes. Figures and names, never sentences. */
+export type CureSaltFitness =
+  // Nothing to say — which covers every silence: a product that carries nitrate, a
+  // cooked category, an uncategorised cure, and a formula that names no curing salt
+  // at all. One `ok` rather than four reasons, because the screen does the same
+  // thing with all four: print nothing.
+  | { kind: 'ok' }
+  // A nitrite-only product on a cure whose safety comes from drying. `nitrateBearing`
+  // is the product the screen names as the one that suits — the member of
+  // `CURE_SALT_PRODUCTS` at the SAME `nitritePercent` that also carries nitrate, so
+  // the dose the person already knows does not change. FOR WORDS ONLY: nothing here
+  // proposes a swap, converts a dose, or crosses a `CURE_SALT_PAIRS` pair.
+  | {
+      kind: 'nitriteOnlyForLongDry';
+      product: SaltProduct;
+      category: CureCategoryDoc;
+      nitrateBearing: SaltProduct;
+    };
+
+/**
+ * The nitrate-bearing product at this one's strength, or null when the table holds
+ * none.
+ *
+ * DERIVED FROM THE COMPOSITION, never a second hand-kept cross-pair list beside
+ * `CURE_SALT_PAIRS` that would be free to drift from it: the counterpart is the
+ * member with the same `nitritePercent` that carries nitrate, which is what "the
+ * same dose, with a reservoir behind it" means. A fifth product therefore cannot
+ * arrive with a suitability answer nobody wrote.
+ */
+function nitrateBearingAtSameStrength(product: SaltProduct): SaltProduct | null {
+  const { nitritePercent } = CURE_SALT_PRODUCTS[product];
+  for (const [candidate, info] of Object.entries(CURE_SALT_PRODUCTS)) {
+    if (info.nitratePercent > 0 && info.nitritePercent === nitritePercent) {
+      return candidate as SaltProduct;
+    }
+  }
+  return null;
+}
+
+/**
+ * Is the curing salt named on this formula the right SORT for this cure?
+ *
+ * THE CLAIM'S REAL BOUNDARY, STATED HERE (CLAUDE.md rule 12), because "Salt
+ * prevents an unsuitable cure" is the sentence this must never be read as:
+ *
+ *   • IT READS TWO THINGS AND NOTHING ELSE — the product named on the formula and
+ *     the recipe's `cureCategory`. Not the dose, not the schedule's duration, not
+ *     the weight, not the clock.
+ *   • NO PRODUCT NAMED MEANS NO NOTE, exactly as no product named means no bound
+ *     (this file's header). An opinion about an ingredient nobody has identified is
+ *     a guess wearing a safety rail's clothes.
+ *   • AN UNCATEGORISED CURE MEANS NO NOTE. `cureCategory` is nullable and most
+ *     recipes carry `null`; there is nothing to reason from.
+ *   • IT SAYS NOTHING ABOUT DOSE. That is `solveFormula`'s refusal, which stays the
+ *     only place Salt says no.
+ *   • IT GATES NOTHING. No `Failure`, no disabled control, no confirmation. A cure
+ *     it disapproves of saves and starts exactly as it does without it.
+ *   • AND IT IS SILENT IF THE TABLE EVER HOLDS A NITRITE-ONLY PRODUCT WITH NO
+ *     NITRATE-BEARING COUNTERPART at its strength — a warning with nothing to
+ *     point at is worse than none. Both of today's nitrite-only products have one,
+ *     and `cureSalt.test.ts` goes red if a fifth arrives without one, so this arm
+ *     is stated rather than left to be discovered.
+ *
+ * Pure and total: a lookup against two tables, no I/O, no clock.
+ */
+export function cureSaltFitness(input: {
+  product: SaltProduct | null;
+  category: CureCategoryDoc | null;
+}): CureSaltFitness {
+  const { product, category } = input;
+  if (product === null || category === null) return { kind: 'ok' };
+  if (!LONG_DRY_CURE_CATEGORIES.includes(category)) return { kind: 'ok' };
+  if (CURE_SALT_PRODUCTS[product].nitratePercent > 0) return { kind: 'ok' };
+  // ORDINARY SALT FALLS OUT HERE RATHER THAN THROUGH A GUARD OF ITS OWN, and that
+  // is the reason there is no `isCuringSalt` check above: nothing in the table
+  // carries nitrate at `plain`'s 0% nitrite, so plain salt finds no counterpart and
+  // takes the same silent exit as the hypothetical fifth nitrite-only product with
+  // no partner. One arm, both cases, and `cureSalt.test.ts` reaches it with `plain`
+  // — which is what keeps it from being the untestable branch a bespoke guard would
+  // have made it.
+  const nitrateBearing = nitrateBearingAtSameStrength(product);
+  if (nitrateBearing === null) return { kind: 'ok' };
+  return { kind: 'nitriteOnlyForLongDry', product, category, nitrateBearing };
 }

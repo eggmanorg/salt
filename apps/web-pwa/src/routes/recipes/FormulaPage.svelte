@@ -38,6 +38,7 @@
   import {
     CURE_SALT_PRODUCTS,
     basisYield,
+    cureSaltFitness,
     deriveFormula,
     flattenIngredients,
     gramsFromParsed,
@@ -1042,6 +1043,36 @@
 
   const rangeRows = $derived(rows.filter((row) => row.isRange && row.included));
 
+  /**
+   * Is the curing salt on this formula the right SORT for this cure (issue #1473)?
+   *
+   * LIVE OFF THE ROWS, not off the saved formula, so tapping the product picker
+   * above answers it again without saving anything. That is the whole behaviour
+   * asked for: change the row to Cure #2 and the note goes, with nothing written.
+   *
+   * IT DECIDES NOTHING AND DISABLES NOTHING. `cureSaltFitness` returns a fact, this
+   * turns it into a sentence, and Save is untouched in every state — the fact is not
+   * on `canSave`'s path and must never join it. The one refusal on this screen stays
+   * `solveFormula`'s bound violation.
+   *
+   * THE DOMAIN PREDICATE DOES THE DECIDING, never a comparison here: a literal
+   * `cureCategory === 'fermented_dry_cured'` in this file is exactly what
+   * `cureKindComparisonGuard.test.ts` fails on, and rightly.
+   *
+   * The FIRST included curing-salt row that draws a note is the one it speaks about.
+   * A formula naming two curing salts is unusual and not forbidden, and a note about
+   * the first is better than silence about both.
+   */
+  const cureSaltNote = $derived.by(() => {
+    const category = recipe?.cureCategory ?? null;
+    for (const row of rows) {
+      if (!row.included) continue;
+      const fitness = cureSaltFitness({ product: row.saltProduct, category });
+      if (fitness.kind === 'nitriteOnlyForLongDry') return fitness;
+    }
+    return null;
+  });
+
   // ─── The stages, as they would be saved ───────────────────────────────────────
 
   const stages = $derived(stageRows.map(stageFrom));
@@ -1404,6 +1435,35 @@
               {/each}
             </CardContent>
           </Card>
+
+          {#if cureSaltNote !== null}
+            <!-- THE SORT OF SALT, NOT THE DOSE (issue #1473). Nitrite depletes; a
+               long dry outlasts it unless there is nitrate behind it. Salt said
+               nothing about this until now, and what it says is a NOTE: nothing
+               above is disabled, Save is untouched, and the formula writes exactly
+               what it would have written. The person reads it and carries on if
+               they want to — Salt records, never polices.
+
+               The warning tint is the range disclosure's, below, because this is
+               the same species of thing: a consequence stated where it can still be
+               changed, with no control of its own. -->
+            <div
+              class="flex flex-col gap-1 rounded border border-warning/40 bg-warning/10 px-3 py-3"
+              data-testid="formula-cure-salt-note"
+              data-nitrate-bearing={cureSaltNote.nitrateBearing}
+            >
+              <p class="text-sm text-warning-text">
+                {CURE_SALT_PRODUCTS[cureSaltNote.product].label} is nitrite only — there is no nitrate
+                behind it to keep working through a long dry, so the protection runs out partway.
+                {CURE_SALT_PRODUCTS[cureSaltNote.nitrateBearing].label} is the same strength and carries
+                one.
+              </p>
+              <p class="text-sm text-warning-text">
+                Nothing here is blocked. Change the product on the row above if you want to, or save
+                this as it stands.
+              </p>
+            </div>
+          {/if}
 
           {#if rangeRows.length > 0}
             <!-- DISCLOSURE ONE. A range becomes a point value the moment it becomes a

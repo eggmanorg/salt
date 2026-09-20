@@ -451,7 +451,9 @@
    * `describeBoundViolation` took when its third surface appeared.
    *
    * It says nothing about whether the substitute SUITS this cure. That is a
-   * different question and Salt does not ask it.
+   * different question, answered separately and in words by `cureSaltFitness`
+   * (issue #1473) — and the two must not be merged. THIS refusal blocks Start; that
+   * note never does.
    */
   const substitutionRefusal = $derived.by((): string | null => {
     const attempt = substitution;
@@ -966,8 +968,10 @@
       <!-- ─── Which jar are you using? ────────────────────────────────────────── -->
       <!-- OFFERED ONLY WHEN THE FORMULA NAMES A CURING SALT, and then only its
            pair member: nitrite-only swaps with nitrite-only, nitrate-bearing with
-           nitrate-bearing. Crossing changes what the cure is fit for, which is a
-           suitability question Salt does not ask (issue #1402). -->
+           nitrate-bearing. Crossing changes what the cure is fit for (issue #1402).
+           Since #1473 Salt does ask that suitability question — in a note, which
+           gates nothing and proposes no swap. These buttons are unchanged by it:
+           there are still exactly two, and they still never cross a pair. -->
       {#if namedCuringSalt !== null && substitutable !== null}
         <div class="flex flex-col gap-2" data-testid="bake-batch-substitute">
           <p class="text-sm font-medium">Which curing salt are you using?</p>

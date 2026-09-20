@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   CURE_SALT_PAIRS,
   CURE_SALT_PRODUCTS,
+  LONG_DRY_CURE_CATEGORIES,
+  cureSaltFitness,
   deriveFormula,
   guessSaltProduct,
   ingoingNitritePpm,
@@ -12,6 +14,7 @@ import {
   withCureSaltSubstituted,
 } from '../../src/formula/index.js';
 import { SaltProductSchema, type Formula, type SaltProduct } from '../../src/schemas/formula.js';
+import { CureCategorySchema, type CureCategoryDoc } from '../../src/schemas/recipe.js';
 
 // THE CURING PRODUCTS, which since phase 3 is not every member of the enum: `plain`
 // joined it so a substitution can find the ordinary salt it moves mass into, and it
@@ -875,5 +878,156 @@ describe('plain salt is a member of the enum and not of the rail', () => {
       expect(guessSaltProduct({ canonName: null, rawText: text })).not.toBe('plain');
     }
     expect(CURE_SALT_PRODUCTS.plain.keywords).toEqual([]);
+  });
+});
+
+// ─── Is this the right SORT of salt? (issue #1473) ────────────────────────────
+//
+// WHAT THESE PIN, and it is deliberately not "Salt prevents an unsuitable cure":
+//
+//   1. IT FIRES on a nitrite-only product in every drying category, naming the
+//      nitrate-bearing product at the SAME strength.
+//   2. IT IS SILENT on the cooked categories, on a nitrate-bearing product, on an
+//      uncategorised cure and on a formula that names no curing salt at all.
+//   3. THE COUNTERPART IS READ FROM THE TABLE, never asserted as a literal — and
+//      every nitrite-only product in the table HAS one, which is the arm
+//      `cureSaltFitness` documents itself as silent on. A fifth nitrite-only
+//      product with no nitrate-bearing partner turns that silence on, and this is
+//      where it goes red.
+//   4. IT GATES NOTHING. The same formula still derives, still solves, and still
+//      carries the window it always did.
+//
+// THE COOKED SET IS NAMED HERE AS LITERALS, deliberately, and this is the one place
+// in this file a hand-written list is the right answer (docs/unit-test-spec.md §E,
+// UT-E2). Deriving it as "everything `LONG_DRY_CURE_CATEGORIES` leaves out" makes
+// the silence assertion SELF-CONSISTENT: move `cooked_whole_muscle` into the drying
+// set and a derived complement quietly moves with it, so "bacon says nothing" passes
+// while bacon warns. Named independently, that edit goes red — which is the whole
+// job, since bacon warning is the failure this feature must never ship.
+//
+// Completeness is still mechanical rather than hand-kept: the partition assertion
+// below reads `CureCategorySchema` itself, so a sixth category has to be placed on
+// one side or the other before anything here passes (UT-E1).
+const COOKED_CATEGORIES: readonly CureCategoryDoc[] = ['cooked_whole_muscle', 'cooked_emulsified'];
+const NITRITE_ONLY = CURING.filter((product) => CURE_SALT_PRODUCTS[product].nitratePercent === 0);
+const NITRATE_BEARING = CURING.filter((product) => CURE_SALT_PRODUCTS[product].nitratePercent > 0);
+
+describe('cureSaltFitness — is this the right sort of salt for this cure', () => {
+  it('partitions all five categories between the drying set and the cooked set', () => {
+    // UT-E1: every category sits in exactly one of the two sets, so a sixth cannot
+    // arrive silently uncovered — and a category moved from one set to the other
+    // fails HERE as a duplicate before it can make a silence assertion vacuous.
+    const both = [...LONG_DRY_CURE_CATEGORIES, ...COOKED_CATEGORIES];
+    expect(new Set(both).size).toBe(both.length);
+    expect([...both].sort()).toEqual([...CureCategorySchema.options].sort());
+    expect(LONG_DRY_CURE_CATEGORIES.length).toBeGreaterThan(0);
+    expect(COOKED_CATEGORIES.length).toBeGreaterThan(0);
+    expect(NITRITE_ONLY.length).toBeGreaterThan(0);
+    expect(NITRATE_BEARING.length).toBeGreaterThan(0);
+  });
+
+  it('every nitrite-only product has a nitrate-bearing counterpart at its own strength', () => {
+    // THE ARM `cureSaltFitness` DECLARES ITSELF SILENT ON, pinned rather than left
+    // to be discovered: it says nothing when the table holds no counterpart, and
+    // today it never has to. Add a nitrite-only product with no partner and this
+    // goes red — which is the moment to decide what the note should say instead.
+    for (const product of NITRITE_ONLY) {
+      const counterpart = NITRATE_BEARING.filter(
+        (other) =>
+          CURE_SALT_PRODUCTS[other].nitritePercent === CURE_SALT_PRODUCTS[product].nitritePercent,
+      );
+      expect(counterpart).toHaveLength(1);
+    }
+  });
+
+  it('fires on every nitrite-only product in every drying category', () => {
+    for (const category of LONG_DRY_CURE_CATEGORIES) {
+      for (const product of NITRITE_ONLY) {
+        const fitness = cureSaltFitness({ product, category });
+        expect(fitness.kind).toBe('nitriteOnlyForLongDry');
+        if (fitness.kind !== 'nitriteOnlyForLongDry') throw new Error('unreachable');
+        expect(fitness.product).toBe(product);
+        expect(fitness.category).toBe(category);
+        // READ OFF THE TABLE, not asserted as 'cure2'/'salvianda': the counterpart
+        // is defined as "same nitrite, carries nitrate", and a hand-written literal
+        // here would be the second cross-pair list the predicate exists to avoid.
+        const named = CURE_SALT_PRODUCTS[fitness.nitrateBearing];
+        expect(named.nitratePercent).toBeGreaterThan(0);
+        expect(named.nitritePercent).toBe(CURE_SALT_PRODUCTS[product].nitritePercent);
+      }
+    }
+  });
+
+  it('says nothing about a nitrate-bearing product, in any category', () => {
+    for (const category of CureCategorySchema.options) {
+      for (const product of NITRATE_BEARING) {
+        expect(cureSaltFitness({ product, category })).toEqual({ kind: 'ok' });
+      }
+    }
+  });
+
+  it('says nothing on a cooked category, whatever the product', () => {
+    // BACON AND MORTADELLA ARE NITRITE-ONLY TERRITORY by ordinary practice, and a
+    // note there would be wrong. It would also teach people to stop reading notes,
+    // which costs the drying cures this exists for.
+    for (const category of COOKED_CATEGORIES) {
+      for (const product of SaltProductSchema.options) {
+        expect(cureSaltFitness({ product, category })).toEqual({ kind: 'ok' });
+      }
+    }
+  });
+
+  it('says nothing when no curing salt is named, even in a drying category', () => {
+    // EXACT CONSISTENCY WITH "NO PRODUCT NAMED MEANS NO BOUND". An opinion about an
+    // ingredient nobody has identified is a guess wearing a safety rail's clothes.
+    for (const category of LONG_DRY_CURE_CATEGORIES) {
+      expect(cureSaltFitness({ product: null, category })).toEqual({ kind: 'ok' });
+      // `plain` IS THE NO-COUNTERPART ARM, not a separate guard. Nothing in the
+      // table carries nitrate at 0% nitrite, so ordinary salt takes the same exit
+      // the predicate documents for a nitrite-only product with no nitrate-bearing
+      // partner — which is how that arm is reachable at all.
+      expect(cureSaltFitness({ product: 'plain', category })).toEqual({ kind: 'ok' });
+      expect(CURE_SALT_PRODUCTS.plain.nitritePercent).toBe(0);
+      expect(
+        SaltProductSchema.options.filter(
+          (other) =>
+            CURE_SALT_PRODUCTS[other].nitratePercent > 0 &&
+            CURE_SALT_PRODUCTS[other].nitritePercent === 0,
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it('says nothing when the cure has no category, whatever the product', () => {
+    // `cureCategory` is nullable and most recipes carry null. There is nothing to
+    // reason from, and guessing would fire on every cure formula before anyone has
+    // categorised it.
+    const uncategorised: CureCategoryDoc | null = null;
+    for (const product of SaltProductSchema.options) {
+      expect(cureSaltFitness({ product, category: uncategorised })).toEqual({ kind: 'ok' });
+    }
+  });
+
+  it('gates nothing — the same formula still derives, still solves, still bounded', () => {
+    // THE WHOLE POINT, PINNED: this is a sentence, not a rail. Cure #1 on a
+    // ninety-day dry is exactly the case the note fires on, and it goes through
+    // `deriveFormula` and `solveFormula` untouched, carrying the window it always
+    // did. `solveFormula`'s bound violation stays the only place Salt says no.
+    const derived = deriveFormula({
+      recipeId: 'recipe-1',
+      components: [
+        { ingredientId: 'ing-meat', grams: 1000, inBasis: true },
+        { ingredientId: 'ing-cure', grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+        { ingredientId: 'ing-salt', grams: 25, inBasis: false, saltProduct: 'plain' },
+      ],
+    });
+    if (!derived.ok) throw new Error('expected a derive');
+    expect(cureSaltFitness({ product: 'cure1', category: 'dry_cured_whole_muscle' }).kind).toBe(
+      'nitriteOnlyForLongDry',
+    );
+    const cure = derived.formula.components.find((c) => c.ingredientId === 'ing-cure');
+    expect(cure?.minPercent).toBe(CURE_SALT_PRODUCTS.cure1.bounds.minPercent);
+    expect(cure?.maxPercent).toBe(CURE_SALT_PRODUCTS.cure1.bounds.maxPercent);
+    expect(solveFormula(derived.formula).ok).toBe(true);
   });
 });

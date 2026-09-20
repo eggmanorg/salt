@@ -74,10 +74,13 @@ export {
   isCuringSalt,
   pairOf,
   withCureSaltSubstituted,
+  LONG_DRY_CURE_CATEGORIES,
+  cureSaltFitness,
 } from './cureSalt.js';
 export type {
   CureSaltProductInfo,
   SaltProductGuessEntry,
   CureSaltSubstitutionFailure,
   CureSaltSubstitutionResult,
+  CureSaltFitness,
 } from './cureSalt.js';
