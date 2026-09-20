@@ -77,6 +77,7 @@ import {
   ledgerShouldAttachTo,
 } from './lib/boardTitles.mjs';
 import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
+import { notOnBoardMessage, showLines } from './lib/boardShow.mjs';
 import { disabledWorkflowFailures } from './lib/boardWorkflows.mjs';
 import { SPEC_LABEL } from './lib/specIssueShape.mjs';
 
@@ -165,6 +166,8 @@ function loadItems(project) {
           content{ ... on Issue { number title state stateReason closedAt
             labels(first:20){ nodes{ name } } } }
           queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
+          class:fieldValueByName(name:"Class"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
+          size:fieldValueByName(name:"Size"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
           blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
       .node.items;
@@ -190,6 +193,11 @@ function loadItems(project) {
         // the failure direction is a missed finding rather than a false one.
         labels: (n.content.labels?.nodes ?? []).map((l) => l.name),
         queue: n.queue?.name ?? null,
+        // `class` and `size` are read by `show` alone — no check rule consults
+        // either, and `size` deliberately has nothing grading it (#1521 adds
+        // the place a human can compare it to what shipped, not a gate).
+        class: n.class?.name ?? null,
+        size: n.size?.name ?? null,
         status: n.status?.name ?? null,
         blockedBy: n.blockedBy?.text ?? '',
       });
@@ -252,6 +260,14 @@ function cmdAdd(project, [num, ...rest]) {
   console.log(
     `${existing ? 'updated' : 'added'} #${number} — ${set || 'no fields set'}  ${issue.title}`,
   );
+}
+
+function cmdShow(project, [num]) {
+  const number = Number(num);
+  if (!Number.isInteger(number)) die('usage: board.mjs show <issue>');
+  const item = loadItems(project).find((i) => i.number === number);
+  if (!item) die(notOnBoardMessage(number));
+  for (const line of showLines(item)) console.log(line);
 }
 
 function cmdSet(project, [num, ...rest]) {
@@ -944,6 +960,7 @@ if (!command || command === '--help' || command === '-h') {
   console.log(`usage:
   board.mjs add <issue> [--queue X --class Y --size Z --status W]
   board.mjs set <issue> [--queue X --class Y --size Z --status W]
+  board.mjs show <issue>
   board.mjs start <issue>
   board.mjs pr <pr> --status "In review"
   board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
@@ -963,6 +980,7 @@ if (command === 'parent') {
 const project = loadProject();
 if (command === 'add') cmdAdd(project, args);
 else if (command === 'set') cmdSet(project, args);
+else if (command === 'show') cmdShow(project, args);
 else if (command === 'start') cmdStart(project, args);
 else if (command === 'pr') cmdPr(project, args);
 else if (command === 'release') cmdRelease(project, args);
@@ -970,5 +988,5 @@ else if (command === 'rollup') cmdRollup(project, args);
 else if (command === 'check') cmdCheck(project);
 else
   die(
-    `unknown command "${command}" — expected add, set, start, pr, parent, release, rollup or check`,
+    `unknown command "${command}" — expected add, set, show, start, pr, parent, release, rollup or check`,
   );
