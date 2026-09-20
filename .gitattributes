@@ -1,0 +1,6 @@
+# Committed AppMap gold-trace baselines are machine-written JSON, sometimes tens
+# of thousands of lines on one line. Marking them binary keeps them out of diffs
+# and merge attempts: a baseline is replaced wholesale when it is blessed, never
+# edited by hand or merged line by line, so a textual diff of one is noise in
+# every review it appears in.
+gold_traces/baseline/appmaps/**/*.appmap.json binary
