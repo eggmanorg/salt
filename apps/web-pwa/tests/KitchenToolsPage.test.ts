@@ -184,11 +184,16 @@ beforeEach(() => {
   setTools([]);
 });
 
-/** The queue rows, in the order they are drawn. */
-function queueRows(): { label: string; count: string }[] {
-  return screen.queryAllByTestId('kitchen-tool-queue-row').map((row) => ({
+/**
+ * The "Not drawn yet" rows, in the order they are drawn. They are rows in the
+ * SAME list as the vocabulary since #1489 Phase 3, not a queue of their own —
+ * but unlike a vocabulary row they render ONCE, because a gap row is identical at
+ * every breakpoint and so does not go through `EditableRow`'s narrow/wide pair.
+ */
+function gapRows(): { label: string; count: string }[] {
+  return screen.queryAllByTestId('kitchen-tool-gap-row').map((row) => ({
     label: row.getAttribute('data-kit-label') ?? '',
-    count: within(row).getByTestId('kitchen-tool-queue-count').textContent?.trim() ?? '',
+    count: within(row).getByTestId('kitchen-tool-gap-count').textContent?.trim() ?? '',
   }));
 }
 
@@ -346,7 +351,7 @@ describe('KitchenToolsPage — the vocabulary list', () => {
   });
 });
 
-describe('KitchenToolsPage — the unresolved queue', () => {
+describe('KitchenToolsPage — the words nothing draws', () => {
   it('ranks by frequency and leaves out anything the vocabulary already names', async () => {
     mockRecipes._set([
       recipeWithKit('r1', 'tagine', 'colander'),
@@ -356,13 +361,19 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     setTools([tool({ id: 'colander', label: 'Colander' })]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows().length).toBe(2));
+    await waitFor(() => expect(gapRows().length).toBe(2));
     // Three mentions of one word in two spellings, one row. "colander" is absent
-    // because it already draws — which is the queue agreeing with the screen.
-    expect(queueRows()).toEqual([
+    // because it already draws — which is the group agreeing with the screen.
+    expect(gapRows()).toEqual([
       { label: 'tagine', count: '3' },
       { label: 'mandoline', count: '1' },
     ]);
+    // The group is its own section, above the vocabulary, and its heading count
+    // is the number of rows under it.
+    expect(screen.getByTestId('kitchen-tool-gaps-toggle')).toHaveTextContent('Not drawn yet (2)');
+    const [first, second] = screen.getAllByTestId(/^kitchen-tool-(gaps|vocabulary)$/);
+    expect(first).toHaveAttribute('data-testid', 'kitchen-tool-gaps');
+    expect(second).toHaveAttribute('data-testid', 'kitchen-tool-vocabulary');
   });
 
   it('counts guided-plan containers alongside the recipe kit labels', async () => {
@@ -370,26 +381,73 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     plansResult.value = [planWithContainers('r1', [null, 'tagine'], ['  '])];
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toEqual([{ label: 'tagine', count: '2' }]));
+    await waitFor(() => expect(gapRows()).toEqual([{ label: 'tagine', count: '2' }]));
   });
 
   it('drops a row the moment the vocabulary can name it — no reread, no rewrite', async () => {
     mockRecipes._set([recipeWithKit('r1', 'tagine')]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toHaveLength(1));
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
     setTools([tool({ id: 'tagine', label: 'Tagine' })]);
-    await waitFor(() => expect(queueRows()).toHaveLength(0));
+    await waitFor(() => expect(gapRows()).toHaveLength(0));
     // Nothing was written to the recipe to make that happen.
     expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
+  });
+
+  it('never opens the editor — there is no document behind the row', async () => {
+    // Rule 12, pinned. An editor over a record that does not exist is a lie, and
+    // every field in it would have to be disabled. So the name is PLAIN TEXT: it
+    // is not a button, and pressing it navigates nowhere.
+    mockRecipes._set([recipeWithKit('r1', 'tagine')]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    const row = screen.getByTestId('kitchen-tool-gap-row');
+    expect(within(row).queryByRole('button', { name: 'tagine' })).toBeNull();
+
+    await userEvent.click(within(row).getByText('tagine'));
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('kitchen-tool-editor-page')).toBeNull();
+  });
+
+  it('the “Not drawn yet” pill leaves that group alone on screen', async () => {
+    mockRecipes._set([recipeWithKit('r1', 'tagine')]);
+    setTools([tool({ id: 'whisk', label: 'Whisk' })]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    expect(toolRows()).toHaveLength(1);
+
+    await userEvent.click(screen.getByTestId('kitchen-tool-filter-not-drawn'));
+    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-vocabulary')).toBeNull());
+    expect(gapRows()).toEqual([{ label: 'tagine', count: '1' }]);
+
+    // ...and the pill that asks for names takes the gap group away, because a
+    // word with no document behind it has no other names by construction.
+    await userEvent.click(screen.getByTestId('kitchen-tool-filter-has-names'));
+    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-gaps')).toBeNull());
+  });
+
+  it('the filter box narrows the gap group as well as the vocabulary', async () => {
+    mockRecipes._set([recipeWithKit('r1', 'tagine', 'mandoline')]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(2));
+    await fireEvent.input(screen.getByTestId('kitchen-tool-filter-text'), {
+      target: { value: 'tag' },
+    });
+
+    await waitFor(() => expect(gapRows()).toEqual([{ label: 'tagine', count: '1' }]));
+    expect(screen.getByTestId('kitchen-tool-gaps-toggle')).toHaveTextContent('Not drawn yet (1)');
   });
 
   it('pre-fills the add form with the unresolved name', async () => {
     mockRecipes._set([recipeWithKit('r1', 'potato masher')]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toHaveLength(1));
-    await userEvent.click(screen.getByTestId('kitchen-tool-queue-new'));
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    await userEvent.click(screen.getByTestId('kitchen-tool-gap-new'));
 
     const input = await screen.findByTestId('kitchen-tool-label-input');
     expect(input).toHaveValue('potato masher');
@@ -404,12 +462,12 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     await userEvent.click(screen.getByText('Cancel'));
   });
 
-  it('adding from the queue mints a slug id, a blank thumbnail, and lands on the editor', async () => {
+  it('adding from a gap row mints a slug id, a blank thumbnail, and lands on the editor', async () => {
     mockRecipes._set([recipeWithKit('r1', 'potato masher')]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toHaveLength(1));
-    await userEvent.click(screen.getByTestId('kitchen-tool-queue-new'));
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    await userEvent.click(screen.getByTestId('kitchen-tool-gap-new'));
     await screen.findByTestId('kitchen-tool-label-input');
     await userEvent.click(screen.getByTestId('kitchen-tool-save'));
 
@@ -431,21 +489,21 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     await waitFor(() => expect(screen.queryByTestId('kitchen-tool-add-dialog')).toBeNull());
   });
 
-  it('leads with a one-click alias when the row has a likely parent', async () => {
+  it('leads with a one-press alias when the row has a likely parent', async () => {
     // Production's real drift, reproduced: a `Large mixing bowl` document minted
-    // from the queue one row at a time, which then cannot name plain "mixing
+    // from a gap row one at a time, which then cannot name plain "mixing
     // bowl" — the commonest kit label in the library. Curated a row at a time
     // that is a second document and a second AI drawing of a bowl.
     mockRecipes._set([recipeWithKit('r1', 'mixing bowl')]);
     setTools([tool({ id: 'large-mixing-bowl', label: 'Large mixing bowl' })]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toHaveLength(1));
-    const suggest = screen.getByTestId('kitchen-tool-queue-suggest');
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    const suggest = screen.getByTestId('kitchen-tool-gap-suggest');
     // The button NAMES the tool, so accepting it is not a leap of faith.
-    expect(suggest).toHaveTextContent('Alias to Large mixing bowl');
-    // ...and the two expensive-or-slow actions are demoted behind it.
-    expect(screen.getByTestId('kitchen-tool-queue-new').className).toContain('salt-button--ghost');
+    expect(suggest).toHaveTextContent('Also call it Large mixing bowl');
+    // ...and the expensive verb is demoted into the overflow menu, off the row.
+    expect(screen.queryByTestId('kitchen-tool-gap-new')).toBeNull();
 
     await userEvent.click(suggest);
 
@@ -460,16 +518,35 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     });
   });
 
-  it('keeps "New tool" the first move when nothing looks like a parent', async () => {
+  it('keeps "Make it a tool" the first move when nothing looks like a parent', async () => {
     mockRecipes._set([recipeWithKit('r1', 'pasta machine')]);
     setTools([tool({ id: 'large-mixing-bowl', label: 'Large mixing bowl' })]);
     render(KitchenToolsPage);
 
-    await waitFor(() => expect(queueRows()).toHaveLength(1));
-    expect(screen.queryByTestId('kitchen-tool-queue-suggest')).toBeNull();
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    expect(screen.queryByTestId('kitchen-tool-gap-suggest')).toBeNull();
     // A pasta machine is genuinely a new object; minting one is the right call and
-    // the row says so.
-    expect(screen.getByTestId('kitchen-tool-queue-new').className).toContain('salt-button--solid');
+    // the row says so with the one press it does offer.
+    expect(screen.getByTestId('kitchen-tool-gap-new')).toHaveTextContent('Make it a tool');
+  });
+
+  it('offers the same two verbs a name row does, minus Remove, in the same order', async () => {
+    // Nothing to remove: the word is in the library's own content, and this page
+    // curates the vocabulary rather than the recipes and plans that read it.
+    mockRecipes._set([recipeWithKit('r1', 'pasta machine')]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    await userEvent.click(screen.getByTestId('kitchen-tool-gap-menu'));
+
+    const alias = await screen.findByTestId('kitchen-tool-gap-alias');
+    const promote = screen.getByTestId('kitchen-tool-gap-promote');
+    // Cheapest first, and the expensive one says what it costs rather than a
+    // confirmation asking whether you meant it.
+    expect(alias).toHaveTextContent('Make it another name for…');
+    expect(promote).toHaveTextContent('Give it its own picture — draws a new one');
+    expect(alias.compareDocumentPosition(promote)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByTestId('kitchen-tool-gap-remove')).toBeNull();
   });
 
   it('warns that a new name already belongs to a drawn tool — and still saves', async () => {
@@ -504,7 +581,7 @@ describe('KitchenToolsPage — the unresolved queue', () => {
     await waitFor(() => expect(screen.queryByTestId('kitchen-tool-add-dialog')).toBeNull());
   });
 
-  // The queue's OTHER action — aliasing onto an existing tool — lives in
+  // A gap row's OTHER action — handing the word to an existing tool — lives in
   // `KitchenToolsPage.alias.test.ts`. It needs a combobox inside a dialog, and a
   // bits-ui combobox only commits a selection while its layer is the topmost one
   // on the library's GLOBAL stack; a dialog opened and closed earlier in the same
