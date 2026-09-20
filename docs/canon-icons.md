@@ -413,7 +413,11 @@ press. It is pinned by
 
 One thing is **not** guaranteed, and no test can make it so: a person may always
 confirm a `new` proposal that should have been an alias; that is the design — Salt
-records, it does not police.
+records, it does not police. Nor does this guard stop the flow proposing an alias
+onto a word `kitchenToolForKitLabel` already refused — the model may answer `alias`
+outright, or a `new` whose `suggestedLabel` resolves to that same refused tool, and
+either still reaches the row's leading press; the guard only prevents minting a
+duplicate, not aliasing onto one.
 
 ### The description's two lives (#1433)
 

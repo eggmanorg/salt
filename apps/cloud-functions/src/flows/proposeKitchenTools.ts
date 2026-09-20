@@ -111,7 +111,11 @@ function renderVocabulary(tools: readonly KitchenToolDoc[]): string {
  *
  * WHAT IT DOES NOT CLAIM. The vocabulary cannot be guaranteed not to bloat, and
  * this does not guarantee it: a person may always confirm a `new` that should
- * have been an alias, and no test can stop them.
+ * have been an alias, and no test can stop them. Nor does it stop the flow
+ * proposing an alias onto a word `kitchenToolForKitLabel` already refused — the
+ * model may answer `alias` outright, or a `new` whose `suggestedLabel` resolves
+ * to that same refused tool, and either still reaches the row's leading press;
+ * this guard only prevents MINTING a duplicate, not aliasing onto one.
  */
 export function sanitiseKitchenToolProposals(
   proposals: readonly KitchenToolProposalAI[],
