@@ -168,6 +168,7 @@ const URL_INPUT = { url: 'https://example.com/loaf' };
 const PHOTO_INPUT = { images: [{ imageBase64: 'B64', contentType: 'image/jpeg' }] };
 const STAGES_INPUT = { recipeId: 'r1' };
 const PLAN_INPUT = { recipeId: 'r1' };
+const TOOL_PROPOSAL_INPUT = { labels: ['spinner bowl'], tools: [] };
 const SCHEDULE_INPUT = { recipeId: 'r1', finishBy: '2026-01-01T18:00:00.000Z' };
 const CHAT_INPUT = { sessionId: 's1', messages: [{ role: 'user', text: 'hi' }] };
 const DRAW_INPUT = { itemName: 'Dutch oven', brief: 'a squat pot' };
@@ -345,6 +346,17 @@ const rows: readonly Row[] = [
     call: () => barrel.callGenerateGuidedPlan(cast(PLAN_INPUT)),
     payload: PLAN_INPUT,
     ok: { kind: 'ok', value: { preps: [], stepNotes: [] } },
+    traced: null,
+    errors: SHARED_ERRORS,
+  },
+  {
+    name: 'callProposeKitchenTools',
+    callable: 'proposeKitchenTools',
+    timeout: 90_000,
+    data: { proposals: [] },
+    call: () => barrel.callProposeKitchenTools(cast(TOOL_PROPOSAL_INPUT)),
+    payload: TOOL_PROPOSAL_INPUT,
+    ok: { kind: 'ok', value: { proposals: [] } },
     traced: null,
     errors: SHARED_ERRORS,
   },

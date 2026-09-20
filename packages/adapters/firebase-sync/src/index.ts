@@ -37,6 +37,8 @@ export {
   upsertKitchenTool,
   deleteKitchenTool,
 } from './kitchenToolSubscription.js';
+// Salt's proposed answer for the words that vocabulary cannot name (issue #1458).
+export { callProposeKitchenTools } from './kitchenToolCallables.js';
 export {
   callMatchOrCreate,
   callCanonicaliseRecipeIngredients,

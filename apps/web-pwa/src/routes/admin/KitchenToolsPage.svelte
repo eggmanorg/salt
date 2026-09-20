@@ -38,6 +38,7 @@
   import {
     kitchenTools,
     isLoadingKitchenTools,
+    getKitchenToolsSnapshot,
     addKitchenTool,
     addKitchenToolMatcher,
     moveKitchenToolMatcher,
@@ -48,6 +49,10 @@
   import { equipment } from '../../lib/equipmentService.js';
   import { recipes } from '../../lib/recipeService.js';
   import { loadAllGuidedPlansForCuration } from '../../lib/guidedPlanService.js';
+  import {
+    proposeKitchenTools,
+    type KitchenToolProposals,
+  } from '../../lib/kitchenToolProposals.js';
   import { createDeferredDelete } from '../../lib/deferredDelete.svelte.js';
   import { SPLIT_QUERY, createMediaQuery } from '../../lib/mediaQuery.svelte.js';
   import { addToast } from '../../lib/toastStore.js';
@@ -100,21 +105,75 @@
     };
   });
 
+  // ─── Salt's own answer per word (issue #1458, Phase 2) ───────────────────────
+  //
+  // ONE CALL FOR THE WHOLE GROUP, once per arrival, and everything below it is
+  // built to be correct before the answer lands and unchanged if it never does.
+  // The judgement worth paying a model for is GROUPING — that "large mixing bowl"
+  // and "Large Bowls" are the bowl we already draw — which a model shown one word
+  // at a time cannot make and a head noun cannot make at all.
+  //
+  // The ask itself is the `$effect` below `queue`, which is what it reads its
+  // question off.
+  let proposals = $state<KitchenToolProposals>(new Map());
+  let askedProposals = $state(false);
+
   // Each row carries the tool it probably belongs to, so the cheap action can be
   // the obvious one. The suggestion is ADVISORY — `suggestKitchenToolParent`'s
   // header says why a head noun is a good hint and a terrible rule — so it is
   // only ever a button a person presses, never a fold that happens on its own.
+  // Salt's proposal inherits that posture exactly: it REPLACES the head-noun guess
+  // in place when it arrives, and changes no verb on the row.
   //
   // The manifest goes in too (issue #954): a kit label may now name an appliance
   // the household owns, and `equipmentIcons` already holds a drawing of it — so
   // offering it here would invite a second pictogram of the same machine, and the
   // row could never clear, because the strip resolves equipment before tools.
   const queue = $derived(
-    unresolvedKitLabels($recipes, plans, $kitchenTools, $equipment?.items ?? []).map((row) => ({
-      ...row,
-      suggestion: suggestKitchenToolParent(row.label, $kitchenTools),
-    })),
+    unresolvedKitLabels($recipes, plans, $kitchenTools, $equipment?.items ?? []).map((row) => {
+      const heuristic = suggestKitchenToolParent(row.label, $kitchenTools);
+      const answered = proposals.get(row.label) ?? null;
+      const aliasTool =
+        answered?.kind === 'alias'
+          ? ($kitchenTools.find((t) => t.id === answered.toolId) ?? null)
+          : null;
+      // An alias naming a tool that has since been deleted is no proposal at all:
+      // the sentence reads the tool off `suggestion`, so a row that kept the
+      // proposal and lost the tool would say one thing and offer another.
+      const proposal = answered?.kind === 'alias' && aliasTool === null ? null : answered;
+      return {
+        ...row,
+        proposal,
+        // `new` clears the alias press deliberately — the row's own rule is that
+        // the free action leads where there is one, and Salt saying "this is its
+        // own object" is precisely the answer that there is not.
+        suggestion: proposal?.kind === 'new' ? null : (aliasTool ?? heuristic),
+        // What the pre-filled Add dialog opens on. Salt's canonical name where it
+        // proposed one, the word itself otherwise — and the dialog is still where
+        // #956's near-duplicate warning does its work either way.
+        createLabel: proposal?.kind === 'new' ? proposal.suggestedLabel : row.label,
+      };
+    }),
   );
+
+  // ASKED ONCE, NOT RE-ASKED. `askedProposals` latches, so curating a row does not
+  // spend a second call: the rows that remain keep the answers they already have,
+  // and a row that is resolved simply disappears. The wait for `plansLoaded` is
+  // what makes the one question the whole question — the plan-side words are not
+  // in `queue` until that lands.
+  $effect(() => {
+    if (askedProposals || !plansLoaded) return;
+    // Untracked: the labels and the vocabulary are the QUESTION, read once. Left
+    // tracked they would make this effect re-run on the answer it is about to
+    // write, and on every curation press after it.
+    const labels = untrack(() => queue.map((row) => row.label));
+    if (labels.length === 0) return;
+    askedProposals = true;
+    const tools = getKitchenToolsSnapshot();
+    void proposeKitchenTools(labels, tools).then((answered) => {
+      proposals = answered;
+    });
+  });
 
   const sortedTools = $derived(
     $kitchenTools.slice().sort((a, b) => a.label.localeCompare(b.label)),
@@ -541,7 +600,8 @@
                       onAcceptSuggestion={() => {
                         if (row.suggestion) void acceptSuggestion(row.label, row.suggestion);
                       }}
-                      onMakeTool={() => openCreate(row.label)}
+                      proposal={row.proposal}
+                      onMakeTool={() => openCreate(row.createLabel)}
                       onAlias={() => openMove(null, row.label)}
                     />
                   {:else}

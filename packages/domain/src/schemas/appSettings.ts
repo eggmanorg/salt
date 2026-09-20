@@ -163,6 +163,14 @@ export const AI_FLOW_ROLES = {
   // that six onions is twenty minutes of knife work and that a proved dough is an
   // unattended wait rather than prep is the entire value of the answer.
   estimateRecipeTimes: 'fast',
+  // `fast` (issue #1458, phase 2). It reads a short list of words and a closed
+  // vocabulary and answers alias / new / not-kit per word. `lite` is too little:
+  // the value is the GROUPING judgement — that "large mixing bowl" and "Large
+  // Bowls" are the bowl we already draw, and that "20cm" is not kit at all — and
+  // that is the same shape of call as identifyRecipeKit above. It is not `pro`
+  // either: a wrong answer costs one glance at a sentence a person then declines
+  // to press, and it runs on every visit to an admin page.
+  proposeKitchenTools: 'fast',
   parseEntry: 'lite',
   parseRecipeIngredients: 'lite',
   populateEquipmentEntry: 'lite',

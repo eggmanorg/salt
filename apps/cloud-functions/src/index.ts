@@ -52,6 +52,7 @@ import { generateChatTitleFlow } from './flows/generateChatTitle.js';
 import { generateGuidedPlanFlow } from './flows/generateGuidedPlan.js';
 import { extractProcessStagesFlow } from './flows/extractProcessStages.js';
 import { proposeScheduleFlow } from './flows/proposeSchedule.js';
+import { proposeKitchenToolsFlow } from './flows/proposeKitchenTools.js';
 import { onShoppingListItemWrite } from './triggers/onShoppingListItemWrite.js';
 import { onCanonItemWritten } from './triggers/onCanonItemWritten.js';
 import { onRecipeWritten } from './triggers/onRecipeWritten.js';
@@ -775,6 +776,30 @@ export const proposeSchedule = onCallGenkit(
     timeoutSeconds: PROPOSE_SCHEDULE_TIMEOUT_SECONDS,
   },
   proposeScheduleFlow,
+);
+
+// Salt's answer to each word the drawn vocabulary cannot name (issue #1458,
+// Phase 2). One call for the whole "Not drawn yet" group on /admin/kitchen-tools,
+// fired on arrival; the rows are fully usable before it lands and unchanged if it
+// never does, so nothing here is on a critical path.
+//
+// Plain onCallGenkit, same as the two above: one call from one page visit, no
+// second callable to unify a trace with, so `makeTracedCallable` would buy only a
+// wire envelope to maintain (apps/cloud-functions/CLAUDE.md, trace propagation
+// note 3 — `traceContextWire.ts` is a roll-call, and a callable that does not need
+// the nesting stays off it).
+//
+// 90 s, sized around the flow's 55 s `AI_TEXT_FLOW_TIMEOUT` with headroom for cold
+// start and the response. The browser wrapper declares the matching client
+// timeout, because 90 s exceeds the callable SDK's own 70 s default.
+export const proposeKitchenTools = onCallGenkit(
+  {
+    ...APP_CHECK_ENFORCEMENT,
+    secrets: [geminiApiKey, posthogApiKey],
+    authPolicy: isSignedIn(),
+    timeoutSeconds: 90,
+  },
+  proposeKitchenToolsFlow,
 );
 
 // SSRF-hardened URL import (recipe URL import epic). A custom onError maps the

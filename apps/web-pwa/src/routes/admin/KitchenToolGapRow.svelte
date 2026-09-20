@@ -8,7 +8,7 @@
     PopoverMenuItem,
     PopoverTrigger,
   } from '@salt/ui-components';
-  import type { KitchenToolDoc } from '@salt/domain/schemas';
+  import type { KitchenToolDoc, KitchenToolProposal } from '@salt/domain/schemas';
 
   /**
    * One word the library already uses that nothing draws (issue #1489, Phase 3).
@@ -44,6 +44,7 @@
     label,
     count,
     suggestion,
+    proposal,
     suggestBusy,
     suggestDisabled,
     onAcceptSuggestion,
@@ -53,8 +54,27 @@
     label: string;
     /** How many times the library says it — recipe kit labels plus plan containers. */
     count: number;
-    /** The tool it probably belongs to, or `null`. ADVISORY: only ever a press. */
+    /**
+     * The tool this row's one press would alias the word to, or `null` when there
+     * is none and "Make it a tool" leads instead.
+     *
+     * THE PAGE DECIDES THIS, NOT THIS COMPONENT (issue #1458, Phase 2). It is
+     * `suggestKitchenToolParent`'s head-noun guess until Salt's proposal arrives
+     * and the tool Salt named where it has, so the sentence below and the button
+     * beside it are two readings of ONE value and cannot come to disagree.
+     */
     suggestion: KitchenToolDoc | null;
+    /**
+     * Salt's own answer for this word, or `null` before one arrives and whenever
+     * the model had nothing to say (issue #1458, Phase 2).
+     *
+     * A SENTENCE AND NOTHING ELSE. It changes no verb on this row: there is no
+     * accept button of its own, because accepting it IS the press the row already
+     * carries, and there is no dismiss, because a word this page cannot name is
+     * the library's own content and there is nowhere honest to record that
+     * somebody disagreed. The menu overrides it in one press either way.
+     */
+    proposal: KitchenToolProposal | null;
     suggestBusy: boolean;
     suggestDisabled: boolean;
     onAcceptSuggestion: () => void;
@@ -74,6 +94,22 @@
   // uncovered branch on the coverage ratchet for no behaviour at all. A whole
   // expression set directly carries no such arm.
   const actionsLabel = $derived(`Actions for “${label}”`);
+
+  // Salt's answer in plain words, built whole for the same reason `actionsLabel`
+  // is. `null` is "say nothing": no proposal yet, or an alias whose tool the page
+  // could not find, which it reports by passing `proposal: null` rather than by
+  // leaving this to guess.
+  //
+  // THE ALIAS SENTENCE READS `suggestion`, NOT THE PROPOSAL'S OWN `toolId`. That
+  // is what makes the sentence and the button one statement: whatever tool the
+  // page put on this row is the tool the words name, so the two cannot drift.
+  const proposalSentence = $derived.by((): string | null => {
+    if (proposal === null) return null;
+    if (proposal.kind === 'not-kit') return 'Salt thinks this is not a piece of kit at all.';
+    if (proposal.kind === 'new')
+      return `Salt thinks this is a new tool — call it ${proposal.suggestedLabel}.`;
+    return suggestion === null ? null : `Salt thinks this is another name for ${suggestion.label}.`;
+  });
 </script>
 
 <li
@@ -95,6 +131,14 @@
       <span data-testid="kitchen-tool-gap-count">{count}</span>
       time{count === 1 ? '' : 's'}
     </span>
+    <!-- Salt's proposal, below the marker line (issue #1458, Phase 2). NOT
+         truncated: the sentence is the whole of what this phase adds and a word
+         cut off mid-name is worth less than the row's extra line. -->
+    {#if proposalSentence}
+      <span class="block text-xs text-muted-foreground" data-testid="kitchen-tool-gap-proposal"
+        >{proposalSentence}</span
+      >
+    {/if}
   </div>
   <!--
     THE FREE ACTION LEADS. Aliasing reuses a picture the vocabulary already has;
