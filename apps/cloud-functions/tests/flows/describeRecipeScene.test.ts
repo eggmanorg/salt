@@ -440,7 +440,7 @@ describe('describeRecipeScene flow — cocktails', () => {
   });
 });
 
-// ─── Meals (issue #838) ──────────────────────────────────────────────────────
+// ─── Meals (issues #838, #1452) ──────────────────────────────────────────────
 // A meal is a recipe pointing at other recipes, and the art director never heard
 // about them: a Sunday roast that is nothing but chicken + potatoes + gravy has no
 // ingredients and no method of its own, so the ENTIRE input was a title and the
@@ -450,9 +450,15 @@ describe('describeRecipeScene flow — cocktails', () => {
 // the user prompt for any kind, because that block is built from the input alone.
 // The CLAUSE that tells the model what to do with them is per-kind, and there are
 // two of them because `takesComponents` is true for two kinds that mean opposite
-// things by it: a recipe's dishes are served ALONGSIDE it (widen to the table), a
-// cocktail's are parts it is MADE FROM (already in the glass, so widening the shot
-// would be exactly wrong).
+// things by it: a recipe's dishes are served ALONGSIDE it (dished up together), a
+// cocktail's are parts it is MADE FROM (already in the glass, so a second glass
+// beside it would be exactly wrong).
+//
+// #1452 INVERTED the recipe clause: one plate is the default and the table spread
+// is the exception, the other way round from #838. The wording is the whole fix,
+// so these assertions are load-bearing rather than incidental — they are the only
+// mechanism there is for "the brief says one plate" and "the table is still
+// reachable" short of running the model.
 describe('describeRecipeScene flow — meals', () => {
   const MEAL = {
     title: 'Sunday roast',
@@ -476,6 +482,11 @@ describe('describeRecipeScene flow — meals', () => {
 
   const MEAL_RULE_MARKER = 'This recipe is a MEAL.';
   const COCKTAIL_RULE_MARKER = 'MADE FROM';
+  // The default direction and the exception, quoted from MEAL_SCENE_RULE. Both are
+  // asserted positively where the rule fires and negatively where it must not, so
+  // the negative cases keep testing something after #1452 changed the wording.
+  const ONE_PLATE_MARKER = 'dished up on ONE PLATE';
+  const TABLE_EXCEPTION_MARKER = 'Set the dishes out separately across the table ONLY where';
 
   async function callFlow(input: Record<string, unknown>): Promise<{
     system: string;
@@ -509,17 +520,36 @@ describe('describeRecipeScene flow — meals', () => {
     expect(prompt.indexOf('Dishes in this meal:')).toBeLessThan(prompt.indexOf('Ingredients:'));
   });
 
-  it('tells the model to photograph the WHOLE TABLE for a recipe-kind meal', async () => {
+  it('plates a recipe-kind meal onto ONE PLATE by default', async () => {
     const { system } = await callFlow({ ...MEAL, kind: 'recipe' });
 
     expect(system).toContain(MEAL_RULE_MARKER);
-    expect(system).toContain('WHOLE TABLE');
+    expect(system).toContain(ONE_PLATE_MARKER);
+    // The inversion, stated as the absence it has to be: #838's direction is gone,
+    // not merely demoted. A rule that still said "photograph the WHOLE TABLE"
+    // anywhere would leave the model two defaults to pick between.
+    expect(system).not.toContain('WHOLE TABLE');
+    expect(system).not.toContain('not a single plated portion');
     // The meal's own lines are the dinner's coordination, never any one dish's —
     // reading them as a dish is how a gravy becomes the subject of the picture.
     expect(system).toContain('belong to the DINNER as a whole');
     // Appended to the recipe prompt, not a replacement for it.
     expect(system).toContain('especially the METHOD and the INGREDIENTS');
     expect(system).not.toContain(COCKTAIL_RULE_MARKER);
+  });
+
+  it('leaves the table reachable, as the exception and not the default', async () => {
+    // #1452 inverted the direction rather than deleting it: a curry night, tapas
+    // or a buffet genuinely is not one plated serving, and the art director must
+    // still be able to choose the spread from the dishes themselves. Nothing but
+    // this string carries that, so nothing but this assertion can pin it.
+    const { system } = await callFlow({ ...MEAL, kind: 'recipe' });
+
+    expect(system).toContain(TABLE_EXCEPTION_MARKER);
+    expect(system).toContain('never the default');
+    // Ordering is the direction: the plate is stated before the exception that
+    // qualifies it, so the exception reads as a carve-out and not as a second rule.
+    expect(system.indexOf(ONE_PLATE_MARKER)).toBeLessThan(system.indexOf(TABLE_EXCEPTION_MARKER));
   });
 
   it('says NOTHING about meals for a recipe with no dishes attached', async () => {
@@ -530,7 +560,8 @@ describe('describeRecipeScene flow — meals', () => {
 
     expect(prompt).not.toContain('Dishes in this meal');
     expect(system).not.toContain(MEAL_RULE_MARKER);
-    expect(system).not.toContain('WHOLE TABLE');
+    expect(system).not.toContain(ONE_PLATE_MARKER);
+    expect(system).not.toContain(TABLE_EXCEPTION_MARKER);
     expect(system).not.toContain(COCKTAIL_RULE_MARKER);
     // And it is the SAME system prompt an empty components array produces, so
     // "absent" and "empty" are not two different behaviours.
@@ -543,11 +574,12 @@ describe('describeRecipeScene flow — meals', () => {
 
     expect(system).toContain(COCKTAIL_RULE_MARKER);
     expect(system).toContain('already IN the glass');
-    // The rule a shared clause could not have carried: the meal rule would widen
-    // the shot to a table, which for a Negroni made with a house vermouth means
-    // photographing the bottle next to the drink.
+    // The rule a shared clause could not have carried: the meal rule plates its
+    // components together and may set them out across a table, which for a Negroni
+    // made with a house vermouth means the bottle next to the drink either way.
     expect(system).not.toContain(MEAL_RULE_MARKER);
-    expect(system).not.toContain('WHOLE TABLE');
+    expect(system).not.toContain(ONE_PLATE_MARKER);
+    expect(system).not.toContain(TABLE_EXCEPTION_MARKER);
     // Still the cocktail prompt underneath.
     expect(system).toContain('glassware the serve implies');
   });
@@ -568,19 +600,22 @@ describe('describeRecipeScene flow — meals', () => {
   });
 
   it('carries the meal rule through a revision too', async () => {
-    // "make it summery" on a roast must still be revising a picture of a TABLE.
-    // The rule hangs off whether dishes are present, not off which mode is running,
-    // so a hand-edited brief cannot quietly drop back to a single plated portion.
+    // "make it summery" on a roast must still be revising a picture of ONE PLATE,
+    // with the table still available to it. The rule hangs off whether dishes are
+    // present, not off which mode is running, so a brief hand-edited into a spread
+    // cannot quietly become the new default on the next revision.
     const { system, prompt } = await callFlow({
       ...MEAL,
       kind: 'recipe',
-      currentBrief: 'A single plated portion on dark wood.',
+      currentBrief: 'Each dish in its own bowl, set out across dark wood.',
       hint: 'make it summery',
     });
 
     expect(system).toContain('Fold the change THROUGH the whole brief');
     expect(system).toContain(MEAL_RULE_MARKER);
-    expect(system).toContain('WHOLE TABLE');
+    expect(system).toContain(ONE_PLATE_MARKER);
+    expect(system).toContain(TABLE_EXCEPTION_MARKER);
+    expect(system).not.toContain('WHOLE TABLE');
     expect(prompt).toContain('Dishes in this meal:');
   });
 });
