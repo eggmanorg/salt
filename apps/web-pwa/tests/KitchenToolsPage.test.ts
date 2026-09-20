@@ -518,6 +518,50 @@ describe('KitchenToolsPage — the words nothing draws', () => {
     });
   });
 
+  it('keeps other gap rows usable while one row accepts its suggestion', async () => {
+    // #1523 review: `suggestDisabled` was compared against `suggestBusy !==
+    // null` (page-level), so accepting one row's suggestion disabled every
+    // OTHER row's suggest button until the write landed — the opposite of the
+    // row-level behaviour the comment above `suggestBusy` claims. The fix
+    // compares against the row's own label instead.
+    mockRecipes._set([recipeWithKit('r1', 'mixing bowl', 'cutting board')]);
+    setTools([
+      tool({ id: 'large-mixing-bowl', label: 'Large mixing bowl' }),
+      tool({ id: 'large-cutting-board', label: 'Large cutting board' }),
+    ]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(2));
+
+    let resolveWrite: ((value: { kind: 'ok'; value: undefined }) => void) | undefined;
+    vi.mocked(upsertKitchenTool).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+
+    const rows = screen.getAllByTestId('kitchen-tool-gap-row');
+    const mixingBowlRow = rows.find((row) => row.getAttribute('data-kit-label') === 'mixing bowl');
+    const cuttingBoardRow = rows.find(
+      (row) => row.getAttribute('data-kit-label') === 'cutting board',
+    );
+    if (!mixingBowlRow || !cuttingBoardRow) throw new Error('expected both gap rows to render');
+
+    const mixingBowlSuggest = within(mixingBowlRow).getByTestId('kitchen-tool-gap-suggest');
+    const cuttingBoardSuggest = within(cuttingBoardRow).getByTestId('kitchen-tool-gap-suggest');
+
+    await userEvent.click(mixingBowlSuggest);
+
+    // The write is in flight: the row that started it reads as busy, but the
+    // other row's button must stay enabled rather than freeze mid-round-trip.
+    await waitFor(() => expect(mixingBowlSuggest).toBeDisabled());
+    expect(cuttingBoardSuggest).not.toBeDisabled();
+
+    resolveWrite?.({ kind: 'ok', value: undefined });
+    await waitFor(() => expect(mixingBowlSuggest).not.toBeDisabled());
+  });
+
   it('keeps "Make it a tool" the first move when nothing looks like a parent', async () => {
     mockRecipes._set([recipeWithKit('r1', 'pasta machine')]);
     setTools([tool({ id: 'large-mixing-bowl', label: 'Large mixing bowl' })]);

@@ -537,7 +537,7 @@
                       count={row.count}
                       suggestion={row.suggestion}
                       suggestBusy={suggestBusy === row.label}
-                      suggestDisabled={suggestBusy !== null}
+                      suggestDisabled={suggestBusy === row.label}
                       onAcceptSuggestion={() => {
                         if (row.suggestion) void acceptSuggestion(row.label, row.suggestion);
                       }}
