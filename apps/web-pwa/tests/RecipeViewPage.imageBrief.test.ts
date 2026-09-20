@@ -148,6 +148,7 @@ import {
   persistRecipe,
   setRecipeImageUpload,
   queueRecipeEdit,
+  canonicaliseIngredients,
 } from '../src/lib/recipeService.js';
 
 const RECIPE_ID = 'recipe-1';
@@ -341,7 +342,10 @@ describe('RecipeViewPage — brief revision and start over', () => {
   // them", not "regenerateRecipeImage was called with BRIEF": a future change making
   // the brief durable would reach for one of the others, and an assertion listing
   // one method by name is a pin you can walk around (issue #1432 — the same mistake
-  // the sibling PRs had to fix in review).
+  // the sibling PRs had to fix in review). canonicaliseIngredients(recipe) is the
+  // other full-`Recipe` handle this page holds (#1464 line 7) — it cannot
+  // originate brief text, but the watch set was not exhaustive as a general
+  // matter, so it is pinned here too rather than left as the one gap.
   const mutatingCalls = () =>
     JSON.stringify(
       [
@@ -350,6 +354,7 @@ describe('RecipeViewPage — brief revision and start over', () => {
         vi.mocked(setRecipeImageUpload),
         vi.mocked(saveRecipe),
         vi.mocked(queueRecipeEdit),
+        vi.mocked(canonicaliseIngredients),
       ].map((m) => m.mock.calls),
     );
 

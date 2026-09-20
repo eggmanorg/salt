@@ -203,7 +203,8 @@ canon shape rather than variations on it:
   `iconNeedsGeneration` precisely because it writes back to the document it watches.
   `onEquipmentManifestWritten` never writes the manifest, so it can just ask the
   honest question — does this item's brief match this item's name? — with no nonce.
-- **A human reads the description before any image is generated.** The trigger
+- **A human reads the description before any image is generated** — through the
+  Draw callable's gate, the only path a client request can reach. The trigger
   authors an appliance description (`describeEquipmentSubject`, `'fast'` tier) and
   stops; the image is drawn only when someone presses **Draw**, by the
   `drawEquipmentIcon` callable, which runs the image flow and `sharp` inline. Canon's
@@ -211,6 +212,11 @@ canon shape rather than variations on it:
   obvious rendering — but a make and model is exactly where fidelity is won or lost,
   and a brief is a sentence you can correct where a wrong picture is only a re-roll.
   Only the description is ever shown or editable; the style anchors stay in code.
+  The one exception is `scripts/generate-equipment-icons.mjs --apply`, the
+  one-off backfill for a kit that already exists: it DELIBERATELY BYPASSES this
+  gate, because those briefs were read by hand, side by side with their
+  drawings, in a prior dry run of the same script. Every item added after the
+  backfill goes through the gate normally.
 
   **The equipment list's Draw button (#1458) does not bypass this.** It is a
   one-press route TO this panel, `push('/equipment/{id}')`, never a second place
