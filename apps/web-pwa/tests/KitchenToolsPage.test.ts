@@ -665,6 +665,32 @@ describe('KitchenToolsPage — the three verbs on a name', () => {
     expect(message).toContain('remove it there');
   });
 
+  it('a refused FIRST write says nothing landed, and does not send the operator to repair anything', async () => {
+    // The state `serviceWriteRefusal.test.ts` and `kitchenToolMatcherMoves.test.ts`
+    // model at the service boundary, driven through the actual page handler: the
+    // adapter refuses the create outright (`permission-denied`, a `StorageError`,
+    // an adapter Zod refusal), and `ricer` is never minted. Following the
+    // destructive "remove it there" instruction here would delete the word from
+    // the only tool that answers to it, so this must NOT be that toast.
+    setTools([MASHER]);
+    vi.mocked(upsertKitchenTool).mockResolvedValueOnce({
+      kind: 'err' as const,
+      error: { kind: 'StorageError', reason: 'unavailable' },
+    });
+    renderOn('potato-masher');
+
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-editor-name-promote'));
+
+    await waitFor(() => expect(vi.mocked(addToast)).toHaveBeenCalled());
+    // Only the refused create is attempted — the trim is never reached.
+    expect(vi.mocked(upsertKitchenTool)).toHaveBeenCalledTimes(1);
+    const [message, variant] = vi.mocked(addToast).mock.calls.at(-1)!;
+    expect(variant).toBe('destructive');
+    expect(message).not.toContain('remove it there');
+    expect(vi.mocked(push)).not.toHaveBeenCalled();
+  });
+
   it('a colliding slug is refused by name, with nothing written', async () => {
     setTools([MASHER, tool({ id: 'ricer', label: 'Ricer' })]);
     renderOn('potato-masher');
@@ -676,6 +702,10 @@ describe('KitchenToolsPage — the three verbs on a name', () => {
       const last = vi.mocked(addToast).mock.calls.at(-1);
       expect(last?.[0]).toContain('already in the list');
     });
+    // Named by the SLUG that collided, not by the phrase that was typed: they
+    // differ here by case ("ricer" the phrase vs "Ricer" the tool already in
+    // the list), and the message must send the operator to the real blocker.
+    expect(vi.mocked(addToast).mock.calls.at(-1)![0]).toContain('Ricer');
     expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
     expect(vi.mocked(push)).not.toHaveBeenCalled();
   });

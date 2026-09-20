@@ -147,10 +147,12 @@ describe('KitchenToolsPage — moving a name to another tool', () => {
     expect(vi.mocked(addToast).mock.calls.at(-1)![0]).toContain('now shows the Whisk');
   });
 
-  it('writes nothing when the chosen tool has left the vocabulary under the dialog', async () => {
+  it('writes nothing, closes and says so when the chosen tool has left the vocabulary under the dialog', async () => {
     // A real race rather than a contrivance: the vocabulary is a live
     // subscription, so the tool picked a moment ago can be gone by the time the
-    // press lands. Doing half a move then would be worse than doing none.
+    // press lands. Doing half a move then would be worse than doing none — and
+    // silence would be worse still: before the fix, this path left the dialog
+    // open with "Move it" enabled over a selection with nothing behind it.
     const dialog = await openMoveDialog();
     await userEvent.click(within(dialog).getByRole('combobox'));
     await userEvent.click(await screen.findByRole('option', { name: 'Whisk' }));
@@ -161,5 +163,12 @@ describe('KitchenToolsPage — moving a name to another tool', () => {
     await userEvent.click(confirm);
 
     expect(vi.mocked(upsertKitchenTool)).not.toHaveBeenCalled();
+    await waitFor(() => expect(vi.mocked(addToast)).toHaveBeenCalled());
+    const [message, variant] = vi.mocked(addToast).mock.calls.at(-1)!;
+    expect(variant).toBe('destructive');
+    expect(message).toContain('ricer');
+    await waitFor(() =>
+      expect(screen.queryByTestId('kitchen-tool-move-dialog')).not.toBeInTheDocument(),
+    );
   });
 });

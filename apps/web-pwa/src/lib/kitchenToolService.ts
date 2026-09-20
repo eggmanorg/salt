@@ -189,6 +189,24 @@ export async function removeKitchenToolMatcher(
 }
 
 /**
+ * The write outcome of `promoteKitchenToolMatcher` / `moveKitchenToolMatcher`.
+ *
+ * The plain `Result` these two used to return was ONE undifferentiated `err`
+ * for four distinct outcomes — a refused domain step, a refused create/append,
+ * and a refused trim all looked identical to the caller, even though only the
+ * last of those leaves a duplicate to repair. `firstWriteLanded` is that
+ * distinction, made mechanical rather than left for the caller to assume:
+ * `false` means NOTHING was written (the gaining write was refused, or never
+ * attempted because a domain step refused first), so there is nothing on a
+ * second document to clean up. `true` means the gaining write landed and only
+ * the trim was refused — the phrase is now duplicated, and that is the one
+ * case a destructive "remove it there" repair toast is honest.
+ */
+export type MatcherWriteResult = Result<KitchenToolDoc, DomainError> & {
+  readonly firstWriteLanded: boolean;
+};
+
+/**
  * Give one of a tool's other names a picture of its own (issue #1489).
  *
  * THE OPPOSITE TRADE TO `addKitchenToolMatcher` above, and it says so at its own
@@ -213,30 +231,33 @@ export async function removeKitchenToolMatcher(
  * that window is therefore unspecified. Do not write a sentence anywhere claiming
  * a phrase can only live on one tool, and do not "fix" this by reordering the
  * writes — trim-first destroys what somebody typed. The caller answers a refused
- * trim with a destructive toast naming the exact repair.
+ * TRIM — `firstWriteLanded: true` — with a destructive toast naming the exact
+ * repair; a refused CREATE, or a refusal before any write, comes back with
+ * `firstWriteLanded: false` and gets a plain failure toast, because there is
+ * nothing on a second document to repair.
  */
 export async function promoteKitchenToolMatcher(
   parent: KitchenToolDoc,
   phrase: string,
-): Promise<Result<KitchenToolDoc, DomainError>> {
+): Promise<MatcherWriteResult> {
   const now = new Date().toISOString();
   const created = createKitchenTool(
     { label: phrase, matchers: [] },
     getKitchenToolsSnapshot(),
     now,
   );
-  if (created.kind !== 'ok') return created;
+  if (created.kind !== 'ok') return { ...created, firstWriteLanded: false };
   const trimmed = updateKitchenTool(
     parent,
     { label: parent.label, matchers: parent.matchers.filter((m) => m !== phrase) },
     now,
   );
-  if (trimmed.kind !== 'ok') return trimmed;
+  if (trimmed.kind !== 'ok') return { ...trimmed, firstWriteLanded: false };
   const wroteCreated = await commitKitchenTool(created.value);
-  if (wroteCreated.kind === 'err') return wroteCreated;
+  if (wroteCreated.kind === 'err') return { ...wroteCreated, firstWriteLanded: false };
   const wroteTrimmed = await commitKitchenTool(trimmed.value);
-  if (wroteTrimmed.kind === 'err') return wroteTrimmed;
-  return created;
+  if (wroteTrimmed.kind === 'err') return { ...wroteTrimmed, firstWriteLanded: true };
+  return { ...created, firstWriteLanded: true };
 }
 
 /**
@@ -249,31 +270,33 @@ export async function promoteKitchenToolMatcher(
  * Gaining write first — append to the destination, then trim the source — with
  * the same reasoning and the same stated boundary as
  * `promoteKitchenToolMatcher` above; read it there rather than trusting a
- * summary here.
+ * summary here. Same `firstWriteLanded` contract too: `false` means the append
+ * never landed, so the caller has nothing to repair; `true` means only the
+ * source's trim was refused, and the phrase is now on both tools.
  */
 export async function moveKitchenToolMatcher(
   from: KitchenToolDoc,
   to: KitchenToolDoc,
   phrase: string,
-): Promise<Result<KitchenToolDoc, DomainError>> {
+): Promise<MatcherWriteResult> {
   const now = new Date().toISOString();
   const appended = updateKitchenTool(
     to,
     { label: to.label, matchers: [...to.matchers, phrase] },
     now,
   );
-  if (appended.kind !== 'ok') return appended;
+  if (appended.kind !== 'ok') return { ...appended, firstWriteLanded: false };
   const trimmed = updateKitchenTool(
     from,
     { label: from.label, matchers: from.matchers.filter((m) => m !== phrase) },
     now,
   );
-  if (trimmed.kind !== 'ok') return trimmed;
+  if (trimmed.kind !== 'ok') return { ...trimmed, firstWriteLanded: false };
   const wroteAppended = await commitKitchenTool(appended.value);
-  if (wroteAppended.kind === 'err') return wroteAppended;
+  if (wroteAppended.kind === 'err') return { ...wroteAppended, firstWriteLanded: false };
   const wroteTrimmed = await commitKitchenTool(trimmed.value);
-  if (wroteTrimmed.kind === 'err') return wroteTrimmed;
-  return appended;
+  if (wroteTrimmed.kind === 'err') return { ...wroteTrimmed, firstWriteLanded: true };
+  return { ...appended, firstWriteLanded: true };
 }
 
 export async function removeKitchenTool(id: string): Promise<Result<void, DomainError>> {

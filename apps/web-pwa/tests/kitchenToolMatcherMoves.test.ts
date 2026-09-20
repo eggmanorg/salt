@@ -101,6 +101,7 @@ describe('promoteKitchenToolMatcher — a name gets a picture of its own', () =>
     const result = await promoteKitchenToolMatcher(PARENT, 'large bowl');
 
     expect(result.kind).toBe('ok');
+    expect(result.firstWriteLanded).toBe(true);
     expect(writes()).toHaveLength(2);
     // First: the gaining document. Its slug comes from the phrase, and
     // `thumbnail: null` is what the `onKitchenToolWritten` edge guard reads to
@@ -134,6 +135,9 @@ describe('promoteKitchenToolMatcher — a name gets a picture of its own', () =>
     expect(writes()[0]).toMatchObject({ id: 'large-bowl' });
     // And the parent still answers to the phrase, because its trim never landed.
     expect(PARENT.matchers).toContain('large bowl');
+    // The gaining write DID land — this is the one refusal shape where the
+    // page's destructive "remove it there" repair toast is honest.
+    expect(result.firstWriteLanded).toBe(true);
   });
 
   it('a colliding slug writes NOTHING AT ALL', async () => {
@@ -143,8 +147,25 @@ describe('promoteKitchenToolMatcher — a name gets a picture of its own', () =>
 
     const result = await promoteKitchenToolMatcher(PARENT, 'large bowl');
 
-    expect(result).toEqual(failure({ kind: 'ConflictError' }));
+    expect(result).toEqual({ ...failure({ kind: 'ConflictError' }), firstWriteLanded: false });
     expect(writes()).toHaveLength(0);
+  });
+
+  it('a refused CREATE writes nothing, and leaves nothing to repair', async () => {
+    // The exact state `serviceWriteRefusal.test.ts` models at the service
+    // boundary (a StorageError, a permission-denied, an adapter Zod refusal) —
+    // here, driven all the way through and checked for the flag the page's
+    // handler gates the destructive toast on. Nothing landed: `ricer` was never
+    // created, so there is no second document for the operator to clean up.
+    vi.mocked(upsertKitchenTool).mockResolvedValueOnce(REFUSED);
+
+    const result = await promoteKitchenToolMatcher(PARENT, 'large bowl');
+
+    expect(result.kind).toBe('err');
+    expect(result.firstWriteLanded).toBe(false);
+    expect(writes()).toHaveLength(1);
+    // Nothing landed anywhere, so the parent still answers to the phrase too.
+    expect(PARENT.matchers).toContain('large bowl');
   });
 });
 
@@ -160,6 +181,7 @@ describe('moveKitchenToolMatcher — a name changes hands', () => {
     const result = await moveKitchenToolMatcher(FROM, TO, 'large bowl');
 
     expect(result.kind).toBe('ok');
+    expect(result.firstWriteLanded).toBe(true);
     expect(writes()).toHaveLength(2);
     expect(writes()[0]).toMatchObject({
       id: 'salad-bowl',
@@ -180,6 +202,18 @@ describe('moveKitchenToolMatcher — a name changes hands', () => {
 
     expect(result.kind).toBe('err');
     expect(writes()[0]).toMatchObject({ matchers: ['serving bowl', 'large bowl'] });
+    expect(FROM.matchers).toContain('large bowl');
+    expect(result.firstWriteLanded).toBe(true);
+  });
+
+  it('a refused APPEND writes nothing, and leaves nothing to repair', async () => {
+    vi.mocked(upsertKitchenTool).mockResolvedValueOnce(REFUSED);
+
+    const result = await moveKitchenToolMatcher(FROM, TO, 'large bowl');
+
+    expect(result.kind).toBe('err');
+    expect(result.firstWriteLanded).toBe(false);
+    expect(writes()).toHaveLength(1);
     expect(FROM.matchers).toContain('large bowl');
   });
 });
@@ -219,6 +253,7 @@ describe('both verbs refuse a document the domain cannot update, before any writ
     const result = await run();
 
     expect(result.kind).toBe('err');
+    expect(result.firstWriteLanded).toBe(false);
     expect(writes()).toHaveLength(0);
   });
 });

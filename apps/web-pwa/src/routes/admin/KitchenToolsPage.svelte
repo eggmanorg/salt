@@ -23,7 +23,12 @@
   } from '@salt/ui-components';
   import { untrack } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { resolveKitchenTool, suggestKitchenToolParent, unresolvedKitLabels } from '@salt/domain';
+  import {
+    kitchenToolSlug,
+    resolveKitchenTool,
+    suggestKitchenToolParent,
+    unresolvedKitLabels,
+  } from '@salt/domain';
   import type { KitchenToolDoc, GuidedPlanDoc } from '@salt/domain/schemas';
   import AdminGuard from './AdminGuard.svelte';
   import KitchenToolEditor from './KitchenToolEditor.svelte';
@@ -262,9 +267,24 @@
       return;
     }
     if (result.kind === 'err' && result.error.kind === 'ConflictError') {
-      // Nothing was written: `createKitchenTool` refuses a slug collision before
-      // the first write, so the honest message names the tool in the way.
-      addToast(`A tool called “${phrase}” is already in the list.`, 'destructive');
+      // Nothing was written: `createKitchenTool` refuses a SLUG collision before
+      // the first write, so the honest message names the tool that slug already
+      // belongs to — not the phrase, which can differ from it by case or
+      // punctuation (`large bowl` vs `Large Bowl`) and would send the operator
+      // looking for a name that is not in the list.
+      const collidingId = kitchenToolSlug(phrase);
+      const colliding = $kitchenTools.find((t) => t.id === collidingId);
+      addToast(
+        `A tool called “${colliding?.label ?? phrase}” is already in the list.`,
+        'destructive',
+      );
+      return;
+    }
+    if (!result.firstWriteLanded) {
+      // Nothing landed at all — the create was refused, or a domain step
+      // refused before either write was attempted. There is no duplicate on a
+      // second tool to send the operator to repair.
+      addToast(`Could not give “${phrase}” its own picture.`, 'destructive');
       return;
     }
     // The duplicate window, made loud. See `promoteKitchenToolMatcher`'s header
@@ -296,14 +316,32 @@
 
   async function handleMoveName(): Promise<void> {
     const target = moveTarget;
+    if (!target) return;
     const to = $kitchenTools.find((t) => t.id === moveToId);
-    if (!target || !to) return;
+    if (!to) {
+      // The vocabulary is a live subscription: the tool chosen a moment ago can
+      // be gone by the time the press lands (the dialog's own picker already
+      // drops it from the choices). Say so and close, rather than a silent
+      // no-op that leaves "Move it" enabled with nothing it can do.
+      moveTarget = null;
+      addToast(
+        `That tool is gone. “${target.phrase}” still shows ${target.tool.label}.`,
+        'destructive',
+      );
+      return;
+    }
     moveBusy = true;
     const result = await moveKitchenToolMatcher(target.tool, to, target.phrase);
     moveBusy = false;
     moveTarget = null;
     if (result.kind === 'ok') {
       addToast(`“${target.phrase}” now shows the ${to.label}.`, 'success');
+      return;
+    }
+    if (!result.firstWriteLanded) {
+      // Nothing landed — the append to the destination was refused. There is no
+      // duplicate on a second tool to send the operator to repair.
+      addToast(`Could not move “${target.phrase}”.`, 'destructive');
       return;
     }
     addToast(
