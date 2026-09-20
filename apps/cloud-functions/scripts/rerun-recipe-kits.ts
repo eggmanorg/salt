@@ -137,7 +137,7 @@
 // `groupKitByEquipment`'s two word-based passes — the issue's point of no return,
 // and deliberately a separate PR.
 
-import { writeFile } from 'node:fs/promises';
+import { rename, writeFile } from 'node:fs/promises';
 
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -308,6 +308,17 @@ type StampWaitResult =
  * concurrent edit briefly leaving the document in some other shape — keeps
  * polling to the deadline instead of silently dropping the recipe from the
  * report before it settles (PR #1483 review, should-fix 6).
+ *
+ * TWO CLOCKS feed that comparison, not one (PR #1483 review): `requestedAt` is
+ * `Date.now()` on the operator's laptop, taken by the caller before this
+ * function is invoked; `kitInferredAt` is a separate `Date.now()` stamped
+ * inside the Cloud Function (`onRecipeWritten.ts`). The comparison assumes the
+ * two clocks agree closely enough to matter and never verifies that they do.
+ * It still fails conservatively: a server clock running behind the laptop's
+ * can only make a genuine completion read as "not yet" — delaying detection
+ * until `deadline`, then timing out — never the reverse. A lagging clock
+ * cannot make the trigger stamp a value that satisfies `>= requestedAt`
+ * before it has actually run.
  */
 async function waitForStamp(
   id: string,
@@ -601,7 +612,15 @@ async function main(): Promise<void> {
     // blocking 3): the record for the recipes already done must survive an
     // interrupt or a throw on a later one, because their "before" cannot be
     // reconstructed once the trigger has overwritten it.
-    await writeFile(outPath, renderReport(outcomes, items, unreadable, neverTriggers), 'utf8');
+    //
+    // Write-then-rename, not a truncate-in-place `writeFile(outPath, ...)`
+    // (PR #1485 line 5): this file is the evidence for an irreversible decision,
+    // so an ENOSPC or a signal landing mid-write must never leave a shortened
+    // `outPath` behind. `rename()` on the same filesystem is atomic; the
+    // half-written state can only ever be the `.tmp` file.
+    const tmpPath = `${outPath}.tmp`;
+    await writeFile(tmpPath, renderReport(outcomes, items, unreadable, neverTriggers), 'utf8');
+    await rename(tmpPath, outPath);
 
     await sleep(SETTLE_MS);
   }
