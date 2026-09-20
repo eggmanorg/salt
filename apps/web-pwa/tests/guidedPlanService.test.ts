@@ -39,6 +39,7 @@ import {
   initGuidedPlanSync,
   generateGuidedPlan,
   saveGuidedPlan,
+  editGuidedPlan,
   discardGuidedPlan,
 } from '../src/lib/guidedPlanService.js';
 
@@ -299,6 +300,50 @@ describe('saveGuidedPlan — the save IS the review', () => {
 
     resolveWrite({ kind: 'ok', value: undefined });
     await pending;
+  });
+});
+
+// `editGuidedPlan` (issue #1453) — the second caller of `persist`, and the first
+// that is not a review. The review screen writes every changed line at once, so
+// the only thing separating an edit from an approval is the two control fields
+// below. The file's header used to be able to say "one caller, and it strips the
+// flag"; it cannot any more, so these two tests are what hold the claim up
+// (CLAUDE.md rule 12) — break either and one typed word silently approves a plan
+// nobody has read.
+describe('editGuidedPlan — an edit is NOT a review', () => {
+  it('carries needs_approval through untouched', async () => {
+    initGuidedPlanSync(RECIPE_ID);
+    const plan = makePlan({ needs_approval: true });
+    emit(plan);
+
+    await editGuidedPlan({ ...plan, stepNotes: [] });
+
+    expect(fs.saveGuidedPlan.mock.calls[0]![0].needs_approval).toBe(true);
+  });
+
+  it('does NOT re-stamp recipeUpdatedAtAtSave, so an edit never clears the stale banner', async () => {
+    initGuidedPlanSync(RECIPE_ID);
+    const plan = makePlan({ recipeUpdatedAtAtSave: OLD });
+    emit(plan);
+
+    await editGuidedPlan({ ...plan, stepNotes: [] });
+
+    expect(fs.saveGuidedPlan.mock.calls[0]![0].recipeUpdatedAtAtSave).toBe(OLD);
+  });
+
+  it('stamps updatedAt and updates the store optimistically, like every other write', async () => {
+    initGuidedPlanSync(RECIPE_ID);
+    emit(makePlan());
+
+    await editGuidedPlan(
+      makePlan({
+        prep: [{ id: 'p1', text: 'Dice the onion', container: null, ingredientIds: [] }],
+      }),
+    );
+
+    const written = fs.saveGuidedPlan.mock.calls[0]![0];
+    expect(written.updatedAt > OLD).toBe(true);
+    expect(get(guidedPlan)).toEqual(written);
   });
 });
 

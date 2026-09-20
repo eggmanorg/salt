@@ -37,11 +37,13 @@ import type { Readable } from 'svelte/store';
 // (`apps/cloud-functions/tests/flows/generateGuidedPlan.test.ts`,
 // `apps/web-pwa/tests/guidedPlanService.test.ts`).
 //
-// What holds the pair EXCLUSIVE is structural rather than tested, so it is worth
-// naming: `persist` below has exactly one caller, `saveGuidedPlan`, which strips
-// the flag before it writes — so there is no client path that can set it. A second
-// caller of `persist` is what would quietly break that, and it is the thing to
-// look at before adding one.
+// `persist` below has TWO callers, and neither can set `needs_approval`:
+// `saveGuidedPlan` strips it, `editGuidedPlan` carries through whatever the plan
+// already held. That is the whole client-side contract, and it is no longer
+// structural — a third caller could set the flag, or an edit could start clearing
+// it — so both halves are pinned by tests in
+// `apps/web-pwa/tests/guidedPlanService.test.ts` (CLAUDE.md rule 12) rather than
+// left to a sentence here.
 //
 // The plan editor owns the subscription lifecycle: it calls initGuidedPlanSync
 // with the recipe id and disposes the returned unsub on teardown.
@@ -207,6 +209,28 @@ export async function saveGuidedPlan(
 ): Promise<ReadResult<GuidedPlanDoc, DomainError>> {
   const { needs_approval: _wasUnreviewed, ...reviewed } = plan;
   return persist({ ...reviewed, recipeUpdatedAtAtSave: recipe.updatedAt });
+}
+
+/**
+ * Write one changed line. AN EDIT IS NOT A REVIEW (issue #1453).
+ *
+ * The review screen has no Save: every line is written the moment it is changed,
+ * the way editing a recipe in place already works. What separates that from
+ * `saveGuidedPlan` above is exactly the two control fields, and this command's
+ * job is to leave both of them alone:
+ *
+ *  1. `needs_approval` is carried through untouched. A plan someone has corrected
+ *     but not yet approved has still not been read end to end, and clearing the
+ *     flag on a typed word would make it say otherwise.
+ *  2. `recipeUpdatedAtAtSave` is NOT re-stamped, so editing a line of a plan whose
+ *     recipe has moved on does not clear the stale banner. Approving does, because
+ *     approving is the claim that the plan was read against the recipe as it now
+ *     stands.
+ */
+export async function editGuidedPlan(
+  plan: GuidedPlanDoc,
+): Promise<ReadResult<GuidedPlanDoc, DomainError>> {
+  return persist(plan);
 }
 
 /**

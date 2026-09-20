@@ -220,6 +220,7 @@ export {
   GenerateGuidedPlanOutputSchema,
 } from './guidedPlan.js';
 export type {
+  GuidedCheckInDoc,
   GuidedPrepEntryDoc,
   GuidedStepNoteDoc,
   GuidedPlanDoc,
