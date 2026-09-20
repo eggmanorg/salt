@@ -32,6 +32,7 @@
   import type { KitchenToolDoc, GuidedPlanDoc } from '@salt/domain/schemas';
   import AdminGuard from './AdminGuard.svelte';
   import KitchenToolEditor from './KitchenToolEditor.svelte';
+  import KitchenToolGapRow from './KitchenToolGapRow.svelte';
   import KitchenToolRow from './KitchenToolRow.svelte';
   import { goBack } from '../../lib/nav.js';
   import {
@@ -70,7 +71,12 @@
   // `params` prop only for parameterised routes.
   let { params }: { params?: { id?: string } } = $props();
 
-  // ─── The unresolved queue ─────────────────────────────────────────────────────
+  // ─── The words nothing draws ──────────────────────────────────────────────────
+  //
+  // NOT A QUEUE OF ITS OWN ANY MORE (issue #1489, Phase 3). These are rows in the
+  // one list, in a group above the vocabulary, and they carry the same verbs a
+  // name row carries. The separate section they used to live in was a third
+  // mechanic on a page that already had two.
   //
   // Recipes are already subscribed app-wide, so only the plans need fetching, and
   // that is ONE SHOT on arrival (see `loadAllGuidedPlansForCuration`). A curation
@@ -116,17 +122,19 @@
 
   // ─── View state — in memory only (Rule 3) ─────────────────────────────────────
 
-  type KitchenToolFilter = 'all' | 'has-names';
+  type KitchenToolFilter = 'all' | 'has-names' | 'not-drawn';
 
   const FILTERS: { id: KitchenToolFilter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'has-names', label: 'Has other names' },
+    { id: 'not-drawn', label: 'Not drawn yet' },
   ];
 
   let filterText = $state('');
   let filter = $state<KitchenToolFilter>('all');
   let expandedRows = $state(new Set<string>());
   let vocabularyExpanded = $state(true);
+  let gapsExpanded = $state(true);
 
   function toggleRow(id: string): void {
     const next = new Set(expandedRows);
@@ -182,6 +190,7 @@
   // ─── The list ─────────────────────────────────────────────────────────────────
 
   const rows = $derived.by((): KitchenToolDoc[] => {
+    if (filter === 'not-drawn') return [];
     const q = filterText.trim().toLowerCase();
     return sortedTools.filter((tool) => {
       if (deferredDelete.isPending(tool.id)) return false;
@@ -192,6 +201,18 @@
         tool.matchers.some((m) => m.toLowerCase().includes(q))
       );
     });
+  });
+
+  // The gap group, under the same filter box. The RANKING IS NEVER RE-SORTED by
+  // anything the reader does — it stays `unresolvedKitLabels`' mention order, for
+  // the reason `CatalogPage`'s aisle-grouping comment gives: a review queue that
+  // reorders itself as you work it loses your place. The filter only ever removes
+  // rows. "Has other names" empties it, because a word with no document behind it
+  // has no other names by construction.
+  const gapRows = $derived.by(() => {
+    if (filter === 'has-names') return [];
+    const q = filterText.trim().toLowerCase();
+    return q === '' ? queue : queue.filter((row) => row.label.toLowerCase().includes(q));
   });
 
   // ─── Add a tool ───────────────────────────────────────────────────────────────
@@ -296,42 +317,64 @@
     );
   }
 
-  // Which name is being moved, and where to. The dialog is the page's because the
+  // Which name is being handed to which tool. The dialog is the page's because the
   // choice is over the whole vocabulary, which only the page holds.
-  let moveTarget = $state<{ tool: KitchenToolDoc; phrase: string } | null>(null);
+  //
+  // ONE DIALOG, TWO SOURCES (Phase 3). `tool: null` is a word from the gap group:
+  // nothing owns it yet, so there is nothing to trim and the write is the plain
+  // `addKitchenToolMatcher` append. `tool` set is a name being moved off the tool
+  // it is on. The choice, the picker and the copy are otherwise identical, and the
+  // separate `kitchen-tool-alias-dialog` this replaced was the last thing keeping
+  // two dialogs over one decision.
+  let moveTarget = $state<{ tool: KitchenToolDoc | null; phrase: string } | null>(null);
   let moveToId = $state('');
   let moveBusy = $state(false);
 
-  function openMove(tool: KitchenToolDoc, phrase: string): void {
+  function openMove(tool: KitchenToolDoc | null, phrase: string): void {
     moveTarget = { tool, phrase };
     moveToId = '';
   }
 
-  // Every tool but the one the phrase is already on.
+  // Every tool but the one the phrase is already on — which, for a gap word, is
+  // none of them.
   const moveChoices = $derived(
     sortedTools
-      .filter((t) => t.id !== moveTarget?.tool.id)
+      .filter((t) => t.id !== moveTarget?.tool?.id)
       .map((t) => ({ value: t.id, label: t.label })),
   );
 
   async function handleMoveName(): Promise<void> {
     const target = moveTarget;
     if (!target) return;
+    const from = target.tool;
     const to = $kitchenTools.find((t) => t.id === moveToId);
     if (!to) {
       // The vocabulary is a live subscription: the tool chosen a moment ago can
       // be gone by the time the press lands (the dialog's own picker already
       // drops it from the choices). Say so and close, rather than a silent
-      // no-op that leaves "Move it" enabled with nothing it can do.
+      // no-op that leaves the confirm enabled with nothing it can do.
       moveTarget = null;
       addToast(
-        `That tool is gone. “${target.phrase}” still shows ${target.tool.label}.`,
+        from
+          ? `That tool is gone. “${target.phrase}” still shows ${from.label}.`
+          : `That tool is gone. “${target.phrase}” is still undrawn.`,
         'destructive',
       );
       return;
     }
     moveBusy = true;
-    const result = await moveKitchenToolMatcher(target.tool, to, target.phrase);
+    // A gap word is a ONE-write append; a name already on a tool is the two-write
+    // move. Only the second can half-complete, so only it has a repair to name —
+    // which is why the two results are read apart rather than folded.
+    if (!from) {
+      const added = await addKitchenToolMatcher(to, target.phrase);
+      moveBusy = false;
+      moveTarget = null;
+      if (added.kind === 'ok') addToast(`“${target.phrase}” now shows the ${to.label}.`, 'success');
+      else addToast('Failed to add the name.', 'destructive');
+      return;
+    }
+    const result = await moveKitchenToolMatcher(from, to, target.phrase);
     moveBusy = false;
     moveTarget = null;
     if (result.kind === 'ok') {
@@ -345,7 +388,7 @@
       return;
     }
     addToast(
-      `${to.label} answers to “${target.phrase}” now, but ${target.tool.label} still does too — remove it there.`,
+      `${to.label} answers to “${target.phrase}” now, but ${from.label} still does too — remove it there.`,
       'destructive',
     );
   }
@@ -382,16 +425,17 @@
   // The action that keeps the vocabulary from bloating. "masher" and "potato
   // masher" want the same drawing, and every near-duplicate tool is another image
   // the pipeline pays to generate and another row somebody has to keep in step.
+  //
+  // The picker for it is the move dialog above — one dialog over one decision.
+  // What stays here is the SUGGESTED parent taken in a single press, which needs
+  // no picker at all.
 
-  let aliasFor = $state<string | null>(null);
-  let aliasToolId = $state('');
-  let aliasBusy = $state(false);
-  // Which queue row's one-click alias is in flight, by label. A row-level flag
+  // Which gap row's one-press alias is in flight, by label. A row-level flag
   // rather than a page-level one so the other rows stay usable.
   let suggestBusy = $state<string | null>(null);
 
   /**
-   * The queue's suggested alias, taken in one click. It reuses `addKitchenToolMatcher`
+   * The suggested alias, taken in one press. It reuses `addKitchenToolMatcher`
    * — the same write the dialog performs — rather than adding a second path to the
    * same effect: appending a phrase to `matchers` and saving is the whole of it.
    */
@@ -400,25 +444,6 @@
     const result = await addKitchenToolMatcher(tool, label);
     suggestBusy = null;
     if (result.kind === 'ok') addToast(`“${label}” now shows the ${tool.label}.`, 'success');
-    else addToast('Failed to add the alias.', 'destructive');
-  }
-
-  const aliasChoices = $derived(sortedTools.map((t) => ({ value: t.id, label: t.label })));
-
-  function openAlias(label: string): void {
-    aliasFor = label;
-    aliasToolId = '';
-  }
-
-  async function handleAlias(): Promise<void> {
-    const phrase = aliasFor;
-    const tool = $kitchenTools.find((t) => t.id === aliasToolId);
-    if (!phrase || !tool) return;
-    aliasBusy = true;
-    const result = await addKitchenToolMatcher(tool, phrase);
-    aliasBusy = false;
-    aliasFor = null;
-    if (result.kind === 'ok') addToast(`“${phrase}” now shows the ${tool.label}.`, 'success');
     else addToast('Failed to add the alias.', 'destructive');
   }
 </script>
@@ -486,101 +511,79 @@
               </ChipGroup>
             </div>
 
-            <!-- The queue. Present only when there is something in it: an empty
-                 "Not drawn yet" heading reads as a broken screen rather than a
-                 vocabulary that has caught up with the content. -->
-            {#if queue.length > 0}
-              <section class="flex flex-col gap-2" data-testid="kitchen-tool-queue">
-                <div>
-                  <h2 class="text-sm font-medium text-foreground">Not drawn yet</h2>
-                  <p class="text-xs text-muted-foreground">
-                    Words your recipes and plans already use that nothing draws, commonest first.
-                    {#if !plansLoaded}
-                      Counting the guided plans…
-                    {/if}
-                  </p>
-                </div>
-                <ul class="divide-y divide-border rounded border">
-                  {#each queue as row (row.label)}
-                    <li
-                      class="flex items-center gap-3 px-3 py-2"
-                      data-testid="kitchen-tool-queue-row"
-                      data-kit-label={row.label}
-                    >
-                      <span class="min-w-0 flex-1 truncate text-sm">{row.label}</span>
-                      <span
-                        class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                        data-testid="kitchen-tool-queue-count"
-                      >
-                        {row.count}
-                      </span>
-                      <!-- The row leads with the action that COSTS NOTHING. Aliasing
-                           reuses a picture the vocabulary already has; "New tool"
-                           spends a Gemini image and a document, and does it again for
-                           the next adjective. Where there is a likely parent, the
-                           one-click alias is solid and the other two are demoted; where
-                           there is not, "New tool" is the right first move and leads. -->
-                      {#if row.suggestion}
-                        {@const parent = row.suggestion}
-                        <Button
-                          size="sm"
-                          onclick={() => void acceptSuggestion(row.label, parent)}
-                          loading={suggestBusy === row.label}
-                          disabled={suggestBusy !== null}
-                          data-testid="kitchen-tool-queue-suggest"
-                        >
-                          Alias to {parent.label}
-                        </Button>
-                      {/if}
-                      <Button
-                        variant={row.suggestion ? 'ghost' : 'solid'}
-                        size="sm"
-                        onclick={() => openCreate(row.label)}
-                        data-testid="kitchen-tool-queue-new"
-                      >
-                        New tool
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onclick={() => openAlias(row.label)}
-                        data-testid="kitchen-tool-queue-alias"
-                      >
-                        {row.suggestion ? 'Another…' : 'Alias…'}
-                      </Button>
+            <!-- The words nothing draws, as a group of rows in this same list.
+                 Present when it holds something, or when the pill has explicitly
+                 asked for it — an empty "Not drawn yet" heading nobody asked for
+                 reads as a broken screen rather than a vocabulary that has caught
+                 up with the content. -->
+            {#if gapRows.length > 0 || filter === 'not-drawn'}
+              <CollapsibleSection
+                title="Not drawn yet ({gapRows.length})"
+                expanded={gapsExpanded}
+                onToggle={() => (gapsExpanded = !gapsExpanded)}
+                triggerTestId="kitchen-tool-gaps-toggle"
+                data-testid="kitchen-tool-gaps"
+              >
+                <p class="mb-2 text-xs text-muted-foreground">
+                  Words your recipes and plans already use that nothing draws, commonest first.
+                  {#if !plansLoaded}
+                    Counting the guided plans…
+                  {/if}
+                </p>
+                <ul class="flex flex-col gap-1" data-testid="kitchen-tool-gap-list">
+                  {#each gapRows as row (row.label)}
+                    <KitchenToolGapRow
+                      label={row.label}
+                      count={row.count}
+                      suggestion={row.suggestion}
+                      suggestBusy={suggestBusy === row.label}
+                      suggestDisabled={suggestBusy === row.label}
+                      onAcceptSuggestion={() => {
+                        if (row.suggestion) void acceptSuggestion(row.label, row.suggestion);
+                      }}
+                      onMakeTool={() => openCreate(row.label)}
+                      onAlias={() => openMove(null, row.label)}
+                    />
+                  {:else}
+                    <li>
+                      <Text muted>Nothing matches this view.</Text>
                     </li>
                   {/each}
                 </ul>
-              </section>
+              </CollapsibleSection>
             {/if}
 
-            <CollapsibleSection
-              title="The vocabulary"
-              expanded={vocabularyExpanded}
-              onToggle={() => (vocabularyExpanded = !vocabularyExpanded)}
-              collapsedCount={rows.length}
-              triggerTestId="kitchen-tool-vocabulary-toggle"
-              data-testid="kitchen-tool-vocabulary"
-            >
-              <ul class="flex flex-col gap-1" data-testid="kitchen-tool-list">
-                {#each rows as tool (tool.id)}
-                  <KitchenToolRow
-                    {tool}
-                    expanded={expandedRows.has(tool.id)}
-                    onToggle={() => toggleRow(tool.id)}
-                    open={openId === tool.id}
-                    onOpen={openToolById}
-                    onPromoteName={handlePromoteName}
-                    onMoveName={openMove}
-                    onRemoveName={handleRemoveName}
-                  />
-                {:else}
-                  <li>
-                    <Text muted>Nothing matches this view.</Text>
-                  </li>
-                {/each}
-              </ul>
-            </CollapsibleSection>
+            <!-- The "Not drawn yet" pill narrows to that group ALONE, so the
+                 vocabulary is gone rather than present and empty. -->
+            {#if filter !== 'not-drawn'}
+              <CollapsibleSection
+                title="The vocabulary"
+                expanded={vocabularyExpanded}
+                onToggle={() => (vocabularyExpanded = !vocabularyExpanded)}
+                collapsedCount={rows.length}
+                triggerTestId="kitchen-tool-vocabulary-toggle"
+                data-testid="kitchen-tool-vocabulary"
+              >
+                <ul class="flex flex-col gap-1" data-testid="kitchen-tool-list">
+                  {#each rows as tool (tool.id)}
+                    <KitchenToolRow
+                      {tool}
+                      expanded={expandedRows.has(tool.id)}
+                      onToggle={() => toggleRow(tool.id)}
+                      open={openId === tool.id}
+                      onOpen={openToolById}
+                      onPromoteName={handlePromoteName}
+                      onMoveName={openMove}
+                      onRemoveName={handleRemoveName}
+                    />
+                  {:else}
+                    <li>
+                      <Text muted>Nothing matches this view.</Text>
+                    </li>
+                  {/each}
+                </ul>
+              </CollapsibleSection>
+            {/if}
           </div>
 
           <!-- The editor, docked from `split:` up. Below that it does not render at
@@ -656,65 +659,11 @@
   </DialogContent>
 </Dialog>
 
-<!-- Alias an unresolved name onto a tool that already has a picture -->
-<Dialog
-  open={aliasFor !== null}
-  onOpenChange={(v) => {
-    if (!v) aliasFor = null;
-  }}
->
-  <DialogContent>
-    <div class="flex flex-col gap-4" data-testid="kitchen-tool-alias-dialog">
-      <DialogHeader>
-        <DialogTitle>Another name for…</DialogTitle>
-        <DialogDescription>
-          “{aliasFor}” will show that tool's existing picture. Nothing new is drawn.
-        </DialogDescription>
-      </DialogHeader>
-      <div data-testid="kitchen-tool-alias-select">
-        <Combobox
-          items={aliasChoices}
-          value={aliasToolId}
-          onValueChange={(v) => (aliasToolId = v)}
-          placeholder="Search tools…"
-          restrict
-        >
-          <ComboboxField>
-            <ComboboxInput />
-            <ComboboxTrigger />
-          </ComboboxField>
-          <ComboboxContent>
-            {#snippet children({ filteredItems })}
-              {#each filteredItems as cbItem, i (cbItem.value)}
-                <ComboboxItem item={cbItem} index={i} />
-              {/each}
-              {#if filteredItems.length === 0}
-                <ComboboxEmpty>No tools match.</ComboboxEmpty>
-              {/if}
-            {/snippet}
-          </ComboboxContent>
-        </Combobox>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onclick={() => (aliasFor = null)} disabled={aliasBusy}>
-          Cancel
-        </Button>
-        <Button
-          onclick={handleAlias}
-          loading={aliasBusy}
-          disabled={aliasBusy || !aliasToolId}
-          data-testid="kitchen-tool-alias-confirm"
-        >
-          Add as another name
-        </Button>
-      </DialogFooter>
-    </div>
-  </DialogContent>
-</Dialog>
-
-<!-- Move one name from the tool it is on to a different one. Two writes, no
-     image, no cost — `moveKitchenToolMatcher` states the ordering and its one
-     stated boundary. -->
+<!-- Hand one name to a tool. From a tool it is already on, that is the two-write
+     move — no image, no cost, and `moveKitchenToolMatcher` states the ordering and
+     its one stated boundary. From the "Not drawn yet" group there is no source, so
+     it is the plain one-write append. ONE DIALOG: the decision is the same one,
+     and the separate alias dialog this replaced was a second picker over it. -->
 <Dialog
   open={moveTarget !== null}
   onOpenChange={(v) => {
@@ -724,10 +673,20 @@
   <DialogContent>
     <div class="flex flex-col gap-4" data-testid="kitchen-tool-move-dialog">
       <DialogHeader>
-        <DialogTitle>Move “{moveTarget?.phrase}” to…</DialogTitle>
+        <DialogTitle>
+          {#if moveTarget?.tool}
+            Move “{moveTarget.phrase}” to…
+          {:else}
+            Another name for “{moveTarget?.phrase}”…
+          {/if}
+        </DialogTitle>
         <DialogDescription>
-          It stops being one of {moveTarget?.tool.label}'s names and becomes one of theirs. Nothing
-          new is drawn.
+          {#if moveTarget?.tool}
+            It stops being one of {moveTarget.tool.label}'s names and becomes one of theirs. Nothing
+            new is drawn.
+          {:else}
+            “{moveTarget?.phrase}” will show that tool's existing picture. Nothing new is drawn.
+          {/if}
         </DialogDescription>
       </DialogHeader>
       <div data-testid="kitchen-tool-move-select">
@@ -764,7 +723,7 @@
           disabled={moveBusy || !moveToId}
           data-testid="kitchen-tool-move-confirm"
         >
-          Move it
+          {moveTarget?.tool ? 'Move it' : 'Add as another name'}
         </Button>
       </DialogFooter>
     </div>
