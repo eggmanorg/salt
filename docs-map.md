@@ -75,7 +75,7 @@ put that file in that doc's row yourself — a file may appear in more than one.
   than inventing tokens.
   Design docs track `packages/ui-components/**` and `apps/web-pwa/src/**` styling.
 
-- **ui-spec-v02 → v13 are cumulative, never superseding.** v0.2 holds the
+- **ui-spec-v02 → v16 are cumulative, never superseding.** v0.2 holds the
   foundations (boundaries, package surface, event naming, styling rules) and stays
   in force for every later version; each later spec only adds components —
   [v03](docs/design/ui-spec-v03.md) RadioGroup/Select/Slider/Sheet/Toast,
@@ -116,7 +116,11 @@ put that file in that doc's row yourself — a file may appear in more than one.
   `navCollapsed` prop and the `TopBar` control that flips it; collapsed means the
   nav is **not rendered**, for the identical #641 reason v05 §2.3 gives for
   `chrome`, and §1.8 records why the choice is deliberately not remembered and
-  why the freed 256px is not a token). Touching
+  why the freed 256px is not a token),
+  [v16](docs/design/ui-spec-v16.md) `Progress`'s presentational mode (§1 — a
+  `presentational` prop that renders the same bar as spans, outside the
+  accessibility tree; §1.1 records why `announce="off"` is only half the fix and
+  §1.5 the three sentences a call site chooses the mode against). Touching
   `@salt/ui-components` means reading [v02](docs/design/ui-spec-v02.md) **plus**
   the spec that owns your component. The specs are binding: if something is
   missing or ambiguous, stop and extend the spec rather than inventing.

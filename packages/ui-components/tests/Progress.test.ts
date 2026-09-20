@@ -92,6 +92,111 @@ describe('Progress', () => {
     });
   });
 
+  // ui-spec-v16 §1 — the presentational mode. Every assertion here is about what
+  // the mode does NOT emit; the geometry assertions compare against the default
+  // mode's own output rather than a literal, so the two modes cannot drift apart
+  // without this file going red (v16 §1.6).
+  describe('presentational mode (ui-spec-v16 §1)', () => {
+    it('renders no progressbar role', () => {
+      render(Progress, { props: { value: 50, presentational: true } });
+      expect(screen.queryByRole('progressbar')).toBeNull();
+    });
+
+    it('renders no aria-live, even though announce defaults to polite', () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      expect(container.querySelectorAll('[aria-live]')).toHaveLength(0);
+    });
+
+    it('renders no aria-live when announce is explicitly polite', () => {
+      const { container } = render(Progress, {
+        props: { value: 50, presentational: true, announce: 'polite' },
+      });
+      expect(container.querySelectorAll('[aria-live]')).toHaveLength(0);
+    });
+
+    it('renders no aria-valuenow and no other aria-value*', () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      expect(container.querySelectorAll('[aria-valuenow]')).toHaveLength(0);
+      expect(container.querySelectorAll('[aria-valuemin], [aria-valuemax]')).toHaveLength(0);
+    });
+
+    it('ignores ariaLabel rather than leaving a label on a hidden node', () => {
+      const { container } = render(Progress, {
+        props: { value: 50, presentational: true, ariaLabel: 'Upload progress' },
+      });
+      expect(container.querySelectorAll('[aria-label]')).toHaveLength(0);
+    });
+
+    it('renders spans only — no div, so it is valid inside a button', () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      expect(container.querySelectorAll('div')).toHaveLength(0);
+      expect(container.querySelectorAll('span')).toHaveLength(2);
+    });
+
+    it('hides the bar from the accessibility tree', () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      expect(container.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('applies the same determinate transform as the default mode', () => {
+      const { container } = render(Progress, { props: { value: 75, presentational: true } });
+      const indicator = container.firstElementChild!.firstElementChild as HTMLElement;
+      cleanup();
+      render(Progress, { props: { value: 75 } });
+      const defaultIndicator = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+      expect(indicator.style.transform).toBe(defaultIndicator.style.transform);
+      expect(indicator.style.transform).toBe('translateX(-25%)');
+    });
+
+    it('clamps exactly as the default mode does', () => {
+      const { container } = render(Progress, {
+        props: { value: 150, max: 100, presentational: true },
+      });
+      const indicator = container.firstElementChild!.firstElementChild as HTMLElement;
+      expect(indicator.style.transform).toBe('translateX(-0%)');
+    });
+
+    it('carries the same root and indicator classes as the default mode', () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      const root = container.firstElementChild as HTMLElement;
+      const indicator = root.firstElementChild as HTMLElement;
+      cleanup();
+      render(Progress, { props: { value: 50 } });
+      const defaultRoot = screen.getByRole('progressbar');
+      const defaultIndicator = defaultRoot.firstElementChild as HTMLElement;
+      for (const cls of defaultRoot.className.split(/\s+/).filter(Boolean)) {
+        expect(root).toHaveClass(cls);
+      }
+      for (const cls of defaultIndicator.className.split(/\s+/).filter(Boolean)) {
+        expect(indicator).toHaveClass(cls);
+      }
+    });
+
+    it('stays indeterminate with no value, without an inline style', () => {
+      const { container } = render(Progress, { props: { presentational: true } });
+      const indicator = container.firstElementChild!.firstElementChild as HTMLElement;
+      expect(indicator.style.transform).toBe('');
+      expect(indicator.className).toContain('animate-[salt-progress-indeterminate');
+    });
+
+    it('merges the class prop onto the root', () => {
+      const { container } = render(Progress, {
+        props: { value: 50, presentational: true, class: 'custom-class' },
+      });
+      expect(container.firstElementChild).toHaveClass('custom-class');
+    });
+
+    it('has no axe violations in determinate mode', async () => {
+      const { container } = render(Progress, { props: { value: 50, presentational: true } });
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('has no axe violations in indeterminate mode', async () => {
+      const { container } = render(Progress, { props: { presentational: true } });
+      expect(await axe(container)).toHaveNoViolations();
+    });
+  });
+
   describe('accessibility', () => {
     it('has no axe violations in indeterminate mode', async () => {
       const { container } = render(Progress, { props: { ariaLabel: 'Loading' } });

@@ -476,6 +476,26 @@ describe('BatchListPage — how far along each run is (issue #1407)', () => {
     expect(card()).toHaveTextContent('1780 g — 26% lost of 35%');
   });
 
+  it('says nothing to a screen reader the card has not already said (issue #1471)', async () => {
+    // The card is one button, and the words two lines above the bar already give
+    // the figure. A live region inside a button is read out on EVERY pass down the
+    // list, not only when the value moves — and ARIA's presentational-children
+    // rule does not silence it. The <div> count is the second half: a <button>
+    // may hold phrasing content only, and the bar was the one thing on this card
+    // that was not a <span>. Both counts were 1, 1 and 2 before ui-spec-v16 §1.
+    mockBatches._set([CURING]);
+    mockLogs._set(new Map([reading('coppa-1', 1780)]));
+    render(BatchListPage);
+
+    await waitFor(() => expect(card()).toBeInTheDocument());
+    const btn = screen.getByTestId('batch-card');
+    expect(btn.querySelectorAll('[aria-live]')).toHaveLength(0);
+    expect(btn.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+    expect(btn.querySelectorAll('div')).toHaveLength(0);
+    // The figure itself is untouched — silencing the picture must not silence the words.
+    expect(btn).toHaveTextContent('1780 g — 26% lost of 35%');
+  });
+
   it('looks different at a glance at 31% of a 35% target than at 12%', async () => {
     // THE OUTCOME, stated as the issue states it: without reading the numbers.
     // Two runs, two stances, and the stance is what the appearance is chosen
