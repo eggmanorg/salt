@@ -27,7 +27,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const FAR_FUTURE = 9_999_999_999_999;
 
 const writeFileMock = vi.fn(async (_path: string, _data: string, _enc: string) => undefined);
-vi.mock('node:fs/promises', () => ({ writeFile: writeFileMock }));
+// `rename` backs the write-then-rename atomic report write (PR #1485 line 5) —
+// mocked as a no-op alongside `writeFile` so the real filesystem is never
+// touched by this suite (see the file header: everything here runs against fakes).
+const renameMock = vi.fn(async (_oldPath: string, _newPath: string) => undefined);
+vi.mock('node:fs/promises', () => ({ writeFile: writeFileMock, rename: renameMock }));
 
 vi.mock('firebase-admin/app', () => ({
   initializeApp: vi.fn(),
@@ -116,6 +120,7 @@ describe('rerun-recipe-kits — blocking findings from PR #1483', () => {
     pollQueues.clear();
     updateCalls.length = 0;
     writeFileMock.mockClear();
+    renameMock.mockClear();
     process.env['GOOGLE_CLOUD_PROJECT'] = 's2-test-fake';
     process.argv = ['node', 'rerun-recipe-kits.ts', '--write', '--out', './kit-rerun-test.md'];
   });

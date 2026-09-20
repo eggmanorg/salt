@@ -57,12 +57,22 @@ export const AccessorySchema = z.object({
   // iron is the only one that goes in the oven", "the XL dough hook needs the
   // upgraded firmware" (issue #1373).
   //
-  // NEVER AMBIENT. No note, here or on the item, is rendered into any AI prompt;
-  // the chef reaches one only by looking a record up with its tool. That is the
-  // whole point — a note is what refines a choice the chef is already weighing,
-  // and there are enough of them across twelve pans to double the prompt if they
-  // rode along on every call. A standing fact that must reach the chef whether or
-  // not it stops to look is a `rules` entry on the item, not a note.
+  // NEVER AMBIENT. No note, here or on the item, is rendered into any AI PROMPT,
+  // and none is ever shown on screen; the chef reaches one only by looking a
+  // record up with its tool. That is the whole point — a note is what refines a
+  // choice the chef is already weighing, and there are enough of them across
+  // twelve pans to double the prompt if they rode along on every call. A standing
+  // fact that must reach the chef whether or not it stops to look is a `rules`
+  // entry on the item, not a note.
+  //
+  // THE BOUNDARY THIS DOES NOT COVER (Daniel's call, 2026-09-20 — issue #1485):
+  // `IdentifyRecipeKitInputSchema.equipment` (`identifyRecipeKit.ts`) is the raw
+  // `EquipmentItemSchema[]`, not a rendering of it, so a note DOES cross into that
+  // flow's declared input and from there into Genkit's Cloud Function trace logs
+  // — deliberately. The data is family-shared and the logs are project-internal,
+  // and stripping notes at that boundary was judged not worth the plumbing. Read
+  // "never ambient" as a claim about prompts and screens; it is not a claim about
+  // what a CF trace can see.
   //
   // `.default('')` for the same reason `environment` defaults below: every
   // accessory already written has no `note` key, and absence means "nothing said
