@@ -64,6 +64,11 @@ export type {
   DuplicateContainerName,
   DanglingContainerName,
 } from './guidedContainerProblems.js';
+// The same join written FORWARDS (issue #1453, Phase 2) — a bowl renamed on the
+// bench has to move on both halves at once, or renaming it is how it stops
+// existing. Here rather than in the editor because the set of jobs and notes that
+// move together is the set the matcher beside it already calls one bowl.
+export { renameGuidedContainer } from './renameGuidedContainer.js';
 // What is coming (issue #769) — the plan's answer to the question plain cook mode
 // can only answer by fading in the next step's raw first clause, plus the part of
 // that step which has to be started before you get to it.

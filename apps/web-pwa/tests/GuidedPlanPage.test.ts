@@ -26,7 +26,12 @@ import type { GuidedPlanDoc } from '@salt/domain/schemas';
 //     never against the wrong step;
 //   • the step screens draw the plan's lines through the SAME components the cook
 //     deck draws them through, which is what makes "exactly as the cook will see
-//     it" mechanical rather than a sentence in a PR body (CLAUDE.md rule 12).
+//     it" mechanical rather than a sentence in a PR body (CLAUDE.md rule 12);
+//   • a step's bowl is PICKED from the bowls the plan has, and renaming one on the
+//     bench renames it on every step that asked for it — the two ways a plan breaks
+//     become things this screen cannot produce, rather than things it warns about;
+//   • every problem it still can hold sits on the step or the bowl it concerns, in
+//     kitchen words, with its fix beside it, and the bar counts what is left.
 
 const { mockRecipes, mockIsLoadingRecipes, mockPlan } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
@@ -230,6 +235,15 @@ describe('GuidedPlanPage — no plan yet', () => {
     );
   });
 
+  it('asks for no recipe at all when the route gave it no id', async () => {
+    // Not reachable from the app's own links, and every guard below it reads the
+    // id — so this is the one render where "there is no recipe" is not a deleted
+    // recipe but an absent parameter.
+    const { getByText } = render(GuidedPlanPage, { props: {} });
+    mockPlan._set(null);
+    await waitFor(() => expect(getByText('Recipe not found')).toBeTruthy());
+  });
+
   it('says so when the recipe itself is gone', async () => {
     mockRecipes._set([]);
     const { getByText } = renderPage();
@@ -268,12 +282,10 @@ describe('GuidedPlanPage — the bench', () => {
       makePlan({
         prep: [
           { id: 'prep-1', text: 'Open the tin', container: null, ingredientIds: ['ing-1'] },
-          {
-            id: 'prep-2',
-            text: 'Dice the carrots',
-            container: 'carrot bowl',
-            ingredientIds: ['ing-2'],
-          },
+          // Nothing filed into it, so the carrots are still in the tray — and
+          // the tray's buttons have to name the unheaded card too, or the only
+          // bowl a stray can be filed into is one that keeps something back.
+          { id: 'prep-2', text: 'Dice the carrots', container: 'carrot bowl', ingredientIds: [] },
         ],
       }),
     );
@@ -283,6 +295,9 @@ describe('GuidedPlanPage — the bench', () => {
         queries.getAllByTestId('guided-plan-bench-card-name').map((el) => el.textContent?.trim()),
       ).toEqual(['Just get out', 'carrot bowl']),
     );
+    expect(
+      queries.getAllByTestId('guided-plan-file-button').map((el) => el.textContent?.trim()),
+    ).toEqual(['Just get out', 'carrot bowl']);
   });
 
   it('files a stray ingredient into a bowl in one tap, and out of every other job', async () => {
@@ -420,6 +435,20 @@ describe('GuidedPlanPage — one step per screen', () => {
       ),
     );
 
+    // A dot is a jump, not only a position.
+    await fireEvent.click(queries.getAllByTestId('guided-plan-dot')[1]!);
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-step-text').textContent).toContain(
+        'Add the carrots.',
+      ),
+    );
+    await fireEvent.click(queries.getAllByTestId('guided-plan-dot')[0]!);
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-step-text').textContent).toContain(
+        'Soften the onion.',
+      ),
+    );
+
     // Back from the first step is the bench, not a dead end.
     await fireEvent.click(queries.getByTestId('guided-plan-back'));
     await waitFor(() => expect(queries.getByTestId('guided-plan-bench')).toBeTruthy());
@@ -480,6 +509,89 @@ describe('GuidedPlanPage — one step per screen', () => {
     expect(queries.queryByTestId('guided-plan-add-check-in')).toBeNull();
   });
 
+  it("shows the recipe's own warning on the step, read-only", async () => {
+    // The plan never edits the dish. It is shown because the cook screen shows
+    // it, and a step read without it is not the step the cook will meet.
+    mockRecipes._set([
+      makeRecipe({
+        steps: [
+          {
+            id: 'step-1',
+            text: 'Soften the onion.',
+            timer: null,
+            note: 'Do not let the onion colour.',
+          },
+        ],
+      }),
+    ]);
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+    await startReading(queries);
+
+    expect(queries.getByTestId('guided-plan-step-note').textContent).toContain(
+      'Do not let the onion colour.',
+    );
+    expect(queries.queryByLabelText('Change Do not let the onion colour.')).toBeNull();
+  });
+
+  it('picks the bowl a step wants from the bowls the plan has', async () => {
+    // The row is the plan's own bowls plus "none", so the commonest way a plan
+    // breaks — a step asking for a name no job fills — is not something this
+    // screen can produce.
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+    await startReading(queries);
+
+    const chips = await waitFor(() => queries.getAllByTestId('guided-plan-bowl-chip'));
+    expect(chips.map((c) => c.textContent?.trim())).toEqual(['onion bowl', 'carrot bowl', 'none']);
+
+    await fireEvent.click(chips[1]!);
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.container).toBe('carrot bowl');
+  });
+
+  it('changes the line about what is coming', async () => {
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+    await startReading(queries);
+
+    await fireEvent.click(queries.getByTestId('guided-plan-add-lookahead'));
+    const field = await waitFor(() => queries.getByLabelText('what the next step does'));
+    await fireEvent.input(field, { target: { value: 'the carrots go in' } });
+    await fireEvent.blur(field);
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.lookahead).toBe('the carrots go in');
+  });
+
+  it('moves and removes a reminder', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: null,
+            setup: null,
+            cue: null,
+            checkIns: [{ atMinutes: 5, text: 'give it a stir' }],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    await rewrite(queries, 'when this reminder fires', '8');
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.checkIns).toEqual([{ atMinutes: 8, text: 'give it a stir' }]);
+
+    await fireEvent.click(queries.getByTestId('guided-plan-check-in-delete'));
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(2));
+    // The note carried nothing else, so it goes with the last reminder.
+    expect(written().stepNotes).toEqual([]);
+  });
+
   it('renders a note whose step no longer exists as NOTHING', async () => {
     // Never an error, and never attached to a neighbouring step. The screens are
     // paged from the RECIPE and notes are looked up by id, so an orphan is simply
@@ -505,6 +617,42 @@ describe('GuidedPlanPage — one step per screen', () => {
     expect(queries.queryByText('a cue for a step that is gone')).toBeNull();
     await fireEvent.click(queries.getByTestId('guided-plan-looks-right'));
     expect(queries.queryByText('a cue for a step that is gone')).toBeNull();
+  });
+
+  it('writes a first line for a step the plan said nothing about', async () => {
+    // Every other editing test starts from a note that exists. This one starts
+    // from none: the note has to be MINTED by the edit, and the orphan beside it
+    // must be left exactly where it is rather than adopted by this step.
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-deleted',
+            container: null,
+            setup: null,
+            cue: 'a cue for a step that is gone',
+            checkIns: [],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    await fireEvent.click(queries.getByTestId('guided-plan-add-check-in'));
+    const words = await waitFor(() => queries.getByLabelText('what the reminder says'));
+    await fireEvent.input(words, { target: { value: 'give it a stir' } });
+    await fireEvent.blur(words);
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes).toHaveLength(2);
+    expect(written().stepNotes[1]).toMatchObject({
+      stepId: 'step-1',
+      checkIns: [{ atMinutes: 5, text: 'give it a stir' }],
+    });
+    expect(written().stepNotes[0]!.stepId).toBe('step-deleted');
   });
 
   it('drops a note that has been emptied rather than keeping a husk', async () => {
@@ -564,6 +712,23 @@ describe('GuidedPlanPage — Approve, the stale banner and the summary', () => {
     const [plan, recipe] = vi.mocked(saveGuidedPlan).mock.calls[0]!;
     expect(plan.id).toBe(RECIPE_ID);
     expect(recipe.id).toBe(RECIPE_ID);
+  });
+
+  it('approves once however many times the button is pressed, and is never disabled', async () => {
+    // Approve is the one control on this page that carries no `disabled` — a
+    // warning is information, never permission — so the second press has to be
+    // stopped by the command rather than by the button.
+    vi.mocked(saveGuidedPlan).mockReturnValueOnce(new Promise(() => {}));
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+
+    const approve = await waitFor(() => queries.getByTestId('guided-plan-approve-button'));
+    expect(approve.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(approve);
+    await fireEvent.click(approve);
+    expect(approve.hasAttribute('disabled')).toBe(false);
+
+    expect(saveGuidedPlan).toHaveBeenCalledTimes(1);
   });
 
   it('shows the "not checked yet" chip only while the plan is flagged', async () => {
@@ -661,6 +826,269 @@ describe('GuidedPlanPage — Approve, the stale banner and the summary', () => {
   });
 });
 
+describe('GuidedPlanPage — bowls are things, and problems sit where they are', () => {
+  // The four banners that used to head this page are gone. Every fault it knows
+  // about is drawn on the step or the bowl it is about, in kitchen words, with its
+  // fix beside it — and NONE of them gates anything, which is the assertion that
+  // repeats below because it is the one that matters.
+
+  async function startReading(queries: ReturnType<typeof renderPage>): Promise<void> {
+    await waitFor(() => expect(queries.getByTestId('guided-plan-start-reading')).toBeTruthy());
+    await fireEvent.click(queries.getByTestId('guided-plan-start-reading'));
+    await waitFor(() => expect(queries.getByTestId('guided-plan-step')).toBeTruthy());
+  }
+
+  function danglingPlan(): GuidedPlanDoc {
+    return makePlan({
+      stepNotes: [
+        {
+          stepId: 'step-1',
+          container: 'the onion bowl',
+          setup: null,
+          cue: 'a very gentle sizzle',
+          checkIns: [],
+          lookahead: null,
+          getAhead: null,
+        },
+      ],
+    });
+  }
+
+  it('renames a bowl on the bench, and on every step that asked for it', async () => {
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+    await waitFor(() => expect(queries.getAllByTestId('guided-plan-bench-card')).toHaveLength(2));
+
+    await rewrite(queries, "this bowl's name", 'alliums');
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    // Both halves, in one write. Renaming the job and leaving the note behind is
+    // how a rename makes the bowl stop existing.
+    expect(written().prep.map((p) => p.container)).toEqual(['alliums', 'carrot bowl']);
+    expect(written().stepNotes[0]!.container).toBe('alliums');
+  });
+
+  it('says on the step when it asks for a bowl nobody fills, and fixes it in one tap', async () => {
+    const queries = renderPage();
+    mockPlan._set(danglingPlan());
+    await startReading(queries);
+
+    const problem = await waitFor(() => queries.getByTestId('guided-plan-problem'));
+    expect(problem.textContent).toContain('This step asks for "the onion bowl"');
+    expect(problem.textContent).toContain('no bowl has that name');
+
+    await fireEvent.click(queries.getByText('Use "onion bowl"'));
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.container).toBe('onion bowl');
+  });
+
+  it('also offers to say the step needs no bowl at all', async () => {
+    const queries = renderPage();
+    mockPlan._set(danglingPlan());
+    await startReading(queries);
+
+    await fireEvent.click(await waitFor(() => queries.getByText('It needs no bowl')));
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.container).toBeNull();
+  });
+
+  it('offers no guess when no bowl resembles the name', async () => {
+    // The container matcher is strict on purpose — a looser one would trade a
+    // visible warning for an invisible wrong bowl. So the suggestion is a button
+    // the reader presses, and when there is nothing to suggest there is no button.
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: 'the big jug',
+            setup: null,
+            cue: null,
+            checkIns: [],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    const fixes = await waitFor(() => queries.getAllByTestId('guided-plan-problem-fix'));
+    expect(fixes.map((b) => b.textContent?.trim())).toEqual(['It needs no bowl']);
+  });
+
+  it('says a reminder could never go off, offers both fixes, and never blocks Approve', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: 'onion bowl',
+            setup: null,
+            cue: null,
+            // Two, so the fix has to move the RIGHT one: the card belongs to
+            // the second reminder, and the first must come through untouched.
+            checkIns: [
+              { atMinutes: 3, text: 'skim it' },
+              { atMinutes: 12, text: 'give it a stir' },
+            ],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    const problem = await waitFor(() => queries.getByTestId('guided-plan-problem'));
+    expect(problem.textContent).toContain('The reminder at 12 min would never go off');
+    expect(problem.textContent).toContain("this step's timer is 10 min");
+    // The whole reason the old page's blocking check could go: the fix is here.
+    expect(queries.getByTestId('guided-plan-approve-button').hasAttribute('disabled')).toBe(false);
+
+    await fireEvent.click(queries.getByText('Move it to 5 min'));
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.checkIns).toEqual([
+      { atMinutes: 3, text: 'skim it' },
+      { atMinutes: 5, text: 'give it a stir' },
+    ]);
+  });
+
+  it('suggests the bowl whichever way round the near-miss runs', async () => {
+    // "onion" against a bowl called "onion bowl", rather than "the onion bowl"
+    // against "onion bowl". Both are the same near-miss to a reader and neither
+    // is one to the matcher, so the suggestion has to see both.
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: 'onion',
+            setup: null,
+            cue: null,
+            checkIns: [],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    await fireEvent.click(await waitFor(() => queries.getByText('Use "onion bowl"')));
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.container).toBe('onion bowl');
+  });
+
+  it('removes a reminder that could never go off', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: 'onion bowl',
+            setup: null,
+            cue: null,
+            checkIns: [{ atMinutes: 30, text: 'give it a stir' }],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    await fireEvent.click(await waitFor(() => queries.getByText('Remove it')));
+
+    await waitFor(() => expect(editGuidedPlan).toHaveBeenCalledTimes(1));
+    expect(written().stepNotes[0]!.checkIns).toEqual([]);
+  });
+
+  it('says on the bowl when two jobs claim one name', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        prep: [
+          {
+            id: 'prep-1',
+            text: 'Dice the onion',
+            container: 'onion bowl',
+            ingredientIds: ['ing-1'],
+          },
+          {
+            id: 'prep-2',
+            text: 'Dice the carrots',
+            container: 'Onion  Bowl',
+            ingredientIds: ['ing-2'],
+          },
+        ],
+      }),
+    );
+
+    // One card, because the matcher already calls them one bowl — which is
+    // exactly why the amounts on it are not the amounts the step will be given.
+    await waitFor(() => expect(queries.getAllByTestId('guided-plan-bench-card')).toHaveLength(1));
+    const problem = queries.getByTestId('guided-plan-problem');
+    expect(problem.textContent).toContain('2 jobs fill');
+    expect(problem.textContent).toContain("only gets the first one's contents");
+    // Nothing to press: either the two jobs were one job, or one wants its own
+    // name, and neither is a choice this screen can make for the reader.
+    expect(queries.queryByTestId('guided-plan-problem-fix')).toBeNull();
+  });
+
+  it('counts what is left to look at in the bar, and still lets Approve through', async () => {
+    const queries = renderPage();
+    mockPlan._set(danglingPlan());
+
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-summary').textContent).toBe(
+        '2 bowls · 2 steps · 1 cue · 0 reminders · 1 thing to look at',
+      ),
+    );
+    expect(queries.getByTestId('guided-plan-approve-button').hasAttribute('disabled')).toBe(false);
+
+    // The count is read off the live plan, so taking the fix drops it. Proved by
+    // re-seeding the store with the fixed plan, which is what the service's
+    // optimistic write does a frame later.
+    mockPlan._set(makePlan());
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-summary').textContent).toBe(
+        '2 bowls · 2 steps · 1 cue · 0 reminders',
+      ),
+    );
+  });
+
+  it('counts an ingredient in no bowl among the things to look at', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        prep: [
+          {
+            id: 'prep-1',
+            text: 'Dice the onion',
+            container: 'onion bowl',
+            ingredientIds: ['ing-1'],
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-summary').textContent).toContain(
+        '1 thing to look at',
+      ),
+    );
+    expect(queries.getByTestId('guided-plan-unassigned-warning')).toBeTruthy();
+  });
+});
+
 describe('the cook deck and the review screen draw the same lines', () => {
   // The claim "exactly as the cook will see it" is pinned HERE, and its boundary
   // is exactly what these assertions say: the plan's own note rows and look-ahead
@@ -705,6 +1133,7 @@ describe('the cook deck and the review screen draw the same lines', () => {
             ? {
                 edit: {
                   timerMinutes: 10,
+                  bowls: ['onion bowl'],
                   onSetContainer: () => {},
                   onSetSetup: () => {},
                   onSetCue: () => {},

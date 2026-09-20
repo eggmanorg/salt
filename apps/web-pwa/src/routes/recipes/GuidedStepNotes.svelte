@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { Button, CanonIcon, Icon } from '@salt/ui-components';
+  import { Button, CanonIcon, Chip, ChipGroup, Icon } from '@salt/ui-components';
+  import { normaliseContainerName } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import type { GuidedCheckInDoc, GuidedStepNoteDoc } from '@salt/domain/schemas';
   import { ingredientIcons, ingredientLabel } from '../../lib/cookIngredientIcons.js';
   import { kitIcons } from '../../lib/kitIcons.js';
   import IngredientText from './IngredientText.svelte';
   import GuidedPlanLine from './GuidedPlanLine.svelte';
+  import GuidedPlanProblem from './GuidedPlanProblem.svelte';
 
   // WHAT THE PLAN ADDS UNDER ONE STEP, drawn once for both screens that draw it
   // (issue #1453): the guided cook deck, and the review screen the plan is read on
@@ -21,9 +23,18 @@
   //
   // `edit` absent is the cook: every row is text, nothing is tappable, and this
   // renders exactly what GuidedCookPage rendered inline before the extraction.
-  // `edit` present turns each row into a line you tap to change, and adds the
-  // "+ setup / + cue" row for the lines the plan left unsaid. There is no mode
-  // flag anywhere: the presence of the handlers IS the difference.
+  // `edit` present turns each row into a line you tap to change, adds the
+  // "+ setup / + cue" row for the lines the plan left unsaid, and puts a chip row
+  // of the plan's bowls under the bowl name. There is no mode flag anywhere: the
+  // presence of the handlers IS the difference, and the same goes for `problems`.
+  //
+  // THE BOWL IS THE ONE ROW THAT IS NOT A LINE YOU TYPE (issue #1453, Phase 2).
+  // It is picked from the bowls the plan has, so a step cannot ask for a bowl no
+  // job fills. The boundary of that, stated rather than implied (CLAUDE.md rule
+  // 12): it holds for every name THIS SCREEN writes. A plan already holding a
+  // dangling name — written by the flow, or edited elsewhere — still shows it, as
+  // the name it says plus a problem card offering the fix. The picker stops the
+  // fault being CREATED here; it does not retro-fix a document.
 
   interface GuidedStepNotesEdit {
     /**
@@ -31,6 +42,14 @@
      * a timer, so a step without one is never offered the "+ reminder" row.
      */
     timerMinutes: number | null;
+    /**
+     * Every bowl the plan actually has, as the plan spells them. The step's bowl
+     * is PICKED from these and nothing else, which is what makes a name no job
+     * fills impossible to type rather than something to warn about afterwards
+     * (issue #1453, Phase 2). Empty on a plan whose jobs all set nothing aside —
+     * then the row says so, because the bowl has to be added on the bench first.
+     */
+    bowls: readonly string[];
     onSetContainer: (value: string | null) => void;
     onSetSetup: (value: string | null) => void;
     onSetCue: (value: string | null) => void;
@@ -46,6 +65,7 @@
     checkIns,
     scale = 1,
     edit,
+    problems = [],
   }: {
     note: GuidedStepNoteDoc | null;
     /** What is in the bowl this step names. Empty when no job fills that name. */
@@ -56,6 +76,17 @@
     checkIns: readonly GuidedCheckInDoc[];
     scale?: number;
     edit?: GuidedStepNotesEdit | undefined;
+    /**
+     * What is worth looking at on THIS step, already in kitchen words and already
+     * carrying its own fixes — the page works them out, because they are read off
+     * the whole plan rather than off one note. Empty for the cook, always: a
+     * warning is a thing to act on while the plan is being read, and the cook is
+     * standing at the hob (issue #1453, Phase 2).
+     */
+    problems?: readonly {
+      message: string;
+      fixes?: readonly { label: string; run: () => void }[];
+    }[];
   } = $props();
 
   // Which absent line the "+" row has just opened. Purely local: an add that is
@@ -67,6 +98,11 @@
   // in the plan. Its minutes default to halfway through the timer, which is the
   // one guess the screen can make that is always inside it.
   let pending = $state<{ atMinutes: number; text: string } | null>(null);
+
+  // Gated on `edit` rather than merely never passed without it: the cook is
+  // standing at the hob, and a warning they cannot act on there is worse than the
+  // fault it names. One line, so the claim is the code rather than a convention.
+  const shownProblems = $derived(edit ? problems : []);
 
   const said = $derived({
     container: note?.container?.trim() ?? '',
@@ -115,10 +151,16 @@
     class="flex flex-col gap-2.5 border-l-2 border-secondary/40 pl-4"
     data-testid="guided-step-notes"
   >
+    {#each shownProblems as problem, i (i)}
+      <li>
+        <GuidedPlanProblem message={problem.message} fixes={problem.fixes ?? []} />
+      </li>
+    {/each}
+
     {#if said.container !== '' || adding === 'container'}
       <li class="flex flex-col gap-2" data-testid="guided-step-note-container">
-        <span class="flex items-start gap-3">
-          {#if said.container !== ''}
+        {#if said.container !== ''}
+          <span class="flex items-start gap-3">
             <!-- The same drawn vessel as the mise card's header (issue #882),
                  resolved from the step's own words so the two surfaces cannot
                  disagree about which bowl this is. -->
@@ -128,23 +170,55 @@
               name={said.container}
               size={32}
             />
-          {/if}
-          {#if edit}
-            <GuidedPlanLine
-              class="min-w-0 flex-1"
-              value={said.container}
-              ariaLabel="the bowl this step wants"
-              placeholder="onion bowl"
-              startOpen={adding === 'container'}
-              onCommit={(v) => edit.onSetContainer(v === '' ? null : v)}
-              onClose={() => (adding = null)}
-            >
-              {@render body(said.container)}
-            </GuidedPlanLine>
-          {:else}
             {@render body(said.container)}
+          </span>
+        {/if}
+        {#if edit}
+          <!-- THE BOWL IS PICKED, NEVER SPELLED (issue #1453, Phase 2). The two
+               ways a plan breaks — a name no job fills, and one name on two jobs —
+               are both a consequence of the same free-text box, and a picker over
+               the bowls that exist makes the first of them unrepresentable rather
+               than something to warn about after the fact. A bowl that does not
+               exist yet is added on the bench, where adding it also says who
+               fills it.
+
+               A chip, per ui-spec-v09 §8.23.2: a facet that is on or off, shown
+               alongside its siblings. `ChipGroup` owns the row's layout and
+               nothing else — which chip is pressed is read off the plan (§8.24). -->
+          {#if edit.bowls.length > 0}
+            <ChipGroup ariaLabel="which bowl this step wants" class="ml-10">
+              {#each edit.bowls as bowl (bowl)}
+                <Chip
+                  pressed={said.container !== '' &&
+                    normaliseContainerName(bowl) === normaliseContainerName(said.container)}
+                  onclick={() => {
+                    adding = null;
+                    edit.onSetContainer(bowl);
+                  }}
+                  data-testid="guided-plan-bowl-chip"
+                >
+                  {bowl}
+                </Chip>
+              {/each}
+              <!-- Always offered: a step that wants nothing out of a bowl is an
+                   ordinary step, not an omission. -->
+              <Chip
+                pressed={said.container === ''}
+                onclick={() => {
+                  adding = null;
+                  edit.onSetContainer(null);
+                }}
+                data-testid="guided-plan-bowl-chip"
+              >
+                none
+              </Chip>
+            </ChipGroup>
+          {:else}
+            <p class="ml-10 text-sm text-muted-foreground" data-testid="guided-plan-no-bowls">
+              No bowls yet — add a job on the bench and this step can ask for it.
+            </p>
           {/if}
-        </span>
+        {/if}
         <!-- What is actually in it, nested UNDER the name: the name is the handle
              the cook already knows from the prep screen, and the contents are the
              amounts that screen showed. Empty when no job fills this name, in
@@ -291,17 +365,13 @@
         {@render glyph('Bell', 'Check in', 'bg-secondary/10 text-secondary')}
         <span class="min-w-0 flex-1 text-base text-muted-foreground">
           <span class="inline-flex flex-wrap items-baseline gap-1">
-            <GuidedPlanLine
-              value={String(pending.atMinutes)}
-              ariaLabel="when this reminder fires"
-              numeric
-              onCommit={(v) => {
-                const minutes = parseMinutes(v);
-                if (minutes !== null && pending) pending = { ...pending, atMinutes: minutes };
-              }}
-            >
-              <span class="font-medium text-foreground">{pending.atMinutes} min in</span>
-            </GuidedPlanLine>
+            <!-- The minutes are TEXT while the reminder is being composed, and
+                 tappable the moment it exists. Not a stingy affordance: the row
+                 only survives while its words are being typed, so a second field
+                 beside them would take the focus that keeps it alive and delete
+                 the thing the tap was trying to adjust. Say the words, then move
+                 the minutes on the row that is now there. -->
+            <span class="font-medium text-foreground">{pending.atMinutes} min in</span>
             <span>—</span>
             <GuidedPlanLine
               class="min-w-0 flex-1"
