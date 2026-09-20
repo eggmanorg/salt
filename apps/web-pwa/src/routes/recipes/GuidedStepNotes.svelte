@@ -8,6 +8,7 @@
   import IngredientText from './IngredientText.svelte';
   import GuidedPlanLine from './GuidedPlanLine.svelte';
   import GuidedPlanProblem from './GuidedPlanProblem.svelte';
+  import { halfwayThroughTimer } from './guidedHalfway.js';
 
   // WHAT THE PLAN ADDS UNDER ONE STEP, drawn once for both screens that draw it
   // (issue #1453): the guided cook deck, and the review screen the plan is read on
@@ -95,8 +96,9 @@
 
   // A reminder being composed. NOT written until it has words — the document
   // never holds a reminder that says nothing, so an abandoned add leaves no trace
-  // in the plan. Its minutes default to halfway through the timer, which is the
-  // one guess the screen can make that is always inside it.
+  // in the plan. Its minutes default to halfway through the timer, via the same
+  // `halfwayThroughTimer` `GuidedPlanPage`'s own "move it" fix uses — one guess,
+  // not two that could drift apart.
   let pending = $state<{ atMinutes: number; text: string } | null>(null);
 
   // Gated on `edit` rather than merely never passed without it: the cook is
@@ -121,7 +123,7 @@
   function startReminder(): void {
     const minutes = edit?.timerMinutes ?? null;
     if (minutes === null) return;
-    pending = { atMinutes: Math.max(1, Math.round(minutes / 2)), text: '' };
+    pending = { atMinutes: halfwayThroughTimer(minutes), text: '' };
   }
 
   // A reminder's minutes, as typed. Anything that is not a positive number is

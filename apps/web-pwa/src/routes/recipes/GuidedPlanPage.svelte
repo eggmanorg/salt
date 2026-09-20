@@ -32,6 +32,7 @@
   import GuidedStepNotes from './GuidedStepNotes.svelte';
   import GuidedStepLookahead from './GuidedStepLookahead.svelte';
   import GuidedPlanProblem from './GuidedPlanProblem.svelte';
+  import { halfwayThroughTimer } from './guidedHalfway.js';
 
   // READ THE PLAN THE WAY YOU WILL COOK IT (issue #1453) — `/recipes/:id/guided`.
   //
@@ -62,11 +63,17 @@
   // page's own, and the cook deck's are richer — the claim covers the plan's
   // lines, not the whole screen.
   //
-  // APPROVE IS NEVER DISABLED. A warning is information, never permission (Salt
-  // records, never polices). That includes a reminder set past the end of its
-  // timer, which used to block the save: with per-line writes there is no save to
-  // block, the runtime already ignores a reminder it cannot fire, and the fix now
-  // sits on the step it belongs to.
+  // APPROVE IS NEVER DISABLED BY A WARNING. A warning is information, never
+  // permission (Salt records, never polices). That includes a reminder set past
+  // the end of its timer, which used to block the save: with per-line writes
+  // there is no save to block, the runtime already ignores a reminder it cannot
+  // fire, and the fix now sits on the step it belongs to. The boundary of that
+  // claim, stated rather than implied (CLAUDE.md rule 12): Approve IS disabled,
+  // the same way Re-run is (`disabled={writing || approving}`), while either is
+  // in flight — not as a policy on the plan's content, but because `apply()`'s
+  // own guard means a write attempted mid-Re-run is silently dropped rather than
+  // landing, and a disabled button is what tells the person why nothing happened
+  // (PR #1504 review, the write race that clobbered a generated plan).
   //
   // PROBLEMS SIT WHERE THEY ARE. The four banners that used to head this page are
   // gone; each fault is drawn on the step or the bowl it concerns, with its fix
@@ -111,7 +118,11 @@
 
   function apply(next: (current: GuidedPlanDoc) => GuidedPlanDoc): void {
     const current = plan;
-    if (!current) return;
+    // Guarded the same way Approve and Re-run are: while a Re-run is in
+    // flight the flow is writing the document server-side, and a client
+    // `setDoc` here is a whole-document LWW write (CLAUDE.md) that would
+    // land on top of it and lose the 1-3 minutes of generation.
+    if (!current || writing) return;
     void editGuidedPlan(next(current)).then((result) => {
       if (result.kind !== 'ok') addToast("Couldn't save that change.", 'destructive');
     });
@@ -311,12 +322,6 @@
     return clash ? clash.prepIds.length : null;
   }
 
-  // Halfway through the timer — the same guess "+ reminder" makes, and the only
-  // one that is always inside it.
-  function halfway(minutes: number): number {
-    return Math.max(1, Math.round(minutes / 2));
-  }
-
   // The one suggestion the screen is willing to make for a dangling name, and it
   // is only ever OFFERED. `normaliseContainerName` is deliberately strict — case
   // and whitespace, nothing else — because a looser match would trade a visible
@@ -377,8 +382,9 @@
         message: `The reminder at ${checkIn.atMinutes} min would never go off — this step's timer is ${timerMinutes} min.`,
         fixes: [
           {
-            label: `Move it to ${halfway(timerMinutes)} min`,
-            run: () => setCheckIn(s.id, i, { ...checkIn, atMinutes: halfway(timerMinutes) }),
+            label: `Move it to ${halfwayThroughTimer(timerMinutes)} min`,
+            run: () =>
+              setCheckIn(s.id, i, { ...checkIn, atMinutes: halfwayThroughTimer(timerMinutes) }),
           },
           { label: 'Remove it', run: () => removeCheckIn(s.id, i) },
         ],
@@ -432,7 +438,7 @@
   let approving = $state(false);
 
   async function handleWrite(): Promise<void> {
-    if (!recipe || writing) return;
+    if (!recipe || writing || approving) return;
     writing = true;
     const result = await generateGuidedPlan(recipe);
     writing = false;
@@ -446,7 +452,7 @@
   }
 
   async function handleApprove(): Promise<void> {
-    if (!recipe || !plan || approving) return;
+    if (!recipe || !plan || approving || writing) return;
     approving = true;
     const result = await saveGuidedPlan(plan, recipe);
     approving = false;
@@ -898,6 +904,7 @@
             <Button
               onclick={handleApprove}
               loading={approving}
+              disabled={writing || approving}
               data-testid="guided-plan-approve-button"
             >
               {#snippet leading()}<Icon name="Check" size={16} />{/snippet}

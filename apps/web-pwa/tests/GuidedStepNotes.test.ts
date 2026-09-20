@@ -188,23 +188,43 @@ describe('GuidedStepNotes — the bowl is picked, never spelled', () => {
     expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
   });
 
-  it('has no way to type a name at all — the bowl is only ever a chip', () => {
+  it('has no way to type a name at all — the bowl is only ever a chip', async () => {
     // The pin under "a name that is not a bowl cannot be entered": there is no
-    // editable line for the container, on a step that has one or on one that does
-    // not. A regression that put the text box back fails here.
-    const { queryByLabelText, getByTestId } = render(GuidedStepNotes, {
+    // editable `GuidedPlanLine` inside the container row, on a step that already
+    // has one or on one that just opened it from "+ bowl". `GuidedPlanLine` is
+    // the component every OTHER row on this screen (setup, cue, a reminder's
+    // words) uses to become a text box — read mode is
+    // `data-testid="guided-plan-line"`, open is `"guided-plan-line-input"` — so
+    // its absence from this subtree is exactly the claim "there is no way to
+    // type a bowl name". Checked by aria-label before, against two labels this
+    // row has never carried (`GuidedStepNotes.svelte` names the chip row
+    // "which bowl this step wants"), which held even with a text box present
+    // and pinned nothing. A regression that put a free-text line back under the
+    // bowl fails here.
+    const edit = makeEdit();
+    const withContainer = render(GuidedStepNotes, {
+      props: { note: makeNote(), containerContents: [], loose: [], checkIns: [], edit },
+    });
+    const setRow = withContainer.getByTestId('guided-step-note-container');
+    expect(setRow.querySelector('[data-testid="guided-plan-line"]')).toBeNull();
+    expect(setRow.querySelector('[data-testid="guided-plan-line-input"]')).toBeNull();
+    withContainer.unmount();
+
+    // Same claim on a step that asks for none yet, once "+ bowl" has opened the
+    // picker — the only other way this row ever appears.
+    const empty = render(GuidedStepNotes, {
       props: {
         note: makeNote({ container: null }),
         containerContents: [],
         loose: [],
         checkIns: [],
-        edit: makeEdit(),
+        edit,
       },
     });
-
-    expect(queryByLabelText('the bowl this step wants')).toBeNull();
-    expect(queryByLabelText('Change the bowl this step wants')).toBeNull();
-    expect(getByTestId('guided-plan-add-container')).toBeTruthy();
+    await fireEvent.click(empty.getByTestId('guided-plan-add-container'));
+    const openedRow = await waitFor(() => empty.getByTestId('guided-step-note-container'));
+    expect(openedRow.querySelector('[data-testid="guided-plan-line"]')).toBeNull();
+    expect(openedRow.querySelector('[data-testid="guided-plan-line-input"]')).toBeNull();
   });
 
   it('writes the bowl the chip names, and clears it on "none"', async () => {

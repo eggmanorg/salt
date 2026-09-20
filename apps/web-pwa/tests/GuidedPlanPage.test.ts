@@ -714,10 +714,11 @@ describe('GuidedPlanPage — Approve, the stale banner and the summary', () => {
     expect(recipe.id).toBe(RECIPE_ID);
   });
 
-  it('approves once however many times the button is pressed, and is never disabled', async () => {
-    // Approve is the one control on this page that carries no `disabled` — a
-    // warning is information, never permission — so the second press has to be
-    // stopped by the command rather than by the button.
+  it('approves once, disabling itself the moment it is in flight (PR #1504 review)', async () => {
+    // Never disabled by a WARNING — a reminder past its timer, a dangling bowl
+    // name — but disabled the same way Re-run already is while ITS OWN write is
+    // in flight, so a second press cannot fire a second `saveGuidedPlan` and a
+    // click mid-Re-run cannot clobber what the flow just wrote.
     vi.mocked(saveGuidedPlan).mockReturnValueOnce(new Promise(() => {}));
     const queries = renderPage();
     mockPlan._set(makePlan());
@@ -725,8 +726,11 @@ describe('GuidedPlanPage — Approve, the stale banner and the summary', () => {
     const approve = await waitFor(() => queries.getByTestId('guided-plan-approve-button'));
     expect(approve.hasAttribute('disabled')).toBe(false);
     await fireEvent.click(approve);
+    expect(approve.hasAttribute('disabled')).toBe(true);
+    // A second press, however it arrives, must not reach the service a second
+    // time — the command's own guard is the backstop the disabled attribute
+    // sits in front of.
     await fireEvent.click(approve);
-    expect(approve.hasAttribute('disabled')).toBe(false);
 
     expect(saveGuidedPlan).toHaveBeenCalledTimes(1);
   });
@@ -778,6 +782,33 @@ describe('GuidedPlanPage — Approve, the stale banner and the summary', () => {
     await waitFor(() =>
       expect(addToast).toHaveBeenCalledWith("Couldn't approve the plan.", 'destructive'),
     );
+  });
+
+  it('blocks every user-initiated write while a Re-run is in flight, so it cannot clobber what the flow just wrote', async () => {
+    // The defect this guards against: `generateGuidedPlan` writes the new plan
+    // server-side and only THEN returns, so a click during the 1-3 minute wait
+    // would land a client `setDoc` of the pre-run document on top of it — a
+    // whole-document LWW write (CLAUDE.md) that loses the generation outright.
+    // Neither Approve nor any per-line edit may reach the service until the
+    // re-run settles.
+    vi.mocked(generateGuidedPlan).mockReturnValueOnce(new Promise(() => {}));
+    const queries = renderPage();
+    mockPlan._set(makePlan());
+    await waitFor(() => expect(queries.getAllByTestId('guided-plan-job')).toHaveLength(2));
+
+    await fireEvent.click(queries.getByTestId('guided-plan-rerun-button'));
+    await waitFor(() =>
+      expect(queries.getByTestId('guided-plan-rerun-button').hasAttribute('disabled')).toBe(true),
+    );
+    expect(queries.getByTestId('guided-plan-approve-button').hasAttribute('disabled')).toBe(true);
+
+    // A per-line edit — deleting a job — must not reach the service.
+    await fireEvent.click(queries.getAllByTestId('guided-plan-job-delete')[0]!);
+    // Approve must not reach the service either.
+    await fireEvent.click(queries.getByTestId('guided-plan-approve-button'));
+
+    expect(editGuidedPlan).not.toHaveBeenCalled();
+    expect(saveGuidedPlan).not.toHaveBeenCalled();
   });
 
   it('adds a job to a plan whose bench has been emptied', async () => {
