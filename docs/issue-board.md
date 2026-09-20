@@ -396,6 +396,13 @@ code exists, and nothing checks it afterwards — `board.mjs check` does not tes
 What it buys is a sense of the budget the work will be built against, and a way for
 triage to compare two issues.
 
+**Written, and — since #1521 — read back, but still not graded.** `Size` is a
+project field, not in the issue body, so `node scripts/board.mjs show <issue>` is
+the only way to read one back; `/salt-campaign`'s Finish step uses it to print an
+`Estimated vs actual` line per issue in the run, against the changed-line count the
+PR actually shipped. That is a record for a spec author to read, not a check —
+nothing gates on the gap, and `board.mjs check` still does not test it.
+
 **`L` has no headroom, by construction.** Its top edge _is_ `--max-diff` — the same
 2000 lines `/salt-run` refuses to carry past a phase boundary. So a correctly
 estimated `L` sits exactly on the wall, and any estimation error at all crosses it.
