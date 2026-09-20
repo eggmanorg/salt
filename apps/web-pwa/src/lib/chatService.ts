@@ -98,10 +98,23 @@ const latestLocalEdit = new Map<string, string>();
 // longer the only copy of anything.
 //
 // `arrived` is what `sendMessage` awaits before applying a generated title, so
-// the title is composed onto the flow's document rather than racing it. It never
-// resolves if the flow's write failed — deliberately: the title is then dropped,
-// the chat keeps its seed name, and that is the cosmetic loss #1430 names and
-// leaves open, not a lost turn.
+// the title is composed onto the flow's document rather than racing it. It
+// never resolves if the flow's write failed — and the entry never expires, so
+// `applySnapshot` above keeps this session `stillAwaitingFlowWrite` and skips
+// EVERY incoming snapshot for it, not only the title's: new messages, a rename,
+// whatever else changes the document next, all held back behind the optimistic
+// copy. That is wider than the cosmetic title loss #1430 names — a session can
+// go quiet and stop tracking the server entirely, and NO LATER TURN RECOVERS
+// IT. Another `sendMessage` replaces the entry, but `expectedMessageCount` is
+// counted from the store's optimistic copy (see the call below), which after a
+// missed write holds two messages the server does not; the flow appends its
+// pair to the STORED array, so its next write — a fully successful one
+// included — arrives two short of the new expectation and is skipped in turn.
+// The skew is permanent, not contingent on a second failure. What clears it is
+// a page reload, which drops this in-memory map and lets the next snapshot
+// through unconditionally — or, by the same coincidence the paragraph above
+// names, another device's own turn carrying the count past the expectation.
+// Accepted as a known quirk, not fixed with a timeout here.
 interface ServerWriteWait {
   readonly landed: Promise<void>;
   readonly arrived: () => void;

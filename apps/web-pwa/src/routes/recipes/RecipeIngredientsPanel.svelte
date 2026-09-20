@@ -516,14 +516,18 @@
        rather than always rendered.
 
        `!editing` is the second half of that gate (#1339 review, should-fix 5) —
-       the same reason the three per-row markers disappear while editing: this
-       button acts on the MATCH, composed from a snapshot of `recipe.ingredients`
-       taken before the round trip, so a keystroke landing in any row before the
-       Cloud Function returns is overwritten by a toast that says "Ingredients
-       matched" and a write that carries none of it. The per-row re-match already
-       states its boundary as "it works where it lives, which is read mode";
-       Canonicalise gets the identical boundary rather than being the one control
-       the marker rule was written about and then left out of it. -->
+       the same reason the three per-row markers disappear while editing. Since
+       #1434 the CF writes the match itself, folding `canonId`/`matchState` onto
+       `recipes/{id}` in a transaction (`canonicaliseRecipeIngredients.ts:29-53`),
+       so there is no browser-held snapshot left for a keystroke to race. The
+       boundary that survives is document-level LWW: `persistRecipe` and the
+       edit coalescer in `recipeService.ts` still rewrite `recipes/{id}` WHOLE,
+       so flushing an edit composed before the transaction lands still
+       overwrites it — the same contract CLAUDE.md names for
+       `thumbnail`/`embedding`. The per-row re-match already states its
+       boundary as "it works where it lives, which is read mode"; Canonicalise
+       gets the identical boundary rather than being the one control the
+       marker rule was written about and then left out of it. -->
   {#if hasParsedPending && !editing}
     <CardHeader class="px-4 pt-4 pb-0">
       <div class="flex items-center justify-end">
