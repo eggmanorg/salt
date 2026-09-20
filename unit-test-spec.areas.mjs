@@ -187,9 +187,17 @@ export const violationCeilings = {
   // them is avoidable by writing the test differently. The alternative was to
   // leave the page's docked/phone gate untested, which is the failure #933 wrote
   // `CatalogPage.docked.test.ts` to stop.
+  //
+  // UT-B1 46 → 47 (issue #1489 Phase 2). `KitchenToolsPage.move.test.ts`, and the
+  // same sanctioned case a second time: it mounts the same admin route, so it
+  // needs the same eight seams, and it is its own file for the reason
+  // `KitchenToolsPage.alias.test.ts` already documents — a bits-ui combobox
+  // inside a dialog only commits while its layer is topmost, and vitest's
+  // isolation is per FILE. Folding it into a file that opens another dialog is
+  // what makes it silently stop asserting.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 46,
+    'UT-B1': 47,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,

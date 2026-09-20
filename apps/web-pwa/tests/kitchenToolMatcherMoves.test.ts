@@ -183,3 +183,42 @@ describe('moveKitchenToolMatcher — a name changes hands', () => {
     expect(FROM.matchers).toContain('large bowl');
   });
 });
+
+describe('both verbs refuse a document the domain cannot update, before any write', () => {
+  // `updateKitchenTool` is the only thing between these commands and a document
+  // with no usable name, and it is reached THREE times across the two of them —
+  // the parent's trim, the destination's append, the source's trim. Each has to
+  // answer `err` with nothing written, and a guard nothing exercises is a guard
+  // nobody knows works (Rule 10).
+  //
+  // A blank label is the whole of what it refuses. It cannot arrive from
+  // Firestore — the schema forbids it — so this is a defensive contract rather
+  // than a reachable user path, and it is stated that way rather than dressed up
+  // as a scenario.
+  const BLANK = tool('blank', '   ', ['large bowl']);
+
+  it.each([
+    [
+      'promote, when the parent cannot be trimmed',
+      () => promoteKitchenToolMatcher(BLANK, 'large bowl'),
+    ],
+    [
+      'move, when the destination cannot be appended to',
+      () =>
+        moveKitchenToolMatcher(
+          tool('mixing-bowl', 'Mixing bowl', ['large bowl']),
+          BLANK,
+          'large bowl',
+        ),
+    ],
+    [
+      'move, when the source cannot be trimmed',
+      () => moveKitchenToolMatcher(BLANK, tool('salad-bowl', 'Salad bowl'), 'large bowl'),
+    ],
+  ])('%s', async (_name, run) => {
+    const result = await run();
+
+    expect(result.kind).toBe('err');
+    expect(writes()).toHaveLength(0);
+  });
+});
