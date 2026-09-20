@@ -385,15 +385,22 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 // prompt with "A single, mouth-watering hero shot of one finished dish": a
 // table-spread brief was contradicted by its own house style, on a prompt where
 // the anchors are deliberately the last word. Directing the plate removes the
-// contradiction instead of carving a meal-shaped hole in the anchors — a per-meal
-// judgement cannot live in a constant that is byte-identical across every recipe,
-// which is the split #652, #671 and #1404 each established.
+// contradiction FOR THE COMMON CASE — the default, one-plate path — instead of
+// carving a meal-shaped hole in the anchors, which a per-meal judgement cannot
+// live in since it is a constant byte-identical across every recipe (the split
+// #652, #671 and #1404 each established). It does not remove the contradiction on
+// the exception path below: when the art director chooses the table, the anchors
+// still close the prompt with "one finished dish" and win by position, since
+// buildRecipePrompt appends them last. #1452 named that the open, deferred
+// question this rule does not answer, not a defect this PR closes.
 //
-// The table stays REACHABLE rather than gone: the rule below names it as the
-// exception the art director may choose from the dishes themselves (a curry night,
-// tapas, a buffet). That is a claim about a string and nothing else can pin it
-// short of an AI call, so it is pinned by a string assertion — see
-// tests/flows/describeRecipeScene.test.ts, "leaves the table reachable".
+// The table stays REACHABLE in the brief rather than gone from it: the rule below
+// names it as the exception the art director may choose from the dishes
+// themselves (a curry night, tapas, a buffet). That is a claim about a string and
+// nothing else can pin it short of an AI call, so it is pinned by a string
+// assertion — see tests/flows/describeRecipeScene.test.ts, "leaves the table
+// reachable". The assertion is scoped the same way: it pins that the brief names
+// the exception, not that a photograph ends up showing the table.
 //
 // Both are APPENDED ONLY when dishes are actually listed, so a recipe that is not
 // a meal gets byte-for-byte the system prompt it got before. Specials and
