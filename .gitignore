@@ -64,3 +64,9 @@ docker/test-emulators/.image-build-hash
 # checkouts under .claude/worktrees/ despite them being gitignored: 17,734 files
 # and ~59 min, versus ~790 files in ~3 min when scoped correctly).
 .serena/
+
+# One-off run reports written beside the script that produced them: a dated
+# record of what a re-run changed in a live project, useful to read once and
+# never worth committing. The trailing epoch makes every filename unique, so
+# this is a glob, not a list.
+apps/cloud-functions/kit-rerun-*.md
