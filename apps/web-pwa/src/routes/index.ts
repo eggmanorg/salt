@@ -30,6 +30,11 @@ import { lazy } from './lazyRoute';
 // would be six wrappers around the same chunk.
 const catalogPage = lazy(() => import('./admin/CatalogPage.svelte'));
 
+// Same trick for the kitchen-tool vocabulary's two entries (issue #1489): the
+// list and the editor are one page, so moving between them must not re-fetch the
+// chunk.
+const kitchenToolsPage = lazy(() => import('./admin/KitchenToolsPage.svelte'));
+
 // More-specific static routes must precede parameterised ones when using a Map.
 // The Map is typed with RouteDefinition's own value type: without it, `new Map`
 // infers a heterogeneous union of `Component<Props>` tuples that TS cannot unify
@@ -145,7 +150,8 @@ export const routes: RouteDefinition = new Map<
   // The drawn kitchen-tool vocabulary (issue #882). A SIBLING of the catalog, not
   // a third record kind in it: a tool shares no aisle, no match pipeline and no
   // approval queue with the two grocery kinds, so it gets its own screen.
-  ['/admin/kitchen-tools', lazy(() => import('./admin/KitchenToolsPage.svelte'))],
+  ['/admin/kitchen-tools', kitchenToolsPage],
+  ['/admin/kitchen-tools/:id', kitchenToolsPage],
   // The catalog (issue #872) — one list for canon items and their product forms,
   // in place of the two it replaced. `/admin/canon` and `/admin/product-forms`
   // survive as ALIASES so existing bookmarks still land somewhere correct: the

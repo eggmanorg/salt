@@ -113,7 +113,10 @@ import {
   editKitchenTool,
   hideKitchenToolIcon,
   initKitchenToolSync,
+  moveKitchenToolMatcher,
+  promoteKitchenToolMatcher,
   regenerateKitchenToolIcon,
+  removeKitchenToolMatcher,
   __resetKitchenToolServiceForTest,
 } from '../src/lib/kitchenToolService.js';
 import {
@@ -429,6 +432,23 @@ const rows: Row[] = [
         label: 'Mandoline',
         matchers: ['mandoline', 'slicer'],
       }),
+  },
+  {
+    name: 'kitchenToolService.promoteKitchenToolMatcher',
+    writer: 'upsertKitchenTool',
+    seed: (w) => w.tools([makeTool('t1', 'Mandoline')]),
+    run: () => promoteKitchenToolMatcher(makeTool('t1', 'Mandoline'), 'slicer'),
+  },
+  {
+    name: 'kitchenToolService.moveKitchenToolMatcher',
+    writer: 'upsertKitchenTool',
+    run: () =>
+      moveKitchenToolMatcher(makeTool('t1', 'Mandoline'), makeTool('t2', 'Slicer'), 'slicer'),
+  },
+  {
+    name: 'kitchenToolService.removeKitchenToolMatcher',
+    writer: 'upsertKitchenTool',
+    run: () => removeKitchenToolMatcher(makeTool('t1', 'Mandoline'), 'slicer'),
   },
   {
     name: 'kitchenToolService.regenerateKitchenToolIcon',
