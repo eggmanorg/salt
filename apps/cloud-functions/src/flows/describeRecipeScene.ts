@@ -362,7 +362,7 @@ mood, hour and season it reads as. ${SCENE_SCOPE_RULE} That holds even if the re
 
 Write ONE paragraph of plain prose, at most about 80 words. Return only the revised brief.`;
 
-// ─── MEALS (issue #838) ──────────────────────────────────────────────────────
+// ─── MEALS (issues #838, #1452) ──────────────────────────────────────────────
 // A meal is a recipe that points at other recipes, and until now the art director
 // never heard about them: a Sunday roast that is nothing but chicken + potatoes +
 // gravy handed the model a TITLE and nothing else, and got back whatever a model
@@ -370,19 +370,50 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 //
 // TWO rules, not one shared clause, because `takesComponents` is true for two
 // kinds that mean opposite things by it. A recipe's components are dishes SERVED
-// ALONGSIDE it — the photograph widens to the table. A cocktail's component is a
-// part it is MADE FROM (the house syrup, an infusion); it is already in the glass,
-// and widening the shot to a second glass would be exactly wrong. One clause
-// covering both would have to be vague enough to direct neither.
+// ALONGSIDE it — they are dished up together, normally onto one plate and in the
+// exceptional case out across the table. A cocktail's component is a part it is
+// MADE FROM (the house syrup, an infusion); it is already in the glass, and a
+// second glass beside it would be exactly wrong. One clause covering both would
+// have to be vague enough to direct neither.
+//
+// ONE PLATE IS THE DEFAULT, AND THAT IS AN INVERSION OF #838 (issue #1452). #838
+// directed every meal at the WHOLE TABLE — each dish in its own bowl, laid out
+// side by side as a spread — and two things were wrong with it. Nearly every meal
+// in this library is a main with sides and is eaten off one plate, so the table
+// was the rule where it should have been the exception, leaving the Revise box as
+// the only way out. And the locked anchors in generateRecipeImage.ts end every
+// prompt with "A single, mouth-watering hero shot of one finished dish": a
+// table-spread brief was contradicted by its own house style, on a prompt where
+// the anchors are deliberately the last word. Directing the plate removes the
+// contradiction FOR THE COMMON CASE — the default, one-plate path — instead of
+// carving a meal-shaped hole in the anchors, which a per-meal judgement cannot
+// live in since it is a constant byte-identical across every recipe (the split
+// #652, #671 and #1404 each established). It does not remove the contradiction on
+// the exception path below: when the art director chooses the table, the anchors
+// still close the prompt with "one finished dish" and win by position, since
+// buildRecipePrompt appends them last. #1452 named that the open, deferred
+// question this rule does not answer, not a defect this PR closes.
+//
+// The table stays REACHABLE in the brief rather than gone from it: the rule below
+// names it as the exception the art director may choose from the dishes
+// themselves (a curry night, tapas, a buffet). That is a claim about a string and
+// nothing else can pin it short of an AI call, so it is pinned by a string
+// assertion — see tests/flows/describeRecipeScene.test.ts, "leaves the table
+// reachable". The assertion is scoped the same way: it pins that the brief names
+// the exception, not that a photograph ends up showing the table.
 //
 // Both are APPENDED ONLY when dishes are actually listed, so a recipe that is not
 // a meal gets byte-for-byte the system prompt it got before. Specials and
 // placeholders never receive either (`takesComponents` is false for both), which
 // is structural here rather than a promise: their arms below simply ignore it.
 const MEAL_SCENE_RULE = `This recipe is a MEAL. The dishes listed above are separate recipes served together as \
-one dinner, and they are the subject: photograph the WHOLE TABLE — those dishes together, as they are set down to be \
-eaten — not a single plated portion. Let the dish that carries the meal lead and the others sit around it as a \
-spread, each recognisably itself.
+one dinner, and they are the subject: describe it AS IT IS EATEN — dished up on ONE PLATE, those dishes composed \
+onto it together. Let the dish that carries the meal lead and the others be plated around, under or over it — the \
+meat resting on the mash, the greens alongside, the sauce over the lot — each still recognisably itself.
+
+Set the dishes out separately across the table ONLY where this dinner plainly is not one plated serving: food shared \
+from the middle, a grazing spread, a buffet, a table of small plates. That is an exception you may choose when the \
+dishes themselves call for it, never the default.
 
 Any ingredients and method given above belong to the DINNER as a whole — a sauce made at the end, the timing that \
 runs the dishes together — and never to any one dish. Read them that way, and read each dish's own description for \
