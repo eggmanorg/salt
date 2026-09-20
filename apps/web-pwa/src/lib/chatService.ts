@@ -104,11 +104,17 @@ const latestLocalEdit = new Map<string, string>();
 // EVERY incoming snapshot for it, not only the title's: new messages, a rename,
 // whatever else changes the document next, all held back behind the optimistic
 // copy. That is wider than the cosmetic title loss #1430 names — a session can
-// go quiet and stop tracking the server entirely until either another
-// `sendMessage` on it replaces the entry (and gets stuck the same way if that
-// write also never lands) or the page reloads, which drops this in-memory map
-// and lets the next snapshot through unconditionally. Accepted as a known
-// quirk, not fixed with a timeout here.
+// go quiet and stop tracking the server entirely, and NO LATER TURN RECOVERS
+// IT. Another `sendMessage` replaces the entry, but `expectedMessageCount` is
+// counted from the store's optimistic copy (see the call below), which after a
+// missed write holds two messages the server does not; the flow appends its
+// pair to the STORED array, so its next write — a fully successful one
+// included — arrives two short of the new expectation and is skipped in turn.
+// The skew is permanent, not contingent on a second failure. What clears it is
+// a page reload, which drops this in-memory map and lets the next snapshot
+// through unconditionally — or, by the same coincidence the paragraph above
+// names, another device's own turn carrying the count past the expectation.
+// Accepted as a known quirk, not fixed with a timeout here.
 interface ServerWriteWait {
   readonly landed: Promise<void>;
   readonly arrived: () => void;
