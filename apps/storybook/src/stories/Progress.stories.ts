@@ -22,6 +22,7 @@ const meta = {
     defaultValue: { control: { type: 'number', min: 0, max: 100, step: 1 } },
     max: { control: { type: 'number', min: 1, step: 1 } },
     announce: { control: 'select', options: ['polite', 'off'] },
+    presentational: { control: 'boolean' },
     ariaLabel: { control: 'text' },
     class: { control: 'text' },
   },
@@ -40,3 +41,10 @@ export const Full: Story = { args: { value: 100 } };
 
 // Indeterminate: no `value`/`defaultValue` supplied.
 export const Indeterminate: Story = {};
+
+// Presentational (ui-spec-v16 §1): the identical bar rendered as spans and
+// hidden from the accessibility tree, for a bar whose figure the surrounding
+// content already states in words — or one that has to sit inside a <button>,
+// which may hold phrasing content only. Visually indistinguishable from `Half`
+// by design; inspect the DOM to see the difference.
+export const Presentational: Story = { args: { value: 50, presentational: true } };
