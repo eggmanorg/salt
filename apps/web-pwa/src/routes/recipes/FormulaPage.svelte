@@ -1073,6 +1073,26 @@
     return null;
   });
 
+  /**
+   * That fact, in words.
+   *
+   * THE COPY IS HERE AND THE FACT IS IN `domain` — the split `cureSaltFitness`
+   * exists to make, and the same one `describeBoundViolation` and the sheet's
+   * `substitutionRefusal` already make.
+   *
+   * BUILT AS ONE STRING RATHER THAN INTERPOLATED PIECEMEAL, which is a coverage
+   * fact rather than a style preference: Svelte compiles every `{expr}` in a
+   * template to `expr ?? ''`, and the empty-string arm of a product label that is
+   * never null cannot be reached by any test. Three interpolations would therefore
+   * have cost three permanently uncovered branches on `apps/web-pwa/src/routes/**`.
+   * Assembled here it is ordinary TypeScript, and the tests cover both arms.
+   */
+  const cureSaltNoteText = $derived(
+    cureSaltNote === null
+      ? ''
+      : `${CURE_SALT_PRODUCTS[cureSaltNote.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[cureSaltNote.nitrateBearing].label} is the same strength and carries one.`,
+  );
+
   // ─── The stages, as they would be saved ───────────────────────────────────────
 
   const stages = $derived(stageRows.map(stageFrom));
@@ -1452,12 +1472,7 @@
               data-testid="formula-cure-salt-note"
               data-nitrate-bearing={cureSaltNote.nitrateBearing}
             >
-              <p class="text-sm text-warning-text">
-                {CURE_SALT_PRODUCTS[cureSaltNote.product].label} is nitrite only — there is no nitrate
-                behind it to keep working through a long dry, so the protection runs out partway.
-                {CURE_SALT_PRODUCTS[cureSaltNote.nitrateBearing].label} is the same strength and carries
-                one.
-              </p>
+              <p class="text-sm text-warning-text">{cureSaltNoteText}</p>
               <p class="text-sm text-warning-text">
                 Nothing here is blocked. Change the product on the row above if you want to, or save
                 this as it stands.
