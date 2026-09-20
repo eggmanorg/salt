@@ -38,6 +38,11 @@ apps/cloud-functions/.genkit/
 coverage/
 tmp/
 
+# AppMap's working directory. Raw recordings land in tmp/appmap (already covered
+# by tmp/ above); .appmap/ holds the derived sequence exports the gold-traces
+# engine regenerates on demand. Only gold_traces/baseline/ is committed.
+.appmap/
+
 # Claude Code local runtime state. `.claude/commands/` and `.claude/settings.json`
 # are the checked-in, shared parts; everything below is per-machine (pids, session
 # ids, scratch checkouts) and was previously only covered by .git/info/exclude,
