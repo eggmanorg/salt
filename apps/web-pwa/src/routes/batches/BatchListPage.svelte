@@ -227,7 +227,13 @@
                  the numbers. No word on this card judges a run, nothing is
                  blocked, and past the target the bar simply stays full while the
                  figure keeps counting. A run with no target — which is every bake
-                 — renders nothing at all here. -->
+                 — renders nothing at all here.
+
+                 The bar is `presentational` (ui-spec-v16 §1) because it is a
+                 picture of the figure the line above already gives in words,
+                 inside the same button: announced, it would be read out on every
+                 pass down the list, and as divs it would be the only block-level
+                 content in a <button> that may hold phrasing content only. -->
               {#if meter !== null}
                 <span
                   class="flex flex-col gap-1"
@@ -237,10 +243,7 @@
                   <span class="text-sm tabular-nums {targetStanceClass(meter.stance)}">
                     {weightLossText(meter)}
                   </span>
-                  <Progress
-                    value={meter.fractionOfTarget * 100}
-                    ariaLabel={`How far ${batch.recipeTitle} has got towards what it is aiming at`}
-                  />
+                  <Progress value={meter.fractionOfTarget * 100} presentational />
                 </span>
               {/if}
 
