@@ -11,10 +11,18 @@
  *     stays up while the page is fully live, so switching chats underneath it is
  *     an ordinary thing to do — and before the fix, "Update recipe" then proposed
  *     an amendment built from the wrong transcript.
- *  2. IT NEVER ASKS OVER A CONVERSATION THAT IS NOT ON SCREEN, and — the half
- *     that makes that safe rather than merely quiet — the request is LEFT ARMED
- *     on the document when it doesn't ask, so it is still there to be taken when
- *     the conversation comes back into view (or by the full `/chat/:id` page).
+ *  2. IT NEVER ASKS OVER A CONVERSATION THAT IS NOT ON SCREEN, and a LIVE
+ *     arrival — one recorded after this page already observed the chat once
+ *     with nothing pending — is left ARMED on the document rather than taken,
+ *     so it is still there to ask about once the conversation comes back into
+ *     view. (It is NOT a hand-off to the full `/chat/:id` page — that page
+ *     drops a first-snapshot request exactly as this one drops a
+ *     first-observation one; see the corrected comment on `saveChoiceOpen` in
+ *     `RecipeViewPage.svelte`, #1533 review, Finding 2.) A request already on
+ *     the document the first time THIS effect ever observes the chat is a
+ *     different case entirely — see the dedicated regression test below for
+ *     Finding 1 — and is cleared on the spot regardless of visibility, since
+ *     it is never asked about either way.
  *
  * jsdom answers `matches: false` to every media query, so `docked` — and with it
  * `chatPaneShown` — is false unless `window.matchMedia` is stubbed. That is the
@@ -397,6 +405,35 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
     recipeChatPanePrefs.show();
 
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+    expect(consumeSaveIntent).toHaveBeenCalledTimes(1);
+  });
+
+  // #1533 review, blocking Finding 1: this is the case `renderAndArm` cannot
+  // reach — every other test in this file arms AFTER the first snapshot, so
+  // `isFirstObservation` is already false by the time the pane matters. Here
+  // the request is on the document BEFORE the page ever mounts, and the pane
+  // is hidden from the start: the mount config 4 of 5 users are in, and
+  // desktop with the pane switched off. Before the fix, the hidden mount run
+  // still recorded the session as "seen" without clearing anything, so the
+  // very next run — triggered by nothing more than the pane opening, with no
+  // new activity on the chat at all — read that stale bookkeeping as a live
+  // arrival and popped "Save which one?" over a days-old request.
+  it('clears a request already sitting there when the page mounts hidden, and never asks about it once the pane opens', async () => {
+    recipeChatPanePrefs.on = false;
+    mockSessions._set([chatA({ pendingSaveIntent: 'a2' })]);
+    renderPage();
+
+    // Cleared on sight — Finding 1's rule does not wait for a surface to ask
+    // with, because a first-observation request is never asked about anyway.
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+
+    // Opening the pane afterwards re-runs the effect on the same session, with
+    // nothing new having arrived — this must not be mistaken for a live
+    // arrival just because bookkeeping changed.
+    recipeChatPanePrefs.show();
+    await tick();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
     expect(consumeSaveIntent).toHaveBeenCalledTimes(1);
   });
 });

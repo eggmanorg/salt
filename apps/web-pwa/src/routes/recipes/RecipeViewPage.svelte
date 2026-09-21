@@ -1506,15 +1506,36 @@
   // a copy in each would take the request twice and ask twice.
   //
   // `activeSession` and no other: a request recorded on a chat you are not
-  // looking at is not yours to answer here, and the full `/chat/:id` page will
-  // take it. It is left on that document rather than cleared.
+  // looking at is not yours to answer here.
+  //
+  // NOT A HAND-OFF (#1533 review, blocking Finding 2 — corrected from an
+  // earlier, false claim that "the full `/chat/:id` page takes it instead").
+  // `/chat/:id` clears the very same request on ITS OWN first snapshot without
+  // acting on it (`ChatSessionPage.svelte`'s `sawFirstSnapshot`), which is
+  // exactly this page's own first-observation rule. So a request left armed
+  // here while hidden is not carried anywhere that will genuinely act on it —
+  // it is silently dropped by whichever surface next observes it for the
+  // first time, this page included on a later mount. That is the same
+  // accepted cost `sawFirstSnapshot`'s own comment states ("losing a request
+  // there is safe, the person asks again"), not a working second path, and
+  // fixing it for real is out of this issue's scope (`sawFirstSnapshot` and
+  // `seenActiveSaveIntentSessions`'s first-observation gating are unchanged).
   let saveChoiceOpen = $state(false);
 
   // WHICH chat the open question is about (issue #1505). Captured when the
   // request is taken and read when the answer comes back, so switching the chat
   // selector while the dialog is up cannot move the answer onto a different
-  // conversation. `null` only when nothing is being asked.
+  // conversation. `null` only when nothing is being asked — kept true by the
+  // effect just below, since without it this stays the last-asked session id
+  // forever after the first ask (#1533 review, trivial Finding 5).
   let saveChoiceSessionId = $state<string | null>(null);
+
+  // Clears alongside the dialog, on every close — an answer (`SaveIntentChoice`
+  // sets `open = false` before either callback runs, so both have already read
+  // this by the time this effect fires) or a bare dismiss alike.
+  $effect(() => {
+    if (!saveChoiceOpen) saveChoiceSessionId = null;
+  });
 
   // A request already sitting on a chat the FIRST time this page shows it as
   // `activeSession` is one nobody was here to take (issue #1490 review, Finding
@@ -1537,25 +1558,50 @@
     seenActiveSaveIntentSessions.add(current.id);
     if (current.pendingSaveIntent === null) return;
     if (!$chatSaveGate.enabled) return;
-    // IS THE CONVERSATION ON SCREEN? (issue #1505.) "Save this?" over a recipe
-    // with no transcript anywhere on it is a question with nothing to answer it
-    // by. The docked column has to be both possible and wanted (`chatPaneShown`)
-    // or the phone drawer has to be up; the chat LIST at the foot of a recipe is
-    // not the conversation and does not count.
+
+    if (isFirstObservation) {
+      // Finding 1 (#1490 review): a request already sitting on this chat the
+      // FIRST time this page ever shows it as `activeSession` is nobody's to
+      // answer. Cleared UNCONDITIONALLY here, not behind the visibility check
+      // below — visibility only matters for a question that might get ASKED,
+      // and a first-observation request never is. #1533 review, blocking
+      // Finding 1: an earlier version of this effect ran the visibility check
+      // FIRST, so a run where the pane was hidden returned before reaching
+      // this branch at all — doing nothing, yet the `seenActiveSaveIntentSessions.add`
+      // two lines up had already fired, unconditionally, on that same
+      // do-nothing run. The NEXT run, triggered by nothing more than the pane
+      // opening (the request itself never changed), then found
+      // `isFirstObservation` already false and mistook a days-old request for
+      // a live arrival, popping "Save which one?" over it. Resolving a
+      // first-observation request in the SAME run that decides it is one is
+      // what keeps that decision from going stale before it is acted on.
+      void consumeSaveIntent(current);
+      return;
+    }
+
+    // IS THE CONVERSATION ON SCREEN? (issue #1505.) Only reached for a LIVE
+    // arrival — one recorded after this page had already observed the chat at
+    // least once with nothing pending — which is a question worth asking once
+    // there is somewhere to ask it. "Save this?" over a recipe with no
+    // transcript anywhere on it is a question with nothing to answer it by:
+    // the docked column has to be both possible and wanted (`chatPaneShown`)
+    // or the phone drawer has to be up; the chat LIST at the foot of a recipe
+    // is not the conversation and does not count.
     //
-    // Deliberately BEFORE `consumeSaveIntent`, so an unseen request is left armed
-    // on the document rather than taken and dropped — the contract the comment
-    // above states, and the full `/chat/:id` page takes it instead. This effect
-    // reads both flags reactively, so opening the pane or raising the drawer with
-    // the request still armed re-runs it and asks then; `isFirstObservation` is
-    // already recorded above and is not re-armed by the wait.
+    // Deliberately BEFORE `consumeSaveIntent`, so an unseen live arrival is
+    // left armed on the document rather than taken and dropped (issue #1533
+    // review, Finding 2 — the boundary of what happens to it after that is
+    // stated on `saveChoiceOpen` above, and is narrower than this comment used
+    // to claim). This effect reads both flags reactively, so opening the pane
+    // or raising the drawer with the request still armed re-runs it and asks
+    // then.
     if (!chatPaneShown && !drawerOpen) return;
     void (async () => {
       // Taken as the QUESTION is asked, not as it is answered — see
       // `consumeSaveIntent`. A question you dismissed has been answered, and a
       // request left on the document would re-ask on every reload.
       const taken = await consumeSaveIntent(current);
-      if (isFirstObservation || !taken) return;
+      if (!taken) return;
       saveChoiceSessionId = current.id;
       saveChoiceOpen = true;
     })();
