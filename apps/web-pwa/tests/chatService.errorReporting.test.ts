@@ -19,6 +19,16 @@ vi.mock('@salt/observability', async () => {
         reportSpy(error, category);
       },
     })),
+    // `chatService.ts` reads the `chatSave` gate via `featureGate.js` (issue
+    // #1512), which builds its flag-key map from these exports at module load —
+    // absent here, that throws before any test runs.
+    // The real values, `true`: this suite is not about the save-intent gate.
+    BREAD_FLAG_KEY: actual.BREAD_FLAG_KEY,
+    LIBRARY_FLAG_KEY: actual.LIBRARY_FLAG_KEY,
+    CHAT_SAVE_FLAG_KEY: actual.CHAT_SAVE_FLAG_KEY,
+    isObservabilityFeatureEnabled: () => true,
+    areObservabilityFeatureFlagsSettled: () => true,
+    onObservabilityFeatureFlags: () => () => {},
   };
 });
 
