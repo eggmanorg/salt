@@ -179,6 +179,12 @@
         basedOnRecipeId,
       }),
     );
+    // A save that LANDED has answered the chef's recorded request too, so the
+    // deferred retry below is dropped rather than making a second recipe (issue
+    // #1505). Cleared in the same synchronous step as `isSavingRecipe`, before
+    // the effect watching that flag can be flushed — an `await` between the two
+    // is the gap through which the retry would fire.
+    if (result.kind === 'ok') pendingSaveRetry = false;
     isSavingRecipe = false;
     if (result.kind !== 'ok') {
       // ONE message, because there is one leg left that can fail (issue #1431).
@@ -251,6 +257,25 @@
   // unprompted is not.
   let sawFirstSnapshot = false;
 
+  // A request that resolves while a save is ALREADY RUNNING (issue #1505). The
+  // request is cleared from the document before anything happens — the "taken,
+  // not read" contract — so `handleSaveAsRecipe`'s `isSavingRecipe` guard used to
+  // drop it with nothing left anywhere saying it had ever been made. It is held
+  // here instead and run when the in-flight save settles.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12): this recovers the case the in-flight save
+  // FAILS. One that succeeds clears this flag in `runSave` and then navigates to
+  // the recipe it wrote — the ask has been honoured by that save, and a retry
+  // there would be a duplicate dish, not a recovery.
+  let pendingSaveRetry = $state(false);
+
+  $effect(() => {
+    // Reads both, so it re-runs when the in-flight save releases the flag.
+    if (isSavingRecipe || !pendingSaveRetry) return;
+    pendingSaveRetry = false;
+    void handleSaveAsRecipe();
+  });
+
   $effect(() => {
     const current = session;
     if (!current) return;
@@ -270,6 +295,13 @@
       if (isFirstSnapshot || !taken) return;
       if (current.recipeId !== null) {
         saveChoiceOpen = true;
+        return;
+      }
+      // Not `handleSaveAsRecipe()` straight off: its own guard would swallow the
+      // call outright if a save is already running (issue #1505), and the request
+      // is already cleared from the document by then.
+      if (isSavingRecipe) {
+        pendingSaveRetry = true;
         return;
       }
       await handleSaveAsRecipe();

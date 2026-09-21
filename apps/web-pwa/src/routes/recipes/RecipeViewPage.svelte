@@ -1067,6 +1067,24 @@
     recipeChats.find((s) => s.id === selectedSessionId) ?? recipeChats[0] ?? null,
   );
 
+  // Which chat an action is FOR. `null` — the menu items' case — means "whatever
+  // is on screen when you press it", which is what those items have always meant
+  // and must keep meaning. An id names one chat and is answered by that chat and
+  // no other, however the selector has moved since (issue #1505): the save-intent
+  // dialog is answered some time after it opens, and until this existed it
+  // proposed an amendment built from whichever transcript happened to be selected
+  // by then.
+  //
+  // An ID, resolved LIVE off the store, rather than the captured document — the
+  // same reasoning as `handleRefresh`'s second read of `activeSession` below: the
+  // transcript the librarian needs is the current one, and a snapshot taken when
+  // the request arrived would be missing every turn since. A chat deleted
+  // meanwhile resolves to `null` and the action stops, which is the right answer.
+  function sessionForAction(sessionId: string | null): ChatSessionDoc | null {
+    if (sessionId === null) return activeSession;
+    return recipeChats.find((s) => s.id === sessionId) ?? null;
+  }
+
   let amendBusy = $state(false);
 
   // Start a fresh line of enquiry about this dish. Seeds the title from the recipe
@@ -1341,8 +1359,9 @@
   let sidebarSummaryOpen = $state(false);
   let sidebarPending = $state<RecipeAmendment | null>(null);
 
-  async function handleSidebarReviewChanges(): Promise<void> {
-    if (!activeSession || !recipe || sidebarIsProposing) return;
+  async function handleSidebarReviewChanges(sessionId: string | null = null): Promise<void> {
+    const session = sessionForAction(sessionId);
+    if (!session || !recipe || sidebarIsProposing) return;
     sidebarIsProposing = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
     // The popover item that started this unmounted on click, so nothing on screen
@@ -1352,7 +1371,7 @@
     // for the librarian's round-trip. The chef's leg keeps that spinner and gains
     // nothing, so the two never show at once.
     const result = await withStartedToast('Reading the conversation to update the recipe…', () =>
-      proposeRecipeAmendment(recipe!, activeSession!.messages, existingTags),
+      proposeRecipeAmendment(recipe!, session.messages, existingTags),
     );
     sidebarIsProposing = false;
     if (result.kind !== 'ok') {
@@ -1443,14 +1462,15 @@
   // ingredients into it. No claim either: the conversation stays listed here.
   let sidebarIsSavingNew = $state(false);
 
-  async function handleSaveAsNewRecipe(): Promise<void> {
-    if (!activeSession || sidebarIsSavingNew) return;
+  async function handleSaveAsNewRecipe(sessionId: string | null = null): Promise<void> {
+    const session = sessionForAction(sessionId);
+    if (!session || sidebarIsSavingNew) return;
     sidebarIsSavingNew = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
     // Same vanishing trigger as "Update recipe" above (issue #1439).
     const result = await withStartedToast('Writing the new recipe…', () =>
       authorRecipeFromChat({
-        messages: activeSession!.messages,
+        messages: session.messages,
         existingTags,
         basedOnRecipeId: null,
       }),
@@ -1490,6 +1510,12 @@
   // take it. It is left on that document rather than cleared.
   let saveChoiceOpen = $state(false);
 
+  // WHICH chat the open question is about (issue #1505). Captured when the
+  // request is taken and read when the answer comes back, so switching the chat
+  // selector while the dialog is up cannot move the answer onto a different
+  // conversation. `null` only when nothing is being asked.
+  let saveChoiceSessionId = $state<string | null>(null);
+
   // A request already sitting on a chat the FIRST time this page shows it as
   // `activeSession` is one nobody was here to take (issue #1490 review, Finding
   // 1) — landing on this recipe, or switching to a different one of its chats,
@@ -1511,12 +1537,26 @@
     seenActiveSaveIntentSessions.add(current.id);
     if (current.pendingSaveIntent === null) return;
     if (!$chatSaveGate.enabled) return;
+    // IS THE CONVERSATION ON SCREEN? (issue #1505.) "Save this?" over a recipe
+    // with no transcript anywhere on it is a question with nothing to answer it
+    // by. The docked column has to be both possible and wanted (`chatPaneShown`)
+    // or the phone drawer has to be up; the chat LIST at the foot of a recipe is
+    // not the conversation and does not count.
+    //
+    // Deliberately BEFORE `consumeSaveIntent`, so an unseen request is left armed
+    // on the document rather than taken and dropped — the contract the comment
+    // above states, and the full `/chat/:id` page takes it instead. This effect
+    // reads both flags reactively, so opening the pane or raising the drawer with
+    // the request still armed re-runs it and asks then; `isFirstObservation` is
+    // already recorded above and is not re-armed by the wait.
+    if (!chatPaneShown && !drawerOpen) return;
     void (async () => {
       // Taken as the QUESTION is asked, not as it is answered — see
       // `consumeSaveIntent`. A question you dismissed has been answered, and a
       // request left on the document would re-ask on every reload.
       const taken = await consumeSaveIntent(current);
       if (isFirstObservation || !taken) return;
+      saveChoiceSessionId = current.id;
       saveChoiceOpen = true;
     })();
   });
@@ -3185,10 +3225,13 @@
 <!-- "You asked me to save this — which did you mean?" (issue #1480). One for the
      page, covering the docked column and the drawer alike; "Update recipe" opens
      the gate above. -->
+<!-- Answered against the chat the request was RECORDED on, not whatever the
+     selector happens to be showing when you answer (issue #1505). The menu items
+     above pass nothing and keep meaning "the chat on screen". -->
 <SaveIntentChoice
   bind:open={saveChoiceOpen}
-  onUpdate={() => void handleSidebarReviewChanges()}
-  onSaveNew={() => void handleSaveAsNewRecipe()}
+  onUpdate={() => void handleSidebarReviewChanges(saveChoiceSessionId)}
+  onSaveNew={() => void handleSaveAsNewRecipe(saveChoiceSessionId)}
 />
 
 <!-- Regenerate image dialog: the editable scene brief (issue #148) -->

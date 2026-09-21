@@ -204,9 +204,23 @@ export const violationCeilings = {
   // own file rather than rows in `KitchenToolsPage.test.ts` because the answer is
   // set per test on a hoisted sink the module mock reads, and a file-wide default
   // of "no proposal" is what every assertion in that file was written against.
+  //
+  // UT-B1 48 → 49 (issue #1505). ONE new file,
+  // `RecipeViewPage.saveIntent.test.ts`, and the sanctioned case again: it mounts
+  // the whole recipe route, so its preamble is the fifteen-seam one every
+  // `RecipeViewPage.*` suite carries and not one of those seams is avoidable —
+  // the page does not render without them. UT-C2 and UT-C3 do NOT move: this
+  // suite builds its recipe with `@salt/domain`'s `emptyRecipe` and leaves the
+  // `pointerEvents` reset to `tests/setup.ts`.
+  //
+  // It is its own file rather than more cases in
+  // `RecipeViewPage.saveNewRecipe.test.ts` for a mechanical reason, not a
+  // stylistic one: the visibility gate under test reads `window.matchMedia`, and
+  // the two hidden cases need it stubbed the OPPOSITE way round from the suite
+  // default that every assertion in that file was written against.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 48,
+    'UT-B1': 49,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,
