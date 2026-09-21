@@ -108,7 +108,7 @@ is the one thing the band is for. This is an invariant, so per CLAUDE.md rule 12
 it is mechanical rather than remembered — `node scripts/board.mjs check` goes red
 when a Recommended item's blocker is absent from Recommended or ordered below it.
 
-`check` covers five more things — plus the `Epic` rule below:
+`check` covers six more things — plus the `Epic` rule below:
 
 - **An open issue on the board has a `Queue`.** GitHub's own "add item to
   project" workflow puts every new issue on the board with every field empty,
@@ -137,12 +137,43 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   them. `Status` held two `Todo` options until 2026-08-31, and nothing noticed.
   The comparison is case-insensitive, because name resolution is.
 - **No view grouped by `Queue` carries a sort** — the other half of having no rank field.
+- **Nothing is closed while work under it is still open.** A closed issue with an
+  open sub-issue at **any depth** is a failure, and the message names the open
+  ones. This is not tidiness: it is the invariant the **Hierarchies** view rests
+  on. That view filters on `sub-issues-progress`, which counts **direct children
+  only**, so a parent closed above an open _grandchild_ reads 100% and its whole
+  family drops out of the only view claiming to show every running thread — with
+  the work still open. On 2026-09-21 two live families of nine were invisible
+  that way (#1372, #1458), found by reading a progress column rather than by
+  anything mechanical. No view definition can express depth, so this check is the
+  only place the claim can be pinned. The pure half is `closedAboveOpenWorkMessage`
+  in [`scripts/lib/boardHierarchy.mjs`](../scripts/lib/boardHierarchy.mjs),
+  unit-tested offline; only the batched GraphQL walk lives in `check`.
+
+  **Its boundary, stated rather than implied.** The walk starts from the board's
+  closed items, so a closed issue that is not on the board is invisible to it —
+  the same blind spot the view has, which is why it is acceptable. A child the
+  query could not resolve, and a parent's children past the hundredth, are
+  likewise missed: the rule under-reports rather than inventing failures, so a
+  green `check` is evidence about what was fetched and never proof about what
+  exists.
+
 - **A closed issue is at a shipping status.** Closed is not by itself stale: an
   issue closes the moment its PR merges and must _stay_ on the board at `Merged`,
   because that is the set `board.mjs release` walks. What is wrong is a closed
   issue that never reached `Merged` — either it was closed without shipping and
   belongs off the board, or a PR closed it without the `Closes #N` that moves it,
   and the automation is silently missing work.
+
+  **Closing and shipping stopped being the same claim** (2026-09-21), and this
+  bullet is the half that did not change. `Status` is what says a thing shipped;
+  closed now says a thing and everything under it is _finished_. So `Merged` on
+  an **open** issue is legitimate and no longer a contradiction — a shipped issue
+  that later grows an open follow-up is reopened by the rule above, keeps
+  `Merged`, still reads as shipped everywhere on the board, and is still promoted
+  to `Released` by `board.mjs release`, which keys on `Status` plus the closing
+  PR's merge commit and never reads issue state. What this rule still catches is
+  unchanged: a **closed** issue that never reached a shipping status.
 
   **A campaign ledger is in this rule** (2026-09-12). It used to be exempt, and the
   cost was 19 closed ledgers at no `Status` at once — one per campaign ever run,
@@ -720,15 +751,35 @@ item.
 
 ## The views
 
-| View         | Layout | Filter                                               | Group by | Sort                       |
-| ------------ | ------ | ---------------------------------------------------- | -------- | -------------------------- |
-| The queue    | table  | `is:open -queue:Epic -queue:Deferred`                | Queue    | —                          |
-| Deferred     | table  | `queue:Deferred`                                     | Class    | —                          |
-| Product      | table  | `is:open class:"New feature","Feature update"`       | Class    | —                          |
-| Workflow     | board  | `-queue:Deferred -queue:epic`                        | Status   | `Closed DESC, Created ASC` |
-| Ready to Run | table  | `is:open -queue:Deferred label:specced no:blocking`  | Queue    | —                          |
-| Epic Status  | table  | `queue:Epic is:open`                                 | —        | —                          |
-| Needs Spec   | table  | `is:open -queue:Deferred -queue:epic -label:specced` | Queue    | —                          |
+| View         | Layout | Filter                                                        | Group by | Sort                       |
+| ------------ | ------ | ------------------------------------------------------------- | -------- | -------------------------- |
+| The queue    | table  | `is:open -queue:Epic -queue:Deferred`                         | Queue    | —                          |
+| Deferred     | table  | `queue:Deferred`                                              | Class    | —                          |
+| Product      | table  | `is:open class:"New feature","Feature update"`                | Class    | —                          |
+| Workflow     | board  | `-queue:Deferred -queue:epic`                                 | Status   | `Closed DESC, Created ASC` |
+| Ready to Run | table  | `is:open -queue:Deferred label:specced no:blocking`           | Queue    | —                          |
+| Epic Status  | table  | `queue:Epic is:open`                                          | —        | —                          |
+| Needs Spec   | table  | `is:open -queue:Deferred -queue:epic -label:specced`          | Queue    | —                          |
+| Hierarchies  | table  | `no:parent-issue sub-issues-progress:<100 sub-issues.is:open` | —        | —                          |
+
+**`Hierarchies` is the one view that depends on an invariant rather than a
+field**, and it is worth knowing why each half of that filter is there before
+editing it. It answers "what is still running, and what does it belong to": every
+family once, from its root, with the unfinished work nested under it — **Show
+hierarchy** on, which is a per-view UI toggle the API cannot set.
+
+- `no:parent-issue` picks the roots, so a family appears once rather than once
+  per member.
+- `sub-issues-progress:<100` drops the families that are finished. It counts
+  **direct children only**, which is exactly why _nothing is closed while work
+  under it is still open_ (above) has to be mechanical: break that invariant and
+  this clause hides a live family instead of a finished one.
+- `sub-issues.is:open` filters the **nested** rows. A bare `is:open` does not —
+  it applies to top-level rows alone, where it would drop the closed roots the
+  view exists to keep. The `sub-issues.` prefix is undocumented in GitHub's
+  hierarchy-view changelog and was found by hand; assume other
+  `sub-issues.<qualifier>` forms exist before concluding something cannot be
+  filtered.
 
 **Grouping cannot be _set_ through the API, but it can be _read_.**
 `ProjectV2ViewConfigurationInput` exposes only `visibleFieldIds`, so a rebuilt

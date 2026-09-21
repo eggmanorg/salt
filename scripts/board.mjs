@@ -67,6 +67,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
+import { closedAboveOpenWorkMessage } from './lib/boardHierarchy.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
 import { NUDGE_MARKER, tickTask, verdict } from './lib/boardRollup.mjs';
 import {
@@ -625,6 +626,58 @@ function fetchParents(numbers) {
 }
 
 /**
+ * `issue number → { state, children }` for every issue at or beneath `roots`,
+ * walked one LEVEL at a time so each level costs a handful of batched queries
+ * rather than one query per node.
+ *
+ * GraphQL only, for the same reason `fetchParents` is (:29): `subIssues` has no
+ * REST equivalent that answers correctly in this repo. The aliased batches of
+ * 50 are that function's shape, reused deliberately.
+ *
+ * TWO CAPS, both of which mean a missed finding rather than a false one.
+ * `subIssues(first:100)` takes a parent's first hundred children and no more —
+ * the largest family here is #778's 22 — and an issue the query could not
+ * resolve is left out of the map entirely, which `openDescendants` then walks
+ * as a leaf. So the tree this returns is a floor on what exists, never a
+ * complete picture of it.
+ */
+function fetchSubIssueTree(roots) {
+  const tree = new Map();
+  const fetched = new Set();
+  let level = [...new Set(roots)];
+  while (level.length) {
+    const pending = level.filter((n) => !fetched.has(n));
+    const next = new Set();
+    for (let i = 0; i < pending.length; i += 50) {
+      const batch = pending.slice(i, i + 50);
+      for (const n of batch) fetched.add(n);
+      const data = gql(
+        `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${batch
+          .map(
+            (n) =>
+              `i${n}: issue(number:${n}){ state subIssues(first:100){ nodes{ number state } } }`,
+          )
+          .join(' ')} } }`,
+      ).repository;
+      for (const n of batch) {
+        const issue = data[`i${n}`];
+        if (!issue) continue;
+        const kids = issue.subIssues?.nodes ?? [];
+        tree.set(n, { state: issue.state, children: kids.map((k) => k.number) });
+        for (const k of kids) {
+          // A placeholder, so a child's own state is known even if the walk
+          // stops here; the level that fetches it overwrites this entry.
+          if (!tree.has(k.number)) tree.set(k.number, { state: k.state, children: [] });
+          if (!fetched.has(k.number)) next.add(k.number);
+        }
+      }
+    }
+    level = [...next];
+  }
+  return tree;
+}
+
+/**
  * The promotion rule, made mechanical: a Recommended issue blocked by another
  * issue in this repo is only actionable if that blocker is also Recommended and
  * ordered above it. `Blocked by` leads with the reference precisely so this can
@@ -662,6 +715,29 @@ function cmdCheck(project) {
     const verdict = closedItemVerdict(item);
     if (verdict.level === 'failure') failures.push(verdict.message);
     else if (verdict.level === 'note') console.log(`  note: ${verdict.message}`);
+  }
+
+  // NOTHING CLOSES WHILE WORK UNDER IT IS STILL OPEN. The other closed-issue
+  // rule, and independent of the one above: that asks whether a closed issue
+  // reached a shipping Status, this asks whether it should be closed at all.
+  //
+  // It sits here rather than with the view rules because the thing it protects
+  // is a view. `Hierarchies` filters on `sub-issues-progress`, which counts
+  // DIRECT children, so a closed parent over an open GRANDCHILD reads 100% and
+  // takes its whole family out of the only view that claims to show every
+  // running thread. No view definition can express depth, so this is the only
+  // place the claim can be pinned — see `boardHierarchy.mjs` for what the walk
+  // can and cannot see, and `docs/issue-board.md` for what `closed` now means.
+  //
+  // The tree comes from a separate query for the same reason the ledger parents
+  // below do: `loadItems` reads project fields, and `subIssues` is not one.
+  const closedItems = items.filter((it) => it.state === 'CLOSED');
+  if (closedItems.length > 0) {
+    const tree = fetchSubIssueTree(closedItems.map((it) => it.number));
+    for (const item of closedItems) {
+      const message = closedAboveOpenWorkMessage(item, tree);
+      if (message) failures.push(message);
+    }
   }
 
   // A LEDGER IS IN PROGRESS FROM THE MOMENT IT OPENS. `/salt-campaign` opens one
