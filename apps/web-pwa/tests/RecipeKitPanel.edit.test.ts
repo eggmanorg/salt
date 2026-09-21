@@ -388,6 +388,61 @@ describe('RecipeKitPanel — the list becomes editable', () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
+  it('leaves every OTHER row exactly as it was when one is changed', async () => {
+    const user = userEvent.setup();
+    show(
+      recipeWith([
+        entry({ label: 'frying pan', stepIds: ['step-1'] }),
+        entry({ label: 'pan', stepIds: ['step-2'] }),
+      ]),
+      true,
+    );
+
+    await user.clear(fields()[1]!);
+    await user.type(fields()[1]!, 'box grater');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(onEdit).toHaveBeenCalled());
+    expect(lastKit()).toEqual([
+      { label: 'frying pan', stepIds: ['step-1'], equipment: null },
+      { label: 'box grater', stepIds: ['step-2'], equipment: null },
+    ]);
+  });
+
+  it('says so when a blank row has nothing to offer and nothing typed', async () => {
+    // Nothing owned, nothing drawn, nothing typed — the one state with neither an
+    // option to pick nor words to keep, so the popup has to say something.
+    show(recipeWith([entry({ label: '' })]), true);
+
+    await userEvent.setup().click(fields()[0]!);
+
+    expect(await screen.findByText('Nothing matches.')).toBeTruthy();
+  });
+
+  it('keeps the picture in the gutter while editing, and draws none on a miss', () => {
+    // The tile is what tells you at a glance which row you are about to change, so
+    // it stays; #882's no-tile-on-a-miss rule stays with it, in both modes.
+    show(recipeWith([entry({ label: 'frying pan' }), entry({ label: 'box grater' })]), true, {
+      drawn: ['frying pan'],
+    });
+
+    const rows = screen.getAllByTestId('recipe-kit-edit-row');
+    expect(within(rows[0]!).getByTestId('canon-icon-img')).toBeTruthy();
+    expect(within(rows[1]!).queryByTestId('canon-icon')).toBeNull();
+  });
+
+  it('offers an item with no accessories array at all, rather than throwing', () => {
+    // `EquipmentItem` types `accessories` as present and the schema defaults it,
+    // so a PARSED manifest always carries the array — but a projection or a page
+    // fixture need not, and a render is the wrong place to find that out.
+    // `resolveKitEntryEquipment` takes the same stance for the same reason.
+    const partial = { id: 'eq-bare', name: 'Sage Pizzaiolo' } as unknown as EquipmentItem;
+    show(recipeWith([entry({ label: 'oven' })]), true, { items: [partial] });
+
+    expect(fields()).toHaveLength(1);
+    expect((fields()[0] as HTMLInputElement).value).toBe('oven');
+  });
+
   it('reads a dangling link as the row s own words rather than a phantom choice', () => {
     // The manifest no longer holds `eq-gone`. `resolveKitEntryEquipment` reads
     // that as a miss everywhere else, and so does the box.

@@ -131,33 +131,62 @@
   // rather than `join(', ')`: three accessories read "a, b and c", and the Oxford-less
   // en-GB conjunction is exactly what a cook would say out loud, which is the register
   // the labels themselves are written in.
+  //
+  // The literal "with the " is composed HERE rather than sitting beside the
+  // interpolation in the markup: a text node reading `with the {expr}` compiles to
+  // `expr ?? ''`, and on an expression that is always a string that fallback is a
+  // branch no test can ever reach (the same reasoning `EditableZone` and
+  // `ReorderControl` give for composing their own strings in script).
   const accessoryList = new Intl.ListFormat('en-GB', { style: 'long', type: 'conjunction' });
-  function accessoryPhrase(accessories: readonly { label: string }[]): string {
-    return accessoryList.format(accessories.map((a) => a.label));
+  function accessoryTail(accessories: readonly { label: string }[]): string {
+    return `with the ${accessoryList.format(accessories.map((a) => a.label))}`;
   }
 
-  /** What choosing one option writes onto the row. `stepIds` is never in here. */
-  type Choice = { label: string; equipment: RecipeKitEntryDoc['equipment'] };
+  /**
+   * One offered thing: what the DROPDOWN reads, and what choosing it WRITES.
+   *
+   * The two differ for an accessory — the dropdown says "Steam Basket — Cosori
+   * 5L Rice Cooker" so two identically named entries under different machines
+   * are tellable apart, while the row should say what the thing is called, not
+   * where it lives. Both are settled here, where the manifest record is already
+   * in hand, rather than re-derived from the key afterwards: re-deriving meant
+   * parsing the key back into a lookup that could not fail, and a `?? null`
+   * nothing can reach is exactly the branch that has no test to write.
+   */
+  type Choice = {
+    value: string;
+    /** The dropdown's words. */
+    label: string;
+    /** The row's words. `stepIds` is never in here. */
+    write: string;
+    equipment: RecipeKitEntryDoc['equipment'];
+  };
 
-  // The offered things, built the same way `KitPicturePicker` builds its own list
-  // — each item, then each of its accessories / family members, labelled
-  // "<entry> — <item>" so two "Small" entries under different machines are
-  // tellable apart. That picker answers a DIFFERENT question (borrow a picture,
-  // hence its `isDrawn` filter and its linked/unlinked split), so the shape is
-  // reused and the component is not.
+  // Built the same way `KitPicturePicker` builds its own list — each item, then
+  // each of its accessories / family members. That picker answers a DIFFERENT
+  // question (borrow a picture, hence its `isDrawn` filter and its
+  // linked/unlinked split), so the shape is reused and the component is not.
   const choices = $derived.by(() => {
-    const out = new Map<string, Choice & { value: string; label: string }>();
+    const out = new Map<string, Choice>();
     for (const item of equipmentItems) {
-      out.set(`equipment:${item.id}`, {
-        value: `equipment:${item.id}`,
+      const value = `equipment:${item.id}`;
+      out.set(value, {
+        value,
         label: item.name,
+        write: item.name,
         equipment: { itemId: item.id, accessoryId: null },
       });
+      // `?? []` stays, exactly as `resolveKitEntryEquipment` carries it and for
+      // the same reason: the schema defaults `accessories`, so a PARSED item
+      // always has the array — but a partial item (a page fixture, a projection)
+      // must degrade to "offers nothing of its own" rather than throw inside a
+      // render. Pinned by a test.
       for (const accessory of item.accessories ?? []) {
-        const value = `equipment:${item.id}:${accessory.id}`;
-        out.set(value, {
-          value,
+        const key = `${value}:${accessory.id}`;
+        out.set(key, {
+          value: key,
           label: `${accessory.name} — ${item.name}`,
+          write: accessory.name,
           equipment: { itemId: item.id, accessoryId: accessory.id },
         });
       }
@@ -165,28 +194,16 @@
     for (const t of kitchenTools) {
       // WORDS, NOT AN ID — see the header. The option's `value` carries the id
       // only so the combobox can tell two identically-worded tools apart; what is
-      // written is `label`, with no link at all.
+      // written is `write`, with no link at all.
       out.set(`kitchenTool:${t.id}`, {
         value: `kitchenTool:${t.id}`,
         label: t.label,
+        write: t.label,
         equipment: null,
       });
     }
     return out;
   });
-
-  // An accessory's option label reads "<entry> — <item>", which is the right thing
-  // to CHOOSE from and the wrong thing to STORE: the row should say what the thing
-  // is called, not where it lives. So the written label comes from the manifest
-  // name alone.
-  function writtenLabel(value: string): string | null {
-    const [family, itemId, accessoryId] = value.split(':');
-    if (family !== 'equipment') return null;
-    const item = equipmentItems.find((i) => i.id === itemId);
-    if (!item) return null;
-    if (accessoryId === undefined) return item.name;
-    return (item.accessories ?? []).find((a) => a.id === accessoryId)?.name ?? null;
-  }
 
   /**
    * The options this row offers. The base list, plus the row's own current words
@@ -222,14 +239,14 @@
     onEdit({ ...recipe, kit: next });
   }
 
-  function patch(index: number, change: Choice): void {
+  function patch(index: number, change: Pick<RecipeKitEntryDoc, 'label' | 'equipment'>): void {
     commit(kit.map((e, i) => (i === index ? { ...e, ...change } : e)));
   }
 
   function chooseRow(index: number, value: string): void {
     const choice = choices.get(value);
     if (choice) {
-      patch(index, { label: writtenLabel(value) ?? choice.label, equipment: choice.equipment });
+      patch(index, { label: choice.write, equipment: choice.equipment });
       return;
     }
     // Free text, and the row's own current words arrive here too (`rowItems` adds
@@ -424,8 +441,7 @@
               <span class="min-w-0 flex-1"
                 >{sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
                     class="block text-xs text-muted-foreground"
-                    data-testid="recipe-kit-accessories"
-                    >with the {accessoryPhrase(group.accessories)}</span
+                    data-testid="recipe-kit-accessories">{accessoryTail(group.accessories)}</span
                   >{/if}</span
               >
             {:else}
@@ -436,8 +452,7 @@
                 data-testid="recipe-kit-picture-btn"
                 >{sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
                     class="block text-xs text-muted-foreground no-underline"
-                    data-testid="recipe-kit-accessories"
-                    >with the {accessoryPhrase(group.accessories)}</span
+                    data-testid="recipe-kit-accessories">{accessoryTail(group.accessories)}</span
                   >{/if}</button
               >
             {/if}
