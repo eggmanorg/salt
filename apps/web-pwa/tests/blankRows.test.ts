@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { emptyRecipe, newIngredient, newStep } from '@salt/domain';
 import type { Ingredient, IngredientGroup, Recipe, Step } from '@salt/domain';
+import type { RecipeKitEntryDoc } from '@salt/domain/schemas';
 
 import { dropBlankRows } from '../src/routes/recipes/blankRows.js';
 
@@ -19,14 +20,23 @@ import { dropBlankRows } from '../src/routes/recipes/blankRows.js';
 //   write at all — and its boundary: a document that already carried a blank row
 //   before anyone pressed Edit IS rewritten.
 //
-//   THE TWO HALVES ARE INDEPENDENT. A recipe can need the ingredient prune and not
-//   the step prune, and vice versa; each was separately capable of being missed by
-//   a change comparison that only counted one of them.
+//   THE THREE RULES ARE INDEPENDENT. A recipe can need the ingredient prune and
+//   not the step prune, or the kit prune and neither of the others; each was
+//   separately capable of being missed by a change comparison that only counted
+//   some of them.
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
-function recipeWith(over: { steps?: Step[]; ingredients?: IngredientGroup[] }): Recipe {
+function recipeWith(over: {
+  steps?: Step[];
+  ingredients?: IngredientGroup[];
+  kit?: RecipeKitEntryDoc[];
+}): Recipe {
   return { ...emptyRecipe('r1', NOW), title: 'Sourdough', ...over };
+}
+
+function kitEntry(label: string, over: Partial<RecipeKitEntryDoc> = {}): RecipeKitEntryDoc {
+  return { label, stepIds: [], equipment: null, ...over };
 }
 
 function group(id: string, name: string | null, items: Ingredient[]): IngredientGroup {
@@ -196,5 +206,63 @@ describe('dropBlankRows — when it writes and when it does not', () => {
     });
 
     expect(dropBlankRows(recipe).ingredients[0]).toBe(keeper);
+  });
+});
+
+describe('dropBlankRows — kit entries (issue #1496)', () => {
+  it('drops an entry whose label is empty once trimmed', () => {
+    const recipe = recipeWith({ kit: [kitEntry('frying pan'), kitEntry('   ')] });
+
+    expect(dropBlankRows(recipe).kit.map((e) => e.label)).toEqual(['frying pan']);
+  });
+
+  it('keeps every named entry, link or no link, steps or no steps', () => {
+    const kit = [
+      kitEntry('frying pan'),
+      kitEntry('Steam Basket', { equipment: { itemId: 'eq-1', accessoryId: 'acc-1' } }),
+      kitEntry('oven glove', { stepIds: ['s1'] }),
+    ];
+
+    expect(dropBlankRows(recipeWith({ kit })).kit).toEqual(kit);
+  });
+
+  it('drops a labelless entry even when it carries a link and steps', () => {
+    // There is no way to get here through the panel — its `+ Add equipment` writes
+    // `{ label: '', stepIds: [], equipment: null }` and the only way to set either
+    // of the other two is to choose words. So this pins the RULE, not a reachable
+    // state: the label is the whole test, exactly as `rawText` is for a row.
+    const recipe = recipeWith({
+      kit: [kitEntry('', { stepIds: ['s1'], equipment: { itemId: 'eq-1', accessoryId: null } })],
+    });
+
+    expect(dropBlankRows(recipe).kit).toEqual([]);
+  });
+
+  it('returns the very same recipe when only the kit is clean', () => {
+    const recipe = recipeWith({
+      steps: [newStep('s1', 'Mix')],
+      ingredients: [group('g1', null, [newIngredient('i1', '500g flour')])],
+      kit: [kitEntry('frying pan')],
+    });
+
+    expect(dropBlankRows(recipe)).toBe(recipe);
+  });
+
+  it('returns a new recipe when ONLY the kit needs pruning', () => {
+    // The independence clause: a change comparison that counted steps and
+    // ingredients alone would hand this recipe straight back, and the nameless row
+    // would live on the document forever.
+    const recipe = recipeWith({
+      steps: [newStep('s1', 'Mix')],
+      ingredients: [group('g1', null, [newIngredient('i1', '500g flour')])],
+      kit: [kitEntry('frying pan'), kitEntry('')],
+    });
+
+    const pruned = dropBlankRows(recipe);
+
+    expect(pruned).not.toBe(recipe);
+    expect(pruned.kit).toHaveLength(1);
+    expect(pruned.steps).toEqual(recipe.steps);
+    expect(pruned.ingredients).toEqual(recipe.ingredients);
   });
 });

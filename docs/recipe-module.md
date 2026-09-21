@@ -57,7 +57,8 @@ Recipe {
   needs_approval?: boolean         // .optional(); AI-authored, not yet read by a human (#616).
                                    // Used-but-flagged: live and never filtered out. Absent = reviewed
   kit: RecipeKitEntry[]            // .default([]); the kit this dish needs a cook to get out (#882) —
-                                   // see "Schema extensions (kit)". Never authored by hand
+                                   // see "Schema extensions (kit)". Inferred server-side, and
+                                   // editable in place on the recipe page since #1496
   kitInferredAt?: number           // .optional(); stamp — present once inference has answered
   kitRequestedAt?: number          // .optional(); redo nonce, bumped by redoRecipeKit
   timesRequestedAt?: number        // .optional(); backfill nonce (#952 phase 2) —
@@ -823,7 +824,27 @@ a required field would empty the list of recipes written before this shipped.
   rematch, an edit), so an emptiness guard would buy an AI call on every
   unrelated save, forever. Same shape as the hero image's control fields
   below, and the same consequence: an edit does NOT re-trigger inference —
-  `redoRecipeKit` is the only way to ask again.
+  `redoRecipeKit` is the only way to ask AGAIN. That is a statement about the
+  SERVER, and since #1496 it is no longer a statement about the list: see the
+  bullet below.
+- **THE LIST IS EDITABLE IN PLACE (issue #1496), and that changes nothing on the
+  server.** `RecipeKitPanel.svelte` is the Equipment tab in both modes; under
+  `editing` it draws the FLAT stored `kit[]` — one row per entry, because
+  `groupKitByEquipment` can fold several entries into one rendered row and Remove
+  would then have no single entry to delete — with a combobox per row over the
+  household's equipment, its accessories and family members, and the drawn tool
+  vocabulary, plus free text. Choosing one of your own things writes
+  `equipment: { itemId, accessoryId }` and that entry's MANIFEST NAME as the
+  label; choosing a drawn tool, or typing, writes the words with `equipment:
+null` and **no `kitchenTools` id**, exactly as the bullet above requires. The
+  tab is shown while editing even on an empty kit, so a recipe whose inference
+  timed out (#1418) has a door. Three things it deliberately does NOT do:
+  `stepIds` is carried through untouched and is not editable (a hand-added row
+  carries `[]` and shows beside no step — Redo kit is still how per-step links
+  come back); no stamp is written, so `kitNeedsInference` stays edge-triggered
+  and a hand-written kit is not re-inferred by the act of saving it; and nothing
+  shields a hand-written kit from **Redo kit** or from a chef amendment, both of
+  which discard it and start over, by decision.
 - **A kit label resolves to a picture through TWO vocabularies since #954**, the
   household's `equipmentManifest` first and `kitchenTools` second, composed once
   in `apps/web-pwa/src/lib/kitIcons.ts` and used by every kit surface. The order
