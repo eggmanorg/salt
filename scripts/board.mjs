@@ -67,7 +67,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
-import { closedAboveOpenWorkMessage } from './lib/boardHierarchy.mjs';
+import { closedAboveOpenWorkMessage, openDescendants } from './lib/boardHierarchy.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
 import { NUDGE_MARKER, tickTask, verdict } from './lib/boardRollup.mjs';
 import {
@@ -556,7 +556,7 @@ function cmdParent(rest0) {
   // the parent being detached, so reading only the number would mean a second
   // round trip to displace one.
   const r = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){
-    child: issue(number:${child}){ id title parent{ id number title } }
+    child: issue(number:${child}){ id title state parent{ id number title } }
     parent: issue(number:${parent}){ id title } } }`).repository;
   if (!r?.child) die(`issue #${child} not found in ${OWNER}/${REPO}`);
   if (!r?.parent) die(`issue #${parent} not found in ${OWNER}/${REPO}`);
@@ -600,6 +600,60 @@ function cmdParent(rest0) {
     `mutation{ addSubIssue(input:{issueId:"${r.parent.id}", subIssueId:"${r.child.id}"}){ issue{ number } } }`,
   );
   console.log(`#${child} → sub-issue of #${parent}  ${r.parent.title}`);
+
+  // NOTHING CLOSES WHILE WORK UNDER IT IS STILL OPEN, and attaching is the one
+  // moment that breaks it with nobody doing anything wrong: a PR merges and
+  // closes an issue, then a defect found afterwards is attached underneath. That
+  // is how #1319 became a violation — it had shipped, and #1496 arrived later.
+  //
+  // FIXED HERE RATHER THAN WATCHED FOR (Daniel, 2026-09-21). The alternatives
+  // were `check` alone — which leaves the family invisible in `Hierarchies` for
+  // however long it takes somebody to run it, the exact failure the invariant
+  // exists to end — and an event-driven reopen in `board-status.yml`, a second
+  // automated writer of issue state. This is the writer that is already here:
+  // the command making the link repairs what the link breaks, in one breath and
+  // out loud.
+  //
+  // THE WHOLE CLOSED CHAIN, not the immediate parent. Every closed ancestor is
+  // separately hiding the family and `check` fails on each one, so reopening
+  // only the nearest would trade one failure for another.
+  //
+  // It never closes anything. Detaching a child can leave its old parent with
+  // nothing open under it, and whether that parent is now finished is a
+  // judgement no command here is entitled to make.
+  const openAttached =
+    r.child.state === 'OPEN' ? [child] : openDescendants(child, fetchSubIssueTree([child]));
+  if (openAttached.length) {
+    for (const a of fetchAncestors(parent)) {
+      if (a.state !== 'CLOSED') continue;
+      gql(`mutation{ reopenIssue(input:{issueId:"${a.id}"}){ issue{ number } } }`);
+      console.log(
+        `#${a.number} reopened — #${openAttached[0]} is open beneath it  ${a.title}\n` +
+          `  (closed means "this and everything under it is finished"; its Status is untouched)`,
+      );
+    }
+  }
+}
+
+/**
+ * An issue and every ancestor above it, nearest first, with the node ids a
+ * reopen needs.
+ *
+ * Nested rather than looped because the whole chain is one round trip that way,
+ * and GitHub caps a sub-issue hierarchy at eight levels — so the nesting depth
+ * here is the product's own limit, not a guess. A chain deeper than that cannot
+ * exist; if one ever did, this would return the nearest eight and the rule's
+ * under-report direction would hold.
+ */
+function fetchAncestors(number) {
+  const nest = (depth) => (depth === 0 ? '' : ` parent{ id number title state${nest(depth - 1)} }`);
+  const root = gql(
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${number}){ id number title state${nest(8)} } } }`,
+  ).repository?.issue;
+  const out = [];
+  for (let n = root; n; n = n.parent)
+    out.push({ id: n.id, number: n.number, title: n.title, state: n.state });
+  return out;
 }
 
 /**
@@ -938,8 +992,7 @@ function cmdRollup(project, [num]) {
   const writeToken = process.env.ISSUE_WRITE_TOKEN || undefined;
 
   const c = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${child}){
-    number state parent{ id number title state body
-      subIssues(first:100){ nodes{ number state } } } } } }`).repository?.issue;
+    number state parent{ id number title state body } } } }`).repository?.issue;
   if (!c) die(`issue #${child} not found in ${OWNER}/${REPO}`);
   if (c.state !== 'CLOSED') {
     console.log(`#${child} is not closed — nothing to roll up`);
@@ -970,10 +1023,15 @@ function cmdRollup(project, [num]) {
     console.log(`#${parent.number} — no single unticked line names #${child}`);
   }
 
+  // THE WHOLE SUBTREE, not the parent's own children. `rollup` closing a parent
+  // over an open grandchild is the automated way to produce exactly the state
+  // `check` now fails on, and this job runs on every `issues: closed` — so the
+  // walk that feeds the check feeds the closer too, rather than each keeping
+  // its own idea of what "nothing left open" means.
   const v = verdict({
     title: parent.title,
     body,
-    subIssues: parent.subIssues.nodes,
+    openBeneath: openDescendants(parent.number, fetchSubIssueTree([parent.number])),
   });
 
   if (v.action === 'wait') {

@@ -60,25 +60,55 @@ describe('tickTask', () => {
 });
 
 describe('verdict', () => {
-  const closed = [
-    { number: 1364, state: 'CLOSED' },
-    { number: 1365, state: 'CLOSED' },
-  ];
+  // Nothing open anywhere beneath the parent — what `openDescendants` returns
+  // for a finished subtree, whatever its shape.
+  const closed = [];
 
   it('waits while any sub-issue is still open', () => {
     const v = verdict({
       title: 'campaign follow-ups: x (#1328)',
       body: '- [x] a (#1364)',
-      subIssues: [{ number: 1365, state: 'OPEN' }, ...closed],
+      openBeneath: [1365],
     });
     expect(v).toEqual({ action: 'wait', open: [1365] });
+  });
+
+  // THE GRANDCHILD CASE. Before this, `verdict` filtered the parent's DIRECT
+  // children, so a parent whose own children had all closed over an open
+  // grandchild took the `close` arm — and `board-status.yml` fires this on
+  // every `issues: closed`, so the automation re-created the exact state
+  // `board.mjs check` now fails on. The caller hands down the whole subtree.
+  it('waits on an open grandchild, not just an open child', () => {
+    const v = verdict({
+      title: 'campaign follow-ups: x (#1328)',
+      body: '- [x] a (#1364)\n- [x] b (#1365)',
+      openBeneath: [1529],
+    });
+    expect(v).toEqual({ action: 'wait', open: [1529] });
+  });
+
+  it('reports what is open in ascending order, whatever order the walk found it', () => {
+    const v = verdict({ title: 'x', body: '- [x] a', openBeneath: [1529, 1488, 1493] });
+    expect(v).toEqual({ action: 'wait', open: [1488, 1493, 1529] });
+  });
+
+  // THE ONLY MECHANICAL PART OF THE DEPTH RULE. Depth is the caller's to supply
+  // and this function cannot verify it got a subtree rather than one level. What
+  // it can refuse is a caller that did not update: left optional, the old
+  // `subIssues:` call site would land `undefined`, read as nothing open, and
+  // take the CLOSE arm — silent wrong closures instead of a stack trace.
+  it('throws rather than reading a missing openBeneath as "nothing is open"', () => {
+    expect(() => verdict({ title: 'x', body: '- [x] a' })).toThrow(/openBeneath/);
+    expect(() =>
+      verdict({ title: 'x', body: '- [x] a', subIssues: [{ number: 1, state: 'OPEN' }] }),
+    ).toThrow(/not the parent’s direct sub-issues/);
   });
 
   it('closes when every sub-issue is closed and every box is ticked', () => {
     const v = verdict({
       title: 'campaign follow-ups: x (#1328)',
       body: '- [x] a (#1364)\n- [x] b (#1365)',
-      subIssues: closed,
+      openBeneath: closed,
     });
     expect(v).toEqual({ action: 'close', items: 2 });
   });
@@ -86,26 +116,26 @@ describe('verdict', () => {
   // The #1335 case: children all closed, body still claiming open work. Closing
   // here would assert something nobody has.
   it('nudges rather than closing while a line is unticked', () => {
-    const v = verdict({ title: 'campaign follow-ups: x', body: BODY_1335, subIssues: closed });
+    const v = verdict({ title: 'campaign follow-ups: x', body: BODY_1335, openBeneath: closed });
     expect(v.action).toBe('nudge');
     expect(v.why).toBe('2 items still unticked');
     expect(v.unticked).toHaveLength(2);
   });
 
   it('nudges a parent that states no checklist of its own', () => {
-    const v = verdict({ title: 'epic: bread', body: 'prose only', subIssues: closed });
+    const v = verdict({ title: 'epic: bread', body: 'prose only', openBeneath: closed });
     expect(v).toMatchObject({ action: 'nudge', why: 'it states no checklist of its own' });
   });
 
-  // A ledger closes at Finish by hand: a parked branch is unfinished business
-  // its children cannot show.
+  // A ledger closes by hand: a parked branch is unfinished business its
+  // children cannot show, and since #1534 Finish leaves it open anyway.
   it('never closes a campaign ledger', () => {
-    const v = verdict({ title: 'campaign: x (#1)', body: '- [x] all done', subIssues: closed });
-    expect(v).toMatchObject({ action: 'nudge', why: 'a campaign ledger closes by hand at Finish' });
+    const v = verdict({ title: 'campaign: x (#1)', body: '- [x] all done', openBeneath: closed });
+    expect(v).toMatchObject({ action: 'nudge', why: 'a campaign ledger closes by hand' });
   });
 
   it('says one item singular', () => {
-    const v = verdict({ title: 'campaign follow-ups: x', body: '- [ ] a', subIssues: closed });
+    const v = verdict({ title: 'campaign follow-ups: x', body: '- [ ] a', openBeneath: closed });
     expect(v.why).toBe('1 item still unticked');
   });
 });

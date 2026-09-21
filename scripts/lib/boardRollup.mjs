@@ -2,8 +2,9 @@
 // nothing owned.
 //
 // `/salt-campaign` files a `campaign follow-ups:` issue at Finish, attaches the
-// issues that action its lines as sub-issues, and explicitly leaves it open
-// ("the ledger closes, the follow-ups issue does not"). After that no command
+// issues that action its lines as sub-issues, and explicitly leaves it open —
+// as of #1534 the ledger above it stays open too, so this is now the only thing
+// that ends either of them. After that no command
 // touches it again: `/salt-run` closes the issue it ran and never looks upward,
 // and `board.mjs check` only reads Queue and Status. So a collector whose every
 // item has shipped stays open, unticked, indefinitely — #1335 sat that way for
@@ -82,26 +83,51 @@ export function tickTask(body, number) {
 /**
  * What should happen to the parent now one of its children has closed.
  *
- * `wait`  — a sub-issue is still open. The common case, and silent.
- * `close` — every sub-issue closed and every box ticked. The issue's own record
+ * `wait`  — work is still open beneath the parent. The common case, and silent.
+ * `close` — nothing open beneath it and every box ticked. The issue's own record
  *           says it is finished, so finishing it invents nothing.
- * `nudge` — every sub-issue closed but the body still claims open work, or
+ * `nudge` — nothing open beneath it but the body still claims open work, or
  *           states no checklist at all. Says so on the issue and stops. A
- *           campaign ledger always lands here: it closes by hand at Finish
- *           because a parked branch is unfinished business its children cannot
- *           show.
+ *           campaign ledger always lands here: it closes by hand, because a
+ *           parked branch is unfinished business its children cannot show —
+ *           and since #1534 it outlives its own campaign's Finish step, which
+ *           leaves it open while the follow-ups issue beneath it is open.
  *
- * `subIssues` is `[{ number, state }]`; `state` is `OPEN`/`CLOSED`.
+ * `openBeneath` is every issue still open below the parent AT ANY DEPTH —
+ * `openDescendants` in `./boardHierarchy.mjs` computes it from a fetched tree.
+ *
+ * DEPTH, AND THAT IS A CORRECTION. This took `subIssues` and filtered it for
+ * `state === 'OPEN'`, which reads DIRECT children only — so a parent whose own
+ * children had all closed while a GRANDCHILD was still open took the `close`
+ * arm, and `board-status.yml` fires this on every `issues: closed`. That is the
+ * automated half of the very state `board.mjs check` now fails on, and it would
+ * have quietly re-created it after every rollup. The parameter changed shape
+ * rather than gaining a second one deliberately: an optional depth argument a
+ * caller could omit would leave the old bug reachable in silence.
+ *
+ * AND IT IS REQUIRED, which is the only mechanical part of that. What guarantees
+ * depth is the CALLER handing down a whole subtree — this function cannot check
+ * that what it was given is deeper than one level, and a test here proving it
+ * honours its own input would be pinning nothing. What it can refuse is the
+ * omission: left optional, a caller still passing `subIssues` would land
+ * `openBeneath === undefined`, read as "nothing open", and take the CLOSE arm —
+ * turning a stale call site into silent wrong closures rather than a stack
+ * trace. So the one thing that can go red here does.
  */
-export function verdict({ title, body, subIssues }) {
-  const open = subIssues.filter((s) => s.state === 'OPEN');
-  if (open.length) return { action: 'wait', open: open.map((s) => s.number) };
+export function verdict({ title, body, openBeneath }) {
+  if (!Array.isArray(openBeneath))
+    throw new TypeError(
+      'verdict needs openBeneath: every issue open below the parent at any depth ' +
+        '(openDescendants in ./boardHierarchy.mjs) — not the parent’s direct sub-issues',
+    );
+  const open = [...openBeneath].sort((a, b) => a - b);
+  if (open.length) return { action: 'wait', open };
 
   const tasks = taskLines(body);
   const unticked = tasks.filter((t) => !t.ticked);
 
   if (isLedger(title))
-    return { action: 'nudge', why: 'a campaign ledger closes by hand at Finish', unticked };
+    return { action: 'nudge', why: 'a campaign ledger closes by hand', unticked };
   if (!tasks.length) return { action: 'nudge', why: 'it states no checklist of its own', unticked };
   if (unticked.length)
     return {

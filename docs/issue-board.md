@@ -121,8 +121,8 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
 - **A campaign ledger is attached to the work it ran.** Where every issue a
   ledger's title names sits under one parent, the ledger sits under that parent
   too; where they do not share one, it stays a root and `check` says nothing in
-  either direction. Open and closed alike, because a ledger closes when its
-  campaign finishes and closed is where nearly every orphan was. The rule's real
+  either direction. Open and closed alike, because a ledger does eventually
+  close and closed is where nearly every orphan was. The rule's real
   boundary is worth stating: the run-set is what the ledger's **title** names,
   never every issue the campaign touched, so an issue added mid-run without a
   title edit is invisible to it. The pure halves — parsing the run-set, and
@@ -179,9 +179,18 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   cost was 19 closed ledgers at no `Status` at once — one per campaign ever run,
   accumulating invisibly to the only check that could have said so and surfacing
   on the `Workflow` board as a column of cards nobody could account for. A ledger
-  is not work, but it does ship: it closes when its campaign finishes, and a
+  is not work, but it does ship: it closes when its campaign is finished, and a
   finished campaign means the work it ran merged. The exemption a ledger keeps is
   `Queue` and `Class`, nothing more.
+
+  **"When its campaign finishes" is no longer the same moment as Finish**
+  (2026-09-21, #1534). `/salt-campaign`'s Finish step files a
+  `campaign follow-ups:` issue under the ledger and deliberately leaves it open,
+  so closing the ledger there put a closed parent over open work — the state the
+  rule above now fails, and seven of the eight issues reopened by hand that day
+  were this exact step. Finish now leaves the ledger **open** whenever anything
+  under it is, which for a campaign with any findings at all is always;
+  `board.mjs rollup` closes it later, when the follow-ups issue does.
 
 ---
 
@@ -326,6 +335,23 @@ line before it posts anything. It exists because an agent asked for an epic had
 nothing correct to reach for and reached for `/salt-spec` instead (#1378), not
 because containers became cheaper.
 
+**It reopens a closed parent rather than leaving a violation behind** (#1534).
+Attaching open work under something already closed is the one way the
+nothing-closes-above-open-work rule breaks with nobody doing anything wrong: a PR
+merges and closes an issue, and the defect found afterwards is attached
+underneath. That is #1319 exactly — it had shipped, and #1496 arrived later. So
+`parent` reopens every **closed ancestor** above the attachment, not just the
+immediate one, prints each with the reason, and touches no field: `Status` stays
+where it was, so the issue still reads as shipped and `release` still promotes it.
+
+Two things that follow. **It never closes anything** — detaching can leave an old
+parent with nothing open under it, and whether that parent is now finished is a
+judgement no command here is entitled to make. And **the fix lives here rather
+than in a watcher**: `check` alone would leave the family invisible in
+`Hierarchies` until somebody ran it, and an event-driven reopen would be a second
+automated writer of issue state. The command making the link repairs what the
+link breaks.
+
 **It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
 and this never passes it. An agent cannot tell "unattached" from "attached to
 something I cannot see", and silently moving a child out from under a parent a
@@ -363,7 +389,8 @@ that is populated.
 **A `/salt-campaign` ledger takes no work fields, but it does take a parent and a
 Status.** An issue titled `campaign:` is a coordination artefact: no `Queue`, no
 `Class`, closed by hand rather than by a PR, and it is the parent the campaign
-hangs its own filings off. `check` skips it in the untriaged rule, or every
+hangs its own filings off — which is also why it now outlives its own campaign,
+since one of those filings is the follow-ups issue and that stays open. `check` skips it in the untriaged rule, or every
 campaign that ever ran would sit in its output forever. `campaign follow-ups:`
 gets no such exemption — that one is ordinary work and is triaged like any.
 
@@ -680,12 +707,19 @@ does three things and refuses to do a fourth:
    match: two lines naming the same issue is a body somebody wrote wrong, and ticking
    either would hide it.
 2. **Closes the parent** — with a comment, and `Status=Merged`, which a closed board
-   item must carry and which no PR was ever going to set here — but only once every
-   sub-issue is closed **and** every line is ticked.
-3. **Nudges instead** when the children are all closed and the body still claims open
+   item must carry and which no PR was ever going to set here — but only once nothing
+   is open **anywhere beneath it** and every line is ticked.
+3. **Nudges instead** when nothing is open beneath it and the body still claims open
    work, states no checklist at all, or is a `campaign:` ledger (a ledger closes by
-   hand at **Finish**, because a parked branch is unfinished business its children
-   cannot show). One comment, marked so a re-close does not repeat it.
+   hand, because a parked branch is unfinished business its children cannot show).
+   One comment, marked so a re-close does not repeat it.
+
+**"Anywhere beneath it" is depth, and that is a correction** (#1534). This asked
+whether the parent's own sub-issues were closed, so a parent over an open
+_grandchild_ took the closing arm — and since this job fires on every
+`issues: closed`, it was the automated way to produce the very state
+`check` now fails on. It reads the whole subtree now, from the same walk the
+check uses.
 
 **The line has to name the issue that actions it, and that is the part a human
 writes.** #1335's lines cited the campaign's PR (`(#1334)`), and the issues that
