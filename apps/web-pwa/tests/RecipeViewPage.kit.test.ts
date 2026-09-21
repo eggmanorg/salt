@@ -1243,3 +1243,94 @@ describe('RecipeViewPage — kit under a method step', () => {
     expect(kitByStepRow()).toEqual([[], ['chopping board']]);
   });
 });
+
+describe('RecipeViewPage — the Equipment tab while editing (issue #1496)', () => {
+  // The page's half of #1496: the tab's VISIBILITY and its COUNT. What each row
+  // then does is `RecipeKitPanel.edit.test.ts`'s.
+
+  async function pressEdit(): Promise<void> {
+    await fireEvent.click(screen.getByTestId('recipe-edit-mode-button'));
+  }
+
+  it('shows the Equipment tab on a recipe with no kit at all — the #1418 case', async () => {
+    // Without this there is no door to add a first tool by hand, which is exactly
+    // the state a timed-out inference leaves a recipe in.
+    mockRecipes._set([makeEntry()]);
+    renderPage();
+    expect(tabNames()).toEqual(['Ingredients', 'Method']);
+
+    await pressEdit();
+
+    expect(tabNames()).toEqual(['Equipment', 'Ingredients', 'Method']);
+    await openEquipmentTab();
+    expect(screen.getByTestId('recipe-edit-kit-add')).toBeTruthy();
+  });
+
+  it('counts the LINES in read mode and the STORED entries while editing', async () => {
+    // A folded appliance+accessory pair is one rendered line and two stored
+    // entries, and the edit list is the stored one — so the two numbers differ,
+    // and each tab state has to show its own.
+    mockEquipment._set({
+      items: [
+        {
+          id: 'eq-cosori',
+          name: 'Cosori 5L Rice Cooker',
+          accessories: [{ id: 'acc-basket', name: 'Steam Basket', owned: true, included: true }],
+        },
+      ],
+    });
+    mockRecipes._set([
+      makeEntry({
+        kit: [
+          {
+            label: 'rice cooker',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: null },
+          },
+          {
+            label: 'steam basket',
+            stepIds: [],
+            equipment: { itemId: 'eq-cosori', accessoryId: 'acc-basket' },
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+    expect(equipmentTab().textContent).toContain('1');
+
+    await pressEdit();
+
+    expect(equipmentTab().textContent).toContain('2');
+  });
+
+  it('does not throw you off the tab when the last row is removed mid-edit', async () => {
+    // The bounce-away `$effect` fires on an empty kit, and while editing that is a
+    // state you pass THROUGH on the way to typing a replacement.
+    mockRecipes._set([makeEntry({ kit: [{ label: 'frying pan', stepIds: [], equipment: null }] })]);
+    renderPage();
+    await pressEdit();
+    await openEquipmentTab();
+
+    mockRecipes._set([makeEntry({ kit: [] })]);
+    await waitFor(() => {
+      expect(screen.queryAllByTestId('recipe-edit-kit-row')).toHaveLength(0);
+    });
+
+    expect(equipmentTab()).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('recipe-edit-kit-add')).toBeTruthy();
+  });
+
+  it('still bounces away from an emptied kit when NOT editing', async () => {
+    // The original guard (a Redo kit that comes back with nothing) is untouched:
+    // a strip with nothing selected and a blank body is a page that looks broken.
+    mockRecipes._set([makeEntry({ kit: [{ label: 'frying pan', stepIds: [], equipment: null }] })]);
+    renderPage();
+    await openEquipmentTab();
+
+    mockRecipes._set([makeEntry({ kit: [] })]);
+
+    await waitFor(() => {
+      expect(tabNames()).toEqual(['Ingredients', 'Method']);
+    });
+  });
+});

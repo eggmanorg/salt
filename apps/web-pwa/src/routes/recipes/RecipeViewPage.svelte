@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     Button,
-    CanonIcon,
     Card,
     CardContent,
     CardDescription,
@@ -86,11 +85,12 @@
   } from '../../lib/recipeAmend.js';
   import { authorRecipeFromChat } from '../../lib/chatRecipeAuthor.js';
   import IngredientText from './IngredientText.svelte';
-  import { sentenceCase } from '../../lib/sentenceCase.js';
   // A pictureless kit row can be given a picture from here (issue #1465, Phase 3).
   // A plain import: this whole page is `lazy()`-routed, and the picker pulls in no
   // cropper — unlike the equipment page's dialogs, which must stay dynamic.
   import KitPicturePicker from './KitPicturePicker.svelte';
+  // The Equipment tab's list, read and written in the same place (issue #1496).
+  import RecipeKitPanel from './RecipeKitPanel.svelte';
   import { canonItems, isLoadingAisles } from '../../lib/canonService.js';
   import { canonIndex, matchMarkersReady } from '../../lib/canonIndex.js';
   // The ONE shared kitchen-tool lookup (issue #882). Subscribed app-wide in
@@ -98,6 +98,9 @@
   // than a plain function precisely so the pictures fill in the moment the drawn
   // vocabulary lands, which on a cold load is after first paint.
   import { kitIcons } from '../../lib/kitIcons.js';
+  // The drawn tool vocabulary, OFFERED by the kit editor's combobox as words
+  // (issue #1496). Subscribed app-wide in App.svelte, same as `kitIcons`.
+  import { kitchenTools } from '../../lib/kitchenToolService.js';
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
   import {
     recipeHeroUrl,
@@ -1712,8 +1715,12 @@
   // editor save, or a Redo kit that comes back with nothing) but not impossible,
   // and the cost of it is a page that looks broken. Falling back to Ingredients is
   // where the page starts anyway.
+  //
+  // `&& !editing` because the tab does NOT disappear while editing (issue #1496) —
+  // without the guard, removing the last row would throw you off the very tab you
+  // were editing, one row before you added its replacement.
   $effect(() => {
-    if (kit.length === 0 && bodyTab === 'equipment') bodyTab = 'ingredients';
+    if (kit.length === 0 && !editing && bodyTab === 'equipment') bodyTab = 'ingredients';
   });
 
   // The Equipment tab's display order, with an accessory folded into the appliance
@@ -1722,14 +1729,6 @@
   // to what.
   const kitGroups = $derived(groupKitByEquipment(kit, $equipment?.items ?? []));
 
-  // The accessories of one appliance, as the tail of "with the …". `Intl.ListFormat`
-  // rather than `join(', ')`: three accessories read "a, b and c", and the Oxford-less
-  // en-GB conjunction is exactly what a cook would say out loud, which is the register
-  // the labels themselves are written in.
-  //
-  // Page-local, and staying that way until a second surface needs it. Cook mode shows
-  // kit per step through `kitByStep` — a flat list with no accessory folding at all —
-  // so there is no second caller to share this with today.
   // Which pictureless row's picker is open, by label — one dialog for the list
   // rather than one per row. The entry is re-read from the live kit each render,
   // so a "Redo kit" landing underneath closes the picker instead of stranding it
@@ -1738,11 +1737,6 @@
   const pictureEntry = $derived(
     pictureFor === null ? null : (kit.find((e) => e.label === pictureFor) ?? null),
   );
-
-  const accessoryList = new Intl.ListFormat('en-GB', { style: 'long', type: 'conjunction' });
-  function accessoryPhrase(accessories: readonly { label: string }[]): string {
-    return accessoryList.format(accessories.map((a) => a.label));
-  }
 
   // Re-asks the question of the whole recipe. Nothing optimistic: the callable bumps
   // a nonce, the trigger re-infers, and the new list arrives on the subscription —
@@ -2803,139 +2797,44 @@
                  one, which is what keeps arrow-key focus and reading order
                  agreeing with what is on screen. -->
             <TabsList ariaLabel="Recipe">
-              {#if kit.length > 0}
-                <TabsTrigger value="equipment" count={kitGroups.length}>Equipment</TabsTrigger>
+              <!-- The count follows the LINES you will read, exactly as Ingredients
+                   counts lines rather than the groups they sit in — so it is
+                   `kitGroups.length` in read mode, where an accessory is folded
+                   into its appliance's row, and `kit.length` while editing, where
+                   the list is the flat stored one (issue #1496). -->
+              {#if kit.length > 0 || editing}
+                <TabsTrigger value="equipment" count={editing ? kit.length : kitGroups.length}
+                  >Equipment</TabsTrigger
+                >
               {/if}
               <TabsTrigger value="ingredients" count={ingredientCount}>Ingredients</TabsTrigger>
               <TabsTrigger value="method" count={recipe.steps.length}>Method</TabsTrigger>
             </TabsList>
 
-            <!-- Equipment (issue #1140). Was a "You'll need" card of `PictogramPill`
-                 chips above the strip; it is a third alternative view of the same
-                 region now, which is what ui-spec-v10 §8.28 is for. Read the same
-                 way the ingredients beside it are read: one thing per line, the
-                 picture in a fixed left gutter, a hairline between rows, so the
-                 names start at one left edge and the column is something you run
-                 your eye down rather than a heap of chips.
+            <!-- Equipment (issues #882, #1140), read and written in the same place
+                 since issue #1496. The grouped read list, the reserved gutter, the
+                 accessory continuation line, the pictureless-row picture button and
+                 the whole editable flat list are all in `RecipeKitPanel.svelte`;
+                 what stays here is the data and the plumbing.
 
-                 THE GUTTER IS RESERVED, THE TILE IS NOT DRAWN ON A MISS. The
-                 ingredients list draws `CanonIcon` for every row, matched or not,
-                 because its bare tile is what holds the text column straight. Kit
-                 cannot borrow that: #882's contract is that a label the drawn
-                 vocabulary does not know renders its WORDS with no picture — never
-                 the bare placeholder, which reads as a broken image, and never
-                 another tool's drawing. A fixed-width empty gutter buys the straight
-                 column without the tile, so the two rules do not have to be traded
-                 off against each other.
-
-                 The picture comes from `$kitIcons` — equipment vocabulary first,
-                 then kitchen tools; that file's header explains at length why the
-                 order is load-bearing (#954) — so turning the icon kill-switch off
-                 costs the pictures and nothing else.
-
-                 AN ACCESSORY IS NOT A ROW. It is said on the appliance's own row,
-                 as a second line under the name: "Cosori 5L Rice Cooker / with the
-                 steam basket and rice spoon". `groupKitByEquipment` decides what
-                 belongs to what — a pure query, so the page never guesses, and it
-                 never nests an accessory whose appliance this recipe did not ask
-                 for — but what it returns is now rendered as ONE line per group.
-                 Since #1465 Phase 4 it reads the entry's recorded LINK and nothing
-                 else, so a kit written before that run lists its parts flat until
-                 "Redo kit" is pressed.
-
-                 It used to be its own `<li>`, indented `pl-12` and muted, drawing
-                 through the same `$kitIcons` lookup as the head row. That lookup is
-                 what killed the design: since #1182 a prefixed accessory resolves to
-                 its OWNING item, so "hand blender attachment" drew the Ninja's
-                 picture at 40px directly beneath the Ninja's picture at 40px, with a
-                 full-width hairline between them. The loudest signal on the row said
-                 "another one of these" while the indent whispered "part of that" —
-                 and the indent lost. Folding it into the appliance removes the
-                 second tile, the second hairline and the ambiguity together: a thing
-                 that came in the box is not a thing you go and fetch.
-
-                 It is also what the accessibility tree wanted. The indented row
-                 needed an `aria-label` — "Rice Spoon, part of Cosori 5L Rice Cooker"
-                 — precisely because `pl-12` and `text-muted-foreground` are pixels,
-                 not structure, and a screen reader walking a flat `<ul>` was handed
-                 siblings. The relationship is now ordinary visible text inside the
-                 appliance's own `<li>`, so it is announced with the appliance
-                 without a parallel accessible name to keep in step with what is on
-                 screen. `RecipeViewPage.kit.test.ts` reads it as text.
-
-                 EACH ROW OPENS WITH A CAPITAL, and that is the only letter this
-                 page decides. A label is the household's own wording or the kit
-                 flow's canonical name, so `sentenceCase` raises the first character
-                 and leaves "Cosori 5L Rice Cooker" and "OXO Mandoline" untouched;
-                 `titleCase` would rewrite both. The accessory line under the name
-                 opens "with the …" and is left alone — it is a continuation, not a
-                 row. `groupKitByEquipment` reads the stored entry rather than the
-                 rendered text, so the capital is a rendering and nothing downstream
-                 sees it.
-
-                 The tab's count follows the LINES, `kitGroups.length`, exactly as
-                 Ingredients counts the lines you will read rather than the groups
-                 they sit in. It was `kit.length` while every entry was its own row
-                 and the two were the same number; they no longer are. -->
-            {#if kit.length > 0}
+                 THE PANEL IS SHOWN WHILE EDITING EVEN WITH AN EMPTY KIT, and the
+                 trigger above with it. Otherwise a recipe whose inference timed out
+                 (#1418) has no door to add a first tool by hand, which is exactly
+                 when you most want one — and it matches the rest of edit mode,
+                 where an absent thing appears as a slot rather than as nothing. -->
+            {#if kit.length > 0 || editing}
               <TabsContent value="equipment">
-                <Card>
-                  <CardContent class="p-4">
-                    <ul class="flex flex-col" data-testid="recipe-kit-list">
-                      {#each kitGroups as group (group.entry.label)}
-                        <li
-                          class="flex items-center gap-2 border-b border-border py-1.5 text-sm last:border-b-0"
-                          data-testid="recipe-kit-row"
-                        >
-                          <div class="flex h-10 w-10 shrink-0 items-center justify-center">
-                            {#if $kitIcons.kitIconFor(group.entry)}
-                              <CanonIcon
-                                thumbnail={$kitIcons.kitIconFor(group.entry)}
-                                version={$kitIcons.kitIconVersionFor(group.entry)}
-                                name={group.entry.label}
-                                size={40}
-                              />
-                            {/if}
-                          </div>
-                          <!-- A row with no picture is TAPPABLE, and only that row
-                               (issue #1465, Phase 3). The miss is noticed here, so
-                               the fix is offered here; a row that already has a
-                               picture has nothing to ask, and making the whole list
-                               tappable would put a control on every line to serve
-                               the few that need one. The empty gutter above is
-                               still the empty gutter — the button is the words, so
-                               nothing appears where #882 says no tile may be
-                               drawn. -->
-                          {#if $kitIcons.kitIconFor(group.entry)}
-                            <span class="min-w-0 flex-1"
-                              >{sentenceCase(
-                                group.entry.label,
-                              )}{#if group.accessories.length > 0}<span
-                                  class="block text-xs text-muted-foreground"
-                                  data-testid="recipe-kit-accessories"
-                                  >with the {accessoryPhrase(group.accessories)}</span
-                                >{/if}</span
-                            >
-                          {:else}
-                            <button
-                              type="button"
-                              class="min-w-0 flex-1 text-left underline decoration-dotted decoration-muted-foreground underline-offset-4"
-                              onclick={() => (pictureFor = group.entry.label)}
-                              data-testid="recipe-kit-picture-btn"
-                              >{sentenceCase(
-                                group.entry.label,
-                              )}{#if group.accessories.length > 0}<span
-                                  class="block text-xs text-muted-foreground no-underline"
-                                  data-testid="recipe-kit-accessories"
-                                  >with the {accessoryPhrase(group.accessories)}</span
-                                >{/if}</button
-                            >
-                          {/if}
-                        </li>
-                      {/each}
-                    </ul>
-                  </CardContent>
-                </Card>
+                <RecipeKitPanel
+                  {recipe}
+                  {editing}
+                  onEdit={handleInlineEdit}
+                  {kitGroups}
+                  equipmentItems={$equipment?.items ?? []}
+                  kitchenTools={$kitchenTools}
+                  kitIconFor={(entry) => $kitIcons.kitIconFor(entry)}
+                  kitIconVersionFor={(entry) => $kitIcons.kitIconVersionFor(entry)}
+                  onPicture={(label) => (pictureFor = label)}
+                />
               </TabsContent>
             {/if}
 
