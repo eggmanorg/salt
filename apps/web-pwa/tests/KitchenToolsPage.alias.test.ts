@@ -5,7 +5,10 @@ import { normaliseMemberEmail } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 import type { KitchenToolDoc } from '@salt/domain/schemas';
 
-// The queue's "add as an alias of an existing tool" action (issue #882, Phase 4).
+// Handing a word nothing draws to a tool that already does — a gap row's "Make it
+// another name for…" (issue #882 Phase 4, moved onto the one list in #1489 Phase
+// 3, where it stopped having a dialog of its own and started using the same move
+// dialog a name already on a tool uses).
 //
 // ITS OWN FILE, and that is a constraint rather than a preference. The action is a
 // combobox inside a dialog, and a bits-ui combobox only commits a selection while
@@ -58,7 +61,7 @@ vi.mock('../src/lib/guidedPlanService.js', () => ({
   loadAllGuidedPlansForCuration: vi.fn(async () => ({ kind: 'ok', value: [] })),
 }));
 vi.mock('@salt/observability', () => ({
-  createObservabilityErrorReportingAdapter: () => ({ reportError: vi.fn() }),
+  createObservabilityErrorReportingAdapter: () => ({ report: vi.fn() }),
 }));
 vi.mock('@salt/firebase-sync', () => ({
   subscribeKitchenTools: vi.fn((onTools: (tools: readonly unknown[]) => void) => {
@@ -67,6 +70,13 @@ vi.mock('@salt/firebase-sync', () => ({
   }),
   upsertKitchenTool: vi.fn(async () => ({ kind: 'ok' as const, value: undefined })),
   deleteKitchenTool: vi.fn(async () => ({ kind: 'ok', value: undefined })),
+  // Salt's proposal per undrawn word (#1458 Phase 2). Answering nothing is the
+  // no-proposal state, which is what every assertion in this file was written
+  // against: each gap row keeps `suggestKitchenToolParent`'s head-noun suggestion.
+  callProposeKitchenTools: vi.fn(async () => ({
+    kind: 'ok' as const,
+    value: { proposals: [] },
+  })),
 }));
 
 import { upsertKitchenTool } from '@salt/firebase-sync';
@@ -125,7 +135,7 @@ beforeEach(() => {
   initKitchenToolSync();
 });
 
-describe('KitchenToolsPage — aliasing an unresolved name', () => {
+describe('KitchenToolsPage — handing an undrawn word to a tool', () => {
   it('appends the name to an existing tool and creates no second tool', async () => {
     // The action that stops the vocabulary filling with near-duplicates that all
     // want the same drawing — and every duplicate would be another AI image call.
@@ -143,15 +153,21 @@ describe('KitchenToolsPage — aliasing an unresolved name', () => {
     ]);
     render(KitchenToolsPage);
 
-    const row = await screen.findByTestId('kitchen-tool-queue-row');
+    const row = await screen.findByTestId('kitchen-tool-gap-row');
     expect(row).toHaveAttribute('data-kit-label', 'masher');
-    await userEvent.click(screen.getByTestId('kitchen-tool-queue-alias'));
+    await userEvent.click(within(row).getByTestId('kitchen-tool-gap-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-gap-alias'));
 
-    const dialog = await screen.findByTestId('kitchen-tool-alias-dialog');
+    // THE SAME DIALOG a name already on a tool is moved with — the separate
+    // `kitchen-tool-alias-dialog` is gone, because it was a second picker over
+    // one decision.
+    const dialog = await screen.findByTestId('kitchen-tool-move-dialog');
+    expect(dialog).toHaveTextContent('Another name for “masher”');
     await userEvent.click(within(dialog).getByRole('combobox'));
     await userEvent.click(await screen.findByRole('option', { name: 'Potato masher' }));
 
-    const confirm = screen.getByTestId('kitchen-tool-alias-confirm');
+    const confirm = screen.getByTestId('kitchen-tool-move-confirm');
+    expect(confirm).toHaveTextContent('Add as another name');
     // The confirm button is the readout of the combobox's committed value, so
     // waiting for it to enable is waiting for the selection to have landed.
     await waitFor(() => expect(confirm).toBeEnabled());
@@ -166,7 +182,7 @@ describe('KitchenToolsPage — aliasing an unresolved name', () => {
     expect(written.thumbnail).toBe('https://example.com/kit/masher.webp');
   });
 
-  it('makes the queue row disappear once the alias resolves it', async () => {
+  it('makes the gap row disappear once the alias resolves it', async () => {
     // No reprocessing and no write to the recipe: the row goes because resolution
     // happens at display time, against whatever the vocabulary now says.
     mockRecipes._set([recipeWithKit('r1', 'masher')]);
@@ -182,9 +198,9 @@ describe('KitchenToolsPage — aliasing an unresolved name', () => {
     setTools([potatoMasher]);
     render(KitchenToolsPage);
 
-    await screen.findByTestId('kitchen-tool-queue-row');
+    await screen.findByTestId('kitchen-tool-gap-row');
     setTools([{ ...potatoMasher, matchers: ['masher'] }]);
 
-    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-queue-row')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('kitchen-tool-gap-row')).toBeNull());
   });
 });

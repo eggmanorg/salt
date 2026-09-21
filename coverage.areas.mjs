@@ -601,11 +601,25 @@ export const coverageThresholds = {
   // not one of them and never will be". The gate enforces against CI, so CI's
   // figure is the one that goes here; a local `coverage:ratchet:check` reads
   // fractionally below this floor and that is expected, not a regression.
+  //
+  // RE-PINNED 85.36/75.10 → 86.22/76.14 for PR #1525 (#1458's review fixes,
+  // d6213c90). onMakeTool's word-carrying matcher and the vocabulary-loaded
+  // gate on the proposal `$effect` each added branches that
+  // `KitchenToolsPage.proposal.test.ts` now drives directly, and the narrowed
+  // alias-over-new guard removed an unreachable arm. The branch ratio rose
+  // 1.04 points past the 1.00-point staleness tolerance, tripping the gate;
+  // the rise was already present one commit earlier at bfce601b (76.12,
+  // itself already over tolerance, run 35522454871) — 756d8076 introduced the
+  // gain and never banked it. BOTH UNCOVERED COUNTS FELL (1707 → 1672 lines,
+  // 1736 → 1735 branches), which is what says this is coverage earned rather
+  // than a denominator that shrank. Pasted verbatim from CI's ubuntu-latest
+  // run (35525912005, job 106117899010), not retyped and not re-measured on
+  // this machine, per the note above.
   'apps/web-pwa/src/routes/**': {
-    lines: 85.36,
-    branches: 75.1,
-    uncoveredLines: 1707,
-    uncoveredBranches: 1736,
+    lines: 86.22,
+    branches: 76.14,
+    uncoveredLines: 1672,
+    uncoveredBranches: 1735,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

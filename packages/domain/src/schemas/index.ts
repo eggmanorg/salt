@@ -167,6 +167,20 @@ export type { LibraryPageDoc, LibraryPageRevisionDoc } from './libraryPage.js';
 // one of these ids, which is what makes the list free to grow.
 export { KitchenToolSchema, KITCHEN_TOOLS_COLLECTION } from './kitchenTool.js';
 export type { KitchenToolDoc } from './kitchenTool.js';
+export {
+  ProposeKitchenToolsInputSchema,
+  ProposeKitchenToolsAIOutputSchema,
+  ProposeKitchenToolsOutputSchema,
+  KitchenToolProposalAISchema,
+  KitchenToolProposalSchema,
+  KITCHEN_TOOL_PROPOSAL_KINDS,
+} from './proposeKitchenTools.js';
+export type {
+  ProposeKitchenToolsInput,
+  ProposeKitchenToolsOutput,
+  KitchenToolProposal,
+  KitchenToolProposalAI,
+} from './proposeKitchenTools.js';
 
 export { DevSettingsSchema } from './devSettings.js';
 export type { DevSettingsDoc } from './devSettings.js';
@@ -220,6 +234,7 @@ export {
   GenerateGuidedPlanOutputSchema,
 } from './guidedPlan.js';
 export type {
+  GuidedCheckInDoc,
   GuidedPrepEntryDoc,
   GuidedStepNoteDoc,
   GuidedPlanDoc,

@@ -158,6 +158,7 @@
     parseEntry: 'Entry parsing',
     parseRecipeIngredients: 'Recipe ingredient parsing',
     populateEquipmentEntry: 'Equipment entry population',
+    proposeKitchenTools: 'Kitchen-tool proposals (what an undrawn word probably is)',
     proposeSchedule: 'Schedule proposal (out of the oven at…)',
   };
 

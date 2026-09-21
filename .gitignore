@@ -38,6 +38,11 @@ apps/cloud-functions/.genkit/
 coverage/
 tmp/
 
+# AppMap's working directory. Raw recordings land in tmp/appmap (already covered
+# by tmp/ above); .appmap/ holds the derived sequence exports the gold-traces
+# engine regenerates on demand. Only gold_traces/baseline/ is committed.
+.appmap/
+
 # Claude Code local runtime state. `.claude/commands/` and `.claude/settings.json`
 # are the checked-in, shared parts; everything below is per-machine (pids, session
 # ids, scratch checkouts) and was previously only covered by .git/info/exclude,
@@ -64,3 +69,9 @@ docker/test-emulators/.image-build-hash
 # checkouts under .claude/worktrees/ despite them being gitignored: 17,734 files
 # and ~59 min, versus ~790 files in ~3 min when scoped correctly).
 .serena/
+
+# One-off run reports written beside the script that produced them: a dated
+# record of what a re-run changed in a live project, useful to read once and
+# never worth committing. The trailing epoch makes every filename unique, so
+# this is a glob, not a list.
+apps/cloud-functions/kit-rerun-*.md

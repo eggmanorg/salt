@@ -178,9 +178,35 @@ export const violationCeilings = {
   // in `RecipeIdentityCard.test.ts` and `RecipeViewPage.matchMarkers.test.ts`)
   // breach nothing new — the new file mounts one component and needs no mocks at
   // all, and the two extended suites were already counted.
+  // UT-B1 45 → 46 (issue #1489 Phase 1). ONE new file,
+  // `KitchenToolsPage.docked.test.ts`, and the raise is the sanctioned case
+  // rather than drift: it is the sibling of `CatalogPage.docked.test.ts` — which
+  // is already on this list — and it mounts a whole admin route, so its eight
+  // `vi.mock` calls are that route's service seams (router, toasts, auth,
+  // members, recipes, guided plans, observability, firebase-sync) and not one of
+  // them is avoidable by writing the test differently. The alternative was to
+  // leave the page's docked/phone gate untested, which is the failure #933 wrote
+  // `CatalogPage.docked.test.ts` to stop.
+  //
+  // UT-B1 46 → 47 (issue #1489 Phase 2). `KitchenToolsPage.move.test.ts`, and the
+  // same sanctioned case a second time: it mounts the same admin route, so it
+  // needs the same eight seams, and it is its own file for the reason
+  // `KitchenToolsPage.alias.test.ts` already documents — a bits-ui combobox
+  // inside a dialog only commits while its layer is topmost, and vitest's
+  // isolation is per FILE. Folding it into a file that opens another dialog is
+  // what makes it silently stop asserting.
+  //
+  // UT-B1 47 → 48 (issue #1458 Phase 2). `KitchenToolsPage.proposal.test.ts`, the
+  // same sanctioned case a third time: it mounts the same admin route and needs
+  // the same eight seams, one of which — `@salt/firebase-sync` — is the very
+  // thing under test here, since the proposal arrives through a callable and the
+  // path that matters most is the one where it never arrives at all. It is its
+  // own file rather than rows in `KitchenToolsPage.test.ts` because the answer is
+  // set per test on a hoisted sink the module mock reads, and a file-wide default
+  // of "no proposal" is what every assertion in that file was written against.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 45,
+    'UT-B1': 48,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,

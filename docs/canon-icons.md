@@ -203,7 +203,8 @@ canon shape rather than variations on it:
   `iconNeedsGeneration` precisely because it writes back to the document it watches.
   `onEquipmentManifestWritten` never writes the manifest, so it can just ask the
   honest question — does this item's brief match this item's name? — with no nonce.
-- **A human reads the description before any image is generated.** The trigger
+- **A human reads the description before any image is generated** — through the
+  Draw callable's gate, the only path a client request can reach. The trigger
   authors an appliance description (`describeEquipmentSubject`, `'fast'` tier) and
   stops; the image is drawn only when someone presses **Draw**, by the
   `drawEquipmentIcon` callable, which runs the image flow and `sharp` inline. Canon's
@@ -211,6 +212,11 @@ canon shape rather than variations on it:
   obvious rendering — but a make and model is exactly where fidelity is won or lost,
   and a brief is a sentence you can correct where a wrong picture is only a re-roll.
   Only the description is ever shown or editable; the style anchors stay in code.
+  The one exception is `scripts/generate-equipment-icons.mjs --apply`, the
+  one-off backfill for a kit that already exists: it DELIBERATELY BYPASSES this
+  gate, because those briefs were read by hand, side by side with their
+  drawings, in a prior dry run of the same script. Every item added after the
+  backfill goes through the gate normally.
 
   **The equipment list's Draw button (#1458) does not bypass this.** It is a
   one-press route TO this panel, `push('/equipment/{id}')`, never a second place
@@ -364,6 +370,54 @@ The arithmetic was never wrong — `undrawnEquipment` and `unresolvedKitLabels` 
 never name the same thing, because that query already excludes a label resolving to
 one of the household's records. What was wrong was putting a count of drawings in a
 place that means approvals, with no route from the number to the work.
+
+### Salt proposes, a person writes (#1458, Phase 2)
+
+Every **Not drawn yet** row on `/admin/kitchen-tools` carries a sentence saying what
+Salt thinks the word is. The rows themselves are #1489 Phase 3's; this is a sentence
+added to them, and it takes no verb away and adds none.
+
+- **`proposeKitchenTools`** (`apps/cloud-functions/src/flows/proposeKitchenTools.ts`)
+  answers one of three things per word — another name for a tool that already draws,
+  a new tool with a suggested name, or not a piece of kit at all.
+- **One call for the whole group, once per arrival.** The judgement worth paying a
+  model for is grouping — that "large mixing bowl" and "Large Bowls" are the bowl we
+  already draw — and a model shown one word at a time cannot make it. It also keeps
+  opening the page to a single `fast` call.
+- **The pure head-noun suggestion still leads.** `suggestKitchenToolParent` paints
+  every row before the call is made and stays there if the answer never comes; the
+  proposal replaces it in place when it arrives. Nothing spins and nothing is
+  disabled while waiting, and a model that is unavailable costs the page a sentence
+  and nothing else.
+- **Nothing is written without a press,** and the presses are the ones the row
+  already had: the one-click alias, or the pre-filled Add dialog where #956's
+  near-duplicate warning lives. There is no accept button of its own, and no
+  dismiss — a word this page cannot name is the library's own content, and there is
+  nowhere honest to record that somebody disagreed with a suggestion.
+
+**What stops the vocabulary bloating, stated rather than overstated.** One thing is
+mechanical: `sanitiseKitchenToolProposals` refuses to propose a **new** tool where
+the vocabulary can already name the name the MODEL suggested for it, through
+`resolveKitchenTool`. It deliberately does **not** check the requested word itself
+against `resolveKitchenTool` — `kitIcons.ts` (every surface that draws a kit label)
+renders through `kitchenToolForKitLabel`, not the bare `resolveKitchenTool`, and every
+word this flow is ever asked about already failed that gate (`unresolvedKitLabels`
+applies the same lookup before a word joins the queue). So `resolveKitchenTool(word,
+tools)` is non-null only when `kitchenToolForKitLabel`'s accessory rule (#1460)
+deliberately refused that word — e.g. "Thermo Bowl" naming the Magimix's sealed
+accessory rather than an ordinary mixing bowl — and checking it would rewrite that
+refusal back into the very alias #1460 exists to prevent, on the row's own leading
+press. It is pinned by
+`apps/cloud-functions/tests/flows/proposeKitchenTools.test.ts`. The ceiling in
+`apps/cloud-functions/tests/kitchenToolVocabulary.test.ts` is unchanged and green.
+
+One thing is **not** guaranteed, and no test can make it so: a person may always
+confirm a `new` proposal that should have been an alias; that is the design — Salt
+records, it does not police. Nor does this guard stop the flow proposing an alias
+onto a word `kitchenToolForKitLabel` already refused — the model may answer `alias`
+outright, or a `new` whose `suggestedLabel` resolves to that same refused tool, and
+either still reaches the row's leading press; the guard only prevents minting a
+duplicate, not aliasing onto one.
 
 ### The description's two lives (#1433)
 

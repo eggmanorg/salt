@@ -48,6 +48,8 @@
     PEEK_MAX_PX,
   } from '../../lib/cookDeck.js';
   import IngredientText from './IngredientText.svelte';
+  import GuidedStepNotes from './GuidedStepNotes.svelte';
+  import GuidedStepLookahead from './GuidedStepLookahead.svelte';
   import CookTimerSheet from './CookTimerSheet.svelte';
   // The regions this screen draws byte-for-byte the same way plain cook mode does
   // (issue #994). Composition, not a design-system primitive: they are app-level
@@ -1028,146 +1030,23 @@
                   {/if}
 
                   <!-- What the plan added: which prepped container this step wants,
-                     how the station is set, and the sensory test that says it is
-                     going right. Quiet rows rather than callouts — none of them is a
-                     warning, and three `warning` boxes on one step would shout down the
-                     instruction they belong to. Each line is independently optional
-                     (null means the plan had nothing honest to say), so a step with
-                     no note renders exactly as it does in plain cook mode.
-                     `whitespace-pre-wrap` keeps author-typed line breaks.
-                     The check-ins are listed here too, as what they are: what this
-                     step's timer will say, and when. Displayed, never enforced —
-                     starting the timer is what arms them, and ignoring one changes
-                     nothing about the cook. -->
-                  <!-- The guard admits `loose` too (issue #761): an ingredient this
-                     step introduces from no bowl has to be printed whether or not
-                     the plan had anything to say about the step, so this list is
-                     "everything guided mode adds under this step" rather than
-                     "everything the plan authored". -->
-                  {#if loose.length > 0 || (note && (note.container || note.setup || note.cue || checkIns.length > 0))}
-                    <ul
-                      class="flex flex-col gap-2.5 border-l-2 border-secondary/40 pl-4"
-                      data-testid="guided-step-notes"
-                    >
-                      {#if note?.container}
-                        <li class="flex flex-col gap-2" data-testid="guided-step-note-container">
-                          <span class="flex items-start gap-3">
-                            <!-- The same drawn vessel as the mise card's header
-                               (issue #882), at the callout's size. Resolved from
-                               the step's own words, so the two surfaces cannot
-                               disagree about which bowl this is. -->
-                            <CanonIcon
-                              thumbnail={$kitIcons.kitIconFor(note.container)}
-                              version={$kitIcons.kitIconVersionFor(note.container)}
-                              name={note.container}
-                              size={32}
-                            />
-                            <span class="whitespace-pre-wrap text-base text-muted-foreground"
-                              >{note.container}</span
-                            >
-                          </span>
-                          <!-- What is actually in it. Nested UNDER the bowl's name
-                             rather than beside it: the name is the handle the cook
-                             already knows from the prep screen, and the contents are
-                             the amounts that screen showed. Empty when no prep job
-                             fills this name, in which case the row above is all
-                             there is — the pre-#761 rendering, unchanged. -->
-                          {#if containerContents.length > 0}
-                            <ul class="ml-10 flex flex-col gap-1.5">
-                              {#each containerContents as ingredient (ingredient.id)}
-                                <li
-                                  class="flex items-center gap-2"
-                                  data-testid="guided-step-container-contents"
-                                >
-                                  <CanonIcon
-                                    thumbnail={$ingredientIcons.thumbnailFor(ingredient)}
-                                    name={ingredientLabel(ingredient)}
-                                    version={$ingredientIcons.iconVersionFor(ingredient)}
-                                    size={32}
-                                  />
-                                  <span class="min-w-0 flex-1 text-base">
-                                    <IngredientText {ingredient} scale={servings.scale} />
-                                  </span>
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-                        </li>
-                      {/if}
-                      <!-- Used here, out of no bowl. Plain cook mode reprints every
-                         ingredient at the step that first uses it; this is the same
-                         list with the bowl's own contents taken out, so nothing is
-                         said twice on one screen and nothing goes unsaid. A quiet
-                         row in the same register as the others — an ingredient is
-                         not a warning. -->
-                      {#each loose as ingredient (ingredient.id)}
-                        <li class="flex items-center gap-3" data-testid="guided-step-loose">
-                          <span
-                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary/10 text-secondary"
-                          >
-                            <Icon name="Plus" size={17} ariaLabel="Also" />
-                          </span>
-                          <CanonIcon
-                            thumbnail={$ingredientIcons.thumbnailFor(ingredient)}
-                            name={ingredientLabel(ingredient)}
-                            version={$ingredientIcons.iconVersionFor(ingredient)}
-                            size={32}
-                          />
-                          <span class="min-w-0 flex-1 text-base">
-                            <IngredientText {ingredient} scale={servings.scale} />
-                          </span>
-                        </li>
-                      {/each}
-                      {#if note?.setup}
-                        <li class="flex items-start gap-3" data-testid="guided-step-note-setup">
-                          <span
-                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-tertiary-variant/10 text-tertiary-variant"
-                          >
-                            <Icon name="Flame" size={17} ariaLabel="Setup" />
-                          </span>
-                          <span class="whitespace-pre-wrap text-base text-muted-foreground"
-                            >{note.setup}</span
-                          >
-                        </li>
-                      {/if}
-                      {#if note?.cue}
-                        <li class="flex items-start gap-3" data-testid="guided-step-note-cue">
-                          <span
-                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
-                          >
-                            <Icon name="Ear" size={17} ariaLabel="Cue" />
-                          </span>
-                          <span class="whitespace-pre-wrap text-base text-muted-foreground"
-                            >{note.cue}</span
-                          >
-                        </li>
-                      {/if}
-                      {#each checkIns as checkIn, ci (ci)}
-                        <li class="flex items-start gap-3" data-testid="guided-step-check-in">
-                          <span
-                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary/10 text-secondary"
-                          >
-                            <Icon name="Bell" size={17} ariaLabel="Check in" />
-                          </span>
-                          <!-- `whitespace-pre-wrap` sits on the AUTHORED TEXT alone,
-                             never on a span that also holds markup. This row is the
-                             only note built from more than one interpolation, and
-                             with the class on the outer span the source's own newline
-                             and indentation between "—" and the text were preserved
-                             verbatim — a line break and a 28-space indent on screen.
-                             The other rows are a single `{...}`, so nothing of the
-                             source can leak into them; this one had to be split. -->
-                          <span class="text-base text-muted-foreground">
-                            <span class="font-medium text-foreground"
-                              >{checkIn.atMinutes} min in</span
-                            >
-                            —
-                            <span class="whitespace-pre-wrap">{checkIn.text}</span>
-                          </span>
-                        </li>
-                      {/each}
-                    </ul>
-                  {/if}
+                     how the station is set, the sensory test that says it is going
+                     right, the ingredients it introduces from no bowl (issue #761),
+                     and the reminders its timer will give.
+
+                     Drawn by `GuidedStepNotes`, which the plan's REVIEW screen
+                     renders too (issue #1453). Sharing the component is what makes
+                     "read it the way you will cook it" true by construction rather
+                     than by assertion — a copy would drift the first time this
+                     screen changed. No edit handlers are passed here: this is the
+                     cook, so every row is text. -->
+                  <GuidedStepNotes
+                    {note}
+                    {containerContents}
+                    {loose}
+                    {checkIns}
+                    scale={servings.scale}
+                  />
 
                   <!-- The kit this step reaches for (issue #882) — the same row,
                      in the same chip vocabulary, plain cook mode draws. BESIDE the
@@ -1256,28 +1135,11 @@
               aria-hidden="true"
             ></div>
             <div class="flex flex-1 flex-col justify-end gap-1 bg-background px-4 pb-3">
-              <div class="mx-auto flex w-full max-w-2xl flex-col gap-1">
-                {#if lookahead.getAhead}
-                  <!-- The one line here that is an INSTRUCTION, so it is the one line
-                   that gets a colour and an icon. It is also deliberately above the
-                   summary: if the cook reads one thing in this gap, it is this. -->
-                  <p
-                    class="flex items-start gap-2 text-sm font-medium text-primary"
-                    data-testid="guided-step-get-ahead"
-                  >
-                    <Icon name="Hourglass" size={16} class="mt-0.5 shrink-0" />
-                    <span class="min-w-0 flex-1">{lookahead.getAhead}</span>
-                  </p>
-                {/if}
-                {#if lookahead.lookahead}
-                  <p class="flex items-baseline gap-2 text-sm text-muted-foreground">
-                    <span class="shrink-0 text-xs font-semibold uppercase tracking-wide">
-                      Next · {lookahead.number}
-                    </span>
-                    <span class="min-w-0 flex-1 truncate">{lookahead.lookahead}</span>
-                  </p>
-                {/if}
-              </div>
+              <GuidedStepLookahead
+                lookahead={lookahead.lookahead ?? ''}
+                getAhead={lookahead.getAhead ?? ''}
+                nextNumber={lookahead.number}
+              />
             </div>
           </div>
         {:else}

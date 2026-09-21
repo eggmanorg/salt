@@ -706,10 +706,12 @@
   // callable that could would land a read-modify-write on `recipes/{id}` that a
   // full-document `setDoc` from this very page can silently drop.
   //
-  // What makes it acceptable is local, specific, and true from only ONE of the
-  // two entry points that share this function. From the ✗ below, the marker
-  // that REPORTS the loss is the control that RE-RUNS it. From the sheet's
-  // "Match again" (`rematchFromSheet` above) it is not: that control exists
+  // What makes it acceptable is local, specific, and true from only TWO of the
+  // three entry points that share this function. From the ✗ below, and from
+  // the `?` no-amount marker (`RecipeIngredientsPanel.svelte`'s `marker ===
+  // 'no-amount'` row, which calls this same function), the marker that
+  // REPORTS the loss is the control that RE-RUNS it. From the sheet's "Match
+  // again" (`rematchFromSheet` above) it is not: that control exists
   // precisely for the line with no ✗ to show (the comment at :662-669), so a
   // suspend reached from there drops the match with no marker and no toast —
   // the loss is silent on that entry point.

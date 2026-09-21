@@ -1,0 +1,41 @@
+# Gold-traces manifest — the behavioural baseline for this repo.
+#
+# Managed by the appmap-gold-traces skill. One file describes the whole gold
+# set: HOW to record (commands) and WHAT to record (entries). Paths are derived,
+# never configured — record commands run from this file's parent directory (the
+# repo root) and recordings are read from the nearest-ancestor appmap.yml, which
+# is ../appmap.yml with appmap_dir: tmp/appmap.
+#
+# Curation rule: one deterministic, lean recording per release-critical
+# subsystem, added only when `discover` shows it runs something no committed
+# trace already runs. Reuse an existing test before writing one.
+#
+#   node "<skill>/assets/manage.mjs" plan     --dir gold_traces
+#   node "<skill>/assets/manage.mjs" discover --dir gold_traces --test-file F --test-name T
+#   node "<skill>/assets/manage.mjs" check    --dir gold_traces --record
+
+schema_version: 2
+
+commands:
+  # The repo is vitest throughout (root `test` script is `vitest run`). The
+  # engine's default launcher for vitest is `npx appmap-node npx vitest run`,
+  # which is left unset deliberately: recording via npx keeps appmap-node out of
+  # package.json, so nothing here adds a dependency to the project.
+  framework: vitest
+
+  record_env:
+    APPMAP_DISPLAY_PARAMS: 'true'
+
+# The curated recordings. Every appmap_path comes from `discover`; none is
+# guessed, and none is derived from a naming convention.
+entries:
+  - feature: recipe-authoring
+    test_file: apps/cloud-functions/tests/flows/authorRecipe.persist.test.ts
+    test_name: writes the recipe to recipes/{id} on the create path
+    appmap_path: vitest/writes_the_recipe_to_recipes-{id}_on_the_create_path.appmap.json
+    summary: >-
+      The authoring flow end to end on the create path: model resolution, the
+      equipment context the librarian is given, draft assembly, tag
+      normalisation, phase reconciliation, attribution stamping, and the write
+      to recipes/{id}. Chosen over the file's other cases because it is the one
+      that walks every stage once.
