@@ -253,6 +253,22 @@ jobs:
       - name: Merge queue check
         run: pnpm mergequeue:check
 
+      # BigQuery export config. The six `infra/bigquery-export/extensions/*.env`
+      # files configure the Firestore -> BigQuery changelog, which is the only
+      # history of what Salt's data used to be. An extension parameter the
+      # extension does not recognise is NOT an install-time error — it is
+      # silently replaced by the declared default and the install goes green, so
+      # a wrong setting was invisible in review, in CI, and on the install that
+      # reached production. PR #1424 shipped `WILDCARD_IDS=yes` (the extension
+      # declares true/false) and a person was the only thing that caught it.
+      # This validates every value against the schema vendored beside the
+      # manifest — static and offline; nothing here may contact a project, and
+      # `firebase deploy --only extensions` restarts every instance. A step in
+      # `static`, never a new job: the ruleset's three required contexts must
+      # stay three.
+      - name: BigQuery extension manifest check
+        run: pnpm bqext:check
+
   types:
     name: Types
     runs-on: ubuntu-latest

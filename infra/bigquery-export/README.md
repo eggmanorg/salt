@@ -308,3 +308,53 @@ this is the vault for history and ad-hoc SQL.
 - No partitioning/clustering/materialized views: the data is megabytes; the
   free-tier defaults are the right size. Partitioning cannot be changed on an
   existing table, so revisit only alongside a table rebuild.
+
+## The `.env` files are checked against the pinned schema (`pnpm bqext:check`)
+
+An extension parameter the extension does not recognise is **not** an error at
+install time: it is dropped and the declared default takes its place, and the
+install goes green. That makes a wrong setting invisible — in review, in CI, and
+on the install that reaches production. It happened once: PR #1424 shipped
+`WILDCARD_IDS=yes`, where this extension only understands `true` and `false`, so
+every batch observation would have streamed with no reference to the run it came
+from, permanently, from that day on. A person was the only thing that caught it.
+
+`scripts/check-bigquery-extensions.mjs` runs as a step in CI's **Static checks**
+job. It reads three things off disk — `firebase.json`, `extensions/*.env`, and
+the extension manifest vendored at `vendor/` — and **contacts nothing**. It
+never invokes `firebase`, for the reason the install section above spells out:
+a whole-manifest `deploy --only extensions` reconciles and restarts every
+instance, and `--force` on a partial manifest deletes the ones it omits.
+
+What it asserts, per `.env`:
+
+- every key present is a parameter the extension declares (so `WILDCRD_IDS` is
+  as red as a bad value);
+- a `select` parameter's value is one of its declared options, compared as
+  strings — `WILDCARD_IDS`'s options are `true`/`false` while
+  `USE_NEW_SNAPSHOT_QUERY_SYNTAX`'s adjacent ones are `yes`/`no`, and that
+  asymmetry is what made #1424 plausible;
+- a `string` parameter's value matches the extension's own `validationRegex`
+  (`COLLECTION_PATH`, `DATASET_ID`, `TABLE_ID` and the rest);
+- a parameter that is `required` with **no declared default** is present — in
+  0.3.3 that is `DATABASE_REGION` alone;
+- `firebase.json` and the `.env` files agree in both directions, and every ref
+  matches the vendored schema's own `version:`.
+
+**What it cannot see, stated because the boundary is the honest claim:** a
+parameter _omitted_ from an `.env` whose extension default is wrong for Salt.
+Roughly a dozen parameters are deliberately omitted across the six files —
+`BIGQUERY_PROJECT_ID`, `LOG_LEVEL`, `TABLE_PARTITIONING` and the rest all take
+sensible declared defaults — so flagging absence wholesale would need an
+allowlist of exceptions, and an allowlist is a thing people learn to append to.
+Whether a taken default is _right_ is a judgement about intent, and it is
+recorded in "Parameter notes" above rather than enforced by the script. The
+other known gap: nothing checks the instance ids against what is actually
+installed on prod, which would need a live read of the project.
+
+**Re-vendoring is part of a version bump, not a follow-up to one.** Bumping a
+ref in `firebase.json` without replacing `vendor/*.extension.yaml` fails the
+check, because validating against a schema the install no longer uses is the
+same silent wrongness the check exists to stop. The vendored file is byte-for-
+byte upstream below its header and is in `.prettierignore` for that reason —
+never hand-edit it.

@@ -13,3 +13,12 @@ graphify-out/
 # autofix bot pushes the reflow back. Nobody reads it by hand, so there is
 # nothing to gain on the other side of that trade.
 pnpm-lock.yaml
+
+# The vendored extension manifest — an upstream copy whose whole value is being
+# byte-comparable to its source (infra/bigquery-export/vendor/, read by
+# `pnpm bqext:check`). It entered prettier's scope with every other `.yaml`, and
+# a reformat destroys the only way to tell a faithful copy from an edited one:
+# `pnpm format` would rewrite it, `format:check` would red CI until it did, and
+# the salt-autofix bot would force-push the reflow onto every PR. Same trade as
+# the lockfile above — nothing to gain on the other side.
+infra/bigquery-export/vendor/
