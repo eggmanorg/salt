@@ -457,29 +457,30 @@
    * done; this is a different thing entirely and blocks nothing. Keeping them apart
    * is the whole point — merge them and Salt starts policing a cure it was only
    * asked to record.
+   *
+   * THE WORDS COME OUT WITH THE FACT, in one object or null, for the reason
+   * `FormulaPage`'s twin states at length: a second `$derived` holding only the text
+   * is read solely from inside the `{#if}` that already proved the note exists, so
+   * its empty arm is unreachable through this component and costs an uncovered
+   * branch no test can ever retire. One object, no arm to miss.
+   *
+   * The copy is worded for the case the formula screen does not have: BOTH BUTTONS
+   * ARE NITRITE-ONLY. A pair never crosses the nitrate line, so when the jar on offer
+   * is nitrite-only its alternative is too — and a sentence that did not say so would
+   * leave the other button looking like the fix.
    */
-  const cureSaltNote = $derived(
-    cureSaltFitness({
+  const cureSaltNote = $derived.by(() => {
+    const fitness = cureSaltFitness({
       product: substituteTo ?? namedCuringSalt,
       category: recipe.cureCategory,
-    }),
-  );
-
-  /**
-   * That fact, in words, worded for the case the formula screen does not have:
-   * BOTH BUTTONS ARE NITRITE-ONLY. A pair never crosses the nitrate line, so when
-   * the jar on offer is nitrite-only its alternative is too — and a sentence that
-   * did not say so would leave the other button looking like the fix.
-   *
-   * ONE STRING RATHER THAN THREE INTERPOLATIONS, for the reason `FormulaPage`'s
-   * twin states: Svelte compiles `{expr}` to `expr ?? ''`, and the empty arm of a
-   * label that is never null is a branch no test can reach.
-   */
-  const cureSaltNoteText = $derived.by(() => {
-    const note = cureSaltNote;
-    if (note.kind === 'ok') return '';
-    return `${CURE_SALT_PRODUCTS[note.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[note.nitrateBearing].label} is the same strength and carries one. Neither jar offered above is it: a swap here changes concentration, never what the cure is fit for. Start is not blocked — go ahead if this is what you have.`;
+    });
+    if (fitness.kind === 'ok') return null;
+    return {
+      nitrateBearing: fitness.nitrateBearing,
+      text: `${CURE_SALT_PRODUCTS[fitness.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[fitness.nitrateBearing].label} is the same strength and carries one. Neither jar offered above is it: a swap here changes concentration, never what the cure is fit for. Start is not blocked — go ahead if this is what you have.`,
+    };
   });
+
   /**
    * A refused substitution, in words, or null when there is nothing to refuse.
    *
@@ -1286,7 +1287,7 @@
         </div>
       {/if}
 
-      {#if cureSaltNote.kind === 'nitriteOnlyForLongDry'}
+      {#if cureSaltNote !== null}
         <!-- THE SORT OF SALT, ABOVE START (issue #1473), because this is the moment
              the jar is actually named — the formula can say Cure #2 and the cupboard
              can still hand over Cure #1.
@@ -1300,7 +1301,7 @@
           data-testid="bake-batch-cure-salt-note"
           data-nitrate-bearing={cureSaltNote.nitrateBearing}
         >
-          {cureSaltNoteText}
+          {cureSaltNote.text}
         </p>
       {/if}
 

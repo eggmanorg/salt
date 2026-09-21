@@ -1062,36 +1062,32 @@
    * The FIRST included curing-salt row that draws a note is the one it speaks about.
    * A formula naming two curing salts is unusual and not forbidden, and a note about
    * the first is better than silence about both.
+   *
+   * THE COPY COMES OUT WITH THE FACT, in one object or null, rather than in a second
+   * `$derived` beside it. That is a coverage fact rather than a style preference, and
+   * it is the second half of a lesson this note already learnt once. The first half:
+   * Svelte compiles every `{expr}` in a template to `expr ?? ''`, so three separate
+   * interpolations of a product label that is never null would have cost three
+   * permanently uncovered branches on `apps/web-pwa/src/routes/**`. Hence one string.
+   * The second half is what a separate `cureSaltNoteText = note === null ? '' : ...`
+   * then cost: the text is only ever read from inside `{#if cureSaltNote !== null}`,
+   * so its empty arm is unreachable THROUGH THIS COMPONENT and no test can drive it
+   * — one uncovered branch, permanently, and the ratchet is right to red on it.
+   * Built here, there is no arm to miss: the object exists or the note does not.
    */
   const cureSaltNote = $derived.by(() => {
     const category = recipe?.cureCategory ?? null;
     for (const row of rows) {
       if (!row.included) continue;
       const fitness = cureSaltFitness({ product: row.saltProduct, category });
-      if (fitness.kind === 'nitriteOnlyForLongDry') return fitness;
+      if (fitness.kind === 'nitriteOnlyForLongDry')
+        return {
+          nitrateBearing: fitness.nitrateBearing,
+          text: `${CURE_SALT_PRODUCTS[fitness.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[fitness.nitrateBearing].label} is the same strength and carries one.`,
+        };
     }
     return null;
   });
-
-  /**
-   * That fact, in words.
-   *
-   * THE COPY IS HERE AND THE FACT IS IN `domain` — the split `cureSaltFitness`
-   * exists to make, and the same one `describeBoundViolation` and the sheet's
-   * `substitutionRefusal` already make.
-   *
-   * BUILT AS ONE STRING RATHER THAN INTERPOLATED PIECEMEAL, which is a coverage
-   * fact rather than a style preference: Svelte compiles every `{expr}` in a
-   * template to `expr ?? ''`, and the empty-string arm of a product label that is
-   * never null cannot be reached by any test. Three interpolations would therefore
-   * have cost three permanently uncovered branches on `apps/web-pwa/src/routes/**`.
-   * Assembled here it is ordinary TypeScript, and the tests cover both arms.
-   */
-  const cureSaltNoteText = $derived(
-    cureSaltNote === null
-      ? ''
-      : `${CURE_SALT_PRODUCTS[cureSaltNote.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[cureSaltNote.nitrateBearing].label} is the same strength and carries one.`,
-  );
 
   // ─── The stages, as they would be saved ───────────────────────────────────────
 
@@ -1472,7 +1468,7 @@
               data-testid="formula-cure-salt-note"
               data-nitrate-bearing={cureSaltNote.nitrateBearing}
             >
-              <p class="text-sm text-warning-text">{cureSaltNoteText}</p>
+              <p class="text-sm text-warning-text">{cureSaltNote.text}</p>
               <p class="text-sm text-warning-text">
                 Nothing here is blocked. Change the product on the row above if you want to, or save
                 this as it stands.
