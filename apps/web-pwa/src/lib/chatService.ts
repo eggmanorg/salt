@@ -8,6 +8,7 @@ import {
 import { createObservabilityErrorReportingAdapter, trackUsageEvent } from '@salt/observability';
 import { parseChatCommand, isChatReadOnly } from '@salt/domain';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
+import { isFeatureEnabled } from './featureGate.js';
 import { rememberNote } from './kitchenMemoryService.js';
 import { currentMember } from './membersService.js';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
@@ -379,16 +380,19 @@ const takenSaveIntents = new Set<string>();
  * Take the save request the chef recorded on this conversation, if there is one
  * (issue #1480). True means the caller now owns it and should run the save.
  *
- * THIS FUNCTION DOES NOT GATE ON THE `chatSave` FEATURE FLAG (CLAUDE.md Rule
- * 12: state the real boundary). Consolidating the check in here (review of
- * #1490) was reverted — the eager `featureGate.ts` import it added changed
- * Rollup's chunking enough to tip the boot bundle over
- * `check-boot-payload.mjs`'s ceiling, and raising that ceiling needs sign-off
- * this change didn't have. The check lives back at each call site
- * (`ChatSessionPage.svelte`'s and `RecipeViewPage.svelte`'s `chatSaveGate`
- * reads) instead. A NEW SURFACE MUST GATE ITSELF before calling this — this
- * function will happily take, clear and report success on a request
- * regardless of whether the flag is on for the caller.
+ * THIS FUNCTION GATES ON THE `chatSave` FEATURE FLAG, so a conforming surface
+ * gets the gate for free (issue #1512): with the flag off it answers `false`
+ * and writes nothing — the request is not taken, not cleared, and no save runs.
+ * This is the one seam every save-intent surface goes through, which is why the
+ * check lives here rather than duplicated at each call site; consolidating it
+ * was attempted during #1490's review, reverted in 071d2807 for boot-payload
+ * headroom alone, and re-applied once #1512 raised that ceiling.
+ *
+ * THE BOUNDARY (CLAUDE.md Rule 12): this gates whether a REQUEST IS ACTED ON,
+ * and nothing more. It is not a permission boundary — `featureGate.ts` says why
+ * — and it does not stop a surface doing its own work around this call. A
+ * caller that ignores the return value and saves anyway is still ungated. The
+ * one thing every caller must do is honour the `false`.
  *
  * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER WAS PRESENT FOR THE REQUEST.
  * A request already sitting on the document the first time a page observes it
@@ -421,6 +425,10 @@ const takenSaveIntents = new Set<string>();
 export async function consumeSaveIntent(session: ChatSessionDoc): Promise<boolean> {
   const messageId = session.pendingSaveIntent;
   if (messageId === null) return false;
+  // BEFORE `takenSaveIntents` below, deliberately: a request refused for the
+  // flag must not be recorded as taken, or turning the flag on mid-session
+  // would find it already spent for this tab.
+  if (!isFeatureEnabled('chatSave')) return false;
   const token = `${session.id}:${messageId}`;
   if (takenSaveIntents.has(token)) return false;
   takenSaveIntents.add(token);

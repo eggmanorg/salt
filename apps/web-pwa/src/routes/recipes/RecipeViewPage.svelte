@@ -39,7 +39,7 @@
   // package. They are still sent from here, as ordinary user turns, unchanged.
   import { OPTIMISE_FOR_KITCHEN_PROMPT, REFRESH_PROMPT } from '@salt/domain/prompts';
   import { goBack } from '../../lib/nav.js';
-  import { breadGate, chatSaveGate } from '../../lib/featureGate.js';
+  import { breadGate } from '../../lib/featureGate.js';
   import { withMealParam } from '../../lib/mealReturn.js';
   import { readServingsParam, withServingsParam } from './servingsParam.js';
   import {
@@ -1557,8 +1557,19 @@
     const isFirstObservation = !seenActiveSaveIntentSessions.has(current.id);
     seenActiveSaveIntentSessions.add(current.id);
     if (current.pendingSaveIntent === null) return;
-    if (!$chatSaveGate.enabled) return;
 
+    // NO `chatSave` FLAG CHECK HERE, and that is the point (issue #1512): every
+    // path below reaches `consumeSaveIntent`, which gates on the flag itself and
+    // answers `false` with nothing written when it is off — so both branches are
+    // already inert without this effect naming the flag at all. Naming it also
+    // made this effect RE-RUN when PostHog's payload landed, and on that re-run
+    // `seenActiveSaveIntentSessions` was already populated by the earlier
+    // flag-off run: a days-old request read as a live arrival, which is exactly
+    // the staleness #1533's blocking Finding 1 removed one trigger of. Dropping
+    // the read drops that trigger too. The cost is stated, not hidden: a request
+    // sitting here while the flags are still in flight is no longer re-examined
+    // when they arrive, and is dropped by the next first observation — the same
+    // accepted cost as `sawFirstSnapshot`'s, and never an unprompted save.
     if (isFirstObservation) {
       // Finding 1 (#1490 review): a request already sitting on this chat the
       // FIRST time this page ever shows it as `activeSession` is nobody's to
