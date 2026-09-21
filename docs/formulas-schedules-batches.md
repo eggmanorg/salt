@@ -650,9 +650,10 @@ them.
   **Its limits, which are narrower than "Salt prevents an unsafe cure":** no product
   named means no bound; celery-powder "natural" cures are **absent by design**
   (their nitrite content varies by brand, so a fixed figure would be a guess wearing
-  a safety rail's clothes); nothing checks the rest of the salt; nothing checks
-  **suitability** (whether a nitrite-only product is fit for a ninety-day dry is a
-  different question, and is deliberately unasked); and scaling is never the danger,
+  a safety rail's clothes); nothing checks the rest of the salt; the **bound** still
+  checks nothing about **suitability** (whether a nitrite-only product is fit for a
+  ninety-day dry is a different question — see the entry below, which answers it in
+  words and refuses nothing); and scaling is never the danger,
   because percentages scale linearly. A formula that saves is therefore **not** a
   formula Salt has pronounced safe. The rail earns its place catching a mis-typed
   percentage, a basis mapped to the wrong ingredient, and a scraped recipe that
@@ -675,10 +676,38 @@ them.
   ingoing nitrate ends up ~2.3× apart, and splitting the difference would move the
   number that matters to flatter the one that does not. A salt total too low to carry
   the dose is **refused with both figures, never clamped** in either direction. And
-  nothing about a substitution says the substitute SUITS the cure. The suitability
-  limit stated above holds unchanged: whether a nitrite-only product is fit for a
-  ninety-day dry is a different question, it is Daniel's to answer, and nothing built
-  here answers it by accident.
+  nothing about a substitution says the substitute SUITS the cure — which remains
+  true: `withCureSaltSubstituted` still never crosses a pair and still proposes
+  nothing about fitness. The suitability question itself is no longer unasked; see
+  the entry below.
+
+- ~~**Should Salt say anything when a nitrite-only cure salt is used for a long
+  dry.**~~ **ANSWERED — yes, and only as a note** (issue #1473). Nitrite depletes
+  and a long dry outlasts it unless nitrate is behind it as a slow reservoir, so
+  Cure #1 on a ninety-day coppa is a real mistake Salt used to watch in silence.
+  `cureSaltFitness` (`packages/domain/src/formula/cureSalt.ts`) reads the product
+  named on the formula and the recipe's `cureCategory` and returns a **fact** — the
+  nitrate-bearing product at the same nitrite strength, derived from
+  `CURE_SALT_PRODUCTS` rather than from a second cross-pair list. Two surfaces word
+  it: the formula screen, and the start-a-run sheet, where it is re-read against the
+  jar the person actually picks.
+
+  **How narrowly, because "Salt prevents an unsuitable cure" is what this must never
+  be read as.** It **gates nothing** — no refusal, no disabled control, no
+  confirmation, no `Failure`, and nothing written. `solveFormula`'s bound violation
+  is still the one and only place Salt says no. It reads two fields and nothing else:
+  no product named means no note (exactly as no product named means no bound), an
+  uncategorised cure means no note, and it says nothing about **dose**. "Long dry"
+  is `cureCategory` — `dry_cured_whole_muscle`, `fermented_dry_cured`, `semi_dry` —
+  never a schedule duration, because a cure's dry is typically observational
+  (`duration: null`) and the note has to work on the formula screen where there may
+  be no process at all. The cooked categories (bacon, mortadella) are silent by
+  design: a note there would be wrong and would teach people to stop reading notes.
+  **The running batch carries nothing** — `BatchQuantitySchema` does not freeze which
+  salt product went on, so a note there would have to read through to a live formula
+  a later edit can rewrite. Adding `saltProduct` to that schema is the honest
+  prerequisite and wants its own issue.
+  `packages/domain/tests/formula/cureSalt.test.ts` pins each of these.
 
 - **How good are the two AI passes.** The gate on everything: hand three real
   bread recipes to the cheap model and check the wait stages come out clean, then

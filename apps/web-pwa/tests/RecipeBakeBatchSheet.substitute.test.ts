@@ -133,6 +133,32 @@ function renderSheet(formula: Formula) {
   return render(RecipeBakeBatchSheet, { props: { recipe: RECIPE, formula, open: true } });
 }
 
+/**
+ * The same coppa, but a CURE in a named category — the field the suitability note
+ * reads (issue #1473). `RECIPE` above is deliberately left as a plain `recipe` with
+ * no category, so every test that came before still exercises the silent case.
+ */
+function renderCure(formula: Formula, cureCategory: string | null) {
+  return render(RecipeBakeBatchSheet, {
+    props: { recipe: { ...RECIPE, kind: 'cure', cureCategory }, formula, open: true } as never,
+  });
+}
+
+/** The coppa's formula naming a different curing salt, with that product's window. */
+function coppaFormulaNaming(product: 'cure1' | 'cure2'): Formula {
+  const base = coppaFormula();
+  return {
+    ...base,
+    components: base.components.map((component) =>
+      component.ingredientId === 'ing-cure' ? { ...component, saltProduct: product } : component,
+    ),
+  } as Formula;
+}
+
+function cureSaltNote(): HTMLElement | null {
+  return screen.queryByTestId('bake-batch-cure-salt-note');
+}
+
 function previewGrams(): string[] {
   return screen
     .queryAllByTestId('bake-batch-preview-grams')
@@ -402,5 +428,81 @@ describe('RecipeBakeBatchSheet — which jar are you using', () => {
       .trim();
     expect(said).toContain('outside the 2%–3.15% window it has to sit in');
     expect(screen.getByTestId('bake-batch-confirm')).toBeDisabled();
+  });
+});
+
+// ─── Is it the right SORT of salt for this cure? (issue #1473) ────────────────
+//
+// THE PREDICATE'S OWN CLAIMS ARE PINNED IN DOMAIN
+// (`packages/domain/tests/formula/cureSalt.test.ts`) — which categories draw a note,
+// which products, and where the named counterpart comes from. Nothing below
+// re-asserts any of that.
+//
+// What this suite holds to is the SHEET's half, which is the half the formula screen
+// cannot cover:
+//
+//   • IT READS THE JAR THE PERSON PICKED, not the one the recipe names, and it
+//     re-reads as the buttons are tapped;
+//   • TAPPING THE OTHER BUTTON DOES NOT MAKE IT GO, because a pair agrees about
+//     nitrate — which is exactly the case this sheet had no words for;
+//   • START IS ENABLED THROUGHOUT and starting still freezes what it always did.
+//     The blocking refusal above it is a different thing and stays a different
+//     thing.
+
+describe('RecipeBakeBatchSheet — is this the right sort of salt for this cure', () => {
+  it('says so for a long dry, and tapping the other jar does not make it go', async () => {
+    renderCure(coppaFormula(), 'dry_cured_whole_muscle');
+    await waitFor(() => expect(cureSaltNote()).toBeInTheDocument());
+    // Cure #1's counterpart at the same strength.
+    expect(cureSaltNote()?.getAttribute('data-nitrate-bearing')).toBe('cure2');
+
+    await pick('nitritedCuringSalt');
+
+    // STILL THERE, and now naming the dilute nitrate-bearing product instead. Both
+    // buttons are nitrite-only because a pair never crosses that line, so the swap
+    // this sheet offers cannot answer the question it is being asked here.
+    await waitFor(() =>
+      expect(cureSaltNote()?.getAttribute('data-nitrate-bearing')).toBe('salvianda'),
+    );
+    const said = (cureSaltNote()?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    expect(said).toContain('Nitrited curing salt');
+    expect(said).toContain('Salvianda');
+  });
+
+  it('says nothing when the recipe already names a nitrate-bearing product', async () => {
+    renderCure(coppaFormulaNaming('cure2'), 'fermented_dry_cured');
+    await waitFor(() => expect(screen.getByTestId('bake-batch-substitute')).toBeInTheDocument());
+    expect(cureSaltNote()).toBeNull();
+
+    // Salvianda is cure #2's pair member and also carries nitrate, so the silence
+    // survives the swap.
+    await pick('salvianda');
+    expect(cureSaltNote()).toBeNull();
+  });
+
+  it('leaves Start enabled, and starting freezes exactly what it did before', async () => {
+    renderCure(coppaFormula(), 'semi_dry');
+    await waitFor(() => expect(cureSaltNote()).toBeInTheDocument());
+    // NOT THE BLOCKING REFUSAL. That one disables Start and this one must not, so
+    // the two are asserted apart rather than merely rendered apart.
+    expect(screen.queryByTestId('bake-batch-substitute-refused')).toBeNull();
+    expect(screen.getByTestId('bake-batch-confirm')).not.toBeDisabled();
+
+    await fireEvent.click(screen.getByTestId('bake-batch-confirm'));
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    // The recipe's own product went on, so there is no substitution to record —
+    // byte for byte what this sheet froze before the note existed.
+    expect('cureSaltSubstitution' in mockStartBatch.mock.calls[0]![0]).toBe(false);
+  });
+
+  it('says nothing on a cooked cure, or on a loaf', async () => {
+    renderCure(coppaFormula(), 'cooked_whole_muscle');
+    await waitFor(() => expect(screen.getByTestId('bake-batch-substitute')).toBeInTheDocument());
+    expect(cureSaltNote()).toBeNull();
+    cleanup();
+
+    renderCure(BREAD_FORMULA, null);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-sheet')).toBeInTheDocument());
+    expect(cureSaltNote()).toBeNull();
   });
 });

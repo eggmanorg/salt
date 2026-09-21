@@ -20,6 +20,7 @@
   import {
     CURE_SALT_PRODUCTS,
     LEAVENING_PERCENT_BOUNDS,
+    cureSaltFitness,
     diffProcess,
     flattenIngredients,
     isCuringSalt,
@@ -441,6 +442,45 @@
   const substitution = $derived.by(() =>
     substituteTo === null ? null : withCureSaltSubstituted(formula, { to: substituteTo }),
   );
+
+  /**
+   * Is the jar being chosen the right SORT for this cure (issue #1473)?
+   *
+   * READ AGAINST THE PRODUCT THE PERSON HAS ACTUALLY PICKED, not the recipe's — this
+   * is the sheet where the cupboard has its say, and the answer has to move as the
+   * buttons are tapped. `substituteTo ?? namedCuringSalt` is the same expression the
+   * preview and the frozen payload already read from, so the note cannot disagree
+   * with the weights below it about which jar is going on.
+   *
+   * IT IS NOT ON `canStart` AND MUST NEVER JOIN IT. The substitution REFUSAL above
+   * disables Start, deliberately, because the person asked for a swap that cannot be
+   * done; this is a different thing entirely and blocks nothing. Keeping them apart
+   * is the whole point — merge them and Salt starts policing a cure it was only
+   * asked to record.
+   *
+   * THE WORDS COME OUT WITH THE FACT, in one object or null, for the reason
+   * `FormulaPage`'s twin states at length: a second `$derived` holding only the text
+   * is read solely from inside the `{#if}` that already proved the note exists, so
+   * its empty arm is unreachable through this component and costs an uncovered
+   * branch no test can ever retire. One object, no arm to miss.
+   *
+   * The copy is worded for the case the formula screen does not have: BOTH BUTTONS
+   * ARE NITRITE-ONLY. A pair never crosses the nitrate line, so when the jar on offer
+   * is nitrite-only its alternative is too — and a sentence that did not say so would
+   * leave the other button looking like the fix.
+   */
+  const cureSaltNote = $derived.by(() => {
+    const fitness = cureSaltFitness({
+      product: substituteTo ?? namedCuringSalt,
+      category: recipe.cureCategory,
+    });
+    if (fitness.kind === 'ok') return null;
+    return {
+      nitrateBearing: fitness.nitrateBearing,
+      text: `${CURE_SALT_PRODUCTS[fitness.product].label} is nitrite only — there is no nitrate behind it to keep working through a long dry, so the protection runs out partway. ${CURE_SALT_PRODUCTS[fitness.nitrateBearing].label} is the same strength and carries one. Neither jar offered above is it: a swap here changes concentration, never what the cure is fit for. Start is not blocked — go ahead if this is what you have.`,
+    };
+  });
+
   /**
    * A refused substitution, in words, or null when there is nothing to refuse.
    *
@@ -451,7 +491,9 @@
    * `describeBoundViolation` took when its third surface appeared.
    *
    * It says nothing about whether the substitute SUITS this cure. That is a
-   * different question and Salt does not ask it.
+   * different question, answered separately and in words by `cureSaltFitness`
+   * (issue #1473) — and the two must not be merged. THIS refusal blocks Start; that
+   * note never does.
    */
   const substitutionRefusal = $derived.by((): string | null => {
     const attempt = substitution;
@@ -966,8 +1008,10 @@
       <!-- ─── Which jar are you using? ────────────────────────────────────────── -->
       <!-- OFFERED ONLY WHEN THE FORMULA NAMES A CURING SALT, and then only its
            pair member: nitrite-only swaps with nitrite-only, nitrate-bearing with
-           nitrate-bearing. Crossing changes what the cure is fit for, which is a
-           suitability question Salt does not ask (issue #1402). -->
+           nitrate-bearing. Crossing changes what the cure is fit for (issue #1402).
+           Since #1473 Salt does ask that suitability question — in a note, which
+           gates nothing and proposes no swap. These buttons are unchanged by it:
+           there are still exactly two, and they still never cross a pair. -->
       {#if namedCuringSalt !== null && substitutable !== null}
         <div class="flex flex-col gap-2" data-testid="bake-batch-substitute">
           <p class="text-sm font-medium">Which curing salt are you using?</p>
@@ -1241,6 +1285,24 @@
             </div>
           {/each}
         </div>
+      {/if}
+
+      {#if cureSaltNote !== null}
+        <!-- THE SORT OF SALT, ABOVE START (issue #1473), because this is the moment
+             the jar is actually named — the formula can say Cure #2 and the cupboard
+             can still hand over Cure #1.
+
+             DELIBERATELY NOT THE REFUSAL ABOVE, which is tinted, blocking, and
+             disables Start. This is the muted note the place picker already uses for
+             the same job: a fact stated where it still matters, with no control and
+             no consequence. Start is enabled underneath it in every state. -->
+        <p
+          class="text-xs text-muted-foreground"
+          data-testid="bake-batch-cure-salt-note"
+          data-nitrate-bearing={cureSaltNote.nitrateBearing}
+        >
+          {cureSaltNote.text}
+        </p>
       {/if}
 
       {#if startError !== null}

@@ -370,3 +370,103 @@ describe('FormulaPage — which curing salt is in the jar', () => {
     expect(labels.some((label) => /min|max|window|bound/i.test(label))).toBe(false);
   });
 });
+
+// ─── Is it the right SORT of salt? (issue #1473) ──────────────────────────────
+//
+// THE PREDICATE'S OWN CLAIMS ARE PINNED IN DOMAIN, in
+// `packages/domain/tests/formula/cureSalt.test.ts` — which categories draw a note,
+// which products, and that the nitrate-bearing counterpart is read off the
+// composition table. This file's own header says so, and nothing below re-asserts
+// any of it.
+//
+// What is pinned HERE is the screen's half, which the domain suite cannot see:
+//
+//   1. IT APPEARS, naming the product that suits.
+//   2. IT IS LIVE OFF THE PICKER and dies the moment the row names a nitrate-bearing
+//      product — with NOTHING SAVED, which is the behaviour that makes it a note
+//      rather than a verdict on a stored formula.
+//   3. IT GATES NOTHING. Save is enabled and a save still writes, with the note up.
+//   4. IT IS SILENT on a cooked cure and on a formula naming no curing salt — the
+//      two silences a screen can get wrong by wiring the predicate to the wrong
+//      field, where the domain suite would stay green.
+
+/** A coppa in a named cure category — the field the note reads. */
+function coppaIn(category: Recipe['cureCategory']): Recipe {
+  return { ...coppa(), kind: 'cure', cureCategory: category };
+}
+
+function noteText(): string {
+  const el = screen.queryByTestId('formula-cure-salt-note');
+  return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+describe('FormulaPage — is this the right sort of salt for this cure', () => {
+  it('says so on a long dry, and names the product that suits', async () => {
+    mockRecipes._set([coppaIn('dry_cured_whole_muscle')]);
+    const { getByTestId } = await openCoppa();
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeTruthy());
+    expect(noteText()).toContain('Cure #1 (Prague powder #1)');
+    expect(noteText()).toContain('Cure #2 (Prague powder #2)');
+    // The product it names comes from the domain fact, not from copy written here.
+    expect(getByTestId('formula-cure-salt-note').getAttribute('data-nitrate-bearing')).toBe(
+      'cure2',
+    );
+  });
+
+  it('goes the moment the row names the nitrate-bearing product, with nothing saved', async () => {
+    mockRecipes._set([coppaIn('fermented_dry_cured')]);
+    const { container } = await openCoppa();
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeTruthy());
+    await pickProduct(container, 2, 'Cure #2 (Prague powder #2)');
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeNull());
+    // LIVE OFF THE ROWS, NOT OFF THE SAVED FORMULA. Nothing was written to make the
+    // note go — which is the whole difference between a note and a verdict.
+    expect(saveFormula).not.toHaveBeenCalled();
+  });
+
+  it('blocks nothing — Save is enabled and still writes with the note up', async () => {
+    mockRecipes._set([coppaIn('semi_dry')]);
+    const { container, getByTestId } = await openCoppa();
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeTruthy());
+    expect(blockedText()).toBe('');
+    await waitFor(() =>
+      expect(getByTestId('formula-save-button').hasAttribute('disabled')).toBe(false),
+    );
+    await fireEvent.click(getByTestId('formula-save-button'));
+    await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
+    // The note is still up after the save, and the formula went out carrying the
+    // very product it is about. Nothing was substituted, cleared or clamped.
+    expect(screen.queryByTestId('formula-cure-salt-note')).toBeTruthy();
+    const written = vi.mocked(saveFormula).mock.calls[0]![0];
+    expect(written.components.find((c) => c.ingredientId === 'ing-cure')).toMatchObject({
+      saltProduct: 'cure1',
+    });
+    // No confirmation between the tap and the write, and nothing dismissible.
+    expect(container.textContent).not.toMatch(/are you sure|dismiss/i);
+  });
+
+  it('says nothing on a cooked cure', async () => {
+    // Bacon and gammon are nitrite-only territory by ordinary practice. A note here
+    // would be wrong, and would teach people to stop reading notes.
+    mockRecipes._set([coppaIn('cooked_whole_muscle')]);
+    await openCoppa();
+    expect(screen.queryByTestId('formula-cure-salt-note')).toBeNull();
+  });
+
+  it('says nothing on an uncategorised cure', async () => {
+    mockRecipes._set([coppaIn(null)]);
+    await openCoppa();
+    expect(screen.queryByTestId('formula-cure-salt-note')).toBeNull();
+  });
+
+  it('says nothing once the row names no curing salt at all', async () => {
+    // EXACT CONSISTENCY WITH "NO PRODUCT NAMED MEANS NO BOUND". Clearing the picker
+    // is what "this is not a curing salt" looks like, and an opinion about an
+    // ingredient nobody has identified is a guess wearing a safety rail's clothes.
+    mockRecipes._set([coppaIn('dry_cured_whole_muscle')]);
+    const { container } = await openCoppa();
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeTruthy());
+    await pickProduct(container, 2, 'Not a curing salt');
+    await waitFor(() => expect(screen.queryByTestId('formula-cure-salt-note')).toBeNull());
+  });
+});

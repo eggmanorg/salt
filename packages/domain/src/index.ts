@@ -492,10 +492,13 @@ export {
   isCuringSalt,
   pairOf,
   withCureSaltSubstituted,
+  LONG_DRY_CURE_CATEGORIES,
+  cureSaltFitness,
 } from './formula/index.js';
 export type {
   BoundViolation,
   ComponentPercentBounds,
+  CureSaltFitness,
   CureSaltProductInfo,
   CureSaltSubstitutionFailure,
   CureSaltSubstitutionResult,
