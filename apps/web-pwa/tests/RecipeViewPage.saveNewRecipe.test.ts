@@ -458,6 +458,30 @@ describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
 // phone drawer are two surfaces of one conversation and can be mounted at once,
 // so a copy in each would ask twice.
 describe('RecipeViewPage — a save the chef was asked for', () => {
+  // The ask only opens over a conversation that is ON SCREEN (issue #1505), and
+  // jsdom answers `matches: false` to every media query — so without this stub
+  // `docked`, and with it `chatPaneShown`, is false and none of these cases is
+  // the one they are written about. The hidden case has its own suite,
+  // `RecipeViewPage.saveIntent.test.ts`.
+  const realMatchMedia = window.matchMedia;
+
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      media: query,
+      matches: true,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  });
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+  });
+
   // A request already on the document the first time this page ever shows a
   // chat as its `activeSession` is one nobody was here to take (issue #1490
   // review, Finding 1) and must not open the ask — see the dedicated pinning

@@ -242,6 +242,73 @@ describe('ChatSessionPage — a save the chef was asked for', () => {
   });
 });
 
+// A request that resolves while a save is ALREADY RUNNING (issue #1505). It is
+// cleared from the document before anything happens — the "taken, not read"
+// contract above — so `handleSaveAsRecipe`'s `isSavingRecipe` guard used to drop
+// it with nothing left anywhere saying it had ever been made.
+//
+// What the fix promises, and what these two pin between them, is exactly this
+// much: the request is held and RUN when the in-flight save FAILS, and DROPPED
+// when it succeeds — that save has already answered it, and a retry there would
+// be a second dish to delete rather than a recovery.
+describe('ChatSessionPage — a save the chef was asked for, while one is already running', () => {
+  type LibrarianResult = Awaited<ReturnType<typeof authorRecipeTraced>>;
+
+  /** Hold the librarian open so a save can be caught mid-flight. */
+  function heldLibrarian(): (v: LibrarianResult) => void {
+    let settle!: (v: LibrarianResult) => void;
+    vi.mocked(authorRecipeTraced).mockReturnValueOnce(
+      new Promise<LibrarianResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    return (v) => settle(v);
+  }
+
+  /**
+   * Press Save, catch it mid-flight, and let the chef's request land on top.
+   * Returns the settle for the button's save.
+   */
+  async function raceAgainstTheButton(): Promise<(v: LibrarianResult) => void> {
+    mockSessions._set([makeSession()]);
+    renderPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const settle = heldLibrarian();
+    await fireEvent.click(screen.getByTestId('chat-save-recipe-btn'));
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalledTimes(1));
+
+    // The request arrives on the subscription while that save is still open.
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2' })]);
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    return settle;
+  }
+
+  it('runs the request once the in-flight save has failed, instead of losing it', async () => {
+    const settle = await raceAgainstTheButton();
+
+    // Still only the button's call — the request is held, not running alongside.
+    expect(authorRecipeTraced).toHaveBeenCalledTimes(1);
+
+    settle({ kind: 'err', error: OFFLINE } as LibrarianResult);
+
+    // Before the fix this was where the request vanished: cleared from the
+    // document, dropped by the guard, and recorded nowhere.
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
+  });
+
+  it('drops the request when the in-flight save succeeded, rather than saving twice', async () => {
+    const settle = await raceAgainstTheButton();
+
+    settle({ kind: 'ok', value: SAVED } as LibrarianResult);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ChatSessionPage — a save the chef was asked for, on a chat about a dish', () => {
   // Two things could be meant standing on a dish, so the app asks instead of
   // guessing — in the same two words the floppy-disc menu uses (#1310).
