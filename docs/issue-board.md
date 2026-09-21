@@ -108,7 +108,7 @@ is the one thing the band is for. This is an invariant, so per CLAUDE.md rule 12
 it is mechanical rather than remembered — `node scripts/board.mjs check` goes red
 when a Recommended item's blocker is absent from Recommended or ordered below it.
 
-`check` covers five more things — plus the `Epic` rule below:
+`check` covers six more things — plus the `Epic` rule below:
 
 - **An open issue on the board has a `Queue`.** GitHub's own "add item to
   project" workflow puts every new issue on the board with every field empty,
@@ -121,8 +121,8 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
 - **A campaign ledger is attached to the work it ran.** Where every issue a
   ledger's title names sits under one parent, the ledger sits under that parent
   too; where they do not share one, it stays a root and `check` says nothing in
-  either direction. Open and closed alike, because a ledger closes when its
-  campaign finishes and closed is where nearly every orphan was. The rule's real
+  either direction. Open and closed alike, because a ledger does eventually
+  close and closed is where nearly every orphan was. The rule's real
   boundary is worth stating: the run-set is what the ledger's **title** names,
   never every issue the campaign touched, so an issue added mid-run without a
   title edit is invisible to it. The pure halves — parsing the run-set, and
@@ -137,6 +137,27 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   them. `Status` held two `Todo` options until 2026-08-31, and nothing noticed.
   The comparison is case-insensitive, because name resolution is.
 - **No view grouped by `Queue` carries a sort** — the other half of having no rank field.
+- **Nothing is closed while work under it is still open.** A closed issue with an
+  open sub-issue at **any depth** is a failure, and the message names the open
+  ones. This is not tidiness: it is the invariant the **Hierarchies** view rests
+  on. That view filters on `sub-issues-progress`, which counts **direct children
+  only**, so a parent closed above an open _grandchild_ reads 100% and its whole
+  family drops out of the only view claiming to show every running thread — with
+  the work still open. On 2026-09-21 two live families of nine were invisible
+  that way (#1372, #1458), found by reading a progress column rather than by
+  anything mechanical. No view definition can express depth, so this check is the
+  only place the claim can be pinned. The pure half is `closedAboveOpenWorkMessage`
+  in [`scripts/lib/boardHierarchy.mjs`](../scripts/lib/boardHierarchy.mjs),
+  unit-tested offline; only the batched GraphQL walk lives in `check`.
+
+  **Its boundary, stated rather than implied.** The walk starts from the board's
+  closed items, so a closed issue that is not on the board is invisible to it —
+  the same blind spot the view has, which is why it is acceptable. A child the
+  query could not resolve, and a parent's children past the hundredth, are
+  likewise missed: the rule under-reports rather than inventing failures, so a
+  green `check` is evidence about what was fetched and never proof about what
+  exists.
+
 - **A closed issue is at a shipping status.** Closed is not by itself stale: an
   issue closes the moment its PR merges and must _stay_ on the board at `Merged`,
   because that is the set `board.mjs release` walks. What is wrong is a closed
@@ -144,13 +165,32 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   belongs off the board, or a PR closed it without the `Closes #N` that moves it,
   and the automation is silently missing work.
 
+  **Closing and shipping stopped being the same claim** (2026-09-21), and this
+  bullet is the half that did not change. `Status` is what says a thing shipped;
+  closed now says a thing and everything under it is _finished_. So `Merged` on
+  an **open** issue is legitimate and no longer a contradiction — a shipped issue
+  that later grows an open follow-up is reopened by the rule above, keeps
+  `Merged`, still reads as shipped everywhere on the board, and is still promoted
+  to `Released` by `board.mjs release`, which keys on `Status` plus the closing
+  PR's merge commit and never reads issue state. What this rule still catches is
+  unchanged: a **closed** issue that never reached a shipping status.
+
   **A campaign ledger is in this rule** (2026-09-12). It used to be exempt, and the
   cost was 19 closed ledgers at no `Status` at once — one per campaign ever run,
   accumulating invisibly to the only check that could have said so and surfacing
   on the `Workflow` board as a column of cards nobody could account for. A ledger
-  is not work, but it does ship: it closes when its campaign finishes, and a
+  is not work, but it does ship: it closes when its campaign is finished, and a
   finished campaign means the work it ran merged. The exemption a ledger keeps is
   `Queue` and `Class`, nothing more.
+
+  **"When its campaign finishes" is no longer the same moment as Finish**
+  (2026-09-21, #1534). `/salt-campaign`'s Finish step files a
+  `campaign follow-ups:` issue under the ledger and deliberately leaves it open,
+  so closing the ledger there put a closed parent over open work — the state the
+  rule above now fails, and seven of the eight issues reopened by hand that day
+  were this exact step. Finish now leaves the ledger **open** whenever anything
+  under it is, which for a campaign with any findings at all is always;
+  `board.mjs rollup` closes it later, when the follow-ups issue does.
 
 ---
 
@@ -295,6 +335,23 @@ line before it posts anything. It exists because an agent asked for an epic had
 nothing correct to reach for and reached for `/salt-spec` instead (#1378), not
 because containers became cheaper.
 
+**It reopens a closed parent rather than leaving a violation behind** (#1534).
+Attaching open work under something already closed is the one way the
+nothing-closes-above-open-work rule breaks with nobody doing anything wrong: a PR
+merges and closes an issue, and the defect found afterwards is attached
+underneath. That is #1319 exactly — it had shipped, and #1496 arrived later. So
+`parent` reopens every **closed ancestor** above the attachment, not just the
+immediate one, prints each with the reason, and touches no field: `Status` stays
+where it was, so the issue still reads as shipped and `release` still promotes it.
+
+Two things that follow. **It never closes anything** — detaching can leave an old
+parent with nothing open under it, and whether that parent is now finished is a
+judgement no command here is entitled to make. And **the fix lives here rather
+than in a watcher**: `check` alone would leave the family invisible in
+`Hierarchies` until somebody ran it, and an event-driven reopen would be a second
+automated writer of issue state. The command making the link repairs what the
+link breaks.
+
 **It refuses to re-parent unasked.** `addSubIssue` takes a `replaceParent` flag
 and this never passes it. An agent cannot tell "unattached" from "attached to
 something I cannot see", and silently moving a child out from under a parent a
@@ -332,7 +389,8 @@ that is populated.
 **A `/salt-campaign` ledger takes no work fields, but it does take a parent and a
 Status.** An issue titled `campaign:` is a coordination artefact: no `Queue`, no
 `Class`, closed by hand rather than by a PR, and it is the parent the campaign
-hangs its own filings off. `check` skips it in the untriaged rule, or every
+hangs its own filings off — which is also why it now outlives its own campaign,
+since one of those filings is the follow-ups issue and that stays open. `check` skips it in the untriaged rule, or every
 campaign that ever ran would sit in its output forever. `campaign follow-ups:`
 gets no such exemption — that one is ordinary work and is triaged like any.
 
@@ -649,12 +707,19 @@ does three things and refuses to do a fourth:
    match: two lines naming the same issue is a body somebody wrote wrong, and ticking
    either would hide it.
 2. **Closes the parent** — with a comment, and `Status=Merged`, which a closed board
-   item must carry and which no PR was ever going to set here — but only once every
-   sub-issue is closed **and** every line is ticked.
-3. **Nudges instead** when the children are all closed and the body still claims open
+   item must carry and which no PR was ever going to set here — but only once nothing
+   is open **anywhere beneath it** and every line is ticked.
+3. **Nudges instead** when nothing is open beneath it and the body still claims open
    work, states no checklist at all, or is a `campaign:` ledger (a ledger closes by
-   hand at **Finish**, because a parked branch is unfinished business its children
-   cannot show). One comment, marked so a re-close does not repeat it.
+   hand, because a parked branch is unfinished business its children cannot show).
+   One comment, marked so a re-close does not repeat it.
+
+**"Anywhere beneath it" is depth, and that is a correction** (#1534). This asked
+whether the parent's own sub-issues were closed, so a parent over an open
+_grandchild_ took the closing arm — and since this job fires on every
+`issues: closed`, it was the automated way to produce the very state
+`check` now fails on. It reads the whole subtree now, from the same walk the
+check uses.
 
 **The line has to name the issue that actions it, and that is the part a human
 writes.** #1335's lines cited the campaign's PR (`(#1334)`), and the issues that
@@ -720,15 +785,35 @@ item.
 
 ## The views
 
-| View         | Layout | Filter                                               | Group by | Sort                       |
-| ------------ | ------ | ---------------------------------------------------- | -------- | -------------------------- |
-| The queue    | table  | `is:open -queue:Epic -queue:Deferred`                | Queue    | —                          |
-| Deferred     | table  | `queue:Deferred`                                     | Class    | —                          |
-| Product      | table  | `is:open class:"New feature","Feature update"`       | Class    | —                          |
-| Workflow     | board  | `-queue:Deferred -queue:epic`                        | Status   | `Closed DESC, Created ASC` |
-| Ready to Run | table  | `is:open -queue:Deferred label:specced no:blocking`  | Queue    | —                          |
-| Epic Status  | table  | `queue:Epic is:open`                                 | —        | —                          |
-| Needs Spec   | table  | `is:open -queue:Deferred -queue:epic -label:specced` | Queue    | —                          |
+| View         | Layout | Filter                                                        | Group by | Sort                       |
+| ------------ | ------ | ------------------------------------------------------------- | -------- | -------------------------- |
+| The queue    | table  | `is:open -queue:Epic -queue:Deferred`                         | Queue    | —                          |
+| Deferred     | table  | `queue:Deferred`                                              | Class    | —                          |
+| Product      | table  | `is:open class:"New feature","Feature update"`                | Class    | —                          |
+| Workflow     | board  | `-queue:Deferred -queue:epic`                                 | Status   | `Closed DESC, Created ASC` |
+| Ready to Run | table  | `is:open -queue:Deferred label:specced no:blocking`           | Queue    | —                          |
+| Epic Status  | table  | `queue:Epic is:open`                                          | —        | —                          |
+| Needs Spec   | table  | `is:open -queue:Deferred -queue:epic -label:specced`          | Queue    | —                          |
+| Hierarchies  | table  | `no:parent-issue sub-issues-progress:<100 sub-issues.is:open` | —        | —                          |
+
+**`Hierarchies` is the one view that depends on an invariant rather than a
+field**, and it is worth knowing why each half of that filter is there before
+editing it. It answers "what is still running, and what does it belong to": every
+family once, from its root, with the unfinished work nested under it — **Show
+hierarchy** on, which is a per-view UI toggle the API cannot set.
+
+- `no:parent-issue` picks the roots, so a family appears once rather than once
+  per member.
+- `sub-issues-progress:<100` drops the families that are finished. It counts
+  **direct children only**, which is exactly why _nothing is closed while work
+  under it is still open_ (above) has to be mechanical: break that invariant and
+  this clause hides a live family instead of a finished one.
+- `sub-issues.is:open` filters the **nested** rows. A bare `is:open` does not —
+  it applies to top-level rows alone, where it would drop the closed roots the
+  view exists to keep. The `sub-issues.` prefix is undocumented in GitHub's
+  hierarchy-view changelog and was found by hand; assume other
+  `sub-issues.<qualifier>` forms exist before concluding something cannot be
+  filtered.
 
 **Grouping cannot be _set_ through the API, but it can be _read_.**
 `ProjectV2ViewConfigurationInput` exposes only `visibleFieldIds`, so a rebuilt
