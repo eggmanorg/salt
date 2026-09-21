@@ -1566,17 +1566,36 @@
     // `seenActiveSaveIntentSessions` was already populated by the earlier
     // flag-off run: a days-old request read as a live arrival, which is exactly
     // the staleness #1533's blocking Finding 1 removed one trigger of. Dropping
-    // the read drops that trigger too. The cost is stated, not hidden: a request
-    // sitting here while the flags are still in flight is no longer re-examined
-    // when they arrive, and is dropped by the next first observation — the same
-    // accepted cost as `sawFirstSnapshot`'s, and never an unprompted save.
+    // the read drops that trigger too. THE COST IS REAL, not merely renamed
+    // (#1536 review, blocking finding — corrected from an earlier, false claim
+    // that this was dropped): a request armed while the flags are still in
+    // flight STAYS ARMED, and the session is already marked seen by the time
+    // this runs. So the next run this effect gets — a later snapshot, the pane
+    // opening — does not re-examine and drop it; `isFirstObservation` is
+    // already false by then, so it CLASSIFIES the still-armed request as a
+    // LIVE ARRIVAL. Here that surfaces as "Save which one?" popping over a
+    // days-old request once the pane or drawer is up when that run fires; the
+    // equivalent effect in `ChatSessionPage.svelte` has no dialog to interpose,
+    // so the same shape runs `handleSaveAsRecipe()` outright. NOT A
+    // REGRESSION: base reached the same end state, driven by the old
+    // `$chatSaveGate` read re-running the effect straight off the flag
+    // payload — this narrows the trigger, it does not remove the hazard.
+    // Closing it for real means not burning `seenActiveSaveIntentSessions` /
+    // `sawFirstSnapshot` on a run that could not have answered, which is out
+    // of this issue's scope.
     if (isFirstObservation) {
       // Finding 1 (#1490 review): a request already sitting on this chat the
       // FIRST time this page ever shows it as `activeSession` is nobody's to
-      // answer. Cleared UNCONDITIONALLY here, not behind the visibility check
-      // below — visibility only matters for a question that might get ASKED,
-      // and a first-observation request never is. #1533 review, blocking
-      // Finding 1: an earlier version of this effect ran the visibility check
+      // answer. Consumed here regardless of visibility, not behind the
+      // visibility check below — visibility only matters for a question that
+      // might get ASKED, and a first-observation request never is. NOT
+      // cleared unconditionally, though (#1536 review): `consumeSaveIntent`
+      // itself still declines to clear when `chatSave` is off for this
+      // person, so a flag-off run reaches this branch, marks the session
+      // seen, and leaves the request armed — precisely the state the comment
+      // above now names as a live-arrival risk on the run after the flags
+      // land. #1533 review, blocking Finding 1: an earlier version of this
+      // effect ran the visibility check
       // FIRST, so a run where the pane was hidden returned before reaching
       // this branch at all — doing nothing, yet the `seenActiveSaveIntentSessions.add`
       // two lines up had already fired, unconditionally, on that same

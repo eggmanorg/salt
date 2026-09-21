@@ -70,14 +70,15 @@ const ASSETS = join(DIST, 'assets');
 // consolidation", 2026-09-20). Nothing of ours grew here either: measured fresh
 // against a build of 8e7dc971, the boot graph is 503.66 kB gz — 1.34 kB of
 // headroom under the old 505 KB ceiling. That margin is the problem. It is
-// thinner than the #1076 raise left (~0.9 kB) and far thinner than the +4.66 kB
-// a single routine dependency bump consumed at #1297, and in campaign #1486 it
+// already thicker than the #1076 raise left (~0.9 kB) yet still far thinner
+// than the +4.66 kB a single routine dependency bump consumed at #1297 — the
+// #1297 comparison is what carries the argument — and in campaign #1486 it
 // failed twice on edges unrelated to their own weight: adding one
 // `featureGate.js` import to the eager `chatService.ts` re-chunked Rollup's
 // output enough to tip the total to 505.06 kB — 60 B over — which is why that
 // consolidation was reverted in 071d2807 rather than shipped. 510 KB gives
 // ~6.3 kB over today's baseline: enough for that consolidation (measured at
-// +0.22 kB against the current dependency graph, where the September attempt saw
+// +0.16 kB against the current dependency graph, where the September attempt saw
 // +1.35 kB — chunking, not code, is what varies) plus one more #1297-sized
 // third-party shock. It is sized to that stated need, not rounded up, and it is
 // not a licence for eager-bundle growth: the OTel/Leaflet/CF-schema content
