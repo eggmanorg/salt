@@ -79,7 +79,7 @@ vi.mock('../src/lib/formulaService.js', () => ({
 }));
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   // Issue #1480: the recipe page and the full chat page read the save request

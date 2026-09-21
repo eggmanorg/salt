@@ -46,7 +46,7 @@ export async function loadRecipe(id: string): Promise<ReadResult<Recipe | null, 
 }
 
 // Keyed by recipe.id. Whole-document last-write-wins.
-export async function saveRecipe(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
+export async function saveRecipeDoc(recipe: Recipe): Promise<ReadResult<void, DomainError>> {
   try {
     const db = getFirestore(getApp());
     await setDoc(doc(db, RECIPES_COLLECTION, recipe.id), { ...recipe });

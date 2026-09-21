@@ -5,7 +5,7 @@ import type { Recipe, CanonItem, IngredientGroup } from '@salt/domain';
 // ─── Mock firebase-sync ──────────────────────────────────────────────────────
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -85,7 +85,7 @@ function sentIds(): (string | undefined)[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
   // Default: empty canon store (no live matches).
   mockGetCanonItemsSnapshot.mockReturnValue([]);
 });
@@ -116,7 +116,7 @@ describe('canonicaliseIngredients', () => {
 
     expect(result).toEqual({ kind: 'ok', value: undefined });
     expect(fs.callCanonicaliseRecipeIngredients).not.toHaveBeenCalled();
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('writes nothing itself — the function it called records the match (#1434)', async () => {
@@ -146,7 +146,7 @@ describe('canonicaliseIngredients', () => {
     const result = await canonicaliseIngredients(recipe);
 
     expect(result).toEqual({ kind: 'ok', value: undefined });
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('sends the recipe id and the per-row ingredient id, so the function can name what it writes', async () => {
@@ -228,7 +228,7 @@ describe('canonicaliseIngredients', () => {
 
     expect(result).toEqual({ kind: 'ok', value: undefined });
     expect(fs.callCanonicaliseRecipeIngredients).not.toHaveBeenCalled();
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('re-canonicalises a matched ingredient whose canon item was deleted (dangling)', async () => {
@@ -364,6 +364,6 @@ describe('matchIngredient (per-row, still a browser write)', () => {
     const [payload] = fs.callCanonicaliseRecipeIngredients.mock.calls[0]!;
     expect(payload.recipeId).toBeUndefined();
     expect(payload.items[0]!.ingredientId).toBeUndefined();
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 });

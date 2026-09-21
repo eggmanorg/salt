@@ -81,7 +81,7 @@ vi.mock('../src/lib/formulaService.js', () => ({
 }));
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   // Issue #1480: the recipe page and the full chat page read the save request
@@ -140,7 +140,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { saveRecipe } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 import {
   regenerateRecipeImage,
   reviseRecipeSceneBrief,
@@ -352,7 +352,7 @@ describe('RecipeViewPage — brief revision and start over', () => {
         vi.mocked(regenerateRecipeImage),
         vi.mocked(persistRecipe),
         vi.mocked(setRecipeImageUpload),
-        vi.mocked(saveRecipe),
+        vi.mocked(saveRecipeDoc),
         vi.mocked(queueRecipeEdit),
         vi.mocked(canonicaliseIngredients),
       ].map((m) => m.mock.calls),

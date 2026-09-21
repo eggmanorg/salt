@@ -16,7 +16,7 @@ import { emptyRecipe } from '@salt/domain';
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -72,7 +72,7 @@ function recipe(overrides: Partial<Recipe> = {}): Recipe {
 }
 
 function saved(): Recipe {
-  return fs.saveRecipe.mock.calls[0]![0];
+  return fs.saveRecipeDoc.mock.calls[0]![0];
 }
 
 function signIn(name: string, email = 'daniel@e.org'): void {
@@ -84,7 +84,7 @@ beforeEach(() => {
   ns += 1;
   __resetMembersServiceForTest();
   vi.clearAllMocks();
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
   auth.user = null;
 });
 
@@ -162,7 +162,7 @@ describe('stampRecipeAttribution — the shared stamp the chat paths use', () =>
 
     expect(stamped).toEqual({ ...input, createdBy: 'Daniel', lastEditedBy: 'Daniel' });
     expect(input.createdBy).toBe('');
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('returns the recipe unchanged when nobody is signed in', () => {

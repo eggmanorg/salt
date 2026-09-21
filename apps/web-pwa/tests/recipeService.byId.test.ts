@@ -18,7 +18,7 @@ import type { Recipe } from '@salt/domain';
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -93,7 +93,7 @@ function seedRecipes(list: Recipe[]): void {
 beforeEach(() => {
   vi.clearAllMocks();
   ns++;
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
 });
 
 describe('recipesById', () => {

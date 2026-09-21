@@ -5,7 +5,7 @@
  *   • the collection target, the unsubscribe, the delivered id set and the
  *     corrupt-document skip — `tests/subscriptionContract.emulator.test.ts`,
  *     the `subscribeRecipes` row, against a real emulator;
- *   • `saveRecipe` / `deleteRecipe` — `tests/writerContract.test.ts`, which pins
+ *   • `saveRecipeDoc` / `deleteRecipe` — `tests/writerContract.test.ts`, which pins
  *     the exact op, path and payload and the classified `Failure` on three
  *     Firestore codes.
  *

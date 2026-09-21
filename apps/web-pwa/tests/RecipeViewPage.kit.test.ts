@@ -95,7 +95,7 @@ vi.mock('../src/lib/formulaService.js', () => ({
 }));
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   // The one seam the kitchen-tool vocabulary arrives through. Everything above it
   // — `resolveKitchenTool`, the renderable tri-state, the cache-bust nonce, the
   // derived store — is the real code, which is the point: this file proves the

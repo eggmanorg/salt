@@ -16,7 +16,7 @@ import type { Recipe } from '@salt/domain';
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -95,15 +95,15 @@ function seedRecipes(list: Recipe[]): void {
   initRecipeSync();
 }
 
-/** What the Nth `saveRecipe` actually wrote. */
+/** What the Nth `saveRecipeDoc` actually wrote. */
 function saved(n = 0): Recipe {
-  return fs.saveRecipe.mock.calls[n]![0];
+  return fs.saveRecipeDoc.mock.calls[n]![0];
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   ns++;
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
 });
 
 describe('attachComponentToMeal', () => {
@@ -116,7 +116,7 @@ describe('attachComponentToMeal', () => {
 
     expect(result.kind).toBe('ok');
     // One write, and it is the MEAL that changed — the dish is untouched.
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
     expect(saved().id).toBe(mealId);
     expect(saved().componentRecipeIds).toEqual([dishId]);
   });
@@ -178,14 +178,14 @@ describe('attachComponentToMeal', () => {
       kind: 'err',
       error: { kind: 'NotFound', resource: 'recipe', id: mealId },
     });
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('surfaces a persistence failure rather than reporting success', async () => {
     const mealId = nsId('roast');
     const dishId = nsId('gravy');
     seedRecipes([recipe(mealId), recipe(dishId)]);
-    fs.saveRecipe.mockResolvedValue({
+    fs.saveRecipeDoc.mockResolvedValue({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
     });

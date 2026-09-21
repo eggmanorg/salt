@@ -14,7 +14,7 @@ import type { ChatSessionDoc } from '@salt/domain/schemas';
 //
 // `recipeAmend` is deliberately NOT mocked. The propose/merge/apply seam is the
 // thing under test at this level, so the mocks stop at the chef (`sendMessage`),
-// the librarian (`authorRecipeTraced`) and the write (`saveRecipe`), exactly as
+// the librarian (`authorRecipeTraced`) and the write (`saveRecipeDoc`), exactly as
 // the "save as new recipe" suite does.
 //
 // The load-bearing case is the guided plan. An amendment that re-mints a step id
@@ -104,7 +104,7 @@ vi.mock('../src/lib/formulaService.js', () => ({
 }));
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   // Issue #1480: the recipe page and the full chat page read the save request
@@ -168,7 +168,7 @@ import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { authorRecipeTraced } from '../src/lib/recipeService.js';
 import { createChatSession, sendMessage } from '../src/lib/chatService.js';
 import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
-import { saveRecipe } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 
 const RECIPE_ID = 'pilaf';
 const REFRESHED_TITLE = 'Chorizo & Red Pepper Pilaf, re-written';
@@ -302,7 +302,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   toastSpy.reset();
-  vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  vi.mocked(saveRecipeDoc).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(discardGuidedPlan).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(authorRecipeTraced).mockResolvedValue({
     kind: 'ok',
@@ -390,7 +390,7 @@ describe('RecipeViewPage — Refresh asks the chef, then proposes', () => {
 
     // The proposal really is a proposal: the sheet is open and nothing is written.
     expect(screen.getByTestId('recipe-change-summary')).toBeInTheDocument();
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('continues the conversation this dish already has', async () => {
@@ -450,7 +450,7 @@ describe('RecipeViewPage — Refresh asks the chef, then proposes', () => {
     await fireEvent.click(screen.getByTestId('recipe-change-discard'));
 
     await waitFor(() => expect(screen.queryByTestId('recipe-change-summary')).toBeNull());
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
     // Nothing was applied, so there is no broken step reference to clean up —
     // throwing away the plan here would be a plain loss.
     expect(discardGuidedPlan).not.toHaveBeenCalled();
@@ -464,8 +464,8 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
 
     await fireEvent.click(screen.getByTestId('recipe-change-apply'));
 
-    await waitFor(() => expect(saveRecipe).toHaveBeenCalledTimes(1));
-    const saved = vi.mocked(saveRecipe).mock.calls[0]![0];
+    await waitFor(() => expect(saveRecipeDoc).toHaveBeenCalledTimes(1));
+    const saved = vi.mocked(saveRecipeDoc).mock.calls[0]![0];
     expect(saved.id).toBe(RECIPE_ID);
     expect(saved.title).toBe(REFRESHED_TITLE);
     // …and the plan goes, keyed on the recipe that was just written.
@@ -473,16 +473,16 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
   });
 
   it('keeps the plan when the save fails — the plan is only stale once the write lands', async () => {
-    vi.mocked(saveRecipe).mockResolvedValue({
+    vi.mocked(saveRecipeDoc).mockResolvedValue({
       kind: 'err',
       error: { kind: 'NetworkError', reason: 'offline' },
-    } as Awaited<ReturnType<typeof saveRecipe>>);
+    } as Awaited<ReturnType<typeof saveRecipeDoc>>);
     renderPage();
     await refreshAndReview();
 
     await fireEvent.click(screen.getByTestId('recipe-change-apply'));
 
-    await waitFor(() => expect(saveRecipe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveRecipeDoc).toHaveBeenCalledTimes(1));
     // The recipe still has its original step ids, so the plan still resolves.
     // Discarding it for a write that never happened would cost the user a
     // document for nothing.
@@ -501,7 +501,7 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
     await amendAndReview();
     await fireEvent.click(screen.getByTestId('recipe-change-apply'));
 
-    await waitFor(() => expect(saveRecipe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveRecipeDoc).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(discardGuidedPlan).toHaveBeenCalledWith(RECIPE_ID));
   });
 
@@ -524,7 +524,7 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
     await amendAndReview();
     await fireEvent.click(screen.getByTestId('recipe-change-apply'));
 
-    await waitFor(() => expect(saveRecipe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveRecipeDoc).toHaveBeenCalledTimes(1));
     expect(discardGuidedPlan).not.toHaveBeenCalled();
   });
 
@@ -543,7 +543,7 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
     await amendAndReview();
     await fireEvent.click(screen.getByTestId('recipe-change-apply'));
 
-    await waitFor(() => expect(saveRecipe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveRecipeDoc).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(discardGuidedPlan).toHaveBeenCalledWith(RECIPE_ID));
   });
 });

@@ -415,7 +415,7 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   server resolves ordinals to `firstUsedInStepId`). Do **not** post-compute this.
 - Canon: the draft's ingredients are run through the existing
   `canonicaliseRecipeIngredients` path to fill `canonId` / `matchState`. The client
-  assembles the final `RecipeDoc` and persists with the existing `saveRecipe`.
+  assembles the final `RecipeDoc` and persists with the existing `saveRecipeDoc`.
 - **The librarian only ever authors cookable kinds** (#637). A "Chef's Specials"
   special is hand-written and has nothing to author, and a placeholder is a
   photograph and a title; the Ask / amend affordance is capability-gated off both

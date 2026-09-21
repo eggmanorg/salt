@@ -33,7 +33,7 @@ import type { Recipe } from '@salt/domain';
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -76,7 +76,7 @@ function fromStore(id: string): Recipe | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
   vi.useFakeTimers();
 });
 
@@ -92,11 +92,11 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
       queueRecipeEdit({ ...(fromStore(base.id) ?? base), title });
     }
 
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
     await vi.runAllTimersAsync();
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
-    expect(fs.saveRecipe.mock.calls[0]![0].title).toBe('Carb');
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc.mock.calls[0]![0].title).toBe('Carb');
   });
 
   it('applies every edit to the store synchronously, so edits compose', () => {
@@ -129,8 +129,8 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
 
     await flushRecipeWrites();
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
-    expect(fs.saveRecipe.mock.calls[0]![0].title).toBe('Flushed');
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc.mock.calls[0]![0].title).toBe('Flushed');
   });
 
   it('hands every edit in one window the same promise — one burst, one result', async () => {
@@ -144,7 +144,7 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
   });
 
   it('surfaces a failed write as a Failure rather than throwing (Rule 10)', async () => {
-    fs.saveRecipe.mockResolvedValue({
+    fs.saveRecipeDoc.mockResolvedValue({
       kind: 'err',
       error: { kind: 'StorageError', reason: 'unavailable' },
     } as never);
@@ -159,7 +159,7 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
   it('leaves persistRecipe immediate — a deliberate tap is never deferred', async () => {
     await persistRecipe(seeded({ title: 'Tapped' }));
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
   });
 
   // Finding 2 (issue #1324 review): a pending coalesced write must not survive
@@ -182,16 +182,16 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
     const { needs_approval: _dropped, ...reviewed } = current;
     await persistRecipe(reviewed);
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
-    expect(fs.saveRecipe.mock.calls[0]![0].title).toBe('Carbonara!');
-    expect('needs_approval' in fs.saveRecipe.mock.calls[0]![0]).toBe(false);
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc.mock.calls[0]![0].title).toBe('Carbonara!');
+    expect('needs_approval' in fs.saveRecipeDoc.mock.calls[0]![0]).toBe(false);
 
     // The pending coalesced write's timer would fire here. It must not — that
-    // would be the revert: a second `saveRecipe` call carrying the stale
+    // would be the revert: a second `saveRecipeDoc` call carrying the stale
     // pre-review document.
     await vi.runAllTimersAsync();
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
   });
 
   it('does not cancel a pending coalesced write for a DIFFERENT recipe', async () => {
@@ -200,13 +200,13 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
     const other = seeded({ title: 'Reviewed separately' });
 
     await persistRecipe(other);
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(1);
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(1);
 
     await vi.runAllTimersAsync();
 
     // The other recipe's queued edit still lands — cancellation is per-id.
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(2);
-    expect(fs.saveRecipe.mock.calls[1]![0].title).toBe('Still queued');
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(2);
+    expect(fs.saveRecipeDoc.mock.calls[1]![0].title).toBe('Still queued');
   });
 
   // Round 2 of the #1324 review: `persistRecipe` stamps and applies its
@@ -218,7 +218,7 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
   // toast — the moment the immediate write resolves.
   it('does not drop an edit queued while an immediate write to the same id is still in flight', async () => {
     let releaseSave!: (result: { kind: 'ok'; value: undefined }) => void;
-    fs.saveRecipe.mockImplementationOnce(
+    fs.saveRecipeDoc.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           releaseSave = resolve;
@@ -237,10 +237,10 @@ describe('queueRecipeEdit — coalesced in-place edits', () => {
     await immediate;
 
     // The pending entry must survive `persistRecipe`'s cancel and flush on its
-    // own timer — a second `saveRecipe` call carrying the mid-flight title.
+    // own timer — a second `saveRecipeDoc` call carrying the mid-flight title.
     await vi.runAllTimersAsync();
 
-    expect(fs.saveRecipe).toHaveBeenCalledTimes(2);
-    expect(fs.saveRecipe.mock.calls[1]![0].title).toBe('Typed mid-flight');
+    expect(fs.saveRecipeDoc).toHaveBeenCalledTimes(2);
+    expect(fs.saveRecipeDoc.mock.calls[1]![0].title).toBe('Typed mid-flight');
   });
 });

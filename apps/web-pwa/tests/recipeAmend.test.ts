@@ -14,7 +14,7 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 const { STAMPED_AT } = vi.hoisted(() => ({ STAMPED_AT: '2026-08-11T12:00:30.000Z' }));
 
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
   authorRecipeTraced: vi.fn(),
@@ -40,7 +40,7 @@ import {
 } from '../src/lib/recipeAmend.js';
 import { authorRecipeTraced, flushRecipeWrites } from '../src/lib/recipeService.js';
 import { discardGuidedPlan } from '../src/lib/guidedPlanService.js';
-import { saveRecipe } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 import { diffRecipe } from '@salt/domain';
 
 const NOW = '2026-08-11T12:00:00.000Z';
@@ -408,10 +408,10 @@ describe('applyRecipeAmendment — whether the guided plan survives the write', 
   it('does not discard when the save failed', async () => {
     // Throwing away the plan for a write that never landed is a loss with
     // nothing bought for it — the recipe still has the steps the plan names.
-    vi.mocked(saveRecipe).mockResolvedValueOnce({
+    vi.mocked(saveRecipeDoc).mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'StorageError', reason: 'corruption' },
-    } as Awaited<ReturnType<typeof saveRecipe>>);
+    } as Awaited<ReturnType<typeof saveRecipeDoc>>);
 
     const result = await applyRecipeAmendment(amendmentWith(['s1'], ['new-1']));
 
@@ -449,7 +449,7 @@ describe('applyRecipeAmendment — the pre-write flush crosses the boundary, nev
     // Nothing was written and no plan was touched: the flush failing means the
     // typing it held never reached the server, so composing on top of it would
     // be composing on a document that does not exist.
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
     expect(discardGuidedPlan).not.toHaveBeenCalled();
   });
 
@@ -458,7 +458,7 @@ describe('applyRecipeAmendment — the pre-write flush crosses the boundary, nev
     vi.mocked(flushRecipeWrites).mockImplementationOnce(async () => {
       order.push('flush');
     });
-    vi.mocked(saveRecipe).mockImplementationOnce(async () => {
+    vi.mocked(saveRecipeDoc).mockImplementationOnce(async () => {
       order.push('save');
       return { kind: 'ok', value: undefined };
     });
@@ -478,6 +478,6 @@ describe('applyRecipeAmendment — the pre-write flush crosses the boundary, nev
 
     await applyRecipeAmendment(amendment);
 
-    expect(vi.mocked(saveRecipe).mock.calls[0]![0].updatedAt).toBe(STAMPED_AT);
+    expect(vi.mocked(saveRecipeDoc).mock.calls[0]![0].updatedAt).toBe(STAMPED_AT);
   });
 });
