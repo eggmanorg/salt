@@ -1,6 +1,6 @@
 import {
   subscribeRecipes,
-  saveRecipe as saveRecipeDoc,
+  saveRecipeDoc,
   deleteRecipe as deleteRecipeDoc,
   callParseRecipeIngredients,
   callCanonicaliseRecipeIngredients,

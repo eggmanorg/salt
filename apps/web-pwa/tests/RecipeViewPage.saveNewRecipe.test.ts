@@ -92,7 +92,7 @@ vi.mock('../src/lib/formulaService.js', () => ({
 }));
 vi.mock('../src/lib/shoppingListService.svelte.js', () => ({ defaultListId: mockDefaultListId }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 // The feature-flag reads are here because this suite stubs the whole adapter and
 // the page now reads the bread gate (issue #831). "Never initialised" is what the
@@ -175,7 +175,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { authorRecipeTraced, stashImportedDraft } from '../src/lib/recipeService.js';
 import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
-import { saveRecipe } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 import { push } from 'svelte-spa-router';
 
 const RECIPE_ID = 'lamb';
@@ -252,7 +252,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   toastSpy.reset();
   flagOn.value = true;
-  vi.mocked(saveRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  vi.mocked(saveRecipeDoc).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
   mockCanonItems._set([]);
   mockIsLoading._set(false);
@@ -372,7 +372,7 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
     // The dish on the page is never written to, and neither is the new one from
     // here: since issue #1431 the flow writes what it authored, and the browser
     // only stashes it so this page can paint before the listener catches up.
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
     expect(stashImportedDraft).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'salad', title: 'Fennel Salad' }),
     );
@@ -392,7 +392,7 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
     await fireEvent.click(screen.getByTestId('sidebar-save-new-recipe-btn'));
 
     await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
   });
 });
@@ -479,7 +479,7 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
     expect(screen.getByTestId('chat-save-intent-update').textContent).toContain('Update recipe');
     expect(screen.getByTestId('chat-save-intent-new').textContent).toContain('Save as new recipe');
     expect(authorRecipeTraced).not.toHaveBeenCalled();
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('takes the request as it asks, so a reload cannot ask again', async () => {
@@ -503,7 +503,7 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
       basedOnRecipeId: null,
     });
     // The lamb is not written to, and the conversation stays listed on it.
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
     expect(claimRecipe).not.toHaveBeenCalled();
   });
 
@@ -524,7 +524,7 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
         recipeId: RECIPE_ID,
       }),
     );
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   // The feature key is a real gate on this side too (mirrors

@@ -36,7 +36,7 @@ vi.mock('@salt/observability', async () => {
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -134,7 +134,7 @@ function parsedIngredient(id: string): Ingredient {
 beforeEach(() => {
   vi.clearAllMocks();
   reportSpy.mockReset();
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
   fs.deleteRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
   fs.saveShoppingListItem.mockResolvedValue({ kind: 'ok', value: undefined });
   mockGetCanonItemsSnapshot.mockReturnValue([]);
@@ -143,13 +143,13 @@ beforeEach(() => {
 describe('recipeService — write/command failure reporting (Phase 2)', () => {
   describe('persistRecipe', () => {
     it('reports a StorageError save failure', async () => {
-      fs.saveRecipe.mockResolvedValueOnce({ kind: 'err', error: STORAGE_ERR });
+      fs.saveRecipeDoc.mockResolvedValueOnce({ kind: 'err', error: STORAGE_ERR });
       await persistRecipe(makeRecipe());
       expect(reportSpy).toHaveBeenCalledWith(STORAGE_ERR, 'StorageError');
     });
 
     it('does NOT surface a ConflictError save failure (gate suppresses)', async () => {
-      fs.saveRecipe.mockResolvedValueOnce({ kind: 'err', error: CONFLICT_ERR });
+      fs.saveRecipeDoc.mockResolvedValueOnce({ kind: 'err', error: CONFLICT_ERR });
       await persistRecipe(makeRecipe());
       expect(reportSpy).not.toHaveBeenCalled();
     });
@@ -212,7 +212,7 @@ describe('recipeService — write/command failure reporting (Phase 2)', () => {
         error: STORAGE_ERR,
       });
       await canonicaliseIngredients(recipe);
-      expect(fs.saveRecipe).not.toHaveBeenCalled();
+      expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
     });
   });
 

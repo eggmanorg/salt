@@ -448,7 +448,7 @@ export const authorRecipe = makeTracedCallable({
 //     apps/web-pwa/tests/RecipeViewPage.imageBrief.test.ts → "re-seeds from the
 //     saved brief on each open" and "discards a revision the user abandoned", which
 //     watches every mutating handle the page holds — regenerateRecipeImage,
-//     persistRecipe, setRecipeImageUpload, saveRecipe AND queueRecipeEdit — by
+//     persistRecipe, setRecipeImageUpload, saveRecipeDoc AND queueRecipeEdit — by
 //     handle, not by name; the stamp itself by
 //     tests/callables/regenerateRecipeImage.test.ts.
 //   • Fact two goes void if the trigger stops writing its brief in the SAME update

@@ -9,11 +9,11 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 //
 // Since issue #1431 they pin one more thing, and it is the sharpest: **this leg
 // writes nothing.** The flow writes the recipe it authored, because the browser
-// was not reliably alive to do it — so `saveRecipe` is mocked below purely so
+// was not reliably alive to do it — so `saveRecipeDoc` is mocked below purely so
 // that a write creeping back in fails a test rather than shipping.
 
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('@salt/observability', () => ({ trackUsageEvent: vi.fn() }));
 // `currentMemberName` is who is signed in, and since #1431 that name goes over
@@ -41,7 +41,7 @@ import {
   stashImportedDraft,
 } from '../src/lib/recipeService.js';
 import { claimRecipe } from '../src/lib/chatService.js';
-import { saveRecipe } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 import { trackUsageEvent } from '@salt/observability';
 
 /**
@@ -134,7 +134,7 @@ describe('authorRecipeFromChat — the happy path', () => {
     // phone that locked during the minute the librarian took performed none of
     // it. Bringing it back would also write `recipes/{id}` twice and fire
     // `onRecipeWritten` twice — two hero images for one recipe.
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('re-stamps neither timestamp, so the copy it returns matches Firestore', async () => {
@@ -213,7 +213,7 @@ describe('authorRecipeFromChat — when it does not land', () => {
     expect(result.kind === 'err' && result.error.kind).toBe('NetworkError');
     expect(stashImportedDraft).not.toHaveBeenCalled();
     expect(trackUsageEvent).not.toHaveBeenCalled();
-    expect(saveRecipe).not.toHaveBeenCalled();
+    expect(saveRecipeDoc).not.toHaveBeenCalled();
   });
 });
 

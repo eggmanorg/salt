@@ -759,8 +759,8 @@ const writerCases: WriterCase[] = [
 
   // ── recipes ──────────────────────────────────────────────────────────────
   {
-    name: 'saveRecipe',
-    run: () => barrel.saveRecipe(RECIPE),
+    name: 'saveRecipeDoc',
+    run: () => barrel.saveRecipeDoc(RECIPE),
     ops: [{ op: 'set', path: 'recipes/r-1', data: { ...RECIPE } }],
     onSuccess: 'success(undefined)',
     onFailure: 'failure',

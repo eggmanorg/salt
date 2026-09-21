@@ -62,7 +62,7 @@ vi.mock('@salt/observability', () => ({
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn(),
+  saveRecipeDoc: vi.fn(),
   deleteRecipe: vi.fn(),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),

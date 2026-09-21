@@ -1,7 +1,7 @@
 import { diffRecipe, reconcileRecipePhases, type Recipe } from '@salt/domain';
 import type { RecipeDiff } from '@salt/domain';
 import type { AuthorRecipeInput, RecipeDoc } from '@salt/domain/schemas';
-import { saveRecipe as saveRecipeDoc } from '@salt/firebase-sync';
+import { saveRecipeDoc } from '@salt/firebase-sync';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import {
   applyRecipeOptimistically,

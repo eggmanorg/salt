@@ -43,7 +43,7 @@ vi.mock('@salt/observability', () => ({
   onObservabilityFeatureFlags: () => () => {},
 }));
 vi.mock('@salt/firebase-sync', () => ({
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
 }));
 vi.mock('../src/lib/chatService.js', () => ({
   // Issue #1480: the recipe page and the full chat page read the save request

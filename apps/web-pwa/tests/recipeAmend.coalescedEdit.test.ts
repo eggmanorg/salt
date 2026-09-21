@@ -25,7 +25,7 @@ import type { RecipeDoc } from '@salt/domain/schemas';
 
 vi.mock('@salt/firebase-sync', () => ({
   subscribeRecipes: vi.fn(() => vi.fn()),
-  saveRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  saveRecipeDoc: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   callParseRecipeIngredients: vi.fn(),
   callCanonicaliseRecipeIngredients: vi.fn(),
@@ -104,14 +104,14 @@ function proposalAgainst(
   return { existing, draft, updated, diff: diffRecipe(existing, updated) };
 }
 
-/** Every document handed to `saveRecipe`, oldest call first. */
+/** Every document handed to `saveRecipeDoc`, oldest call first. */
 function savedDocs(): Recipe[] {
-  return fs.saveRecipe.mock.calls.map((call) => call[0] as Recipe);
+  return fs.saveRecipeDoc.mock.calls.map((call) => call[0] as Recipe);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fs.saveRecipe.mockResolvedValue({ kind: 'ok', value: undefined });
+  fs.saveRecipeDoc.mockResolvedValue({ kind: 'ok', value: undefined });
   vi.useFakeTimers();
   vi.setSystemTime(new Date(APPLY_AT));
 });
@@ -142,7 +142,7 @@ describe('applyRecipeAmendment — against a pending in-place edit (issue #1330)
     // Still typing when Apply is pressed: an entry is pending and its 400 ms
     // timer has not elapsed.
     queueRecipeEdit({ ...fromStore(base.id)!, notes: 'Use the smoked one.' });
-    expect(fs.saveRecipe).not.toHaveBeenCalled();
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
 
     await applyRecipeAmendment(proposal);
 
@@ -221,7 +221,7 @@ describe('applyRecipeAmendment — against a pending in-place edit (issue #1330)
     seedStore([base]);
     const proposal = proposalAgainst(base);
 
-    fs.saveRecipe.mockResolvedValueOnce({
+    fs.saveRecipeDoc.mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'StorageError', reason: 'unavailable' },
     } as never);
@@ -261,7 +261,7 @@ describe('applyRecipeAmendment — against a pending in-place edit (issue #1330)
     seedStore([base]);
     const proposal = proposalAgainst(base);
 
-    fs.saveRecipe.mockResolvedValueOnce({
+    fs.saveRecipeDoc.mockResolvedValueOnce({
       kind: 'err',
       error: { kind: 'StorageError', reason: 'unavailable' },
     } as never);
