@@ -34,9 +34,14 @@
  *     `FieldPath`. None exists today; a future one would evade this entirely,
  *     and saying so is better than implying a completeness the scan lacks.
  *   • anything outside the scan roots. `equipmentIcons` is `allow write: if
- *     false` in firestore.rules, so only Cloud Functions and the operator
- *     scripts beside them can reach it — the roots follow from that rule, not
- *     from a survey of where writes happen to live today.
+ *     false` in firestore.rules, which constrains browsers, not Admin-SDK
+ *     code — it does not by itself keep a write out of root `scripts/`, which
+ *     already holds five other Admin-SDK operator scripts. The roots are
+ *     `apps/cloud-functions/src` and `apps/cloud-functions/scripts` because
+ *     that is where the Firestore Admin SDK is actually invoked against this
+ *     field today, per a survey of the tree, not because the rules clause
+ *     forbids anywhere else — an operator script that writes it from
+ *     elsewhere would be a real, undetected fifth site.
  *   • the CATEGORY column, and the prose that cites it. The table says which of
  *     the three buckets a writer sits in; a wrong bucket is a reviewer's job.
  *     The count and the membership are this script's job, and those are the two
@@ -58,8 +63,15 @@ export const SCAN_EXTENSION = /\.(ts|mjs)$/;
  */
 export const SCAN_ROOTS = ['apps/cloud-functions/src', 'apps/cloud-functions/scripts'];
 
-/** Directory names the walk never descends into. */
-export const SKIP_DIRS = new Set(['node_modules', 'dist', 'lib', 'tests', '__tests__']);
+/**
+ * Directory names the walk never descends into: build output and test
+ * fixtures, never a source directory. `lib` is deliberately absent —
+ * `apps/cloud-functions/scripts/lib/` holds real source (the testable half of
+ * self-executing operator scripts, lifted out the way `kitRerunPlan.ts` is),
+ * and it is inside a declared scan root. Skipping it would make that
+ * directory a blind spot a writer could sit in un-caught.
+ */
+export const SKIP_DIRS = new Set(['node_modules', 'dist', 'tests', '__tests__']);
 
 /**
  * A field assignment, not a read. `subjectBrief:` in an object literal or an
@@ -71,16 +83,76 @@ export const SKIP_DIRS = new Set(['node_modules', 'dist', 'lib', 'tests', '__tes
 const ASSIGNMENT = /\bsubjectBrief\s*:/;
 
 /**
- * Line comments are stripped and block-comment bodies skipped before matching,
- * so the prose ABOUT the writers cannot be counted as one. The strip is
- * textual: a `//` inside a string literal would truncate the line early. No
- * line in the scan roots is written that way, and the failure it would cause is
- * a false NEGATIVE — a writer the doc then over-declares, which this check
- * still reds on.
+ * Strip `//` line comments and `/* *\/` block comments from a whole file's
+ * text before matching, so the prose ABOUT the writers cannot be counted as
+ * one — a comment is recognised by walking the text once and tracking
+ * whether the cursor is inside a string, a line comment or a block comment,
+ * so `//` and `/*` sequences that occur inside a `'`/`"`/`` ` ``-quoted
+ * string (an ordinary URL, a path, a regex-looking literal) are left alone
+ * rather than mistaken for a comment start. Newlines are preserved exactly —
+ * including the ones swallowed inside a block comment — so line numbers
+ * downstream still line up with the original file.
+ *
+ * What this still cannot see: a `//`/`/*` sequence inside a template
+ * literal's `${...}` interpolation is treated as still "inside the string",
+ * since the interpolation is not itself parsed. No line in the scan roots
+ * does that today.
  */
-function codeOf(line) {
-  if (/^\s*(\/\*|\*)/.test(line)) return '';
-  return line.replace(/\/\/.*$/, '');
+function stripComments(text) {
+  let out = '';
+  let inString = null; // the quote character currently open, or null
+  let inLineComment = false;
+  let inBlockComment = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n') {
+        inLineComment = false;
+        out += '\n';
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '\n') out += '\n';
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      if (ch === '\\' && next !== undefined) {
+        out += next;
+        i += 1;
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'" || ch === '`') {
+      inString = ch;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 /**
@@ -91,8 +163,10 @@ function codeOf(line) {
  */
 export function findSubjectBriefWrites(text) {
   const found = [];
-  text.split('\n').forEach((line, i) => {
-    if (ASSIGNMENT.test(codeOf(line))) found.push({ line: i + 1, text: line.trim() });
+  const codeLines = stripComments(text).split('\n');
+  const originalLines = text.split('\n');
+  codeLines.forEach((code, i) => {
+    if (ASSIGNMENT.test(code)) found.push({ line: i + 1, text: originalLines[i].trim() });
   });
   return found;
 }

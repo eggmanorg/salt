@@ -43,6 +43,10 @@ describe('findSubjectBriefWrites', () => {
     ],
     ['a merge set', 'await ref.set({ subjectBrief: brief }, { merge: true });'],
     ['spacing before the colon', '  subjectBrief : brief,'],
+    [
+      'an assignment on a line whose string literal contains //',
+      "    .set({ source: 'https://salt.eggyman.net/x', subjectBrief: brief }, { merge: true });",
+    ],
   ];
 
   for (const [name, source] of CATCHES) {
@@ -63,7 +67,14 @@ describe('findSubjectBriefWrites', () => {
       '  prompt: buildEquipmentIconPrompt(icon.data.briefSourceName, icon.data.subjectBrief),',
     ],
     ['a line comment', '// the manifest trigger writes subjectBrief: itself, from the name'],
-    ['a block-comment body', ' * one `ref.set({ subjectBrief: x })` would do it'],
+    [
+      'an asterisk-prefixed block-comment body',
+      ['/**', ' * one `ref.set({ subjectBrief: x })` would do it', ' */'].join('\n'),
+    ],
+    [
+      'a non-asterisk-prefixed block-comment continuation line',
+      ['/*', '  ref.set({ subjectBrief: brief })', '*/'].join('\n'),
+    ],
     ['a trailing line comment on real code', '  const x = 1; // subjectBrief: brief'],
     ['a longer identifier', '  notSubjectBriefish: brief,'],
   ];
@@ -188,5 +199,69 @@ describe('the gate, spawned for real', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/In the code, not in the table/);
     expect(result.stderr).toContain(dropped);
+  });
+
+  /**
+   * A scratch copy of the scan roots, the CLI, its library and the
+   * (unmodified) doc — the base the two mutation tests below start from, so
+   * writing one rogue file in is the only difference from a green run.
+   */
+  function scratchRepo() {
+    const scratch = mkdtempSync(path.join(tmpdir(), 'briefwriters-'));
+    for (const root of SCAN_ROOTS) {
+      cpSync(path.join(REPO_ROOT, root), path.join(scratch, root), { recursive: true });
+    }
+    for (const file of [
+      'scripts/check-subject-brief-writers.mjs',
+      'scripts/lib/subjectBriefWriters.mjs',
+    ]) {
+      cpSync(path.join(REPO_ROOT, file), path.join(scratch, file));
+    }
+    mkdirSync(path.join(scratch, 'docs'), { recursive: true });
+    cpSync(DOC, path.join(scratch, 'docs/canon-icons.md'));
+    return scratch;
+  }
+
+  /**
+   * Blocking finding 1 (#1549 review): `SKIP_DIRS` used to contain `lib`, so
+   * the walk never entered `apps/cloud-functions/scripts/lib/` even though
+   * it sits inside a declared scan root and holds real source. A writer
+   * dropped there was invisible to the gate: absent from the scan AND from
+   * the (unmodified) table, the multisets agreed and the run passed. This
+   * must go red, naming the rogue file under `scripts/lib/`.
+   */
+  it('goes red on a writer added under apps/cloud-functions/scripts/lib/', () => {
+    const scratch = scratchRepo();
+    const rogue = path.join(scratch, 'apps/cloud-functions/scripts/lib/rogueWriter.ts');
+    writeFileSync(rogue, "export function rogue(ref) {\n  ref.set({ subjectBrief: 'x' });\n}\n");
+
+    const result = run(scratch);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/In the code, not in the table/);
+    expect(result.stderr).toContain('apps/cloud-functions/scripts/lib/rogueWriter.ts');
+  });
+
+  /**
+   * Blocking finding 2 (#1549 review): the comment strip used to be a
+   * textual `//` truncation, so a line whose string literal contained `//`
+   * (an ordinary URL) ahead of the `subjectBrief:` field never reached the
+   * matcher. For a NEW writer that is a silent pass, not the "false negative
+   * … which this check still reds on" the old header claimed — the writer is
+   * absent from both multisets. This must go red, naming the rogue file.
+   */
+  it('goes red on a new writer whose assignment line has // inside a string literal', () => {
+    const scratch = scratchRepo();
+    const rogue = path.join(scratch, 'apps/cloud-functions/src/callables/rogueUrl.ts');
+    writeFileSync(
+      rogue,
+      'export function rogue(ref) {\n' +
+        "  ref.set({ source: 'https://salt.eggyman.net/x', subjectBrief: 'x' }, { merge: true });\n" +
+        '}\n',
+    );
+
+    const result = run(scratch);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/In the code, not in the table/);
+    expect(result.stderr).toContain('apps/cloud-functions/src/callables/rogueUrl.ts');
   });
 });
