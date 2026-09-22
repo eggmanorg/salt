@@ -124,6 +124,24 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    // Background-enrichment failures (issue #1419) — one tiny document per
+    // (job, subject) pair, written by the six triggers when a background AI job
+    // gives up and deleted by the same branch on its next success. It is what
+    // makes "we asked and it failed" distinguishable from "nobody ever asked",
+    // which until now was written only to Cloud Logging and PostHog.
+    //
+    // The `equipmentIcons` shape above, deliberately, and NOT `canonEmbeddings`'
+    // fully-closed one: the client reads these to show a recipe that its
+    // equipment list could not be worked out, which is the entire reason the
+    // collection exists. Server-written via the Admin SDK (which bypasses these
+    // rules), so client writes are denied — a client must never be able to
+    // invent or clear a failure.
+    //
+    // Family-shared, with no owner field and no per-user scoping.
+    match /enrichmentFailures/{failureId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     // Shopping lists and items — shared; any authenticated user can read and write.
     match /shoppingLists/{listId} {
       allow read, write: if request.auth != null;

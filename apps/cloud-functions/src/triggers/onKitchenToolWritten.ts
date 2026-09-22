@@ -56,6 +56,7 @@ export const onKitchenToolWritten = onDocumentWritten(
   iconWriteTrigger<KitchenToolDoc>({
     name: 'onKitchenToolWritten',
     collection: KITCHEN_TOOLS_COLLECTION,
+    enrichment: 'kitchenToolIcon',
     storagePrefix: ICON_STORAGE_PREFIX,
     schema: KitchenToolSchema,
     // The tool's LABEL is what the picture is of — "Mixing bowl", "Balloon

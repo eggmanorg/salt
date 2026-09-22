@@ -60,10 +60,27 @@ const mockSelectGet = vi.fn(async () => ({
   })),
 }));
 
-const mockCollection = vi.fn(() => ({
-  select: () => ({ get: mockSelectGet }),
-  doc: mockIconDoc,
+// Background-enrichment failure records (issue #1419) — a SECOND collection
+// through the same stub, so the collection-blind version above would have made
+// a failure record look like an icon document.
+const recordedFailures: { id: string; data: Record<string, unknown> }[] = [];
+const clearedFailures: string[] = [];
+let failureSetThrows = false;
+const mockFailureDoc = vi.fn((id: string) => ({
+  set: async (data: Record<string, unknown>) => {
+    if (failureSetThrows) throw new Error('PERMISSION_DENIED');
+    recordedFailures.push({ id, data });
+  },
+  delete: async () => {
+    clearedFailures.push(id);
+  },
 }));
+
+const mockCollection = vi.fn((name: string) =>
+  name === 'enrichmentFailures'
+    ? { select: () => ({ get: mockSelectGet }), doc: mockFailureDoc }
+    : { select: () => ({ get: mockSelectGet }), doc: mockIconDoc },
+);
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: () => ({ collection: mockCollection }),
@@ -136,6 +153,9 @@ beforeEach(() => {
   iconDocs = [];
   deleted.length = 0;
   written.length = 0;
+  recordedFailures.length = 0;
+  clearedFailures.length = 0;
+  failureSetThrows = false;
 });
 
 describe('onEquipmentManifestWritten — the reconcile pass', () => {
@@ -178,5 +198,62 @@ describe('onEquipmentManifestWritten — the brief loop', () => {
     expect(mockDescribe).toHaveBeenCalledTimes(1);
     expect(mockDescribe).toHaveBeenCalledWith({ name: 'Magimix Cook Expert' });
     expect(written.map((w) => w.id)).toEqual([ITEM_ID]);
+  });
+});
+
+// A brief that gives up says so (issue #1419). This branch is the one where the
+// failure was most completely invisible: on the other eight, something on the
+// enriched document is at least left unstamped, but here the
+// `equipmentIcons/{itemId}` document is never created at all — and both
+// `drawEquipmentIcon` and `setIconUpload` bail on `!snap.exists`, so there was
+// no handle to retry from either.
+describe('onEquipmentManifestWritten — the failure record', () => {
+  it('records a brief that gave up, and clears it when the next one lands', async () => {
+    mockDescribe.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+    await run(manifest());
+    expect(recordedFailures).toEqual([
+      {
+        id: `equipmentBrief_${ITEM_ID}`,
+        data: expect.objectContaining({
+          enrichment: 'equipmentBrief',
+          subjectId: ITEM_ID,
+          subjectLabel: 'Magimix Cook Expert',
+          reason: 'upstream',
+        }),
+      },
+    ]);
+
+    recordedFailures.length = 0;
+    await run(manifest());
+    expect(recordedFailures).toEqual([]);
+    expect(clearedFailures).toEqual([`equipmentBrief_${ITEM_ID}`]);
+  });
+
+  // THE PIN THAT MATTERS HERE, and the reason this property is asserted on THIS
+  // trigger rather than on `onRecipeWritten`. The brief loop is SEQUENTIAL and
+  // has no `Promise.allSettled` to absorb a throw: if recording a failure could
+  // reject, one unwritable record would abandon the loop and every later item in
+  // the manifest would silently lose its description too. Verified red by
+  // removing the inner catch from `recordEnrichmentFailure`.
+  it('a record that cannot be written does not abandon the rest of the manifest', async () => {
+    failureSetThrows = true;
+    mockDescribe.mockRejectedValueOnce(new Error('boom'));
+
+    const two = manifest();
+    (two['items'] as Record<string, unknown>[]).push({
+      id: 'eq-thermapen',
+      schemaVersion: 1,
+      name: 'Thermapen',
+      kind: 'equipment',
+      rules: [],
+      note: '',
+      updatedAt: '2026-09-18T00:00:00.000Z',
+      accessories: [],
+    });
+
+    await expect(run(two)).resolves.toBeUndefined();
+    // The SECOND item's brief was still authored and still written.
+    expect(mockDescribe).toHaveBeenCalledWith({ name: 'Thermapen' });
+    expect(written.map((w) => w.id)).toEqual(['eq-thermapen']);
   });
 });

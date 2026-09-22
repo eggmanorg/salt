@@ -16,6 +16,10 @@ import { buildStorageDownloadUrl } from '../imaging/storageDownloadUrl.js';
 import { AI_TRIGGER_FUNCTION_TIMEOUT_SECONDS, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { aiFakeEnabled } from '../ai/fakeModel.js';
 import { reportServerError } from '../observability/reportServerError.js';
+import {
+  recordEnrichmentFailure,
+  clearEnrichmentFailure,
+} from '../adapters/enrichmentFailureStore.js';
 import { withFirestoreTrigger, traceContextFromWrittenDoc } from './triggerEntrypoint.js';
 
 // Tier-2 recipe hero-image generation (issue #148). The counterpart to
@@ -175,6 +179,9 @@ async function maybeGenerateImage(
         imageHint: FieldValue.delete(),
         ...(brief ? { imageBrief: brief } : {}),
       });
+    // The picture is there, so any record of a previous failure is now a lie.
+    // Unconditional and never throws (issue #1419).
+    await clearEnrichmentFailure('recipeImage', id);
   } catch (err) {
     // Leave image null so a later regenerate retries; never block the trigger.
     logger.error('onRecipeWritten: image generation failed', { id, err });
@@ -182,6 +189,17 @@ async function maybeGenerateImage(
     // upload — a throw here is unexpected. Report it to PostHog alongside the
     // logger. Best-effort, never throws; the handler's finally flushes.
     reportServerError(err);
+    // Write the failure down where the app can read it (issue #1419). Inside
+    // this catch, never throwing, so it cannot reject into a sibling branch.
+    // The scene brief has no record of its own: if it failed and the image then
+    // succeeded there is no hole to mark, and if the image failed too this is
+    // the record for both.
+    await recordEnrichmentFailure({
+      enrichment: 'recipeImage',
+      subjectId: id,
+      subjectLabel: title,
+      err,
+    });
   }
 }
 
@@ -318,12 +336,27 @@ async function maybeInferKit(
       kit,
       kitInferredAt: Date.now(),
     });
+    // Answered, so clear any record of a previous failure (issue #1419). Note
+    // this clears on an EMPTY kit too, and that is right: "we asked, and this
+    // dish genuinely needs nothing listed" is a real answer, and the record is
+    // only ever for "we asked and could not tell you".
+    await clearEnrichmentFailure('recipeKit', id);
   } catch (err) {
     // Leave `kitInferredAt` unstamped so a redo retries; never block the trigger.
     logger.error('onRecipeWritten: kit inference failed', { id, err });
     // Additive: an AI flow throwing is unexpected, so report it to PostHog alongside
     // the logger. Best-effort, never throws; the handler's finally flushes.
     reportServerError(err);
+    // And write it down where the app can read it (issue #1419) — the Equipment
+    // tab is what turns this row into words on the page. Purely additive: the
+    // retry handle is still the unstamped `kitInferredAt` above, and no guard
+    // reads this collection.
+    await recordEnrichmentFailure({
+      enrichment: 'recipeKit',
+      subjectId: id,
+      subjectLabel: recipe.title.trim(),
+      err,
+    });
   }
 }
 
@@ -459,6 +492,7 @@ async function maybeEstimateTimes(
       // trap the kit branch documents.
       timesEstimatedAt: Date.now(),
     });
+    await clearEnrichmentFailure('recipeTimes', id);
   } catch (err) {
     // Leave `timesEstimatedAt` unstamped so a re-run retries; never block the
     // trigger.
@@ -467,6 +501,13 @@ async function maybeEstimateTimes(
     // alongside the logger. Best-effort, never throws; the handler's finally
     // flushes.
     reportServerError(err);
+    // And where the app can read it (issue #1419).
+    await recordEnrichmentFailure({
+      enrichment: 'recipeTimes',
+      subjectId: id,
+      subjectLabel: recipe.title.trim(),
+      err,
+    });
   }
 }
 

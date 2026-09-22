@@ -218,9 +218,23 @@ export const violationCeilings = {
   // stylistic one: the visibility gate under test reads `window.matchMedia`, and
   // the two hidden cases need it stubbed the OPPOSITE way round from the suite
   // default that every assertion in that file was written against.
+  //
+  // UT-B1 49 → 50 (issue #1419 Phase 1). ONE new file,
+  // `RecipeViewPage.enrichmentFailure.test.ts`, and the sanctioned case again:
+  // it mounts the whole recipe route, so its preamble is the same route-seam
+  // preamble every `RecipeViewPage.*` suite carries and none of those seams is
+  // avoidable — the page does not render without them. UT-C2 and UT-C3 do NOT
+  // move: this suite builds its recipe with `@salt/domain`'s `emptyRecipe` and
+  // `newStep`, and leaves the `pointerEvents` reset to `tests/setup.ts`.
+  //
+  // It is its own file rather than cases in `RecipeViewPage.kit.test.ts` because
+  // that suite is the words→picture lookup contract and every assertion in it is
+  // written against a kit that EXISTS. This one is about the third state that
+  // suite never had — a kit that was asked for and could not be worked out — and
+  // its records arrive on a subscription that file does not wire at all.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 49,
+    'UT-B1': 50,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,
@@ -279,9 +293,27 @@ export const violationCeilings = {
   // is the prompt-composition suite (create/edit/variation grounding), this is a
   // persistence regression, and every sibling of this fix in campaign #1417 has
   // its own `*.persist.test.ts` beside the suite it is not part of.
+  //
+  // UT-B1 34 → 35 (issue #1419 Phase 1). ONE new file,
+  // `triggers/enrichmentFailureRecording.test.ts`, which pins that a background
+  // job giving up now leaves a row and that its next success removes it. Twelve
+  // mocks, and the seam cannot narrow: a Firestore trigger has no caller to
+  // inject through, so every boundary it crosses is a module boundary — the
+  // registration façade, `defineSecret`, the logger, Firestore, Storage, the
+  // observability flush, and the six AI flows this suite's whole method is to
+  // turn from "resolve" to "throw". Nine of the twelve are that harness and only
+  // three are the subject.
+  //
+  // It is its own file rather than cases spread across the five
+  // `onRecipeWritten.*` suites and the icon ones because the property is one
+  // property over six triggers: split up, nothing would notice a seventh
+  // enrichment arriving with no record, which is the exact defect class the issue
+  // exists to close. UT-A1 and UT-C2 do NOT move — every assertion checks the
+  // written payload, and the recipe fixture is built with `@salt/domain`'s
+  // `emptyRecipe` and `newStep`.
   'apps/cloud-functions': {
     'UT-A1': 3,
-    'UT-B1': 34,
+    'UT-B1': 35,
     'UT-C2': 4,
     'UT-E4': 0,
     'UT-G1': 0,

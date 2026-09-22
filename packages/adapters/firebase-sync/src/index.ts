@@ -30,6 +30,10 @@ export {
   callDescribeEquipmentSubject,
   callAuthorEntryIconBrief,
 } from './equipmentIconSubscription.js';
+
+// Background-enrichment failures (issue #1419) — read-only: every write is a
+// trigger's, through the Admin SDK.
+export { subscribeEnrichmentFailures } from './enrichmentFailureSubscription.js';
 // Kitchen-tool vocabulary (issue #882) — the curated pictogram list every
 // surface resolves free-text container names against.
 export {

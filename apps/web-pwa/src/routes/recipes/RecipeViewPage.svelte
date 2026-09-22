@@ -101,6 +101,9 @@
   // The drawn tool vocabulary, OFFERED by the kit editor's combobox as words
   // (issue #1496). Subscribed app-wide in App.svelte, same as `kitIcons`.
   import { kitchenTools } from '../../lib/kitchenToolService.js';
+  // Recorded background-enrichment failures (issue #1419). Subscribed app-wide in
+  // App.svelte, same as `kitIcons` and `kitchenTools`.
+  import { enrichmentFailures, hasEnrichmentFailure } from '../../lib/enrichmentFailureService.js';
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
   import {
     recipeHeroUrl,
@@ -1709,6 +1712,24 @@
   // list, not two.
   const kit = $derived(recipe?.kit ?? []);
 
+  // Did the kit inference GIVE UP on this recipe (issue #1419)?
+  //
+  // The third state the tab strip never had. Until this existed, a recipe whose
+  // inference failed was byte-for-byte a recipe nobody had asked — `kit: []`,
+  // no tab — so the page said "this dish needs no equipment" about a dish it had
+  // simply failed to read. The record is written by `onRecipeWritten`'s kit
+  // catch and deleted by its next success, so this goes false on a redo that
+  // works with no reload.
+  //
+  // INFORMATION, NEVER PERMISSION. Nothing below this line gates anything: the
+  // recipe cooks, plans, edits and shops exactly as it does without a record,
+  // and `RecipeViewPage.enrichmentFailure.test.ts` pins that.
+  const kitFailed = $derived(
+    recipe !== null && recipe !== undefined
+      ? hasEnrichmentFailure($enrichmentFailures, 'recipeKit', recipe.id)
+      : false,
+  );
+
   // The Equipment trigger and panel both disappear when the kit empties, and
   // `bodyTab` is `$state` — so a kit that goes away while its own tab is selected
   // would leave the strip with nothing selected and the body blank. Rare (an
@@ -1719,8 +1740,13 @@
   // `&& !editing` because the tab does NOT disappear while editing (issue #1496) —
   // without the guard, removing the last row would throw you off the very tab you
   // were editing, one row before you added its replacement.
+  //
+  // `&& !kitFailed` for the same shape of reason (issue #1419): the tab stays for
+  // a recorded failure, so bouncing off it would leave the "couldn't work this
+  // out" panel visible in the strip and unreachable by a press.
   $effect(() => {
-    if (kit.length === 0 && !editing && bodyTab === 'equipment') bodyTab = 'ingredients';
+    if (kit.length === 0 && !editing && !kitFailed && bodyTab === 'equipment')
+      bodyTab = 'ingredients';
   });
 
   // The Equipment tab's display order, with an accessory folded into the appliance
@@ -1728,6 +1754,12 @@
   // the page only renders what it returns, and never decides on its own what belongs
   // to what.
   const kitGroups = $derived(groupKitByEquipment(kit, $equipment?.items ?? []));
+  // What the Equipment trigger counts. Today's rule, unchanged, plus the one new
+  // case: a recorded failure has nothing to count, and a `0` badge beside
+  // "Equipment" would read as the answer rather than as the absence of one.
+  const equipmentTabCount = $derived(
+    editing ? kit.length : kit.length === 0 && kitFailed ? undefined : kitGroups.length,
+  );
 
   // Which pictureless row's picker is open, by label — one dialog for the list
   // rather than one per row. The entry is re-read from the live kit each render,
@@ -2802,10 +2834,8 @@
                    `kitGroups.length` in read mode, where an accessory is folded
                    into its appliance's row, and `kit.length` while editing, where
                    the list is the flat stored one (issue #1496). -->
-              {#if kit.length > 0 || editing}
-                <TabsTrigger value="equipment" count={editing ? kit.length : kitGroups.length}
-                  >Equipment</TabsTrigger
-                >
+              {#if kit.length > 0 || editing || kitFailed}
+                <TabsTrigger value="equipment" count={equipmentTabCount}>Equipment</TabsTrigger>
               {/if}
               <TabsTrigger value="ingredients" count={ingredientCount}>Ingredients</TabsTrigger>
               <TabsTrigger value="method" count={recipe.steps.length}>Method</TabsTrigger>
@@ -2822,19 +2852,49 @@
                  (#1418) has no door to add a first tool by hand, which is exactly
                  when you most want one — and it matches the rest of edit mode,
                  where an absent thing appears as a slot rather than as nothing. -->
-            {#if kit.length > 0 || editing}
+            {#if kit.length > 0 || editing || kitFailed}
               <TabsContent value="equipment">
-                <RecipeKitPanel
-                  {recipe}
-                  {editing}
-                  onEdit={handleInlineEdit}
-                  {kitGroups}
-                  equipmentItems={$equipment?.items ?? []}
-                  kitchenTools={$kitchenTools}
-                  kitIconFor={(entry) => $kitIcons.kitIconFor(entry)}
-                  kitIconVersionFor={(entry) => $kitIcons.kitIconVersionFor(entry)}
-                  onPicture={(label) => (pictureFor = label)}
-                />
+                {#if kit.length === 0 && !editing && kitFailed}
+                  <!-- The third state (issue #1419). Working out this recipe's kit
+                       was ATTEMPTED and gave up, which until now looked exactly
+                       like a dish that needs nothing — so the strip showed two
+                       tabs and the page quietly said something untrue.
+
+                       A NOTE ON THE FRIDGE, NEVER A LOCKED DOOR. It blocks
+                       nothing, confirms nothing and hides nothing: every other
+                       tab, the cook button, the planner and the editor are
+                       exactly as they are on a recipe with a full kit list. What
+                       it adds is the retry that already existed three taps deep
+                       in the overflow menu, put where the missing thing would
+                       have been. -->
+                  <div class="flex flex-col items-start gap-3 py-6" data-testid="recipe-kit-failed">
+                    <p class="text-sm text-muted-foreground">
+                      Couldn't work this out. The equipment list is missing, not empty.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={() => void handleRedoKit()}
+                      loading={kitBusy}
+                      disabled={kitBusy}
+                      data-testid="recipe-kit-failed-redo"
+                    >
+                      Redo kit
+                    </Button>
+                  </div>
+                {:else}
+                  <RecipeKitPanel
+                    {recipe}
+                    {editing}
+                    onEdit={handleInlineEdit}
+                    {kitGroups}
+                    equipmentItems={$equipment?.items ?? []}
+                    kitchenTools={$kitchenTools}
+                    kitIconFor={(entry) => $kitIcons.kitIconFor(entry)}
+                    kitIconVersionFor={(entry) => $kitIcons.kitIconVersionFor(entry)}
+                    onPicture={(label) => (pictureFor = label)}
+                  />
+                {/if}
               </TabsContent>
             {/if}
 
