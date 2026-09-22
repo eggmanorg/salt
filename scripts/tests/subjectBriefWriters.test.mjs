@@ -1,0 +1,192 @@
+/**
+ * The characterization suite for `scripts/lib/subjectBriefWriters.mjs` and the
+ * CLI over it (issue #1519).
+ *
+ * The guard cannot characterise itself: it runs over a tree that holds exactly
+ * four sanctioned writers and a table that lists exactly those four, so a
+ * matcher quietly narrowed to nothing would sit green there — the doc would be
+ * over-declaring against an empty scan, which is why the CLI has a liveness arm
+ * and why this suite feeds the shapes in directly.
+ *
+ * The last two blocks are the ones that matter: the CLI is spawned for real
+ * against the real repository (green), and then against a repository whose doc
+ * has had a writer removed (red). That is the red-then-green demonstration the
+ * issue's Definition of Done asks for, run every time rather than once by hand.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  SCAN_ROOTS,
+  TABLE_END,
+  TABLE_START,
+  diffWriters,
+  findSubjectBriefWrites,
+  parseDeclaredWriters,
+} from '../lib/subjectBriefWriters.mjs';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const DOC = path.join(REPO_ROOT, 'docs/canon-icons.md');
+
+describe('findSubjectBriefWrites', () => {
+  /** [name, source line the scan MUST report] */
+  const CATCHES = [
+    ['a plain object-literal field', '        subjectBrief: brief,'],
+    [
+      'an inline transaction update',
+      '        tx.update(ref, { ...stamp, subjectBrief: input.brief, sourceName: n });',
+    ],
+    ['a merge set', 'await ref.set({ subjectBrief: brief }, { merge: true });'],
+    ['spacing before the colon', '  subjectBrief : brief,'],
+  ];
+
+  for (const [name, source] of CATCHES) {
+    it(`catches ${name}`, () => {
+      expect(findSubjectBriefWrites(source)).toHaveLength(1);
+    });
+  }
+
+  /**
+   * Near-misses. Every one mentions `subjectBrief` — that is the anti-vacuity
+   * floor, since a "near-miss" without the field name proves nothing about a
+   * scan that matches the field name.
+   */
+  const MISSES = [
+    ['a read', '  const words = icon.data.subjectBrief;'],
+    [
+      'an argument position',
+      '  prompt: buildEquipmentIconPrompt(icon.data.briefSourceName, icon.data.subjectBrief),',
+    ],
+    ['a line comment', '// the manifest trigger writes subjectBrief: itself, from the name'],
+    ['a block-comment body', ' * one `ref.set({ subjectBrief: x })` would do it'],
+    ['a trailing line comment on real code', '  const x = 1; // subjectBrief: brief'],
+    ['a longer identifier', '  notSubjectBriefish: brief,'],
+  ];
+
+  for (const [name, source] of MISSES) {
+    it(`does not fire on ${name}`, () => {
+      expect(findSubjectBriefWrites(source)).toEqual([]);
+    });
+  }
+
+  it('reports 1-based line numbers, one entry per assignment', () => {
+    const src = ['const a = 1;', 'x({ subjectBrief: b });', '', 'y({ subjectBrief: c });'].join(
+      '\n',
+    );
+    expect(findSubjectBriefWrites(src).map((w) => w.line)).toEqual([2, 4]);
+  });
+});
+
+describe('parseDeclaredWriters', () => {
+  const table = (rows) =>
+    [
+      '# doc',
+      `${TABLE_START} -->`,
+      '| Writer | Site | Where the sentence comes from |',
+      '| --- | --- | --- |',
+      ...rows,
+      `${TABLE_END} -->`,
+    ].join('\n');
+
+  it('takes the path column, not the writer name', () => {
+    const md = table(['| `drawEquipmentIcon` | `apps/cloud-functions/src/x.ts` | client text |']);
+    expect(parseDeclaredWriters(md)).toEqual({ paths: ['apps/cloud-functions/src/x.ts'] });
+  });
+
+  it('keeps duplicates, so two writers in one file are two rows', () => {
+    const md = table([
+      '| `one` | `apps/cloud-functions/src/x.ts` | a |',
+      '| `two` | `apps/cloud-functions/src/x.ts` | b |',
+    ]);
+    expect(parseDeclaredWriters(md).paths).toHaveLength(2);
+  });
+
+  it('reads an .mjs operator script', () => {
+    const md = table(['| `backfill` | `apps/cloud-functions/scripts/gen.mjs` | the name |']);
+    expect(parseDeclaredWriters(md).paths).toEqual(['apps/cloud-functions/scripts/gen.mjs']);
+  });
+
+  it('ignores markdown outside the fences', () => {
+    const md = ['| `stray` | `apps/cloud-functions/src/outside.ts` | x |', table([])].join('\n');
+    expect(parseDeclaredWriters(md).error).toMatch(/no writer rows/);
+  });
+
+  it('errors rather than passing when the fences are gone', () => {
+    expect(parseDeclaredWriters('# doc\n\nno table here').error).toMatch(/fences are missing/);
+  });
+});
+
+describe('diffWriters', () => {
+  it('agrees when the multisets match, order-independently', () => {
+    expect(diffWriters(['b', 'a'], ['a', 'b'])).toEqual({ missing: [], extra: [] });
+  });
+
+  it('reports a code writer the table has not got', () => {
+    expect(diffWriters(['a', 'b'], ['a'])).toEqual({ missing: [], extra: ['b'] });
+  });
+
+  it('reports a table row the code has not got', () => {
+    expect(diffWriters(['a'], ['a', 'b'])).toEqual({ missing: ['b'], extra: [] });
+  });
+
+  it('counts a second writer inside an already-listed file', () => {
+    expect(diffWriters(['a', 'a'], ['a'])).toEqual({ missing: [], extra: ['a'] });
+  });
+});
+
+describe('the gate, spawned for real', () => {
+  /**
+   * The CLI locates the repository from its OWN path, not from `cwd` — so a
+   * scratch run has to spawn the copy that lives inside the scratch tree.
+   */
+  const run = (root) =>
+    spawnSync(process.execPath, [path.join(root, 'scripts/check-subject-brief-writers.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+
+  it('is green on this repository as it stands', () => {
+    const result = run(REPO_ROOT);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/briefwriters:check passed/);
+  });
+
+  /**
+   * The red half, and the reason this suite exists rather than a line in a PR
+   * body saying the gate was demonstrated once. A throwaway copy of the tree
+   * loses one row from the table; the gate must name the writer it can still
+   * see in the code.
+   */
+  it('goes red when the table loses a writer the code still has', () => {
+    const scratch = mkdtempSync(path.join(tmpdir(), 'briefwriters-'));
+    for (const root of SCAN_ROOTS) {
+      cpSync(path.join(REPO_ROOT, root), path.join(scratch, root), { recursive: true });
+    }
+    for (const file of [
+      'scripts/check-subject-brief-writers.mjs',
+      'scripts/lib/subjectBriefWriters.mjs',
+    ]) {
+      cpSync(path.join(REPO_ROOT, file), path.join(scratch, file));
+    }
+
+    const doc = readFileSync(DOC, 'utf8');
+    const dropped = parseDeclaredWriters(doc).paths[0];
+    mkdirSync(path.join(scratch, 'docs'), { recursive: true });
+    const kept = doc
+      .split('\n')
+      .filter((line) => !(line.trim().startsWith('|') && line.includes(`\`${dropped}\``)))
+      .join('\n');
+    writeFileSync(path.join(scratch, 'docs/canon-icons.md'), kept, { flush: true });
+
+    const result = run(scratch);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/In the code, not in the table/);
+    expect(result.stderr).toContain(dropped);
+  });
+});

@@ -547,18 +547,20 @@ export async function hideEquipmentIconFor(
 // Both take the NAME rather than the item id: the callable reads nothing from
 // Firestore, so the caller supplies the whole input. Neither touches
 // `equipmentIcons`, and neither could: the collection is `allow write: if false`
-// in firestore.rules, so the only mutations this app can reach are two callables —
-// `drawEquipmentIcon`, which stamps the brief the user pressed Draw on, and
-// `setIconUpload`, which stamps `thumbnail` and the cache-bust nonce and never a
-// brief. Server-side the field has two further writers, neither of which can carry
-// a sentence from here: the manifest trigger and the `--apply` backfill script
-// both author their own from the item's name. So `drawEquipmentIcon` is the
-// only writer of `subjectBrief` that takes its brief from a client request —
-// this callable's output, once the browser sends it — reaching Firestore. Not
-// "a description a human has read": the backfill's briefs are read by hand too
-// (scripts/generate-equipment-icons.mjs's own header), and reading is not what
-// separates the writers. And not "the only writer of `subjectBrief`" either,
-// which is false — it has three.
+// in firestore.rules, so every mutation this app reaches goes through a callable.
+//
+// What IS true of `drawEquipmentIcon`, and all this path rests on: it is the only
+// writer of `subjectBrief` that takes its brief from a CLIENT REQUEST — this
+// callable's output, once the browser sends it. Not "the only writer of
+// `subjectBrief`", which is false, and not "a description a human has read"
+// either: the backfill's briefs are read by hand too, and reading is not what
+// separates the writers.
+//
+// The writers are NOT listed here. There is one list, in docs/canon-icons.md →
+// "Who writes `subjectBrief`", and `pnpm briefwriters:check` reds when it drifts
+// from the code. This comment carried its own copy, went stale, was corrected in
+// #1461, and went stale again on the next PR to add a writer — hence #1519. A
+// count in this file is a claim with no reader, so do not add one back.
 //
 // A revision lost to a sleeping phone is therefore by design, not a gap. The
 // reason, its five facts and which of them are pinned live at the callable

@@ -23,6 +23,7 @@
     "palette:check": "node scripts/check-raw-palette.mjs",
     "mergequeue:check": "node scripts/check-merge-queue.mjs",
     "bqext:check": "node scripts/check-bigquery-extensions.mjs",
+    "briefwriters:check": "node scripts/check-subject-brief-writers.mjs",
     "coverage:files:check": "node scripts/check-coverage-files.mjs",
     "coverage:platforms:check": "node scripts/check-coverage-platforms.mjs",
     "coverage:ratchet:check": "node scripts/check-coverage-ratchet.mjs",
