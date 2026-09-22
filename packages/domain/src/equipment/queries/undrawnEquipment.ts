@@ -44,18 +44,35 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 // close what that leaves unresolved: a record pointed at a drawing that is not
 // (or is no longer) renderable shows no picture here and is not reported.
 //
-// THE REACHABLE TRIGGER IS HIDE, NOT DELETION. There is no delete-a-drawing
-// command, so "a drawing that has since been deleted" describes a case nothing
-// in the app can reach. Hide is reachable, ships on two surfaces, and
-// `hideEquipmentIconFor` (`equipmentService.ts`) withdraws only the borrow HELD
-// BY the record being hidden — never the borrows POINTING AT it. So hiding one
-// drawing silently un-pictures every record and kitchenTool that borrows it, in
-// one press, none of them counted here or offered Draw. That is under-reporting
-// by however many things point at what got hidden, not "one case" and not "one
-// row" — both absolutes this paragraph used to state were wrong. It is still the
-// safe direction for a badge — it can never invent a gap that is not there, only
-// miss a real one — and `undrawnEquipment.test.ts` pins that behaviour rather
-// than an absolute nobody can check.
+// TWO DELETIONS, AND ONLY THE NARROW ONE IS UNREACHABLE. There is no
+// delete-a-drawing command — nothing takes the picture away and leaves the record
+// standing. Deleting the RECORD is another matter, and it is ordinary: a removal
+// on the equipment list takes its id out of the manifest's live set, and
+// `reconcileRemovedItems` (`onEquipmentManifestWritten.ts`) then deletes every
+// `equipmentIcons` document outside that set. Nothing rewrites the borrows that
+// pointed at it — `borrowedPictureField` says so in the schema, and a dangling
+// reference is valid on read. A RECORD's own dangling borrow resolves to
+// nothing at display time (an entry's does not — see below) — so "a drawing
+// that has since been deleted" is a case the app reaches, by the record going,
+// and `undrawnEquipment.test.ts`'s `'deleted-record'` case is what pins this
+// query's answer to it.
+//
+// HIDE STRANDS BORROWERS WITHOUT DELETING ANYTHING, and is the other half of the
+// same boundary. It ships on two surfaces, and `hideEquipmentIconFor`
+// (`equipmentService.ts`) withdraws only the borrow HELD BY the record being
+// hidden — never the borrows POINTING AT it. So hiding one drawing silently
+// un-pictures every RECORD that borrows it, in one press; those records are
+// neither counted here nor offered Draw. AN ENTRY DOES NOT LOSE ITS PICTURE
+// THE SAME WAY: `kitIcons.ts`'s `linkedIcon` reads entry's own → entry's
+// borrowed → item's own → item's borrowed, so an entry whose borrow now
+// dangles falls through to its PARENT RECORD'S OWN picture and silently shows
+// that instead — it goes blank only when the parent has no picture of its own
+// either. That is under-reporting by however many records point at what got
+// hidden, not "one case" and not "one row" — both absolutes this paragraph
+// used to state were wrong. It is still the safe direction for a badge — it
+// can never invent a gap that is not there, only miss a real one — and
+// `undrawnEquipment.test.ts` pins that behaviour rather than an absolute
+// nobody can check.
 //
 // PURE, and takes the two plain structures a caller already holds. The icons
 // arrive as a Map rather than an array because an `EquipmentIconDoc` does not
