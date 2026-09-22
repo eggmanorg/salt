@@ -11,9 +11,15 @@
 // What this test does NOT claim: that 90 minutes is the *right* budget. No test
 // can know that — it would need to time real workers. What it guarantees is
 // narrower and checkable: the stated budget does not silently drift, the same
-// number appears everywhere it must, and the file never again asks the harness
-// to start a sleep it cannot start (a Bash `timeout` is capped at 600000 ms,
-// which is why the per-worker watchdog sleep had to go).
+// number appears everywhere it must, and the heartbeat paragraph keeps the shape
+// #1541 gave it.
+//
+// #1541 is also the cautionary half of this file. The version of these tests that
+// shipped with #1524 pinned a harness cap that did not exist — a sentence nobody
+// had run the experiment for, made mechanical, which is how a falsehood acquires
+// a green tick. A test over prose can hold that a disproved sentence stays out and
+// that a described mechanism stays described. It cannot make a claim true, and the
+// moment it looks like it has, it is doing harm.
 //
 // From #1521 Phase 2 the same number lives in five files that never import each
 // other — the campaign command that hands it out, the three spec commands that
@@ -28,9 +34,6 @@ import { describe, expect, it } from 'vitest';
 
 const repo = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const read = (f) => readFileSync(path.join(repo, '.claude/commands', f), 'utf8');
-
-/** The harness's own cap on a backgrounded Bash call, in seconds. */
-const MAX_SLEEP_SECONDS = 600;
 
 describe('salt-campaign.md — the budget the coordinator hands each worker', () => {
   const src = read('salt-campaign.md');
@@ -57,15 +60,6 @@ describe('salt-campaign.md — the budget the coordinator hands each worker', ()
 describe('salt-campaign.md — the mechanism that enforces it', () => {
   const src = read('salt-campaign.md');
 
-  // This is the pin for the fault itself: the command used to instruct a
-  // `sleep <budget-seconds>` per worker, which at any budget over ten minutes
-  // is a call the harness refuses. A regression would re-introduce a literal.
-  it('never asks for a sleep longer than the harness allows', () => {
-    const asked = [...src.matchAll(/sleep\s+(\d+)/g)].map((m) => Number(m[1]));
-    expect(asked.length).toBeGreaterThan(0); // the heartbeat itself
-    for (const seconds of asked) expect(seconds).toBeLessThanOrEqual(MAX_SLEEP_SECONDS);
-  });
-
   it('describes one heartbeat for the whole pool, not one per worker', () => {
     expect(src).toMatch(/One heartbeat covers the whole pool/);
     // The per-worker mechanism is gone by name, so it cannot creep back in
@@ -73,13 +67,44 @@ describe('salt-campaign.md — the mechanism that enforces it', () => {
     expect(src).not.toMatch(/watchdog/i);
   });
 
-  it('says why the long sleep is gone, so the next reader does not re-propose it', () => {
-    expect(src).toMatch(/600000 ms/);
+  // The three sentences #1541 disproved. Each was in the file, each was false,
+  // and a coordinator reading any of them is instructed away from the mechanism
+  // that works — so absence is the property worth holding, not a paraphrase.
+  it('makes no claim that the harness caps or refuses a backgrounded sleep', () => {
+    expect(src).not.toMatch(/the harness cannot start one/);
+    expect(src).not.toMatch(/is refused before it starts/);
+    expect(src).not.toMatch(/it is not a thing this harness can run/);
   });
 
-  it('requires re-arming on every wake, including an agent-return wake', () => {
+  it('arms the heartbeat to the earliest deadline, not to a fixed interval', () => {
+    expect(src).toMatch(/Arm it to the earliest budget end-time across the live pool/);
+    expect(src).toMatch(/re-arm it only when that earliest deadline actually changes/);
+    // The ten-minute cycle is the cost #1541 measured; it must not return.
+    expect(src).not.toMatch(/sleep 600\b/);
+  });
+
+  it('carries the observation that replaced the cap claim, with its date', () => {
+    expect(src).toMatch(/`timeout` parameter does not kill a backgrounded command/);
+    expect(src).toMatch(/campaign #1495 \(2026-09-20\)/);
+  });
+
+  it('names the watchers a coordinator waits on CI and on a merge with', () => {
+    expect(src).toMatch(/gh pr checks <pr> --watch --fail-fast/);
+    expect(src).toMatch(/until \[ "\$\(gh pr view <pr> --json state --jq \.state\)" != "OPEN" \]/);
+    // So nobody re-proposes the push tools that do not exist in this harness.
+    expect(src).toMatch(/subscribe_pr_activity/);
+    expect(src).toMatch(/send_later/);
+  });
+
+  it('still compares against the ledger on every wake, including an agent-return wake', () => {
     expect(src).toMatch(/including a wake caused by an agent returning/);
-    expect(src).toMatch(/re-arm the heartbeat before you end the turn/);
+    expect(src).toMatch(
+      /a heartbeat armed for the current earliest deadline whenever the pool is non-empty/,
+    );
+  });
+
+  it('still tears the heartbeat down at Finish', () => {
+    expect(src).toMatch(/`TaskStop` the pool heartbeat if it is still running/);
   });
 });
 
