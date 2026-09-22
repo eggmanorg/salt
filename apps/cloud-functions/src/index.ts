@@ -561,12 +561,19 @@ export const describeRecipeScene = makeTracedCallable({
 //     describeRecipeScene above. `equipmentIcons` is `allow write: if false`
 //     (firestore.rules), so no browser write reaches it at all; the whole-document
 //     `setDoc`s the equipment surfaces do make land on `equipmentManifest/current`,
-//     which carries no brief field. The only two mutations a browser can reach are
-//     callables — `drawEquipmentIcon`, and `setIconUpload`, which stamps
-//     `thumbnail` and the cache-bust nonce and never a brief. VOID if that rules
-//     clause opens, or if `subjectBrief` moves onto the manifest. NOTHING GUARDS
-//     THIS: no suite asserts the write denial (firestoreRules.emulator.test.ts
-//     does not cover this collection), so a rules edit would go green everywhere.
+//     which carries no brief field. What forecloses the hazard is the rules
+//     clause, not an inventory: a browser cannot reach this collection at all, so
+//     it cannot send a stale full document to it, and that holds however many
+//     callables there are and whatever they write. How many there are is
+//     deliberately not written here — a count in this comment read "the only two
+//     mutations a browser can reach" from #1461 until #1519, having gone false in
+//     between when #1482 added a third. The callables that touch `subjectBrief`
+//     are listed once, in docs/canon-icons.md → "Who writes `subjectBrief`", and
+//     `pnpm briefwriters:check` reds when that list drifts from the code.
+//     VOID if that rules clause opens, or if
+//     `subjectBrief` moves onto the manifest. NOTHING GUARDS THIS: no suite
+//     asserts the write denial (firestoreRules.emulator.test.ts does not cover
+//     this collection), so a rules edit would go green everywhere.
 //   • FOUR — a brief-only write would be SILENT. `equipmentIconAwaitingApproval`
 //     is `sourceName !== briefSourceName` (@salt/domain, equipment/queries), so a
 //     write of `subjectBrief` alone moves neither field and the one signal that
@@ -595,16 +602,26 @@ export const describeRecipeScene = makeTracedCallable({
 // nothing goes red if one of them moves.
 //
 // BOUNDARY — this is NOT "the equipment description is never persisted
-// server-side", and must not be written as one: fact five names two writers that
+// server-side", and must not be written as one: fact five names writers that
 // persist one deliberately. Nor is `drawEquipmentIcon` the only writer of
 // `subjectBrief`, which is what this comment claimed until #1433 — an absolute
 // that made drawEquipmentIcon.ts:110-131's transaction look like ceremony when it
 // exists precisely because the trigger is a concurrent writer of that field. What
 // IS true, and is what the review gate rests on: `drawEquipmentIcon` is the only
-// writer of `subjectBrief` that takes its brief from a client request — this
-// callable's output reaching Firestore once the browser sends it. The other two
-// writers author their own from the item's name and never carry a client-held
-// sentence. And note what does NOT carry from the epic: #1417's "no
+// writer of `subjectBrief` that takes its brief from a CLIENT REQUEST — this
+// callable's output reaching Firestore once the browser sends it.
+//
+// That is the whole of the claim. It is deliberately NOT "and the other writers
+// author their own from the item's name", which this paragraph said until #1519
+// and which was false as well as too small: `authorEntryIconBrief` is reached from
+// the browser like `drawEquipmentIcon` and authors its own sentence like the
+// trigger, so it fits neither bucket, and the paragraph's two-bucket STRUCTURE
+// broke before its arithmetic did. The writers and their categories live in one
+// place — docs/canon-icons.md → "Who writes `subjectBrief`" — held honest by
+// `pnpm briefwriters:check` (scripts/check-subject-brief-writers.mjs). Read it
+// there; do not re-derive it here.
+//
+// And note what does NOT carry from the epic: #1417's "no
 // firestore.rules change is needed, for any child" is true here for a SERVER-side
 // durable write (the Admin SDK bypasses rules) and false for a client-side one
 // (`allow write: if false`), so it argues nothing either way. A server-side write

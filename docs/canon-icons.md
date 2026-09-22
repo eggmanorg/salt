@@ -437,10 +437,50 @@ compares `sourceName` with `briefSourceName` and never reads the brief), and arr
 back down the item page's own subscription over whatever the user had typed since.
 Client-side durability was rejected too, by CLAUDE.md hard rule 3. The claim this
 rests on is narrower than the one the code used to state: `drawEquipmentIcon` is
-the only writer of `subjectBrief` that takes its brief from a client request —
-the **callable's** output, once the browser sends it — reaching Firestore. Not
-the only writer of the field, which has three; the other two author their own
-from the item's name and never carry a client-held sentence.
+the only writer of `subjectBrief` that **takes its brief from a client request** —
+the describe callable's output, once the browser sends it — reaching Firestore. It
+is emphatically not the only writer of the field; who the others are is the next
+section, and no code comment restates it.
+
+### Who writes `subjectBrief` (#1519)
+
+**This table is the only enumeration of this set. Every comment that used to carry
+its own points here instead, and `pnpm briefwriters:check` fails when the table and
+the code disagree.** That gate exists because the prose version went stale twice on
+the same mechanism — #1461 corrected four sites after the trigger and the backfill
+were recognised as writers, and #1482 broke all four again one PR later by adding
+`authorEntryIconBrief` and touching none of them. CLAUDE.md rule 12.
+
+Read the **category**, not the count. The count is what a script can check; the
+category is what an agent actually needs, and it is the half that broke worst — the
+old prose divided the world into "text a human typed" and "text authored from the
+item's name", and `authorEntryIconBrief` is neither. It is reached from the browser
+like the first and authors its own sentence like the second, then persists it with
+no review step at all.
+
+<!-- subject-brief-writers:start — the canonical list; checked by `pnpm briefwriters:check` (#1519) -->
+
+| Writer                                 | Site                                                              | Where its sentence comes from                                                                                                                                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drawEquipmentIcon`                    | `apps/cloud-functions/src/callables/drawEquipmentIcon.ts`         | **A client-typed string.** The only one. Its brief is whatever was in the textarea when Draw was pressed, so this is the one write a person approved.                                                                  |
+| `authorEntryIconBrief`                 | `apps/cloud-functions/src/callables/authorEntryIconBrief.ts`      | **Server-authored, browser-asked-for.** A press resolves the entry's name server-side, runs the flow and persists the answer immediately — no textarea, no review step. Neither of the other two categories covers it. |
+| `onEquipmentManifestWritten`           | `apps/cloud-functions/src/triggers/onEquipmentManifestWritten.ts` | **Server-authored, nobody asked.** A create or a rename runs the flow in authoring mode and writes the result; no browser is in the loop.                                                                              |
+| `generate-equipment-icons.mjs --apply` | `apps/cloud-functions/scripts/generate-equipment-icons.mjs`       | **Server-authored, nobody asked.** Same flow, same mode, in bulk. An operator tool rather than a path — its briefs are read by hand, which is not what separates the writers.                                          |
+
+<!-- subject-brief-writers:end -->
+
+Consequences worth keeping in view when you add a fifth:
+
+- `drawEquipmentIcon.ts`'s transaction is not ceremony. The trigger is a concurrent
+  writer of the same field, so a rename landing mid-draw has already re-authored
+  `subjectBrief` under the new name.
+- `equipmentIconAwaitingApproval` compares `sourceName` with `briefSourceName` and
+  never reads the brief, so a brief-only write raises no signal at all — see
+  `index.ts` → `describeEquipmentSubject`, fact FOUR.
+- The gate matches a literal `subjectBrief:` assignment under
+  `apps/cloud-functions/src` and `apps/cloud-functions/scripts`. A write that never
+  spells the field on the line — a spread, a computed key — is outside what it sees;
+  `scripts/lib/subjectBriefWriters.mjs`'s header says so at length.
 
 ## Generation pipeline
 

@@ -269,6 +269,19 @@ jobs:
       - name: BigQuery extension manifest check
         run: pnpm bqext:check
 
+      # `subjectBrief` writer list. Four prose comments each enumerated
+      # everything that writes `equipmentIcons.subjectBrief`; all four went stale
+      # when a PR added a writer and touched none of them, were hand-corrected
+      # (#1461), and all four went stale again on the very next such PR (#1482).
+      # Nothing greps for writers of a Firestore field, so nothing noticed either
+      # time. #1519 collapsed the four into one list in docs/canon-icons.md and
+      # this is what holds it against the code — CLAUDE.md rule 12's first
+      # option, after its second option had been tried and had failed twice.
+      # A step in `static`, never a new job: the ruleset's three required
+      # contexts must stay three.
+      - name: Brief writer list check
+        run: pnpm briefwriters:check
+
   types:
     name: Types
     runs-on: ubuntu-latest
