@@ -122,5 +122,11 @@ export const breadGate = featureGate('bread');
 /** The library — the kitchen facts that are not recipes (epic #1372). */
 export const libraryGate = featureGate('library');
 
-/** Asking the chef to save a recipe, rather than tapping the icon (issue #1480). */
-export const chatSaveGate = featureGate('chatSave');
+// NO `chatSaveGate` STORE, deliberately (issue #1512). Asking the chef to save a
+// recipe (issue #1480) is gated in exactly one place — `consumeSaveIntent` in
+// `chatService.ts`, the seam every save-intent surface goes through — via the
+// one-shot `isFeatureEnabled('chatSave')` above. A store here would be a second
+// place to read the same flag, which is the duplication #1512 removed: the two
+// call sites that had it could disagree, and a third surface could have neither.
+// A surface that needs the flag reactively (to paint something differently)
+// would need one back; nothing does today.

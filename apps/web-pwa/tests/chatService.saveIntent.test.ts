@@ -1,7 +1,7 @@
 /**
  * Taking the save request the chef recorded (issue #1480) — `consumeSaveIntent`.
  *
- * Four claims, each of which is a real defect if it is wrong:
+ * Five claims, each of which is a real defect if it is wrong:
  *
  *  1. IT CLEARS BEFORE IT ANSWERS. The caller runs the save on `true`, so the
  *     write that clears the request has to have happened by the time that `true`
@@ -18,10 +18,12 @@
  *     while the request stays armed on the document — the next tab or reload
  *     takes it again and writes a second recipe. Answering `false` costs one
  *     retry and removes the duplicate.
- *
- * `consumeSaveIntent` does not gate on the `chatSave` feature key — that check
- * lives at each call site (`ChatSessionPage.svelte`, `RecipeViewPage.svelte`);
- * see the doc comment on the function itself.
+ *  5. THE FEATURE KEY IS READ HERE, not at each call site (issue #1512) — this
+ *     is the one seam every surface goes through, so a recorded request is
+ *     inert end to end while the key is off, with nothing taken, nothing
+ *     cleared and nothing saved. This file is where that claim is pinned: both
+ *     page suites mock `consumeSaveIntent` wholesale and so cannot prove
+ *     anything about the flag, only that they reach this seam.
  *
  * THE BOUNDARY, stated because "exactly once" would be too strong: this holds per
  * request per TAB (Finding 4 — narrower than "browser": two tabs on the SAME
@@ -60,6 +62,14 @@ vi.mock('../src/lib/membersService.js', () => ({
   },
 }));
 
+// The `chatSave` gate `consumeSaveIntent` reads directly (issue #1512). `true`
+// by default so the behavioural tests below stay about taking and clearing, not
+// about the gate; the gate's own tests flip it.
+const isFeatureEnabledMock = vi.fn((_feature: string) => true);
+vi.mock('../src/lib/featureGate.js', () => ({
+  isFeatureEnabled: (feature: string) => isFeatureEnabledMock(feature),
+}));
+
 import * as firebaseSync from '@salt/firebase-sync';
 import { consumeSaveIntent } from '../src/lib/chatService.js';
 
@@ -96,6 +106,7 @@ function lastWritten(): ChatSessionDoc | undefined {
 beforeEach(() => {
   vi.clearAllMocks();
   fs.saveChatSession.mockResolvedValue({ kind: 'ok', value: undefined });
+  isFeatureEnabledMock.mockReturnValue(true);
 });
 
 describe('consumeSaveIntent', () => {
@@ -157,5 +168,40 @@ describe('consumeSaveIntent', () => {
     await expect(consumeSaveIntent(asked)).resolves.toBe(false);
     // Attempted, not skipped — the clear is still tried before answering.
     expect(fs.saveChatSession).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #1512: the `chatSave` feature key is read inside `consumeSaveIntent`,
+  // the one seam every surface goes through, rather than at each call site — so
+  // a caller that only honours the return value still gets the gate, and a new
+  // conforming surface cannot silently bypass it.
+  describe('the chatSave feature key', () => {
+    it('says no, and writes nothing, while the key is off', async () => {
+      isFeatureEnabledMock.mockReturnValue(false);
+
+      await expect(consumeSaveIntent(session({ pendingSaveIntent: 'm2' }))).resolves.toBe(false);
+      expect(fs.saveChatSession).not.toHaveBeenCalled();
+    });
+
+    it('is asked about the chatSave key specifically', async () => {
+      await consumeSaveIntent(session({ pendingSaveIntent: 'm2' }));
+
+      expect(isFeatureEnabledMock).toHaveBeenCalledWith('chatSave');
+    });
+
+    // The gate sits BEFORE `takenSaveIntents`, so a refusal does not spend the
+    // request for this tab. Without that ordering, a person whose flags arrive
+    // late — the payload lands after the page has already looked once — would
+    // find their request permanently inert until a reload.
+    it('does not spend the request, so it is still takeable once the key comes on', async () => {
+      const asked = session({ pendingSaveIntent: 'm2' });
+      isFeatureEnabledMock.mockReturnValue(false);
+      await expect(consumeSaveIntent(asked)).resolves.toBe(false);
+
+      isFeatureEnabledMock.mockReturnValue(true);
+
+      await expect(consumeSaveIntent(asked)).resolves.toBe(true);
+      expect(fs.saveChatSession).toHaveBeenCalledTimes(1);
+      expect(lastWritten()?.pendingSaveIntent).toBeNull();
+    });
   });
 });
