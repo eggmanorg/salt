@@ -379,6 +379,7 @@ function renderReport(
   items: readonly EquipmentItemDoc[],
   unreadable: readonly string[],
   neverTriggers: readonly NamedRecipe[],
+  declinedByGuards: readonly NamedRecipe[],
 ): string {
   const stampedChanged = outcomes.filter((o) => o.status === 'stamped' && o.diff!.changed).length;
   const timedOut = outcomes.filter((o) => o.status === 'timeout').length;
@@ -396,7 +397,7 @@ function renderReport(
   // stdout (PR #1483 review, should-fix 5, extended to should-fix 4's
   // full-schema case): a gap here is exactly the gap the narrow-pick comment in
   // `readRecipes` says it exists to avoid.
-  if (unreadable.length > 0 || neverTriggers.length > 0) {
+  if (unreadable.length > 0 || neverTriggers.length > 0 || declinedByGuards.length > 0) {
     lines.push('## Excluded — never targeted');
     lines.push('');
     if (unreadable.length > 0) {
@@ -414,6 +415,20 @@ function renderReport(
           `stamp and burn the wait timeout. Fix their shape, then re-run:`,
       );
       for (const entry of neverTriggers) {
+        lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
+      }
+      lines.push('');
+    }
+    if (declinedByGuards.length > 0) {
+      lines.push(
+        `${declinedByGuards.length} recipe(s) have a non-empty kit but fail one of the trigger's ` +
+          `own two guards — \`isCookable(kind)\`, or a step count of zero — the same pair ` +
+          `\`maybeInferKit\` checks before it calls the model. The trigger will decline these ` +
+          `for as long as their shape stands, so they are read for this report but never ` +
+          `targeted. Their kit is whatever an earlier edit left behind. Fix the kind or the ` +
+          `steps, then re-run:`,
+      );
+      for (const entry of declinedByGuards) {
         lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
       }
       lines.push('');
@@ -504,9 +519,19 @@ async function main(): Promise<void> {
   const allTargets = steps.filter((step) => step.skip === null);
   const targets = limit === null ? allTargets : allTargets.slice(0, limit);
 
+  // Collected here rather than in `readRecipes` because the reason only exists
+  // once `planKitRerun` has run — and threaded into the report because stdout
+  // scrolls past while the report file is the artifact the spot-check reads
+  // (issue #1517). Note the boundary: the report is only written under
+  // `--write`, and only from inside the per-target loop below, so a run with no
+  // targets at all still leaves this list unwritten — the same limit the two
+  // existing exclusion lists already have.
+  const declinedByGuards: NamedRecipe[] = [];
+
   for (const step of steps) {
     if (step.skip === 'empty-kit') continue; // the common, uninteresting case
     if (step.skip === 'not-cookable' || step.skip === 'no-steps') {
+      declinedByGuards.push({ id: step.id, title: step.title });
       console.log(`  SKIP  ${step.title} — ${step.skip}, the trigger would decline it`);
     }
     if (step.skip === 'already-rerun') {
@@ -619,7 +644,11 @@ async function main(): Promise<void> {
     // `outPath` behind. `rename()` on the same filesystem is atomic; the
     // half-written state can only ever be the `.tmp` file.
     const tmpPath = `${outPath}.tmp`;
-    await writeFile(tmpPath, renderReport(outcomes, items, unreadable, neverTriggers), 'utf8');
+    await writeFile(
+      tmpPath,
+      renderReport(outcomes, items, unreadable, neverTriggers, declinedByGuards),
+      'utf8',
+    );
     await rename(tmpPath, outPath);
 
     await sleep(SETTLE_MS);

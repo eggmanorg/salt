@@ -283,4 +283,63 @@ describe('rerun-recipe-kits — blocking findings from PR #1483', () => {
       expect(renameMock.mock.calls[i]).toEqual([tmpPath, './kit-rerun-test.md']);
     }
   });
+
+  // Issue #1517: the `not-cookable` / `no-steps` skips reached stdout and
+  // nothing else. The report file is what an operator opens afterwards, so an
+  // exclusion absent from it is invisible to the person deciding whether the
+  // re-run did what they wanted.
+  it('names the trigger-guard exclusions in the report, not only on stdout', async () => {
+    const targetFresh = {
+      exists: true,
+      data: recipeDoc({
+        id: 'r-target',
+        title: 'Targeted Dish',
+        kitInferredAt: FAR_FUTURE,
+        kit: [
+          { label: 'frying pan', equipment: { itemId: 'eq-pans', accessoryId: null }, stepIds: [] },
+        ],
+      }),
+    };
+    initialDocs = [
+      { id: 'r-target', data: () => recipeDoc({ id: 'r-target', title: 'Targeted Dish' }) },
+      // A non-empty kit, but `isCookable('special')` is false — `maybeInferKit`
+      // declines it, so `planKitRerun` never targets it.
+      {
+        id: 'r-special',
+        data: () =>
+          recipeDoc({
+            id: 'r-special',
+            title: 'Nan Special',
+            kind: 'special',
+            kit: [{ label: 'roasting tin', equipment: null, stepIds: [] }],
+            steps: [],
+          }),
+      },
+      // A non-empty kit left behind by an earlier edit that removed every step —
+      // the trigger's second guard.
+      {
+        id: 'r-stepless',
+        data: () =>
+          recipeDoc({
+            id: 'r-stepless',
+            title: 'Stepless Dish',
+            steps: [],
+            kit: [{ label: 'sieve', equipment: null, stepIds: [] }],
+          }),
+      },
+    ];
+    pollQueues.set('r-target', [targetFresh]);
+
+    await runScript();
+
+    // Only the one cookable, stepped recipe was ever written to.
+    expect(updateCalls.map((call) => call.id)).toEqual(['r-target']);
+
+    const lastReport = writeFileMock.mock.calls.at(-1)?.[1] as string;
+    expect(lastReport).toContain('## Excluded — never targeted');
+    expect(lastReport).toContain('Nan Special (`recipes/r-special`)');
+    expect(lastReport).toContain('Stepless Dish (`recipes/r-stepless`)');
+    // Under its own heading, not mistaken for the full-schema class above it.
+    expect(lastReport).toContain("fail one of the trigger's own two guards");
+  });
 });
