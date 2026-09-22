@@ -88,15 +88,31 @@ const ASSIGNMENT = /\bsubjectBrief\s*:/;
  * one — a comment is recognised by walking the text once and tracking
  * whether the cursor is inside a string, a line comment or a block comment,
  * so `//` and `/*` sequences that occur inside a `'`/`"`/`` ` ``-quoted
- * string (an ordinary URL, a path, a regex-looking literal) are left alone
- * rather than mistaken for a comment start. Newlines are preserved exactly —
- * including the ones swallowed inside a block comment — so line numbers
- * downstream still line up with the original file.
+ * string (an ordinary URL, a path, a regex-LOOKING string literal such as
+ * `'/\\/\\//'`) are left alone rather than mistaken for a comment start.
+ * Newlines are preserved exactly — including the ones swallowed inside a
+ * block comment — so line numbers downstream still line up with the
+ * original file.
  *
- * What this still cannot see: a `//`/`/*` sequence inside a template
- * literal's `${...}` interpolation is treated as still "inside the string",
- * since the interpolation is not itself parsed. No line in the scan roots
- * does that today.
+ * What this still cannot see, and the two fail differently:
+ *
+ *   • SAFE — the gate reds, it does not stay green over a miss: a `//`/`/*`
+ *     sequence inside a template literal's `${...}` interpolation is
+ *     treated as still "inside the string", since the interpolation is not
+ *     itself parsed. No line in the scan roots does that today.
+ *   • DANGEROUS — the gate stays green over a real writer: there is no
+ *     tracked state for an actual regex LITERAL (`/\/\//`, `/[//]/` — not a
+ *     quoted string that merely looks like one, see above). Walked as
+ *     ordinary code, its unescaped `//` reads as a line-comment start, so
+ *     everything after it on that line is dropped before matching —
+ *     including a `subjectBrief:` assignment later on the same line.
+ *     Reproduced: a new writer file whose line reads
+ *     `.set({ slug: name.replace(/\/\//g, '-'), subjectBrief: brief })`
+ *     scans clean — same `4 writer(s) across 4 file(s)`, exit 0, as the
+ *     unmutated tree — with no signal that a writer was missed. Giving the
+ *     walker regex-literal state is the real fix and is tracked as its own
+ *     issue, not applied here; putting the assignment before the regex on
+ *     the line sidesteps it in the meantime.
  */
 function stripComments(text) {
   let out = '';
