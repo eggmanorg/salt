@@ -11,7 +11,11 @@
     TextField,
     Textarea,
   } from '@salt/ui-components';
-  import { CANON_ICON_HIDDEN, equipmentEntrySubjectName } from '@salt/domain';
+  import {
+    CANON_ICON_HIDDEN,
+    equipmentEntrySubjectName,
+    equipmentIconAwaitingApproval,
+  } from '@salt/domain';
   import type { Accessory, EquipmentItem } from '@salt/domain';
   import {
     equipmentIcons,
@@ -62,6 +66,13 @@
 
   const icon = $derived(equipmentIconFor($equipmentIcons, accessory.id));
   const hidden = $derived(icon?.thumbnail === CANON_ICON_HIDDEN);
+  // The item panel's review signal, at entry scale (issue #1518). Same pure
+  // predicate, same words, and deliberately NOT the same thing as the
+  // Redraw/Draw it label below: that label says whether a picture was ever
+  // drawn, this says whether the picture still matches the words. An entry
+  // renamed or re-described since its draw shows "Redraw" either way, which is
+  // exactly the case that was silent here before.
+  const awaitingApproval = $derived(equipmentIconAwaitingApproval(icon));
   // The words the brief was authored FROM — an appliance's part qualified by its
   // appliance, a family member standing alone. Revise needs them: rewriting prose
   // about an appliance without knowing which appliance is exactly the drift the
@@ -183,6 +194,21 @@
             right costs a moment; getting the picture wrong costs a redraw.
           </p>
         </div>
+
+        <!-- The same heading the item panel carries, for the same reason: the
+             "waiting for you" suffix needs something to hang off, and a bare
+             middot floating above a box says nothing on its own. -->
+        <p class="text-sm font-medium">
+          Description
+          {#if awaitingApproval}
+            <span
+              class="ml-1 font-normal text-muted-foreground"
+              data-testid="equipment-entry-awaiting-approval"
+            >
+              · waiting for you
+            </span>
+          {/if}
+        </p>
 
         <Textarea
           bind:value={briefDraft}
