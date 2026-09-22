@@ -134,9 +134,11 @@ describe('EquipmentEntryIconDialog — once described, it is the item flow', () 
   });
 
   // Issue #1518. The Redraw/Draw it label above says only whether a picture was
-  // ever drawn; this says whether the picture still matches the words. The gap
-  // between them is the whole defect: a renamed entry reads "Redraw" exactly as
-  // a current one does, and nothing else said the drawing had gone stale.
+  // ever drawn; this pins the same predicate once a re-authored brief has
+  // landed under a changed subject name — NOT what a live rename alone
+  // produces at entry scale (see the comment on `awaitingApproval`). Before
+  // this: a picture drawn from words that have since moved read "Redraw"
+  // exactly as a current one does, with nothing else on screen saying so.
   it('says the picture is waiting for you once the words have moved out from under it', () => {
     open({ ...DESCRIBED, sourceName: 'Steam Basket' });
     expect(screen.getByTestId('equipment-entry-awaiting-approval').textContent).toContain(
