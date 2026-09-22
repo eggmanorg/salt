@@ -44,13 +44,24 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 // close what that leaves unresolved: a record pointed at a drawing that is not
 // (or is no longer) renderable shows no picture here and is not reported.
 //
-// THE REACHABLE TRIGGER IS HIDE, NOT DELETION. There is no delete-a-drawing
-// command, so "a drawing that has since been deleted" describes a case nothing
-// in the app can reach. Hide is reachable, ships on two surfaces, and
-// `hideEquipmentIconFor` (`equipmentService.ts`) withdraws only the borrow HELD
-// BY the record being hidden — never the borrows POINTING AT it. So hiding one
-// drawing silently un-pictures every record and kitchenTool that borrows it, in
-// one press, none of them counted here or offered Draw. That is under-reporting
+// TWO DELETIONS, AND ONLY THE NARROW ONE IS UNREACHABLE. There is no
+// delete-a-drawing command — nothing takes the picture away and leaves the record
+// standing. Deleting the RECORD is another matter, and it is ordinary: a removal
+// on the equipment list takes its id out of the manifest's live set, and
+// `reconcileRemovedItems` (`onEquipmentManifestWritten.ts`) then deletes every
+// `equipmentIcons` document outside that set. Nothing rewrites the borrows that
+// pointed at it — `borrowedPictureField` says so in the schema, a dangling
+// reference being valid on read and resolving to nothing at display time — so "a
+// drawing that has since been deleted" is a case the app reaches, by the record
+// going, and `undrawnEquipment.test.ts`'s `'deleted-record'` case is what pins
+// this query's answer to it.
+//
+// HIDE STRANDS BORROWERS WITHOUT DELETING ANYTHING, and is the other half of the
+// same boundary. It ships on two surfaces, and `hideEquipmentIconFor`
+// (`equipmentService.ts`) withdraws only the borrow HELD BY the record being
+// hidden — never the borrows POINTING AT it. So hiding one drawing silently
+// un-pictures every record and entry that borrows it, in one press; the records
+// among them are neither counted here nor offered Draw. That is under-reporting
 // by however many things point at what got hidden, not "one case" and not "one
 // row" — both absolutes this paragraph used to state were wrong. It is still the
 // safe direction for a badge — it can never invent a gap that is not there, only
