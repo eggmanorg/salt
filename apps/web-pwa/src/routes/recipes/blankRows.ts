@@ -15,14 +15,16 @@
 //
 // IT NOW DROPS BOTH HALVES OF THE RETIRED EDITOR'S `pruneDraft`: stepless steps
 // (#1336, Phase 4) and blank ingredient rows with the groups they empty (Phase
-// 5). The two halves are independent — a recipe can need one and not the other —
-// and `dropBlankRows` is the only place either rule is expressed.
+// 5) — and, since issue #1496, labelless kit entries. The three rules are
+// independent — a recipe can need one and not the others — and `dropBlankRows`
+// is the only place any of them is expressed.
 //
 // It is a module, not a method on a component, because the caller is the PAGE
 // (all three exits above) while the rows belong to its children — and because a
 // pure function over a `Recipe` is testable without mounting anything.
 
 import type { Ingredient, IngredientGroup, Recipe } from '@salt/domain';
+import type { RecipeKitEntryDoc } from '@salt/domain/schemas';
 
 /**
  * The recipe with its blank rows gone, or the very same object when there are
@@ -47,6 +49,15 @@ import type { Ingredient, IngredientGroup, Recipe } from '@salt/domain';
  * `RecipeMethodRail.svelte`'s `setTimer` never lets an abandoned `+ Timer`
  * reach the document as `{ durationMinutes: 0, description: null }` — a
  * persisted `timer` here always carries a real duration or a label.
+ *
+ * A KIT ENTRY is blank when its `label` is empty once trimmed, and that is the
+ * whole of the rule (issue #1496). It is the ingredient row's rule, for the same
+ * reason and with the same boundary: `stepIds` and `equipment` are both ABOUT a
+ * line and say nothing on their own, and neither can outlive the words that
+ * produced it — a row the `+ Add equipment` slot wrote and nobody named carries
+ * `stepIds: []` and `equipment: null` by construction, and the only way to set
+ * either on an existing row is to choose words for it. So a labelless entry
+ * carries nothing a human chose.
  *
  * AN INGREDIENT ROW is blank when its `rawText` is empty once trimmed, and that
  * is the whole of the rule — deliberately narrower than the step's, because an
@@ -80,6 +91,7 @@ export function dropBlankRows(recipe: Recipe): Recipe {
     (s) => s.text.trim() !== '' || s.note !== null || s.timer !== null,
   );
   const ingredients = pruneIngredients(recipe.ingredients);
+  const kit = recipe.kit.filter((e) => !isBlankKitEntry(e));
   // Length comparison for the steps and for the GROUPS; per-group identity for
   // the rows inside a group that survived. `pruneIngredients` returns each group
   // unchanged when none of its rows went, so a surviving group is `!==` its
@@ -88,10 +100,16 @@ export function dropBlankRows(recipe: Recipe): Recipe {
   // sound.
   const changed =
     steps.length !== recipe.steps.length ||
+    kit.length !== recipe.kit.length ||
     ingredients.length !== recipe.ingredients.length ||
     ingredients.some((g, i) => g !== recipe.ingredients[i]);
   if (!changed) return recipe;
-  return { ...recipe, steps, ingredients };
+  return { ...recipe, steps, ingredients, kit };
+}
+
+/** A kit entry with no words at all — the whole of the kit-entry blank rule. */
+export function isBlankKitEntry(entry: RecipeKitEntryDoc): boolean {
+  return entry.label.trim() === '';
 }
 
 /** A row with no words at all — the whole of the ingredient-row blank rule. */

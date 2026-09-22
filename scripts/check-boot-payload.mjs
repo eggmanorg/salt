@@ -64,7 +64,28 @@ const ASSETS = join(DIST, 'assets');
 // one does not fail this gate on third-party bytes alone. If this recurs, the
 // fix is not another raise: posthog.js is ~90 kB gz, the second-largest thing
 // in the boot graph, and analytics has no business loading before first paint.
-const BOOT_GZIP_CEILING_KB = 505;
+//
+// Raised 505 -> 510 in #1512 (2026-09-21), authorised by Daniel ("raise the
+// boot-payload ceiling by a small amount, then do the chat-save-gate
+// consolidation", 2026-09-20). Nothing of ours grew here either: measured fresh
+// against a build of 8e7dc971, the boot graph is 503.66 kB gz — 1.34 kB of
+// headroom under the old 505 KB ceiling. That margin is the problem. It is
+// already thicker than the #1076 raise left (~0.9 kB) yet still far thinner
+// than the +4.66 kB a single routine dependency bump consumed at #1297 — the
+// #1297 comparison is what carries the argument — and in campaign #1486 it
+// failed twice on edges unrelated to their own weight: adding one
+// `featureGate.js` import to the eager `chatService.ts` re-chunked Rollup's
+// output enough to tip the total to 505.06 kB — 60 B over — which is why that
+// consolidation was reverted in 071d2807 rather than shipped. 510 KB gives
+// ~6.3 kB over today's baseline: enough for that consolidation (measured at
+// +0.16 kB against the current dependency graph, where the September attempt saw
+// +1.35 kB — chunking, not code, is what varies) plus one more #1297-sized
+// third-party shock. It is sized to that stated need, not rounded up, and it is
+// not a licence for eager-bundle growth: the OTel/Leaflet/CF-schema content
+// markers below still catch the named libraries at any ceiling. The standing
+// advice from #1297 is unchanged — the next raise should be refused in favour of
+// getting posthog.js (~90 kB gz) out of the boot graph.
+const BOOT_GZIP_CEILING_KB = 510;
 
 // Raw (un-gzipped) ceiling for the settings page's own chunk. Leaflet is 145 kB
 // and Phase 2 moved it out; the chunk measured 34.4 kB after, against 183.7 kB

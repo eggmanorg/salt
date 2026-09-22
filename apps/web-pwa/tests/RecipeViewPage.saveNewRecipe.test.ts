@@ -19,7 +19,6 @@ const {
   mockSessions,
   mockEquipment,
   toastSpy,
-  flagOn,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   const { makeToastSpy } = await import('./support/toastSpy.js');
@@ -32,10 +31,6 @@ const {
     mockDefaultListId: makeStore<string | null>('list-1'),
     mockSessions: makeStore<readonly ChatSessionDoc[]>([]),
     mockEquipment: makeStore<unknown>(null),
-    // The `chat-save` flag, switchable per test — see
-    // `ChatSessionPage.saveIntent.test.ts` for the same harness on the other
-    // call site.
-    flagOn: { value: true },
   };
 });
 
@@ -100,13 +95,15 @@ vi.mock('@salt/firebase-sync', () => ({
 // gated, and this suite's subject is unaffected.
 vi.mock('@salt/observability', () => ({
   trackUsageEvent: vi.fn(),
-  // `chatSaveGate` reads through this key (issue #1480); every other gate this
-  // suite touches stays hard-on, matching the pre-existing comment below.
-  isObservabilityFeatureEnabled: (key: string) => (key === 'chat-save' ? flagOn.value : true),
+  // Every gate this suite touches stays hard-on, matching the pre-existing
+  // comment above. The `chatSave` key is no longer among them: it moved inside
+  // `consumeSaveIntent` (issue #1512), which is mocked here, so flipping it from
+  // this file would prove nothing — see `chatService.saveIntent.test.ts`.
+  isObservabilityFeatureEnabled: () => true,
   areObservabilityFeatureFlagsSettled: () => true,
   onObservabilityFeatureFlags: () => () => {},
-  // `featureGate.ts` reads the PostHog flag key from the adapter (issue #1054);
-  // nothing here asserts on it, but the whole-module mock must supply it.
+  // `featureGate.ts` reads the PostHog flag keys from the adapter (issue #1054);
+  // nothing here asserts on them, but the whole-module mock must supply them.
   BREAD_FLAG_KEY: 'bread',
   LIBRARY_FLAG_KEY: 'library',
   CHAT_SAVE_FLAG_KEY: 'chat-save',
@@ -251,7 +248,6 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   toastSpy.reset();
-  flagOn.value = true;
   vi.mocked(saveRecipeDoc).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
   mockCanonItems._set([]);
@@ -549,22 +545,6 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
       }),
     );
     expect(saveRecipeDoc).not.toHaveBeenCalled();
-  });
-
-  // The feature key is a real gate on this side too (mirrors
-  // `ChatSessionPage.saveIntent.test.ts`'s equivalent case): with it off, a
-  // request sitting on the document is ignored entirely — `consumeSaveIntent`
-  // is never even called, so nothing is cleared or asked either.
-  it('ignores a recorded request entirely with the feature key off', async () => {
-    flagOn.value = false;
-    mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
-
-    renderPage();
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(consumeSaveIntent).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
-    expect(authorRecipeTraced).not.toHaveBeenCalled();
   });
 
   it('never asks on a chat that carries no request', async () => {
