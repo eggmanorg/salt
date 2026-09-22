@@ -79,10 +79,11 @@
 // failed inference from here, and all four are permanent, so three are filtered
 // before they can cost a `STAMP_TIMEOUT_MS` wait: not-cookable and no-steps are
 // `planKitRerun` skip reasons (the pure half, using the same `isCookable`
-// predicate `maybeInferKit` reads), the kill switch is a pre-flight read that
-// refuses `--write` outright when it is off, and a recipe failing the full
-// schema is read for its title/kit only (never targeted) and named in the
-// report instead — see `readRecipes` below.
+// predicate `maybeInferKit` reads) and are named in the report as declined-by-
+// guard entries; the kill switch is a pre-flight read that refuses `--write`
+// outright when it is off; and a recipe failing the full schema is read for
+// its title/kit only (never targeted) and named in the report separately —
+// see `readRecipes` below.
 //
 // RESUMABLE. `--write` prints its own start instant; re-running with
 // `--since <that number>` skips every recipe already stamped at or after it. An
@@ -109,11 +110,13 @@
 // have to agree, and only writing incrementally makes that true. `--out`
 // (defaulted per project and start instant) is what each recipe's kit said
 // before, what it says now, and which lines gained a link — plus, since the same
-// review (should-fix 5), every document this run could NOT act on and why: a
-// document failing even the narrow read, and one failing the full schema. The
-// issue's own acceptance is a spot-check of recipes using the Magimix, the rice
-// cooker and a named pan; this file is what that check reads, and it is meant to
-// hold every recipe the run touched or excluded, not only the successes.
+// review (should-fix 5, extended to should-fix 4), every document this run
+// could NOT act on and why: one failing even the narrow read, one failing the
+// full schema, and one the trigger's own guards decline (not-cookable or
+// no-steps). The issue's own acceptance is a spot-check of recipes using the
+// Magimix, the rice cooker and a named pan; this file is what that check
+// reads, and it is meant to hold every recipe the run touched or excluded, not
+// only the successes.
 //
 // THE DECISION LAYER — which recipes are in scope, and what counts as a change —
 // lives in the pure, tested `scripts/lib/kitRerunPlan.ts` (docs/one-shot-scripts.md
@@ -425,8 +428,11 @@ function renderReport(
           `own two guards — \`isCookable(kind)\`, or a step count of zero — the same pair ` +
           `\`maybeInferKit\` checks before it calls the model. The trigger will decline these ` +
           `for as long as their shape stands, so they are read for this report but never ` +
-          `targeted. Their kit is whatever an earlier edit left behind. Fix the kind or the ` +
-          `steps, then re-run:`,
+          `targeted. A zero step count is missing method text — add steps in place and ` +
+          `re-run. A non-cookable kind (\`special\` or \`placeholder\`) is not something an ` +
+          `edit can fix: \`kind\` is immutable and no surface in the app changes it once a ` +
+          `recipe exists (packages/domain/src/recipe/queries/capabilities.ts), so these stay ` +
+          `on this list for as long as their kit does:`,
       );
       for (const entry of declinedByGuards) {
         lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
