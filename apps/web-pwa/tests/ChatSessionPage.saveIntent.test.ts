@@ -510,3 +510,57 @@ describe('ChatSessionPage — a save the chef was asked for, on a chat about a d
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });
+
+// The send record (`lastSent` in `chatThreadState.svelte.ts`) is what
+// `askedHere` reads to decide a request is this page's to act on. Issue
+// #1561 (campaign #1552): nothing pinned that it is written BEFORE the send
+// call returns, nor that it survives a failed send — either regression would
+// silently drop a genuine save request while every existing test here still
+// passes, because they all deliver the reply strictly after the call settles.
+describe('ChatSessionPage — the send record that gates "asked here" (#1561)', () => {
+  it('records the send before the call returns, so a reply arriving while it is still in flight is still recognised', async () => {
+    mockSessions._set([makeSession()]);
+    renderPage();
+
+    // Hold `sendMessage` open so the reply can land while this page's own send
+    // is still awaiting it — the comment on `chatThreadState.svelte.ts`'s
+    // `send` says exactly this can happen (a reply arriving before the call
+    // resolves).
+    let resolveSend!: (v: Awaited<ReturnType<typeof sendMessage>>) => void;
+    vi.mocked(sendMessage).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof sendMessage>>>((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+
+    await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: ASK } });
+    await fireEvent.click(screen.getByTestId('chat-send-btn'));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+
+    // The chef's reply, carrying the request, arrives on the subscription
+    // while `send`'s own promise is still unresolved.
+    mockSessions._set([withReply(makeSession())]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
+
+    // Let the held call settle so nothing is left dangling.
+    resolveSend({ kind: 'ok', value: withReply(makeSession()) });
+  });
+
+  it('keeps the send record when the send fails, so a reply that lands anyway still saves', async () => {
+    mockSessions._set([makeSession()]);
+    renderPage();
+    vi.mocked(sendMessage).mockResolvedValueOnce({ kind: 'err', error: OFFLINE });
+
+    await sendFromPage();
+
+    // The reply lands at the same slot the failed send would have produced —
+    // the flow writes the turn regardless of whether the stream reached this
+    // page (a locked phone mid-reply), so this is still an answer to this send.
+    mockSessions._set([withReply(makeSession())]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
+  });
+});
