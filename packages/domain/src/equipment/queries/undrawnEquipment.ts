@@ -37,7 +37,7 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 //
 // ─── The boundary this claim actually has ───────────────────────────────────
 // A borrowed picture is read as the PRESENCE OF A REFERENCE, never resolved to
-// the drawing it points at. Resolving one here would put a second copy of the
+// the drawing it points at. Resolving one here would put another copy of the
 // app's picture order inside the pure domain, where it could answer differently
 // from the code that renders — the defect round-1 review on #1482 called
 // blocking.
@@ -47,8 +47,7 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 // the equipment list — counts as having a picture here and is not reported. A
 // dangling reference is valid on read (`borrowedPictureField` in the manifest
 // schema says why), so this is a state the data can hold, not a hypothetical.
-// The under-report is by however many records point at what got hidden or
-// removed, not one row. That is the safe direction for a badge:
+// That is the safe direction for a badge:
 // the error is an omission, and a record this query does report has nothing
 // drawn, nothing borrowed and is not hidden. `undrawnEquipment.test.ts` pins
 // each of those — the `'deleted-record'` case, the now-hidden source, and every
@@ -56,8 +55,7 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 //
 // WHAT A BORROWED PICTURE RESOLVES TO ON SCREEN — which level answers when
 // another has nothing, and when a row goes blank — is deliberately not stated
-// here. Three successive attempts to restate it in this header each shipped a
-// different false claim (#1516, #1544, #1548). Read it from the code that
+// here. Read it from the code that
 // renders: `linkedIcon` in `apps/web-pwa/src/lib/kitIcons.ts` for kit
 // surfaces, and `pictureFor` in
 // `apps/web-pwa/src/routes/equipment/EquipmentListPage.svelte` for the
