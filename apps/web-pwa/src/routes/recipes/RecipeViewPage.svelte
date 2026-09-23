@@ -1514,18 +1514,13 @@
   // `activeSession` and no other: a request recorded on a chat you are not
   // looking at is not yours to answer here.
   //
-  // NOT A HAND-OFF (#1533 review, blocking Finding 2 — corrected from an
-  // earlier, false claim that "the full `/chat/:id` page takes it instead").
-  // `/chat/:id` clears the very same request on ITS OWN first snapshot without
-  // acting on it (`ChatSessionPage.svelte`'s `sawNothingPendingOn`), the same
-  // first-observation rule as this page's own — though keyed differently:
-  // that latch remembers only the session currently showing, while this page's
-  // remembers every session it has seen. So a request left armed
-  // here while hidden is not carried anywhere that will genuinely act on it —
-  // it is silently dropped by whichever surface next observes it for the
-  // first time, this page included on a later mount. That is the same
-  // accepted cost `sawNothingPendingOn`'s own comment states ("losing it is
-  // safe, the person asks again"), not a working second path.
+  // NOT A HAND-OFF (#1533 review, blocking Finding 2). A request is this
+  // page's only when it answers a message sent from this page while it was open
+  // (#1494 — `chat.askedHere`, one thread shared by the column and the drawer).
+  // `/chat/:id` applies the same rule to its own thread, so a request asked here
+  // is never carried anywhere that will act on it: whichever page next observes
+  // it without having asked clears and drops it — this page included, on a later
+  // mount. That is the accepted cost ("the person asks again"), not a second path.
   let saveChoiceOpen = $state(false);
 
   // WHICH chat the open question is about (issue #1505). Captured when the
@@ -1543,39 +1538,20 @@
     if (!saveChoiceOpen) saveChoiceSessionId = null;
   });
 
-  // A request is acted on only once this page has shown THIS chat as
-  // `activeSession` with nothing pending (issue #1490 review, Finding 1).
-  // One already sitting on a chat when this page first shows it — landing on
-  // this recipe, or switching to another of its chats — is nobody's to take,
-  // and must not pop "Save which one?" over a conversation that has been
-  // sitting there for days. Keyed per session id, not a single flag, because
-  // `activeSession` changes whenever a different chat is picked from the list.
-  //
-  // Recorded ONLY on a run that saw nothing pending, never merely on "a run
-  // happened" (#1494, Finding B). A run can see a request and fail to clear it
-  // — `consumeSaveIntent` declines while the `chatSave` flag is still in
-  // flight — and marking the session seen on that run turned the same,
-  // still-armed request into a "live arrival" on the next one.
-  //
-  // THE BOUNDARY (CLAUDE.md Rule 12): "seen with nothing pending" is what this
-  // page observed, not what was true on the server — a stale cached snapshot
-  // followed by the server's armed copy still reads as a live arrival here.
-  // That is #1494's Finding A, not fixed by this; see `ChatSessionPage.svelte`'s
-  // `sawNothingPendingOn` for the same boundary on that page.
-  const sessionsSeenWithNothingPending = new Set<string>();
-
+  // A request is acted on only when it is the chef's reply to a message sent
+  // from this page (#1494). One already sitting on a chat when this page first
+  // shows it — landing on this recipe, switching to another of its chats, or a
+  // stale cached snapshot followed by the server's armed copy after the device
+  // was away — must not pop "Save which one?" over a conversation nobody here
+  // just spoke in.
   $effect(() => {
     const current = activeSession;
-    if (!current) return;
-    if (current.pendingSaveIntent === null) {
-      sessionsSeenWithNothingPending.add(current.id);
-      return;
-    }
+    if (!current || current.pendingSaveIntent === null) return;
 
     // No `chatSave` flag read here (issue #1512): `consumeSaveIntent` is the one
     // seam that gates on it, and answers `false` with nothing written when the
     // flag is off.
-    if (!sessionsSeenWithNothingPending.has(current.id)) {
+    if (!chat.askedHere(current)) {
       // Cleared regardless of visibility — visibility only matters for a
       // question that might get ASKED, and this one never is. A run that sees
       // it again before the clear lands comes back here too; `consumeSaveIntent`
@@ -1585,16 +1561,15 @@
       return;
     }
 
-    // IS THE CONVERSATION ON SCREEN? (issue #1505.) Only reached for a LIVE
-    // arrival — one recorded after this page had already observed the chat at
-    // least once with nothing pending — which is a question worth asking once
-    // there is somewhere to ask it. "Save this?" over a recipe with no
+    // IS THE CONVERSATION ON SCREEN? (issue #1505.) Only reached for a request
+    // this page asked for, which is a question worth asking once there is
+    // somewhere to ask it. "Save this?" over a recipe with no
     // transcript anywhere on it is a question with nothing to answer it by:
     // the docked column has to be both possible and wanted (`chatPaneShown`)
     // or the phone drawer has to be up; the chat LIST at the foot of a recipe
     // is not the conversation and does not count.
     //
-    // Deliberately BEFORE `consumeSaveIntent`, so an unseen live arrival is
+    // Deliberately BEFORE `consumeSaveIntent`, so an unseen answer is
     // left armed on the document rather than taken and dropped (issue #1533
     // review, Finding 2 — the boundary of what happens to it after that is
     // stated on `saveChoiceOpen` above, and is narrower than this comment used

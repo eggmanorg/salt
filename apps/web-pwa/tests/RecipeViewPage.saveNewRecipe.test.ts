@@ -171,7 +171,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
 import { authorRecipeTraced, stashImportedDraft } from '../src/lib/recipeService.js';
-import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
+import { claimRecipe, consumeSaveIntent, sendMessage } from '../src/lib/chatService.js';
 import { saveRecipeDoc } from '@salt/firebase-sync';
 import { push } from 'svelte-spa-router';
 
@@ -478,16 +478,21 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
     window.matchMedia = realMatchMedia;
   });
 
-  // A request already on the document the first time this page ever shows a
-  // chat as its `activeSession` is one nobody was here to take (issue #1490
-  // review, Finding 1) and must not open the ask — see the dedicated pinning
-  // test below. So the ask tests here render on an UNARMED chat first, let
-  // that first snapshot land, and only THEN arm it — the shape of a real
-  // request arriving on the subscription while the page is mounted.
+  // Only a request answering a message sent from THIS page opens the ask
+  // (#1494); one already on the document when the page shows the chat is
+  // nobody's to take (issue #1490 review, Finding 1) — see the dedicated
+  // pinning test below. So the ask tests here render on an empty chat, send
+  // `USER_TURN`'s words from the page, and only THEN deliver the chef's reply
+  // with the request on it.
   async function askAndWait() {
-    mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
+    vi.mocked(sendMessage).mockResolvedValue({ kind: 'ok', value: makeSession([]) });
+    mockSessions._set([makeSession([])]);
     const rendered = renderPage();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fireEvent.input(screen.getByTestId('chat-input'), {
+      target: { value: USER_TURN.text },
+    });
+    await fireEvent.click(screen.getByTestId('chat-send-btn'));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
     mockSessions._set([{ ...makeSession([USER_TURN, ASSISTANT_TURN]), pendingSaveIntent: 'm2' }]);
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
     return rendered;

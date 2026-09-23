@@ -394,12 +394,11 @@ const takenSaveIntents = new Set<string>();
  * caller that ignores the return value and saves anyway is still ungated. The
  * one thing every caller must do is honour the `false`.
  *
- * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER WAS PRESENT FOR THE REQUEST.
- * A request already sitting on the document the first time a page observes it
- * is one nobody was there to take, and MUST be cleared without being acted on —
- * that is the caller's job (see the mount-tracking in `ChatSessionPage.svelte`
- * and `RecipeViewPage.svelte`), not this function's; this one only takes and
- * clears whatever it is handed.
+ * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER ASKED FOR THE REQUEST. One
+ * that is not the reply to a message the calling page sent must be cleared
+ * without being acted on — that is the caller's job (`askedHere` in
+ * `chatThreadState.svelte.ts`, issue #1494), not this function's; this one only
+ * takes and clears whatever it is handed.
  *
  * THE CLEAR IS ATTEMPTED BEFORE THE SAVE RUNS, and only a clear that actually
  * lands answers `true`. A clear that fails outright (a `permission-denied`, a
