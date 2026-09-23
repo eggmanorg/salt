@@ -1517,8 +1517,10 @@
   // NOT A HAND-OFF (#1533 review, blocking Finding 2 — corrected from an
   // earlier, false claim that "the full `/chat/:id` page takes it instead").
   // `/chat/:id` clears the very same request on ITS OWN first snapshot without
-  // acting on it (`ChatSessionPage.svelte`'s `sawNothingPendingOn`), which is
-  // exactly this page's own first-observation rule. So a request left armed
+  // acting on it (`ChatSessionPage.svelte`'s `sawNothingPendingOn`), the same
+  // first-observation rule as this page's own — though keyed differently:
+  // that latch remembers only the session currently showing, while this page's
+  // remembers every session it has seen. So a request left armed
   // here while hidden is not carried anywhere that will genuinely act on it —
   // it is silently dropped by whichever surface next observes it for the
   // first time, this page included on a later mount. That is the same
