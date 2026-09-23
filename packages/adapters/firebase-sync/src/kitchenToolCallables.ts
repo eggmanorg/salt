@@ -1,5 +1,9 @@
 import type { DomainError, ReadResult } from '@salt/shared-types';
-import type { ProposeKitchenToolsInput, ProposeKitchenToolsOutput } from '@salt/domain/schemas';
+import {
+  PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS,
+  type ProposeKitchenToolsInput,
+  type ProposeKitchenToolsOutput,
+} from '@salt/domain/schemas';
 import { callFunction } from './callFunction.js';
 
 // proposeKitchenTools (issue #1458, Phase 2) — Salt's proposed answer for every
@@ -20,11 +24,10 @@ export async function callProposeKitchenTools(
   return callFunction<ProposeKitchenToolsInput, ProposeKitchenToolsOutput>({
     name: 'proposeKitchenTools',
     input,
-    // Matches the function's declared 90 s (`cloud-functions/src/index.ts`),
-    // which is in turn sized around the flow's 55 s `withAiTimeout`. Against the
-    // callable client's 70 s DEFAULT the browser would give up first — harmless
-    // here, since nothing is written and the page is already usable, but it
-    // would report a failure for a call that was about to succeed.
-    timeoutMs: 90_000,
+    // Past the callable client's 70 s DEFAULT, which the flow's 55 s AI budget
+    // plus a cold start can exceed — harmless if cut short, since nothing is
+    // written, but it would report a failure for a call about to succeed. The
+    // order against the function's deadline is at the constant.
+    timeoutMs: PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS,
   });
 }

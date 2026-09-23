@@ -14,6 +14,7 @@ import {
   RefreshWeatherForecastWireInputSchema,
   PHOTO_IMPORT_TIMEOUT_SECONDS,
   PROPOSE_SCHEDULE_TIMEOUT_SECONDS,
+  PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
 } from '@salt/domain/schemas';
 import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
 import {
@@ -806,15 +807,14 @@ export const proposeSchedule = onCallGenkit(
 // note 3 — `traceContextWire.ts` is a roll-call, and a callable that does not need
 // the nesting stays off it).
 //
-// 90 s, sized around the flow's 55 s `AI_TEXT_FLOW_TIMEOUT` with headroom for cold
-// start and the response. The browser wrapper declares the matching client
-// timeout, because 90 s exceeds the callable SDK's own 70 s default.
+// The deadline is shared with the browser wrapper; the order it must keep is at
+// `PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS`.
 export const proposeKitchenTools = onCallGenkit(
   {
     ...APP_CHECK_ENFORCEMENT,
     secrets: [geminiApiKey, posthogApiKey],
     authPolicy: isSignedIn(),
-    timeoutSeconds: 90,
+    timeoutSeconds: PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
   },
   proposeKitchenToolsFlow,
 );

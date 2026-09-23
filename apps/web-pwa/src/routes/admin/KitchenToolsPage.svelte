@@ -1,3 +1,14 @@
+<script lang="ts" module>
+  import { createDeferredDelete } from '../../lib/deferredDelete.svelte.js';
+
+  // Module scope, not per instance: deleting from the phone's full-page editor
+  // pushes `/:id` → the bare list, and svelte-spa-router renders a route with
+  // params and one without in different `{#if componentParams}` branches, so the
+  // page REMOUNTS. A per-instance pending set would be lost with it, and the tool
+  // would sit in the list for the whole undo window (#1529).
+  const deferredDelete = createDeferredDelete();
+</script>
+
 <script lang="ts">
   import {
     Button,
@@ -53,7 +64,6 @@
     proposeKitchenTools,
     type KitchenToolProposals,
   } from '../../lib/kitchenToolProposals.js';
-  import { createDeferredDelete } from '../../lib/deferredDelete.svelte.js';
   import { SPLIT_QUERY, createMediaQuery } from '../../lib/mediaQuery.svelte.js';
   import { addToast } from '../../lib/toastStore.js';
 
@@ -234,8 +244,6 @@
     syncedRouteId = routeId;
     openId = routeId;
   });
-
-  const deferredDelete = createDeferredDelete();
 
   const openTool = $derived(
     openId === null ? null : ($kitchenTools.find((t) => t.id === openId) ?? null),
@@ -495,8 +503,8 @@
       },
     );
     // A deleted tool leaves the pane AND the URL: a path still naming it would be
-    // a dead bookmark. The undo toast outlives this page, so the deferred delete
-    // is unaffected by the list remounting under it.
+    // a dead bookmark. From `/:id` this remounts the page, which is why
+    // `deferredDelete` lives in the module script.
     push('/admin/kitchen-tools');
   }
 

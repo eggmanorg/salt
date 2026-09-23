@@ -20,6 +20,19 @@ import { KitchenToolSchema } from './kitchenTool.js';
 // family"). No embeddings, no `findClosestMatch`, no arbitration, no
 // `needs_approval` document. The vocabulary stays curated and closed: the model
 // proposes, a person writes.
+// The two deadlines the CF and the callable wrapper share, so they cannot drift
+// (proposeSchedule's precedent). The AI budget is the CF's `AI_TEXT_FLOW_TIMEOUT`
+// (55 s), and the order is load-bearing:
+//
+//   AI budget (55 s) < client (80 s) < function (90 s)
+//
+// The client outlasts the model call so a working answer is not abandoned, and
+// must exceed the callable SDK's 70 s default, which is why the wrapper passes
+// one at all. The function outlasts the client so it is never cut off from under
+// a browser that is still listening.
+export const PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS = 90;
+export const PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS = 80_000;
+
 export const ProposeKitchenToolsInputSchema = z.object({
   // The words to answer for — the gap rows as the page has them. Sent verbatim
   // so the answers can be matched back to the rows they belong to.

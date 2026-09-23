@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { KitchenToolDoc, KitchenToolProposalAI } from '@salt/domain/schemas';
+import {
+  PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS,
+  PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
+  type KitchenToolDoc,
+  type KitchenToolProposalAI,
+} from '@salt/domain/schemas';
 
 const mockGenerate = vi.fn();
 
@@ -245,5 +250,18 @@ describe('proposeKitchenToolsFlow', () => {
     await expect(proposeKitchenToolsFlow({ labels: ['x'], tools: VOCABULARY })).rejects.toThrow(
       /invalid output/,
     );
+  });
+});
+
+describe('proposeKitchenTools deadlines', () => {
+  it('nests the three deadlines: AI budget < client < function', async () => {
+    // The client's must also exceed the callable SDK's 70 s default, which is the
+    // whole reason the wrapper passes one at all (#1529).
+    const { AI_TEXT_FLOW_TIMEOUT } = await import('../../src/adapters/withAiTimeout.js');
+    expect(AI_TEXT_FLOW_TIMEOUT.timeoutMs).toBeLessThan(PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS);
+    expect(PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS).toBeLessThan(
+      PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS * 1000,
+    );
+    expect(PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS).toBeGreaterThan(70_000);
   });
 });

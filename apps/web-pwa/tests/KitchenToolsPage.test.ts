@@ -525,6 +525,26 @@ describe('KitchenToolsPage — the words nothing draws', () => {
     });
   });
 
+  it('mints a tool from the overflow menu on a row with a likely parent', async () => {
+    // #1529: on exactly these rows the leading "Make it a tool" button is absent,
+    // so this menu item is the only way to a new tool. A swapped callback would
+    // leave every such row unable to mint one.
+    mockRecipes._set([recipeWithKit('r1', 'mixing bowl')]);
+    setTools([tool({ id: 'large-mixing-bowl', label: 'Large mixing bowl' })]);
+    render(KitchenToolsPage);
+
+    await waitFor(() => expect(gapRows()).toHaveLength(1));
+    await userEvent.click(screen.getByTestId('kitchen-tool-gap-menu'));
+    await userEvent.click(await screen.findByTestId('kitchen-tool-gap-promote'));
+
+    const input = await screen.findByTestId('kitchen-tool-label-input');
+    expect(input).toHaveValue('mixing bowl');
+    // The alias picker is the other verb; it must not be what opened.
+    expect(screen.queryByTestId('kitchen-tool-move-dialog')).toBeNull();
+
+    await userEvent.click(screen.getByText('Cancel'));
+  });
+
   it('keeps other gap rows usable while one row accepts its suggestion', async () => {
     // #1523 review: `suggestDisabled` was compared against `suggestBusy !==
     // null` (page-level), so accepting one row's suggestion disabled every
@@ -723,6 +743,26 @@ describe('KitchenToolsPage — the editor', () => {
 
     // Hidden while pending, and back the moment Undo is pressed.
     await waitFor(() => expect(toolRows()).toHaveLength(0));
+    opts.action.onClick();
+    await waitFor(() => expect(toolRows()).toHaveLength(1));
+    expect(vi.mocked(deleteKitchenTool)).not.toHaveBeenCalled();
+  });
+  it('keeps a tool deleted from the full-page editor hidden after the page remounts', async () => {
+    // #1529: the phone path. Deleting at `/admin/kitchen-tools/:id` pushes the bare
+    // list, and the router renders a route with params and one without in
+    // different branches — the page remounts. The pending set must survive it, or
+    // the tool sits in the list for the whole undo window and Undo looks inert.
+    setTools([tool({ id: 'whisk', label: 'Whisk' })]);
+    const editor = renderOn('whisk');
+    await userEvent.click(await screen.findByTestId('kitchen-tool-delete'));
+    expect(vi.mocked(push)).toHaveBeenCalledWith('/admin/kitchen-tools');
+    const opts = vi.mocked(addToast).mock.calls.at(-1)![2] as { action: { onClick: () => void } };
+
+    editor.unmount();
+    render(KitchenToolsPage);
+
+    await screen.findByTestId('kitchen-tool-add');
+    expect(toolRows()).toHaveLength(0);
     opts.action.onClick();
     await waitFor(() => expect(toolRows()).toHaveLength(1));
     expect(vi.mocked(deleteKitchenTool)).not.toHaveBeenCalled();
