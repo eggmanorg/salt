@@ -352,7 +352,7 @@ const rows: readonly Row[] = [
   {
     name: 'callProposeKitchenTools',
     callable: 'proposeKitchenTools',
-    timeout: 90_000,
+    timeout: 80_000,
     data: { proposals: [] },
     call: () => barrel.callProposeKitchenTools(cast(TOOL_PROPOSAL_INPUT)),
     payload: TOOL_PROPOSAL_INPUT,

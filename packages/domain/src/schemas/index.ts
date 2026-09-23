@@ -168,6 +168,8 @@ export type { LibraryPageDoc, LibraryPageRevisionDoc } from './libraryPage.js';
 export { KitchenToolSchema, KITCHEN_TOOLS_COLLECTION } from './kitchenTool.js';
 export type { KitchenToolDoc } from './kitchenTool.js';
 export {
+  PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
+  PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS,
   ProposeKitchenToolsInputSchema,
   ProposeKitchenToolsAIOutputSchema,
   ProposeKitchenToolsOutputSchema,
