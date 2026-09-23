@@ -82,6 +82,22 @@ describe('board.mjs actually fetches the fields show prints', () => {
     expect(src.split('${ITEM_SELECTION}')).toHaveLength(3);
   });
 
+  // #1564 fixed six lookup-by-number call sites (add, show, set, start, pr,
+  // rollup) that scanned `items` alone and so missed anything the lagging
+  // `ProjectV2.items` connection hadn't caught up on yet — see
+  // `lib/boardItemLookup.mjs`'s header. Nothing else pinned that the fix
+  // stays applied: reverting any one call site back to a scan-only
+  // `.find`/`.some` on `.number ===` left every other test green. Proven by
+  // temporarily reverting `cmdShow` to `loadItems(project).find((i) =>
+  // i.number === number)` — this test went red — then restoring it.
+  it('every lookup by issue number goes through itemFor, never a bare scan', () => {
+    expect(src).not.toMatch(/\.(?:find|some)\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.number\s*===/);
+  });
+
+  it('itemFor is called once per command that looks up an item by number', () => {
+    expect(src.match(/\bitemFor\(/g)).toHaveLength(6);
+  });
+
   it('dispatches the show subcommand and lists it in the usage text', () => {
     expect(src).toMatch(/command === 'show'/);
     expect(src).toMatch(/board\.mjs show <issue>/);
