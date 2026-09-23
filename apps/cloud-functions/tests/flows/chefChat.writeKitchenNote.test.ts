@@ -430,8 +430,9 @@ describe('writeKitchenNote — what it refuses', () => {
     // The tool description tells the model to REPEAT `problem` word for word, so
     // this is the one output path the corrected framing prose (#1476) cannot
     // paraphrase — whatever word is here is the word the household hears. Every
-    // refusal the handler can return is driven below, one per branch, so a new
-    // refusal written with the old word goes red here rather than in a chat.
+    // refusal the handler can return today is driven below, one per branch, and
+    // all seven are checked below: each is a distinct string, and none uses the
+    // word "note".
     const { db } = dbWith({ 'p-broken': { nonsense: true } });
     const failing = {
       collection: () => ({ doc: () => ({ set: () => Promise.reject(new Error('boom')) }) }),
