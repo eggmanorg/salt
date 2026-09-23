@@ -30,7 +30,12 @@ export function createChatThread() {
   // lands at the pre-send count plus one, straight after that text. The same
   // arithmetic `sendMessage`'s `expectedMessageCount` relies on, with the
   // same boundary: a turn another device appends in between shifts the reply,
-  // and the request then reads as not asked here — dropped, never fired.
+  // so the request then reads as not asked here and is dropped, never fired —
+  // UNLESS this entry is still sitting here when that happens. It is kept on
+  // a failed send and replaced only by this page's own next send on that
+  // session, so it can also match a later turn sent from elsewhere with the
+  // same text at the same position, for as long as this page stays mounted
+  // (see the boundary on `askedHere` below).
   //
   // Plain, not `$state`: nothing renders it, and it lives exactly as long as this
   // thread — one page instance. A page mounted after the send never has it.
@@ -84,9 +89,11 @@ export function createChatThread() {
      * snapshots carrying it arrive in.
      *
      * THE BOUNDARY (CLAUDE.md Rule 12): it matches position and text, not
-     * identity. The same person sending the identical words into the same
-     * conversation from a second device, at the same moment, lands a turn this
-     * cannot tell from its own.
+     * identity or time. `lastSent` is kept on a failed send and replaced only
+     * by this page's own next send on that session, so the same person
+     * sending the identical words into the same conversation from a second
+     * device lands a turn this cannot tell from its own for as long as this
+     * page stays mounted — not only if it happens "at the same moment".
      */
     askedHere(session: ChatSessionDoc): boolean {
       const sent = lastSent.get(session.id);

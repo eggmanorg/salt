@@ -86,8 +86,11 @@ export const ChatSessionSchema = z.object({
   // answering false (and running no save) if that clear does not land; and a
   // request any page observes that is not the reply to a message THAT page sent
   // — the finished conversation nobody comes back to for a turn, reopened days
-  // later, among others — is cleared without ever being acted on (`askedHere`
-  // in `web-pwa`'s `chatThreadState.svelte.ts`). That third path is the one
+  // later, among others — is cleared without being acted on, PROVIDED the
+  // observing page can tell the two apart: `askedHere` (in `web-pwa`'s
+  // `chatThreadState.svelte.ts`) matches by position and text, not identity,
+  // so identical words sent later from a second device while the asking page
+  // stays mounted still read as its own reply. That third path is the one
   // that actually bounds a conversation with no next turn: without it, "next
   // thing anybody says" is not a bound at all on a chat nobody is talking in.
   //
