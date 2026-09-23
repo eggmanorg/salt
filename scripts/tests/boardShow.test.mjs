@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { ITEM_SELECTION } from '../lib/boardItemLookup.mjs';
 import { SHOW_FIELDS, notOnBoardMessage, showLines } from '../lib/boardShow.mjs';
 
 const item = (fields = {}) => ({
@@ -69,8 +70,16 @@ describe('board.mjs actually fetches the fields show prints', () => {
 
   // Before #1521 the item query selected Queue, Status and Blocked by only.
   // Adding `show` without widening it would have printed a confident `—`.
+  // The selection lives in `lib/boardItemLookup.mjs` so the bulk scan and the
+  // lagging-scan fallback share it; the second test pins that the scan uses it.
   it.each(['Class', 'Size'])('the item query selects %s', (field) => {
-    expect(src).toMatch(new RegExp(`${field.toLowerCase()}:fieldValueByName\\(name:"${field}"\\)`));
+    expect(ITEM_SELECTION).toMatch(
+      new RegExp(`${field.toLowerCase()}:fieldValueByName\\(name:"${field}"\\)`),
+    );
+  });
+
+  it('both item reads select through ITEM_SELECTION', () => {
+    expect(src.split('${ITEM_SELECTION}')).toHaveLength(3);
   });
 
   it('dispatches the show subcommand and lists it in the usage text', () => {
