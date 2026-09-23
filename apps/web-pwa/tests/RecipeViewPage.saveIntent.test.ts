@@ -11,18 +11,17 @@
  *     stays up while the page is fully live, so switching chats underneath it is
  *     an ordinary thing to do — and before the fix, "Update recipe" then proposed
  *     an amendment built from the wrong transcript.
- *  2. IT NEVER ASKS OVER A CONVERSATION THAT IS NOT ON SCREEN, and a LIVE
- *     arrival — one recorded after this page already observed the chat once
- *     with nothing pending — is left ARMED on the document rather than taken,
- *     so it is still there to ask about once the conversation comes back into
- *     view. (It is NOT a hand-off to the full `/chat/:id` page — that page
- *     drops a first-snapshot request exactly as this one drops a
- *     first-observation one; see the corrected comment on `saveChoiceOpen` in
- *     `RecipeViewPage.svelte`, #1533 review, Finding 2.) A request already on
- *     the document the first time THIS effect ever observes the chat is a
- *     different case entirely — see the dedicated regression test below for
- *     Finding 1 — and is cleared on the spot regardless of visibility, since
- *     it is never asked about either way.
+ *  2. IT NEVER ASKS OVER A CONVERSATION THAT IS NOT ON SCREEN, and a request
+ *     this page asked for — the chef's reply to a message sent from it (#1494)
+ *     — is left ARMED on the document rather than taken, so it is still there
+ *     to ask about once the conversation comes back into view. (It is NOT a
+ *     hand-off to the full `/chat/:id` page — that page drops a request it did
+ *     not ask for exactly as this one does; see the comment on
+ *     `saveChoiceOpen` in `RecipeViewPage.svelte`, #1533 review, Finding 2.) A
+ *     request this page did NOT ask for is a different case entirely — see the
+ *     dedicated regression tests below for Finding 1 and #1494 — and is cleared
+ *     on the spot regardless of visibility, since it is never asked about
+ *     either way.
  *
  * jsdom answers `matches: false` to every media query, so `docked` — and with it
  * `chatPaneShown` — is false unless `window.matchMedia` is stubbed. That is the
@@ -35,7 +34,7 @@
  * the wrong-session bug is about, and one no testid can see.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe } from '@salt/domain';
 import type { ChatSessionDoc } from '@salt/domain/schemas';
@@ -173,7 +172,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { consumeSaveIntent } from '../src/lib/chatService.js';
+import { consumeSaveIntent, sendMessage } from '../src/lib/chatService.js';
 import { proposeRecipeAmendment } from '../src/lib/recipeAmend.js';
 import { authorRecipeFromChat } from '../src/lib/chatRecipeAuthor.js';
 import { recipeChatPanePrefs } from '../src/lib/recipeChatPanePrefs.svelte.js';
@@ -210,6 +209,14 @@ function turn(id: string, role: 'user' | 'assistant', text: string) {
 const CHAT_A_MESSAGES = [
   turn('a1', 'user', 'make it for eight'),
   turn('a2', 'assistant', 'Scale the shoulder to 2.5kg.'),
+];
+// Chat A as the flow writes it back after this page sent `ASK` on it: the words
+// verbatim, then the chef's reply — which is what the save request names.
+const ASK = 'save that as a recipe';
+const CHAT_A_ASKED = [
+  ...CHAT_A_MESSAGES,
+  turn('a3', 'user', ASK),
+  turn('a4', 'assistant', 'Which would you like?'),
 ];
 const CHAT_B_MESSAGES = [
   turn('b1', 'user', 'what would go with this?'),
@@ -266,6 +273,7 @@ beforeEach(() => {
   mockRecipes._set([LAMB]);
   mockSessions._set([]);
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
+  vi.mocked(sendMessage).mockResolvedValue({ kind: 'ok', value: makeSession() });
   vi.mocked(proposeRecipeAmendment).mockResolvedValue({ kind: 'err', error: OFFLINE });
   vi.mocked(authorRecipeFromChat).mockResolvedValue({ kind: 'err', error: OFFLINE });
 });
@@ -284,23 +292,43 @@ function renderPage() {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /**
- * Render on UNARMED chats, let that first snapshot land, then arm one of them —
- * the shape of a real request arriving on the subscription while the page is
- * open. Arming at mount instead is Finding 1's case, which is pinned in
- * `saveNewRecipe.test.ts` and must never open the ask.
+ * Type `ASK` into a conversation's composer and send it — the docked column's
+ * unless `surface` names another (on a phone the hidden column is still
+ * mounted, so the drawer's has to be picked out).
  */
-async function renderAndArm(chats: readonly ChatSessionDoc[], armId: string): Promise<void> {
+async function sendFromPage(surface: HTMLElement = document.body): Promise<void> {
+  const on = within(surface);
+  await fireEvent.input(on.getByTestId('chat-input'), { target: { value: ASK } });
+  await fireEvent.click(on.getByTestId('chat-send-btn'));
+  await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+}
+
+/** Chat A's reply to `ASK` arrives, carrying the save request. */
+function deliverReplyToA(chats: readonly ChatSessionDoc[]): void {
+  mockSessions._set(
+    chats.map((c) =>
+      c.id === 'session-a' ? { ...c, messages: [...CHAT_A_ASKED], pendingSaveIntent: 'a4' } : c,
+    ),
+  );
+}
+
+/**
+ * Render on UNARMED chats, SEND from this page on Chat A (the opening
+ * selection), then deliver the chef's reply with the request on it — the shape
+ * of a real request arriving while the page that asked is open (#1494). A
+ * request this page did not ask for is Finding 1's and Finding A's case, which
+ * must never open the ask.
+ */
+async function renderAndArm(chats: readonly ChatSessionDoc[]): Promise<void> {
   mockSessions._set(chats);
   renderPage();
-  await tick();
-  mockSessions._set(
-    chats.map((c) => (c.id === armId ? { ...c, pendingSaveIntent: c.messages.at(-1)!.id } : c)),
-  );
+  await sendFromPage();
+  deliverReplyToA(chats);
 }
 
 describe('RecipeViewPage — the ask is answered on the chat it was recorded on (#1505)', () => {
   async function armAThenSelectB(): Promise<void> {
-    await renderAndArm([chatA(), chatB()], 'session-a');
+    await renderAndArm([chatA(), chatB()]);
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
 
     // The dialog does not freeze the page, so picking a different conversation
@@ -318,7 +346,7 @@ describe('RecipeViewPage — the ask is answered on the chat it was recorded on 
     await waitFor(() => expect(proposeRecipeAmendment).toHaveBeenCalled());
     // Chat A's transcript — the one the chef was asked on. Before the fix this
     // was Chat B's, because both handlers re-read `activeSession` at call time.
-    expect(vi.mocked(proposeRecipeAmendment).mock.calls[0]?.[1]).toEqual(CHAT_A_MESSAGES);
+    expect(vi.mocked(proposeRecipeAmendment).mock.calls[0]?.[1]).toEqual(CHAT_A_ASKED);
   });
 
   it('authors the new dish from the requesting chat, not the one selected since', async () => {
@@ -328,7 +356,7 @@ describe('RecipeViewPage — the ask is answered on the chat it was recorded on 
 
     await waitFor(() => expect(authorRecipeFromChat).toHaveBeenCalled());
     expect(vi.mocked(authorRecipeFromChat).mock.calls[0]?.[0]).toMatchObject({
-      messages: CHAT_A_MESSAGES,
+      messages: CHAT_A_ASKED,
       basedOnRecipeId: null,
     });
   });
@@ -336,7 +364,7 @@ describe('RecipeViewPage — the ask is answered on the chat it was recorded on 
   // Naming one chat means that chat OR NOTHING — it never falls back to the one
   // on screen, which would be the same wrong-transcript bug wearing a fallback.
   it('does nothing at all when the requesting chat is gone by the time it is answered', async () => {
-    await renderAndArm([chatA(), chatB()], 'session-a');
+    await renderAndArm([chatA(), chatB()]);
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
 
     mockSessions._set([chatB()]);
@@ -371,11 +399,19 @@ describe('RecipeViewPage — the ask is answered on the chat it was recorded on 
 });
 
 describe('RecipeViewPage — it does not ask over a conversation that is off screen (#1505)', () => {
-  it('stays quiet, and leaves the request armed, with the chat pane switched off', async () => {
+  /** Ask from the docked column, then switch the pane off before the reply lands. */
+  async function askThenHidePane(): Promise<void> {
+    mockSessions._set([chatA()]);
+    renderPage();
+    await sendFromPage();
     recipeChatPanePrefs.on = false;
-
-    await renderAndArm([chatA()], 'session-a');
     await tick();
+    deliverReplyToA([chatA()]);
+    await tick();
+  }
+
+  it('stays quiet, and leaves the request armed, with the chat pane switched off', async () => {
+    await askThenHidePane();
 
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
     // NOT TAKEN, which is the half that makes this safe rather than merely quiet:
@@ -387,8 +423,14 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
     // No room for a column, and nothing raised over the recipe: the chat list at
     // the foot of the page is not the conversation.
     window.matchMedia = fullStub(false);
-
-    await renderAndArm([chatA()], 'session-a');
+    mockSessions._set([chatA()]);
+    renderPage();
+    // Asked from the drawer, which is then put away before the reply lands.
+    await fireEvent.click(screen.getByText('Chat A').closest('button')!);
+    await sendFromPage(await screen.findByTestId('recipe-chat-drawer'));
+    await fireEvent.click(screen.getByTestId('recipe-chat-drawer-close'));
+    await tick();
+    deliverReplyToA([chatA()]);
     await tick();
 
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
@@ -396,9 +438,7 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
   });
 
   it('asks as soon as the conversation comes back on screen', async () => {
-    recipeChatPanePrefs.on = false;
-    await renderAndArm([chatA()], 'session-a');
-    await tick();
+    await askThenHidePane();
     expect(consumeSaveIntent).not.toHaveBeenCalled();
 
     // Bringing the pane back is the same act as tapping the chat in the list.
@@ -409,9 +449,8 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
   });
 
   // #1533 review, blocking Finding 1: this is the case `renderAndArm` cannot
-  // reach — every other test in this file arms AFTER the first snapshot, so
-  // the chat has already been seen with nothing pending by the time the pane
-  // matters. Here the request is on the document BEFORE the page ever mounts,
+  // reach — every other test in this file asks from the page first. Here the
+  // request is on the document BEFORE the page ever mounts,
   // and the pane
   // is hidden from the start: the mount config 4 of 5 users are in, and
   // desktop with the pane switched off. Before the fix, the hidden mount run
@@ -456,6 +495,25 @@ describe('RecipeViewPage — a request it could not clear on first sight (#1494)
     await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(2));
     await tick();
 
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+});
+
+describe('RecipeViewPage — a request this page did not ask for (#1494, Finding A)', () => {
+  // The real device sequence after being away: Firestore's persistent cache
+  // delivers its stale copy first (nothing pending), then the server's copy
+  // with the request already armed. Snapshot for snapshot that is exactly a live
+  // arrival, so only "did this page send the message it answers?" tells them
+  // apart — and here it sent nothing.
+  it('does not ask about a request delivered as a stale cached snapshot, then the server copy', async () => {
+    mockSessions._set([chatA()]);
+    renderPage();
+    await tick();
+
+    deliverReplyToA([chatA()]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(1));
+    await tick();
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });
