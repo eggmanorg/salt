@@ -52,6 +52,8 @@
  *     the list out again in prose.
  */
 
+import ts from 'typescript';
+
 /** Extensions the walk reads. `.mjs` is here for the operator backfill script. */
 export const SCAN_EXTENSION = /\.(ts|mjs)$/;
 
@@ -83,92 +85,54 @@ export const SKIP_DIRS = new Set(['node_modules', 'dist', 'tests', '__tests__'])
 const ASSIGNMENT = /\bsubjectBrief\s*:/;
 
 /**
- * Strip `//` line comments and `/* *\/` block comments from a whole file's
- * text before matching, so the prose ABOUT the writers cannot be counted as
- * one — a comment is recognised by walking the text once and tracking
- * whether the cursor is inside a string, a line comment or a block comment,
- * so `//` and `/*` sequences that occur inside a `'`/`"`/`` ` ``-quoted
- * string (an ordinary URL, a path, a regex-LOOKING string literal such as
- * `'/\\/\\//'`) are left alone rather than mistaken for a comment start.
- * Newlines are preserved exactly — including the ones swallowed inside a
- * block comment — so line numbers downstream still line up with the
- * original file.
+ * Blank out every comment in a whole file's text before matching, so the
+ * prose ABOUT the writers cannot be counted as one.
  *
- * What this still cannot see, and the two fail differently:
+ * Comments are found the way the compiler finds them, not by a hand-rolled
+ * character walk: the text is parsed by `typescript` (the same dependency
+ * `schemaCatchSites.mjs` parses with) and every token the parser produced is
+ * visited. A comment can only sit in the trivia between two tokens, so the
+ * trivia ranges are blanked and every token's own text is kept verbatim. That
+ * is what makes a `//` or `/*` inside a regex LITERAL (`/\/\//`, `/[//]/`,
+ * `/a\/*b/`), a quoted string, a template literal or a template `${...}`
+ * interpolation part of a token rather than a comment opener, and a quote
+ * character inside a regex (`/don't/`) part of the regex rather than a string
+ * opener. The hand-rolled walker this replaced had no regex state and went
+ * green over a real writer on exactly those lines (#1550).
  *
- *   • SAFE — the gate reds, it does not stay green over a miss: a `//`/`/*`
- *     sequence inside a template literal's `${...}` interpolation is
- *     treated as still "inside the string", since the interpolation is not
- *     itself parsed. No line in the scan roots does that today.
- *   • DANGEROUS — the gate stays green over a real writer: there is no
- *     tracked state for an actual regex LITERAL (`/\/\//`, `/[//]/` — not a
- *     quoted string that merely looks like one, see above). Walked as
- *     ordinary code, its unescaped `//` reads as a line-comment start, so
- *     everything after it on that line is dropped before matching —
- *     including a `subjectBrief:` assignment later on the same line.
- *     Reproduced: a new writer file whose line reads
- *     `.set({ slug: name.replace(/\/\//g, '-'), subjectBrief: brief })`
- *     scans clean — same `4 writer(s) across 4 file(s)`, exit 0, as the
- *     unmutated tree — with no signal that a writer was missed. Giving the
- *     walker regex-literal state is the real fix and is tracked as its own
- *     issue, not applied here; putting the assignment before the regex on
- *     the line sidesteps it in the meantime.
+ * Only characters are blanked, never removed, and newlines inside a comment
+ * are kept, so line numbers downstream line up with the original file.
+ *
+ * Its boundary: the file is parsed as TypeScript whatever its extension, with
+ * JSDoc parsing off (JSDoc would otherwise be surfaced as nodes rather than
+ * trivia), and the above holds for source that parses. On source that does
+ * not, the parser's error recovery decides the tokens, and text it skips is
+ * re-scanned lexically — where a `/` reads as division, which is the old
+ * walker's blindness back again for that file.
  */
 function stripComments(text) {
-  let out = '';
-  let inString = null; // the quote character currently open, or null
-  let inLineComment = false;
-  let inBlockComment = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (inLineComment) {
-      if (ch === '\n') {
-        inLineComment = false;
-        out += '\n';
-      }
-      continue;
+  const sourceFile = ts.createSourceFile(
+    'scan.ts',
+    text,
+    { languageVersion: ts.ScriptTarget.Latest, jsDocParsingMode: ts.JSDocParsingMode.ParseNone },
+    false,
+    ts.ScriptKind.TS,
+  );
+  const chars = text.split(''); // UTF-16 units, the indexing the parser's positions use
+  const blank = (from, to) => {
+    for (let i = from; i < to; i += 1) if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
+  };
+  const visit = (node) => {
+    const children = node.getChildren(sourceFile);
+    if (children.length === 0) {
+      // A leaf token: [pos, start) is its leading trivia — whitespace and comments only.
+      blank(node.pos, node.getStart(sourceFile));
+      return;
     }
-
-    if (inBlockComment) {
-      if (ch === '\n') out += '\n';
-      if (ch === '*' && next === '/') {
-        inBlockComment = false;
-        i += 1;
-      }
-      continue;
-    }
-
-    if (inString) {
-      out += ch;
-      if (ch === '\\' && next !== undefined) {
-        out += next;
-        i += 1;
-        continue;
-      }
-      if (ch === inString) inString = null;
-      continue;
-    }
-
-    if (ch === '"' || ch === "'" || ch === '`') {
-      inString = ch;
-      out += ch;
-      continue;
-    }
-    if (ch === '/' && next === '/') {
-      inLineComment = true;
-      i += 1;
-      continue;
-    }
-    if (ch === '/' && next === '*') {
-      inBlockComment = true;
-      i += 1;
-      continue;
-    }
-    out += ch;
-  }
-  return out;
+    children.forEach(visit);
+  };
+  visit(sourceFile);
+  return chars.join('');
 }
 
 /**
