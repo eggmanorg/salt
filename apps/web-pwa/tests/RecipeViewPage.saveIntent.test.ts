@@ -410,8 +410,9 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
 
   // #1533 review, blocking Finding 1: this is the case `renderAndArm` cannot
   // reach — every other test in this file arms AFTER the first snapshot, so
-  // `isFirstObservation` is already false by the time the pane matters. Here
-  // the request is on the document BEFORE the page ever mounts, and the pane
+  // the chat has already been seen with nothing pending by the time the pane
+  // matters. Here the request is on the document BEFORE the page ever mounts,
+  // and the pane
   // is hidden from the start: the mount config 4 of 5 users are in, and
   // desktop with the pane switched off. Before the fix, the hidden mount run
   // still recorded the session as "seen" without clearing anything, so the
@@ -435,5 +436,26 @@ describe('RecipeViewPage — it does not ask over a conversation that is off scr
     await tick();
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
     expect(consumeSaveIntent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RecipeViewPage — a request it could not clear on first sight (#1494)', () => {
+  // #1494, Finding B, and the #1536 review's named hazard: a first look that
+  // could not clear the request (`consumeSaveIntent` declining while the
+  // `chatSave` flag is still in flight) must not mark the chat as "been here".
+  // Before the fix it did, so the next snapshot — flag landed, the same
+  // days-old request still armed — popped "Save which one?" over it.
+  it('does not ask about a request it could not clear the first time, once the flag lands', async () => {
+    vi.mocked(consumeSaveIntent).mockResolvedValueOnce(false);
+    mockSessions._set([chatA({ pendingSaveIntent: 'a2' })]);
+    renderPage();
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(1));
+
+    // A later snapshot of the same chat, the request still armed.
+    mockSessions._set([chatA({ pendingSaveIntent: 'a2', title: 'Chat A, renamed' })]);
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(2));
+    await tick();
+
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });

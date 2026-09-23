@@ -16,9 +16,12 @@
  *     itself.
  *  4. A REQUEST ALREADY ON THE DOCUMENT THE FIRST TIME THIS PAGE SEES IT is one
  *     nobody was here to take (review of #1490, Finding 1) — cleared, never
- *     acted on. Only a request that arrives on a LATER snapshot, while the page
- *     is mounted, is eligible to fire. Without this, reopening a finished
- *     conversation days later writes a recipe with no interaction at all.
+ *     acted on. Only a request that arrives after this page has seen the
+ *     conversation with NOTHING pending is eligible to fire — not merely one on
+ *     a later snapshot, which a request the page could not clear the first time
+ *     (the `chatSave` flag still in flight) also is (#1494, Finding B). Without
+ *     this, reopening a finished conversation days later writes a recipe with no
+ *     interaction at all.
  *  5. AN ATTACHED CHAT IS ASKED, in the menu's own two words, and neither handler
  *     runs until one is picked. Dismissing writes nothing.
  *
@@ -221,6 +224,45 @@ describe('ChatSessionPage — a save the chef was asked for', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(authorRecipeTraced).not.toHaveBeenCalled();
     expect(claimRecipe).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  // #1494, Finding B. The first look at an already-armed request can fail to
+  // clear it: `consumeSaveIntent` answers `false` and writes nothing while the
+  // `chatSave` flag payload is still in flight. The request is still the same
+  // days-old one when the next snapshot arrives with the flag landed — and
+  // before the fix, that first run had already marked the page as "been here",
+  // so the second read it as a live arrival and saved with no interaction.
+  it('does not act on a request it could not clear the first time, once the flag lands', async () => {
+    vi.mocked(consumeSaveIntent).mockResolvedValueOnce(false);
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2' })]);
+
+    renderPage();
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(1));
+
+    // Any later snapshot of the same conversation — here a title the flow
+    // wrote — with the request still armed and the flag now on.
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2', title: 'Negroni' })]);
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(claimRecipe).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  // Moving from one conversation to another keeps this page mounted, so what it
+  // saw on the first says nothing about the second.
+  it('does not carry "was here" from one conversation to the next', async () => {
+    mockSessions._set([makeSession(), makeSession({ id: 'session-2', pendingSaveIntent: 'm2' })]);
+
+    const { rerender } = renderPage('session-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await rerender({ params: { id: 'session-2' } });
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
   });
 });

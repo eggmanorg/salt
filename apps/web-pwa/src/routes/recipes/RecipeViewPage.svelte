@@ -1517,15 +1517,13 @@
   // NOT A HAND-OFF (#1533 review, blocking Finding 2 — corrected from an
   // earlier, false claim that "the full `/chat/:id` page takes it instead").
   // `/chat/:id` clears the very same request on ITS OWN first snapshot without
-  // acting on it (`ChatSessionPage.svelte`'s `sawFirstSnapshot`), which is
+  // acting on it (`ChatSessionPage.svelte`'s `sawNothingPendingOn`), which is
   // exactly this page's own first-observation rule. So a request left armed
   // here while hidden is not carried anywhere that will genuinely act on it —
   // it is silently dropped by whichever surface next observes it for the
   // first time, this page included on a later mount. That is the same
-  // accepted cost `sawFirstSnapshot`'s own comment states ("losing a request
-  // there is safe, the person asks again"), not a working second path, and
-  // fixing it for real is out of this issue's scope (`sawFirstSnapshot` and
-  // `seenActiveSaveIntentSessions`'s first-observation gating are unchanged).
+  // accepted cost `sawNothingPendingOn`'s own comment states ("losing it is
+  // safe, the person asks again"), not a working second path.
   let saveChoiceOpen = $state(false);
 
   // WHICH chat the open question is about (issue #1505). Captured when the
@@ -1543,74 +1541,44 @@
     if (!saveChoiceOpen) saveChoiceSessionId = null;
   });
 
-  // A request already sitting on a chat the FIRST time this page shows it as
-  // `activeSession` is one nobody was here to take (issue #1490 review, Finding
-  // 1) — landing on this recipe, or switching to a different one of its chats,
-  // must not pop "Save which one?" over a conversation that has been sitting
-  // there for days. Keyed per session id, not a single flag, because
-  // `activeSession` can change more than once in this page's lifetime (picking
-  // a different chat from the list) and each one gets its own "was this page
-  // here when the request arrived" answer. A session already in this set has
-  // been observed before on this page — a request recorded on it since is a
-  // live arrival and IS actionable; one seen for the first time is cleared
-  // without asking, same reasoning as `ChatSessionPage.svelte`'s
-  // `sawFirstSnapshot`.
-  const seenActiveSaveIntentSessions = new Set<string>();
+  // A request is acted on only once this page has shown THIS chat as
+  // `activeSession` with nothing pending (issue #1490 review, Finding 1).
+  // One already sitting on a chat when this page first shows it — landing on
+  // this recipe, or switching to another of its chats — is nobody's to take,
+  // and must not pop "Save which one?" over a conversation that has been
+  // sitting there for days. Keyed per session id, not a single flag, because
+  // `activeSession` changes whenever a different chat is picked from the list.
+  //
+  // Recorded ONLY on a run that saw nothing pending, never merely on "a run
+  // happened" (#1494, Finding B). A run can see a request and fail to clear it
+  // — `consumeSaveIntent` declines while the `chatSave` flag is still in
+  // flight — and marking the session seen on that run turned the same,
+  // still-armed request into a "live arrival" on the next one.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12): "seen with nothing pending" is what this
+  // page observed, not what was true on the server — a stale cached snapshot
+  // followed by the server's armed copy still reads as a live arrival here.
+  // That is #1494's Finding A, not fixed by this; see `ChatSessionPage.svelte`'s
+  // `sawNothingPendingOn` for the same boundary on that page.
+  const sessionsSeenWithNothingPending = new Set<string>();
 
   $effect(() => {
     const current = activeSession;
     if (!current) return;
-    const isFirstObservation = !seenActiveSaveIntentSessions.has(current.id);
-    seenActiveSaveIntentSessions.add(current.id);
-    if (current.pendingSaveIntent === null) return;
+    if (current.pendingSaveIntent === null) {
+      sessionsSeenWithNothingPending.add(current.id);
+      return;
+    }
 
-    // NO `chatSave` FLAG CHECK HERE, and that is the point (issue #1512): every
-    // path below reaches `consumeSaveIntent`, which gates on the flag itself and
-    // answers `false` with nothing written when it is off — so both branches are
-    // already inert without this effect naming the flag at all. Naming it also
-    // made this effect RE-RUN when PostHog's payload landed, and on that re-run
-    // `seenActiveSaveIntentSessions` was already populated by the earlier
-    // flag-off run: a days-old request read as a live arrival, which is exactly
-    // the staleness #1533's blocking Finding 1 removed one trigger of. Dropping
-    // the read drops that trigger too. THE COST IS REAL, not merely renamed
-    // (#1536 review, blocking finding — corrected from an earlier, false claim
-    // that this was dropped): a request armed while the flags are still in
-    // flight STAYS ARMED, and the session is already marked seen by the time
-    // this runs. So the next run this effect gets — a later snapshot, the pane
-    // opening — does not re-examine and drop it; `isFirstObservation` is
-    // already false by then, so it CLASSIFIES the still-armed request as a
-    // LIVE ARRIVAL. Here that surfaces as "Save which one?" popping over a
-    // days-old request once the pane or drawer is up when that run fires; the
-    // equivalent effect in `ChatSessionPage.svelte` has no dialog to interpose,
-    // so the same shape runs `handleSaveAsRecipe()` outright. NOT A
-    // REGRESSION: base reached the same end state, driven by the old
-    // `$chatSaveGate` read re-running the effect straight off the flag
-    // payload — this narrows the trigger, it does not remove the hazard.
-    // Closing it for real means not burning `seenActiveSaveIntentSessions` /
-    // `sawFirstSnapshot` on a run that could not have answered, which is out
-    // of this issue's scope.
-    if (isFirstObservation) {
-      // Finding 1 (#1490 review): a request already sitting on this chat the
-      // FIRST time this page ever shows it as `activeSession` is nobody's to
-      // answer. Consumed here regardless of visibility, not behind the
-      // visibility check below — visibility only matters for a question that
-      // might get ASKED, and a first-observation request never is. NOT
-      // cleared unconditionally, though (#1536 review): `consumeSaveIntent`
-      // itself still declines to clear when `chatSave` is off for this
-      // person, so a flag-off run reaches this branch, marks the session
-      // seen, and leaves the request armed — precisely the state the comment
-      // above now names as a live-arrival risk on the run after the flags
-      // land. #1533 review, blocking Finding 1: an earlier version of this
-      // effect ran the visibility check
-      // FIRST, so a run where the pane was hidden returned before reaching
-      // this branch at all — doing nothing, yet the `seenActiveSaveIntentSessions.add`
-      // two lines up had already fired, unconditionally, on that same
-      // do-nothing run. The NEXT run, triggered by nothing more than the pane
-      // opening (the request itself never changed), then found
-      // `isFirstObservation` already false and mistook a days-old request for
-      // a live arrival, popping "Save which one?" over it. Resolving a
-      // first-observation request in the SAME run that decides it is one is
-      // what keeps that decision from going stale before it is acted on.
+    // No `chatSave` flag read here (issue #1512): `consumeSaveIntent` is the one
+    // seam that gates on it, and answers `false` with nothing written when the
+    // flag is off.
+    if (!sessionsSeenWithNothingPending.has(current.id)) {
+      // Cleared regardless of visibility — visibility only matters for a
+      // question that might get ASKED, and this one never is. A run that sees
+      // it again before the clear lands comes back here too; `consumeSaveIntent`
+      // answers a repeat `false` without writing (its per-tab
+      // `takenSaveIntents`).
       void consumeSaveIntent(current);
       return;
     }

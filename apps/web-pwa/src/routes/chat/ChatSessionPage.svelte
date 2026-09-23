@@ -244,17 +244,26 @@
   // until one is picked.
   let saveChoiceOpen = $state(false);
 
-  // A request already sitting on the document the FIRST time this page observes
-  // it is one nobody was here to take (issue #1490 review, Finding 1) — a
-  // conversation you finished, closed, and reopened days later carries exactly
-  // this shape, and firing the save unprompted on that reopen is the bug. A
-  // legitimate request always arrives at a MOUNTED page through the realtime
-  // subscription, i.e. as a snapshot after the first one, so gating on "is this
-  // the first snapshot" costs only the case where the browser reloads between
-  // the flow recording the request and the subscription delivering it — and
-  // losing a request there is safe (the person asks again), where firing
+  // A request is acted on only once this page has seen THIS conversation with
+  // nothing pending (issue #1490 review, Finding 1). One already sitting there
+  // when the page first looks is nobody's to take — a conversation you finished,
+  // closed and reopened days later carries exactly that shape — so it is cleared
+  // and dropped, and losing it is safe (the person asks again) where firing
   // unprompted is not.
-  let sawFirstSnapshot = false;
+  //
+  // Set ONLY on a snapshot with nothing pending, never merely on "a run
+  // happened" (#1494, Finding B): a run that saw the request but could not take
+  // it — `consumeSaveIntent` answering `false` while the `chatSave` flag is
+  // still in flight — must not turn that same request into a "live arrival" on
+  // the next snapshot. Holds the conversation's id, not a boolean, so a route
+  // change to a different chat does not inherit the previous one's answer.
+  //
+  // THE BOUNDARY (CLAUDE.md Rule 12): "seen with nothing pending" is what this
+  // page observed, not what was true on the server. A device that was away can
+  // be shown a stale cached snapshot with nothing pending and then the server's
+  // copy with the request already armed, and that still reads as a live arrival
+  // here — #1494's Finding A, not fixed by this.
+  let sawNothingPendingOn: string | null = null;
 
   // A request that resolves while a save is ALREADY RUNNING (issue #1505). The
   // request is cleared from the document before anything happens — the "taken,
@@ -278,9 +287,11 @@
   $effect(() => {
     const current = session;
     if (!current) return;
-    const isFirstSnapshot = !sawFirstSnapshot;
-    sawFirstSnapshot = true;
-    if (current.pendingSaveIntent === null) return;
+    if (current.pendingSaveIntent === null) {
+      sawNothingPendingOn = current.id;
+      return;
+    }
+    const arrivedWhileHere = sawNothingPendingOn === current.id;
     void (async () => {
       // Clears the request before anything happens, and answers false if the
       // `chatSave` flag is off for this person (issue #1512 — the gate lives at
@@ -290,9 +301,10 @@
       // answered: a question you dismissed has been answered, and leaving the
       // request on the document would re-ask it on every reload.
       const taken = await consumeSaveIntent(current);
-      // A first-snapshot request is cleared above and stops here regardless of
-      // `taken` — it is not this page's to act on, only to stop re-arming.
-      if (isFirstSnapshot || !taken) return;
+      // A request that was already there is cleared above and stops here
+      // regardless of `taken` — it is not this page's to act on, only to stop
+      // re-arming.
+      if (!arrivedWhileHere || !taken) return;
       if (current.recipeId !== null) {
         saveChoiceOpen = true;
         return;
