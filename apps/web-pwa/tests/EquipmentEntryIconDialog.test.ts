@@ -133,6 +133,33 @@ describe('EquipmentEntryIconDialog — once described, it is the item flow', () 
     expect(screen.getByTestId('equipment-entry-draw-btn').textContent).toContain('Draw it');
   });
 
+  // Issue #1518. The Redraw/Draw it label above says only whether a picture was
+  // ever drawn; this pins the same predicate once a re-authored brief has
+  // landed under a changed subject name — NOT what a live rename alone
+  // produces at entry scale (see the comment on `awaitingApproval`). Before
+  // this: a picture drawn from words that have since moved read "Redraw"
+  // exactly as a current one does, with nothing else on screen saying so.
+  it('says the picture is waiting for you once the words have moved out from under it', () => {
+    open({ ...DESCRIBED, sourceName: 'Steam Basket' });
+    expect(screen.getByTestId('equipment-entry-awaiting-approval').textContent).toContain(
+      'waiting for you',
+    );
+    // ...and the stale-signal case is one the Redraw label cannot distinguish.
+    expect(screen.getByTestId('equipment-entry-draw-btn').textContent).toContain('Redraw');
+  });
+
+  it('stays quiet once the picture was drawn from the words now on screen', () => {
+    // NOT the bare DESCRIBED fixture: that has no `sourceName` at all, which the
+    // predicate reads as "never drawn" and therefore also awaiting approval.
+    open({ ...DESCRIBED, sourceName: DESCRIBED.briefSourceName });
+    expect(screen.queryByTestId('equipment-entry-awaiting-approval')).toBeNull();
+  });
+
+  it('says it of a description nobody has drawn yet, which is the same wait', () => {
+    open(DESCRIBED);
+    expect(screen.getByTestId('equipment-entry-awaiting-approval')).toBeTruthy();
+  });
+
   it('revises against the QUALIFIED subject name, not the entry’s bare words', async () => {
     open(DESCRIBED);
     // fireEvent, not userEvent: bits-ui's focus trap eats keystrokes inside a
