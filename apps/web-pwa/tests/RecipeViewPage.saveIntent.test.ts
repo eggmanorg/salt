@@ -517,3 +517,54 @@ describe('RecipeViewPage — a request this page did not ask for (#1494, Finding
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
   });
 });
+
+// The send record (`lastSent` in `chatThreadState.svelte.ts`) is what
+// `askedHere` reads to decide a request is this page's to act on. Issue
+// #1561 (campaign #1552): nothing pinned that it is written BEFORE the send
+// call returns, nor that it survives a failed send — either regression would
+// silently drop a genuine save request while every existing test in this file
+// still passes, because they all deliver the reply strictly after `sendFromPage`
+// has already awaited the call.
+describe('RecipeViewPage — the send record that gates "asked here" (#1561)', () => {
+  it('records the send before the call returns, so a reply arriving while it is still in flight is still recognised', async () => {
+    mockSessions._set([chatA()]);
+    renderPage();
+
+    // Hold `sendMessage` open so the reply can land while this page's own send
+    // is still awaiting it.
+    let resolveSend!: (v: Awaited<ReturnType<typeof sendMessage>>) => void;
+    vi.mocked(sendMessage).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof sendMessage>>>((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+
+    await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: ASK } });
+    await fireEvent.click(screen.getByTestId('chat-send-btn'));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+
+    // The chef's reply, carrying the request, arrives on the subscription
+    // while `send`'s own promise is still unresolved.
+    deliverReplyToA([chatA()]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+
+    // Let the held call settle so nothing is left dangling.
+    resolveSend({ kind: 'ok', value: chatA() });
+  });
+
+  it('keeps the send record when the send fails, so a reply that lands anyway still saves', async () => {
+    mockSessions._set([chatA()]);
+    renderPage();
+    vi.mocked(sendMessage).mockResolvedValueOnce({ kind: 'err', error: OFFLINE });
+
+    await sendFromPage();
+
+    // The reply lands at the same slot the failed send would have produced.
+    deliverReplyToA([chatA()]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
+  });
+});
