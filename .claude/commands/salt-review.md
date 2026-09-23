@@ -115,7 +115,9 @@ Then the disposition falls out, and there are only three:
 | **material impact**    | **Fix before merge** | **Fix before merge**                                                          |
 | **no material impact** | **Fix before merge** | **Fix before merge**, unless it would bloat the PR — then propose a follow-up |
 
-**Fix before merge is the preference, and the bar for departing from it is real bloat**, not mere size: the fix pulls in files outside this PR's footprint, or it needs a design decision that would turn a reviewed PR into an unreviewed one. Sizing the diff back is Daniel's call, not yours to take by filing. Every finding is ranked most-severe first: material before immaterial, and within each, blocking failure modes before latent ones.
+**Fix before merge is the preference, and the bar for departing from it is real bloat**, not mere size: the fix pulls in files outside this PR's footprint, or it needs a design decision that would turn a reviewed PR into an unreviewed one. Sizing the diff back is Daniel's call, not yours to take by filing.
+
+**A false invariant is never a proposed follow-up.** Lens 1's highest-yield finding is also the one whose fix is cheapest — and it has three fixes, not one: pin the claim with a test, qualify it to its real boundary, or **delete the sentence**. All three land in a file this diff already touches, so a false invariant is `Fix before merge` by construction. Reach for delete when the claim restates something the code already expresses, and always when it is not the first correction that sentence has had: `undrawnEquipment`'s header spent three issues on three successive re-wordings (#1516, #1544, #1548). Filing a wrong sentence as a follow-up buys a fourth wording at the price of a spec pass, a board row, a worktree, a run, a PR and a review. Every finding is ranked most-severe first: material before immaterial, and within each, blocking failure modes before latent ones.
 
 ## 7. Post exactly one review
 

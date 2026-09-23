@@ -361,6 +361,7 @@ So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFil
 >
 > - **blocking** — you can state a concrete failure: this input, this state, this wrong output or crash. If you cannot name one, it is not blocking.
 > - **should-fix** — real, but ships safely and can be a follow-up. Append `[trivial]` to the line when the whole fix is **≤5 lines and mechanical** in a file this diff already touches — a stale line reference, a wrong glob, a sentence this PR made false. You are the only actor holding the diff, so you are the only one who can size it; the coordinator decides what to do with the mark.
+>   **A false invariant (lens 1) is `[trivial]` by construction**, because it has three fixes and all of them are small: pin the claim with a test, qualify it to its real boundary, or **delete the sentence**. Say which you mean on the line. Reach for delete when the claim restates what the code already expresses, and always when the sentence has been corrected before — `undrawnEquipment`'s header spent #1516, #1544 and #1548 on three successive re-wordings, and filing a wrong sentence rather than fixing it is what buys the fourth.
 > - **note** — style, taste, preference. Say them in one line each or not at all.
 >
 > **Write only findings.** No "what I verified and found sound" section, no summary of what the PR does, no restatement of the phases — the coordinator and the author both already know. If the honest answer is that you found nothing, the review is three lines saying so, and that is a good review rather than a failed one.
@@ -535,7 +536,8 @@ Running unattended means most of salt-run.md's pause conditions become deadlocks
 - a queue ejection classified as this campaign's own work;
 - a flaky CI job — re-run once, then treat a second failure as real;
 - ordering among issues that don't conflict;
-- whether a FLAG changes the conflict graph.
+- whether a FLAG changes the conflict graph;
+- a **falsified premise** a worker corrected in place (salt-run.md → _Standing rules_): the three tests it had to pass are checkable from the worker's return, so confirm them and record it. A falsified premise the worker says needs a **decision** is a park, not a park-or-guess — it is the same call as a UX deviation.
 
 **Park the branch — not the campaign — for these:**
 
