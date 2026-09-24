@@ -111,7 +111,11 @@ async function runScript(): Promise<void> {
   await vi.runAllTimersAsync();
 }
 
-describe('rerun-recipe-kits — blocking findings from PR #1483', () => {
+// An explicit timeout, because vitest's 5 s default is too tight: draining a
+// whole run's poll loop on fake timers takes ~7-10 s of real time on a cold
+// runner, and has timed out in isolation both on a Mac and in a cloud container
+// (#1522). The fake clock, not this number, is what the assertions are about.
+describe('rerun-recipe-kits — blocking findings from PR #1483', { timeout: 30_000 }, () => {
   const originalArgv = process.argv;
   const originalEnv = process.env['GOOGLE_CLOUD_PROJECT'];
 

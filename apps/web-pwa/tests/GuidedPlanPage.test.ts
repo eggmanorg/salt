@@ -1017,6 +1017,85 @@ describe('GuidedPlanPage — bowls are things, and problems sit where they are',
     expect(written().stepNotes[0]!.container).toBe('onion bowl');
   });
 
+  // Two bowls where one name sits inside the other. The first containment match
+  // used to win, so "the red onion bowl" was offered "onion bowl" — a press that
+  // clears the warning and points the step at the wrong bowl (#1522).
+  function nestedBowlsPlan(wanted: string): GuidedPlanDoc {
+    return makePlan({
+      prep: [
+        { id: 'prep-1', text: 'Dice the onion', container: 'onion bowl', ingredientIds: ['ing-1'] },
+        {
+          id: 'prep-2',
+          text: 'Slice the red onion',
+          container: 'red onion bowl',
+          ingredientIds: ['ing-2'],
+        },
+      ],
+      stepNotes: [
+        {
+          stepId: 'step-1',
+          container: wanted,
+          setup: null,
+          cue: null,
+          checkIns: [],
+          lookahead: null,
+          getAhead: null,
+        },
+      ],
+    });
+  }
+
+  it.each([
+    ['the red onion bowl', 'red onion bowl'],
+    ['onion', 'onion bowl'],
+  ])('offers the nearest of two nested bowl names for "%s"', async (wanted, offered) => {
+    const queries = renderPage();
+    mockPlan._set(nestedBowlsPlan(wanted));
+    await startReading(queries);
+
+    const fixes = await waitFor(() => queries.getAllByTestId('guided-plan-problem-fix'));
+    expect(fixes.map((b) => b.textContent?.trim())).toEqual([
+      `Use "${offered}"`,
+      'It needs no bowl',
+    ]);
+  });
+
+  it('offers every bowl tied for nearest rather than guessing between them', async () => {
+    const queries = renderPage();
+    mockPlan._set(
+      makePlan({
+        prep: [
+          { id: 'prep-1', text: 'Dice the onion', container: 'red bowl', ingredientIds: ['ing-1'] },
+          {
+            id: 'prep-2',
+            text: 'Dice the carrots',
+            container: 'big bowl',
+            ingredientIds: ['ing-2'],
+          },
+        ],
+        stepNotes: [
+          {
+            stepId: 'step-1',
+            container: 'bowl',
+            setup: null,
+            cue: null,
+            checkIns: [],
+            lookahead: null,
+            getAhead: null,
+          },
+        ],
+      }),
+    );
+    await startReading(queries);
+
+    const fixes = await waitFor(() => queries.getAllByTestId('guided-plan-problem-fix'));
+    expect(fixes.map((b) => b.textContent?.trim())).toEqual([
+      'Use "red bowl"',
+      'Use "big bowl"',
+      'It needs no bowl',
+    ]);
+  });
+
   it('removes a reminder that could never go off', async () => {
     const queries = renderPage();
     mockPlan._set(

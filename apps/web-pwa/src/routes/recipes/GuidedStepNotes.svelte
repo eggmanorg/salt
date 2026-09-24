@@ -337,7 +337,11 @@
                 value={checkIn.text}
                 ariaLabel="what the reminder says"
                 placeholder="give it a stir, or the bottom will catch"
-                onCommit={(v) => edit.onSetCheckIn(i, { ...checkIn, text: v })}
+                onCommit={(v) => {
+                  // An emptied reminder is refused exactly as an empty new one is
+                  // below: the row keeps its words, and the bin is how it goes.
+                  if (v !== '') edit.onSetCheckIn(i, { ...checkIn, text: v });
+                }}
               >
                 <span class="whitespace-pre-wrap">{checkIn.text}</span>
               </GuidedPlanLine>
