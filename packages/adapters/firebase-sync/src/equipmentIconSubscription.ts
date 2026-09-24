@@ -18,12 +18,21 @@ import { subscribeCollection } from './subscribeCollection.js';
 // The collection is client-write-denied in firestore.rules, so there is no
 // upsert/delete here to match `canonSubscription`'s: the brief trigger creates
 // and reconciles the documents, and every client mutation goes through a
-// callable. Two of them do, not one — `drawEquipmentIcon` below, and
-// `setIconUpload` (iconUploadCallables.ts), which replaces the pictogram with an
-// uploaded picture and stamps `thumbnail` + the cache-bust nonce only. Neither
-// `describeEquipmentSubject` nor anything else in this file writes a description:
-// see `apps/cloud-functions/src/index.ts` → `describeEquipmentSubject` for why an
-// unaccepted revision is deliberately transient (#1433).
+// callable. This file holds three of those callable wrappers — `drawEquipmentIcon`
+// below, `callAuthorEntryIconBrief` below that, and `setIconUpload` lives next
+// door in iconUploadCallables.ts.
+//
+// Two of them reach `subjectBrief` and one does not, and that is the distinction
+// worth carrying here rather than a count: `callDescribeEquipmentSubject` persists
+// NOTHING — its sentence comes back to the caller and only a later Draw commits it
+// (#1433) — while `callAuthorEntryIconBrief` writes the field on the server the
+// moment it is asked. The full writer list, including the two server-side ones no
+// browser can reach, is docs/canon-icons.md → "Who writes `subjectBrief`", held
+// honest by `pnpm briefwriters:check`. Do not restate it here: this header did,
+// and claimed nothing in this file wrote a description while
+// `callAuthorEntryIconBrief` sat below it in this same file (#1519). Why an
+// unaccepted revision is deliberately transient:
+// `apps/cloud-functions/src/index.ts` → `describeEquipmentSubject`.
 
 /**
  * Subscribe to every equipment icon document.

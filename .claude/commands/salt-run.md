@@ -25,6 +25,7 @@ Two things dominate what a run costs: re-deriving context the issue already hold
 - **CLAUDE.md is binding.** Layer map, hard rules, data-model and Zod conventions, dependency pinning. A phase that can only be delivered by breaking one of them is a pause condition, not a judgment call.
 - **No bodges.** If the phase as specified can only be built by contorting the code, stop and raise the spec question. The cleanest, most maintainable code wins over a delivered phase.
 - **Flag the simpler path.** If a rule change or a different shape would be materially _simpler and more maintainable_ (not merely easier or lazier), say so — in `DECISIONS` if you proceeded, as a pause if it changes the design.
+- **A falsified premise is corrected here, not deferred.** See below.
 - **Never open a shell command with `cd`.** Use `git -C <worktree>` and absolute paths; `(cd <path> && …)` only when nothing else will do. The permission allowlist matches whole command strings, so `cd <path> && cat x && sed -n y` matches none of the `cat`/`sed`/`git` entries that would each have run unprompted — and when you are a campaign worker, a permission stop blocks on a human who is not watching.
 - Everything else: make the call, record it, continue.
 
@@ -34,13 +35,32 @@ Every code PR in campaign #1064 shipped the same defect: a safety property asser
 
 Before writing a sentence claiming the code always, never or only does something:
 
-- **Pin it, or qualify it.** Either add a test that goes red when the property breaks — verified red by breaking the property first, not merely written — or state the claim with its actual boundary. The unqualified absolute nobody can falsify is the failure mode; a claim stated precisely enough to check is a good outcome even when checking falsifies it.
+- **Pin it, qualify it, or delete it.** Either add a test that goes red when the property breaks — verified red by breaking the property first, not merely written — or state the claim with its actual boundary, or do not make the claim at all. The unqualified absolute nobody can falsify is the failure mode; a claim stated precisely enough to check is a good outcome even when checking falsifies it.
+- **A claim someone has already found false is deleted, not re-worded.** The third option above is the one that gets skipped, and re-wording is the expensive reflex: `undrawnEquipment`'s header comment burned three issues on three successive re-wordings, each shipping a different false absolute (#1516, #1544, #1548). If the phase you are building is _itself_ a correction to a prose claim, and the claim restates something the code already expresses, delete the sentence rather than attempt a fourth wording — and say so in `DECISIONS`. A comment that has to be re-derived to be checked is the defect, not its wording.
 - **Read it as an adversary holding the diff.** Which input, which state, which second construction path makes the sentence false?
 - **When you fix one instance, look at its neighbours.** The commonest way a true sentence goes false is a later fix introducing a second path the sentence never contemplated.
 
 Worked example (#1067). The script printed `Mode : APPLY — one AI call per recipe` and its DoD called `--verify` a read-only pre-flight. `--verify` in fact `process.exit`ed before the production confirm gate and the write loop, so a real run reported `Still pending : 0 ✔` and exit 0 having written nothing. The pin was one test: spawn the real CLI with `--project prod --apply --redo --confirm production --verify` and assert it refuses.
 
 Do not try to build a lint rule for this. The campaign's five instances were falsified by five different mechanisms — a wrong operand, a control-flow exit, a set membership that changes over time, a second construction path, a self-consistent assertion — and share no syntactic signature.
+
+### A falsified premise is corrected here, not deferred
+
+The issue you are executing rests on claims about the code that were written **without building anything** — a reproduction nobody ran to the last step, a fixture assumed to serve as the negative case, an adjacent path assumed to already work. Building is the first time any of them is tested, so you are the actor who finds out, and the answer arrives with the cheapest possible fix already in your hands.
+
+**The default is to correct it inside this phase.** Do that when all three hold:
+
+- it needs **no decision from Daniel** — no design fork, no rule change, no question about what the right shape would be;
+- it stays inside the **files the phase already touches** — no new footprint, which is what keeps a reviewed PR reviewable and the merge queue's conflict model intact;
+- the branch stays under **`--max-diff`**.
+
+Then make the correction, record it in `DECISIONS` with the premise it replaces, and name it in the PR body under the phase it landed in. The issue's own stated Expected is the standard you validate against — a premise inside it that proves false does not become a note about what the PR does not do; it gets fixed or it gets escalated.
+
+**It becomes a follow-on issue only when it fails one of the three.** A genuine design fork, a second surface, a diff that no longer fits — then it is a different piece of work and defers as today, and the PR body says which of the three it failed.
+
+The reason the default flips this way is pure cost. A deferred premise is not a note: it is a spec pass, a board row, a triage, a worktree, a run, a PR and a review, to deliver what was frequently two lines. #1518 is the worked example in both directions — its reproduction said renaming an entry would show the stale-picture banner, and the build proved it does not. That gap was correctly deferred (it is a Cloud Functions change with three candidate shapes — a real fork). But the same PR also found the issue's `DESCRIBED` fixture does not serve as the "current, not stale" case it was promised as, and folding _that_ in was correct and cost nothing. Tell the two apart by the three tests above, not by which one the issue happened to mention.
+
+**This is not a licence to widen scope.** A `Must not touch` entry is a decision and stays binding; an _improvement_ you noticed is not a falsified premise and defers exactly as it does today. What moves is only a claim the issue makes about the code that building has proved untrue.
 
 ---
 

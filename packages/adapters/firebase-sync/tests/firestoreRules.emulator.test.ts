@@ -1290,6 +1290,75 @@ describe.skipIf(!reachable)('firestore.rules — kitchenMemories (issue #816)', 
   });
 });
 
+// `enrichmentFailures` (issue #1419) — the `equipmentIcons` shape: readable by
+// any signed-in member, written by nobody but the Admin SDK. The write half is
+// the load-bearing one and the reason this block exists at all. A record is the
+// app's only evidence that a background job gave up, so a client able to create
+// one could make a perfectly good recipe say its equipment list failed, and a
+// client able to delete one could clear the marker without the retry that is
+// supposed to clear it — which would put the collection straight back to being
+// unable to tell "we asked and failed" from "nobody asked".
+describe.skipIf(!reachable)('firestore.rules — enrichmentFailures (issue #1419)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  const FAILURE_ID = 'recipeKit_r1';
+  const failure = () => ({
+    enrichment: 'recipeKit',
+    subjectId: 'r1',
+    subjectLabel: 'Home-Cured Streaky Bacon',
+    reason: 'timeout',
+    failedAt: 1_757_030_400_000,
+  });
+
+  async function seedAsServer(): Promise<void> {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'enrichmentFailures', FAILURE_ID), failure());
+    });
+  }
+
+  it('lets any signed-in member read the records', async () => {
+    await seedAsServer();
+    const db = testEnv.authenticatedContext('uid-a', { email: 'a@e.org' }).firestore();
+    await assertSucceeds(getDoc(doc(db, 'enrichmentFailures', FAILURE_ID)));
+    await assertSucceeds(getDocs(collection(db, 'enrichmentFailures')));
+  });
+
+  it('DENIES a signed-in member creating, overwriting or deleting one', async () => {
+    await seedAsServer();
+    const db = testEnv.authenticatedContext('uid-a', { email: 'a@e.org' }).firestore();
+    await assertFails(setDoc(doc(db, 'enrichmentFailures', 'recipeKit_r2'), failure()));
+    await assertFails(setDoc(doc(db, 'enrichmentFailures', FAILURE_ID), failure()));
+    await assertFails(deleteDoc(doc(db, 'enrichmentFailures', FAILURE_ID)));
+  });
+
+  it('denies an unauthenticated caller entirely', async () => {
+    await seedAsServer();
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'enrichmentFailures', FAILURE_ID)));
+    await assertFails(getDocs(collection(db, 'enrichmentFailures')));
+    await assertFails(setDoc(doc(db, 'enrichmentFailures', FAILURE_ID), failure()));
+  });
+});
+
 describe.skipIf(!reachable)('firestore.rules — libraryPages (epic #1372)', () => {
   let testEnv: RulesTestEnvironment;
 

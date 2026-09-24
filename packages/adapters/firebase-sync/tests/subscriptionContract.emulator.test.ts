@@ -33,7 +33,7 @@
  *   • DOCUMENT   — one `T | null`. An absent document delivers `null`; a corrupt
  *     one is a `StorageError`/`corruption` on `onError`.
  * Those two rules are the CLAUDE.md adapter contract, and the table asserts them
- * uniformly rather than trusting 29 files to have implemented them the same way.
+ * uniformly rather than trusting 30 files to have implemented them the same way.
  *
  * ─── What pins #939 (query narrowing) ────────────────────────────────────────
  * EVERY row seeds a fixed, complete world and asserts EXACTLY what comes out of
@@ -43,7 +43,7 @@
  * more document in the answer satisfies just as happily. The world always has
  * two halves: the documents the subscription must return (`seed` plus, where a
  * second in-bounds document is possible, `alsoDelivers`) and at least one decoy
- * it must not (`excluded`, required on all 29 rows).
+ * it must not (`excluded`, required on all 30 rows).
  *
  * That is the whole mechanism. Adding ANY narrowing to ANY subscription — a
  * `where`, a `limit`, a tighter path, a different document key — changes the
@@ -165,6 +165,7 @@ import { subscribeChatSessions } from '../src/chatSessionSubscription.js';
 import { subscribeCookSession, subscribeMyCookSessions } from '../src/cookSessionSubscription.js';
 import { subscribeDevSettings } from '../src/devSettingsSync.js';
 import { subscribeEquipmentIcons } from '../src/equipmentIconSubscription.js';
+import { subscribeEnrichmentFailures } from '../src/enrichmentFailureSubscription.js';
 import { subscribeEquipmentManifest } from '../src/equipmentManifestSubscription.js';
 import { subscribeFormula } from '../src/formulaSubscription.js';
 import { subscribeGuidedPlan } from '../src/guidedPlanSubscription.js';
@@ -520,6 +521,13 @@ const fx = {
     subjectBrief: 'a steel pan',
     briefSourceName: 'pan',
     thumbnail: 'https://example.test/x.webp',
+  }),
+  enrichmentFailure: (subjectId: string) => ({
+    enrichment: 'recipeKit',
+    subjectId,
+    subjectLabel: 'Home-Cured Streaky Bacon',
+    reason: 'timeout',
+    failedAt: 1_757_030_400_000,
   }),
   equipmentManifest: (updatedAt: string = NOW) => ({ schemaVersion: 1, updatedAt, items: [] }),
   formula: (recipeId: string) => ({
@@ -918,6 +926,25 @@ const collectionCases: CollectionCase[] = [
           );
         }
       },
+    },
+  },
+  {
+    // Keyed by DOCUMENT id — `enrichmentFailureId(kind, subjectId)` — which is
+    // the whole point of the shape: a page holding a recipe asks the map one
+    // question rather than walking the collection.
+    name: 'subscribeEnrichmentFailures',
+    subscribe: (on, err) => subscribeEnrichmentFailures((f) => on([...f.keys()]), err),
+    id: 'recipeKit_r1',
+    seed: () => writeAs(['enrichmentFailures', 'recipeKit_r1'], fx.enrichmentFailure('r1')),
+    alsoDelivers: {
+      ids: ['recipeKit_r2'],
+      seed: () => writeAs(['enrichmentFailures', 'recipeKit_r2'], fx.enrichmentFailure('r2')),
+    },
+    corrupt: { id: 'bad', seed: () => writeAs(['enrichmentFailures', 'bad'], CORRUPT) },
+    excluded: {
+      ids: [NESTED_DECOY_ID],
+      what: NESTED_DECOY_WHAT,
+      seed: () => writeAs(nestedPath('enrichmentFailures'), fx.enrichmentFailure(NESTED_DECOY_ID)),
     },
   },
   {
@@ -1342,7 +1369,7 @@ describe('subscription contract — table coverage', () => {
     // #928 asks for: the shape only exists once to copy from, and the table is
     // what notices when someone copies it anyway.
     expect(tabled).toEqual(exported);
-    expect(exported).toHaveLength(29);
+    expect(exported).toHaveLength(30);
   });
 
   it('every row is uniquely named', () => {

@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { ITEM_SELECTION } from '../lib/boardItemLookup.mjs';
 import { SHOW_FIELDS, notOnBoardMessage, showLines } from '../lib/boardShow.mjs';
 
 const item = (fields = {}) => ({
@@ -69,8 +70,32 @@ describe('board.mjs actually fetches the fields show prints', () => {
 
   // Before #1521 the item query selected Queue, Status and Blocked by only.
   // Adding `show` without widening it would have printed a confident `—`.
+  // The selection lives in `lib/boardItemLookup.mjs` so the bulk scan and the
+  // lagging-scan fallback share it; the second test pins that the scan uses it.
   it.each(['Class', 'Size'])('the item query selects %s', (field) => {
-    expect(src).toMatch(new RegExp(`${field.toLowerCase()}:fieldValueByName\\(name:"${field}"\\)`));
+    expect(ITEM_SELECTION).toMatch(
+      new RegExp(`${field.toLowerCase()}:fieldValueByName\\(name:"${field}"\\)`),
+    );
+  });
+
+  it('both item reads select through ITEM_SELECTION', () => {
+    expect(src.split('${ITEM_SELECTION}')).toHaveLength(3);
+  });
+
+  // #1564 fixed six lookup-by-number call sites (add, show, set, start, pr,
+  // rollup) that scanned `items` alone and so missed anything the lagging
+  // `ProjectV2.items` connection hadn't caught up on yet — see
+  // `lib/boardItemLookup.mjs`'s header. Nothing else pinned that the fix
+  // stays applied: reverting any one call site back to a scan-only
+  // `.find`/`.some` on `.number ===` left every other test green. Proven by
+  // temporarily reverting `cmdShow` to `loadItems(project).find((i) =>
+  // i.number === number)` — this test went red — then restoring it.
+  it('every lookup by issue number goes through itemFor, never a bare scan', () => {
+    expect(src).not.toMatch(/\.(?:find|some)\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.number\s*===/);
+  });
+
+  it('itemFor is called once per command that looks up an item by number', () => {
+    expect(src.match(/\bitemFor\(/g)).toHaveLength(6);
   });
 
   it('dispatches the show subcommand and lists it in the usage text', () => {

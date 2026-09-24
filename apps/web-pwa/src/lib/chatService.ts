@@ -366,14 +366,17 @@ export async function claimRecipe(
 // reload reads; this set exists for the window between taking the request and
 // that clear landing on the subscription, during which the store still holds
 // the old document and an effect watching it would fire again. A reload
-// legitimately empties it — by then the field is either cleared (nothing to
-// take) or still armed because the clear failed, and a failed clear now also
-// means the save never ran (`consumeSaveIntent` answers `false` on it), so
-// firing again on reload is the recovery, not a bug — EXCEPT the one failure
-// mode `consumeSaveIntent` cannot see: a clear that queues while offline
-// resolves `ok` immediately, runs the save, and can still be rejected later on
-// reconnect. There a re-fire is a genuine duplicate, the same exposure any
-// offline Firestore write has, not one particular to this feature.
+// legitimately empties it, but that no longer means a reload can re-fire the
+// request: the caller only acts when `askedHere` holds (`chatThreadState.svelte.ts`),
+// which is false for any page with no matching `lastSent` entry, and a
+// reloaded page never has one — so a reload clears the field, if anything is
+// still armed, without ever calling this function to act on it. A clear that
+// fails outright on the asking page therefore loses the request outright,
+// with no retry and no re-fire. The one path left where a later attempt can
+// duplicate the save is a clear that queues while offline: it resolves `ok`
+// immediately, runs the save, and can still be rejected later on reconnect —
+// the ordinary hazard of an offline Firestore write, not one particular to
+// this feature.
 const takenSaveIntents = new Set<string>();
 
 /**
@@ -394,24 +397,25 @@ const takenSaveIntents = new Set<string>();
  * caller that ignores the return value and saves anyway is still ungated. The
  * one thing every caller must do is honour the `false`.
  *
- * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER WAS PRESENT FOR THE REQUEST.
- * A request already sitting on the document the first time a page observes it
- * is one nobody was there to take, and MUST be cleared without being acted on —
- * that is the caller's job (see the mount-tracking in `ChatSessionPage.svelte`
- * and `RecipeViewPage.svelte`), not this function's; this one only takes and
- * clears whatever it is handed.
+ * THIS FUNCTION DOES NOT KNOW WHETHER THE CALLER ASKED FOR THE REQUEST. One
+ * that is not the reply to a message the calling page sent must be cleared
+ * without being acted on — that is the caller's job (`askedHere` in
+ * `chatThreadState.svelte.ts`, issue #1494), not this function's; this one only
+ * takes and clears whatever it is handed.
  *
  * THE CLEAR IS ATTEMPTED BEFORE THE SAVE RUNS, and only a clear that actually
  * lands answers `true`. A clear that fails outright (a `permission-denied`, a
- * `StorageError`) answers `false`, so the caller runs no save and the request
- * survives on the document for the next attempt — a page that goes away
- * mid-flight, or a failed clear, then costs one retry rather than a duplicate
- * recipe. NOT COVERED: a clear that queues while offline resolves `ok`
- * immediately — this answers `true` and the save runs — and can still be
- * rejected once it replays on reconnect, past the point anything here can
- * still say no. That is the one path left where a later re-fire can duplicate
- * the save; it is the ordinary hazard of an offline Firestore write, not
- * specific to this function.
+ * `StorageError`) answers `false`, so the caller runs no save — and the
+ * request survives on the document, but that does not mean a next attempt
+ * picks it up: the caller only acts when `askedHere` holds
+ * (`chatThreadState.svelte.ts`), and that is false once the page that asked
+ * is gone. A page that goes away mid-flight, or a failed clear on the asking
+ * page, loses the request outright, with no retry and no re-fire. NOT
+ * COVERED: a clear that queues while offline resolves `ok` immediately —
+ * this answers `true` and the save runs — and can still be rejected once it
+ * replays on reconnect, past the point anything here can still say no. That
+ * remains a genuine duplicate risk; it is the ordinary hazard of an offline
+ * Firestore write, not specific to this function.
  *
  * THE BOUNDARY (CLAUDE.md Rule 12): "exactly once" holds per request per TAB,
  * not globally — `takenSaveIntents` above is why. The clear is an ordinary LWW

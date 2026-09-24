@@ -168,6 +168,8 @@ export type { LibraryPageDoc, LibraryPageRevisionDoc } from './libraryPage.js';
 export { KitchenToolSchema, KITCHEN_TOOLS_COLLECTION } from './kitchenTool.js';
 export type { KitchenToolDoc } from './kitchenTool.js';
 export {
+  PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
+  PROPOSE_KITCHEN_TOOLS_CLIENT_TIMEOUT_MS,
   ProposeKitchenToolsInputSchema,
   ProposeKitchenToolsAIOutputSchema,
   ProposeKitchenToolsOutputSchema,
@@ -513,3 +515,20 @@ export type {
   StageSkip,
   BatchStagePlace,
 } from './batch.js';
+
+// Background-enrichment failures (issue #1419) — the one place a job that gave up
+// is written down where the app and the household can read it. Family-shared,
+// server-written, client-readable; read `enrichmentFailure.ts`'s header before
+// adding a kind, because the kind list is also the marker-copy list.
+export {
+  ENRICHMENT_FAILURES_COLLECTION,
+  EnrichmentKindSchema,
+  EnrichmentFailureReasonSchema,
+  EnrichmentFailureSchema,
+  enrichmentFailureId,
+} from './enrichmentFailure.js';
+export type {
+  EnrichmentKind,
+  EnrichmentFailureReason,
+  EnrichmentFailureDoc,
+} from './enrichmentFailure.js';

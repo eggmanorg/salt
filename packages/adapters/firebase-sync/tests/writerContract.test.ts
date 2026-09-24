@@ -1030,6 +1030,7 @@ const NON_WRITERS: Record<string, 'subscription' | 'read' | 'callable' | 'infras
   subscribeChatSessions: 'subscription',
   subscribeCookSession: 'subscription',
   subscribeDevSettings: 'subscription',
+  subscribeEnrichmentFailures: 'subscription',
   subscribeEquipmentIcons: 'subscription',
   subscribeEquipmentManifest: 'subscription',
   subscribeFormula: 'subscription',
@@ -1140,7 +1141,7 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(120);
+    expect(exported).toHaveLength(121);
     expect(writerCases).toHaveLength(45);
   });
 

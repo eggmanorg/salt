@@ -86,6 +86,49 @@ existing rules block covers every producer without change.
 Retention on this collection and on `chatSessions` has its own runbook:
 [runbooks/ttl-policies.md](runbooks/ttl-policies.md).
 
+## `enrichmentFailures` — server-owned, client-READABLE
+
+One tiny document per (background job, subject) pair, written by the Firestore
+triggers when an AI enrichment gives up and deleted by the same branch on its
+next success (issue #1419). It is what makes "we asked and it failed"
+distinguishable from "nobody ever asked" — a distinction the data could not make
+at all before, which is how four recipes reached the library with no equipment
+list and sat there for up to twelve days (#1418).
+
+Document id: `` `${enrichment}_${subjectId}` `` (`enrichmentFailureId` in
+`@salt/domain/schemas`). Derived rather than random, which is the whole of the
+housekeeping: a job that fails twice overwrites its own row, and a success
+deletes a row it can name without reading anything first.
+
+| Field          | Meaning                                                                                                                                               |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enrichment`   | Closed enum — `recipeImage` / `recipeKit` / `recipeTimes` / `equipmentBrief` / `canonEmbedding` / `canonIcon` / `productFormIcon` / `kitchenToolIcon` |
+| `subjectId`    | The document the job was FOR. Never a uid, never read as scoping                                                                                      |
+| `subjectLabel` | What that subject was called at the moment of failure — a snapshot                                                                                    |
+| `reason`       | Closed enum — `timeout` / `upstream` / `unknown`. No free text                                                                                        |
+| `failedAt`     | Epoch ms                                                                                                                                              |
+
+**Why not a field on the enriched document.** `recipes`, `canonItems`,
+`productForms` and `kitchenTools` are all rewritten wholesale by a client
+`setDoc`, so a trigger-written field is clobbered under LWW — the
+`timerDeliveries` reasoning above, unchanged. The equipment brief settles it
+independently: on that failure path there is no `equipmentIcons/{itemId}`
+document to put a field on.
+
+**And why not `timerDeliveries` itself**, which the note above says not to
+duplicate: the difference is the rules block, not taste. That one is a dedupe
+ledger no client ever reads (`allow read, write: if false`). This one exists to
+BE read by the client — the recipe page renders a marker from it — so it takes
+the `equipmentIcons` shape instead: `allow read: if request.auth != null; allow
+write: if false`.
+
+**Nothing branches on it.** No trigger guard consults it, and the retry handles
+are unchanged — an unstamped `kitInferredAt` / `timesEstimatedAt`, a null
+`thumbnail`, a bumped nonce. It is purely additive, so the ~91 production
+documents that predate it render exactly as they did: **no migration, no
+backfill.** Family-shared, with no `userId`; the four per-user collections stay
+four.
+
 ## `shoppingDays/{YYYY-MM-DD}` — its own collection
 
 One tiny family-shared document per shop trip (issue #629).

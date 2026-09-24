@@ -79,10 +79,11 @@
 // failed inference from here, and all four are permanent, so three are filtered
 // before they can cost a `STAMP_TIMEOUT_MS` wait: not-cookable and no-steps are
 // `planKitRerun` skip reasons (the pure half, using the same `isCookable`
-// predicate `maybeInferKit` reads), the kill switch is a pre-flight read that
-// refuses `--write` outright when it is off, and a recipe failing the full
-// schema is read for its title/kit only (never targeted) and named in the
-// report instead — see `readRecipes` below.
+// predicate `maybeInferKit` reads) and are named in the report as declined-by-
+// guard entries; the kill switch is a pre-flight read that refuses `--write`
+// outright when it is off; and a recipe failing the full schema is read for
+// its title/kit only (never targeted) and named in the report separately —
+// see `readRecipes` below.
 //
 // RESUMABLE. `--write` prints its own start instant; re-running with
 // `--since <that number>` skips every recipe already stamped at or after it. An
@@ -109,11 +110,13 @@
 // have to agree, and only writing incrementally makes that true. `--out`
 // (defaulted per project and start instant) is what each recipe's kit said
 // before, what it says now, and which lines gained a link — plus, since the same
-// review (should-fix 5), every document this run could NOT act on and why: a
-// document failing even the narrow read, and one failing the full schema. The
-// issue's own acceptance is a spot-check of recipes using the Magimix, the rice
-// cooker and a named pan; this file is what that check reads, and it is meant to
-// hold every recipe the run touched or excluded, not only the successes.
+// review (should-fix 5, extended to should-fix 4), every document this run
+// could NOT act on and why: one failing even the narrow read, one failing the
+// full schema, and one the trigger's own guards decline (not-cookable or
+// no-steps). The issue's own acceptance is a spot-check of recipes using the
+// Magimix, the rice cooker and a named pan; this file is what that check
+// reads, and it is meant to hold every recipe the run touched or excluded, not
+// only the successes.
 //
 // THE DECISION LAYER — which recipes are in scope, and what counts as a change —
 // lives in the pure, tested `scripts/lib/kitRerunPlan.ts` (docs/one-shot-scripts.md
@@ -379,6 +382,7 @@ function renderReport(
   items: readonly EquipmentItemDoc[],
   unreadable: readonly string[],
   neverTriggers: readonly NamedRecipe[],
+  declinedByGuards: readonly NamedRecipe[],
 ): string {
   const stampedChanged = outcomes.filter((o) => o.status === 'stamped' && o.diff!.changed).length;
   const timedOut = outcomes.filter((o) => o.status === 'timeout').length;
@@ -396,7 +400,7 @@ function renderReport(
   // stdout (PR #1483 review, should-fix 5, extended to should-fix 4's
   // full-schema case): a gap here is exactly the gap the narrow-pick comment in
   // `readRecipes` says it exists to avoid.
-  if (unreadable.length > 0 || neverTriggers.length > 0) {
+  if (unreadable.length > 0 || neverTriggers.length > 0 || declinedByGuards.length > 0) {
     lines.push('## Excluded — never targeted');
     lines.push('');
     if (unreadable.length > 0) {
@@ -414,6 +418,23 @@ function renderReport(
           `stamp and burn the wait timeout. Fix their shape, then re-run:`,
       );
       for (const entry of neverTriggers) {
+        lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
+      }
+      lines.push('');
+    }
+    if (declinedByGuards.length > 0) {
+      lines.push(
+        `${declinedByGuards.length} recipe(s) have a non-empty kit but fail one of the trigger's ` +
+          `own two guards — \`isCookable(kind)\`, or a step count of zero — the same pair ` +
+          `\`maybeInferKit\` checks before it calls the model. The trigger will decline these ` +
+          `for as long as their shape stands, so they are read for this report but never ` +
+          `targeted. A zero step count is missing method text — add steps in place and ` +
+          `re-run. A non-cookable kind (\`special\` or \`placeholder\`) is not something an ` +
+          `edit can fix: \`kind\` is immutable and no surface in the app changes it once a ` +
+          `recipe exists (packages/domain/src/recipe/queries/capabilities.ts), so these stay ` +
+          `on this list for as long as their kit does:`,
+      );
+      for (const entry of declinedByGuards) {
         lines.push(`- ${entry.title} (\`recipes/${entry.id}\`)`);
       }
       lines.push('');
@@ -504,9 +525,19 @@ async function main(): Promise<void> {
   const allTargets = steps.filter((step) => step.skip === null);
   const targets = limit === null ? allTargets : allTargets.slice(0, limit);
 
+  // Collected here rather than in `readRecipes` because the reason only exists
+  // once `planKitRerun` has run — and threaded into the report because stdout
+  // scrolls past while the report file is the artifact the spot-check reads
+  // (issue #1517). Note the boundary: the report is only written under
+  // `--write`, and only from inside the per-target loop below, so a run with no
+  // targets at all still leaves this list unwritten — the same limit the two
+  // existing exclusion lists already have.
+  const declinedByGuards: NamedRecipe[] = [];
+
   for (const step of steps) {
     if (step.skip === 'empty-kit') continue; // the common, uninteresting case
     if (step.skip === 'not-cookable' || step.skip === 'no-steps') {
+      declinedByGuards.push({ id: step.id, title: step.title });
       console.log(`  SKIP  ${step.title} — ${step.skip}, the trigger would decline it`);
     }
     if (step.skip === 'already-rerun') {
@@ -619,7 +650,11 @@ async function main(): Promise<void> {
     // `outPath` behind. `rename()` on the same filesystem is atomic; the
     // half-written state can only ever be the `.tmp` file.
     const tmpPath = `${outPath}.tmp`;
-    await writeFile(tmpPath, renderReport(outcomes, items, unreadable, neverTriggers), 'utf8');
+    await writeFile(
+      tmpPath,
+      renderReport(outcomes, items, unreadable, neverTriggers, declinedByGuards),
+      'utf8',
+    );
     await rename(tmpPath, outPath);
 
     await sleep(SETTLE_MS);

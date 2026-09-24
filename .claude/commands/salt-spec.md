@@ -80,6 +80,8 @@ Check for prior art too: `gh issue list --search "<keywords>" --state all`. Exte
 
 Scope the read's output to five things and no others: **layers involved**, **binding constraints** (named — rule number, `docs/…` section — not paraphrased), **existing patterns to reuse**, **anything that looks like it will fight the architecture**, and **whether it can ship dark**. No code walkthroughs, no implementation proposals — those come later, if at all.
 
+**Mark what you read but did not run.** Rule 12 binds the issue body as much as it binds code: every claim you make about what the app does _today_ — this already works, that path already handles it, this helper is already generic over the case — is a premise the builder is the first person to test, and one that proves false costs a follow-on issue rather than a line. Where you inferred it from a code read, write it `(unverified — inferred from <file:line>)`. Never generalise one checked path into a set of them. The cost is on the record: #1518's reproduction offered two ways to reach a state, one of them checked, and PR #1546 shipped an Expected it does not deliver. `/salt-run` now corrects a falsified premise in place where it cheaply can — do not treat that as cover for asserting more.
+
 **Can it ship dark?** Production is a deliberate promotion, so anything half-built on `main` holds
 back everything merged behind it. A per-user flag is the release valve (#831), but a flag hides a
 _surface_, never a _consequence_. Answer three questions, in order:
@@ -207,7 +209,7 @@ an exploratory one with live forks earns more.]
 **Context pointers:** [What Step 1 already learned about _this_ phase, so `/salt-run` reads rather than re-sweeps:
 `file:line` for the code to reuse or respect, and the named rules and `docs/…` sections that bound it.
 Written for an agent arriving with no context — thin here buys a fresh Explore sweep there.]
-**Must not touch:** [Explicitly out of scope]
+**Must not touch:** [Explicitly out of scope, and every entry is a DECISION — something we chose not to do, which binds the builder and the reviewer. Never park an assumption here ("this path already works, so it needs no change"): that is a premise, it belongs in Architecture Notes marked `(unverified)` if you did not check it, and `/salt-run` corrects a falsified premise in place rather than deferring it.]
 
 ### Phase 2: [Name]
 

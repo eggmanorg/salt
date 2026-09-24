@@ -23,6 +23,8 @@ This is the heavyweight path — Explore agents, a tracked issue, the decision a
 
 If the cause is obvious, the change is contained to a file or two, and there is no decision for the user to make, **do not run this** — just fix it inline (with a regression test) and report. When unsure, say so and ask before spinning up the full flow.
 
+**A false sentence in a comment or a doc is not a defect this path takes.** It is real and it matters — rule 12 exists because of it — but the whole fix is prose, there is no fork to decide, and an issue body for one runs thirty times the length of its own diff. Fix it where you found it. And check whether the claim has been corrected before: **the second time a sentence is found false, the fix is to delete it, not to attempt a third wording.** `undrawnEquipment`'s header spent #1516, #1544 and #1548 on exactly that loop — three issues, three PRs, three reviews, three successive false absolutes, for a paragraph restating a resolution chain the code already expresses. The only comment-claim defect that earns this path is one whose correction changes _code_: the sentence becomes a mechanical check, and then it is the check that is the deliverable. #1463 → #1549 → #1550 is that shape and is not the loop above — a hand-counted enumeration became one checked list, and #1550 is a hole in the check rather than a fourth wording.
+
 **The other direction, and it is the one nothing here used to ask.** The escape above runs downward —
 too small for this path. There is an upward one: some things are too big to be a **work issue at
 all**. A programme whose increments each get specced, triaged and sequenced against other work
@@ -63,6 +65,8 @@ Confirm the defect is real before theorising. Reproduce it (run the failing test
 - **First-guess severity / blast radius:** who or what is affected, and is any production data being corrupted while the bug is live?
 
 Check for prior art before investigating far: `gh issue list --search "<symptom keywords>" --state all`. This repo has known-flake history worth not rediscovering.
+
+**Run the reproduction to its last step, including every branch of it.** Rule 12 applies to the issue body you are about to write as much as to code: a reproduction step asserted from a code read, with nothing having executed it, is an unfalsifiable claim that the builder falsifies for you later — at the price of a follow-on issue rather than a line. What you did not run gets marked `(unverified)` in the body; what you cannot run at all gets said plainly. Never silently generalise one verified path into a list of them.
 
 Do not propose a fix yet.
 
@@ -138,7 +142,12 @@ Once we've agreed, post it with `gh issue create`.
 
 ## Reproduction
 
-[Smallest reliable steps / command / test that shows the defect. Note frequency if intermittent.]
+[Smallest reliable steps / command / test that shows the defect. Note frequency if intermittent.
+**Every step is one you ran, or it is marked `(unverified — <what you inferred it from>)`.** A step
+inferred from reading the code and written as fact is a premise the builder will discover is false,
+and by then correcting it costs an issue instead of a line. Where a step offers alternatives ("rename
+it, _or_ change the words"), each alternative is verified separately or marked separately — one of
+#1518's two was false, which is how PR #1546 shipped an Expected it does not deliver.]
 
 ## Root Cause
 
@@ -200,7 +209,7 @@ None of those apply? One phase.]
 `file:line` for the faulty mechanism and the tests around it, and the named rules and `docs/…` sections
 that bound the fix. Written for an agent arriving with no context — thin here buys a fresh Explore sweep
 there, re-tracing a root cause you already found.]
-**Must not touch:** [Explicitly out of scope; the preserved behavior]
+**Must not touch:** [Explicitly out of scope; the preserved behavior. Every entry is a DECISION — something we chose not to do, which binds the builder and the reviewer. Never park an assumption here ("this path already works, so it needs no change"): that is a premise, it belongs in Architecture Notes & Constraints marked `(unverified)` if you did not check it, and `/salt-run` corrects a falsified premise in place rather than deferring it.]
 
 ### Phase 2: [Name]
 

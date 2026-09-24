@@ -8,6 +8,10 @@ import { embedTextFlow } from '../flows/embedText.js';
 import { generateCanonIconFlow } from '../flows/generateCanonIcon.js';
 import { reportServerError } from '../observability/reportServerError.js';
 import {
+  recordEnrichmentFailure,
+  clearEnrichmentFailure,
+} from '../adapters/enrichmentFailureStore.js';
+import {
   maybeGenerateIcon,
   parseIconDocument,
   type IconTriggerDescriptor,
@@ -64,22 +68,35 @@ async function maybeGenerateEmbedding(id: string, item: CanonItemDoc): Promise<v
       .collection('canonEmbeddings')
       .doc(id)
       .set({ embedding: values, updatedAt: new Date().toISOString() });
+    await clearEnrichmentFailure('canonEmbedding', id);
   } catch (err) {
     logger.error('onCanonItemWritten: embedding failed', { id, err });
     // Additive: an embedding flow failure (AI/Genkit) is unexpected → report it
     // to PostHog alongside the logger. Best-effort, never throws. The entrypoint's
     // finally flushes before the function returns.
     reportServerError(err);
+    // Written down where the app can read it (issue #1419). RECORDED, NOT
+    // ANNOUNCED: this branch is level-triggered — any later write to the canon
+    // item re-enters it and the vector self-heals — so it is worth a row and
+    // never worth a notification.
+    await recordEnrichmentFailure({
+      enrichment: 'canonEmbedding',
+      subjectId: id,
+      subjectLabel: item.name,
+      err,
+    });
   }
 }
 
 /**
- * Canon's icon family, on the five axes `iconWriteTrigger` reads (issue #989).
+ * Canon's icon family, on the six axes `iconWriteTrigger` reads (issue #989,
+ * plus the failure-record kind added by #1419).
  * Named here rather than inlined because the trigger body below passes it twice.
  */
 const canonIconDescriptor: IconTriggerDescriptor<CanonItemDoc> = {
   name: 'onCanonItemWritten',
   collection: 'canonItems',
+  enrichment: 'canonIcon',
   storagePrefix: ICON_STORAGE_PREFIX,
   schema: CanonItemSchema,
   subjectOf: (item) => item.name,

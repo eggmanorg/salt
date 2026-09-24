@@ -244,18 +244,6 @@
   // until one is picked.
   let saveChoiceOpen = $state(false);
 
-  // A request already sitting on the document the FIRST time this page observes
-  // it is one nobody was here to take (issue #1490 review, Finding 1) — a
-  // conversation you finished, closed, and reopened days later carries exactly
-  // this shape, and firing the save unprompted on that reopen is the bug. A
-  // legitimate request always arrives at a MOUNTED page through the realtime
-  // subscription, i.e. as a snapshot after the first one, so gating on "is this
-  // the first snapshot" costs only the case where the browser reloads between
-  // the flow recording the request and the subscription delivering it — and
-  // losing a request there is safe (the person asks again), where firing
-  // unprompted is not.
-  let sawFirstSnapshot = false;
-
   // A request that resolves while a save is ALREADY RUNNING (issue #1505). The
   // request is cleared from the document before anything happens — the "taken,
   // not read" contract — so `handleSaveAsRecipe`'s `isSavingRecipe` guard used to
@@ -275,12 +263,18 @@
     void handleSaveAsRecipe();
   });
 
+  // A request is acted on only when it is the chef's reply to a message sent
+  // from THIS page, while it was open (#1494 — `thread.askedHere`). Anything
+  // else — a conversation you finished, closed and reopened days later; one
+  // armed while this device was away and delivered as a stale cached snapshot
+  // followed by the server's copy; one asked from another device (bar the one
+  // boundary stated on `askedHere`) — is cleared and dropped. Losing it is safe
+  // (the person asks again) where firing unprompted is not. Leaving the page
+  // before the reply lands drops the request the same way.
   $effect(() => {
     const current = session;
-    if (!current) return;
-    const isFirstSnapshot = !sawFirstSnapshot;
-    sawFirstSnapshot = true;
-    if (current.pendingSaveIntent === null) return;
+    if (!current || current.pendingSaveIntent === null) return;
+    const askedHere = thread.askedHere(current);
     void (async () => {
       // Clears the request before anything happens, and answers false if the
       // `chatSave` flag is off for this person (issue #1512 — the gate lives at
@@ -290,9 +284,10 @@
       // answered: a question you dismissed has been answered, and leaving the
       // request on the document would re-ask it on every reload.
       const taken = await consumeSaveIntent(current);
-      // A first-snapshot request is cleared above and stops here regardless of
-      // `taken` — it is not this page's to act on, only to stop re-arming.
-      if (isFirstSnapshot || !taken) return;
+      // A request this page did not ask for is cleared above and stops here
+      // regardless of `taken` — it is not this page's to act on, only to stop
+      // re-arming.
+      if (!askedHere || !taken) return;
       if (current.recipeId !== null) {
         saveChoiceOpen = true;
         return;
