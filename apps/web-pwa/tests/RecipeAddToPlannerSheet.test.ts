@@ -347,10 +347,11 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     expect(cookOf('2026-08-15')).toBeNull();
   });
 
-  it('marks nothing as yours while the roster is still loading', async () => {
+  it('names the cook but marks nothing as yours while the current member is unknown', async () => {
     // `currentMember` is null for a real window on every cold launch. Defaulting
     // to "not you" is the honest answer; falling back to the auth email would be
-    // a second definition of the same fact.
+    // a second definition of the same fact. The roster itself is populated here
+    // (the shared `beforeEach`); an unpopulated one is the next two tests.
     mockCurrentMember._set(null);
     const week = setDayChefs(
       setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
@@ -363,6 +364,46 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     // Named, not guessed at: naming needs no current member.
     await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Daniel'));
     expect(cookOf('2026-08-13')).not.toHaveTextContent('You');
+  });
+
+  it('never says "No cook" on a taken night while the roster is still loading', async () => {
+    // `day.chefs` comes off the plan document; the names come off `$members`,
+    // which may not have delivered yet. Someone has this night — the row must not
+    // read like the planned night nobody has taken.
+    mockCurrentMember._set(null);
+    mockMembers._set([]);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      [DANIEL.id],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Cooking'));
+    expect(cookOf('2026-08-13')).not.toHaveTextContent('No cook');
+    expect(nightRow('2026-08-13')).toHaveAttribute(
+      'aria-label',
+      'Thursday 13 August, Roast chicken, cooking: Cooking',
+    );
+
+    // And it names them as soon as the roster lands.
+    mockMembers._set([DANIEL, SAM]);
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Daniel'));
+  });
+
+  it('never says "No cook" on a night taken by someone no longer on the roster', async () => {
+    mockCurrentMember._set(DANIEL);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      ['m-removed'],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Cooking'));
+    expect(cookOf('2026-08-13')).not.toHaveTextContent('No cook');
   });
 
   it('never says a week it has not read is free', async () => {
