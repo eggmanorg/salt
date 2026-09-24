@@ -36,7 +36,8 @@ import { ErrorCode, failure, success, type DomainError, type ReadResult } from '
 import { trackUsageEvent } from '@salt/observability';
 import { writable, derived, get } from 'svelte/store';
 import type { Readable } from 'svelte/store';
-import { subscriptionErrorHandler } from './errorReporting.js';
+import { reportIfFailed, subscriptionErrorHandler } from './errorReporting.js';
+import { getErrorReporter } from './errorReporter.js';
 import { createWriteCoalescer } from './writeCoalescer.js';
 import { todayIso } from './today.js';
 
@@ -441,17 +442,18 @@ function weekIsKnown(start: string): boolean {
  * widen `weekIsKnown`. `tests/mealPlanService.sync.test.ts` → _"a display read is
  * not the write path's evidence"_ goes red the day that stops being true.
  *
- * `null` is a real answer — an unplanned week, with no document. A `Failure` is
- * the caller's to degrade from quietly: a display read that fails is not
- * reported (CLAUDE.md § _Observability_), and the row it would have filled stays
- * pickable because the write path reads for itself regardless.
+ * `null` is a real answer — an unplanned week, with no document. A `Failure`
+ * from the read goes to `reportIfFailed`, whose port gates it on category like
+ * any other one-shot read, and is then returned unchanged: the caller still
+ * degrades its row quietly, and the row stays pickable because the write path
+ * reads for itself regardless.
  */
-export function loadWeekForDisplay(
+export async function loadWeekForDisplay(
   startDate: string,
 ): Promise<ReadResult<MealPlanWeek | null, DomainError>> {
   const held = get(_weeks)[startDate];
-  if (held !== undefined) return Promise.resolve(success(held));
-  return loadMealPlanWeek(startDate);
+  if (held !== undefined) return success(held);
+  return reportIfFailed(getErrorReporter(), await loadMealPlanWeek(startDate));
 }
 
 /**
