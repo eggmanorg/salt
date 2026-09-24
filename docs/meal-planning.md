@@ -268,9 +268,9 @@ rather than becoming a blind overwrite. That one-shot read is deliberately **not
 cached in the service's week store: nothing is listening to it, so nothing would
 refresh it, and its presence would make `weekIsKnown` lie to the next writer.
 
-**It seeds the night's note too** (#1437), on exactly the day sheet picker's
-terms — `recipe.title` into `day.note`, only when that note is empty at attach
-time. Without it the night carried the recipe's hero photograph under the muted
+**It seeds the night's note too** (#1437) — with the first recipe on the
+night, only when that note is empty at attach time (the three seeding paths are
+under _A meal plans the whole dinner, once_ below). Without it the night carried the recipe's hero photograph under the muted
 "Nothing planned", because `day.note` is the only thing that names a night. The
 seed composes into the single `MealPlanWeek` this function already persists, so
 it costs no second write; nights planned before the fix stay unnamed until
@@ -379,17 +379,44 @@ Nothing about the plan document changed to allow it: `recipeIds` was already a
   the week card, "Shop the week", `personalViewService`, the admin editor) goes on
   resolving plain recipe ids against one store, with no idea meals exist.
 - **The meal id goes FIRST**, and two existing mechanics then do the right thing
-  by themselves: the day's note seeds from the first attached recipe's title, and
-  the day's card takes the first attached hero. Neither was modified.
+  by themselves: the first attached recipe names the night, and the day's card
+  takes the first attached hero. Neither was modified.
 
-  The seed is not a property of the plan document — it is a decision each
-  **attach handler** makes, in the app layer, from the `Recipe` it is holding,
-  and only when the day's note is empty at attach time. There are two such
-  handlers: the day sheet's picker (`MealDayDetail.svelte`) and `addRecipeToDay`
-  for the recipe page. The second one shipped without the seed, which is what
-  made a night planned from a recipe page read "Nothing planned" over its own
-  photograph until #1437. A third attach path would have to seed for itself
-  again; nothing downstream of the write supplies a title.
+  Naming is not a property of the plan document — the title is a live UI value,
+  never denormalised — so every place a recipe title reaches `day.note` is an
+  app-layer write, and each seeds only when the note is empty. There are three:
+
+  1. **The day sheet's picker** — `addRecipe` in `MealDayDetail.svelte` — seeds
+     from the recipe just picked. On a night with no recipes yet that is the
+     first attached. Its limit: a night that already holds recipes with an empty
+     note (legacy data, or a note emptied without leaving the field) is named
+     after the pick, not the first recipe.
+  2. **The day sheet's blur re-seed** — the Dinner textarea's `onblur` in the
+     same file — refills a field left empty from `attachedRecipes[0]`, the first
+     recipe on the night that still resolves.
+  3. **`addRecipeToDay`**, the recipe page's attach — seeds from the first
+     resolvable entry of the day's merged `recipeIds`, the same resolution as
+     (2). Until #1513 it seeded from the recipe it was handed, so a night that
+     already held recipes was named after whichever dish came last.
+
+  A fourth path that writes a title would have to seed for itself again;
+  nothing downstream of the write supplies one.
+
+  **Notes are tidied when written** (#1513). `setDayNote` — the one mutator
+  every note edit goes through, week and template alike — drops leading
+  whitespace, blank lines included. The week row and the recipe page's night
+  list headline a note by its FIRST line, while the seed guards ask whether the
+  WHOLE note is blank; a note like `"\nbring wine"` answered those differently
+  and read "Nothing planned" over a planned night. With leading whitespace gone
+  the two agree. Only the start is trimmed: `setDayNote` runs on every
+  keystroke of a textarea driven from the store, and trimming the end reset the
+  field mid-sentence (pinned by `MealDayDetail.noteTyping.test.ts`).
+
+  **Decided: fix-forward only** (Daniel, #1513 / #1565). No migration, no
+  clean-up, no normalising on read. A note stored with a leading blank line
+  before #1513 keeps it — and still reads "Nothing planned" — until that day is
+  next edited; an old template note is copied into new weeks as it stands until
+  that weekday is next edited.
 
 - **`expandForPlanner` takes no recipe store and filters nothing.** A component
   deleted since it was attached leaves a dangling id, which every planner consumer
