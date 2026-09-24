@@ -39,6 +39,7 @@ import type { Readable } from 'svelte/store';
 import { reportIfFailed, subscriptionErrorHandler } from './errorReporting.js';
 import { getErrorReporter } from './errorReporter.js';
 import { createWriteCoalescer } from './writeCoalescer.js';
+import { resolveRecipeIds } from './attachedRecipes.js';
 import { todayIso } from './today.js';
 
 // Meal planning service (issue #169). Subscribes to the two singletons (config +
@@ -656,8 +657,12 @@ export async function weekHasEdits(date: string): Promise<ReadResult<boolean, Do
  * Takes the whole RECIPE, not its id (issue #752, Phase 2): a meal expands to
  * itself plus its components, and that expansion is a pure function of the
  * document. The only production caller already holds the recipe, so asking for it
- * is free — and it keeps this service from acquiring a dependency on the recipes
- * store purely to look an id back up.
+ * is free.
+ *
+ * Takes `byId` too (issue #1513) — the recipes index the caller already renders
+ * from — because naming the night needs the title of the day's FIRST recipe,
+ * which is not necessarily this one. Passed in rather than read from the
+ * recipes store here, so this service stays free of that dependency.
  *
  * Idempotent, per id, on what the day already holds. `'already-there'` means
  * NOTHING NEW LANDED — which is also the honest answer when a meal was already
@@ -667,6 +672,7 @@ export async function weekHasEdits(date: string): Promise<ReadResult<boolean, Do
 export async function addRecipeToDay(
   dateKey: string,
   recipe: Recipe,
+  byId: ReadonlyMap<string, Recipe>,
 ): Promise<ReadResult<'added' | 'already-there', DomainError>> {
   const start = weekStartFor(dateKey, firstDay());
   let week: MealPlanWeek;
@@ -687,31 +693,38 @@ export async function addRecipeToDay(
   const day = week.days[dateKey]!;
   const next = mergePlannerRecipeIds(day.recipeIds, expandForPlanner(recipe));
   if (next.length === day.recipeIds.length) return success('already-there');
-  // Name the night (issue #1437). What the planner's week row reads out is
-  // `day.note` and nothing else, so an attach that leaves the note empty renders
-  // "Nothing planned" above the dish's own photograph. The planner's picker has
-  // seeded the note since #469 — `MealDayDetail.svelte`'s `addRecipe`, which
-  // carries the reasoning in full — and this is the same operation reached from
-  // the recipe page, so it seeds on the same terms: only when the note is empty,
-  // so the first attached recipe wins and text the household typed is never lost.
+  // Name the night (issues #1437, #1513). What the planner's week row reads out
+  // is `day.note` and nothing else, so an attach that leaves the note empty
+  // renders "Nothing planned" above the dish's own photograph. So an empty note
+  // is seeded — only when empty, so text the household typed is never lost.
   //
-  // The seed lives HERE, in the app-layer service, for the reason that block
-  // gives: the title is a live UI value resolved from the recipes store and is
-  // never denormalised onto the plan document (docs/meal-planning.md → _Recipes
-  // on a day_). This function is already handed the whole `Recipe`, so the title
-  // is in hand with no store lookup, and `setDayNote` still takes a plain string
-  // — no title knowledge reaches the domain or any mutator (Rule 1).
+  // It is seeded from the FIRST recipe on the night, not from `recipe`. A day can
+  // already hold recipes with an emptied note, and seeding from `recipe` named it
+  // after whichever dish was attached last (#1513). First means first RESOLVABLE,
+  // in the day's order — the same `resolveRecipeIds(...)[0]` the day sheet's
+  // blur re-seed reads as `attachedRecipes[0]` (`MealDayDetail.svelte`), so a
+  // since-deleted id is skipped rather than seeding nothing. `recipe` is laid
+  // over `byId` because it is the one document certain to be in hand; `next` is
+  // `existing` ids followed by `recipe`'s expansion (`mergePlannerRecipeIds`
+  // appends, it never leads — #752), so the meal's title lands here only on a
+  // night with no resolvable recipe yet: `existing` empty, or every id in it
+  // dangling. On a night that already resolves a recipe, `first` resolves to
+  // that existing one instead, not the meal just attached.
+  //
+  // The seed lives HERE, in the app-layer service: the title is a live UI value
+  // and is never denormalised onto the plan document (docs/meal-planning.md →
+  // _Recipes on a day_), and `setDayNote` still takes a plain string — no title
+  // knowledge reaches the domain or any mutator (Rule 1).
   //
   // Both mutators are pure, so they compose into the SINGLE `MealPlanWeek` that
   // `persistWeekNow` writes. A second whole-week `setDoc` to add the note would
   // be a second LWW clobber window for a field the first write could carry.
-  //
-  // For a meal (#752) `recipe` IS the meal document, so the meal's title lands —
-  // agreeing with the meal-first ordering `expandForPlanner` produces, without
-  // either mechanic knowing about the other.
   const withRecipes = setDayRecipes(week, dateKey, next);
+  const first = day.note.trim()
+    ? undefined
+    : resolveRecipeIds(next, new Map(byId).set(recipe.id, recipe))[0];
   const saved = await persistWeekNow(
-    day.note.trim() ? withRecipes : setDayNote(withRecipes, dateKey, recipe.title),
+    first ? setDayNote(withRecipes, dateKey, first.title) : withRecipes,
   );
   return saved.kind === 'ok' ? success('added') : saved;
 }
