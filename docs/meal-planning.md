@@ -255,7 +255,9 @@ read is never the write path's evidence. A week whose read has not landed render
 a placeholder rather than _Nothing planned_, which would be a confident lie about
 the one fact the row exists for; a failed read degrades to the same placeholder
 with the row still pickable, because the write reads for itself regardless and
-returns a real `Failure` if that fails. A display-read failure is not reported.
+returns a real `Failure` if that fails. A display-read failure goes through
+`reportIfFailed`, so it reaches `ErrorReportingPort` gated on category like any
+other one-shot read — the row's degradation is unaffected either way (#1511).
 
 The non-obvious part is the write. Every other day mutator **refuses** a week it
 has not read, because a full-document write built on a week nobody looked at
