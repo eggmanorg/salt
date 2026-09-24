@@ -241,6 +241,7 @@ describe('the gate, spawned for real', () => {
     for (const file of [
       'scripts/check-subject-brief-writers.mjs',
       'scripts/lib/subjectBriefWriters.mjs',
+      'scripts/lib/stripComments.mjs',
     ]) {
       cpSync(path.join(REPO_ROOT, file), path.join(scratch, file));
     }
