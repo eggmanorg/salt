@@ -425,7 +425,7 @@ export const authorRecipe = makeTracedCallable({
 //     generated hero shows next to a stale brief (the trigger's own words). That is
 //     a claim about synchronisation, not universal presence: `describeSceneOrNothing`
 //     can still return nothing (an empty brief, or any throw) and the image is then
-//     written with no brief at all, same as an uploaded hero — #1416's fix is
+//     written with no brief at all — #1416's fix is
 //     already applied to the automatic path, it does not guarantee every hero gets
 //     a brief.
 //   • What is exposed by any of this is seconds, not the 90 s below. That number is

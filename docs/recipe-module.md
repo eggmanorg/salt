@@ -145,7 +145,7 @@ which is why the field looks inconsistently durable and is not:
   image it directed, so there is no in-flight window where a freshly generated hero
   shows next to a stale brief. That is a guarantee about synchronisation, not
   presence: the brief step can still return nothing (an empty result, or any throw),
-  in which case the image is written with no brief at all, same as an uploaded hero.
+  in which case the image is written with no brief at all.
   Nobody is watching that path, so saving whatever brief there is remains the only
   sane outcome — this is the shape #1416 exists to enforce, already applied.
 - **The `describeRecipeScene` CALLABLE persists nothing.** It serves the regenerate

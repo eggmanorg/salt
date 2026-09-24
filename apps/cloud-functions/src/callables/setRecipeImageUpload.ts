@@ -1,4 +1,4 @@
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { HttpsError } from 'firebase-functions/https';
 import { defineSecret } from 'firebase-functions/params';
@@ -39,6 +39,17 @@ const IMAGE_STORAGE_PREFIX = 'recipe-images';
 // byte-identical across uploads, a fresh nonce is what makes the new photo appear
 // immediately without a hard reload.
 //
+// The same write deletes `imageBrief` (issue #1575). That field means "the art
+// direction behind the photo you are looking at", and no art direction produced an
+// uploaded photo — keeping the brief the trigger wrote for the previous AI hero
+// would make it false, and every reader of it would act on a scene that is no
+// longer on screen: the Regenerate dialog seeds from it, onRecipeWritten uses a
+// present brief verbatim, and the prompt viewer builds from it. With the field
+// gone, Regenerate over an uploaded photo takes the same path as a recipe that has
+// never had a brief: an empty box, and the trigger authors a fresh one. Pinned by
+// tests/callables/setRecipeImageUpload.test.ts. Recipes uploaded over an AI hero
+// before this change still carry the old brief (fix-forward, no back-fill).
+//
 // region/memory are pinned inline (not via setGlobalOptions) because this module
 // is imported at the top of index.ts and its onCall is built before
 // setGlobalOptions runs — same reason regenerateRecipeImage pins them.
@@ -72,13 +83,18 @@ export const setRecipeImageUpload = makeCallable({
     });
     const url = buildStorageDownloadUrl(bucket.name, path);
 
-    // Partial update: set the hero to the uploaded photo and bump the cache-bust
-    // nonce so the identical Storage URL re-fetches. `source: 'upload'` marks it
-    // user-supplied so the onRecipeWritten trigger skips it forever.
+    // Partial update: set the hero to the uploaded photo, bump the cache-bust
+    // nonce so the identical Storage URL re-fetches, and drop the previous AI
+    // hero's brief (see the header). `source: 'upload'` marks it user-supplied so
+    // the onRecipeWritten trigger skips it forever.
     await getFirestore()
       .collection('recipes')
       .doc(recipeId)
-      .update({ image: { url, source: 'upload' }, imageRequestedAt: Date.now() });
+      .update({
+        image: { url, source: 'upload' },
+        imageBrief: FieldValue.delete(),
+        imageRequestedAt: Date.now(),
+      });
     return { ok: true } as const;
   },
 });
