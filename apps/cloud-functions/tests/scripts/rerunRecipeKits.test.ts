@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 // Regression coverage for `scripts/rerun-recipe-kits.ts` itself — the three
 // BLOCKING findings from the PR #1483 review, none of which the pure
@@ -111,11 +111,22 @@ async function runScript(): Promise<void> {
   await vi.runAllTimersAsync();
 }
 
-// An explicit timeout, because vitest's 5 s default is too tight: draining a
-// whole run's poll loop on fake timers takes ~7-10 s of real time on a cold
-// runner, and has timed out in isolation both on a Mac and in a cloud container
-// (#1522). The fake clock, not this number, is what the assertions are about.
-describe('rerun-recipe-kits — blocking findings from PR #1483', { timeout: 30_000 }, () => {
+describe('rerun-recipe-kits — blocking findings from PR #1483', () => {
+  // Whichever test ran first used to pay the script's whole cold module graph
+  // (~3 s warm, well past vitest's 5 s default on a cold runner) inside its own
+  // body, so it timed out in isolation while the rest took ~50 ms (#1522). Load
+  // that graph once, up front: `vi.resetModules()` in `runScript` clears the
+  // registry but not the transform cache, so each re-import is then cheap. The
+  // script itself is not imported here — it self-executes on import.
+  beforeAll(async () => {
+    await Promise.all([
+      import('@salt/domain'),
+      import('@salt/domain/schemas'),
+      import('../../src/adapters/withAiTimeout.js'),
+      import('../../scripts/lib/kitRerunPlan.js'),
+    ]);
+  });
+
   const originalArgv = process.argv;
   const originalEnv = process.env['GOOGLE_CLOUD_PROJECT'];
 
