@@ -484,7 +484,7 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     await user.click(nightRow('2026-08-21'));
     await user.click(screen.getByTestId('recipe-add-to-planner-confirm'));
 
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE, expect.any(Map));
   });
 
   it('reads each week the window spans once, and only the new ones on extending', async () => {
@@ -543,7 +543,7 @@ describe('RecipeAddToPlannerSheet — committing', () => {
     // The whole RECIPE, not its id (#752): a meal expands to itself plus its
     // components, and that expansion is a pure function of the document — so the
     // service is handed the document rather than made to look it back up.
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE, expect.any(Map));
     await waitFor(() =>
       expect(mockAddToast).toHaveBeenCalledWith('Added to Friday 21 August.', 'success'),
     );
@@ -557,7 +557,7 @@ describe('RecipeAddToPlannerSheet — committing', () => {
     await user.click(nightRow('2026-08-08'));
     await user.click(screen.getByTestId('recipe-add-to-planner-confirm'));
 
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-08', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-08', RECIPE, expect.any(Map));
     await waitFor(() =>
       expect(mockAddToast).toHaveBeenCalledWith('Added to Saturday 8 August.', 'success'),
     );

@@ -38,12 +38,33 @@ function withAttendee(day: Day, memberId: string, update: (a: Attendee) => Atten
   };
 }
 
+// The note is tidied on the way in (issue #1513): leading whitespace — blank
+// lines included — is dropped. The planner's headline is the note's FIRST line,
+// while "is this night named?" asks whether the WHOLE note is blank; a note like
+// "\nbring wine" answered those two questions differently and read "Nothing
+// planned" over a planned night. Once the note starts with a non-blank
+// character, its first line is non-blank exactly when the whole note is.
+//
+// Only the START is trimmed, not both ends. This runs on every keystroke of the
+// Dinner textarea, whose `value` is driven from the store: stripping a trailing
+// space reset the field mid-sentence ("Pa b", backspace, "Pa " became "Pa", so
+// the next word ran on). `apps/web-pwa/tests/MealDayDetail.noteTyping.test.ts`
+// pins that. A trailing blank never changes what the first line reads, so it
+// costs nothing to keep.
+//
+// Every note the app EDITS — week day and weekday template alike — is written
+// through here, which is why the tidy lives here and not at a persist boundary:
+// a template note is copied verbatim into each new week by `instantiateWeek`, so
+// tidying it once here tidies every week built from it. The limit: a note
+// stored before this change keeps its old shape until that day (or template
+// weekday) is next edited, and `instantiateWeek` copies an old template note
+// as it stands. #1513 chose fix-forward — see docs/meal-planning.md.
 export function setDayNote<K extends string, T extends DayContainer<K>>(
   container: T,
   dayKey: K,
   note: string,
 ): T {
-  return withDay(container, dayKey, (day) => ({ ...day, note }));
+  return withDay(container, dayKey, (day) => ({ ...day, note: note.trimStart() }));
 }
 
 export function setDayChefs<K extends string, T extends DayContainer<K>>(
