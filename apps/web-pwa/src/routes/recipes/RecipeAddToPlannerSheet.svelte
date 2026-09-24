@@ -181,10 +181,12 @@
   // planned_ for a night this very recipe is already on, which is the worst lie
   // this particular control could tell.
   //
-  // The cook is `day.chefs`, in the planner row's own vocabulary — you, the
-  // cook's name, or _No cook_ on a planned night nobody has taken. A night whose
-  // `chefs` the roster cannot currently name (still loading, or the member was
-  // removed) reads _Cooking_: someone has it, and _No cook_ would say otherwise.
+  // The cook is `day.chefs`, in the planner row's own vocabulary, plus
+  // _Cooking_ for a taken night the roster cannot name yet, which the planner
+  // row leaves blank — you, the cook's name, or _No cook_ on a planned night
+  // nobody has taken. A night whose `chefs` the roster cannot currently name
+  // (still loading, or the member was removed) reads _Cooking_ here: someone
+  // has it, and _No cook_ would say otherwise.
   // Whether anyone has it is `chefs.length`, as `MealDayEditor`'s `hasCook` is,
   // never whether `$members` resolved a name. "Am I
   // cooking" is `chefs.includes(currentMember.id)` and nothing else, the same
