@@ -455,9 +455,16 @@ export const authorRecipe = makeTracedCallable({
 //   • Fact two goes void if the trigger stops writing its brief in the SAME update
 //     as the image, or stops authoring one at all — either decouples image and
 //     brief on the one path nobody reviews, which is a failure from the OTHER side
-//     of the meaning argument than fact one's. Fact two draws on fact one (nothing
-//     else originates new brief text) but is not voided by fact one's failure, nor
-//     does fact one depend on fact two. Pinned by
+//     of the meaning argument than fact one's. Fact one and fact two are
+//     independent as PROPOSITIONS — neither's truth settles the other's, which is
+//     why each carries its own void condition and its own pin — but the meaning
+//     above needs BOTH: fact two still holding does not rescue it if fact one
+//     fails — a brief fact one lets through stays false no matter how
+//     faithfully the trigger persists it — and fact one still holding does not
+//     rescue the brief-beside-the-hero SYNCHRONISATION if fact two fails: the
+//     result is a hero shown with no brief at all, never a stale or false one,
+//     because only fact one's failure ever puts false words on the doc.
+//     Pinned by
 //     tests/triggers/onRecipeWritten.test.ts, which asserts the brief lands in the
 //     SAME update object as the image, not merely somewhere in the same handler.
 //   • Fact three goes void one constant at a time: the `fast` role
