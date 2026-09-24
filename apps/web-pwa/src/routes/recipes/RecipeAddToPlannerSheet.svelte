@@ -182,7 +182,11 @@
   // this particular control could tell.
   //
   // The cook is `day.chefs`, in the planner row's own vocabulary — you, the
-  // cook's name, or _No cook_ on a planned night nobody has taken. "Am I
+  // cook's name, or _No cook_ on a planned night nobody has taken. A night whose
+  // `chefs` the roster cannot currently name (still loading, or the member was
+  // removed) reads _Cooking_: someone has it, and _No cook_ would say otherwise.
+  // Whether anyone has it is `chefs.length`, as `MealDayEditor`'s `hasCook` is,
+  // never whether `$members` resolved a name. "Am I
   // cooking" is `chefs.includes(currentMember.id)` and nothing else, the same
   // sentence the Kitchen's `isMine` is (`personalViewService.ts`): a projection
   // over family-shared data, storing nothing per user and gating nothing. With
@@ -209,7 +213,13 @@
         .map((m) => m.name);
       const cooks = [...(me && chefs.includes(me.id) ? ['You'] : []), ...named];
       const meal = known ? planned || 'Nothing planned' : '';
-      const cook = planned ? (cooks.length ? cooks.join(' & ') : 'No cook') : null;
+      const cook = planned
+        ? cooks.length
+          ? cooks.join(' & ')
+          : chefs.length
+            ? 'Cooking'
+            : 'No cook'
+        : null;
       return {
         date,
         isToday: date === today,
