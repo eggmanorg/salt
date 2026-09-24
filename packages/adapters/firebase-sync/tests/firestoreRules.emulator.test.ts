@@ -545,6 +545,60 @@ describe.skipIf(!reachable)('firestore.rules — canonEmbeddings server-only (is
   });
 });
 
+// `equipmentIcons` (issue #1515) — the `weatherForecast` shape, not the
+// `canonEmbeddings` one: readable by any signed-in member (the list and detail
+// pages render from it), written only through the Admin SDK.
+describe.skipIf(!reachable)('firestore.rules — equipmentIcons server-only (issue #1515)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+    // Icons are written by server-side code on the Admin SDK, which bypasses
+    // rules; seed one with rules disabled so the read assertions have a doc.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'equipmentIcons', 'pan'), icon());
+    });
+  });
+
+  const icon = () => ({
+    subjectBrief: 'a steel pan',
+    briefSourceName: 'pan',
+    thumbnail: 'https://example.test/x.webp',
+  });
+
+  it('lets any signed-in member read an icon', async () => {
+    const db = testEnv.authenticatedContext('uid-kid', { email: 'kid@e.org' }).firestore();
+    await assertSucceeds(getDoc(doc(db, 'equipmentIcons', 'pan')));
+  });
+
+  it('denies a signed-in client creating, overwriting or deleting an icon directly', async () => {
+    const db = testEnv.authenticatedContext('uid-admin', { email: 'admin@e.org' }).firestore();
+    await assertFails(setDoc(doc(db, 'equipmentIcons', 'pot'), icon()));
+    await assertFails(setDoc(doc(db, 'equipmentIcons', 'pan'), icon()));
+    await assertFails(deleteDoc(doc(db, 'equipmentIcons', 'pan')));
+  });
+
+  it('denies an unauthenticated caller from reading an icon', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'equipmentIcons', 'pan')));
+  });
+});
+
 describe.skipIf(!reachable)('firestore.rules — notes collection removed (issue #408)', () => {
   let testEnv: RulesTestEnvironment;
 
