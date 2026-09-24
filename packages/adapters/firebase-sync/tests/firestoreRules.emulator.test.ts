@@ -570,8 +570,13 @@ describe.skipIf(!reachable)('firestore.rules — equipmentIcons server-only (iss
     await testEnv.clearFirestore();
     // Icons are written by server-side code on the Admin SDK, which bypasses
     // rules; seed one with rules disabled so the read assertions have a doc.
+    // Also seed the admin member doc so the write-denied test's caller is a
+    // *real* admin per isAdmin() — otherwise an `allow write: if isAdmin()`
+    // loosening would still (incidentally) deny that caller, and the test
+    // would stay green without actually exercising admin-write denial.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'equipmentIcons', 'pan'), icon());
+      await setDoc(doc(ctx.firestore(), 'members', 'admin@e.org'), memberDoc('admin@e.org', true));
     });
   });
 
@@ -583,6 +588,11 @@ describe.skipIf(!reachable)('firestore.rules — equipmentIcons server-only (iss
 
   it('lets any signed-in member read an icon', async () => {
     const db = testEnv.authenticatedContext('uid-kid', { email: 'kid@e.org' }).firestore();
+    await assertSucceeds(getDoc(doc(db, 'equipmentIcons', 'pan')));
+  });
+
+  it('lets a signed-in admin member read an icon too', async () => {
+    const db = testEnv.authenticatedContext('uid-admin', { email: 'admin@e.org' }).firestore();
     await assertSucceeds(getDoc(doc(db, 'equipmentIcons', 'pan')));
   });
 
