@@ -459,7 +459,11 @@ export const authorRecipe = makeTracedCallable({
 //     independent as PROPOSITIONS — neither's truth settles the other's, which is
 //     why each carries its own void condition and its own pin — but the meaning
 //     above needs BOTH: fact two still holding does not rescue it if fact one
-//     fails, and fact one still holding does not rescue it if fact two fails.
+//     fails — a brief fact one lets through stays false no matter how
+//     faithfully the trigger persists it — and fact one still holding does not
+//     rescue the brief-beside-the-hero SYNCHRONISATION if fact two fails: the
+//     result is a hero shown with no brief at all, never a stale or false one,
+//     because only fact one's failure ever puts false words on the doc.
 //     Pinned by
 //     tests/triggers/onRecipeWritten.test.ts, which asserts the brief lands in the
 //     SAME update object as the image, not merely somewhere in the same handler.
