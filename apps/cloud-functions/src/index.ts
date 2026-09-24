@@ -535,10 +535,10 @@ export const describeRecipeScene = makeTracedCallable({
 //     flows/kitchenMemoryContext.ts among them). Giving
 //     `describeEquipmentSubjectFlow` a `db` parameter in that same local idiom
 //     would write to Firestore from inside the flow and never touch
-//     `mockGetFirestore`, and the caller already holds a handle to pass:
-//     `maybeAuthorBrief` in triggers/onEquipmentManifestWritten.ts obtains
-//     `const db = getFirestore()` earlier in the same function that calls
-//     this flow.
+//     `mockGetFirestore`, and callers that already hold a handle pass it —
+//     `maybeAuthorBrief` in triggers/onEquipmentManifestWritten.ts among them:
+//     it obtains `const db = getFirestore()` earlier in the same function
+//     that calls this flow.
 //   • TWO — Draw is the only route from the box to the document: in the
 //     browser, `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`
 //     is the only call that carries brief text into a Firestore write. VOID if
