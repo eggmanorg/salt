@@ -73,4 +73,13 @@ describe('MealDayDetail — typing a note through the tidy (issue #1513)', () =>
     await type('Pie', 'Pie\n', 'Pie\nx', 'Pie\n');
     expect(field.value).toBe('Pie\n');
   });
+
+  it("keeps a leading space left by deleting a note's first word", async () => {
+    const { field, type } = mountTyping();
+
+    // "Pie and mash", first word deleted, leaves " and mash" — a leading space
+    // on real content, not a blank line, so it must not be trimmed away.
+    await type('Pie and mash', ' and mash');
+    expect(field.value).toBe(' and mash');
+  });
 });

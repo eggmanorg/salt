@@ -38,19 +38,24 @@ function withAttendee(day: Day, memberId: string, update: (a: Attendee) => Atten
   };
 }
 
-// The note is tidied on the way in (issue #1513): leading whitespace — blank
-// lines included — is dropped. The planner's headline is the note's FIRST line,
-// while "is this night named?" asks whether the WHOLE note is blank; a note like
-// "\nbring wine" answered those two questions differently and read "Nothing
-// planned" over a planned night. Once the note starts with a non-blank
-// character, its first line is non-blank exactly when the whole note is.
+// The note is tidied on the way in (issue #1513): leading BLANK LINES — lines
+// holding only whitespace — are dropped, up to and including the first line
+// that has any non-whitespace on it. The planner's headline is the note's
+// FIRST line, while "is this night named?" asks whether the WHOLE note is
+// blank; a note like "\nbring wine" answered those two questions differently
+// and read "Nothing planned" over a planned night. Once the note's first
+// non-blank-line has any non-whitespace character, that line is non-blank
+// exactly when the whole note is.
 //
-// Only the START is trimmed, not both ends. This runs on every keystroke of the
-// Dinner textarea, whose `value` is driven from the store: stripping a trailing
-// space reset the field mid-sentence ("Pa b", backspace, "Pa " became "Pa", so
-// the next word ran on). `apps/web-pwa/tests/MealDayDetail.noteTyping.test.ts`
-// pins that. A trailing blank never changes what the first line reads, so it
-// costs nothing to keep.
+// Only whole leading blank LINES are stripped — never characters within the
+// first non-blank line, and never anything after it. This runs on every
+// keystroke of the Dinner textarea, whose `value` is driven from the store:
+// stripping every leading space unconditionally (`trimStart`) rewrote the
+// field mid-edit when the first word was deleted — "Pie and mash", delete
+// "Pie", leaves " and mash", which lost its leading space and jumped the
+// caret. `apps/web-pwa/tests/MealDayDetail.noteTyping.test.ts` pins that, and
+// also that a trailing space survives a backspace mid-word. A trailing blank
+// never changes what the first line reads, so it costs nothing to keep.
 //
 // Every note the app EDITS — week day and weekday template alike — is written
 // through here, which is why the tidy lives here and not at a persist boundary:
@@ -64,7 +69,10 @@ export function setDayNote<K extends string, T extends DayContainer<K>>(
   dayKey: K,
   note: string,
 ): T {
-  return withDay(container, dayKey, (day) => ({ ...day, note: note.trimStart() }));
+  return withDay(container, dayKey, (day) => ({
+    ...day,
+    note: note.replace(/^(?:[^\S\n]*\n)+/, ''),
+  }));
 }
 
 export function setDayChefs<K extends string, T extends DayContainer<K>>(

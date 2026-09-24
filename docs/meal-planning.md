@@ -403,14 +403,19 @@ Nothing about the plan document changed to allow it: `recipeIds` was already a
   nothing downstream of the write supplies one.
 
   **Notes are tidied when written** (#1513). `setDayNote` — the one mutator
-  every note edit goes through, week and template alike — drops leading
-  whitespace, blank lines included. The week row and the recipe page's night
-  list headline a note by its FIRST line, while the seed guards ask whether the
-  WHOLE note is blank; a note like `"\nbring wine"` answered those differently
-  and read "Nothing planned" over a planned night. With leading whitespace gone
-  the two agree. Only the start is trimmed: `setDayNote` runs on every
-  keystroke of a textarea driven from the store, and trimming the end reset the
-  field mid-sentence (pinned by `MealDayDetail.noteTyping.test.ts`).
+  every note edit goes through, week and template alike — drops whole leading
+  BLANK LINES (whitespace-only lines), up to the first line with any
+  non-whitespace on it. The week row and the recipe page's night list headline
+  a note by its FIRST line, while the seed guards ask whether the WHOLE note is
+  blank; a note like `"\nbring wine"` answered those differently and read
+  "Nothing planned" over a planned night. With leading blank lines gone the two
+  agree. Only whole leading blank lines are stripped, never characters within
+  the first non-blank line: `setDayNote` runs on every keystroke of a textarea
+  driven from the store, and stripping every leading space unconditionally
+  rewrote the field mid-edit when the note's first word was deleted (`"Pie and
+mash"` → delete `"Pie"` → `" and mash"`, which must keep its leading space).
+  Trimming the end reset the field mid-sentence for the same reason (pinned by
+  `MealDayDetail.noteTyping.test.ts`).
 
   **Decided: fix-forward only** (Daniel, #1513 / #1565). No migration, no
   clean-up, no normalising on read. A note stored with a leading blank line

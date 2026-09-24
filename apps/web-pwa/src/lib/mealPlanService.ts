@@ -704,9 +704,12 @@ export async function addRecipeToDay(
   // in the day's order — the same `resolveRecipeIds(...)[0]` the day sheet's
   // blur re-seed reads as `attachedRecipes[0]` (`MealDayDetail.svelte`), so a
   // since-deleted id is skipped rather than seeding nothing. `recipe` is laid
-  // over `byId` because it is the one document certain to be in hand; for a meal
-  // (#752) it leads `next`, so the meal's title lands — agreeing with the
-  // meal-first ordering `expandForPlanner` produces.
+  // over `byId` because it is the one document certain to be in hand; `next` is
+  // `existing` ids followed by `recipe`'s expansion (`mergePlannerRecipeIds`
+  // appends, it never leads — #752), so the meal's title lands here only on a
+  // night with no resolvable recipe yet: `existing` empty, or every id in it
+  // dangling. On a night that already resolves a recipe, `first` resolves to
+  // that existing one instead, not the meal just attached.
   //
   // The seed lives HERE, in the app-layer service: the title is a live UI value
   // and is never denormalised onto the plan document (docs/meal-planning.md →

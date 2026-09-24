@@ -343,8 +343,19 @@ describe('day mutators (immutability + correctness)', () => {
     expect(next.days[key]!.note.split('\n')[0]!.trim()).not.toBe('');
   });
 
+  it('setDayNote drops only whole blank leading lines, keeping a leading space on real content', () => {
+    // "Pie and mash", first word deleted: " and mash" must survive untouched —
+    // it is not a blank line, so trimming it would rewrite the field mid-edit.
+    expect(setDayNote(base, key, ' and mash').days[key]!.note).toBe(' and mash');
+  });
+
+  it('setDayNote strips a leading blank line even with \\r\\n endings', () => {
+    expect(setDayNote(base, key, '\r\nbring wine').days[key]!.note).toBe('bring wine');
+    expect(setDayNote(base, key, ' \r\npie').days[key]!.note).toBe('pie');
+  });
+
   it('setDayNote agrees with the first-line headline for any leading whitespace', () => {
-    for (const raw of ['  \n\t\n roast\nwith gravy', ' \r\n pie', '\n\n\n']) {
+    for (const raw of ['  \n\t\n roast\nwith gravy', ' \r\n pie', '\n\n\n', ' and mash']) {
       const note = setDayNote(base, key, raw).days[key]!.note;
       // The two tests the planner uses must never disagree about a stored note.
       expect(Boolean(note.split('\n')[0]?.trim())).toBe(Boolean(note.trim()));
