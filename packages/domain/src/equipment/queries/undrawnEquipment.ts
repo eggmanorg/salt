@@ -37,25 +37,29 @@ import type { EquipmentIconDoc } from '../../schemas/equipmentIcon.js';
 //
 // ─── The boundary this claim actually has ───────────────────────────────────
 // A borrowed picture is read as the PRESENCE OF A REFERENCE, never resolved to
-// the drawing it points at. Resolving one means reading the equipment icons AND
-// the tool vocabulary in a fixed order, and that order already exists exactly
-// once, in `kitIcons.ts` — a second copy here that answered differently is the
-// defect round-1 review on #1482 called blocking, and it is not worth buying to
-// close what that leaves unresolved: a record pointed at a drawing that is not
-// (or is no longer) renderable shows no picture here and is not reported.
+// the drawing it points at. Resolving one here would put another copy of the
+// app's picture order inside the pure domain, where it could answer differently
+// from the code that renders — the defect round-1 review on #1482 called
+// blocking.
 //
-// THE REACHABLE TRIGGER IS HIDE, NOT DELETION. There is no delete-a-drawing
-// command, so "a drawing that has since been deleted" describes a case nothing
-// in the app can reach. Hide is reachable, ships on two surfaces, and
-// `hideEquipmentIconFor` (`equipmentService.ts`) withdraws only the borrow HELD
-// BY the record being hidden — never the borrows POINTING AT it. So hiding one
-// drawing silently un-pictures every record and kitchenTool that borrows it, in
-// one press, none of them counted here or offered Draw. That is under-reporting
-// by however many things point at what got hidden, not "one case" and not "one
-// row" — both absolutes this paragraph used to state were wrong. It is still the
-// safe direction for a badge — it can never invent a gap that is not there, only
-// miss a real one — and `undrawnEquipment.test.ts` pins that behaviour rather
-// than an absolute nobody can check.
+// So a record whose borrow points at something that is not (or is no longer)
+// renderable — a source drawing since hidden, a source record since removed from
+// the equipment list — counts as having a picture here and is not reported. A
+// dangling reference is valid on read (`borrowedPictureField` in the manifest
+// schema says why), so this is a state the data can hold, not a hypothetical.
+// That is the safe direction for a badge:
+// the error is an omission, and a record this query does report has nothing
+// drawn, nothing borrowed and is not hidden. `undrawnEquipment.test.ts` pins
+// each of those — the `'deleted-record'` case, the now-hidden source, and every
+// borrower of one hidden source going unreported at once.
+//
+// WHAT A BORROWED PICTURE RESOLVES TO ON SCREEN — which level answers when
+// another has nothing, and when a row goes blank — is deliberately not stated
+// here. Read it from the code that
+// renders: `linkedIcon` in `apps/web-pwa/src/lib/kitIcons.ts` for kit
+// surfaces, and `pictureFor` in
+// `apps/web-pwa/src/routes/equipment/EquipmentListPage.svelte` for the
+// equipment list's own tiles.
 //
 // PURE, and takes the two plain structures a caller already holds. The icons
 // arrive as a Map rather than an array because an `EquipmentIconDoc` does not

@@ -13,6 +13,10 @@ import { equipmentIconOwnerIds } from '@salt/domain';
 import { describeEquipmentSubjectFlow } from '../flows/describeEquipmentSubject.js';
 import { aiFakeEnabled } from '../ai/fakeModel.js';
 import { reportServerError } from '../observability/reportServerError.js';
+import {
+  recordEnrichmentFailure,
+  clearEnrichmentFailure,
+} from '../adapters/enrichmentFailureStore.js';
 import { isIconGenerationEnabled } from './iconWriteTrigger.js';
 import { withFirestoreTrigger, traceContextFromWrittenDoc } from './triggerEntrypoint.js';
 
@@ -137,11 +141,26 @@ async function maybeAuthorBrief(item: EquipmentItemDoc): Promise<void> {
       },
       { merge: true },
     );
+    await clearEnrichmentFailure('equipmentBrief', item.id);
   } catch (err) {
     // Log and return: a trigger has no caller to surface a Failure to, and the
     // item simply keeps its old brief (or none) until the next manifest write.
     logger.error('onEquipmentManifestWritten: brief authoring failed', { id: item.id, err });
     reportServerError(err);
+    // Written down where the app can read it (issue #1419), and THE ONLY TRACE
+    // THERE IS: on this path the `equipmentIcons/{itemId}` document is never
+    // created at all, so unlike the recipe branches there is not even an
+    // unstamped field to look at.
+    //
+    // RECORDED, NOT ANNOUNCED. This guard is level-triggered — the next manifest
+    // write re-attempts it — so it fixes itself, and Phase 3 stays silent about
+    // it deliberately.
+    await recordEnrichmentFailure({
+      enrichment: 'equipmentBrief',
+      subjectId: item.id,
+      subjectLabel: name,
+      err,
+    });
   }
 }
 

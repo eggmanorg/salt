@@ -1,10 +1,14 @@
 import { getFirestore, FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { DevSettingsSchema } from '@salt/domain/schemas';
+import { DevSettingsSchema, type EnrichmentKind } from '@salt/domain/schemas';
 import { removeFlatBackground } from '../imaging/removeFlatBackground.js';
 import { normalizeIconFraming } from '../imaging/normalizeIconFraming.js';
 import { ICON_CONTENT_MAX, uploadIcon } from '../imaging/iconStorage.js';
 import { aiFakeEnabled } from '../ai/fakeModel.js';
+import {
+  recordEnrichmentFailure,
+  clearEnrichmentFailure,
+} from '../adapters/enrichmentFailureStore.js';
 import { reportServerError } from '../observability/reportServerError.js';
 import { withFirestoreTrigger, traceContextFromWrittenDoc } from './triggerEntrypoint.js';
 
@@ -14,8 +18,10 @@ import { withFirestoreTrigger, traceContextFromWrittenDoc } from './triggerEntry
 // (#871) and kitchen tools (#882) — and they were one file copied three times:
 // the same edge-trigger decision, the same fail-open kill switch, the same
 // draw → background-removal → framing → upload → write-back chain. They differ
-// on five mechanical axes and nothing else: the collection, the Storage prefix,
-// the document schema, which field the picture is OF, and which flow draws it.
+// on six mechanical axes and nothing else: the collection, the Storage prefix,
+// the document schema, which field the picture is OF, which flow draws it, and
+// (since #1419) which `enrichmentFailures` kind a failed drawing is recorded
+// under.
 // They are now DECLARATIONS over this module, and a fifth icon family is a
 // descriptor rather than a file.
 //
@@ -164,12 +170,24 @@ export async function isIconGenerationEnabled(name: string): Promise<boolean> {
   }
 }
 
-/** The five axes an icon family differs on, plus the name its logs are grepped by. */
+/** The six axes an icon family differs on, plus the name its logs are grepped by. */
 export interface IconTriggerDescriptor<TDoc extends IconDocument> {
   /** The deployed function name, used as the log prefix. */
   readonly name: string;
   /** The collection the finished icon is written back to. */
   readonly collection: string;
+  /**
+   * Which `enrichmentFailures` kind a failed drawing is recorded under (issue
+   * #1419), and the SIXTH axis — added by that issue, which is why the sentence
+   * above says six where #989 said five.
+   *
+   * A declared field rather than a value derived from `collection`, because the
+   * two do not line up: product forms draw through the CANON flow but must not
+   * share canon's marker, and a derivation would put the mapping somewhere the
+   * closed enum could not see it. The enum is also the marker-copy list, so a
+   * new icon family declaring a kind is what makes its marker have words.
+   */
+  readonly enrichment: EnrichmentKind;
   /** This family's Storage prefix — distinct per family; see `imaging/iconStorage.ts`. */
   readonly storagePrefix: string;
   /** Parses the written document. Kept whole so schema defaults and back-compat run. */
@@ -256,6 +274,9 @@ export async function maybeGenerateIcon<TDoc extends IconDocument>(
       .collection(collection)
       .doc(id)
       .update({ thumbnail: url, iconHint: FieldValue.delete() });
+    // There is a picture now, so any record of a previous failure goes (issue
+    // #1419). Unconditional and never throws.
+    await clearEnrichmentFailure(descriptor.enrichment, id);
   } catch (err) {
     // Leave thumbnail null so a later regenerate retries; never block the
     // trigger. Drawing chains an AI flow, image processing and a Storage upload,
@@ -263,6 +284,16 @@ export async function maybeGenerateIcon<TDoc extends IconDocument>(
     // best-effort and never throwing (Rule 10). The entrypoint's finally flushes.
     logger.error(`${name}: icon generation failed`, { id, err });
     reportServerError(err);
+    // And written down where the app can read it (issue #1419). This is the
+    // branch the comment above is about: a drawing that fails no longer
+    // self-heals, so until a human presses redo the only trace of it — before
+    // this — was a log line.
+    await recordEnrichmentFailure({
+      enrichment: descriptor.enrichment,
+      subjectId: id,
+      subjectLabel: subject,
+      err,
+    });
   }
 }
 

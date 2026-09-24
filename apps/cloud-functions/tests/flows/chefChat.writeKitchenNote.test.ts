@@ -425,6 +425,42 @@ describe('writeKitchenNote — what it refuses', () => {
     });
     expect(mockWarn).toHaveBeenCalled();
   });
+
+  it('calls it a page in every refusal, never a note (#1488)', async () => {
+    // The tool description tells the model to REPEAT `problem` word for word, so
+    // this is the one output path the corrected framing prose (#1476) cannot
+    // paraphrase — whatever word is here is the word the household hears. Every
+    // refusal the handler can return today is driven below, one per branch, and
+    // all seven are checked below: each is a distinct string, and none uses the
+    // word "note".
+    const { db } = dbWith({ 'p-broken': { nonsense: true } });
+    const failing = {
+      collection: () => ({ doc: () => ({ set: () => Promise.reject(new Error('boom')) }) }),
+    } as never;
+
+    const problems = [
+      await writeKitchenNoteForChef(db, { title: '   ', body: 'x' }),
+      await writeKitchenNoteForChef(db, {
+        title: 'T'.repeat(LIBRARY_PAGE_TITLE_MAX + 1),
+        body: 'x',
+      }),
+      await writeKitchenNoteForChef(db, { title: 'Empty', body: '  ' }),
+      await writeKitchenNoteForChef(db, {
+        title: 'Huge',
+        body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX + 1),
+      }),
+      await writeKitchenNoteForChef(db, { id: 'p-guessed', title: 'x', body: 'y' }),
+      await writeKitchenNoteForChef(db, { id: 'p-broken', title: 'x', body: 'y' }),
+      await writeKitchenNoteForChef(failing, { title: 'x', body: 'y' }),
+    ].map((r) => r.problem);
+
+    // Seven distinct refusals, so no branch was silently skipped by an earlier one.
+    expect(new Set(problems).size).toBe(7);
+    for (const problem of problems) {
+      expect(problem).toEqual(expect.any(String));
+      expect(problem).not.toMatch(/note/i);
+    }
+  });
 });
 
 // ─── The tool the model is shown ─────────────────────────────────────────────

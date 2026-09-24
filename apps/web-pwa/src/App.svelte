@@ -34,6 +34,7 @@
   import { initCookTimerAlerts } from './lib/cookTimerAlerts.js';
   import { initMyCookSessionsSync } from './lib/cookSessionService.js';
   import { initKitchenTimerSync } from './lib/kitchenTimerService.js';
+  import { initEnrichmentFailureSync } from './lib/enrichmentFailureService.js';
   import { runPendingShareImport } from './lib/shareTarget.js';
   import { envBanner } from './lib/environment.js';
   import SessionOverlay from './lib/dev/SessionOverlay.svelte';
@@ -67,6 +68,11 @@
     const unsubDevSettings = initDevSettingsSync();
     const unsubAppSettings = initAppSettingsSync();
     const unsubWeather = initWeatherSync();
+    // Background-enrichment failures (issue #1419). App-wide because it is a
+    // lookup table, not a page's data: a recipe page, a canon tile and a tool
+    // row all ask the same small collection whether the job that should have
+    // filled them in gave up.
+    const unsubEnrichmentFailures = initEnrichmentFailureSync();
     // Not a Firestore subscription — a clock over the cook-session store the cook
     // page already fills. It lives here rather than on the cook page so a timer
     // still alerts once the chef has navigated away (see cookTimerAlerts.ts).
@@ -87,6 +93,7 @@
       unsubDevSettings();
       unsubAppSettings();
       unsubWeather();
+      unsubEnrichmentFailures();
       unsubCookTimers();
     };
   });

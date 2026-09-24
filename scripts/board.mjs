@@ -78,6 +78,7 @@ import {
   ledgerShouldAttachTo,
 } from './lib/boardTitles.mjs';
 import { forbiddenSortMessage, viewGroupFields } from './lib/boardViews.mjs';
+import { findItem, ITEM_SELECTION, itemOnProject, parseItem } from './lib/boardItemLookup.mjs';
 import { notOnBoardMessage, showLines } from './lib/boardShow.mjs';
 import { disabledWorkflowFailures } from './lib/boardWorkflows.mjs';
 import { SPEC_LABEL } from './lib/specIssueShape.mjs';
@@ -99,15 +100,30 @@ const die = (msg) => {
  * both moves a field and edits an issue cannot do it under a single token. The
  * workflow hands it the Actions GITHUB_TOKEN for the issue half.
  */
-function gql(query, token) {
+function gql(query, token, { notFoundIsNull = false } = {}) {
   let out;
   try {
     out = execFileSync('gh', ['api', 'graphql', '-f', `query=${query}`], {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
+      // Piped, not inherited, when a NOT_FOUND is expected — else gh's own
+      // stderr line would print for a miss this function then swallows.
+      ...(notFoundIsNull ? { stdio: ['ignore', 'pipe', 'pipe'] } : {}),
       env: token ? { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token } : process.env,
     });
   } catch (err) {
+    // `notFoundIsNull`: a number that is not an issue (a PR, or nothing) comes
+    // back as NOT_FOUND alongside a null field — a miss for the caller to judge,
+    // not a failure of the call.
+    if (notFoundIsNull) {
+      let body = null;
+      try {
+        body = JSON.parse(err.stdout);
+      } catch {
+        // not a GraphQL body — fall through to die
+      }
+      if (body?.data && body.errors?.every((e) => e.type === 'NOT_FOUND')) return body.data;
+    }
     die(
       `gh failed — ${String(err.stderr || err.message)
         .trim()
@@ -163,51 +179,35 @@ function loadItems(project) {
     const page = gql(`{ node(id:"${project.id}"){ ... on ProjectV2 {
       items(first:100, after:${after}){
         pageInfo{ hasNextPage endCursor }
-        nodes{ id createdAt
-          content{ ... on Issue { number title state stateReason closedAt
-            labels(first:20){ nodes{ name } } } }
-          queue:fieldValueByName(name:"Queue"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          class:fieldValueByName(name:"Class"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          size:fieldValueByName(name:"Size"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          status:fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          blockedBy:fieldValueByName(name:"Blocked by"){ ... on ProjectV2ItemFieldTextValue { text } } } } } } }`)
-      .node.items;
+        nodes{ ${ITEM_SELECTION} } } } } }`).node.items;
     for (const n of page.nodes) {
-      if (!n.content?.number) continue; // draft item — not an issue
-      items.push({
-        id: n.id,
-        number: n.content.number,
-        title: n.content.title,
-        state: n.content.state,
-        // `COMPLETED` | `NOT_PLANNED` | null. The check needs it to tell a
-        // won't-fix close from one that shipped — see `closedItemVerdict`.
-        stateReason: n.content.stateReason ?? null,
-        // WHEN THE BOARD ITEM APPEARED, against when the issue closed. An item
-        // created AFTER its issue closed was never in the pipeline at all —
-        // GitHub's "Auto-add sub-issues to project" workflow put it there when
-        // something linked it to a parent. See `closedItemVerdict`.
-        createdAt: n.createdAt ?? null,
-        closedAt: n.content.closedAt ?? null,
-        // Read for exactly one rule: an epic must not be runnable. `first:20`
-        // is the cap, so an issue carrying more than twenty labels could hide
-        // `specced` from the check below — no issue in this repo is close, and
-        // the failure direction is a missed finding rather than a false one.
-        labels: (n.content.labels?.nodes ?? []).map((l) => l.name),
-        queue: n.queue?.name ?? null,
-        // `class` and `size` are read by `show` alone — no check rule consults
-        // either, and `size` deliberately has nothing grading it (#1521 adds
-        // the place a human can compare it to what shipped, not a gate).
-        class: n.class?.name ?? null,
-        size: n.size?.name ?? null,
-        status: n.status?.name ?? null,
-        blockedBy: n.blockedBy?.text ?? '',
-      });
+      const item = parseItem(n);
+      if (item) items.push(item);
     }
     if (!page.pageInfo.hasNextPage) break;
     after = `"${page.pageInfo.endCursor}"`;
   }
   return items;
 }
+
+/**
+ * One issue's item on this project, asked from the ISSUE's side. The fallback
+ * for a number the `items` scan missed — that connection lags a fresh add by
+ * 30+ minutes; see the header of `lib/boardItemLookup.mjs` for the boundary.
+ */
+function lookupItem(project, number) {
+  const nodes = gql(
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${number}){
+    projectItems(first:20, includeArchived:false){ nodes{ project{ id } ${ITEM_SELECTION} } } } } }`,
+    undefined,
+    { notFoundIsNull: true },
+  ).repository?.issue?.projectItems?.nodes;
+  return itemOnProject(nodes, project.id);
+}
+
+/** The item for one issue number — the scan, then the targeted lookup. */
+const itemFor = (project, number, items = loadItems(project)) =>
+  findItem(items, number, (n) => lookupItem(project, n));
 
 function setSelect(project, itemId, fieldName, value) {
   const optionId = project.option(fieldName, value);
@@ -244,7 +244,7 @@ function cmdAdd(project, [num, ...rest]) {
   ).repository?.issue;
   if (!issue) die(`issue #${number} not found in ${OWNER}/${REPO}`);
 
-  const existing = loadItems(project).find((i) => i.number === number);
+  const existing = itemFor(project, number);
   const itemId = existing
     ? existing.id
     : gql(
@@ -266,7 +266,7 @@ function cmdAdd(project, [num, ...rest]) {
 function cmdShow(project, [num]) {
   const number = Number(num);
   if (!Number.isInteger(number)) die('usage: board.mjs show <issue>');
-  const item = loadItems(project).find((i) => i.number === number);
+  const item = itemFor(project, number);
   if (!item) die(notOnBoardMessage(number));
   for (const line of showLines(item)) console.log(line);
 }
@@ -276,7 +276,7 @@ function cmdSet(project, [num, ...rest]) {
   if (!Number.isInteger(number))
     die('usage: board.mjs set <issue> [--queue X --class Y --size Z --status W]');
   const flags = parseFlags(rest);
-  const item = loadItems(project).find((i) => i.number === number);
+  const item = itemFor(project, number);
   if (!item) die(`#${number} is not on the board — use \`add\` first`);
   for (const [flag, field] of Object.entries(FLAG_FIELD)) {
     if (flags[flag]) setSelect(project, item.id, field, flags[flag]);
@@ -319,7 +319,7 @@ function cmdStart(project, [num]) {
   ).repository?.issue;
   if (!issue) die(`issue #${number} not found in ${OWNER}/${REPO}`);
 
-  const item = loadItems(project).find((i) => i.number === number);
+  const item = itemFor(project, number);
   if (!item) {
     console.log(`#${number} is not on the board yet — nothing to move`);
     return;
@@ -374,14 +374,17 @@ function cmdPr(project, [num, ...rest]) {
   }
 
   const items = loadItems(project);
-  const absent = targets.filter((issue) => !items.some((i) => i.number === issue));
+  // Resolved once per target, so a number the lagging scan missed is asked
+  // about from the issue's side before it counts as absent.
+  const found = new Map(targets.map((issue) => [issue, itemFor(project, issue, items)]));
+  const absent = targets.filter((issue) => !found.get(issue));
   // Only asked for when something IS absent, which is the rare case — and it is
   // asked once for all of them rather than per target.
   const closedAt = absent.length === 0 ? new Map() : fetchClosedAt(absent);
 
   let missed = 0;
   for (const issue of targets) {
-    const item = items.find((i) => i.number === issue);
+    const item = found.get(issue);
     if (!item) {
       // An absent target is not automatically a miss, and not automatically
       // fine either. `absentTargetVerdict` holds which is which and why.
@@ -1069,7 +1072,7 @@ function cmdRollup(project, [num]) {
 
   // A closed board item must carry `Merged` or `Released` — `check` fails on one
   // that does not, and this issue never had a PR to move it there.
-  const item = loadItems(project).find((i) => i.number === parent.number);
+  const item = itemFor(project, parent.number);
   if (item && item.status !== 'Merged' && item.status !== 'Released') {
     setSelect(project, item.id, 'Status', 'Merged');
     console.log(`#${parent.number} → Status=Merged`);

@@ -11,7 +11,11 @@
     TextField,
     Textarea,
   } from '@salt/ui-components';
-  import { CANON_ICON_HIDDEN, equipmentEntrySubjectName } from '@salt/domain';
+  import {
+    CANON_ICON_HIDDEN,
+    equipmentEntrySubjectName,
+    equipmentIconAwaitingApproval,
+  } from '@salt/domain';
   import type { Accessory, EquipmentItem } from '@salt/domain';
   import {
     equipmentIcons,
@@ -62,6 +66,28 @@
 
   const icon = $derived(equipmentIconFor($equipmentIcons, accessory.id));
   const hidden = $derived(icon?.thumbnail === CANON_ICON_HIDDEN);
+  // The item panel's review signal, at entry scale (issue #1518). Same pure
+  // predicate — true whenever `sourceName` differs from `briefSourceName` —
+  // and deliberately NOT the same thing as the Redraw/Draw it label below:
+  // that label says only whether a picture was ever drawn; this compares the
+  // SUBJECT NAME the picture was drawn from against the one the current brief
+  // was authored from.
+  //
+  // Its real boundary: it fires when nothing has been drawn yet (the ordinary
+  // state for most entries — a brief exists only once "Describe it" has been
+  // pressed) and once a re-authored brief has actually landed under a changed
+  // name. It does NOT fire from a rename alone. `onEquipmentManifestWritten`'s
+  // brief-authoring loop is item-only, so renaming this accessory never moves
+  // `briefSourceName` — `sourceName === briefSourceName` survives the rename,
+  // and this banner stays silent until someone presses "Describe it again".
+  // Closing that gap is a separate call, not this change (issue #1518).
+  //
+  // Also not implied: "there is a picture on screen to compare against" — the
+  // never-drawn case above has none — and an upload does not clear it either
+  // (`setIconUpload` writes only `thumbnail`/`iconRequestedAt`, never
+  // `sourceName`), so an entry carrying a user's own photo reads "waiting for
+  // you" until it is drawn over.
+  const awaitingApproval = $derived(equipmentIconAwaitingApproval(icon));
   // The words the brief was authored FROM — an appliance's part qualified by its
   // appliance, a family member standing alone. Revise needs them: rewriting prose
   // about an appliance without knowing which appliance is exactly the drift the
@@ -183,6 +209,21 @@
             right costs a moment; getting the picture wrong costs a redraw.
           </p>
         </div>
+
+        <!-- The same heading the item panel carries, for the same reason: the
+             "waiting for you" suffix needs something to hang off, and a bare
+             middot floating above a box says nothing on its own. -->
+        <p class="text-sm font-medium">
+          Description
+          {#if awaitingApproval}
+            <span
+              class="ml-1 font-normal text-muted-foreground"
+              data-testid="equipment-entry-awaiting-approval"
+            >
+              · waiting for you
+            </span>
+          {/if}
+        </p>
 
         <Textarea
           bind:value={briefDraft}

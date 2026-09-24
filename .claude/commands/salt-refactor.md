@@ -80,6 +80,8 @@ Scope the output to five things and no others:
 >
 > No walkthrough of how the code works, no target-shape proposal yet.
 
+**Mark what you read but did not run.** Rule 12 binds the issue body as much as it binds code, and on a refactor the premise that matters most is item 3: "existing coverage is strong enough to prove behavior is preserved" is a claim, and the builder is the first person to test it. Run the suites you are relying on. Where a claim about today's behaviour or coverage came from a code read alone, write it `(unverified — inferred from <file:line>)`, and never generalise one checked call site into a set of them. `/salt-run` now corrects a falsified premise in place where it cheaply can (salt-run.md → _Standing rules_) — that is not cover for asserting more.
+
 **Keep the `file:line` as you go.** This read gets spent twice: once writing the issue, and once by `/salt-run`, which otherwise re-derives it once per phase. The call-site inventory in particular is the most expensive thing you will produce here and the thing every phase needs — record it against the phases in **Context pointers** and no one has to find those call sites again.
 
 ## Step 2 — Clarify with user
@@ -199,7 +201,7 @@ Do not split a single atomic move that has no safe midpoint — say so in **Safe
 the `file:line` call sites it must update, the tests that cover them, and the named rules and `docs/…`
 sections that bound the target shape. Written for an agent arriving with no context — thin here buys a
 fresh Explore sweep there, and on a refactor that sweep is the expensive one.]
-**Must not touch:** [Explicitly out of scope]
+**Must not touch:** [Explicitly out of scope, and every entry is a DECISION — something we chose not to do, which binds the builder and the reviewer. Never park an assumption here ("this call site needs no update"): that is a premise, it belongs in Architecture Notes marked `(unverified)` if you did not check it, and `/salt-run` corrects a falsified premise in place rather than deferring it.]
 **Safe to stop here?:** [Yes/No — is the codebase in a shippable, consistent state after this phase, or is this a point of no return mid-migration?]
 
 ### Phase 2: [Name]

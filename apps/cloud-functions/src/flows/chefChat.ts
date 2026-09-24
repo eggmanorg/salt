@@ -762,10 +762,10 @@ export async function writeKitchenNoteForChef(
   input: WriteKitchenNoteInput,
 ): Promise<WriteKitchenNoteOutput> {
   const title = input.title.trim();
-  if (title === '') return refused('a note needs a title, and that one was blank');
+  if (title === '') return refused('a page needs a title, and that one was blank');
   if (title.length > LIBRARY_PAGE_TITLE_MAX) {
     return refused(
-      `that title is too long — a note's title holds ${LIBRARY_PAGE_TITLE_MAX} characters`,
+      `that title is too long — a page's title holds ${LIBRARY_PAGE_TITLE_MAX} characters`,
     );
   }
   // A blank or whitespace-only body would `set` a page with nothing left in it —
@@ -777,7 +777,7 @@ export async function writeKitchenNoteForChef(
   // (Rule 10 — a refusal the chef can read out, not a validation error inside its
   // own tool loop).
   if (input.body.trim() === '') {
-    return refused('a note needs some body text, and that one was blank');
+    return refused('a page needs some body text, and that one was blank');
   }
   // The number comes from the schema's own constant, so there is one source for
   // it. This is NOT a second copy of the browser's append arithmetic
@@ -788,7 +788,7 @@ export async function writeKitchenNoteForChef(
   // — nothing imports an app (Rule 6).
   if (input.body.length > LIBRARY_PAGE_BODY_MAX) {
     return refused(
-      `that note is too long — a note holds ${LIBRARY_PAGE_BODY_MAX} characters, and that was ${input.body.length}`,
+      `that page is too long — a page holds ${LIBRARY_PAGE_BODY_MAX} characters, and that was ${input.body.length}`,
     );
   }
 
@@ -825,13 +825,13 @@ export async function writeKitchenNoteForChef(
     const snap = await ref.get();
     if (!snap.exists) {
       return refused(
-        'there is no note with that id — search for it, or leave the id out to start a new one',
+        'there is no page with that id — search for it, or leave the id out to start a new one',
       );
     }
     const parsed = LibraryPageSchema.safeParse({ ...snap.data(), id: snap.id });
     if (!parsed.success) {
       logger.warn('chefChat: writeKitchenNote left an unreadable note alone', { id: input.id });
-      return refused('that note could not be read, so it was left exactly as it was');
+      return refused('that page could not be read, so it was left exactly as it was');
     }
 
     const current = parsed.data;

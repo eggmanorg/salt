@@ -14,11 +14,16 @@
  *     save starts, so a second surface, a re-render or a reload cannot run it
  *     again — and a save that fails costs a button press rather than repeating
  *     itself.
- *  4. A REQUEST ALREADY ON THE DOCUMENT THE FIRST TIME THIS PAGE SEES IT is one
- *     nobody was here to take (review of #1490, Finding 1) — cleared, never
- *     acted on. Only a request that arrives on a LATER snapshot, while the page
- *     is mounted, is eligible to fire. Without this, reopening a finished
- *     conversation days later writes a recipe with no interaction at all.
+ *  4. ONLY THE PAGE THAT ASKED ACTS (#1494). A request is eligible to fire
+ *     only when it names the chef's reply to a message sent from THIS page.
+ *     Everything else is cleared, never acted on: one already on the document
+ *     when the page opens (review of #1490, Finding 1), one the page could not
+ *     clear the first time (the `chatSave` flag still in flight — #1494,
+ *     Finding B), and one delivered as a stale cached snapshot with nothing
+ *     pending followed by the server's armed copy (#1494, Finding A) — a shape
+ *     that is indistinguishable, snapshot for snapshot, from a live arrival.
+ *     Without this, reopening a conversation writes a recipe with no
+ *     interaction at all.
  *  5. AN ATTACHED CHAT IS ASKED, in the menu's own two words, and neither handler
  *     runs until one is picked. Dismissing writes nothing.
  *
@@ -87,7 +92,7 @@ vi.mock('../src/lib/recipeAmend.js', () => ({
 }));
 
 import ChatSessionPage from '../src/routes/chat/ChatSessionPage.svelte';
-import { claimRecipe, consumeSaveIntent } from '../src/lib/chatService.js';
+import { claimRecipe, consumeSaveIntent, sendMessage } from '../src/lib/chatService.js';
 import { proposeRecipeAmendment } from '../src/lib/recipeAmend.js';
 import { authorRecipeTraced } from '../src/lib/recipeService.js';
 import { toasts } from '../src/lib/toastStore.js';
@@ -135,6 +140,7 @@ beforeEach(() => {
   mockRecipes._set([]);
   mockRouter.querystring = undefined;
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
+  vi.mocked(sendMessage).mockResolvedValue({ kind: 'ok', value: makeSession() });
   vi.mocked(proposeRecipeAmendment).mockResolvedValue({ kind: 'err', error: OFFLINE });
   vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: SAVED });
   window.history.replaceState(null, '', '#/');
@@ -144,20 +150,45 @@ function renderPage(id = 'session-1') {
   return render(ChatSessionPage, { props: { params: { id } } });
 }
 
-// A request already on the document the first time this page ever sees the
-// session — the mount-time case Finding 1 closes — must NOT be acted on. So
-// every test below that wants to pin the ACTING behaviour renders first on an
-// unarmed session, lets that first snapshot land, and only THEN arms it — the
-// shape of a real request arriving on the subscription while the page is
-// mounted and open.
+const ASK = 'save that as a recipe';
+
+/** Type `text` into this page's composer and send it. */
+async function sendFromPage(text = ASK): Promise<void> {
+  await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: text } });
+  await fireEvent.click(screen.getByTestId('chat-send-btn'));
+  await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+}
+
+/**
+ * `session` as the flow writes it back after a turn: the words sent, verbatim,
+ * then the chef's reply — which is what the save request names.
+ */
+function withReply(session: ChatSessionDoc, asked = ASK): ChatSessionDoc {
+  const ts = new Date().toISOString();
+  return {
+    ...session,
+    messages: [
+      ...session.messages,
+      { id: 'm3', role: 'user', text: asked, createdAt: ts },
+      { id: 'm4', role: 'assistant', text: 'Saving that now.', createdAt: ts },
+    ],
+    pendingSaveIntent: 'm4',
+  };
+}
+
+// Only the page that asked acts on a request (#1494), so every test below that
+// wants to pin the ACTING behaviour renders on an unarmed session, SENDS from
+// the page, and only then delivers the chef's reply with the request on it —
+// the shape of a real request arriving while the page that asked is open.
 async function renderAndArm(
   overrides: Partial<ChatSessionDoc> = {},
   id = 'session-1',
 ): Promise<ReturnType<typeof renderPage>> {
-  mockSessions._set([makeSession({ ...overrides, id, pendingSaveIntent: null })]);
+  const before = makeSession({ ...overrides, id, pendingSaveIntent: null });
+  mockSessions._set([before]);
   const rendered = renderPage(id);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  mockSessions._set([makeSession({ ...overrides, id, pendingSaveIntent: 'm2' })]);
+  await sendFromPage();
+  mockSessions._set([withReply(before)]);
   return rendered;
 }
 
@@ -223,6 +254,99 @@ describe('ChatSessionPage — a save the chef was asked for', () => {
     expect(claimRecipe).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
   });
+
+  // #1494, Finding B. The first look at an already-armed request can fail to
+  // clear it: `consumeSaveIntent` answers `false` and writes nothing while the
+  // `chatSave` flag payload is still in flight. The request is still the same
+  // days-old one when the next snapshot arrives with the flag landed — and
+  // before the fix, that first run had already marked the page as "been here",
+  // so the second read it as a live arrival and saved with no interaction.
+  it('does not act on a request it could not clear the first time, once the flag lands', async () => {
+    vi.mocked(consumeSaveIntent).mockResolvedValueOnce(false);
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2' })]);
+
+    renderPage();
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(1));
+
+    // Any later snapshot of the same conversation — here a title the flow
+    // wrote — with the request still armed and the flag now on.
+    mockSessions._set([makeSession({ pendingSaveIntent: 'm2', title: 'Negroni' })]);
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(claimRecipe).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  // Moving from one conversation to another keeps this page mounted, so what it
+  // saw on the first says nothing about the second.
+  it('does not carry "was here" from one conversation to the next', async () => {
+    mockSessions._set([makeSession(), makeSession({ id: 'session-2', pendingSaveIntent: 'm2' })]);
+
+    const { rerender } = renderPage('session-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await rerender({ params: { id: 'session-2' } });
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  // #1494, Finding A — the real device sequence after being away. Firestore's
+  // persistent cache delivers its stale copy first (nothing pending), then the
+  // server's copy with the request already armed. Snapshot for snapshot that is
+  // exactly what a live arrival looks like, which is why "seen with nothing
+  // pending, then armed" could never tell the two apart. This page sent
+  // nothing, so the request is not its to act on.
+  it('does not act on a request delivered as a stale cached snapshot, then the server copy', async () => {
+    const cached = makeSession();
+    mockSessions._set([cached]);
+    renderPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    mockSessions._set([withReply(cached)]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+    expect(claimRecipe).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  // The page sent something, but the request names the reply to a different
+  // turn — another device's, landing where this page's reply would have.
+  it('does not act on a request answering a message this page did not send', async () => {
+    const before = makeSession();
+    mockSessions._set([before]);
+    renderPage();
+    await sendFromPage('what wine goes with it?');
+
+    mockSessions._set([withReply(before, 'save that as a recipe')]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+  });
+
+  // The accepted cost of "only the page that asked": leave before the reply
+  // lands and the page that comes back is a different page. The request is
+  // dropped, and the person asks again.
+  it('does not act on the reply to a message sent from an earlier visit to the page', async () => {
+    const before = makeSession();
+    mockSessions._set([before]);
+    const first = renderPage();
+    await sendFromPage();
+    first.unmount();
+
+    mockSessions._set([withReply(before)]);
+    renderPage();
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(authorRecipeTraced).not.toHaveBeenCalled();
+  });
 });
 
 // A request that resolves while a save is ALREADY RUNNING (issue #1505). It is
@@ -253,16 +377,17 @@ describe('ChatSessionPage — a save the chef was asked for, while one is alread
    * Returns the settle for the button's save.
    */
   async function raceAgainstTheButton(): Promise<(v: LibrarianResult) => void> {
-    mockSessions._set([makeSession()]);
+    const before = makeSession();
+    mockSessions._set([before]);
     renderPage();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await sendFromPage();
 
     const settle = heldLibrarian();
     await fireEvent.click(screen.getByTestId('chat-save-recipe-btn'));
     await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalledTimes(1));
 
     // The request arrives on the subscription while that save is still open.
-    mockSessions._set([makeSession({ pendingSaveIntent: 'm2' })]);
+    mockSessions._set([withReply(before)]);
     await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
     return settle;
   }
@@ -300,9 +425,9 @@ describe('ChatSessionPage — a save the chef was asked for, on a chat about a d
     // proposes against the recipe it finds there and says "Recipe not found"
     // otherwise, which is a different path from the one under test.
     mockRecipes._set([{ ...emptyRecipe('recipe-1', '2026-09-19T00:00:00.000Z'), title: 'Lamb' }]);
-    // Armed AFTER the first snapshot lands (see `renderAndArm`) — a request
-    // already present at mount is Finding 1's case and must not open this ask;
-    // that is pinned separately below.
+    // Asked from this page (see `renderAndArm`) — a request already present at
+    // mount is Finding 1's case and must not open this ask; that is pinned
+    // separately below.
     const rendered = await renderAndArm({ recipeId: 'recipe-1' });
     await waitFor(() => expect(screen.getByTestId('chat-save-intent-dialog')).toBeInTheDocument());
     return rendered;
@@ -383,5 +508,59 @@ describe('ChatSessionPage — a save the chef was asked for, on a chat about a d
     await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+});
+
+// The send record (`lastSent` in `chatThreadState.svelte.ts`) is what
+// `askedHere` reads to decide a request is this page's to act on. Issue
+// #1561 (campaign #1552): nothing pinned that it is written BEFORE the send
+// call returns, nor that it survives a failed send — either regression would
+// silently drop a genuine save request while every existing test here still
+// passes, because they all deliver the reply strictly after the call settles.
+describe('ChatSessionPage — the send record that gates "asked here" (#1561)', () => {
+  it('records the send before the call returns, so a reply arriving while it is still in flight is still recognised', async () => {
+    mockSessions._set([makeSession()]);
+    renderPage();
+
+    // Hold `sendMessage` open so the reply can land while this page's own send
+    // is still awaiting it — the comment on `chatThreadState.svelte.ts`'s
+    // `send` says exactly this can happen (a reply arriving before the call
+    // resolves).
+    let resolveSend!: (v: Awaited<ReturnType<typeof sendMessage>>) => void;
+    vi.mocked(sendMessage).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof sendMessage>>>((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+
+    await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: ASK } });
+    await fireEvent.click(screen.getByTestId('chat-send-btn'));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+
+    // The chef's reply, carrying the request, arrives on the subscription
+    // while `send`'s own promise is still unresolved.
+    mockSessions._set([withReply(makeSession())]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
+
+    // Let the held call settle so nothing is left dangling.
+    resolveSend({ kind: 'ok', value: withReply(makeSession()) });
+  });
+
+  it('keeps the send record when the send fails, so a reply that lands anyway still saves', async () => {
+    mockSessions._set([makeSession()]);
+    renderPage();
+    vi.mocked(sendMessage).mockResolvedValueOnce({ kind: 'err', error: OFFLINE });
+
+    await sendFromPage();
+
+    // The reply lands at the same slot the failed send would have produced —
+    // the flow writes the turn regardless of whether the stream reached this
+    // page (a locked phone mid-reply), so this is still an answer to this send.
+    mockSessions._set([withReply(makeSession())]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalled());
   });
 });

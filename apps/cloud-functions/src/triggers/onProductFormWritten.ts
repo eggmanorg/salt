@@ -55,6 +55,7 @@ export const onProductFormWritten = onDocumentWritten(
   iconWriteTrigger<ProductFormDoc>({
     name: 'onProductFormWritten',
     collection: 'productForms',
+    enrichment: 'productFormIcon',
     storagePrefix: ICON_STORAGE_PREFIX,
     schema: ProductFormSchema,
     // The form's LABEL is what the picture is of — "lime juice", "egg yolk". It
