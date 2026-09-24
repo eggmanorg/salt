@@ -529,16 +529,16 @@ export const describeRecipeScene = makeTracedCallable({
 //     property access, so a write that somehow slipped the assertion still fails
 //     loudly rather than being absorbed by a stub that answers every path. Its
 //     boundary: it catches a handle THIS FLOW obtains for itself, via
-//     `getFirestore()` — 37 modules in this package do that today. A handle
-//     passed in as an ARGUMENT would evade it, and that is not a theoretical
-//     gap: seven modules already take one that way, three of them sibling flow
-//     modules — flows/equipmentContext.ts, flows/componentContext.ts,
-//     flows/kitchenMemoryContext.ts — plus four adapters/triggers. Giving
+//     `getFirestore()`. A handle passed in as an ARGUMENT would evade it, and
+//     that is not a theoretical gap: sibling flow modules already take one that
+//     way (flows/equipmentContext.ts, flows/componentContext.ts and
+//     flows/kitchenMemoryContext.ts among them). Giving
 //     `describeEquipmentSubjectFlow` a `db` parameter in that same local idiom
 //     would write to Firestore from inside the flow and never touch
 //     `mockGetFirestore`, and the caller already holds a handle to pass:
-//     onEquipmentManifestWritten.ts:111 obtains `const db = getFirestore()`
-//     earlier in the same function that calls this flow at :120.
+//     `maybeAuthorBrief` in triggers/onEquipmentManifestWritten.ts obtains
+//     `const db = getFirestore()` earlier in the same function that calls
+//     this flow.
 //   • TWO — Draw is the only route from the box to the document: in the
 //     browser, `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`
 //     is the only call that carries brief text into a Firestore write. VOID if
