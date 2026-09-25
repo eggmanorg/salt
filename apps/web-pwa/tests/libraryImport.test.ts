@@ -260,17 +260,24 @@ describe('htmlToMarkdown — what must not survive', () => {
 
   // The separator contract limit 2 of `libraryImport.ts` states as fact — "nothing
   // at all for bare text, a blank line where the cell held blocks" — applied to two
-  // skipped one-cell tables sitting side by side in the same outer cell, rather
-  // than one. Once stated, it is a claim Rule 12 requires pinned rather than left
-  // as an open question: this is not an answer to what a nested/layout table
-  // SHOULD become (still undecided), it is what the stated contract says happens
-  // to THIS shape today.
-  it('concatenates two adjacent skipped tables with nothing between them', () => {
+  // one-cell tables sitting side by side in the same outer cell, rather than one.
+  // Once stated, it is a claim Rule 12 requires pinned rather than left as an open
+  // question: this is not an answer to what a nested/layout table SHOULD become
+  // (still undecided), it is what the stated contract says happens to THIS shape
+  // today.
+  //
+  // Text written directly inside a `<table>` is not table content: the HTML parser
+  // foster-parents it out to just before that table, so the outer cell really
+  // holds `one`, an empty table, `two`, an empty table. Chromium parses it that
+  // way, and so does jsdom from 30.1 (30.0 left the text inside); the empty tables
+  // are the blocks the blank lines come from. Before jsdom 30.1 this test expected
+  // `onetwo` — a parse no browser produces.
+  it('separates two adjacent one-cell tables with a blank line', () => {
     const md = htmlToMarkdown(
       '<table><tr><td><table>one</table><table>two</table></td><td>x</td></tr></table>',
     );
     expect(residualTags(md)).toEqual([]);
-    expect(md).toBe('onetwo\n\nx');
+    expect(md).toBe('one\n\ntwo\n\nx');
   });
 
   // THE DETECTION ITSELF, pinned rather than reasoned about (CLAUDE.md Rule 12).
