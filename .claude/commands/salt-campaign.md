@@ -213,15 +213,15 @@ Use `git worktree add`, **not** `isolation: "worktree"` (no base, no branch name
 
 ## Dispatch
 
-**Workers are `campaign-worker` subagents, spawned in the background, one per worktree** — confirmably killable and unable to outlive your session; substitute no other mechanism. Record the agent's id in the ledger row **at the moment you dispatch it**: it cannot be recovered later, and you will not read logs to find it.
+**Workers are `campaign-worker` subagents, spawned in the background, one per worktree** — confirmably killable and unable to outlive your session; substitute no other mechanism. Its agent id goes in the ledger row **at dispatch**: it cannot be recovered later.
 
-**Give every worker a budget, and arm one heartbeat for the pool.** State the budget in the dispatch prompt: **no single phase longer than 90 minutes**, and per worker `min(360, max(180, 90 × phases))` minutes — `phases` being what **this dispatch** builds: the extractor's `PHASES`, or `PHASES_UNBUILT` on a continuation. Worked values: 1 → 180, 2 → 180, 3 → 270, 4+ → 360. Record the dispatch clock time in the ledger row and the budget end-time in its Note **at dispatch** — the breach check's only inputs.
+**Give every worker a budget, and arm one heartbeat for the pool.** State the budget in the dispatch prompt: **no single phase longer than 90 minutes**, and per worker `min(360, max(180, 90 × phases))` minutes — `phases` being what **this dispatch** builds: the extractor's `PHASES`, or `PHASES_UNBUILT` on a continuation. Worked values: 1 → 180, 2 → 180, 3 → 270, 4+ → 360. Write the cells `node scripts/campaign-heartbeat.mjs --dispatch <phases>` prints **at dispatch** — the breach check's only inputs.
 
-A hung worker returns nothing. **One heartbeat covers the whole pool** — one backgrounded `sleep` (Bash, `run_in_background: true`), its shell id on the Plan block. **Arm it to the earliest budget end-time across the live pool** — `sleep <seconds until then>`, never a fixed interval — and **re-arm it only when that earliest deadline actually changes**: a worker dispatched, returned or terminated.
+A hung worker returns nothing. **One heartbeat covers the whole pool** — one backgrounded `sleep` (Bash, `run_in_background: true`), its shell id on the Plan block. **Arm it to the earliest budget end-time across the live pool** — `sleep <SLEEP>`, never a fixed interval — and **re-arm it only when that earliest deadline actually changes**: a worker dispatched, returned or terminated.
 
-**The `timeout` parameter does not kill a backgrounded command** — its 600000 ms cap bounds foreground calls (observation in the rationale doc). If a long sleep is ever refused, report the refusal you actually saw.
+**The `timeout` parameter does not kill a backgrounded command** — its 600000 ms cap bounds foreground calls (rationale doc). If a long sleep is ever refused, report the refusal you actually saw.
 
-**The timer is dumb; you do the comparison.** On every wake — **including a wake caused by an agent returning, not only a heartbeat exit** — compare each live worker's recorded dispatch time and budget end-time, and act on any breach. Hold **a heartbeat armed for the current earliest deadline whenever the pool is non-empty**: before ending a turn, re-arm if this wake moved that deadline.
+**The script does the comparison.** On every wake — **including a wake caused by an agent returning, not only a heartbeat exit** — run `node scripts/campaign-heartbeat.mjs <ledger-body-file>` (resume: pipe in the ledger body) and act on each `BREACHED` line. **Exit 2** is a pause, **never an empty pool**: fix the row it names. Hold **a heartbeat armed for the current earliest deadline whenever the pool is non-empty**: before ending a turn, re-arm to `SLEEP` if `EARLIEST` differs from the deadline you last armed.
 
 Dispatch as `Agent(subagent_type: "campaign-worker", prompt: …, run_in_background: true)`, the prompt carrying only issue `#N`, worktree path, branch, `--max-diff <n>` and the budget — plus `PHASES_UNBUILT` on a continuation and the stop reason on a retry.
 
