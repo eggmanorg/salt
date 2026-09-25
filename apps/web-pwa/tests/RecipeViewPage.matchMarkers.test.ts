@@ -123,7 +123,11 @@ vi.mock('../src/lib/recipeService.js', () => ({
 }));
 
 import RecipeViewPage from '../src/routes/recipes/RecipeViewPage.svelte';
-import { matchIngredient, persistRecipe } from '../src/lib/recipeService.js';
+import {
+  canonicaliseIngredients,
+  matchIngredient,
+  persistRecipe,
+} from '../src/lib/recipeService.js';
 import { addToast } from '../src/lib/toastStore.js';
 
 const RECIPE_ID = 'recipe-1';
@@ -529,5 +533,42 @@ describe('RecipeViewPage — what a repaired row actually does', () => {
     // never happened, the other that it happened and did not stick. A cook who
     // taps again is right in the first case and wasting a call in the second.
     expect(addToast).not.toHaveBeenCalledWith('Failed to match ingredient.', 'destructive');
+  });
+});
+
+// Issue #1601. The Canonicalise button's function folds its matches onto the
+// recipe itself, and now says whether that fold landed. "Matching complete." on a
+// fold that failed is the lie this removes: the ✗ markers stay, and the toast has
+// to say why and name the retry.
+describe('RecipeViewPage — Canonicalise says whether the recipe was updated', () => {
+  const pending = () => makeRecipe([line({ id: 'ing-new', canonId: null, matchState: 'pending' })]);
+
+  it('warns, and does not claim completion, when the fold failed', async () => {
+    mockRecipes._set([pending()]);
+    vi.mocked(canonicaliseIngredients).mockResolvedValue({ kind: 'ok', value: 'failed' });
+    const { getByTestId, getAllByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-canonicalise-button'));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith(
+        "Matches found, but the recipe wasn't updated. Tap Canonicalise again to retry.",
+        'destructive',
+      ),
+    );
+    expect(addToast).not.toHaveBeenCalledWith('Matching complete.', 'success');
+    // The rows were not updated, so the marker the toast points at is still there.
+    expect(getAllByTestId('match-state-unmatched')).toHaveLength(1);
+  });
+
+  it('says "Matching complete." exactly as before when the fold landed', async () => {
+    mockRecipes._set([pending()]);
+    vi.mocked(canonicaliseIngredients).mockResolvedValue({ kind: 'ok', value: 'written' });
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('recipe-canonicalise-button'));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Matching complete.', 'success'));
+    expect(addToast).toHaveBeenCalledOnce();
   });
 });

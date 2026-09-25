@@ -67,6 +67,9 @@ vi.mock('../src/lib/recipeService.js', () => ({
   // can attribute what it writes, and the hand-off stash for the page it goes to.
   currentMemberName: vi.fn(() => 'Daniel'),
   stashImportedDraft: vi.fn(),
+  // The words for a recipe the server could not save (issue #1601).
+  NOT_SAVED_YET_COPY: 'copy:not-saved-yet',
+  COULD_NOT_SAVE_COPY: 'copy:could-not-save',
   // The write-ordering seams `applyRecipeAmendment` uses (issue #1330). Identity
   // and no-ops here: the ordering itself is pinned in
   // `recipeAmend.coalescedEdit.test.ts`, against the real service.
@@ -337,7 +340,7 @@ describe('ChatSessionPage — save as recipe', () => {
     mockSessions._set([makeSession({ recipeId: null })]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: emptyRecipe('recipe-new', NOW),
+      value: { recipe: emptyRecipe('recipe-new', NOW), persistence: 'written' as const },
     });
     const { getByTestId } = renderPage();
 
@@ -345,6 +348,23 @@ describe('ChatSessionPage — save as recipe', () => {
 
     await waitFor(() => expect(claimRecipe).toHaveBeenCalledWith('session-1', 'recipe-new'));
     expect(push).toHaveBeenCalledWith('/recipes/recipe-new');
+  });
+
+  // Issue #1601: the flow's write failed, so the recipe exists only in this tab.
+  // It still opens — the page's first edit saves it — and it is not "created".
+  it('opens a recipe the server could not save with the not-saved warning, not "created"', async () => {
+    mockSessions._set([makeSession({ recipeId: null })]);
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: emptyRecipe('recipe-new', NOW), persistence: 'failed' as const },
+    });
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-save-recipe-btn'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
+    expect(addToast).toHaveBeenCalledWith('copy:not-saved-yet', 'destructive');
+    expect(addToast).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
   it('does not claim when the recipe never saved', async () => {
@@ -372,7 +392,10 @@ describe('ChatSessionPage — save as recipe', () => {
     mockSessions._set([makeSession({ recipeId: null })]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: { ...emptyRecipe('recipe-new', NOW), kind },
+      value: {
+        recipe: { ...emptyRecipe('recipe-new', NOW), kind },
+        persistence: 'written' as const,
+      },
     });
     const { getByTestId } = renderPage();
 
@@ -429,7 +452,7 @@ describe('ChatSessionPage — save as NEW recipe', () => {
     mockSessions._set([makeSession({ recipeId: 'lamb', basedOnRecipeId: 'older-dish' })]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: emptyRecipe('salad', NOW),
+      value: { recipe: emptyRecipe('salad', NOW), persistence: 'written' as const },
     });
     renderPage();
     await openChatActions();
@@ -493,7 +516,7 @@ describe('ChatSessionPage — a variation chat', () => {
     mockSessions._set([makeSession({ basedOnRecipeId: 'pilaf' })]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: emptyRecipe('recipe-new', NOW),
+      value: { recipe: emptyRecipe('recipe-new', NOW), persistence: 'written' as const },
     });
     const { getByTestId } = renderPage();
 
@@ -519,7 +542,10 @@ describe('ChatSessionPage — a variation chat', () => {
 describe('ChatSessionPage — saving a dish back onto a meal', () => {
   const SAVED = {
     kind: 'ok' as const,
-    value: { ...emptyRecipe('recipe-new', NOW), title: 'Onion gravy' },
+    value: {
+      recipe: { ...emptyRecipe('recipe-new', NOW), title: 'Onion gravy' },
+      persistence: 'written' as const,
+    },
   };
 
   it('attaches the dish to the meal and lands back on the meal', async () => {
@@ -535,13 +561,36 @@ describe('ChatSessionPage — saving a dish back onto a meal', () => {
     // heard about a server-written dish yet, so `attachComponentToMeal` needs it
     // in hand to rank correctly rather than treating it as untimed.
     await waitFor(() =>
-      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value),
+      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value.recipe),
     );
     // The claim is untouched — the conversation still belongs to the dish it
     // produced, exactly as it does without a meal.
     expect(claimRecipe).toHaveBeenCalledWith('session-1', 'recipe-new');
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/roast'));
     expect(push).not.toHaveBeenCalledWith('/recipes/recipe-new');
+  });
+
+  // Issue #1601: this door lands on the MEAL, so nothing claims the stash and no
+  // edit can rescue a recipe the server could not save. Say so, and hang nothing
+  // off the meal — it would point at a dish that does not exist.
+  it('says the recipe could not be saved, and attaches nothing, when the write failed', async () => {
+    mockRouter.querystring = 'meal=roast';
+    mockSessions._set([makeSession({ recipeId: null })]);
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: { ...SAVED.value, persistence: 'failed' as const },
+    });
+    const { getByTestId } = renderPage();
+
+    await fireEvent.click(getByTestId('chat-save-recipe-btn'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/roast'));
+    expect(addToast).toHaveBeenCalledWith('copy:could-not-save', 'destructive');
+    expect(attachComponentToMeal).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('added to the meal'),
+      'success',
+    );
   });
 
   it('does the same from "Save as new recipe" on an attached chat', async () => {
@@ -554,7 +603,7 @@ describe('ChatSessionPage — saving a dish back onto a meal', () => {
     await fireEvent.click(screen.getByTestId('chat-save-new-recipe-btn'));
 
     await waitFor(() =>
-      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value),
+      expect(attachComponentToMeal).toHaveBeenCalledWith('roast', 'recipe-new', SAVED.value.recipe),
     );
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/roast'));
   });
@@ -662,11 +711,14 @@ describe('ChatSessionPage — applying an amendment decides the guided plan', ()
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
       value: {
-        ...pilafWithSteps(),
-        steps: [
-          { id: 'fresh-1', text: 'Fry the chorizo hard.', timer: null, note: null },
-          { id: 'fresh-2', text: 'Add the rice.', timer: null, note: null },
-        ],
+        recipe: {
+          ...pilafWithSteps(),
+          steps: [
+            { id: 'fresh-1', text: 'Fry the chorizo hard.', timer: null, note: null },
+            { id: 'fresh-2', text: 'Add the rice.', timer: null, note: null },
+          ],
+        },
+        persistence: 'skipped' as const,
       },
     } as Awaited<ReturnType<typeof authorRecipeTraced>>);
     const { getByTestId } = renderPage();
@@ -681,7 +733,10 @@ describe('ChatSessionPage — applying an amendment decides the guided plan', ()
     mockRecipes._set([pilafWithSteps()]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: { ...pilafWithSteps(), title: 'Chorizo & Red Pepper Pilaf (hot)' },
+      value: {
+        recipe: { ...pilafWithSteps(), title: 'Chorizo & Red Pepper Pilaf (hot)' },
+        persistence: 'skipped' as const,
+      },
     } as Awaited<ReturnType<typeof authorRecipeTraced>>);
     const { getByTestId } = renderPage();
 
@@ -820,7 +875,10 @@ describe('ChatSessionPage — an AI action says it has started', () => {
     return { settle: (v) => settle(v) };
   }
 
-  const OK = { kind: 'ok', value: emptyRecipe('recipe-new', NOW) } as LibrarianResult;
+  const OK = {
+    kind: 'ok',
+    value: { recipe: emptyRecipe('recipe-new', NOW), persistence: 'written' as const },
+  } as LibrarianResult;
   const FAILED = {
     kind: 'err',
     error: { kind: 'NetworkError', reason: 'offline' },

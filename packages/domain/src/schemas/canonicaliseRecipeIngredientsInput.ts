@@ -3,6 +3,7 @@ import {
   MatchOrCreateCanonInputSchema,
   MatchOrCreateCanonOutputSchema,
 } from './matchOrCreateCanonInput.js';
+import { PersistenceOutcomeSchema } from './persistenceOutcome.js';
 
 // One ingredient to canonicalise. This is exactly a single-item canon match
 // without the manual `forceCreate` override, so it is DERIVED rather than
@@ -42,4 +43,28 @@ export type CanonicaliseRecipeIngredientsInput = z.infer<
 
 // One result per input item, in order — the same envelope a single canon match
 // returns.
-export const CanonicaliseRecipeIngredientsOutputSchema = z.array(MatchOrCreateCanonOutputSchema);
+export const CanonicaliseRecipeIngredientsResultsSchema = z.array(MatchOrCreateCanonOutputSchema);
+
+// The `recipeId` arm's answer (issue #1601): the same results, plus whether the
+// fold onto `recipes/{recipeId}` landed. ONE outcome for the batch, not one per
+// slot — the fold is a single transaction, so a per-row flag would repeat one
+// fact N times.
+export const CanonicaliseRecipeIngredientsEnvelopeSchema = z.object({
+  results: CanonicaliseRecipeIngredientsResultsSchema,
+  persistence: PersistenceOutcomeSchema,
+});
+
+// The arm is picked by the INPUT, never by the caller's preference: `recipeId`
+// present answers with the envelope, absent answers with the bare array. The
+// array arm is what a content-only caller reads (`matchIngredient`,
+// `assembleRecipeDraft`) and what a PWA tab older than #1434 — which sends no
+// `recipeId` — still expects. You cannot add a sibling field to an array, so the
+// envelope is a second arm rather than an extension of the first.
+export const CanonicaliseRecipeIngredientsOutputSchema = z.union([
+  CanonicaliseRecipeIngredientsResultsSchema,
+  CanonicaliseRecipeIngredientsEnvelopeSchema,
+]);
+
+export type CanonicaliseRecipeIngredientsEnvelope = z.infer<
+  typeof CanonicaliseRecipeIngredientsEnvelopeSchema
+>;

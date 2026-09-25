@@ -28,6 +28,8 @@ import {
   urlImportMessage,
   isSignedOutFailure,
   stashPendingImportUrl,
+  NOT_SAVED_YET_COPY,
+  COULD_NOT_SAVE_COPY,
 } from './recipeService.js';
 
 /**
@@ -193,10 +195,23 @@ export async function runPendingShareImport(signedIn: boolean): Promise<void> {
   // Already persisted server-side and flagged unreviewed (issue #616), so this
   // opens the existing recipe — its own PAGE since issue #1319 Phase 7, where the
   // unreviewed banner lives and everything is editable in place. The stash just
-  // saves that page a listener round-trip. A navigation failure is cosmetic — the
-  // recipe is safely in the collection — so the toast points at where it landed.
-  stashImportedDraft(result.value);
-  if (!(await goTo(`/recipes/${result.value.id}`))) {
-    addToast(`Imported "${result.value.title}" — find it in Recipes.`, 'default');
+  // saves that page a listener round-trip.
+  //
+  // Unless the server's write failed (issue #1601). Then the stash is the only
+  // copy: landing on the page, the cook is told it is not saved yet and that any
+  // change keeps it; if navigation fails too, nothing can rescue it, and the
+  // toast says so. Otherwise a navigation failure is cosmetic — the recipe is in
+  // the collection — so the toast points at where it landed.
+  const { recipe, persistence } = result.value;
+  stashImportedDraft(recipe);
+  if (!(await goTo(`/recipes/${recipe.id}`))) {
+    addToast(
+      persistence === 'failed'
+        ? COULD_NOT_SAVE_COPY
+        : `Imported "${recipe.title}" — find it in Recipes.`,
+      persistence === 'failed' ? 'destructive' : 'default',
+    );
+    return;
   }
+  if (persistence === 'failed') addToast(NOT_SAVED_YET_COPY, 'destructive');
 }

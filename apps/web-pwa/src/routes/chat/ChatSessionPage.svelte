@@ -19,7 +19,13 @@
   } from '../../lib/chatService.js';
   import { addToast } from '../../lib/toastStore.js';
   import { withStartedToast } from '../../lib/startedToast.js';
-  import { recipes, attachComponentToMeal } from '../../lib/recipeService.js';
+  import {
+    recipes,
+    attachComponentToMeal,
+    COULD_NOT_SAVE_COPY,
+    NOT_SAVED_YET_COPY,
+    type AuthoredRecipe,
+  } from '../../lib/recipeService.js';
   import { readMealParam } from '../../lib/mealReturn.js';
   import { authorRecipeFromChat } from '../../lib/chatRecipeAuthor.js';
   import {
@@ -27,7 +33,6 @@
     applyRecipeAmendment,
     type RecipeAmendment,
   } from '../../lib/recipeAmend.js';
-  import type { Recipe } from '@salt/domain';
   import type { ChatSessionDoc } from '@salt/domain/schemas';
   import { KIND_COPY, kindOf } from '../recipes/recipeKind.js';
   import RecipeChangeSummary from '../recipes/RecipeChangeSummary.svelte';
@@ -138,10 +143,20 @@
    * with — chat is the only path whose dish does not exist until the conversation
    * makes it. A meal that has been deleted meanwhile must not cost the user the
    * recipe they just made: say so, and land them on what was written.
+   *
+   * This door never lands on the new recipe's page, so a recipe the server could
+   * not save (issue #1601) has no edit to rescue it: say it could not be saved,
+   * and attach nothing — the meal would otherwise point at a dish that does not
+   * exist.
    */
-  async function returnToMeal(saved: Recipe): Promise<boolean> {
+  async function returnToMeal({ recipe: saved, persistence }: AuthoredRecipe): Promise<boolean> {
     const mealId = mealReturnId;
     if (mealId === null) return false;
+    if (persistence === 'failed') {
+      addToast(COULD_NOT_SAVE_COPY, 'destructive');
+      push(`/recipes/${mealId}`);
+      return true;
+    }
     const attached = await attachComponentToMeal(mealId, saved.id, saved);
     if (attached.kind !== 'ok') {
       addToast('Saved — but that meal is no longer in the library.', 'destructive');
@@ -154,9 +169,10 @@
   }
 
   /**
-   * The shared leg: author it and toast a failure. `null` means it did not land.
-   * The saving is the Cloud Function's since issue #1431, which is why there is
-   * one failure message below and not two.
+   * The shared leg: author it and toast a failure. `null` means the call failed.
+   * The saving is the Cloud Function's since issue #1431 and never fails the
+   * call; whether it landed is the answer's `persistence` (issue #1601), which
+   * each door turns into words for where it lands.
    *
    * `startedMessage` is the caller's, not this function's: both buttons come
    * through here and the point of the acknowledgement is that it says WHICH one
@@ -168,7 +184,7 @@
     transcript: ChatSessionDoc,
     basedOnRecipeId: string | null,
     startedMessage: string,
-  ): Promise<Recipe | null> {
+  ): Promise<AuthoredRecipe | null> {
     isSavingRecipe = true;
     const existingTags = [...new Set($recipes.flatMap((r) => r.metadata.tags))];
     const result = await withStartedToast(startedMessage, () =>
@@ -186,11 +202,6 @@
     if (result.kind === 'ok') pendingSaveRetry = false;
     isSavingRecipe = false;
     if (result.kind !== 'ok') {
-      // ONE message, because there is one leg left that can fail (issue #1431).
-      // The recipe is written by the flow that authors it, and that write is
-      // best-effort by design — it never fails the call — so "it was written but
-      // not kept" is not news this page can be given, and a branch for it would
-      // be a message nothing can produce.
       addToast('Failed to generate recipe.', 'destructive');
       return null;
     }
@@ -206,21 +217,21 @@
     // mentioned. It stays the CREATE path: the flow assembles with no base
     // recipe, so the new dish gets its own title, its own hero image and no
     // "makes" link, and the original is untouched (issue #763).
-    const saved = await runSave(session, session.basedOnRecipeId, 'Writing the recipe…');
-    if (!saved) return;
+    const authored = await runSave(session, session.basedOnRecipeId, 'Writing the recipe…');
+    if (!authored) return;
+    const saved = authored.recipe;
     // The conversation now belongs to the dish it produced, so it is listed on
     // that recipe and stops being swept away after a fortnight (issue #696).
     // Best-effort: the recipe is already saved and a failed claim must not read
     // as a failed save.
     await claimRecipe(session.id, saved.id);
-    if (await returnToMeal(saved)) return;
+    if (await returnToMeal(authored)) return;
     // What the librarian decided it had written (issue #765). The toast is COPY,
     // so it comes from `KIND_COPY` and never from a comparison — say "Cocktail
     // created" when the conversation was about a Negroni. Read off the SAVED
     // document rather than anything on this page: the kind is the flow's answer,
     // and the chat has no opinion about it.
-    addToast(KIND_COPY[kindOf(saved)].createdToast, 'success');
-    push(`/recipes/${saved.id}`);
+    openSaved(authored);
   }
 
   // ─── Asking the chef to save it (issue #1480) ───────────────────────────────
@@ -315,14 +326,22 @@
   // the chat is not about it, it merely produced it.
   async function handleSaveAsNewRecipe(): Promise<void> {
     if (!session || isSavingRecipe) return;
-    const saved = await runSave(session, null, 'Writing the new recipe…');
-    if (!saved) return;
-    if (await returnToMeal(saved)) return;
+    const authored = await runSave(session, null, 'Writing the new recipe…');
+    if (!authored) return;
+    if (await returnToMeal(authored)) return;
     // Same rule as "Save as recipe" above (issue #765): this is a CREATE path
     // (`null` base), so the librarian can classify what it wrote as a cocktail —
     // ask a chat what would go with the dish and it may well produce one. The
     // toast is copy, so it comes from `KIND_COPY` and never from a comparison.
-    addToast(KIND_COPY[kindOf(saved)].createdToast, 'success');
+    openSaved(authored);
+  }
+
+  // Both buttons' landing on the new recipe's page. A recipe the server could not
+  // save is not "created": it opens with the not-saved warning instead, and its
+  // first edit on that page saves it (issue #1601).
+  function openSaved({ recipe: saved, persistence }: AuthoredRecipe): void {
+    if (persistence === 'failed') addToast(NOT_SAVED_YET_COPY, 'destructive');
+    else addToast(KIND_COPY[kindOf(saved)].createdToast, 'success');
     push(`/recipes/${saved.id}`);
   }
 

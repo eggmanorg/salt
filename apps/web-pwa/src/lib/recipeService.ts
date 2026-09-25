@@ -12,9 +12,15 @@ import {
   callRedoRecipeKit,
   callSetRecipeImageUpload,
   saveShoppingListItem,
+  type AuthoredRecipe,
 } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter, startUserActionSpan } from '@salt/observability';
-import type { AuthorRecipeInput, DescribeRecipeSceneInput, RecipeDoc } from '@salt/domain/schemas';
+import type {
+  AuthorRecipeInput,
+  DescribeRecipeSceneInput,
+  PersistenceOutcome,
+  RecipeDoc,
+} from '@salt/domain/schemas';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
 import {
   addItem,
@@ -578,6 +584,19 @@ export function urlImportMessage(outcome: UrlImportFailure): string {
   return UNKNOWN_IMPORT_COPY;
 }
 
+// ─── A recipe the server could not save (issue #1601) ─────────────────────────
+// The authoring callables write the recipe themselves and say whether that write
+// landed. When it did not, the recipe still opens — the AI work is not thrown
+// away — and the page's first edit writes it whole (`persistAuthoredRecipe`
+// documents that recovery and its limits). These are the two things the cook is
+// told, worded once for every door:
+//  - a door that LANDS on the recipe's page, where an edit rescues it;
+//  - a door that does not, where nothing can.
+export const NOT_SAVED_YET_COPY =
+  'This recipe isn’t saved yet — make any change on the page to keep it.';
+export const COULD_NOT_SAVE_COPY = 'The recipe couldn’t be saved — please try again.';
+export type { AuthoredRecipe };
+
 // Whether a failure means "your session has died", and so whether the UI should
 // offer a route back to sign-in rather than a retry. One predicate for both
 // import paths so the two sheets cannot drift on what "signed out" means.
@@ -707,11 +726,12 @@ async function tracedUserAction<T, E>(
 export async function importRecipeFromUrl(
   url: string,
   source: 'button' | 'share' = 'button',
-): Promise<ReadResult<Recipe, UrlImportFailure>> {
+): Promise<ReadResult<AuthoredRecipe, UrlImportFailure>> {
   const trimmed = url.trim();
   // `Recipe` is an alias of `RecipeDoc` (issue #417), so the draft that comes
-  // back is already a Recipe — no cast needed.
-  return tracedUserAction<Recipe, UrlImportFailure>(
+  // back is already a Recipe — no cast needed. It comes with whether the server
+  // saved it (issue #1601), which the door turns into words.
+  return tracedUserAction<AuthoredRecipe, UrlImportFailure>(
     `Import recipe from ${hostForSpan(trimmed)}`,
     'callExtractRecipeFromUrl',
     { 'import.source': source },
@@ -782,10 +802,9 @@ export function photoImportMessage(outcome: PhotoImportFailure): string {
 // passed from here.
 export async function importRecipeFromPhoto(
   images: readonly RecipePagePhoto[],
-): Promise<ReadResult<Recipe, PhotoImportFailure>> {
-  // `Recipe` is an alias of `RecipeDoc` (issue #417), so the draft that comes
-  // back is already a Recipe — no cast needed.
-  return tracedUserAction<Recipe, PhotoImportFailure>(
+): Promise<ReadResult<AuthoredRecipe, PhotoImportFailure>> {
+  // Same answer as the URL import: the draft and whether it was saved (#1601).
+  return tracedUserAction<AuthoredRecipe, PhotoImportFailure>(
     'Import recipe from photo',
     'callExtractRecipeFromPhoto',
     { 'import.source': 'photo', 'import.pageCount': images.length },
@@ -808,14 +827,14 @@ export async function importRecipeFromPhoto(
 export async function authorRecipeTraced(
   input: AuthorRecipeInput,
   titleHint?: string,
-): Promise<ReadResult<RecipeDoc, DomainError>> {
+): Promise<ReadResult<AuthoredRecipe, DomainError>> {
   const name =
     titleHint && titleHint.trim() ? `Author recipe: ${titleHint.trim()}` : 'Author recipe';
   // No `onFailure`: authoring has no import copy to choose and no second surface
   // to keep in agreement, so nothing is reported from here. The outcome label is
   // the error's own `kind` rather than `importOutcomeLabel` — there are no import
   // codes to prefer.
-  return tracedUserAction<RecipeDoc, DomainError>(
+  return tracedUserAction<AuthoredRecipe, DomainError>(
     name,
     'callAuthorRecipe',
     {},
@@ -912,9 +931,16 @@ export function takeImportedDraft(expectedId: string): Recipe | null {
 // The selection rules stay here, because they read the browser's live canon
 // snapshot: an ingredient already matched to a canon item that still exists is
 // skipped, one whose canon item has been deleted is re-matched.
+//
+// THE ANSWER IS WHETHER THE RECIPE WAS UPDATED (issue #1601): `ok` carries the
+// function's own `PersistenceOutcome` for that fold, `skipped` when there was
+// nothing to send, and `null` when a function older than #1601 did not say. A
+// `failed` outcome is still `ok` here — the call succeeded and
+// the matching is durable — and it is NOT reported: the function reported it
+// when the write failed, and a second report would count one failure twice.
 export async function canonicaliseIngredients(
   recipe: Recipe,
-): Promise<ReadResult<void, DomainError>> {
+): Promise<ReadResult<PersistenceOutcome | null, DomainError>> {
   // Collect ingredients that need canonicalisation: parsed and without a live match
   // (pending, failed, or matched-but-canon-item-deleted).
   const canonIds = new Set(getCanonItemsSnapshot().map((c) => c.id));
@@ -927,7 +953,7 @@ export async function canonicaliseIngredients(
     }
   }
 
-  if (toProcess.length === 0) return success(undefined);
+  if (toProcess.length === 0) return success('skipped');
 
   const batchResult = await callCanonicaliseRecipeIngredients({
     recipeId: recipe.id,
@@ -946,8 +972,8 @@ export async function canonicaliseIngredients(
   // failures — so they are still intentionally not reported.
   if (batchResult.kind === 'err') return reportIfFailed(getErrorReporter(), batchResult);
   // The returned results are not folded here: the function has already recorded
-  // them on the recipe, and the subscription delivers them.
-  return success(undefined);
+  // them on the recipe (or says it could not), and the subscription delivers them.
+  return success(batchResult.value.persistence);
 }
 
 // Parse and canon-match a single ingredient line. Chains callParseRecipeIngredients

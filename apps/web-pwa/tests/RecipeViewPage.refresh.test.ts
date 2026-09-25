@@ -306,7 +306,7 @@ beforeEach(() => {
   vi.mocked(discardGuidedPlan).mockResolvedValue({ kind: 'ok', value: undefined });
   vi.mocked(authorRecipeTraced).mockResolvedValue({
     kind: 'ok',
-    value: librarianDraft(),
+    value: { recipe: librarianDraft(), persistence: 'skipped' as const },
   } as Awaited<ReturnType<typeof authorRecipeTraced>>);
   mockCanonItems._set([]);
   mockIsLoading._set(false);
@@ -514,8 +514,11 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
       value: {
-        ...draft,
-        steps: [{ ...draft.steps[0]!, id: 'step-1', text: 'Fry the chorizo.' }],
+        recipe: {
+          ...draft,
+          steps: [{ ...draft.steps[0]!, id: 'step-1', text: 'Fry the chorizo.' }],
+        },
+        persistence: 'skipped' as const,
       },
     } as Awaited<ReturnType<typeof authorRecipeTraced>>);
     mockSessions._set([makeSession(CHAT_TURNS)]);
@@ -535,7 +538,10 @@ describe('RecipeViewPage — an applied amendment takes the guided plan with it'
     const draft = librarianDraft();
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: { ...draft, steps: [{ ...draft.steps[0]!, id: 'step-1' }] },
+      value: {
+        recipe: { ...draft, steps: [{ ...draft.steps[0]!, id: 'step-1' }] },
+        persistence: 'skipped' as const,
+      },
     } as Awaited<ReturnType<typeof authorRecipeTraced>>);
     mockSessions._set([makeSession(CHAT_TURNS)]);
     renderPage();
@@ -655,7 +661,10 @@ describe('RecipeViewPage — Refresh acknowledges the librarian leg, not the che
     );
     expect(document.body.textContent).not.toContain('Thinking…');
 
-    settleLibrarian({ kind: 'ok', value: librarianDraft() } as LibrarianResult);
+    settleLibrarian({
+      kind: 'ok',
+      value: { recipe: librarianDraft(), persistence: 'skipped' as const },
+    } as LibrarianResult);
     await waitFor(() => expect(screen.getByTestId('recipe-change-summary')).toBeInTheDocument());
     expect(toastSpy.live()).toEqual([]);
   });

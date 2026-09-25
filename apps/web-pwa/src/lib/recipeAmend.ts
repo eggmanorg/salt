@@ -165,8 +165,11 @@ async function propose(
   const result = await authorRecipeTraced(input, existing.title);
   if (result.kind !== 'ok') return result;
 
-  const updated = mergeAmendedRecipe(existing, result.value, new Date().toISOString());
-  return success({ existing, draft: result.value, updated, diff: diffRecipe(existing, updated) });
+  // Edit mode writes nothing, so the answer's `persistence` has nothing to say
+  // here (issue #1601) — the proposal is the recipe alone.
+  const draft = result.value.recipe;
+  const updated = mergeAmendedRecipe(existing, draft, new Date().toISOString());
+  return success({ existing, draft, updated, diff: diffRecipe(existing, updated) });
 }
 
 /**

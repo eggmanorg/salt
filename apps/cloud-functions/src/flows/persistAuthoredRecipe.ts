@@ -1,6 +1,6 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import type { RecipeDoc } from '@salt/domain/schemas';
+import type { AuthoredRecipeEnvelope, PersistenceOutcome, RecipeDoc } from '@salt/domain/schemas';
 import { reportServerError } from '../observability/reportServerError.js';
 
 // Write a freshly-authored recipe to `recipes/{id}` (issue #616), shared by all
@@ -28,15 +28,10 @@ import { reportServerError } from '../observability/reportServerError.js';
 //
 // A write failure does NOT fail the call. The callable still returns the recipe,
 // the client stashes it and the page paints it, rather than throwing away a
-// successful, already-paid-for generation. Logged so the failure is visible, AND
-// reported (issue #1431 review, should-fix): the recipe the caller believes it
-// has is not in Firestore, which is `StorageError`'s report column exactly as
-// the sibling write in `canonicaliseRecipeIngredients` reads it — an
-// already-paid-for run whose cheap half silently failed. "The user still gets a
-// working recipe" was true of the callable's return value but not of what
-// happens after — every recovery path this file documents below depends on an
-// EDIT, so an operator needs to see the failure even though the caller does not
-// fail on it.
+// successful, already-paid-for generation. Logged and reported as `StorageError`
+// here, once (issue #1431 review) — the client does not report it again — and
+// returned as `'failed'` so a caller that asked (`reportPersistence`, issue
+// #1601) can tell the cook the recipe is not saved yet.
 //
 // HOW IT RECOVERS, now that #1319 Phase 8 has deleted the editor and its Save
 // that used to be the answer. The recovery survives, narrowed: `RecipeViewPage`'s
@@ -51,29 +46,45 @@ import { reportServerError } from '../observability/reportServerError.js';
 // The boundary, because "it recovers" unqualified would be too strong. Three
 // limits, all real:
 //   * it takes an EDIT. A cook who reads the recipe, changes nothing and
-//     navigates away loses it, and nothing on screen says so. Narrower than the
-//     pre-#616 fallback, where the recipe sat in an editor wearing a Save
-//     button — though that one equally lost it if they walked away without
-//     pressing it.
+//     navigates away loses it. Since #1601 a door that lands on the page warns
+//     that the recipe is not saved yet and that any change keeps it; a tab on an
+//     older bundle does not ask for the outcome and still shows nothing.
 //   * the stash is module state, single-use and id-keyed, so it does not survive
 //     a reload and cannot bleed into another recipe's page.
-//   * the chat leg has one door where it never applies: `ChatSessionPage`'s
-//     `returnToMeal` navigates to the MEAL rather than to the new recipe, so the
-//     stash is never claimed there and simply expires unread.
+//   * two doors never land on the page, so the stash is never claimed and the
+//     recipe is lost: `ChatSessionPage`'s `returnToMeal` (it navigates to the
+//     MEAL) and the share target's navigation fallback. Both say the recipe
+//     could not be saved (#1601).
 // Pinned by "rescues an import whose server-side write failed" in
 // `apps/web-pwa/tests/RecipeViewPage.reviewFlag.test.ts` — one path, exercising
 // the id-keyed fallback all three share.
 //
 // `flowName` prefixes the log line so the failure is attributed to the authoring
 // path that hit it.
-export async function persistAuthoredRecipe(recipe: RecipeDoc, flowName: string): Promise<void> {
+export async function persistAuthoredRecipe(
+  recipe: RecipeDoc,
+  flowName: string,
+): Promise<Extract<PersistenceOutcome, 'written' | 'failed'>> {
   try {
     await getFirestore().collection('recipes').doc(recipe.id).set(recipe);
+    return 'written';
   } catch (err) {
     logger.error(`${flowName}: failed to persist authored recipe`, {
       recipeId: recipe.id,
       error: err instanceof Error ? err.message : String(err),
     });
     reportServerError(err, 'StorageError');
+    return 'failed';
   }
+}
+
+// The authoring callables' answer, shaped by the caller's `reportPersistence`
+// (issue #1601): the envelope when it asked, the bare recipe otherwise — which is
+// what every tab on an older bundle reads.
+export function authoredAnswer(
+  recipe: RecipeDoc,
+  persistence: PersistenceOutcome,
+  reportPersistence: true | undefined,
+): RecipeDoc | AuthoredRecipeEnvelope {
+  return reportPersistence ? { recipe, persistence } : recipe;
 }

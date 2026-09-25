@@ -15,7 +15,7 @@ import { setActiveSpanName } from '@salt/observability/server';
 import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
-import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
+import { authoredAnswer, persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 
@@ -81,7 +81,7 @@ export const extractRecipeFromPhotoFlow = ai.defineFlow(
     // run against real model output on staging.
     outputSchema: ExtractRecipeFromPhotoOutputSchema,
   },
-  async ({ images }): Promise<RecipeDoc> => {
+  async ({ images, reportPersistence }) => {
     // Human-readable top-level span name for the end-to-end trace view. There is
     // no URL or title to name it by until the extraction has run, so the page
     // count is the only honest identifier available at this point.
@@ -145,8 +145,8 @@ export const extractRecipeFromPhotoFlow = ai.defineFlow(
     // recipe exists the moment the extraction finishes, whatever the client does
     // next — which matters more here than anywhere, since the user has just been
     // holding a phone over a book and the page photos are gone.
-    await persistAuthoredRecipe(recipe, 'extractRecipeFromPhoto');
-    return recipe;
+    const persistence = await persistAuthoredRecipe(recipe, 'extractRecipeFromPhoto');
+    return authoredAnswer(recipe, persistence, reportPersistence);
   },
 );
 

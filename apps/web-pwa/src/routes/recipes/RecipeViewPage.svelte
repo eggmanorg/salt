@@ -51,6 +51,8 @@
     queueRecipeEdit,
     flushRecipeWrites,
     stashImportedDraft,
+    NOT_SAVED_YET_COPY,
+    type AuthoredRecipe,
     takeImportedDraft,
     attachComponentToMeal,
     regenerateRecipeImage,
@@ -321,7 +323,10 @@
   // the dialogs that call this are mounted inside `{#if showComponents}`, which is
   // false whenever `recipe` is null. It is one uncovered branch and it is named
   // here rather than dressed up with a test that fakes the state.
-  async function handleComponentImported(imported: Recipe, method: 'url' | 'photo'): Promise<void> {
+  async function handleComponentImported(
+    { recipe: imported, persistence }: AuthoredRecipe,
+    method: 'url' | 'photo',
+  ): Promise<void> {
     if (recipe === null) return;
     trackUsageEvent('recipe.created', {
       recipe_id: imported.id,
@@ -331,11 +336,19 @@
     showComponentUrlImport = false;
     showComponentPhotoImport = false;
     const attached = await attachComponentToMeal(recipe.id, imported.id, imported);
-    // Rule 10. The dish is already saved on the server, so a failed attach must
-    // not strand it — say what happened and still go to it.
+    // Rule 10. A failed attach must not strand the dish — say what happened and
+    // still go to it. "Saved the dish" only when it was: a server write that
+    // failed (issue #1601) is its own warning, and the dish's page is where the
+    // first edit saves it.
     if (attached.kind !== 'ok') {
-      addToast('Saved the dish, but could not add it to this meal.', 'destructive');
+      addToast(
+        persistence === 'failed'
+          ? 'Could not add the dish to this meal.'
+          : 'Saved the dish, but could not add it to this meal.',
+        'destructive',
+      );
     }
+    if (persistence === 'failed') addToast(NOT_SAVED_YET_COPY, 'destructive');
     stashImportedDraft(imported);
     push(`/recipes/${imported.id}`);
   }
@@ -638,15 +651,17 @@
       addToast('Canonicalisation failed.', 'destructive');
       return;
     }
-    // `result.kind === 'ok'` confirms the callable returned and the matching it
-    // ran is durable (the canon documents it created or reused). It does NOT
-    // confirm the recipe row itself was updated: the flow's own fold onto
-    // `recipes/{id}` is best-effort and swallows a Firestore failure server-side
-    // (logged + reported, never thrown — Rule 10), and nothing on this wire says
-    // whether that write landed (#1475 review, finding 3). A toast claiming the
-    // row was matched would be wrong on that rare path, so this one asserts only
-    // what the response actually establishes — the list itself, via the
-    // subscription, is what shows whether the row changed.
+    // `ok` means the matching ran and is durable; the value says whether the
+    // function's fold onto `recipes/{id}` landed (issue #1601). On `failed` the
+    // rows were not updated and their ✗ markers stay, so say so and name the
+    // retry — the server has already reported the failure.
+    if (result.value === 'failed') {
+      addToast(
+        "Matches found, but the recipe wasn't updated. Tap Canonicalise again to retry.",
+        'destructive',
+      );
+      return;
+    }
     addToast('Matching complete.', 'success');
   }
 
@@ -1483,18 +1498,23 @@
     );
     sidebarIsSavingNew = false;
     if (result.kind !== 'ok') {
-      // One message, for the reason written out at `runSave` in ChatSessionPage:
-      // since issue #1431 the flow writes the recipe and its write never fails
-      // the call, so there is no save leg here to report on separately.
+      // The call itself failed. The flow's write never fails the call (issue
+      // #1431); whether it landed is the answer's `persistence`, below.
       addToast('Failed to generate recipe.', 'destructive');
       return;
     }
+    const { recipe: saved, persistence } = result.value;
     // The sidebar twin of the chat page's "Save as new recipe" (issue #765):
     // `basedOnRecipeId: null` makes it a CREATE path, so the librarian may
     // classify the accompaniment it just wrote as a cocktail. Copy comes from
-    // `KIND_COPY`, never from a comparison on the kind.
-    addToast(KIND_COPY[kindOf(result.value)].createdToast, 'success');
-    push(`/recipes/${result.value.id}`);
+    // `KIND_COPY`, never from a comparison on the kind. A recipe the server could
+    // not save is not "created" — it opens with the not-saved warning instead
+    // (issue #1601), and its first edit saves it.
+    addToast(
+      persistence === 'failed' ? NOT_SAVED_YET_COPY : KIND_COPY[kindOf(saved)].createdToast,
+      persistence === 'failed' ? 'destructive' : 'success',
+    );
+    push(`/recipes/${saved.id}`);
   }
 
   // ─── Asking the chef to save it (issue #1480) ──────────────────────────────

@@ -15,6 +15,7 @@ import {
   CanonicaliseRecipeIngredientsOutputSchema,
   IngredientGroupSchema,
   type CanonicaliseRecipeIngredientsInput,
+  type PersistenceOutcome,
   type ProductFormProposal,
 } from '@salt/domain/schemas';
 import type { DomainError, ReadResult } from '@salt/shared-types';
@@ -48,7 +49,10 @@ import { withAiTimeout } from '../adapters/withAiTimeout.js';
 //
 // Best-effort, never a throw (Rule 10), and shaped after `persistAuthoredRecipe`:
 // an already-paid-for AI run is not discarded over a Firestore hiccup, so a
-// failure is logged, reported and the results still returned. It does NOT copy
+// failure is logged, reported and the results still returned — now with the
+// outcome beside them (issue #1601), so the caller can say the rows were not
+// updated instead of claiming they were. `failed` is reported HERE, once; the
+// client does not report it again. It does NOT copy
 // that function's full `.set()`, whose justification ("the doc cannot already
 // exist") is false here — this recipe exists, is family-shared, and other people
 // and other triggers write it.
@@ -56,7 +60,7 @@ async function persistCanonMatches(
   recipeId: string,
   items: CanonicaliseRecipeIngredientsInput['items'],
   results: ReadResult<MatchOrCreateResult, DomainError>[],
-): Promise<void> {
+): Promise<PersistenceOutcome> {
   // Only items that named a row can be folded onto one. An item with no
   // `ingredientId` is matched and returned like any other and simply has no
   // destination here.
@@ -73,27 +77,28 @@ async function persistCanonMatches(
       byIngredientId.set(item.ingredientId, { result, rawText: item.rawText });
     }
   });
-  if (byIngredientId.size === 0) return;
+  if (byIngredientId.size === 0) return 'skipped';
 
   try {
     const db = getFirestore();
     const ref = db.collection('recipes').doc(recipeId);
-    await db.runTransaction(async (tx) => {
+    return await db.runTransaction(async (tx): Promise<PersistenceOutcome> => {
       const snap = await tx.get(ref);
-      if (!snap.exists) return; // deleted mid-call — nothing to fold onto
+      if (!snap.exists) return 'skipped'; // deleted mid-call — nothing to fold onto
 
       // A Firestore read is a trust boundary, and the ingredients array is the
       // only field this write touches, so it is the only field validated. On a
       // parse failure the fold is SKIPPED rather than attempted against an
       // unknown shape: the run's canon documents are already written and the
-      // results still return.
+      // results still return. The outcome is `failed`, not `skipped`: the cook's
+      // rows were due an update and did not get one, and nothing else tells them.
       const groups = IngredientGroupSchema.array().safeParse(snap.get('ingredients'));
       if (!groups.success) {
         logger.error(
           'canonicaliseRecipeIngredients: recipe ingredients failed validation — matches not written',
           { recipeId },
         );
-        return;
+        return 'failed';
       }
 
       // The same fold the browser used to perform: an `err` slot is a match
@@ -131,13 +136,14 @@ async function persistCanonMatches(
       // Nothing left to annotate — every row this batch was for has gone. Write
       // nothing rather than bump `updatedAt` and re-fire `onRecipeWritten` for a
       // document that would be byte-identical.
-      if (!folded) return;
+      if (!folded) return 'skipped';
 
       // `update`, not `set`: every other field on the document is left exactly as
       // the transaction read it. `updatedAt` is stamped because this IS a change
       // to the document, and the client's `applySnapshot` echo guard needs the
       // incoming snapshot to be newer than anything it wrote itself.
       tx.update(ref, { ingredients: next, updatedAt: new Date().toISOString() });
+      return 'written';
     });
   } catch (err) {
     logger.error('canonicaliseRecipeIngredients: failed to persist canon matches', {
@@ -145,6 +151,7 @@ async function persistCanonMatches(
       error: err instanceof Error ? err.message : String(err),
     });
     reportServerError(err, 'StorageError');
+    return 'failed';
   }
 }
 
@@ -579,8 +586,13 @@ export const canonicaliseRecipeIngredientsFlow = ai.defineFlow(
       // exist yet, and an unconditional write there would have no document to
       // name. Pinned by "writes no recipe document" in
       // `canonicaliseRecipeIngredients.persist.test.ts`, not merely asserted here.
+      //
+      // The same condition picks the response's shape (issue #1601): the
+      // `recipeId` arm answers `{ results, persistence }`, the content arm the bare
+      // array every content-only caller — and every pre-#1434 tab — reads.
       if (input.recipeId !== undefined) {
-        await persistCanonMatches(input.recipeId, input.items, settled);
+        const persistence = await persistCanonMatches(input.recipeId, input.items, settled);
+        return { results: settled, persistence };
       }
 
       return settled;

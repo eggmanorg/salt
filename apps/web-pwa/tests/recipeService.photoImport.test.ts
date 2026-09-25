@@ -105,6 +105,9 @@ const DRAFT: Recipe = {
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
 };
+// What the adapter hands back since issue #1601: the draft and whether the server
+// saved it. The service passes it through untouched.
+const AUTHORED = { recipe: DRAFT, persistence: 'written' as const };
 
 const PAGES: RecipePagePhoto[] = [
   { base64: 'AAAA', contentType: 'image/webp' },
@@ -125,18 +128,18 @@ beforeEach(() => {
 
 describe('importRecipeFromPhoto', () => {
   it('sends the captured pages and returns the persisted draft', async () => {
-    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: DRAFT });
+    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: AUTHORED });
 
     const result = await importRecipeFromPhoto(PAGES);
 
-    expect(result).toEqual({ kind: 'ok', value: DRAFT });
+    expect(result).toEqual({ kind: 'ok', value: AUTHORED });
     expect(fs.callExtractRecipeFromPhoto).toHaveBeenCalledTimes(1);
     const [input] = fs.callExtractRecipeFromPhoto.mock.calls[0]!;
     expect(input).toEqual({ images: PAGES });
   });
 
   it('roots a browser span and hands its traceparent to the callable', async () => {
-    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: DRAFT });
+    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: AUTHORED });
 
     await importRecipeFromPhoto(PAGES);
 
@@ -159,7 +162,7 @@ describe('importRecipeFromPhoto', () => {
     // Best-effort tracing: an inert tracer yields an empty traceparent, and the
     // import must then behave exactly as a bare callable call.
     tracer.traceparent = '';
-    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: DRAFT });
+    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: AUTHORED });
 
     await importRecipeFromPhoto(PAGES);
 
@@ -194,7 +197,7 @@ describe('importRecipeFromPhoto', () => {
   });
 
   it('reports the page count it was actually given', async () => {
-    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: DRAFT });
+    fs.callExtractRecipeFromPhoto.mockResolvedValue({ kind: 'ok', value: AUTHORED });
 
     await importRecipeFromPhoto([PAGES[0]!]);
 

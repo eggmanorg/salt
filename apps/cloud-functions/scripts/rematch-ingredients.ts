@@ -201,12 +201,14 @@ for (const recipeId of recipeIds) {
   // One canonicalise call for the whole recipe. Results come back in input order.
   let results: unknown[];
   try {
-    results = await canonicaliseRecipeIngredientsFlow({
+    // No `recipeId`, so the content arm: the bare array, and no recipe write.
+    const answer = await canonicaliseRecipeIngredientsFlow({
       items: parsedLines.map(({ work, parsed }) => ({
         rawName: String(parsed['item'] ?? work.rawText),
         rawText: work.rawText,
       })),
     });
+    results = Array.isArray(answer) ? answer : answer.results;
   } catch (err) {
     console.log(`   CANONICALISE FAILED — recipe left untouched\n     ${String(err)}`);
     failed += parsedLines.length;

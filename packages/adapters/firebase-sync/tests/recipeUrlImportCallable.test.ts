@@ -28,7 +28,7 @@ const rejectWith = (code: string, message = 'nope') => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  callableMock.mockResolvedValue({ data: RECIPE });
+  callableMock.mockResolvedValue({ data: { recipe: RECIPE, persistence: 'written' } });
   // Node >= 21 exposes navigator globally with onLine = false, and since #916 the
   // offline check runs FIRST in classifyCallableError — so every code-based case
   // has to say it is online, exactly as firestoreErrors.test.ts does.
@@ -41,7 +41,10 @@ afterEach(() => {
 
 describe('callExtractRecipeFromUrl', () => {
   it('returns the assembled draft on success', async () => {
-    await expect(callExtractRecipeFromUrl(INPUT)).resolves.toEqual({ kind: 'ok', value: RECIPE });
+    await expect(callExtractRecipeFromUrl(INPUT)).resolves.toEqual({
+      kind: 'ok',
+      value: { recipe: RECIPE, persistence: 'written' },
+    });
   });
 
   // ─── Import-specific outcomes keep their bespoke codes ──────────────────────

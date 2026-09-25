@@ -19,6 +19,9 @@
     isLoadingRecipes,
     stashImportedDraft,
     takePendingImportUrl,
+    NOT_SAVED_YET_COPY,
+    COULD_NOT_SAVE_COPY,
+    type AuthoredRecipe,
   } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
   import { currentMember, systemAccountNames } from '../../lib/membersService.js';
@@ -319,7 +322,7 @@
   const rescuedUrl = takePendingImportUrl();
   if (rescuedUrl !== null) showImport = true;
 
-  function handleUrlImported(recipe: Recipe): void {
+  function handleUrlImported(authored: AuthoredRecipe): void {
     // The callable already persisted the recipe (issue #616), flagged as not yet
     // reviewed — so this opens the EXISTING recipe, and since issue #1319 Phase 7
     // it opens the recipe's own PAGE rather than an editor. That page is where the
@@ -329,19 +332,39 @@
     // was written on the SERVER, so the Firestore listener may not have delivered
     // it yet and the page would otherwise read "Recipe not found." for a second.
     // If navigation itself fails, surface it rather than silently closing the
-    // form: the recipe exists either way, so the user isn't stranded.
+    // form. `openImported` says which: the recipe exists unless the server's
+    // write of it failed (issue #1601).
+    openImported(authored, 'url', () => (showImport = false));
+  }
+
+  // The landing both imports share. A recipe the server could not save still
+  // opens — its page's first edit writes it — and the cook is told so, because
+  // otherwise it looks saved (issue #1601). If navigation fails there is no page
+  // to rescue it from, and a failed write means it is gone.
+  function openImported(
+    { recipe, persistence }: AuthoredRecipe,
+    method: 'url' | 'photo',
+    close: () => void,
+  ): void {
     trackUsageEvent('recipe.created', {
       recipe_id: recipe.id,
       recipe_kind: recipe.kind,
-      recipe_method: 'url',
+      recipe_method: method,
     });
     stashImportedDraft(recipe);
     try {
       push(`/recipes/${recipe.id}`);
-      showImport = false;
+      close();
     } catch {
-      addToast('Could not open the recipe — please try again.', 'destructive');
+      addToast(
+        persistence === 'failed'
+          ? COULD_NOT_SAVE_COPY
+          : 'Could not open the recipe — please try again.',
+        'destructive',
+      );
+      return;
     }
+    if (persistence === 'failed') addToast(NOT_SAVED_YET_COPY, 'destructive');
   }
 
   // ─── Import from photo (issue #649) ───────────────────────────────────────────
@@ -364,21 +387,10 @@
     showNewEntry = true;
   }
 
-  function handlePhotoImported(recipe: Recipe): void {
+  function handlePhotoImported(authored: AuthoredRecipe): void {
     // Same hand-off as the URL path above, including where it lands since issue
     // #1319 Phase 7: the recipe's own page, stash and all.
-    trackUsageEvent('recipe.created', {
-      recipe_id: recipe.id,
-      recipe_kind: recipe.kind,
-      recipe_method: 'photo',
-    });
-    stashImportedDraft(recipe);
-    try {
-      push(`/recipes/${recipe.id}`);
-      showPhotoImport = false;
-    } catch {
-      addToast('Could not open the recipe — please try again.', 'destructive');
-    }
+    openImported(authored, 'photo', () => (showPhotoImport = false));
   }
 </script>
 

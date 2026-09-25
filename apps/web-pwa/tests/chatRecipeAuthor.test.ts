@@ -91,9 +91,10 @@ const MESSAGES = [
 ];
 
 function ok() {
-  vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: written() } as Awaited<
-    ReturnType<typeof authorRecipeTraced>
-  >);
+  vi.mocked(authorRecipeTraced).mockResolvedValue({
+    kind: 'ok',
+    value: { recipe: written(), persistence: 'written' },
+  } as Awaited<ReturnType<typeof authorRecipeTraced>>);
 }
 
 beforeEach(() => {
@@ -122,7 +123,25 @@ describe('authorRecipeFromChat — the happy path', () => {
     // Handed back exactly as it came, so the caller navigates to the document
     // that is actually in Firestore.
     expect(result.kind).toBe('ok');
-    expect(result.kind === 'ok' && result.value).toEqual(written());
+    expect(result.kind === 'ok' && result.value).toEqual({
+      recipe: written(),
+      persistence: 'written',
+    });
+  });
+
+  // Issue #1601: the flow's write failing is not a failed call. The outcome is
+  // handed on for the page to put into words, and the draft is still stashed —
+  // the page's first edit is what saves it.
+  it('hands on a failed write as the outcome, still stashing the recipe', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: written(), persistence: 'failed' },
+    } as Awaited<ReturnType<typeof authorRecipeTraced>>);
+
+    const result = await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
+
+    expect(result).toEqual({ kind: 'ok', value: { recipe: written(), persistence: 'failed' } });
+    expect(stashImportedDraft).toHaveBeenCalledWith(written());
   });
 
   it('writes nothing from the browser — the flow is the writer (#1431)', async () => {
@@ -142,8 +161,8 @@ describe('authorRecipeFromChat — the happy path', () => {
 
     const result = await authorRecipeFromChat({ messages: MESSAGES, existingTags: [] });
 
-    expect(result.kind === 'ok' && result.value.createdAt).toBe('2026-09-18T10:00:05.000Z');
-    expect(result.kind === 'ok' && result.value.updatedAt).toBe('2026-09-18T10:00:05.000Z');
+    expect(result.kind === 'ok' && result.value.recipe.createdAt).toBe('2026-09-18T10:00:05.000Z');
+    expect(result.kind === 'ok' && result.value.recipe.updatedAt).toBe('2026-09-18T10:00:05.000Z');
   });
 
   it('sends the signed-in name so the flow can attribute what it writes', async () => {

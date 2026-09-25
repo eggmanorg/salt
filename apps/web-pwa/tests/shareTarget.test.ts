@@ -20,6 +20,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
     `friendly:${outcome.code ?? outcome.kind}`,
   isSignedOutFailure: (outcome: { kind: string }) => outcome.kind === 'AuthError',
   stashPendingImportUrl: (url: string) => stashPendingImportUrl(url),
+  NOT_SAVED_YET_COPY: 'copy:not-saved-yet',
+  COULD_NOT_SAVE_COPY: 'copy:could-not-save',
 }));
 
 async function loadModule() {
@@ -147,7 +149,10 @@ describe('runPendingShareImport', () => {
     // opens the recipe's own page, where the unreviewed banner lives and
     // everything is editable in place, rather than a separate editor.
     const draft = { id: 'r1', title: 'Carbonara' };
-    importRecipeFromUrl.mockResolvedValue({ kind: 'ok', value: draft });
+    importRecipeFromUrl.mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: draft, persistence: 'written' },
+    });
     const { runPendingShareImport } = await loadWithShare('?url=https%3A%2F%2Fexample.com%2Fr');
 
     await runPendingShareImport(true);
@@ -155,6 +160,29 @@ describe('runPendingShareImport', () => {
     expect(importRecipeFromUrl).toHaveBeenCalledWith('https://example.com/r', 'share');
     expect(stashImportedDraft).toHaveBeenCalledWith(draft);
     expect(push).toHaveBeenCalledWith('/recipes/r1');
+  });
+
+  // Issue #1601. The server's write of the recipe failed, so the stash is the only
+  // copy. Landing on its page, the first edit saves it — and the cook has to be
+  // told, or it looks saved.
+  it('opens a recipe the server could not save, and says it is not saved yet', async () => {
+    const draft = { id: 'r1', title: 'Carbonara' };
+    importRecipeFromUrl.mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: draft, persistence: 'failed' },
+    });
+    const { runPendingShareImport, toasts } = await loadWithShare(
+      '?url=https%3A%2F%2Fexample.com%2Fr',
+    );
+
+    await runPendingShareImport(true);
+
+    expect(stashImportedDraft).toHaveBeenCalledWith(draft);
+    expect(push).toHaveBeenCalledWith('/recipes/r1');
+    expect(get(toasts).at(-1)).toMatchObject({
+      message: 'copy:not-saved-yet',
+      variant: 'destructive',
+    });
   });
 
   it('says an import is running for the whole extraction, then takes it down', async () => {
@@ -175,7 +203,10 @@ describe('runPendingShareImport', () => {
     expect(live).toHaveLength(1);
     expect(live[0]!.message).toBe('Importing recipe from example.com in the background…');
 
-    finish({ kind: 'ok', value: { id: 'r1', title: 'Carbonara' } });
+    finish({
+      kind: 'ok',
+      value: { recipe: { id: 'r1', title: 'Carbonara' }, persistence: 'written' },
+    });
     await running;
 
     // Taken down on completion rather than left to time out.
@@ -252,7 +283,10 @@ describe('runPendingShareImport', () => {
   it('says where the recipe landed if navigation fails', async () => {
     // The recipe is safely persisted by then, so a failed navigation is cosmetic
     // — the toast points at it rather than implying the import was lost.
-    importRecipeFromUrl.mockResolvedValue({ kind: 'ok', value: { id: 'r1', title: 'Carbonara' } });
+    importRecipeFromUrl.mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: { id: 'r1', title: 'Carbonara' }, persistence: 'written' },
+    });
     push.mockRejectedValue(new Error('no route'));
     const { runPendingShareImport, toasts } = await loadWithShare(
       '?url=https%3A%2F%2Fexample.com%2Fr',
@@ -261,5 +295,26 @@ describe('runPendingShareImport', () => {
     await runPendingShareImport(true);
 
     expect(get(toasts).at(-1)?.message).toMatch(/imported "Carbonara" — find it in Recipes/i);
+  });
+
+  it('says the recipe could not be saved when neither the write nor the navigation landed', async () => {
+    // Issue #1601: no page means no edit to rescue it, so "find it in Recipes"
+    // would send the cook looking for a recipe that is not there.
+    importRecipeFromUrl.mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: { id: 'r1', title: 'Carbonara' }, persistence: 'failed' },
+    });
+    push.mockRejectedValue(new Error('no route'));
+    const { runPendingShareImport, toasts } = await loadWithShare(
+      '?url=https%3A%2F%2Fexample.com%2Fr',
+    );
+
+    await runPendingShareImport(true);
+
+    expect(get(toasts).at(-1)).toMatchObject({
+      message: 'copy:could-not-save',
+      variant: 'destructive',
+    });
+    expect(get(toasts).map((t) => t.message)).not.toContain('copy:not-saved-yet');
   });
 });

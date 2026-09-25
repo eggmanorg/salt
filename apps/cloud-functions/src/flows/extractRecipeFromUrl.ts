@@ -13,7 +13,7 @@ import { ai } from '../genkit.js';
 import { ssrfGuardedFetch, SsrfFetchError } from '../adapters/ssrfFetch.js';
 import { extractRecipeJsonLd, type JsonLdRecipe } from '../adapters/jsonLdRecipe.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
-import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
+import { authoredAnswer, persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 
@@ -66,7 +66,7 @@ export const extractRecipeFromUrlFlow = ai.defineFlow(
     // run against real model output on staging.
     outputSchema: ExtractRecipeFromUrlOutputSchema,
   },
-  async ({ url }): Promise<RecipeDoc> => {
+  async ({ url, reportPersistence }) => {
     // 1. Validate the URL shape + scheme before any I/O. The SSRF guard does
     //    the resolved-IP enforcement; here we reject garbage and non-https.
     const parsed = parseImportUrl(url);
@@ -168,8 +168,8 @@ export const extractRecipeFromUrlFlow = ai.defineFlow(
     // 7. Persist it here, server-side, flagged as not yet human-reviewed
     //    (issue #616) — see persistAuthoredRecipe for why, and for why a write
     //    failure must not fail the import.
-    await persistAuthoredRecipe(recipe, 'extractRecipeFromUrl');
-    return recipe;
+    const persistence = await persistAuthoredRecipe(recipe, 'extractRecipeFromUrl');
+    return authoredAnswer(recipe, persistence, reportPersistence);
   },
 );
 

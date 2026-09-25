@@ -33,6 +33,9 @@ const revoked: string[] = [];
 let objectUrlSeq = 0;
 
 const DRAFT = { id: 'imported-9', title: 'Braised Beef' };
+// What the import answers since issue #1601: the draft and whether the server
+// saved it. The dialog hands it to its host untouched.
+const AUTHORED = { recipe: DRAFT, persistence: 'written' };
 
 function openDialog(onImported = vi.fn()) {
   render(RecipeImportPhotoDialog, { props: { open: true, onImported } });
@@ -157,18 +160,34 @@ describe('RecipeImportPhotoDialog — import', () => {
   it('sends every captured page as WebP and hands the draft back', async () => {
     const user = userEvent.setup();
     const onImported = openDialog();
-    importMock.mockResolvedValue({ kind: 'ok', value: DRAFT as never });
+    importMock.mockResolvedValue({ kind: 'ok', value: AUTHORED as never });
 
     await capturePage(user);
     setNextCrop('second-page-base64');
     await capturePage(user);
     await user.click(screen.getByTestId('recipe-import-photo-btn'));
 
-    await waitFor(() => expect(onImported).toHaveBeenCalledWith(DRAFT));
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith(AUTHORED));
     expect(importMock).toHaveBeenCalledWith([
       { base64: 'stub-cropped-base64', contentType: 'image/webp' },
       { base64: 'second-page-base64', contentType: 'image/webp' },
     ]);
+  });
+
+  // Issue #1601: a server write that failed is not a failed import — the recipe
+  // still opens, and the host is the one that knows where it lands and so what to
+  // say. The dialog must hand the outcome on rather than drop it or claim success.
+  it('hands a recipe the server could not save to the host, outcome and all', async () => {
+    const user = userEvent.setup();
+    const onImported = openDialog();
+    const unsaved = { recipe: DRAFT, persistence: 'failed' };
+    importMock.mockResolvedValue({ kind: 'ok', value: unsaved as never });
+
+    await capturePage(user);
+    await user.click(screen.getByTestId('recipe-import-photo-btn'));
+
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith(unsaved));
+    expect(toastMock).not.toHaveBeenCalled();
   });
 
   it('keeps the photos when the read fails, and says why', async () => {
@@ -229,7 +248,7 @@ describe('RecipeImportPhotoDialog — import', () => {
     await user.click(screen.getByTestId('recipe-import-photo-btn'));
     await user.keyboard('{Escape}');
 
-    settle({ kind: 'ok', value: DRAFT });
+    settle({ kind: 'ok', value: AUTHORED });
 
     // The recipe is saved and flagged Unreviewed regardless — it is waiting in
     // the library. Reopening an editor someone walked away from is not a favour.

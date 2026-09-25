@@ -312,3 +312,44 @@ describe('extractRecipeFromPhoto — recipe or cocktail', () => {
     expect(recipe.title).toBe('Ragù alla bolognese');
   });
 });
+
+// Issue #1601: asked with `reportPersistence: true`, the flow says whether its
+// server-side write landed; not asked — every tab on an older bundle — it answers
+// the bare recipe exactly as before.
+describe('extractRecipeFromPhoto — says whether the write landed, when asked (#1601)', () => {
+  it('answers { recipe, persistence: written } when asked and the write lands', async () => {
+    const answer = await invoke({ images: [PAGE_ONE], reportPersistence: true });
+
+    expect(answer.persistence).toBe('written');
+    expect(answer.recipe).toBe(mockSet.mock.calls[0]![0]);
+  });
+
+  it('answers persistence: failed when asked and the write fails, and logs it', async () => {
+    mockSet.mockRejectedValue(new Error('firestore unavailable'));
+
+    const answer = await invoke({ images: [PAGE_ONE], reportPersistence: true });
+
+    expect(answer.persistence).toBe('failed');
+    expect(answer.recipe.title).toBe('Ragù alla bolognese');
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining('failed to persist'),
+      expect.objectContaining({ recipeId: answer.recipe.id }),
+    );
+  });
+
+  it('answers the BARE recipe when not asked, even on a failed write', async () => {
+    mockSet.mockRejectedValue(new Error('firestore unavailable'));
+
+    const answer = await invoke({ images: [PAGE_ONE] });
+
+    expect(answer).not.toHaveProperty('persistence');
+    expect(answer).not.toHaveProperty('recipe');
+    expect(answer.title).toBe('Ragù alla bolognese');
+  });
+
+  it('never writes the outcome onto the stored recipe', async () => {
+    await invoke({ images: [PAGE_ONE], reportPersistence: true });
+
+    expect(mockSet.mock.calls[0]![0]).not.toHaveProperty('persistence');
+  });
+});

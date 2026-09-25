@@ -149,6 +149,7 @@ export {
 export { savePushSubscription, deletePushSubscription } from './pushSubscriptionSync.js';
 export { streamChefChat, callGenerateChatTitle } from './chatCallables.js';
 export { callAuthorRecipe } from './authorRecipeCallable.js';
+export type { AuthoredRecipe } from './authoredRecipeAnswer.js';
 export {
   callParseRecipeIngredients,
   callDescribeRecipeScene,

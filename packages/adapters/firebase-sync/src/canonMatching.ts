@@ -1,5 +1,5 @@
 import type { MatchOrCreateInput, MatchOrCreateResult } from '@salt/domain';
-import type { CanonicaliseRecipeIngredientsInput } from '@salt/domain/schemas';
+import type { CanonicaliseRecipeIngredientsInput, PersistenceOutcome } from '@salt/domain/schemas';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
 import { classifyCallableError } from './callableErrors.js';
 import { callFunction, invokeCallable } from './callFunction.js';
@@ -36,18 +36,38 @@ export async function callMatchOrCreate(
 }
 
 type WireBatchResult = ReadResult<MatchOrCreateResult, DomainError>[];
+type WireBatchEnvelope = { results: WireBatchResult; persistence: PersistenceOutcome };
+// `persistence: null` — a function deployed before #1601 answers the bare array
+// even when a recipe is named; it did not say whether its fold landed.
+type BatchEnvelope = { results: WireBatchResult; persistence: PersistenceOutcome | null };
 
 // The batch canon matcher. Since issue #1434 the input can also carry the
 // IDENTITY of what is being matched — a `recipeId` and a per-item
 // `ingredientId` — and when it does, the function records `canonId`/`matchState`
-// onto that recipe itself rather than returning them for the caller to write. It
-// rides on the input type and needs nothing here: no branch, no second call
-// shape, no timeout change. The results array comes back either way.
+// onto that recipe itself rather than returning them for the caller to write.
+//
+// The same `recipeId` picks the answer's shape (issue #1601): with it, the
+// function answers `{ results, persistence }` so the caller can tell whether the
+// recipe was updated; without it, the bare results array. The overloads carry
+// that into the type, so a content-only caller (`matchIngredient`) keeps reading
+// an array and cannot mistake it for the envelope.
+export async function callCanonicaliseRecipeIngredients(
+  input: CanonicaliseRecipeIngredientsInput & { recipeId: string },
+  traceparent?: string,
+): Promise<ReadResult<BatchEnvelope, DomainError>>;
+export async function callCanonicaliseRecipeIngredients(
+  input: CanonicaliseRecipeIngredientsInput & { recipeId?: undefined },
+  traceparent?: string,
+): Promise<ReadResult<WireBatchResult, DomainError>>;
 export async function callCanonicaliseRecipeIngredients(
   input: CanonicaliseRecipeIngredientsInput,
   traceparent?: string,
-): Promise<ReadResult<WireBatchResult, DomainError>> {
-  return callFunction<CanonicaliseRecipeIngredientsInput, WireBatchResult>({
+): Promise<ReadResult<WireBatchResult | BatchEnvelope, DomainError>> {
+  return callFunction<
+    CanonicaliseRecipeIngredientsInput,
+    WireBatchResult | WireBatchEnvelope,
+    WireBatchResult | BatchEnvelope
+  >({
     name: 'canonicaliseRecipeIngredients',
     input,
     traceparent,
@@ -56,6 +76,10 @@ export async function callCanonicaliseRecipeIngredients(
     // matcher here, so the long tail is the ordinary case rather than the
     // exception (#928, B2-010).
     timeoutMs: 120_000,
+    project: (wire) =>
+      input.recipeId !== undefined && Array.isArray(wire)
+        ? { results: wire, persistence: null }
+        : wire,
   });
 }
 

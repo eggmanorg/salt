@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { RecipeSchema } from './recipe.js';
 import { ExtractRecipeAIOutputSchema } from './extractRecipeFromUrl.js';
+import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
 
 // Import a recipe from photographs of a cookbook page (issue #649, Phase 3).
 //
@@ -42,12 +42,14 @@ export const ExtractRecipeFromPhotoInputSchema = z.object({
   // Pages of ONE recipe, in reading order. The prompt tells the model to treat
   // them as a single recipe and to ignore a facing page carrying a different one.
   images: z.array(RecipePagePhotoSchema).min(1).max(MAX_RECIPE_PAGE_PHOTOS),
+  // Same opt-in as the URL import (issue #1601).
+  reportPersistence: ReportPersistenceSchema,
 });
 
 export type ExtractRecipeFromPhotoInput = z.infer<typeof ExtractRecipeFromPhotoInputSchema>;
 
 // The flow returns a complete recipe draft, same as the URL import.
-export const ExtractRecipeFromPhotoOutputSchema = RecipeSchema;
+export const ExtractRecipeFromPhotoOutputSchema = AuthoredRecipeOutputSchema;
 
 // How long the client must be willing to wait, and how long the function is
 // given. ONE constant so the two cannot drift: the Firebase callable client

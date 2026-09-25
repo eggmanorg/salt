@@ -177,6 +177,10 @@ const ENTRY_BRIEF_INPUT = { itemId: 'eq-cosori', accessoryId: 'acc-steam-basket'
 
 const CATALOG = { byRole: { text: [], image: [] }, fetchedAt: 1 };
 const RECIPE = { id: 'r1', title: 'Focaccia' };
+// The three authoring wrappers always ask for the persistence envelope (issue
+// #1601) and hand it on as `{ recipe, persistence }`.
+const AUTHORED = { recipe: RECIPE, persistence: 'written' };
+const ASK = { reportPersistence: true };
 const PROMPT_RESULT = { prompt: 'a loaf, lit softly', model: 'gemini-x', seedFile: null };
 
 const rows: readonly Row[] = [
@@ -206,13 +210,13 @@ const rows: readonly Row[] = [
     name: 'callAuthorRecipe',
     callable: 'authorRecipe',
     timeout: 120_000,
-    data: RECIPE,
+    data: AUTHORED,
     call: () => barrel.callAuthorRecipe(cast(AUTHOR_INPUT)),
-    payload: AUTHOR_INPUT,
-    ok: { kind: 'ok', value: RECIPE },
+    payload: { ...AUTHOR_INPUT, ...ASK },
+    ok: { kind: 'ok', value: AUTHORED },
     traced: {
       call: () => barrel.callAuthorRecipe(cast(AUTHOR_INPUT), TRACEPARENT),
-      payload: { ...AUTHOR_INPUT, traceparent: TRACEPARENT },
+      payload: { ...AUTHOR_INPUT, ...ASK, traceparent: TRACEPARENT },
     },
     errors: SHARED_ERRORS,
   },
@@ -259,10 +263,12 @@ const rows: readonly Row[] = [
     name: 'callCanonicaliseRecipeIngredients',
     callable: 'canonicaliseRecipeIngredients',
     timeout: 120_000,
-    data: [],
+    // The input names a recipe, so the function answers with the envelope
+    // (issue #1601), forwarded untouched inside the `ok` wrap.
+    data: { results: [], persistence: 'written' },
     call: () => barrel.callCanonicaliseRecipeIngredients(cast(CANONICALISE_INPUT)),
     payload: CANONICALISE_INPUT,
-    ok: { kind: 'ok', value: [] },
+    ok: { kind: 'ok', value: { results: [], persistence: 'written' } },
     traced: {
       call: () => barrel.callCanonicaliseRecipeIngredients(cast(CANONICALISE_INPUT), TRACEPARENT),
       payload: { ...CANONICALISE_INPUT, traceparent: TRACEPARENT },
@@ -479,13 +485,13 @@ const rows: readonly Row[] = [
     name: 'callExtractRecipeFromUrl',
     callable: 'extractRecipeFromUrl',
     timeout: 120_000,
-    data: RECIPE,
+    data: AUTHORED,
     call: () => barrel.callExtractRecipeFromUrl(cast(URL_INPUT)),
-    payload: URL_INPUT,
-    ok: { kind: 'ok', value: RECIPE },
+    payload: { ...URL_INPUT, ...ASK },
+    ok: { kind: 'ok', value: AUTHORED },
     traced: {
       call: () => barrel.callExtractRecipeFromUrl(cast(URL_INPUT), TRACEPARENT),
-      payload: { ...URL_INPUT, traceparent: TRACEPARENT },
+      payload: { ...URL_INPUT, ...ASK, traceparent: TRACEPARENT },
     },
     // Its OWN failure vocabulary, not DomainError: the web copy map keys off
     // these codes (`classifyUrlImportError`). `internal` is a verdict on the
@@ -509,13 +515,13 @@ const rows: readonly Row[] = [
     // CF passes as `timeoutSeconds` (`recipeCallables.ts:262-265`). Phase 5 must
     // not move it.
     timeout: PHOTO_IMPORT_TIMEOUT_SECONDS * 1000,
-    data: RECIPE,
+    data: AUTHORED,
     call: () => barrel.callExtractRecipeFromPhoto(cast(PHOTO_INPUT)),
-    payload: PHOTO_INPUT,
-    ok: { kind: 'ok', value: RECIPE },
+    payload: { ...PHOTO_INPUT, ...ASK },
+    ok: { kind: 'ok', value: AUTHORED },
     traced: {
       call: () => barrel.callExtractRecipeFromPhoto(cast(PHOTO_INPUT), TRACEPARENT),
-      payload: { ...PHOTO_INPUT, traceparent: TRACEPARENT },
+      payload: { ...PHOTO_INPUT, ...ASK, traceparent: TRACEPARENT },
     },
     // A separate taxonomy from the URL import's, deliberately: invalid-url and
     // fetch-failed are meaningless about a photograph. `unavailable` has no arm

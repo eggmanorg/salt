@@ -18,6 +18,11 @@ import type { IngredientDoc, IngredientGroupDoc } from '@salt/domain/schemas';
 //  3. a recipe-write failure is logged, reported and the results still returned;
 //  4. an `ingredientId` no longer in the document is skipped, never re-created.
 //
+// And since issue #1601, what the caller is TOLD: the `recipeId` arm answers
+// `{ results, persistence }` with one outcome per exit of the fold, and the
+// content arm still answers the bare array a pre-#1434 tab and every content-only
+// caller read.
+//
 // The flow + the real domain matchOrCreateBatch + the real createFirestoreCanonStore
 // run against an in-memory Firestore, as the sibling suites do. The `.persist`
 // suffix follows the per-concern naming of `…trace` / `…proposal` / `…reporting`.
@@ -136,9 +141,20 @@ const { canonicaliseRecipeIngredientsFlow } =
 // the imported binding at call time.
 const mockLoggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
+type Slot = { kind: string; value?: { item: { id: string } } };
+type Envelope = { results: Slot[]; persistence: string };
+
 const runFlow = canonicaliseRecipeIngredientsFlow as unknown as (
   input: unknown,
-) => Promise<{ kind: string; value?: { item: { id: string } } }[]>;
+) => Promise<Slot[] | Envelope>;
+
+// The `recipeId` arm must answer with the envelope; a bare array there is the
+// pre-#1601 shape and fails the test rather than being read around.
+async function runForRecipe(input: { recipeId: string; items: unknown[] }): Promise<Envelope> {
+  const out = await runFlow(input);
+  if (Array.isArray(out)) throw new Error('expected { results, persistence } on the recipeId arm');
+  return out;
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -198,7 +214,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
   it('records canonId + matchState on recipes/{id} with no client involved', async () => {
     seedRecipe('recipe-1', [ingredient('i1', 'tinned tomatoes'), ingredient('i2', 'chickpeas')]);
 
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-1',
       items: [
         { ingredientId: 'i1', rawName: 'tinned tomatoes' },
@@ -208,6 +224,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
 
     expect(results).toHaveLength(2);
     for (const r of results) expect(r.kind).toBe('ok');
+    expect(persistence).toBe('written');
 
     // The document itself — this is the whole defect. Nothing in this test ran in
     // a browser, and the rows carry their matches.
@@ -238,7 +255,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // per-item `err` slot the client used to fold into `failed`.
     seedRecipe('recipe-2', [ingredient('i1', 'lentils'), ingredient('i2', '   ')]);
 
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-2',
       items: [
         { ingredientId: 'i1', rawName: 'lentils' },
@@ -247,6 +264,8 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     });
 
     expect(results[1]!.kind).toBe('err');
+    // A per-item match failure is an outcome, not a write failure: the fold landed.
+    expect(persistence).toBe('written');
     const [ok, bad] = rows('recipe-2');
     expect(ok!.matchState).toBe('matched');
     expect(bad!.matchState).toBe('failed');
@@ -264,8 +283,12 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
       items: [{ ingredientId: 'i1', rawName: 'tinned tomatoes' }],
     });
 
+    // The BARE array, not the envelope (issue #1601): this is the shape
+    // `assembleRecipeDraft`, `matchIngredient` and every tab older than #1434
+    // read, and wrapping it would break them.
+    expect(Array.isArray(results)).toBe(true);
     expect(results).toHaveLength(1);
-    expect(results[0]!.kind).toBe('ok');
+    expect((results as Slot[])[0]!.kind).toBe('ok');
     // Untouched, to the timestamp.
     expect(storedRecipe('recipe-3').updatedAt).toBe(SEEDED_AT);
     expect(rows('recipe-3')[0]!.matchState).toBe('pending');
@@ -279,8 +302,12 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // `ingredientId` has nothing to fold onto, and must not bump the document.
     seedRecipe('recipe-4', [ingredient('i1', 'tinned tomatoes')]);
 
-    await runFlow({ recipeId: 'recipe-4', items: [{ rawName: 'tinned tomatoes' }] });
+    const { persistence } = await runForRecipe({
+      recipeId: 'recipe-4',
+      items: [{ rawName: 'tinned tomatoes' }],
+    });
 
+    expect(persistence).toBe('skipped');
     expect(storedRecipe('recipe-4').updatedAt).toBe(SEEDED_AT);
     expect(rows('recipe-4')[0]!.matchState).toBe('pending');
   });
@@ -292,7 +319,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // nobody asked about is untouched.
     seedRecipe('recipe-5', [ingredient('i1', 'tinned tomatoes'), ingredient('i9', 'parsley')]);
 
-    await runFlow({
+    const { persistence } = await runForRecipe({
       recipeId: 'recipe-5',
       items: [
         { ingredientId: 'i1', rawName: 'tinned tomatoes' },
@@ -300,6 +327,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
       ],
     });
 
+    expect(persistence).toBe('written');
     const current = rows('recipe-5');
     expect(current.map((r) => r.id)).toEqual(['i1', 'i9']);
     expect(current[0]!.matchState).toBe('matched');
@@ -313,23 +341,25 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // re-fired for a document that would be byte-identical.
     seedRecipe('recipe-8', [ingredient('i9', 'parsley')]);
 
-    await runFlow({
+    const { persistence } = await runForRecipe({
       recipeId: 'recipe-8',
       items: [{ ingredientId: 'deleted-row', rawName: 'chickpeas' }],
     });
 
+    expect(persistence).toBe('skipped');
     expect(storedRecipe('recipe-8').updatedAt).toBe(SEEDED_AT);
     expect(rows('recipe-8')[0]!.matchState).toBe('pending');
   });
 
   it('writes nothing when the recipe document has gone entirely', async () => {
     // Nothing seeded for this id.
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-missing',
       items: [{ ingredientId: 'i1', rawName: 'tinned tomatoes' }],
     });
 
     expect(results[0]!.kind).toBe('ok');
+    expect(persistence).toBe('skipped');
     expect(getCollection('recipes').has('recipe-missing')).toBe(false);
   });
 
@@ -340,13 +370,15 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     seedRecipe('recipe-6', [ingredient('i1', 'tinned tomatoes')]);
     transactionFailure = new Error('simulated recipes write failure');
 
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-6',
       items: [{ ingredientId: 'i1', rawName: 'tinned tomatoes' }],
     });
 
     expect(results).toHaveLength(1);
     expect(results[0]!.kind).toBe('ok');
+    // …and says so (issue #1601), rather than answering exactly as a success does.
+    expect(persistence).toBe('failed');
 
     const errors = mockLoggerError.mock.calls.filter((c) =>
       String(c[0]).includes('failed to persist canon matches'),
@@ -369,10 +401,12 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     seedRecipe('recipe-9', [ingredient('i1', 'tinned tomatoes')]);
     transactionFailure = 'a bare string, not an Error';
 
-    await runFlow({
+    const { persistence } = await runForRecipe({
       recipeId: 'recipe-9',
       items: [{ ingredientId: 'i1', rawName: 'tinned tomatoes' }],
     });
+
+    expect(persistence).toBe('failed');
 
     const errors = mockLoggerError.mock.calls.filter((c) =>
       String(c[0]).includes('failed to persist canon matches'),
@@ -390,7 +424,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // edit landing before this transaction reads the document.
     seedRecipe('recipe-10', [ingredient('i1', '200g cocoa powder')]);
 
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-10',
       items: [{ ingredientId: 'i1', rawName: 'flor', rawText: '200g plain flor' }],
     });
@@ -405,6 +439,7 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
     // Nothing folded means nothing written — same guarantee as every id that
     // vanished from the document mid-call.
     expect(storedRecipe('recipe-10').updatedAt).toBe(SEEDED_AT);
+    expect(persistence).toBe('skipped');
   });
 
   it('skips the fold, and writes nothing, when the stored ingredients fail validation', async () => {
@@ -417,12 +452,15 @@ describe('canonicaliseRecipeIngredients — the function writes the match back',
       updatedAt: SEEDED_AT,
     });
 
-    const results = await runFlow({
+    const { results, persistence } = await runForRecipe({
       recipeId: 'recipe-7',
       items: [{ ingredientId: 'i1', rawName: 'tinned tomatoes' }],
     });
 
     expect(results[0]!.kind).toBe('ok');
+    // `failed`, not `skipped` (issue #1601): the rows were due an update and did
+    // not get one, and nothing else will tell the cook.
+    expect(persistence).toBe('failed');
     expect(getCollection('recipes').get('recipe-7')).toMatchObject({
       ingredients: 'not an array of groups',
       updatedAt: SEEDED_AT,
