@@ -25,7 +25,7 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 
 ## Standing rules
 
-- **Context hygiene is a hard rule, not an aspiration.** You do not read source files, diffs, CI logs, or test output. If you are about to Read something under `packages/`, `apps/`, or `docs/`, that is a delegation. You read: structured agent returns, the reviewer's summary, and `gh`/`git` status output — and not even the issue bodies, which are extracted for you (Setup 2). File names are not diffs — `git diff --name-only`, `gh pr view --json files` and `git status` are yours and you will need them. A coordinator that reads diffs runs out of context at issue three and restarts work that already landed.
+- **Context hygiene is a hard rule, not an aspiration.** You do not read source files, diffs, CI logs, or test output. If you are about to Read something under `packages/`, `apps/`, or `docs/`, that is a delegation. You read: structured agent returns, the reviewer's summary, and `gh`/`git` status output — and not even the issue bodies, which are extracted for you (Setup 2). File names are not diffs — `git diff --name-only`, `gh pr view --json files` and `git status` are yours and you will need them. A coordinator that reads diffs runs out of context at issue three and restarts work that already landed. **This holds hardest for the jobs that exist so Daniel comes back to finished work** — a retry, a divided phase, the sweep. Each is a delegation: you hand the agent a one-line reason and the ledger row, and take back its structured return. You never read what went wrong to decide how to recover from it; the agent you send reads that.
 - **Unattended by default.** Daniel is not watching. AskUserQuestion is unavailable to you in spirit even where it exists — a question blocks the fleet for hours. Decide inside the envelope below; outside it, park the branch and keep the queue moving.
 - **CLAUDE.md is binding**, for you and every agent you spawn.
 - **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear` — the stash stack is shared across every worktree and concurrent agent. Land things with `gh pr merge`. Set work aside with a WIP commit, never a stash.
@@ -40,7 +40,7 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 
 ## Filing an issue
 
-This command files issues of its own — the ledger, a `BLOCKED: oversized` re-spec, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created — and the ledger gets its own parent at Finish:**
+This command files issues of its own — the ledger, an adjudicated blocking finding, and the follow-ups checklist at **Finish**. Creating one is two thirds of the job. **Every one of them except the ledger is triaged and attached in the same breath as it is created — and the ledger gets its own parent at Finish:**
 
 ```
 gh issue create --title "…" --body-file <file>       # take the number out of the URL it prints
@@ -50,20 +50,19 @@ node scripts/board.mjs parent <new> --of <parent>
 
 Neither of those lines is somebody else's job later. GitHub's own project workflow puts a new issue on the board with **every field empty**, and an item with no `Queue` appears in no queue view — so an issue filed and not triaged is not "waiting in Triage", it is invisible, and it stays invisible until someone happens to scroll the unfiltered board. `board.mjs check` fails on one now, which is how you find out you skipped this.
 
-| What you filed                                                               | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`            |
-| ---------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------------------------ |
-| the **ledger**                                                               | — none of it —                            |                                                              |                             | at **Finish**, see below |
-| **`BLOCKED: oversized`** re-spec (a single phase too big — see **Dispatch**) | the issue's own Class                     | the issue's own band                                         | `M` or `L`                  | the issue it came from   |
-| **adjudicated blocking finding**                                             | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger               |
-| **follow-ups checklist** (Finish)                                            | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger               |
+| What you filed                    | `--class`                                 | `--queue`                                                    | `--size`                    | `parent --of`            |
+| --------------------------------- | ----------------------------------------- | ------------------------------------------------------------ | --------------------------- | ------------------------ |
+| the **ledger**                    | — none of it —                            |                                                              |                             | at **Finish**, see below |
+| **adjudicated blocking finding**  | `Defect`                                  | `Medium`, or `Recommended` only per the rule below           | `S`                         | the ledger               |
+| **follow-ups checklist** (Finish) | `Refactor`, or `Defect` if most lines are | `Low`; `Medium` if a line has a real user-facing consequence | `S` up to 3 lines, else `M` | the ledger               |
 
 **The ledger is the one exception on fields, and it is deliberate.** It is not work: it carries no priority, it closes by hand rather than through a PR, and it exists to be resumed from and then finished with. `board.mjs check` skips any issue titled `campaign:` in its field rules for exactly that reason — so putting fields on one is not merely unnecessary, it puts a coordination artefact into a work queue. `campaign follow-ups:` does **not** get that exemption and is ordinary work.
 
 **`Status` is not one of those fields, and a closed ledger must carry one** (2026-09-12). The exemption is `Queue` and `Class`; extending it to `Status` let 19 closed ledgers pile up at no Status, invisible to `check` and visible to Daniel as a column of cards on the `Workflow` board nobody could account for. So **Finish** sets it alongside the parent — see step 2 there.
 
-**The exemption is about fields, not about reachability.** A ledger used to take no parent either, and the cost of that was the whole point of #1346: everything a campaign throws off attaches to the ledger, so a root ledger puts every follow-up, re-spec and mid-run defect one hop from being unreachable. Campaign #1266 ran #968, #971 and #993 — all three under epic #913 — and left #1269 behind where nobody opening #913 would ever see it. So the ledger is attached too, upward, at **Finish**.
+**The exemption is about fields, not about reachability.** A ledger used to take no parent either, and the cost of that was the whole point of #1346: everything a campaign throws off attaches to the ledger, so a root ledger puts every follow-up and mid-run defect one hop from being unreachable. Campaign #1266 ran #968, #971 and #993 — all three under epic #913 — and left #1269 behind where nobody opening #913 would ever see it. So the ledger is attached too, upward, at **Finish**.
 
-**A parent is not an epic, and an epic is not the only thing that can be a parent** — and this command never creates one of either. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. A run-set frequently shares an ordinary work issue as its parent rather than an epic (#1122 and #1202 each hold their own phase issues from inside a work band); the ledger attaches to that exactly the same way. The `BLOCKED: oversized` re-spec is the exception in the other direction: it is the remaining work of the issue it came out of, so it hangs off that issue and inherits whatever epic that issue already sits under.
+**A parent is not an epic, and an epic is not the only thing that can be a parent** — and this command never creates one of either. `parent` writes the sub-issue link and touches no field, so attaching the follow-ups to the ledger groups them without claiming the campaign was a programme of work. A run-set frequently shares an ordinary work issue as its parent rather than an epic (#1122 and #1202 each hold their own phase issues from inside a work band); the ledger attaches to that exactly the same way.
 
 **The ledger goes up, the work stays put.** A GitHub sub-issue link is a strict tree — one parent, no second one — so an issue sits under the parent it already has, epic or ordinary issue, or under a ledger, never both. Attaching the _ledger_ to the run-set's shared parent is what buys reachability without emptying that parent of its own work: its progress count keeps counting the same issues and gains one extra node whose subtree holds everything the campaign produced. **Never re-parent a run-set issue away from the parent it already has to sit under the ledger.**
 
@@ -104,6 +103,7 @@ So this command names a model at **every** `Agent` call rather than letting one 
 | fix agent            | `sonnet` | findings arrive enumerated and the scope is closed                                                         |
 | sweep agent          | `sonnet` | the same, across files: every line was marked decision-free before it reached the list                     |
 | conflict resolver    | `sonnet` | you have already classified the conflict; it applies a rule you handed it                                  |
+| phase divider        | `opus`   | a spec judgement: where a too-big phase divides without changing what gets built                           |
 
 Never omit `model:` and let it inherit. If you find yourself running on anything other than Opus, say so once in the ledger's **Plan** block before you dispatch anything — that line is the only chance anyone gets to catch it before the bill.
 
@@ -302,11 +302,30 @@ Brief each worker with:
 
 1. `TaskStop` the worker's agent id.
 2. Confirm it actually stopped: the harness reports the task killed. An unconfirmed kill is a live worker.
-3. Only now: park the branch as it stands (`BLOCKED: timeout`), and free the slot.
+3. Only now: treat it as `BLOCKED: timeout` — a **retry**, below, or a park if the issue has already had its one.
 
 The slot is the smaller half of this. A worker you left running still holds a worktree, still runs `pnpm test` against the resources the next worker needs, and — the one that actually costs you — can still commit and push to a branch you have parked, or push to one sitting in the merge queue. That produces a `--force-with-lease` failure or a merged branch containing work nobody reviewed. Never start a replacement worker into a slot whose previous occupant you have not confirmed dead. If the kill cannot be confirmed, do not recycle the slot at all: run the pool one narrower for the rest of the campaign and log it.
 
-**BLOCKED non-empty** → park the issue, log it, start the next startable issue. Do not diagnose it yourself; that is diff-reading.
+**BLOCKED non-empty** → sort it by the one-line reason alone. Do not diagnose it yourself; that is diff-reading.
+
+- **Needs Daniel** → park the issue, log it, start the next startable issue. That is: a UX deviation, a CLAUDE.md rule collision or a phase buildable only as a bodge, phase scope ambiguous in a way that changes what gets built, deliverables missing or Must-not-touch violated, phase blocks missing their fields, a handoff comment and a commit disagreeing about what landed, and a falsified premise the worker says needs a decision.
+- **`oversized`** → divide the phase, below.
+- **Anything else** — CI it could not resolve, a rebase conflict in code it did not author, a timeout, heavy suites that would not go green → **retry**, below.
+
+**Retry: once per issue, with a fresh worker, then park.** A stuck worker is usually a worker that ran out of road, not an issue that cannot be built, and a fresh one reading the branch cold gets past most of them. One retry per issue across the whole campaign, whatever the reason — note `retried: <reason>` in the ledger row when you dispatch it, and a resumed session reads that as spent. Never a second.
+
+1. The slot's previous worker is confirmed dead (always true after a return; after a breach, see above).
+2. If the worktree is gone (an ejection removed it), fetch and re-add it on the existing branch: `git worktree add .claude/worktrees/<slug>-N <branch>`. If it is dirty, a WIP commit — `git -C <worktree> status --porcelain` is status output and yours to read.
+3. Dispatch a fresh `opus` worker with the standard brief plus two lines: _"A previous worker on this branch stopped: `<the one-line reason, verbatim>`. salt-run.md's resume check finds what it landed. Bringing the branch up to date with `origin/main` and resolving conflicts against code already merged there is in scope for this attempt — never against an unmerged branch."_ Fresh budget, recorded as at any dispatch.
+4. Its return is handled like any other — except that anything short of success parks, with both reasons on the PR.
+
+**Divide: a single phase too big to build under the ceiling.** That phase was specced too big, and no PR boundary fixes it — but dividing it is spec work, not a decision, as long as what gets built stays the same. Spawn one `Agent(…, model: "opus")`:
+
+> Issue #N's phase <k> could not be built under a `--max-diff <n>` ceiling on its own; its worker stopped on branch `<branch>`, and the issue's handoff comments say what landed. Read the issue (`gh api repos/{owner}/{repo}/issues/N --jq '.body'`) and `.claude/commands/salt-spec.md`'s rules for where a phase boundary may fall. Rewrite phase <k> — and only phase <k> — as two or more phases that each build under the ceiling, renumbering the phases after it. **What gets built must not change**: the same deliverables, outcomes and Must-not-touch entries, redistributed. Every new phase block carries all five fields and ends user-testable. Verify the new body with `node scripts/check-spec-shape.mjs` (exit 0), then write it with `gh issue edit N --body-file <file>` and post one comment saying what you divided and why. If the phase cannot be divided without changing what gets built, or without a boundary that would leave the app broken between PRs, change nothing and say so.
+>
+> Return only: `DIVIDED: phase <k> → phases <k>…<m>` or `NEEDS_DECISION: <one line>`.
+
+`DIVIDED` → re-dispatch a worker on the same branch exactly as after a `SPLIT: YES`, with the renumbered phases as `PHASES_UNBUILT`. Dividing is not the issue's retry, and does not spend it. `NEEDS_DECISION` → park, with the divider's line as the reason.
 
 **`SPLIT: YES`** → the issue is neither finished nor parked, and this is the one return that puts an issue back into the schedule rather than out of it. The PR it left behind is out of draft, green and review-eligible exactly like any other, so it goes through review and the merge queue unchanged — nothing about the landing path is special. What is special is what happens after it merges: **re-dispatch**.
 
@@ -317,7 +336,7 @@ The slot is the smaller half of this. A worker you left running still holds a wo
 
 The re-dispatched worker needs no special instruction to find its place: salt-run.md's resume check detects landed phases by content, not by lineage, and its own **Working branch** section covers the continuation form. File no split issue. Do not decide the phase boundary yourself — the spec already chose it, and the worker cut there.
 
-**`BLOCKED: oversized`** now means one thing only: **a single phase that cannot be built under the ceiling on its own**. That is a phase specced too big, and no PR boundary fixes it — which is why it is a spec question and not a split. It is still the one blocked reason that gets an action rather than a bare park: file a follow-up issue proposing that phase be re-specced (what the phase asked for, what it cost, and the ceiling it hit), **triage and attach it per Filing an issue** — it is the remaining work of the issue it came out of, so it hangs off that issue, not off the ledger — reference it from the parked branch, and move on. Crossing the ceiling _across_ phases is not this: it splits, and never reaches you as a park.
+**`BLOCKED: oversized`** means one thing only: **a single phase that cannot be built under the ceiling on its own** — divided as above. Crossing the ceiling _across_ phases is not this: it splits, and never reaches you as a block.
 
 **FLAGS naming another campaign issue** → record it in the ledger and re-check the conflict graph. A flag is the one signal that can reveal an overlap the footprints did not.
 
@@ -335,7 +354,7 @@ A PR reaching review is already under the ceiling, or is the last PR of an issue
 
 **Splitting at a phase boundary is sanctioned; carving up a branch already built is not.** The two look alike and are not. A phase boundary was chosen by the spec, each side of it ends user-testable, and the reviewer of PR _k+1_ reads it against a base that already contains PR _k_ — merged, and reviewed on its own terms. Carving a finished branch in half has none of that: the boundary is arbitrary, and neither reviewer can see a duplication or an architectural drift that spans it. So the old rule survives exactly where it was true — **you never split a diff that is in front of you** — and the place a large issue gets divided is upstream, in the phase loop, before the code exists.
 
-So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFiles` — counts, not content, and remember the worker's count excluded `pnpm-lock.yaml`: an overage the lockfile explains (check `--json files`) is not a breach. An overage the worker _declared_ is not a breach either — a final phase that carried the branch past the ceiling with no phases left ships as one PR by design, and the PR body says so. What is a breach is an undeclared overage with `SPLIT: NO` and phases unbuilt: that means the worker's check did not run, and a worker that skipped that check may have skipped anything. Park the branch and treat it as `BLOCKED: oversized`. Do not review it anyway.
+So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFiles` — counts, not content, and remember the worker's count excluded `pnpm-lock.yaml`: an overage the lockfile explains (check `--json files`) is not a breach. An overage the worker _declared_ is not a breach either — a final phase that carried the branch past the ceiling with no phases left ships as one PR by design, and the PR body says so. What is a breach is an undeclared overage with `SPLIT: NO` and phases unbuilt: that means the worker's check did not run, and a worker that skipped that check may have skipped anything. Do not review it: close the PR unmerged and **retry** the issue from its branch, telling the fresh worker the ceiling check did not run.
 
 > Review PR #X against issue #N adversarially. Assume it is wrong and find where.
 >
@@ -402,7 +421,7 @@ Drop whatever comes back under `FIXED` from the should-fix list: a finding canno
 
 The cost being paid for today is on the record. #1026 exists because the round-1 fix agent drafted both of its doc corrections, **reverted them as out of its assigned scope**, and left an issue behind for someone to redo the work later — three payments for two lines. #1022 ("add a single line in two places"), #1015 ("one-line CLAUDE.md edit") and #1045's "one-token fix" are the same shape.
 
-Rounds are capped at two. Round 1 is the full review. Round 2 may only verify the blocking items from round 1 — no new findings, unless the fix introduced a new blocking regression. There is no round 3. A **blocking** item still open after round 2 parks the branch (see the envelope), or — if you adjudicate it as safe to ship — gets a filed issue before the merge. Everything else joins the should-fix list — less anything the round-1 fix agent returned under `FIXED`; its decision-free lines are fixed by the **Sweep**, and the rest are filed as one issue at **Finish**.
+Rounds are capped at two. Round 1 is the full review. Round 2 may only verify the blocking items from round 1 — no new findings, unless the fix introduced a new blocking regression. There is no round 3. A **blocking** item still open after round 2 parks the branch (see the envelope), or — if you adjudicate it as safe to ship — gets a filed issue before the merge, and a line on the `## Sweep` checklist naming that issue, so this campaign fixes it rather than the next. Everything else joins the should-fix list — less anything the round-1 fix agent returned under `FIXED`; its decision-free lines are fixed by the **Sweep**, and the rest are filed as one issue at **Finish**.
 
 **You adjudicate, not the reviewer.** A rejection is a position, not a veto; you decide, record the decision in the ledger, and move on. Reviewer-wins is a deadlock and this command runs unattended.
 
@@ -422,10 +441,7 @@ This is a correction to a rule that lost its own output. The previous version sa
 
 That rule's stated grounds were also wrong, and the record is checkable: it claimed campaign #1009's seventeen filed follow-ups were "never actioned". Most were closed within a day — and #1021, #1023 and #1030, the entire contents of campaign #1040, were three of them. Filing is the mechanism that feeds the next campaign. One issue per campaign rather than seventeen is the concession to noise; not filing at all is not.
 
-Two findings still get their own `gh issue create` at the time rather than waiting for the list — each triaged and attached per **Filing an issue** — because they are structural rather than taste:
-
-- **`BLOCKED: oversized`** — the re-spec proposal for the single phase that would not fit, as described in **Dispatch**. A ceiling crossed across phases files nothing; it splits.
-- **a blocking finding you adjudicated as real but chose not to hold the queue for** — that is a known defect shipping to main, and it needs a number before the merge, not after the campaign.
+One finding still gets its own `gh issue create` at the time rather than waiting for the list — triaged and attached per **Filing an issue**: **a blocking finding you adjudicated as real but chose not to hold the queue for.** That is a known defect shipping to main, and it needs a number before the merge, not after the campaign — `campaign-land.mjs --adjudicated` will not merge without one. Filing it is not leaving it: it also goes on the `## Sweep` checklist, and the sweep PR closes it. Only a fix that turns out to need a decision leaves it open.
 
 Do not let the reviewer's taste hold the queue.
 
@@ -526,8 +542,10 @@ the queue is for, so treat it as signal, not noise. Read the merge-group run's
 failure, then apply the same classification the old rebase step used: a failure
 in files a merged sibling of this campaign changed, or in `pnpm-lock.yaml` or the
 Docs map, is this campaign's own work — fix it on the branch, push, re-enqueue.
-Anything else is someone's concurrent change and is **not yours to resolve**:
-park it, log it, next.
+Anything else is someone's concurrent change and is **not yours to resolve** —
+but it is a fresh worker's: **retry** the issue (see **Dispatch**), which brings
+the branch up to date with `main` and sends it back through **Review**. Park it
+only if the issue has already had its retry.
 
 Each merge to `main` triggers `deploy-staging.yml` off CI completion. That is
 expected and it is what staging is for — but it means a campaign lands N staging
@@ -546,16 +564,23 @@ Running unattended means most of salt-run.md's pause conditions become deadlocks
 - whether a FLAG changes the conflict graph;
 - a **falsified premise** a worker corrected in place (salt-run.md → _Standing rules_): the three tests it had to pass are checkable from the worker's return, so confirm them and record it. A falsified premise the worker says needs a **decision** is a park, not a park-or-guess — it is the same call as a UX deviation.
 
+**Retry once with a fresh worker, then park** (see **Dispatch** → _Retry_) — these are a worker that ran out of road, not a decision:
+
+- a worker returns BLOCKED for a reason that is not Daniel's, or blows its budget (terminate and confirm first);
+- a PR over the `--max-diff` ceiling with phases unbuilt and `SPLIT: NO` — the worker's check did not run. A declared overage on a final phase is not this, and a ceiling crossed with phases remaining is a split;
+- a queue ejection, whoever's change it collided with, and gates red on the queue's rebuild;
+- heavy suites that will not run green.
+
+A single phase too big to build is neither: it is divided (see **Dispatch** → _Divide_), and parks only if the divider says dividing it needs a decision.
+
 **Park the branch — not the campaign — for these:**
 
-- a worker returns BLOCKED, or blows its budget (a heartbeat found it past its budget end-time — terminate and confirm first; see **Dispatch**);
-- a PR over the `--max-diff` ceiling with phases unbuilt and `SPLIT: NO` — the worker's check did not run. A declared overage on a final phase is not this, and a ceiling crossed with phases remaining is a split, not a park;
 - a UX deviation (salt-run.md step 4) — always a human call, never yours;
 - a CLAUDE.md rule collision, or a phase that can only be built as a bodge;
-- a queue ejection whose failure lies outside this campaign's merged footprints;
-- gates red on the queue's rebuild (the semantic conflict);
-- blocking findings still outstanding after round 2;
-- heavy suites that will not run green, or cannot be confirmed to have run.
+- anything else a worker or the divider says needs a decision;
+- blocking findings still outstanding after round 2, unless you adjudicate them shippable;
+- heavy suites that cannot be confirmed to have run — the check is blind, and a retry cannot fix that;
+- anything on the retry list, a second time.
 
 Parking never stops the queue — but it does have to reach Daniel while there is still a campaign to redirect. A park is the one outcome he might want to act on before the fleet finishes, and the ledger is not somewhere he is looking. So on every park, send one `PushNotification` alongside the ledger update, and lead with the decision rather than the status:
 
@@ -582,11 +607,11 @@ When every run-set issue has reached a terminal state and the ledger's `## Sweep
 2. **Cut a worktree from the new `main`** exactly as in **Worktrees** — fetch first — on `chore/<slug>-sweep`. Everything the findings were raised against has merged by now, so there is nothing left for the sweep to conflict with in flight.
 3. **Dispatch one sweep agent**, `Agent(…, model: "sonnet")`, in the background:
 
-   > In worktree `<path>` on branch `<branch>`, fix these review findings from campaign #<ledger>. Each was raised on a merged PR and marked as needing no decision: [the unticked `## Sweep` lines, verbatim]. Do only that. If a line turns out to need a design choice, a rule change or new behaviour, or has already been fixed on `main`, or would take this PR over `--max-diff <n>` changed lines (excluding `pnpm-lock.yaml`), put it under REJECTED with the reason instead of forcing it. Do not touch any file a parked branch of this campaign changes: [each parked branch — check with `git diff --name-only origin/main...origin/<branch>`]. Run the safe gate set, commit, push, and open a ready-for-review PR titled `chore: campaign #<ledger> sweep` whose body says `Refs #<ledger>` and lists one line per finding with the PR it came from. Never end your turn with a backgrounded command still running.
+   > In worktree `<path>` on branch `<branch>`, fix these review findings from campaign #<ledger>. Each was raised on a merged PR and marked as needing no decision: [the unticked `## Sweep` lines, verbatim]. Do only that. If a line turns out to need a design choice, a rule change or new behaviour, or has already been fixed on `main`, or would take this PR over `--max-diff <n>` changed lines (excluding `pnpm-lock.yaml`), put it under REJECTED with the reason instead of forcing it. Do not touch any file a parked branch of this campaign changes: [each parked branch — check with `git diff --name-only origin/main...origin/<branch>`]. Run the safe gate set, commit, push, and open a ready-for-review PR titled `chore: campaign #<ledger> sweep` whose body says `Refs #<ledger>`, plus `Closes #<n>` for each line that names a filed issue, and lists one line per finding with the PR it came from. Never end your turn with a backgrounded command still running.
    >
    > Return: `PR: <n>`, `FIXED: [line → what changed]`, `REJECTED: [line → why]`, `CI: <green | red>`.
 
-4. **Then it is an ordinary campaign PR.** Confirm CI, review it (the reviewer brief with the ledger in place of issue #N — the `## Sweep` lines are its scope), fix round, and land it with `campaign-land.mjs`. Its own review's should-fix findings go straight to the follow-ups list, whatever their mark: **there is one sweep per campaign, never a second.** Blocking findings unresolved after round 2 park it like any other branch, and every line it carried moves to the follow-ups list.
+4. **Then it is an ordinary campaign PR.** Confirm CI, review it (the reviewer brief with the ledger in place of issue #N — the `## Sweep` lines are its scope), fix round, and land it with `campaign-land.mjs`. Its own review's `[fold-in]` **and** `[sweep]` findings both go to its round-1 fix agent, ceiling permitting — on this PR there is no later sweep to defer them to; unmarked ones, and anything that agent rejects, go to the follow-ups list. **There is one sweep per campaign, never a second.** Blocking findings unresolved after round 2 park it like any other branch, and every line it carried moves to the follow-ups list.
 5. Tick each `FIXED` line in the ledger body. `REJECTED` lines move to the follow-ups list with the agent's reason.
 
 Empty `## Sweep` checklist → skip this section and say nothing about it. Under `--stop-at-green`, the sweep PR is left reviewed and green like everything else.
@@ -621,7 +646,8 @@ When the queue is empty, and the **Sweep** has landed or had nothing to do:
    **Landed:** #a (PR #1), #b (PR #2 → PR #3)   ← an issue split at the ceiling lists every PR that carried it, in order
    **Swept:** PR #4 — n findings fixed, m moved to follow-ups   ← omit when the sweep had nothing to do
    **Parked:** #c — [reason, what a human needs to decide, branch name]
-   **Issues filed:** #f follow-ups; #d, #e — [oversized re-specs and shipped-known-defects; see Review]
+   **Issues filed:** #f follow-ups; #d, #e — [shipped-known-defects not fixed by the sweep; see Review]
+   **Retried:** #c (timeout → landed) · #g (ejection → parked)   ← omit when nothing was
    **Estimated vs actual:** #a M / 812 · #b L / 2140 (2 PRs) · #c M / — (parked)
    **Decisions taken:** [one line each]
    ```
