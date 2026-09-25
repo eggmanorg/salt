@@ -28,7 +28,7 @@ Success is a clean tree when Daniel comes back: every issue merged to main, or p
 - **CLAUDE.md is binding**, for you and every agent you spawn.
 - **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear` — the stash stack is shared across every worktree and agent. Land things with `gh pr merge`; set work aside with a WIP commit, never a stash.
 - **/salt-run is the worker.** Never reimplement the phase loop — two copies drift within a month. `campaign-worker` runs `.claude/commands/salt-run.md` with the overrides it needs.
-- **Settle how you reach GitHub before your first `gh` call** — `command -v gh`, a property of where this session runs. Recipes here assume `gh`; each `.claude/agents/campaign-*.md` handles this itself, so a dispatch prompt never carries it.
+- **Settle how you reach GitHub before your first `gh` call** — `command -v gh`, a property of where this session runs. Recipes here assume `gh`; each `.claude/agents/` file handles this itself, so a dispatch prompt never carries it.
   - **`gh` present (the Mac).** Plain `gh issue view` / `gh pr view` exit 0 with **empty stdout** in a non-TTY session: use `--json` forms or `gh api`, and treat empty comment output as a failed fetch, not "no comments". Every `gh` call needs the sandbox disabled.
   - **`gh` absent (a cloud session)** — it cannot be made present: the proxy refuses `api.github.com` and the classifier refuses `gh`. Use the GitHub MCP server per **`gh` absent** below; `git push` is unaffected. `issue_read` strips raw angle brackets from a body, so never "correct" an issue on the strength of what it returned. Record the deviation once in the ledger's **Plan** block.
 - **Waiting is ending your turn, not running a command.** Once a helper is dispatched, stop — a final line and **no tool call**. A no-op "yield" (`echo hold`, `true`, a foreground `sleep`) polls at API speed, re-sending the whole campaign; a returning background `Agent` or the heartbeat's `sleep` wakes you. The only legitimate blocking wait blocks _inside_ one call, like `gh pr checks <pr> --watch`.
@@ -84,7 +84,7 @@ Otherwise stay silent — no "checking…" or "confirmed". Each message: the sta
 
 ## Models
 
-Each helper is a subagent under `.claude/agents/`, its model in frontmatter: `campaign-extractor` `haiku`; `campaign-worker`, `campaign-reviewer` and `campaign-divider` `opus`; `campaign-fixer`, `campaign-sweeper` and `campaign-resolver` `sonnet`. You run on `opus` — you adjudicate technical disputes without reading the code, and your merges are irreversible. **Spawn them as `Agent(subagent_type: "campaign-<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
+Each helper is a subagent under `.claude/agents/`, its model in frontmatter: `campaign-extractor` `haiku`; `campaign-worker`, `pr-reviewer` and `campaign-divider` `opus`; `campaign-fixer`, `campaign-sweeper` and `campaign-resolver` `sonnet`. You run on `opus` too (rationale doc says why). **Spawn them as `Agent(subagent_type: "<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
 
 Your own model propagates to any agent spawned without one: if you are not on Opus, say so once in the ledger's **Plan** block before dispatching — the only chance to catch it before the bill.
 
@@ -127,7 +127,7 @@ Spawn one `campaign-extractor` per issue, all in one message, its prompt the iss
 
 - **Ordering may act on it** — over-collection there costs only an unneeded serialisation.
 - **Nothing else may** — never a scope breach, a finding, a park reason, or a line in a review or ledger; you hold neither the issue's wording nor the diff.
-- **When it looks breached, ask**: add to that PR's `campaign-reviewer` prompt — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer, including no, as the verdict.
+- **When it looks breached, ask**: add to that PR's `pr-reviewer` prompt — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer, including no, as the verdict.
 
 `RUNNABLE: no` → **confirm it first** (a false negative silently parks a good issue): `gh api repos/{owner}/{repo}/issues/N --jq '.body' | grep -c '^### Phase'` returns a count, not prose. Zero → park it and say which. Non-zero → dispatch, and let /salt-run judge; it returns BLOCKED on a phase block missing its fields.
 
@@ -263,7 +263,7 @@ salt-run.md's resume check finds landed phases by content. File no split issue, 
 
 A PR is review-eligible once `gh pr checks <pr>` confirms the worker's `CI: green`. Heavy suites passed-because-skipped (a sibling merged since) are the queue's to rerun; all else must be genuinely green. A red check means the worker misreported, possibly more than CI: park, don't review.
 
-One `campaign-reviewer` per PR, spawned fresh, **read-only** — no branch checked out, nothing fixed; a reviewer that can fix things will, and the signal is lost. Its prompt: PR `#X`, issue `#N`, and any Must-not-touch question from Setup 2, verbatim. **Give it the parameters, not the material** — it fetches issue, comments and diff itself; never paste a diff into your context. It posts the review `scripts/lib/prEligibility.mjs` parses and returns counts and one-line blocking and should-fix summaries with their `[fold-in]` / `[sweep]` marks.
+One `Agent(subagent_type: "pr-reviewer")` per PR, spawned fresh, **read-only** — no branch checked out, nothing fixed. Its prompt: PR `#X`, its head SHA, issue `#N`, any Must-not-touch question from Setup 2 verbatim, and a line on whether the heavy suites ran; round 2 adds `verify: <round-1 blocking list>`. **Give it the parameters, not the material** — it fetches issue, comments and diff itself; never paste a diff into your context. It posts the review `scripts/lib/prEligibility.mjs` parses and returns one line per finding, severity and `[fold-in]` / `[sweep]` mark included — or `STALE` if the head moved: re-confirm CI, respawn.
 
 **Confirm the ceiling, don't carve** — phase-boundary splits are sanctioned; **you never split a diff that is in front of you.** `gh pr view <pr> --json additions,deletions,changedFiles` gives counts. An overage the lockfile explains (`--json files`; the worker's count excludes `pnpm-lock.yaml`) or the worker _declared_ (a final phase, nothing left to move) is no breach. An undeclared overage with `SPLIT: NO` and phases unbuilt means the worker's check did not run: do not review — close the PR unmerged and **retry** from its branch, telling the worker the ceiling check did not run.
 
@@ -385,7 +385,7 @@ When every run-set issue is terminal and `## Sweep` has an unticked line, run on
 1. **Drop what the run no longer supports.** A line whose PR was parked, not merged, moves to the follow-ups list: its code never reached `main`.
 2. **Cut `chore/<slug>-sweep` from the new `main`** as in **Worktrees**.
 3. **Dispatch one `campaign-sweeper`** in the background with the worktree path, branch, ledger number, the unticked `## Sweep` lines verbatim, every parked branch (whose files it must not touch), and `--max-diff <n>`. It opens the PR `chore: campaign #<ledger> sweep` and returns `PR`, `FIXED`, `REJECTED`, `CI`.
-4. **Then it is an ordinary campaign PR**: confirm CI, review (a `campaign-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]` **and** `[sweep]` findings both go to its round-1 fixer, ceiling permitting; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
+4. **Then it is an ordinary campaign PR**: confirm CI, review (a `pr-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]` **and** `[sweep]` findings both go to its round-1 fixer, ceiling permitting; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
 5. Tick each `FIXED` line in the ledger body; `REJECTED` lines move to follow-ups with the reason.
 
 Empty `## Sweep` → skip silently. Under `--stop-at-green` the sweep PR is left reviewed and green too.
