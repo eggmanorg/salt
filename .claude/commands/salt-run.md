@@ -10,7 +10,7 @@ Arguments: $ARGUMENTS → ISSUE_NUMBER, plus an optional `--max-diff <lines>`.
 
 No argument given? If the current branch ends in `-<digits>`, that is the issue — say which and carry on. Otherwise ask which issue and stop until I answer; there is nothing safe to guess here.
 
-`--max-diff` is this branch's diff ceiling in changed lines — **default 2000**, excluding `pnpm-lock.yaml` — checked at each phase boundary in step 9. A campaign dispatching this loop may pass its own value; nothing else sets it. It is not a wall. Over the ceiling with phases still unbuilt, the run cuts the built phases as their own PR and the rest become a second one; over it with nothing left to build, the branch ships as it stands. The default used to live only in `/salt-campaign`'s dispatch brief, which left a standalone `/salt-run` with no ceiling at all and improvising one — it lives here now, and the campaign overrides rather than owns it.
+`--max-diff` is this branch's diff ceiling in changed lines — **default 2000**, excluding `pnpm-lock.yaml` — checked at each phase boundary in step 9. A campaign dispatching this loop may pass its own value; nothing else sets it. It is not a wall. Over the ceiling with phases still unbuilt, the run cuts the built phases as their own PR and the rest become a second one; over it with nothing left to build, the branch ships as it stands. The campaign overrides the default rather than owns it ([why](../../docs/campaign-rationale.md#the-diff-ceiling-default)).
 
 You own two things end to end: the **spec contract** (the issue's phases are the scope — nothing more, nothing less) and the **git history** (branch, commits, PR). Everything else is yours to delegate or do directly as the work warrants.
 
@@ -26,17 +26,17 @@ Two things dominate what a run costs: re-deriving context the issue already hold
 - **No bodges.** If the phase as specified can only be built by contorting the code, stop and raise the spec question. The cleanest, most maintainable code wins over a delivered phase.
 - **Flag the simpler path.** If a rule change or a different shape would be materially _simpler and more maintainable_ (not merely easier or lazier), say so — in `DECISIONS` if you proceeded, as a pause if it changes the design.
 - **A falsified premise is corrected here, not deferred.** See below.
-- **Never open a shell command with `cd`.** Use `git -C <worktree>` and absolute paths; `(cd <path> && …)` only when nothing else will do. The permission allowlist matches whole command strings, so `cd <path> && cat x && sed -n y` matches none of the `cat`/`sed`/`git` entries that would each have run unprompted — and when you are a campaign worker, a permission stop blocks on a human who is not watching.
+- **Never open a shell command with `cd`.** Use `git -C <worktree>` and absolute paths; `(cd <path> && …)` only when nothing else will do ([why](../../docs/campaign-rationale.md#why-no-leading-cd-in-a-run)).
 - Everything else: make the call, record it, continue.
 
 ### An invariant you state, you make mechanical — or you state its limits
 
-Every code PR in campaign #1064 shipped the same defect: a safety property asserted in a header comment, a doc, a PR body or a test name, which the code did not actually guarantee. Five for five, all green on every gate. There is no lint rule for "this sentence is true", so this convention is the only control there is.
+A safety property asserted in a header comment, a doc, a PR body or a test name, which the code does not actually guarantee, passes every gate. This convention is the only control there is ([campaign #1064](../../docs/campaign-rationale.md#invariants-campaign-1064)).
 
 Before writing a sentence claiming the code always, never or only does something:
 
 - **Pin it, qualify it, or delete it.** Either add a test that goes red when the property breaks — verified red by breaking the property first, not merely written — or state the claim with its actual boundary, or do not make the claim at all. The unqualified absolute nobody can falsify is the failure mode; a claim stated precisely enough to check is a good outcome even when checking falsifies it.
-- **A claim someone has already found false is deleted, not re-worded.** The third option above is the one that gets skipped, and re-wording is the expensive reflex: `undrawnEquipment`'s header comment burned three issues on three successive re-wordings, each shipping a different false absolute (#1516, #1544, #1548). If the phase you are building is _itself_ a correction to a prose claim, and the claim restates something the code already expresses, delete the sentence rather than attempt a fourth wording — and say so in `DECISIONS`. A comment that has to be re-derived to be checked is the defect, not its wording.
+- **A claim someone has already found false is deleted, not re-worded** ([the story](../../docs/campaign-rationale.md#deleted-not-re-worded)). If the phase you are building is _itself_ a correction to a prose claim, and the claim restates something the code already expresses, delete the sentence rather than attempt another wording — and say so in `DECISIONS`. A comment that has to be re-derived to be checked is the defect, not its wording.
 - **Read it as an adversary holding the diff.** Which input, which state, which second construction path makes the sentence false?
 - **When you fix one instance, look at its neighbours.** The commonest way a true sentence goes false is a later fix introducing a second path the sentence never contemplated.
 
@@ -58,7 +58,7 @@ Then make the correction, record it in `DECISIONS` with the premise it replaces,
 
 **It becomes a follow-on issue only when it fails one of the three.** A genuine design fork, a second surface, a diff that no longer fits — then it is a different piece of work and defers as today, and the PR body says which of the three it failed.
 
-The reason the default flips this way is pure cost. A deferred premise is not a note: it is a spec pass, a board row, a triage, a worktree, a run, a PR and a review, to deliver what was frequently two lines. #1518 is the worked example in both directions — its reproduction said renaming an entry would show the stale-picture banner, and the build proved it does not. That gap was correctly deferred (it is a Cloud Functions change with three candidate shapes — a real fork). But the same PR also found the issue's `DESCRIBED` fixture does not serve as the "current, not stale" case it was promised as, and folding _that_ in was correct and cost nothing. Tell the two apart by the three tests above, not by which one the issue happened to mention.
+Tell the two apart by the three tests above, not by which one the issue happened to mention. Why the default flips this way, and #1518 as the worked example in both directions: [campaign-rationale](../../docs/campaign-rationale.md#falsified-premises-why-the-default-flips).
 
 **This is not a licence to widen scope.** A `Must not touch` entry is a decision and stays binding; an _improvement_ you noticed is not a falsified premise and defers exactly as it does today. What moves is only a claim the issue makes about the code that building has proved untrue.
 
@@ -83,7 +83,7 @@ Your held copy is authoritative. Don't re-read the issue mid-run and drift.
 
 ### Name the session
 
-Rename this session from what you have just read — `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and `title: "RUN: #<issue> — <subject>"`. `<subject>` is the issue's own title with its `feat:`/`fix:`/`refactor:` prefix and its imperative verb dropped, cut to the few words that make it recognisable in a list: `RUN: #1333 — Chef's Specials in the data`, not `RUN: #1333 — feat: rename "When you CBA" to Chef's Specials`. The title this session is given automatically is the prompt that started it, so a sidebar of `salt-run 1333` rows is unreadable at the four concurrent sessions this command is normally run at. That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
+Rename this session from what you have just read — `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"` and `title: "RUN: #<issue> — <subject>"`. `<subject>` is the issue's own title with its `feat:`/`fix:`/`refactor:` prefix and its imperative verb dropped, cut to the few words that make it recognisable in a list: `RUN: #1333 — Chef's Specials in the data`, not `RUN: #1333 — feat: rename "When you CBA" to Chef's Specials` ([why](../../docs/campaign-rationale.md#session-titles)). That tool is the desktop app's; a terminal or cloud session does not have it, and there this step is skipped silently.
 
 ### Resume, don't restart
 
@@ -145,7 +145,7 @@ Delegate an Explore only when one of these holds, and say which:
 - an earlier phase moved the ground under them;
 - the deliverables name files the issue never located.
 
-That gate matters because the sweep is not cheap and the issue was written to make it unnecessary — an Explore run out of habit re-buys what `/salt-spec` already paid for.
+Hold that gate: an Explore run out of habit re-buys what `/salt-spec` already paid for ([why](../../docs/campaign-rationale.md#the-context-gate)).
 
 When you do delegate it, use `Agent(…, model: "haiku")` — or `"sonnet"` if the sweep has to reason about what it finds — and restrict the report to exactly these three, nothing else:
 
@@ -157,7 +157,7 @@ When you do delegate it, use `Agent(…, model: "haiku")` — or `"sonnet"` if t
 
 ### 2. Implementation
 
-**Default: write it yourself, in-place on the issue branch.** You are already holding the phase spec, step 1's context and the previous phase's handoff contract. An implementer subagent starts from none of that — so delegating means re-serialising what you already have, paying a fresh full context to receive it, and then re-validating its self-report against the diff in step 3 regardless, because a report is a claim and `git diff` is evidence. On a typical phase that is an entire extra agent bought to save you nothing, and across a four-phase issue it is four of them.
+**Default: write it yourself, in-place on the issue branch.** You already hold the phase spec, step 1's context and the previous phase's handoff contract; an implementer starts from none of that, and step 3 re-validates its report against the diff regardless ([why](../../docs/campaign-rationale.md#why-write-the-phase-yourself)).
 
 Spawn an implementer only when the phase is genuinely large — as a rule of thumb **400+ changed lines across five or more files** — or when it divides into two independent chunks worth running at once. Below that, write the code.
 
@@ -195,9 +195,9 @@ Check the work, not just the report — a self-report is a claim, `git diff` is 
 
   Then, once `test:coverage` has written the report they read: `pnpm coverage:files:check` · `pnpm coverage:ratchet:check`. These two are the only gates that cannot go in the concurrent batch, because they consume its output.
 
-  Every package exports `./src/*.ts`, so nothing waits on a build. `test:coverage` and `check` are the only long poles and the other nine finish inside them, so the whole set concurrently costs roughly what `pnpm test:coverage` costs alone — against ~80s for even the core five run one after another. Run the suite **with** coverage rather than bare `pnpm test`: it costs ~6s more (33.0s → 39.3s, measured in `ci.yml`'s `unit` job header) and it is the only way to see the two coverage gates before CI does. Don't spend thought on which gates the change "implicates": that judgment costs more than the run, and getting it wrong costs a red CI five minutes later.
+  Every package exports `./src/*.ts`, so nothing waits on a build, and the whole set concurrently costs roughly what `pnpm test:coverage` costs alone. Run the suite **with** coverage rather than bare `pnpm test`: it is the only way to see the two coverage gates before CI does. Don't spend thought on which gates the change "implicates": that judgment costs more than the run ([timings](../../docs/campaign-rationale.md#why-the-whole-gate-set-concurrently)).
 
-  The seven beyond the obvious six are there because they are the ones a phase trips _without noticing_: a new file under `docs/` fails `docsmap:check` unless `docs-map.md` gained a row, a paragraph added to `CLAUDE.md` fails `context:check` once it passes its budget, any `packages/ui-components` edit can fail `theme:check` or `provenance:check`, and an `eslint.config.*` or `.dependency-cruiser.*` change fails `boundary:test`. The two coverage gates are the ones that bit hardest: they run with near-zero slack, so deleting a well-covered file or adding an uncovered one goes red on the ratchet minutes after a locally-green phase (campaign #1176 lost one CI cycle on #1140 and two on #1137 to exactly this).
+  The seven beyond the obvious six are the ones a phase trips _without noticing_: a new file under `docs/` fails `docsmap:check` unless `docs-map.md` gained a row, a paragraph added to `CLAUDE.md` fails `context:check` once it passes its budget, any `packages/ui-components` edit can fail `theme:check` or `provenance:check`, and an `eslint.config.*` or `.dependency-cruiser.*` change fails `boundary:test`. The two coverage gates run with near-zero slack, so deleting a well-covered file or adding an uncovered one goes red on the ratchet minutes after a locally-green phase.
 
 - **Add a production build when the phase touches `apps/web-pwa`'s entry, dependencies or asset pipeline:** `pnpm --filter @salt/web-pwa build`. CI's `boot-payload` job blocks on it, and it catches the class of failure `tsc` structurally cannot see — a bare specifier inside a CSS `url()`, a dynamic import that doesn't resolve. This one _is_ conditional, because unlike the rest it is slow.
 - On a failure, fix it and re-run **only** the gate that failed; run the full set once more before committing. Do not commit red. A red `format:check` is not a thinking problem — `pnpm format` fixes it, and hand-editing whitespace the pre-commit hook would have rewritten anyway is pure waste.
@@ -240,14 +240,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 `Refs #ISSUE_NUMBER` on every phase commit including the last — the PR closes the issue, not the commits. No `#N` anywhere but that footer.
 
-**Keep the `Co-Authored-By` trailer the harness appends by default**, in the trailer block below `Refs`. Name the model you are actually running as. The trailer is the repo's convention throughout — and it is the only per-commit record of which model wrote a phase, which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`). A squash carries one copy per phase commit plus GitHub's own deduped copy at the bottom; that repetition is expected and is not a reason to strip it.
+**Keep the `Co-Authored-By` trailer the harness appends by default**, in the trailer block below `Refs`. Name the model you are actually running as: the trailer is the only per-commit record of which model wrote a phase ([why](../../docs/campaign-rationale.md#the-commit-trailer)). A squash carries one copy per phase commit plus GitHub's own deduped copy at the bottom; that repetition is expected and is not a reason to strip it.
 
 The pre-commit hook is not a formality — it runs `lint-staged` (prettier `--write`, then eslint), and then `pnpm typecheck` and `pnpm depcruise` all over again. Three things follow:
 
 - give the commit a generous Bash timeout. 40–60s is normal, and a commit that looks hung usually isn't.
 - prettier **rewrites files during the commit**, so what lands can differ from what you validated a moment ago. Check `git status --short` afterwards and amend if the hook left anything behind.
 - the overlap with step 3 is deliberate belt-and-braces, not licence to skip those gates earlier. By the time the hook catches something you have already written the commit message twice.
-- **it covers typecheck and depcruise only.** There is no `pre-push` hook — it ran the full suite on every push, a third run of what step 3 had just run and CI would run again, and it was deleted for that. So step 3's `pnpm test` is the only local run of the suite there is: skip it and the first thing to notice a broken test is CI, seven minutes after you have moved on.
+- **it covers typecheck and depcruise only.** There is no `pre-push` hook ([why](../../docs/campaign-rationale.md#no-pre-push-hook)). So step 3's `pnpm test` is the only local run of the suite there is: skip it and the first thing to notice a broken test is CI, seven minutes after you have moved on.
 
 ### 6. Push, and start CI in the background
 
@@ -261,7 +261,7 @@ git push -u origin <type>/<slug>-ISSUE_NUMBER
 
 **Pushing runs no gates.** No hook fires on push, so the push itself proves nothing — step 3 is where the suite ran, and CI is what re-checks it. A push that takes minutes is the network, not a test run; do not kill it waiting for output that is not coming.
 
-**Rebase every phase, before pushing.** CI skips both heavy suites when the branch is behind `origin/main` — the "Main" ruleset is strict, so a behind-branch must rebase before it can merge anyway, and that rebase re-triggers CI. `auto-update-prs.yml` does that automatically, but only for PRs with auto-merge enabled, which a `/salt-run` draft is not: yours is yours to rebase. Push while behind and you get a green tick for suites that never ran (step 8). Add `--force-with-lease` only when the rebase actually rewrote commits.
+**Rebase every phase, before pushing.** CI skips both heavy suites when the branch is behind `origin/main`, and nothing rebases a `/salt-run` draft for you: yours is yours to rebase ([why](../../docs/campaign-rationale.md#rebase-every-phase)). Push while behind and you get a green tick for suites that never ran (step 8). Add `--force-with-lease` only when the rebase actually rewrote commits.
 
 **Phase 1 only — open the PR, as a draft.** CI triggers on `pull_request` and on pushes to `main`, and on nothing else: **a pushed branch with no PR runs no CI at all.** The PR exists from phase 1 so every later phase gets a real signal; it stays draft until the final phase.
 
@@ -273,9 +273,7 @@ gh pr create --draft --base main --head <type>/<slug>-ISSUE_NUMBER \
 WIP — phases land as commits. Full summary on the final phase."
 ```
 
-**Open with `Closes`; swap to `Refs` only if this turns out to be an intermediate PR.** One PR per issue is the common case and `Closes #ISSUE_NUMBER` is right for it. If step 9's ceiling check later cuts this PR short with phases still unbuilt, that is the moment you swap the body to `Refs #ISSUE_NUMBER` and append ` (#ISSUE_NUMBER)` to the title. That ordering is safe for one mechanical reason: the swap happens before `gh pr ready`, and GitHub refuses to merge a draft PR — so an intermediate PR cannot reach `main` still carrying a closing keyword. Do the swap after `gh pr ready` and that guarantee is gone.
-
-The distinction is load-bearing. `board-status.yml` derives the issue→PR link from the closing keyword alone ([its header comment says so](../../.github/workflows/board-status.yml)), so a `Refs` PR closes nothing and moves no board field — which is exactly right: the issue stays `In progress` until the PR that actually finishes it merges.
+**Open with `Closes`; swap to `Refs` only if this turns out to be an intermediate PR.** One PR per issue is the common case and `Closes #ISSUE_NUMBER` is right for it. If step 9's ceiling check later cuts this PR short with phases still unbuilt, that is the moment you swap the body to `Refs #ISSUE_NUMBER` and append ` (#ISSUE_NUMBER)` to the title. The swap goes **before** `gh pr ready`, never after — that ordering is what keeps an intermediate PR from reaching `main` with a closing keyword, and a `Refs` PR closes nothing and moves no board field ([why](../../docs/campaign-rationale.md#why-closes-before-refs-is-safe)).
 
 Then start the watch **in the background** and move on:
 
@@ -283,9 +281,7 @@ Then start the watch **in the background** and move on:
 sleep 20 && gh pr checks --watch --fail-fast      # Bash tool, run_in_background: true
 ```
 
-`--fail-fast` returns on the first failing check instead of waiting out the suites that are still green. On a broken phase that is four or five minutes you get back, and there is nothing you'd have done differently had you waited for the rest.
-
-The `sleep` is not padding: GitHub takes a few seconds to register the run, and `gh pr checks` exits straight away with _"no checks reported"_ if none exist yet — which arrives looking exactly like a finished CI. If the watch does return within seconds, that is what happened; re-issue it rather than reading it as a result.
+`--fail-fast` returns on the first failing check instead of waiting out the suites that are still green. The `sleep` is not padding: without it `gh pr checks` can exit straight away with _"no checks reported"_, which looks exactly like a finished CI. If the watch does return within seconds, that is what happened; re-issue it rather than reading it as a result ([why](../../docs/campaign-rationale.md#the-backgrounded-ci-watch)).
 
 A run takes about 10 minutes — measured p50 over successful `ci.yml` runs on `pull_request` events, range 8–15 — and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
 
@@ -353,7 +349,7 @@ Three outcomes, and only the first is new:
 - **Over the ceiling with nothing left to build → ship it as one PR.** A final phase that carries the branch to 2400 lines is not split for the sake of a number — there is no phase left to move into a second PR, and cutting one would produce a PR containing nothing. Note the count in the PR body so the reviewer knows what they are being handed, and conclude normally below.
 - **Under the ceiling → carry on.**
 
-The check is backward-looking on purpose: it never asks how large a phase will be before it is built, only whether what is already built has passed the ceiling while work remains. Which is also why a **single phase that on its own exceeds the ceiling** is a pause condition rather than a split — there is no phase boundary inside it to cut at, and the fix is a spec change, not a PR boundary.
+The check never asks how large a phase will be before it is built, only whether what is already built has passed the ceiling while work remains. A **single phase that on its own exceeds the ceiling** is a pause condition rather than a split: there is no phase boundary inside it to cut at, and the fix is a spec change ([why](../../docs/campaign-rationale.md#the-ceiling-looks-backward)).
 
 More phases and under the ceiling → straight into N+1. Its step 1 is already done if you overlapped it during the CI wait; pick up at step 2.
 

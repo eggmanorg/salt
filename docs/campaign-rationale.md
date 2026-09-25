@@ -113,3 +113,73 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 **Why the ledger stays open while its follow-ups issue is open** (#1534). A closed ledger over an open follow-up is a `check` failure the next morning and a family that vanishes from the `Hierarchies` view while its work is live: that view reads sub-issue progress, which counts direct children only, so it reads 100% done. Seven of the eight issues reopened by hand on 2026-09-21 were exactly this step.
 
 **Why report once.** An earlier run closed with four messages that said the same thing.
+
+## salt-run.md
+
+[`/salt-run`](../.claude/commands/salt-run.md) is the worker every campaign dispatches and every standalone run loads, so it too carries each rule as an instruction and nothing more. Moved here by #1589: the incident, cost or measurement behind each of its rules, under the rule it justifies. Headings follow the order the rules appear in the command.
+
+### The diff ceiling default
+
+The `--max-diff` default of 2000 used to live only in `/salt-campaign`'s dispatch brief, which left a standalone `/salt-run` with no ceiling at all and improvising one. It lives in the command now, and the campaign overrides rather than owns it.
+
+### Why no leading `cd` in a run
+
+The permission allowlist matches whole command strings, so `cd <path> && cat x && sed -n y` matches none of the `cat`/`sed`/`git` entries that would each have run unprompted — and when the run is a campaign worker, a permission stop blocks on a human who is not watching.
+
+### Invariants, campaign #1064
+
+Every code PR in campaign #1064 shipped the same defect: a safety property asserted in a header comment, a doc, a PR body or a test name, which the code did not actually guarantee. Five for five, all green on every gate. There is no lint rule for "this sentence is true", so the convention is the only control there is. The worked example (#1067) and why no lint rule is possible stay in the command, where `CLAUDE.md` rule 12 points.
+
+### Deleted, not re-worded
+
+Of pin, qualify or delete, deletion is the option that gets skipped, and re-wording is the expensive reflex: `undrawnEquipment`'s header comment burned three issues on three successive re-wordings, each shipping a different false absolute (#1516, #1544, #1548). A fourth wording was the obvious next move, and the reason the rule says delete.
+
+### Falsified premises: why the default flips
+
+The reason the default is to correct a falsified premise in-phase is pure cost. A deferred premise is not a note: it is a spec pass, a board row, a triage, a worktree, a run, a PR and a review, to deliver what was frequently two lines.
+
+#1518 is the worked example in both directions — its reproduction said renaming an entry would show the stale-picture banner, and the build proved it does not. That gap was correctly deferred (it is a Cloud Functions change with three candidate shapes — a real fork). But the same PR also found the issue's `DESCRIBED` fixture does not serve as the "current, not stale" case it was promised as, and folding _that_ in was correct and cost nothing.
+
+### Session titles
+
+The title a session is given automatically is the prompt that started it, so a sidebar of `salt-run 1333` rows is unreadable at the four concurrent sessions the command is normally run at.
+
+### The Context gate
+
+The Explore sweep is not cheap, and the issue was written to make it unnecessary — an Explore run out of habit re-buys what `/salt-spec` already paid for.
+
+### Why write the phase yourself
+
+An implementer subagent starts from none of what the run already holds, so delegating means re-serialising it, paying a fresh full context to receive it, and then re-validating its self-report against the diff in step 3 regardless. On a typical phase that is an entire extra agent bought to save nothing, and across a four-phase issue it is four of them.
+
+### Why the whole gate set, concurrently
+
+`test:coverage` and `check` are the only long poles and the other nine gates finish inside them, so the whole set run concurrently costs roughly what `pnpm test:coverage` costs alone — against ~80s for even the core five run one after another. Coverage costs ~6s over bare `pnpm test` (33.0s → 39.3s, measured in `ci.yml`'s `unit` job header). Guessing which gates a change "implicates" costs more than the run, and guessing wrong costs a red CI five minutes later.
+
+The two coverage gates are the ones that bit hardest: campaign #1176 lost one CI cycle on #1140 and two on #1137 to a locally-green phase going red on the ratchet.
+
+### The commit trailer
+
+The `Co-Authored-By` trailer is the repo's convention throughout, and the only per-commit record of which model wrote a phase — which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`).
+
+### No pre-push hook
+
+There used to be a `pre-push` hook. It ran the full suite on every push — a third run of what step 3 had just run and CI would run again — and it was deleted for that.
+
+### Rebase every phase
+
+The "Main" ruleset is strict, so a behind-branch must rebase before it can merge anyway, and that rebase re-triggers CI. `auto-update-prs.yml` does the rebase automatically, but only for PRs with auto-merge enabled, which a `/salt-run` draft is not.
+
+### Why Closes before Refs is safe
+
+The swap to `Refs` happens before `gh pr ready`, and GitHub refuses to merge a draft PR — so an intermediate PR cannot reach `main` still carrying a closing keyword. Do the swap after `gh pr ready` and that guarantee is gone.
+
+The distinction is load-bearing. `board-status.yml` derives the issue→PR link from the closing keyword alone ([its header comment says so](../.github/workflows/board-status.yml)), so a `Refs` PR closes nothing and moves no board field — which is exactly right: the issue stays `In progress` until the PR that actually finishes it merges.
+
+### The backgrounded CI watch
+
+`--fail-fast` on a broken phase is four or five minutes back, and there is nothing a run would have done differently had it waited for the rest. The `sleep` covers the few seconds GitHub takes to register the run.
+
+### The ceiling looks backward
+
+The step 9 check is backward-looking on purpose: it measures what is built, never a forecast of what a phase will be.
