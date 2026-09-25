@@ -34,6 +34,7 @@ import { describe, expect, it } from 'vitest';
 
 const repo = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const read = (f) => readFileSync(path.join(repo, '.claude/commands', f), 'utf8');
+const readDoc = (f) => readFileSync(path.join(repo, 'docs', f), 'utf8');
 
 describe('salt-campaign.md — the budget the coordinator hands each worker', () => {
   const src = read('salt-campaign.md');
@@ -85,7 +86,9 @@ describe('salt-campaign.md — the mechanism that enforces it', () => {
 
   it('carries the observation that replaced the cap claim, with its date', () => {
     expect(src).toMatch(/`timeout` parameter does not kill a backgrounded command/);
-    expect(src).toMatch(/campaign #1495 \(2026-09-20\)/);
+    // The dated observation itself moved to the rationale doc (#1586); the
+    // command keeps the operative sentence above and links there.
+    expect(readDoc('campaign-rationale.md')).toMatch(/campaign #1495 \(2026-09-20\)/);
   });
 
   it('names the watchers a coordinator waits on CI and on a merge with', () => {

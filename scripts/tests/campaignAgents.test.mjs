@@ -9,6 +9,11 @@
 // the coordinator actually spawns them without a `model:` override — that is
 // a run-time act of an agent reading prose, so the test holds only that the
 // prose forbidding the override is still there.
+//
+// It also caps the command's size (#1586 Phase 2). The coordinator's prompt is
+// re-sent on every one of a campaign's hundred-plus turns, and it grew from
+// nothing to 85 KB one justified paragraph at a time; incident history now
+// lives in docs/campaign-rationale.md, and this cap is what keeps it there.
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -68,5 +73,12 @@ describe('salt-campaign.md spawns them by name', () => {
   it('forbids passing a model override on those spawns', () => {
     expect(src).toMatch(/never pass `model:`/);
     expect(src).not.toMatch(/Agent\(…, model: "(opus|sonnet)"\)/);
+  });
+});
+
+describe('salt-campaign.md stays a lean coordinator prompt', () => {
+  it('is at most 40,000 bytes', () => {
+    const bytes = readFileSync(path.join(repo, '.claude/commands/salt-campaign.md')).length;
+    expect(bytes).toBeLessThanOrEqual(40_000);
   });
 });

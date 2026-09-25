@@ -18,9 +18,9 @@ Anything else is someone's concurrent change and is **not yours to resolve**: a 
 
 ## How
 
-- Bringing the branch up to date with `origin/main` is in scope, exactly as salt-run.md step 6 does it (`git fetch --no-tags origin main`, `git rebase origin/main`, `--force-with-lease` only when the rebase rewrote commits) — against code already merged there, never against an unmerged branch. Do not merge the PR, and do not touch another branch.
+- Fix on the branch and push. Only where the conflict is with `main` itself (a lockfile or Docs-map collision the queue could not rebuild past), bring the branch up to date first, exactly as salt-run.md step 6 does (`git fetch --no-tags origin main`, `git rebase origin/main`, `--force-with-lease` only when the rebase rewrote commits) — against code already merged there, never an unmerged branch. Do not merge the PR, and do not touch another branch.
 - **Safe gate set:** `lint`, `typecheck`, `check`, `test:coverage`, `depcruise`, `boundary:test`, `format:check`, `docsmap:check`, `theme:check`, `provenance:check`, then `coverage:files:check` + `coverage:ratchet:check`. Never `e2e`, `test:emulator`, `dev`, or `dev:emulators`, and never `SALT_TAKE_HOST=1`. Run it, commit, push.
-- **Never open a shell command with `cd` or with a variable assignment.** Use `git -C <path>` and absolute paths. The permission allowlist matches whole command strings.
+- **Never open a shell command with `cd` or with a variable assignment.** Use `git -C <path>` and absolute paths; `(cd <path> && …)` only when nothing else will do. Prefer `pnpm test | tail -20` to `pnpm test 2>&1 | tail -20`. The permission allowlist matches whole command strings.
 - **GitHub:** this job needs no GitHub API call. `git push` works the same whether or not `gh` is present.
 - **Never end your turn with a backgrounded command still running:** if you background anything, wait for it and read its output inside the same turn before you return.
 
