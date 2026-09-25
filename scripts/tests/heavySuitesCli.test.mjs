@@ -158,6 +158,18 @@ describe('heavy-suites.mjs — file mode (no gh)', () => {
     expect(run(args(shard({ conclusion: 'cancelled' }))).status).toBe(4);
   });
 
+  it('pending, exit 3, when the heavy jobs are not listed yet because Detect changes is still running', () => {
+    const early = file(
+      'jobs-early.json',
+      JSON.stringify({
+        jobs: [{ name: 'Detect changes', status: 'in_progress', conclusion: null }],
+      }),
+    );
+    const result = run(['--jobs', early, '--changes-log', behindLog, '--event', 'pull_request']);
+    expect(result.status).toBe(3);
+    expect(result.stdout.split('\n')[0]).toBe('pending');
+  });
+
   it('exit 64 when --jobs comes without --changes-log and --event', () => {
     expect(run(['--jobs', fx('gh-pr-1585-skipped.json')]).status).toBe(64);
   });

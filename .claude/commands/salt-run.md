@@ -340,7 +340,7 @@ node scripts/heavy-suites.mjs --branch <type>/<slug>-ISSUE_NUMBER
 
 - `ran-green` → verified.
 - `skipped-non-app` → **not verified**, correctly: only non-app paths changed, so no e2e signal. `skipped-behind` → **not verified**: the branch is behind `origin/main`, which is no longer yours to fix — the merge queue runs these suites on current `main` before it lands ([docs/ci.md](../../docs/ci.md)); rebase only if you need the signal. `cannot-confirm` → **not verified**; its `reason:` line says why. Say which in the handoff comment; never report any of the three as green.
-- `pending` → re-read once the run finishes. `cancelled` → a later push superseded that run; re-run the command.
+- `pending` → re-read once the run finishes. `cancelled` → re-run once; if still cancelled, **not verified**.
 - `failed` → `gh run view <run-id> --log-failed` (id on the `run:` line) gives the failing steps alone, never the full log. Fix on the issue branch (delegate the triage if large), commit, push. Can't resolve it → stop and tell me.
 
 Blind spot: a phase editing the e2e or integration job setup **inside `.github/workflows/ci.yml`** skips those suites. Flag it and validate on a follow-up that also touches app code.
