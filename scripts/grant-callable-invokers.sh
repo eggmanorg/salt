@@ -61,20 +61,40 @@ CALLABLES=(
 
 echo "Granting allUsers invoker on ${#CALLABLES[@]} callables in ${PROJECT} (${REGION})"
 
+# add-iam-policy-binding is a read-modify-write guarded by an ETag. Right after
+# `firebase deploy`, the service's policy can still be settling, and gcloud then
+# fails with "ABORTED: There were concurrent policy changes. Please retry the
+# whole read-modify-write with exponential backoff" (production release
+# 202609.7, arbitrateCanon). Each attempt re-reads the policy, so retrying is
+# exactly what Google asks for. Up to 5 attempts, backing off 2/4/8/16s.
+MAX_ATTEMPTS=5
+
+grant() {
+  gcloud run services add-iam-policy-binding "$1" \
+    --region="$REGION" \
+    --project="$PROJECT" \
+    --member="allUsers" \
+    --role="roles/run.invoker" \
+    --quiet
+}
+
 failed=()
 for fn in "${CALLABLES[@]}"; do
   # The 2nd-gen Cloud Run service name is the lowercased function name.
   svc="$(echo "$fn" | tr '[:upper:]' '[:lower:]')"
   echo "== ${fn} (run service: ${svc}) =="
-  if ! gcloud run services add-iam-policy-binding "$svc" \
-        --region="$REGION" \
-        --project="$PROJECT" \
-        --member="allUsers" \
-        --role="roles/run.invoker" \
-        --quiet; then
-    echo "::warning::failed to grant invoker on ${fn}"
-    failed+=("$fn")
-  fi
+  attempt=1
+  until grant "$svc"; do
+    if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+      echo "::warning::failed to grant invoker on ${fn} after ${attempt} attempts"
+      failed+=("$fn")
+      break
+    fi
+    delay=$((2 ** attempt))
+    echo "Attempt ${attempt} failed for ${fn}; retrying in ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
 done
 
 if [ "${#failed[@]}" -gt 0 ]; then
