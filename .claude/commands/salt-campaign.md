@@ -30,12 +30,12 @@ The success condition is a clean tree when Daniel comes back: every issue merged
 - **CLAUDE.md is binding**, for you and every agent you spawn.
 - **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear` — the stash stack is shared across every worktree and concurrent agent. Land things with `gh pr merge`. Set work aside with a WIP commit, never a stash.
 - **/salt-run is the worker.** Do not reimplement the phase loop. Point each worker at `.claude/commands/salt-run.md` and give it the overrides in **Dispatch**. Two copies of that loop will drift within a month.
-- **Settle how you reach GitHub before you write a single brief.** `command -v gh` decides it, and the answer is a property of where this session runs, not of the repo. Every `gh` recipe in this file is written in the first form below; under the second, every brief you write carries the substitution in place of them.
-  - **`gh` present (the Mac).** Use it throughout, with two harness traps that every brief must also carry: plain `gh issue view` / `gh pr view` exit 0 with **empty stdout** in a non-TTY session, so use the `--json` forms or `gh api` and treat empty comment output as a failed fetch rather than "no comments"; and every `gh` call needs the sandbox disabled.
+- **Settle how you reach GitHub before your first `gh` call.** `command -v gh` decides it, and the answer is a property of where this session runs, not of the repo. Every `gh` recipe in this file is written in the first form below. Your helpers settle this for themselves — each `.claude/agents/campaign-*.md` definition carries its own `gh` handling and MCP substitution, so a dispatch prompt never carries either.
+  - **`gh` present (the Mac).** Use it throughout, with two harness traps: plain `gh issue view` / `gh pr view` exit 0 with **empty stdout** in a non-TTY session, so use the `--json` forms or `gh api` and treat empty comment output as a failed fetch rather than "no comments"; and every `gh` call needs the sandbox disabled.
   - **`gh` absent (a cloud session), and it cannot be made present.** `api.github.com` is refused by the session proxy and `gh` itself by the permission classifier. GitHub is reachable only through the GitHub MCP server. `git push` is unaffected — only the API layer is substituted. What changes: CI is waited on by polling `pull_request_read` on a backgrounded timer rather than `gh pr checks --watch`, which makes it the one blocking wait this command has that no longer blocks inside a single call; heavy-suite conclusions come from the workflow-jobs listing rather than `gh run view --json jobs`, with **empty output → park** unchanged; and `issue_read` strips raw angle brackets from the body it returns, so never "correct" an issue on the strength of what it read back. Record the deviation once in the ledger's **Plan** block and never again. Campaign #1064 established all of this the hard way; do not rediscover it.
 - **Waiting is ending your turn, not running a command.** After you dispatch a worker, a reviewer, a fix agent or a conflict resolver there is nothing for you to do until it returns, so stop — a final line and **no tool call**. A tool call is what keeps a turn open, so a no-op "yield" (`echo hold`, `true`, a bare foreground `sleep`) is not waiting; it is polling at API speed, re-sending the whole campaign context every few seconds. You do not need to poll, because you already armed the wake signals: a background `Agent` re-invokes you when it returns, and the pool heartbeat's `sleep` re-invokes you when it exits. Campaign #1046 had this backwards and ran `echo hold` 1,304 times across eight hours — roughly $600 of cache reads to learn nothing, while its own transcript said "polling just burns turns". The only legitimate blocking wait is one that blocks _inside_ a single call, like `gh pr checks <pr> --watch` while a PR's CI runs.
 - **Waiting on a named event is a watcher, not a heartbeat.** When you start waiting on one specific thing — a PR's CI, a PR leaving the merge queue — arm a backgrounded watcher for it at that moment and it wakes you once, **on** the event: `gh pr checks <pr> --watch --fail-fast` for CI, and `until [ "$(gh pr view <pr> --json state --jq .state)" != "OPEN" ]; do sleep 30; done` for a merge, both Bash with `run_in_background: true`. That is the opposite of the `echo hold` above rather than a variation on it: one call, one wake, and the polling runs in the shell where it costs nothing instead of in your context where every poll re-reads the whole campaign. Do not let the pool heartbeat notice these for you instead — in campaign #1495 that was 42 wasted wakes and up to ten minutes of latency on every CI result. And do not go hunting for a push-based alternative: `subscribe_pr_activity` and `send_later` (the tools `.claude/skills/steward/SKILL.md` is written around) do not exist in this harness, so a local watcher is the reactive option there is.
-- **Never open a shell command with `cd`, and never with a variable assignment.** Use `git -C <worktree>` and absolute paths; for a non-git command that needs a directory, `(cd <path> && …)` only when nothing else will do. The permission allowlist matches command strings, so `cd <path> && cat x && sed -n y` and `W=<path>; grep -rn foo $W/src` match none of the `cat`/`sed`/`grep` entries that would have let each part through unprompted — these two shapes are the largest source of permission stops in this command outside the merge queue, and every one of them blocks the fleet on a human. Redirection counts too: prefer `pnpm test | tail -20` to `pnpm test 2>&1 | tail -20`, since the allowlist carries the plain form. This applies to every brief you write, not just your own calls.
+- **Never open a shell command with `cd`, and never with a variable assignment.** Use `git -C <worktree>` and absolute paths; for a non-git command that needs a directory, `(cd <path> && …)` only when nothing else will do. The permission allowlist matches command strings, so `cd <path> && cat x && sed -n y` and `W=<path>; grep -rn foo $W/src` match none of the `cat`/`sed`/`grep` entries that would have let each part through unprompted — these two shapes are the largest source of permission stops in this command outside the merge queue, and every one of them blocks the fleet on a human. Redirection counts too: prefer `pnpm test | tail -20` to `pnpm test 2>&1 | tail -20`, since the allowlist carries the plain form. Every campaign agent definition carries this rule too.
 - **There is one command that lands a branch, and you do not compose around it.** `node scripts/campaign-land.mjs <pr>` — see **Merge queue**. It is allowlisted, it applies the queue-eligibility rule itself, and it derives every path and branch name from the PR. A hand-written `gh pr merge` still works and is still gated by `~/.claude/hooks/gh-merge-guard.mjs`, but that gate can only clear a line it recognises in full, and an agent composing fresh shell each time will always eventually write one it does not. That was ten stopped runs. Use the command.
 
 ## Filing an issue
@@ -90,22 +90,11 @@ Each message: the state in one line, then the decision or the recommendation. **
 
 ## Models
 
-**Whatever model you are running on propagates to every agent you spawn** — a subagent with no `model:` inherits from its parent. One selection at the top silently sets the price of the entire tree, and a campaign spawns thirty-odd agents. Fable 5 is exactly twice Opus 5 on both input and output, so an unnoticed selection doubles the whole campaign and nothing in the run tells you it happened.
+**Whatever model you are running on propagates to every agent you spawn without one** — a subagent with no model of its own inherits from its parent. One selection at the top silently sets the price of the entire tree, and a campaign spawns thirty-odd agents. Fable 5 is exactly twice Opus 5 on both input and output, so an unnoticed selection doubles the whole campaign and nothing in the run tells you it happened.
 
-So this command names a model at **every** `Agent` call rather than letting one inherit:
+So every helper role is a project subagent under `.claude/agents/`, and its model is that file's `model:` frontmatter: `campaign-extractor` `haiku`; `campaign-worker`, `campaign-reviewer` and `campaign-divider` `opus`; `campaign-fixer`, `campaign-sweeper` and `campaign-resolver` `sonnet`. Each file says why. You, the coordinator, run on `opus` — you adjudicate technical disputes without being allowed to read the code, and your merges are irreversible. **Spawn them as `Agent(subagent_type: "campaign-<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the definition's frontmatter, so passing one reintroduces exactly the drift the frontmatter removes. The dispatch prompt carries only the per-dispatch parameters each section below names; the brief itself lives in the agent file.
 
-| Spawn                | Model    | Why                                                                                                        |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| you, the coordinator | `opus`   | you adjudicate technical disputes without being allowed to read the code, and your merges are irreversible |
-| footprint extractor  | `haiku`  | fixed extraction against a known heading set                                                               |
-| worker (`/salt-run`) | `opus`   | owns validation and the git history                                                                        |
-| reviewer             | `opus`   | the other genuine reasoning job in this command                                                            |
-| fix agent            | `sonnet` | findings arrive enumerated and the scope is closed                                                         |
-| sweep agent          | `sonnet` | the same, across files: every line was marked decision-free before it reached the list                     |
-| conflict resolver    | `sonnet` | you have already classified the conflict; it applies a rule you handed it                                  |
-| phase divider        | `opus`   | a spec judgement: where a too-big phase divides without changing what gets built                           |
-
-Never omit `model:` and let it inherit. If you find yourself running on anything other than Opus, say so once in the ledger's **Plan** block before you dispatch anything — that line is the only chance anyone gets to catch it before the bill.
+If you find yourself running on anything other than Opus, say so once in the ledger's **Plan** block before you dispatch anything — that line is the only chance anyone gets to catch it before the bill.
 
 ---
 
@@ -138,22 +127,7 @@ gh api repos/{owner}/{repo}/issues/N --jq '"#\(.number) \(.state) — \(.title)"
 
 **Do not open the issue bodies yourself.** A phased spec issue runs 10–25KB; you need about 200 tokens of it. Everything you read here stays in your transcript and is resent on every turn for the rest of the campaign — across a hundred-plus coordinator turns that is the single largest avoidable cost in this command, and it buys you nothing, because `/salt-run` reads the issue from source anyway.
 
-Spawn one extractor per issue, all in one message so they run concurrently, each `Agent(…, model: "haiku")`:
-
-> Read issue #N with `gh api repos/{owner}/{repo}/issues/N --jq '.body'` — the sandbox must be disabled, and plain `gh issue view` prints nothing in this harness. Return exactly this and nothing else. No prose, no summary of what the feature does, no opinion on whether it is a good idea:
->
-> ```
-> ISSUE: N
-> TITLE: <title>
-> KIND: <spec | defect | refactor — whichever baseline heading it carries>
-> PHASES: <count>
-> DELIVERABLES: [every path named across all phases' Technical deliverables]
-> MUST_NOT_TOUCH: [every phase's Must not touch entries, copied verbatim — one per line, worded exactly as the issue words them]
-> DEPENDS_ON: [issues the body names as a dependency — "depends on #N", "after #N", "supersedes #N" — or NONE]
-> RUNNABLE: <yes | no — no if there are no phase blocks, or any phase block carries no Technical deliverables>
-> ```
-
-**Transcribe; do not interpret.** Say this in the brief, because it is the instruction the extractor breaks. A `Must not touch` entry may name a path, but it may equally name a symbol, an export, a behaviour or a rule — "do not change `RecipeMetadataSchema`", "preserve the current sort order". Copy those as written and never resolve one to the file that holds it: `RecipeMetadataSchema` is not `packages/domain/src/schemas/recipe.ts`, and turning it into that path widens a symbol-level prohibition into a file-level one — usually over a file the issue fully expects the work to edit. The same holds for `Technical deliverables`: a path where it gives a path, the words where it gives words. An entry that yields no path at all is a correct answer, not a gap to fill.
+Spawn one `campaign-extractor` per issue, all in one message so they run concurrently. Its prompt is the issue number and nothing else; it returns `ISSUE`, `TITLE`, `KIND`, `PHASES`, `DELIVERABLES`, `MUST_NOT_TOUCH`, `DEPENDS_ON` and `RUNNABLE`, and its definition carries the rule it is most prone to break — **transcribe; do not interpret**: a `Must not touch` entry naming a symbol, an export, a behaviour or a rule stays those words and is never resolved to the file that holds it.
 
 `DELIVERABLES` plus whatever `MUST_NOT_TOUCH` entries are literally paths is the issue's **footprint**. It has exactly one job — ordering the conflict graph below — and it is all you hold of an issue you are forbidden to read.
 
@@ -161,7 +135,7 @@ Spawn one extractor per issue, all in one message so they run concurrently, each
 
 - **Ordering may act on it.** Over-collection there costs a serialisation you did not need, which is the cheap direction and the reason **Conflict graph** tells you to be generous.
 - **Nothing else may.** A footprint is never grounds for a statement about a PR — not a scope breach, not a finding, not a park reason, not a line in a review or a ledger. You hold neither the issue's real wording nor the diff, so scope is not yours to adjudicate.
-- **When it looks breached, hand it over as a question.** Add one line to that PR's reviewer brief — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer as the verdict, including when the answer is no. The reviewer fetches both the issue and the diff, so it is the only actor in this command that can tell a real breach from an extraction artefact. A prohibition worth enforcing survives being asked as a question.
+- **When it looks breached, hand it over as a question.** Add one line to that PR's `campaign-reviewer` prompt — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer as the verdict, including when the answer is no. The reviewer fetches both the issue and the diff, so it is the only actor in this command that can tell a real breach from an extraction artefact. A prohibition worth enforcing survives being asked as a question.
 
 `RUNNABLE: no` → **confirm it before you act on it.** A false negative here silently parks a good issue and nothing downstream ever contradicts it, so spend the one call: `gh api repos/{owner}/{repo}/issues/N --jq '.body' | grep -c '^### Phase'` returns a count rather than prose, which keeps it inside your standing rule. Where there is no `gh` (see **Standing rules**), have a `haiku` agent fetch the body and return the count alone — never the body, and never into your context. Zero → park it and say which. Non-zero → the extractor was wrong; dispatch the issue and let /salt-run be the judge, since it reads the issue from source and returns BLOCKED on a phase block missing the fields its loop consumes.
 
@@ -179,7 +153,7 @@ Two files are excluded from footprint overlap, because otherwise they collide on
 - `pnpm-lock.yaml` — any two issues adding a dependency touch it. At merge time, resolve by regenerating (`pnpm install --lockfile-only`), never by park.
 - the **Docs map table in `docs-map.md`** — any two issues adding a doc row touch it. Resolve by re-applying both rows.
 
-Both are delegated resolutions like any other; they are simply never a reason to stop.
+Both are delegated resolutions like any other — a `campaign-resolver`, handed the rule — they are simply never a reason to stop.
 
 Order the issues into a list: dependencies before dependents, and where neither depends on the other, cheapest (fewest phases) first — a short issue that merges early frees its footprint for everything behind it.
 
@@ -259,9 +233,9 @@ Explicitly, with `git worktree add` — **not** the Agent tool's `isolation: "wo
 
 ## Dispatch
 
-**Workers are Agent-tool subagents on `opus`, spawned in the background — one per worktree.** This choice is load-bearing, so do not substitute a mechanism: a subagent has a task id the harness can kill (`TaskStop`) and _confirm_ killed, it cannot outlive your session — so a resumed campaign never inherits a live worker it cannot see — and it runs unattended without any permission-flag guesswork. Record the agent's id in the ledger row **at the moment you dispatch it**, before anything else. A handle you did not record at dispatch cannot be recovered afterwards, and you will not read logs to find it.
+**Workers are `campaign-worker` subagents, spawned in the background — one per worktree.** This choice is load-bearing, so do not substitute a mechanism: a subagent has a task id the harness can kill (`TaskStop`) and _confirm_ killed, it cannot outlive your session — so a resumed campaign never inherits a live worker it cannot see — and it runs unattended without any permission-flag guesswork. Record the agent's id in the ledger row **at the moment you dispatch it**, before anything else. A handle you did not record at dispatch cannot be recovered afterwards, and you will not read logs to find it.
 
-**Give every worker a budget, and arm one heartbeat for the pool.** State the budget in the brief: **no single phase longer than 90 minutes**, and per worker `min(360, max(180, 90 × phases))` minutes — where `phases` is the number of phases **this dispatch** will build, which is the extractor's `PHASES` count, or `PHASES_UNBUILT` on a continuation dispatch after a split. Worked values: 1 phase → 180, 2 → 180, 3 → 270, 4 → 360, 5+ → 360. Ninety is measured, not guessed: about 10 minutes of every phase boundary is CI wait that `/salt-run` makes serial by design (its step 6 pushes and waits, and it forbids starting phase N+1 before phase N's CI result is read), and merged campaign PRs put a real phase between 45 and 115 minutes. Record the dispatch clock time in the worker's ledger row and its budget end-time in the Note column **at dispatch** — those two cells are the only inputs the breach check has.
+**Give every worker a budget, and arm one heartbeat for the pool.** State the budget in the dispatch prompt: **no single phase longer than 90 minutes**, and per worker `min(360, max(180, 90 × phases))` minutes — where `phases` is the number of phases **this dispatch** will build, which is the extractor's `PHASES` count, or `PHASES_UNBUILT` on a continuation dispatch after a split. Worked values: 1 phase → 180, 2 → 180, 3 → 270, 4 → 360, 5+ → 360. Ninety is measured, not guessed: about 10 minutes of every phase boundary is CI wait that `/salt-run` makes serial by design (its step 6 pushes and waits, and it forbids starting phase N+1 before phase N's CI result is read), and merged campaign PRs put a real phase between 45 and 115 minutes. Record the dispatch clock time in the worker's ledger row and its budget end-time in the Note column **at dispatch** — those two cells are the only inputs the breach check has.
 
 A budget nobody checks is dead text: a spinning worker does not return BLOCKED, it returns nothing, and nothing wakes you for a worker that has hung. **One heartbeat covers the whole pool** — a single backgrounded shell that is nothing but a `sleep` (Bash, `run_in_background: true`), its shell id on the Plan block, not one shell per worker. **Arm it to the earliest budget end-time across the live pool** rather than to a fixed interval — `sleep <seconds from now until that deadline>` — and **re-arm it only when that earliest deadline actually changes**: a worker dispatched, a worker returned, a worker terminated. A wake that moves no deadline needs no new timer. Re-arming on a fixed short interval instead is what turns this mechanism into a polling clock: campaign #1495's coordinator spent 47 turns and 6.96M tokens — 23% of its session, ~$4.45 — on ten-minute cycles that learned nothing on 42 of them.
 
@@ -269,34 +243,7 @@ A budget nobody checks is dead text: a spinning worker does not return BLOCKED, 
 
 **The timer is dumb; you do the comparison.** On every wake — **including a wake caused by an agent returning, not only a heartbeat exit** — read your own ledger, compare each live worker's recorded dispatch time against its recorded budget end-time, and act on any breach. Nothing else needs reading: both numbers are cells you wrote. The invariant to hold is **a heartbeat armed for the current earliest deadline whenever the pool is non-empty** — so before you end the turn, ask whether the wake you just handled moved that deadline, and re-arm only if it did. A non-empty pool with no heartbeat armed has no backstop wake at all, which is exactly the failure the mechanism exists to prevent. A worker past its budget end-time → the budget is breached; armed to the deadline itself, the timer wakes you at the breach rather than up to a fixed interval after it.
 
-Brief each worker with:
-
-> Follow `.claude/commands/salt-run.md` verbatim for issue #N, with these overrides:
->
-> - You are already in worktree `<path>` on branch `<branch>`, cut from `origin/main`. Skip salt-run.md's **Working branch** step; do not create or switch branches.
-> - Your base is `origin/main`. salt-run.md's per-phase `git fetch origin main && git rebase origin/main` stands exactly as written.
-> - Run the safe gate set only. Never `e2e`, `test:emulator`, `dev`, or `dev:emulators`, and never `SALT_TAKE_HOST=1`.
-> - `gh` in this harness: plain `gh issue view` / `gh pr view` exit 0 with empty stdout — use the `--json` forms or `gh api` (issue comments: `gh api "repos/{owner}/{repo}/issues/N/comments"`), and every `gh` call needs the sandbox disabled. Empty output from a comments fetch is a failed fetch, not an empty thread.
-> - Do run `gh pr ready` at the final phase, as salt-run.md says. It is what triggers `pr-doc-review.yml`, and that review is an input to the code review that follows.
-> - Do not merge, and do not touch any branch but your own.
-> - Diff ceiling: `--max-diff <n>` changed lines, excluding the lockfile. This is salt-run.md's own flag and its step 9 already implements the rule — pass the number, do not re-derive the behaviour. Its three outcomes reach me as three different returns: over the ceiling **with phases still unbuilt**, you finish the current phase, turn the PR into an intermediate one (`Refs #N`, title suffixed ` (#N)`), `gh pr ready` it, and return `SPLIT: YES` with the unbuilt phases named; over the ceiling with **nothing left to build**, there is no split — ship it as one PR and conclude normally; a **single phase** that alone exceeds the ceiling is a pause condition and returns `BLOCKED: oversized`.
-> - **Never end your turn with a backgrounded command still running.** Nothing wakes me for a worker that has gone quiet with work in flight — no agent return — so the slot stalls until my next heartbeat notices, and then only if the budget has run out. If you background anything (`run_in_background`), wait for it and read its output inside the same turn before you return. Two workers in campaign #1328 did this; the slot sat idle until the budget expired. This binds **you**, backgrounding work mid-task, and is not a rule about backgrounded commands in general: my own wake signals — the pool heartbeat, and the CI and merge watchers I arm — are meant to outlive a turn.
-> - salt-run.md's pause conditions are yours, with one change: you cannot wait for a human. On a pause condition, stop, commit what you have, leave the branch as it is, and return BLOCKED with the reason.
->
-> Return, and nothing else:
->
-> ```
-> ISSUE: N
-> BRANCH: <name>          PRS: <this run's PR, plus any earlier PR for this issue your resume check found — or NONE>
-> PHASES_LANDED: <n of m>
-> PHASES_UNBUILT: <numbers and names still to build — or NONE>
-> SPLIT: <YES if you cut an intermediate PR at the ceiling, else NO>
-> CI: <green | red | heavy-suites-skipped>
-> DECISIONS: [choices not specified in the issue, and why]
-> FLAGS: [anything another issue in this campaign must know]
-> CONCERNS: [rules the scope pushed against, or a simpler shape you'd recommend — or NONE]
-> BLOCKED: [pause condition hit, or NONE]
-> ```
+Dispatch each worker as `Agent(subagent_type: "campaign-worker", prompt: …, run_in_background: true)`. The prompt carries the parameters and nothing else: issue `#N`, the worktree path, the branch, `--max-diff <n>`, and the budget above — plus `PHASES_UNBUILT` on a continuation and the stop reason on a retry. The agent file holds the override list for `/salt-run` (worktree and base already set, safe gate set only, `gh pr ready` at the final phase, never merge, the diff ceiling's three outcomes, never end a turn with a backgrounded command still running, BLOCKED in place of waiting for a human) and the return shape: `ISSUE`, `BRANCH`/`PRS`, `PHASES_LANDED`, `PHASES_UNBUILT`, `SPLIT`, `CI`, `DECISIONS`, `FLAGS`, `CONCERNS`, `BLOCKED`.
 
 **On budget breach, terminate before recycling the slot.** In this order, and do not skip a step:
 
@@ -316,14 +263,10 @@ The slot is the smaller half of this. A worker you left running still holds a wo
 
 1. The slot's previous worker is confirmed dead (always true after a return; after a breach, see above).
 2. If the worktree is gone (an ejection removed it), fetch and re-add it on the existing branch: `git worktree add .claude/worktrees/<slug>-N <branch>`. If it is dirty, a WIP commit — `git -C <worktree> status --porcelain` is status output and yours to read.
-3. Dispatch a fresh `opus` worker with the standard brief plus two lines: _"A previous worker on this branch stopped: `<the one-line reason, verbatim>`. salt-run.md's resume check finds what it landed. Bringing the branch up to date with `origin/main` and resolving conflicts against code already merged there is in scope for this attempt — never against an unmerged branch."_ Fresh budget, recorded as at any dispatch.
+3. Dispatch a fresh `campaign-worker` with the standard parameters plus the previous worker's stop reason — `<the one-line reason, verbatim>`. The agent file carries what a retry may do: pick up what landed through salt-run.md's resume check, and bring the branch up to date with `origin/main`, resolving conflicts against code already merged there — never against an unmerged branch. Fresh budget, recorded as at any dispatch.
 4. Its return is handled like any other — except that anything short of success parks, with both reasons on the PR.
 
-**Divide: a single phase too big to build under the ceiling.** That phase was specced too big, and no PR boundary fixes it — but dividing it is spec work, not a decision, as long as what gets built stays the same. Spawn one `Agent(…, model: "opus")`:
-
-> Issue #N's phase <k> could not be built under a `--max-diff <n>` ceiling on its own; its worker stopped on branch `<branch>`, and the issue's handoff comments say what landed. Read the issue (`gh api repos/{owner}/{repo}/issues/N --jq '.body'`) and `.claude/commands/salt-spec.md`'s rules for where a phase boundary may fall. Rewrite phase <k> — and only phase <k> — as two or more phases that each build under the ceiling, renumbering the phases after it. **What gets built must not change**: the same deliverables, outcomes and Must-not-touch entries, redistributed. Every new phase block carries all five fields and ends user-testable. Verify the new body with `node scripts/check-spec-shape.mjs` (exit 0), then write it with `gh issue edit N --body-file <file>` and post one comment saying what you divided and why. If the phase cannot be divided without changing what gets built, or without a boundary that would leave the app broken between PRs, change nothing and say so.
->
-> Return only: `DIVIDED: phase <k> → phases <k>…<m>` or `NEEDS_DECISION: <one line>`.
+**Divide: a single phase too big to build under the ceiling.** That phase was specced too big, and no PR boundary fixes it — but dividing it is spec work, not a decision, as long as what gets built stays the same. Spawn one `campaign-divider` with issue `#N`, phase `<k>`, `--max-diff <n>` and the branch its worker stopped on. It rewrites only that phase into several that each build under the ceiling — same deliverables, outcomes and Must-not-touch entries — verifies the body with `scripts/check-spec-shape.mjs`, writes it back, and returns `DIVIDED: phase <k> → phases <k>…<m>` or `NEEDS_DECISION: <one line>`.
 
 `DIVIDED` → re-dispatch a worker on the same branch exactly as after a `SPLIT: YES`, with the renumbered phases as `PHASES_UNBUILT`. Dividing is not the issue's retry, and does not spend it. `NEEDS_DECISION` → park, with the divider's line as the reason.
 
@@ -331,7 +274,7 @@ The slot is the smaller half of this. A worker you left running still holds a wo
 
 1. Review and land the intermediate PR through the normal queue. Its body says `Refs #N`, so it closes nothing and moves no board field — the issue correctly stays `In progress`.
 2. Remove the worktree and delete the local branch as on any merge.
-3. Fetch, then create a fresh worktree on the continuation branch (`<type>/<slug>-N-2`) cut from the **new** `main`, and dispatch a fresh worker with the same brief, for `PHASES_UNBUILT` only.
+3. Fetch, then create a fresh worktree on the continuation branch (`<type>/<slug>-N-2`) cut from the **new** `main`, and dispatch a fresh `campaign-worker` with the same parameters, for `PHASES_UNBUILT` only.
 4. The ledger row for #N goes back to `queued` with the merged PR listed and the unbuilt phases in the note; the states line below covers this.
 
 The re-dispatched worker needs no special instruction to find its place: salt-run.md's resume check detects landed phases by content, not by lineage, and its own **Working branch** section covers the continuation form. File no split issue. Do not decide the phase boundary yourself — the spec already chose it, and the worker cut there.
@@ -346,9 +289,9 @@ The re-dispatched worker needs no special instruction to find its place: salt-ru
 
 A PR is review-eligible only after you have verified what the review prompt asserts. The worker's `CI` field says green — check it agrees with reality now: `gh pr checks <pr>` (the heavy suites may show as passed-because-skipped if a sibling merged since the worker finished; that is the queue's problem — it rebuilds on current `main` and runs them there — so what must be genuinely green here is everything else). A red check means the worker's return was wrong, and a worker that misreported CI may have misreported anything: park, don't review.
 
-One reviewer agent per PR, `Agent(…, model: "opus")`, spawned fresh, **read-only** — it must not have the branch checked out and must not fix anything. A reviewer that can fix things will, and you lose the signal.
+One `campaign-reviewer` per PR, spawned fresh, **read-only** — it must not have the branch checked out and must not fix anything. A reviewer that can fix things will, and you lose the signal. Its prompt carries PR `#X`, issue `#N`, and any Must-not-touch question from **Setup** 2, verbatim.
 
-**Give it the commands, not their output.** The brief below hands the reviewer a fetch list it runs itself. You run none of it — fetching the diff to paste it over would put 2000 lines into the context this whole command exists to protect, and this is the one place in the file where that mistake is easy to make.
+**Give it the parameters, not the material.** The agent file hands the reviewer a fetch list it runs itself. You run none of it — fetching the diff to paste it over would put 2000 lines into the context this whole command exists to protect, and this is the one place in the file where that mistake is easy to make.
 
 A PR reaching review is already under the ceiling, or is the last PR of an issue with nothing left to move out of it — the worker enforced `--max-diff` at every phase boundary and cut a PR there if it had to.
 
@@ -356,62 +299,18 @@ A PR reaching review is already under the ceiling, or is the last PR of an issue
 
 So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFiles` — counts, not content, and remember the worker's count excluded `pnpm-lock.yaml`: an overage the lockfile explains (check `--json files`) is not a breach. An overage the worker _declared_ is not a breach either — a final phase that carried the branch past the ceiling with no phases left ships as one PR by design, and the PR body says so. What is a breach is an undeclared overage with `SPLIT: NO` and phases unbuilt: that means the worker's check did not run, and a worker that skipped that check may have skipped anything. Do not review it: close the PR unmerged and **retry** the issue from its branch, telling the fresh worker the ceiling check did not run.
 
-> Review PR #X against issue #N adversarially. Assume it is wrong and find where.
->
-> Gather your own material first — every `gh` call needs the sandbox disabled, and the plain `--comments` forms print nothing in this harness, so empty output is a failed fetch and never "no comments":
->
-> - the issue: `gh api repos/{owner}/{repo}/issues/N --jq '.body'`
-> - the per-phase handoff comments: `gh api "repos/{owner}/{repo}/issues/N/comments"`
-> - the PR discussion, from **both** endpoints, because conversation comments and review bodies live apart: `gh api "repos/{owner}/{repo}/issues/<pr>/comments"` and `gh api "repos/{owner}/{repo}/pulls/<pr>/reviews"`
-> - the diff: `gh pr diff <pr>`
->
-> Do not re-litigate what the gates already prove. `lint` + `depcruise` + `boundary:test` prove the import graph and the layer map. `typecheck` + `check` prove the types. `docsmap:check` proves the Docs map has a row. `theme:check` and `provenance:check` prove the tokens. All green on this PR — verified before you were spawned. Re-reporting any of them is noise.
->
-> Do not repeat findings already on the PR. Read the existing comments first.
->
-> Scope is the issue's phases. The handoff comments carry **Out of scope (do not suggest)** — that list is binding. Suggesting work the issue deliberately deferred is a defect in the review, not a finding.
->
-> **You are hunting defects, not auditing quality.** Anything a tool can find, a tool has already found. Look at the four things the gates structurally cannot see, in this order — the first two are where real defects live and where most of your effort belongs:
->
-> 1. **Correctness** — an input, a state, or an ordering under which this code does the wrong thing. Concurrency, LWW clobbering, partial failure, empty and boundary cases, a `Failure` swallowed, a trigger racing a client write. **Including a false invariant:** a safety property this diff asserts — in a header comment, a test name, a doc paragraph or the PR body — which the code does not actually guarantee. Read each such claim against the code that is supposed to enforce it and name the input, state or second construction path that falsifies it. Campaign #1064 shipped five of these, every one green on every gate, and three would have destroyed production data.
-> 2. **Architectural intent** — legal by depcruise but wrong in spirit: policy leaking into an adapter, a domain concern implemented in a component, a rule that will be true today and unenforced tomorrow.
-> 3. **Duplication** — semantic, not textual: the same rule expressed in two places that can now disagree. Not duplicated test scaffolding, not similar-looking code.
-> 4. **Testing** — report a gap **only** where a missing assertion means a real defect could ship undetected, and say what that defect would be. Do not audit against a checklist; do not open `docs/unit-test-spec.md` or `docs/e2e-test-spec.md` — 50KB of checklist compels enumeration, and enumeration is what makes a review unreadable. No findings about test style, test naming, or duplicated test helpers.
->
-> **Documentation is not your lens.** `pr-doc-review.yml` has already run on this PR and is the tool that owns it. Raise a doc point only when the diff makes a specific existing sentence factually false _and_ the doc review did not catch it. A false invariant is not a doc point and this rule does not apply to it — it is lens 1, wherever the sentence happens to live.
->
-> Severity, and be strict about the top one:
->
-> - **blocking** — you can state a concrete failure: this input, this state, this wrong output or crash. If you cannot name one, it is not blocking.
-> - **should-fix** — real, but ships safely and can be a follow-up. Append `[fold-in]` to the line when the fix needs **no decision** and stays **inside this diff's files or their tests** — whatever its size. A stale line reference, a wrong glob, a sentence this PR made false, a missing test for behaviour this PR added: all fold in. What does not: a design choice, a new source file, a second call site outside the diff, or anything the issue's Out of scope list names. You are the only actor holding the diff, so you are the only one who can judge it; the coordinator decides what to do with the mark.
->   Append `[sweep]` instead when the fix needs **no decision** but reaches **outside this diff** — a second call site elsewhere, a sibling file with the same stale sentence, a missing test for pre-existing code this PR leaned on. Name the file or symbol on the line: whoever fixes it will not have your diff. What gets neither mark: a design choice, a rule change, a question about the right shape, and anything the issue's Out of scope list names — deferring it was the decision.
->   **A false invariant (lens 1) is `[fold-in]` by construction**, because it has three fixes and none of them needs a decision: pin the claim with a test, qualify it to its real boundary, or **delete the sentence**. Say which you mean on the line. Reach for delete when the claim restates what the code already expresses, and always when the sentence has been corrected before — `undrawnEquipment`'s header spent #1516, #1544 and #1548 on three successive re-wordings, and filing a wrong sentence rather than fixing it is what buys the fourth.
-> - **note** — style, taste, preference. Say them in one line each or not at all.
->
-> **Write only findings.** No "what I verified and found sound" section, no summary of what the PR does, no restatement of the phases — the coordinator and the author both already know. If the honest answer is that you found nothing, the review is three lines saying so, and that is a good review rather than a failed one.
->
-> Post one review: `gh pr review <pr> --comment --body-file <file>` (every `gh` call needs the sandbox disabled), findings grouped by severity, most severe first, under the literal headings `## Blocking`, `## Should-fix` and `## Notes`. **All three appear even when a section is empty** — the merge gate (`scripts/lib/prEligibility.mjs`) parses those headings, and a body with none of them, or with `## Blocking` missing, is unreadable to it and stops the merge on a prompt. A review, never `gh pr comment`: an issue comment does not appear in `gh pr view --json reviews`, so the PR reads as unreviewed. Then return only the counts, the blocking findings' one-line summaries, and the should-fix findings' one-line summaries.
+The agent file holds the rest: what not to re-litigate, the four lenses (correctness including false invariants, architectural intent, duplication, testing), the severity rules with the `[fold-in]` and `[sweep]` marks, and the posting shape — one `gh pr review` under `## Blocking`, `## Should-fix` and `## Notes`, which `scripts/lib/prEligibility.mjs` parses. It returns the counts, the blocking findings' one-line summaries, and the should-fix findings' one-line summaries with their marks.
 
 ### Fixing findings
 
-Do not re-dispatch /salt-run for this. salt-run.md is a phase loop keyed to an issue whose phases have all landed; pointed at a finished branch it either no-ops or restarts work. Spawn a plain `Agent(…, model: "sonnet")` instead — the findings arrive enumerated and the scope is closed, so there is no design judgement left in this step:
-
-> In worktree `<path>` on branch `<branch>`, address these review findings — every blocking one, plus any marked `[fold-in]`: [list]. Do not rebase, do not merge, do not touch another branch, and do not take work beyond the findings — the issue's Out of scope list still binds. If a `[fold-in]` fix turns out to need a design choice, or would take the PR over the `--max-diff <n>` ceiling of changed lines (excluding `pnpm-lock.yaml`), or the PR is already over it, put it under REJECTED with that reason rather than forcing it. Run the safe gate set, commit, push. Never end your turn with a backgrounded command still running: if you background anything, wait for it and read its output inside the same turn before you return — nothing wakes me for a fix agent that went quiet mid-command, and the round stalls until a heartbeat wakes me to notice it.
->
-> Return:
->
-> ```
-> FIXED: [finding → what changed]
-> REJECTED: [finding → why it is wrong, or why the fix is worse than the bug]
-> GATES: <green | red>
-> ```
+Do not re-dispatch /salt-run for this. salt-run.md is a phase loop keyed to an issue whose phases have all landed; pointed at a finished branch it either no-ops or restarts work. Spawn a `campaign-fixer` instead — the findings arrive enumerated and the scope is closed, so there is no design judgement left in this step. Its prompt carries the worktree path, the branch, the findings (every blocking one, plus the `[fold-in]` ones you have sent per the rule below) and `--max-diff <n>`. It returns `FIXED`, `REJECTED` and `GATES`, rejecting rather than forcing a fold-in that needs a design choice or would breach the ceiling.
 
 **Should-fix findings that fit in the PR are fixed in the PR.** A filed issue costs a spec pass, a board row, triage, a worktree, a run, a PR and a review, and that cost does not shrink with the fix. So the test is **scope, not size**. Send a `[fold-in]`-marked **should-fix** finding to the fix agent in round 1, rather than listing it, once you have confirmed the two things you can confirm without a diff:
 
 - **the file is already in this PR's footprint, or is the test file for one that is** — `gh pr view <pr> --json files`, which is yours under **Standing rules**: file names are not diffs. No new source footprint means the queue's conflict model is untouched, and that is the condition making the rest of this safe — /salt-run's scope discipline protects _footprint_, not line count, and **Dispatch** scores conflicts on deliverables;
 - **it needs no decision from Daniel** — no design fork, no rule change, no question about what the right shape would be. Judge this from the finding's one-line summary; if you cannot tell, that is a no.
 
-The reviewer's `[fold-in]` mark covers the rest, because judging whether a fix is closed-scope needs the diff and you do not read diffs. **Unmarked should-fix findings are never sent.** The one ceiling is `--max-diff`, and you put its number in the fix agent's brief. The agent rejects a fold-in that would push the PR over the ceiling, or any fold-in at all on a PR already over it by a declared final-phase overage, and that finding goes on the list. Campaign #1552 is why the rule is scope and not size. The old "≤5 lines" cap sent a two-test gap in a file its PR had already touched to #1561, and Daniel asked why it had not simply been fixed.
+The reviewer's `[fold-in]` mark covers the rest, because judging whether a fix is closed-scope needs the diff and you do not read diffs. **Unmarked should-fix findings are never sent.** The one ceiling is `--max-diff`, and you put its number in the fix agent's prompt. The agent rejects a fold-in that would push the PR over the ceiling, or any fold-in at all on a PR already over it by a declared final-phase overage, and that finding goes on the list. Campaign #1552 is why the rule is scope and not size. The old "≤5 lines" cap sent a two-test gap in a file its PR had already touched to #1561, and Daniel asked why it had not simply been fixed.
 
 Drop whatever comes back under `FIXED` from the should-fix list: a finding cannot both ship fixed and be filed as outstanding. Anything under `REJECTED` stays on the list, and the agent's reason goes on the line. A fold-in rejected **only** for the ceiling still needs no decision, so it moves to the sweep list below rather than the follow-ups list; one rejected because it turned out to need a design choice does not.
 
@@ -541,7 +440,7 @@ catch firing — two branches green apart, red together — and it is exactly wh
 the queue is for, so treat it as signal, not noise. Read the merge-group run's
 failure, then apply the same classification the old rebase step used: a failure
 in files a merged sibling of this campaign changed, or in `pnpm-lock.yaml` or the
-Docs map, is this campaign's own work — fix it on the branch, push, re-enqueue.
+Docs map, is this campaign's own work — a `campaign-resolver` fixes it on the branch and pushes (its prompt: worktree, branch, PR, and that classification with the sibling PRs), then you re-enqueue.
 Anything else is someone's concurrent change and is **not yours to resolve** —
 but it is a fresh worker's: **retry** the issue (see **Dispatch**), which brings
 the branch up to date with `main` and sends it back through **Review**. Park it
@@ -605,13 +504,9 @@ When every run-set issue has reached a terminal state and the ledger's `## Sweep
 
 1. **Drop what the run no longer supports.** A line whose PR ended up parked, not merged, comes off the sweep and goes to the follow-ups list: the code it names never reached `main`.
 2. **Cut a worktree from the new `main`** exactly as in **Worktrees** — fetch first — on `chore/<slug>-sweep`. Everything the findings were raised against has merged by now, so there is nothing left for the sweep to conflict with in flight.
-3. **Dispatch one sweep agent**, `Agent(…, model: "sonnet")`, in the background:
+3. **Dispatch one `campaign-sweeper`**, in the background. Its prompt carries the worktree path, the branch, the ledger number, the unticked `## Sweep` lines verbatim, every parked branch of this campaign (it must not touch their files), and `--max-diff <n>`. It opens the ready-for-review PR `chore: campaign #<ledger> sweep` itself and returns `PR: <n>`, `FIXED: [line → what changed]`, `REJECTED: [line → why]`, `CI: <green | red>`.
 
-   > In worktree `<path>` on branch `<branch>`, fix these review findings from campaign #<ledger>. Each was raised on a merged PR and marked as needing no decision: [the unticked `## Sweep` lines, verbatim]. Do only that. If a line turns out to need a design choice, a rule change or new behaviour, or has already been fixed on `main`, or would take this PR over `--max-diff <n>` changed lines (excluding `pnpm-lock.yaml`), put it under REJECTED with the reason instead of forcing it. Do not touch any file a parked branch of this campaign changes: [each parked branch — check with `git diff --name-only origin/main...origin/<branch>`]. Run the safe gate set, commit, push, and open a ready-for-review PR titled `chore: campaign #<ledger> sweep` whose body says `Refs #<ledger>`, plus `Closes #<n>` for each line that names a filed issue, and lists one line per finding with the PR it came from. Never end your turn with a backgrounded command still running.
-   >
-   > Return: `PR: <n>`, `FIXED: [line → what changed]`, `REJECTED: [line → why]`, `CI: <green | red>`.
-
-4. **Then it is an ordinary campaign PR.** Confirm CI, review it (the reviewer brief with the ledger in place of issue #N — the `## Sweep` lines are its scope), fix round, and land it with `campaign-land.mjs`. Its own review's `[fold-in]` **and** `[sweep]` findings both go to its round-1 fix agent, ceiling permitting — on this PR there is no later sweep to defer them to; unmarked ones, and anything that agent rejects, go to the follow-ups list. **There is one sweep per campaign, never a second.** Blocking findings unresolved after round 2 park it like any other branch, and every line it carried moves to the follow-ups list.
+4. **Then it is an ordinary campaign PR.** Confirm CI, review it (a `campaign-reviewer` with the ledger in place of issue #N — the `## Sweep` lines are its scope), fix round, and land it with `campaign-land.mjs`. Its own review's `[fold-in]` **and** `[sweep]` findings both go to its round-1 fix agent, ceiling permitting — on this PR there is no later sweep to defer them to; unmarked ones, and anything that agent rejects, go to the follow-ups list. **There is one sweep per campaign, never a second.** Blocking findings unresolved after round 2 park it like any other branch, and every line it carried moves to the follow-ups list.
 5. Tick each `FIXED` line in the ledger body. `REJECTED` lines move to the follow-ups list with the agent's reason.
 
 Empty `## Sweep` checklist → skip this section and say nothing about it. Under `--stop-at-green`, the sweep PR is left reviewed and green like everything else.

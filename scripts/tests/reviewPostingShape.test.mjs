@@ -18,9 +18,11 @@ import { describe, expect, it } from 'vitest';
 import { hasBlockingFindings, reviewSections } from '../lib/prEligibility.mjs';
 
 const repo = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
-const read = (f) => readFileSync(path.join(repo, '.claude/commands', f), 'utf8');
+const read = (f) => readFileSync(path.join(repo, f), 'utf8');
 
-const COMMANDS = ['salt-review.md', 'salt-campaign.md'];
+// `/salt-campaign`'s reviewer brief moved out of the command into its own
+// agent definition (#1586), so that file is the one the reviewer actually reads.
+const COMMANDS = ['.claude/commands/salt-review.md', '.claude/agents/campaign-reviewer.md'];
 
 describe('the posting shape a reviewer is told to use', () => {
   it.each(COMMANDS)('%s tells the reviewer to post a review, not an issue comment', (file) => {
@@ -38,7 +40,7 @@ describe('the posting shape a reviewer is told to use', () => {
 describe('salt-review.md’s no-findings template', () => {
   /** The fenced block the command tells the reviewer to post when nothing was found. */
   const template = (() => {
-    const src = read('salt-review.md');
+    const src = read('.claude/commands/salt-review.md');
     const m = src.match(/Nothing found is:\s*\n\n```\n([\s\S]*?)\n```/);
     if (!m) throw new Error('no-findings template not found in salt-review.md');
     return m[1];
