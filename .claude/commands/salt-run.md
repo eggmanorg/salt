@@ -14,7 +14,7 @@ No argument given? If the current branch ends in `-<digits>`, that is the issue 
 
 You own two things end to end: the **spec contract** (the issue's phases are the scope — nothing more, nothing less) and the **git history** (branch, commits, PR). Everything else is yours to delegate or do directly as the work warrants.
 
-Delegate breadth — codebase sweeps, independent implementation work, CI-log triage — and keep judgment: validation against the real diff, the git operations, and every decision the issue's audit trail depends on. Search and mechanical fan-out can run on a cheaper model — `Agent(…, model: "haiku")`, or `"sonnet"` where the sweep has to reason about what it finds. Implementation and validation should not.
+Delegate breadth — codebase sweeps, independent implementation, CI-log triage — and keep judgment: validation against the real diff, the git operations, and every decision the issue's audit trail depends on. Search and mechanical fan-out can run on a cheaper model — `Agent(…, model: "haiku")`, or `"sonnet"` where the sweep has to reason about what it finds. Implementation and validation should not.
 
 GitHub through the `gh` CLI throughout, or — where `gh` is absent — the GitHub MCP server, per the table in _Standing rules_.
 
@@ -41,7 +41,7 @@ Keep the loop's order: it is built so a run neither re-derives what the issue ho
 | Heavy-suite verdict (step 8)     | `heavy-suites.mjs --branch`        | **Heavy-suite files** (below)              |
 | Failing-step logs (step 8)       | `gh run view --log-failed`         | `get_job_logs`                             |
 
-- **Empty output is a failed fetch**, never "no jobs". The CI poll is the one wait here that no longer blocks inside a single call.
+- **Empty output is a failed fetch**, never "no jobs". The CI poll is the one wait that no longer blocks inside a single call.
 - **Heavy-suite files**: the newest `ci.yml` run on `<branch>` (`list_workflow_runs`, `workflow_runs_filter.branch`), its jobs (`list_workflow_jobs`) and `Detect changes` log (`get_job_logs`, `return_content: true`), saved to files, then `node scripts/heavy-suites.mjs --jobs <file> --changes-log <file> --event pull_request`.
 - **Board dispatch** is [`board-dispatch.yml`](../../.github/workflows/board-dispatch.yml) run through the MCP server: `command: set`, `issue: ISSUE_NUMBER`, `status: In progress`; an omitted input stays `(unchanged)`. No token fixes `board.mjs`: the session proxy refuses its `gh api graphql` before any credential is evaluated. **Never a shell `curl`** to the dispatches endpoint (403 `Resource not accessible by integration`; only the MCP path has `actions:write`). **A dispatch is a request, not a confirmation** — name the route you took; never report the board as moved on the strength of one. `check` is deliberately **not** relayed ([docs/issue-board.md](../../docs/issue-board.md) says why).
 
@@ -297,7 +297,7 @@ sleep 20 && gh pr checks --watch --fail-fast      # Bash tool, run_in_background
 
 The `sleep` is not padding: without it `gh pr checks` can exit at once with _"no checks reported"_, which looks like a finished CI. A watch that returns within seconds is that — re-issue it, never read it as a result ([why](../../docs/campaign-rationale.md#the-backgrounded-ci-watch)).
 
-A run takes about 10 minutes — p50 over `ci.yml` `pull_request` runs, range 8–15 — and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
+A run takes about 10 minutes — p50 over successful `ci.yml` `pull_request` runs, range 8–15 — and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
 
 Stop there. **Do not start implementing N+1 until you have read phase N's CI result** (step 8): building on a red phase turns one rework into two.
 
@@ -328,7 +328,7 @@ Comment on issue #ISSUE_NUMBER — the audit trail and the AI PR reviewers' brie
 
 For a single-phase issue, drop **Handoff contract** and **Settled** entirely.
 
-### 8. Read CI — and check the heavy suites ran
+### 8. Read CI — and check the heavy suites actually ran
 
 Picks up when the backgrounded watch from step 6 returns.
 
@@ -343,7 +343,7 @@ node scripts/heavy-suites.mjs --branch <type>/<slug>-ISSUE_NUMBER
 - `pending` → re-read once the run finishes. `cancelled` → a later push superseded that run; re-run the command.
 - `failed` → `gh run view <run-id> --log-failed` (id on the `run:` line) gives the failing steps alone, never the full log. Fix on the issue branch (delegate the triage if large), commit, push. Can't resolve it → stop and tell me.
 
-Blind spot: a phase editing the e2e or integration job setup **inside `.github/workflows/ci.yml`** skips those very suites. Flag it and validate on a follow-up that also touches app code.
+Blind spot: a phase editing the e2e or integration job setup **inside `.github/workflows/ci.yml`** skips those suites. Flag it and validate on a follow-up that also touches app code.
 
 ### 9. Continue or conclude
 
