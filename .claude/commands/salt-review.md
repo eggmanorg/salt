@@ -40,14 +40,13 @@ Three required contexts, all from `ci.yml`: `Lint, typecheck, test, boundary`, `
 
 - **Anything still pending or in progress** → stop. "CI is still running — N of M checks pending."
 - **Anything failed or cancelled** → stop, naming the check. Nothing more; you are not diagnosing it.
-- **`E2E (Playwright)` or `Vitest integration (emulator)` reporting as skipped** → **not green, and not a red either.** A skipped required check _passes_, deliberately — it is how a docs-only PR merges without paying for the emulator ([docs/ci.md](../../docs/ci.md)). So a green tick is not proof a suite ran. Read the conclusions, not the summary:
+- **Then whether the heavy suites ran — a green tick is not proof.** A skipped required check _passes_, deliberately — it is how a docs-only PR merges without paying for the emulator ([docs/ci.md](../../docs/ci.md)) — and the `E2E (Playwright)` aggregator reports `success` even when every shard was skipped. Take the verdict, not the summary (no `gh`: `/salt-run`'s **Heavy-suite files** route):
 
   ```
-  gh run list --branch <headRefName> --limit 1 --json databaseId --jq '.[0].databaseId'
-  gh run view <run-id> --json jobs --jq '.jobs[] | select(.name | test("E2E|integration")) | "\(.name): \(.conclusion)"'
+  node scripts/heavy-suites.mjs --branch <headRefName>
   ```
 
-  `skipped` with every changed file under `docs/`, `*.md`, `LICENSE`, `.github/`, `.claude/`, `.vscode/` or the meta dotfiles → correct, and this PR simply has no runtime signal. Carry on, and say so in the heavy-suite line you pass at step 2. `skipped` with app code in the diff → the branch is behind `origin/main` (`mergeStateStatus: BEHIND` confirms it in one read). Stop: **"the heavy suites did not run — update the branch and re-run `/salt-review`."** That is a state report, not an investigation; do not go further.
+  `ran-green` → carry on; your heavy-suite line at step 2 says both suites ran. `skipped-non-app` → correct, and this PR simply has no runtime signal; carry on, and say so in that line. `skipped-behind` → stop: **"the heavy suites did not run — update the branch and re-run `/salt-review`."** `cannot-confirm` → stop, quoting its `reason:` line. `pending`, `cancelled` or `failed` → the matching stop above. Each stop is a state report, not an investigation; do not go further.
 
 Then take the head SHA. The reviewer reads it again before posting — if it moved, a push landed mid-review and the findings would be against a diff that no longer exists, so it posts nothing.
 

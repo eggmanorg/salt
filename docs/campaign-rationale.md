@@ -110,7 +110,7 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 **Why the reviewer does not win.** A rejection is a position, not a veto; reviewer-wins is a deadlock in a command that runs unattended, so the coordinator adjudicates and records it.
 
-**Why not `--branch main` for the heavy-suite read.** A merge-queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so `--branch main --limit 1` returns the post-merge `push` run instead — still `in_progress` with empty job conclusions at that moment, which the "empty output → park" rule then reads as a reason to park a good merge.
+**Why the heavy-suite read selects by PR** (#1588). A merge-queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so `--branch main --limit 1` returns the post-merge `push` run instead — still `in_progress` with empty job conclusions at that moment, which parks a good merge; `heavy-suites.mjs` refuses it. And the newest `merge_group` run of _any_ PR is another entry's when two are queued, so `--pr` matches that prefix rather than taking the newest.
 
 ## Finish
 

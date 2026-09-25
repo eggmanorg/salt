@@ -39,11 +39,35 @@ Two properties are deliberate and easy to misread:
 
 - **A skipped required check passes.** That is how a docs-only PR merges without
   paying for the emulator and Playwright suites. It also means a green tick is
-  not proof a suite ran — read job conclusions, not the check summary
-  (`.claude/commands/salt-run.md` step 8 has the recipe).
+  not proof a suite ran — see
+  [Confirming the heavy suites ran](#confirming-the-heavy-suites-ran).
 - **Both aggregators run `if: always()` and assert their dependencies
   themselves.** A plain `needs:` would _skip_ them when a dependency failed, and
   a skipped required check passes — the gate would silently stop gating.
+
+### Confirming the heavy suites ran
+
+`node scripts/heavy-suites.mjs --pr <n>` (the PR's merge-queue run),
+`--branch <name>` (a PR branch's newest run) or `--run <id>` prints one verdict
+and exits with its code; with no `gh`, pass the run's jobs and its
+`Detect changes` log as files (`--jobs`, `--changes-log`, `--event`). The
+three agent commands that need the answer — `/salt-run` step 8, `/salt-review`
+step 1 and `/salt-campaign`'s **Merged.** — call it rather than filter jobs by
+hand. Three things a hand-typed filter got wrong, which the classifier in
+`scripts/lib/heavySuites.mjs` handles and its tests pin against `ci.yml`:
+
+- the `E2E (Playwright)` aggregator reports `success` when every shard was
+  skipped, so it is never counted as proof of a run;
+- a matrix job skipped by its `if:` is listed once, literally named
+  `E2E shard ${{ matrix.shard }}/3`, not as three skipped shards;
+- the `Detect changes` log echoes the step's whole script, so both skip-reason
+  sentences appear in every such log as `echo` source text. Only a line CI
+  printed counts.
+
+Why a skip happened is read from that log, never re-derived from the diff:
+`ci.yml` already decided. `--branch main` is refused: a queue run's branch is
+`gh-readonly-queue/main/pr-<n>-<sha>`, so it would find the post-merge `push`
+run instead.
 
 ## The merge queue
 
