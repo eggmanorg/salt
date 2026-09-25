@@ -425,7 +425,7 @@ export const authorRecipe = makeTracedCallable({
 //     generated hero shows next to a stale brief (the trigger's own words). That is
 //     a claim about synchronisation, not universal presence: `describeSceneOrNothing`
 //     can still return nothing (an empty brief, or any throw) and the image is then
-//     written with no brief at all, same as an uploaded hero — #1416's fix is
+//     written with no brief at all — #1416's fix is
 //     already applied to the automatic path, it does not guarantee every hero gets
 //     a brief.
 //   • What is exposed by any of this is seconds, not the 90 s below. That number is
@@ -455,9 +455,16 @@ export const authorRecipe = makeTracedCallable({
 //   • Fact two goes void if the trigger stops writing its brief in the SAME update
 //     as the image, or stops authoring one at all — either decouples image and
 //     brief on the one path nobody reviews, which is a failure from the OTHER side
-//     of the meaning argument than fact one's. Fact two draws on fact one (nothing
-//     else originates new brief text) but is not voided by fact one's failure, nor
-//     does fact one depend on fact two. Pinned by
+//     of the meaning argument than fact one's. Fact one and fact two are
+//     independent as PROPOSITIONS — neither's truth settles the other's, which is
+//     why each carries its own void condition and its own pin — but the meaning
+//     above needs BOTH: fact two still holding does not rescue it if fact one
+//     fails — a brief fact one lets through stays false no matter how
+//     faithfully the trigger persists it — and fact one still holding does not
+//     rescue the brief-beside-the-hero SYNCHRONISATION if fact two fails: the
+//     result is a hero shown with no brief at all, never a stale or false one,
+//     because only fact one's failure ever puts false words on the doc.
+//     Pinned by
 //     tests/triggers/onRecipeWritten.test.ts, which asserts the brief lands in the
 //     SAME update object as the image, not merely somewhere in the same handler.
 //   • Fact three goes void one constant at a time: the `fast` role
@@ -529,16 +536,16 @@ export const describeRecipeScene = makeTracedCallable({
 //     property access, so a write that somehow slipped the assertion still fails
 //     loudly rather than being absorbed by a stub that answers every path. Its
 //     boundary: it catches a handle THIS FLOW obtains for itself, via
-//     `getFirestore()` — 37 modules in this package do that today. A handle
-//     passed in as an ARGUMENT would evade it, and that is not a theoretical
-//     gap: seven modules already take one that way, three of them sibling flow
-//     modules — flows/equipmentContext.ts, flows/componentContext.ts,
-//     flows/kitchenMemoryContext.ts — plus four adapters/triggers. Giving
+//     `getFirestore()`. A handle passed in as an ARGUMENT would evade it, and
+//     that is not a theoretical gap: sibling flow modules already take one that
+//     way (flows/equipmentContext.ts, flows/componentContext.ts and
+//     flows/kitchenMemoryContext.ts among them). Giving
 //     `describeEquipmentSubjectFlow` a `db` parameter in that same local idiom
 //     would write to Firestore from inside the flow and never touch
-//     `mockGetFirestore`, and the caller already holds a handle to pass:
-//     onEquipmentManifestWritten.ts:111 obtains `const db = getFirestore()`
-//     earlier in the same function that calls this flow at :120.
+//     `mockGetFirestore`, and callers that already hold a handle pass it —
+//     `maybeAuthorBrief` in triggers/onEquipmentManifestWritten.ts among them:
+//     it obtains `const db = getFirestore()` earlier in the same function
+//     that calls this flow.
 //   • TWO — Draw is the only route from the box to the document: in the
 //     browser, `drawEquipmentIcon(item.id, briefDraft.trim())` in `handleDraw`
 //     is the only call that carries brief text into a Firestore write. VOID if

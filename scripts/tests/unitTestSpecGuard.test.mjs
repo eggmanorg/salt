@@ -64,6 +64,10 @@ import {
 
 const areas = unitTestAreas();
 const violations = scanViolations();
+// Every file parsed once, up front: stripping comments runs the TypeScript
+// parser over ~700 files, and a per-test rescan outran the 5s test timeout
+// under the full suite's load.
+const filesByArea = new Map(areas.map((a) => [a, testFilesIn(a)]));
 
 /** Which rules bind a given area — a file rule may be scoped to one app. */
 const rulesFor = (area) => [
@@ -132,13 +136,13 @@ describe('the unit-test spec is counted, not merely written', () => {
   });
 
   it('still finds the test files it scans', () => {
-    const counts = Object.fromEntries(areas.map((a) => [a, testFilesIn(a).length]));
+    const counts = Object.fromEntries(areas.map((a) => [a, filesByArea.get(a).length]));
     // A walk that narrowed — a `tests/` renamed, a suffix dropped — fails here
     // rather than counting zero violations in an area it can no longer see.
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBeGreaterThan(400);
     for (const area of areas) expect(counts[area], `test files in ${area}`).toBeGreaterThan(0);
 
-    const paths = areas.flatMap((a) => testFilesIn(a).map((f) => f.path));
+    const paths = areas.flatMap((a) => filesByArea.get(a).map((f) => f.path));
     expect(paths).toContain('apps/web-pwa/tests/sharedHelperGuard.test.ts');
     expect(paths).toContain('apps/cloud-functions/tests/aiTimeoutGuard.test.ts');
     expect(paths).toContain('scripts/tests/coverageFileSet.test.mjs');
@@ -152,7 +156,7 @@ describe('the unit-test spec is counted, not merely written', () => {
     // must-not-match case below is being met by an empty set.
     const escape = /(?:\.\.\/){2,}(?:packages|apps)\//;
     const mentions = areas
-      .flatMap((a) => testFilesIn(a))
+      .flatMap((a) => filesByArea.get(a))
       .filter((f) => !escape.test(f.code) && escape.test(rawOf(f.path)));
     expect(mentions.length).toBeGreaterThan(0);
   });

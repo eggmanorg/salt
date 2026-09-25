@@ -38,12 +38,41 @@ function withAttendee(day: Day, memberId: string, update: (a: Attendee) => Atten
   };
 }
 
+// The note is tidied on the way in (issue #1513): leading BLANK LINES — lines
+// holding only whitespace — are dropped, up to and including the first line
+// that has any non-whitespace on it. The planner's headline is the note's
+// FIRST line, while "is this night named?" asks whether the WHOLE note is
+// blank; a note like "\nbring wine" answered those two questions differently
+// and read "Nothing planned" over a planned night. Once the note's first
+// non-blank-line has any non-whitespace character, that line is non-blank
+// exactly when the whole note is.
+//
+// Only whole leading blank LINES are stripped — never characters within the
+// first non-blank line, and never anything after it. This runs on every
+// keystroke of the Dinner textarea, whose `value` is driven from the store:
+// stripping every leading space unconditionally (`trimStart`) rewrote the
+// field mid-edit when the first word was deleted — "Pie and mash", delete
+// "Pie", leaves " and mash", which lost its leading space and jumped the
+// caret. `apps/web-pwa/tests/MealDayDetail.noteTyping.test.ts` pins that, and
+// also that a trailing space survives a backspace mid-word. A trailing blank
+// never changes what the first line reads, so it costs nothing to keep.
+//
+// Every note the app EDITS — week day and weekday template alike — is written
+// through here, which is why the tidy lives here and not at a persist boundary:
+// a template note is copied verbatim into each new week by `instantiateWeek`, so
+// tidying it once here tidies every week built from it. The limit: a note
+// stored before this change keeps its old shape until that day (or template
+// weekday) is next edited, and `instantiateWeek` copies an old template note
+// as it stands. #1513 chose fix-forward — see docs/meal-planning.md.
 export function setDayNote<K extends string, T extends DayContainer<K>>(
   container: T,
   dayKey: K,
   note: string,
 ): T {
-  return withDay(container, dayKey, (day) => ({ ...day, note }));
+  return withDay(container, dayKey, (day) => ({
+    ...day,
+    note: note.replace(/^(?:[^\S\n]*\n)+/, ''),
+  }));
 }
 
 export function setDayChefs<K extends string, T extends DayContainer<K>>(

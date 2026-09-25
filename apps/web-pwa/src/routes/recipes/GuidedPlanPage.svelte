@@ -322,20 +322,28 @@
     return clash ? clash.prepIds.length : null;
   }
 
-  // The one suggestion the screen is willing to make for a dangling name, and it
-  // is only ever OFFERED. `normaliseContainerName` is deliberately strict — case
+  // The suggestions the screen is willing to make for a dangling name, and they
+  // are only ever OFFERED. `normaliseContainerName` is deliberately strict — case
   // and whitespace, nothing else — because a looser match would trade a visible
   // warning for an invisible wrong bowl. This containment test is looser than
   // that on purpose, which is exactly why it ends at a button the reader presses
   // rather than at anything written to the document.
-  function nearestBowl(wanted: string): string | null {
+  //
+  // Among the bowls that contain (or are contained by) the wanted name, the one
+  // closest to it in length is the nearest — "the red onion bowl" means "red
+  // onion bowl", not "onion bowl", and a bare "onion" means "onion bowl", not
+  // "red onion bowl". Taking the first containment match instead preferred
+  // whichever bowl came first, which systematically offered the shorter name
+  // (#1522). Bowls tied for nearest are ALL offered: picking one of them would be
+  // the same arbitrary guess the containment test exists to stop short of.
+  function nearestBowls(wanted: string): string[] {
     const key = normaliseContainerName(wanted);
-    return (
-      bowlNames.find((bowl) => {
-        const name = normaliseContainerName(bowl);
-        return name.includes(key) || key.includes(name);
-      }) ?? null
-    );
+    const candidates = bowlNames
+      .map((bowl) => ({ bowl, name: normaliseContainerName(bowl) }))
+      .filter(({ name }) => name.includes(key) || key.includes(name))
+      .map(({ bowl, name }) => ({ bowl, distance: Math.abs(name.length - key.length) }));
+    const best = Math.min(...candidates.map((c) => c.distance));
+    return candidates.filter((c) => c.distance === best).map((c) => c.bowl);
   }
 
   // What is worth looking at on ONE step. Asked per step rather than computed
@@ -352,20 +360,17 @@
     const out: { message: string; fixes?: { label: string; run: () => void }[] }[] = [];
     const stepNote = stepNotes.find((n) => n.stepId === s.id) ?? null;
 
-    const wanted = stepNote?.container?.trim() ?? '';
-    if (wanted !== '' && prepEntryForContainer(prepEntries, wanted) === null) {
-      const suggestion = nearestBowl(wanted);
+    // Whether a step's bowl dangles is `guidedContainerProblems`' answer, not a
+    // second copy of its rule here — the two used to be written out separately
+    // and could drift (#1522).
+    for (const { name: wanted } of containerProblems.dangling.filter((d) => d.stepId === s.id)) {
       out.push({
         message: `This step asks for "${wanted}" but no bowl has that name.`,
         fixes: [
-          ...(suggestion === null
-            ? []
-            : [
-                {
-                  label: `Use "${suggestion}"`,
-                  run: () => updateNote(s.id, { container: suggestion }),
-                },
-              ]),
+          ...nearestBowls(wanted).map((suggestion) => ({
+            label: `Use "${suggestion}"`,
+            run: () => updateNote(s.id, { container: suggestion }),
+          })),
           { label: 'It needs no bowl', run: () => updateNote(s.id, { container: null }) },
         ],
       });

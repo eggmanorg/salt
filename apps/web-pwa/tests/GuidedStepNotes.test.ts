@@ -369,6 +369,25 @@ describe('GuidedStepNotes — reminders', () => {
     expect(queryByTestId('guided-plan-add-check-in')).toBeNull();
   });
 
+  it('refuses to empty a reminder, just as it refuses to create an empty one', async () => {
+    const edit = makeEdit(10);
+    const { getByLabelText } = render(GuidedStepNotes, {
+      props: {
+        note: makeNote({ checkIns: [REMINDER] }),
+        containerContents: [],
+        loose: [],
+        checkIns: [REMINDER],
+        edit,
+      },
+    });
+
+    await fireEvent.click(getByLabelText('Change what the reminder says'));
+    const words = await waitFor(() => getByLabelText('what the reminder says'));
+    await fireEvent.input(words, { target: { value: '   ' } });
+    await fireEvent.blur(words);
+    expect(edit.onSetCheckIn).not.toHaveBeenCalled();
+  });
+
   it('moves a reminder, ignores minutes that are not a number, and removes one', async () => {
     const edit = makeEdit(10);
     const { getByTestId, getByLabelText } = render(GuidedStepNotes, {
