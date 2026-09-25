@@ -61,6 +61,17 @@ describe('both commands spawn the shared reviewer', () => {
   });
 });
 
+describe('round-2 verify mode keeps FIXED items out of the posted body', () => {
+  it('says FIXED items are reported only in the return, and `## Blocking` reads None when all are fixed', () => {
+    // A FIXED item written into `## Blocking` (instead of only the agent's
+    // return) makes hasBlockingFindings() see it as an outstanding finding and
+    // wrongly refuse a fully-fixed PR - see the finding this test pins.
+    expect(read(AGENT)).toMatch(
+      /FIXED items are reported only in the return, never in the posted body/,
+    );
+  });
+});
+
 describe('pr-reviewer.md’s no-findings template', () => {
   /** The fenced block the agent is told to post when nothing was found. */
   const template = (() => {

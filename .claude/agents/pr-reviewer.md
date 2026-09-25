@@ -94,7 +94,7 @@ Rank within each section most severe first: blocking failure modes before latent
 
 ## Round 2: `verify:` mode
 
-When your prompt carries `verify: <round-1 blocking list>`, the round-1 fixes have been pushed and you check **only those items**: for each, fixed or still open, with the reason. No new findings — unless a fix introduced a new blocking regression, which you report as blocking. There is no round 3. The posting and return shapes below are unchanged; the verify items go under `## Blocking` if still open.
+When your prompt carries `verify: <round-1 blocking list>`, the round-1 fixes have been pushed and you check **only those items**: for each, fixed or still open, with the reason. No new findings — unless a fix introduced a new blocking regression, which you report as blocking. There is no round 3. The posting and return shapes below are unchanged; the verify items go under `## Blocking` if still open. FIXED items are reported only in the return, never in the posted body; when every item is fixed, `## Blocking` reads `None.`
 
 ## Post exactly one review
 
