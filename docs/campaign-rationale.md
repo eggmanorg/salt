@@ -116,6 +116,8 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 **Why the ledger stays open while its follow-ups issue is open** (#1534). A closed ledger over an open follow-up is a `check` failure the next morning and a family that vanishes from the `Hierarchies` view while its work is live: that view reads sub-issue progress, which counts direct children only, so it reads 100% done. Seven of the eight issues reopened by hand on 2026-09-21 were exactly this step.
 
+**Why the ledger then closes itself, and reads its run-set from its title** (#1606). "Stays open" had become "stays open forever": `board.mjs rollup` refused to close a ledger at all, and a follow-ups issue closed _by_ the rollup raised no event to wake the ledger above it anyway. #1466, #1497 and #1565 sat finished and open, and #1565 held #1459 and #1440 open above it. The rollup now closes a ledger once nothing is open beneath it, every issue its title names is closed and no `## Sweep` line is unticked, and carries each close on up in the same run. The title, not the tree, is what holds a parked campaign open, because a parked run-set issue is never attached beneath the ledger — moving it there would detach it from its own epic (the strict-tree rule under **Filing an issue**). A ledger can therefore close before its own Finish, in the narrow window where the whole run-set has closed and a sub-issue closes; Finish's `board.mjs parent` reopens it when the follow-ups issue attaches.
+
 **Why report once.** An earlier run closed with four messages that said the same thing.
 
 ## salt-run.md
