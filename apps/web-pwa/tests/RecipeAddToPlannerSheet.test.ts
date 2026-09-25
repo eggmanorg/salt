@@ -406,6 +406,23 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     expect(cookOf('2026-08-13')).not.toHaveTextContent('No cook');
   });
 
+  it('counts the cooks the roster cannot name instead of dropping them (#1578)', async () => {
+    mockCurrentMember._set(DANIEL);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      [SAM.id, 'm-removed'],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent(`${SAM.name} & 1 other`));
+    expect(nightRow('2026-08-13')).toHaveAttribute(
+      'aria-label',
+      `Thursday 13 August, Roast chicken, cooking: ${SAM.name} & 1 other`,
+    );
+  });
+
   it('never says a week it has not read is free', async () => {
     // The row that matters most: "Nothing planned" for a week nobody has looked
     // at is a confident lie about the one fact the row exists for.

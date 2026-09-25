@@ -194,6 +194,34 @@ describe('MealDayEditor — the recipe picker inside the day sheet (#640)', () =
     expect(onRecipesChange).toHaveBeenCalledWith(['r2', 'm-roast', 'r1']);
   });
 
+  it('names an empty-noted night after its FIRST recipe, not the pick (#1578)', async () => {
+    // A night already holding a recipe under an empty note (legacy data, or a
+    // note emptied without leaving the field) keeps the name its first recipe
+    // gives it — the same `attachedRecipes[0]` the blur re-seed reads.
+    const onNoteChange = vi.fn();
+    render(MealDayEditor, {
+      props: baseProps({ day: { ...emptyDay, recipeIds: ['r1'] }, onNoteChange }),
+    });
+    await openPicker();
+    await filterPicker('roast');
+    await fireEvent.click(await screen.findByRole('option', { name: 'Sunday Roast' }));
+
+    expect(onNoteChange).toHaveBeenCalledWith(bolognese.title);
+    expect(onNoteChange).not.toHaveBeenCalledWith('Sunday Roast');
+  });
+
+  it('falls back to the pick when nothing on the night resolves', async () => {
+    const onNoteChange = vi.fn();
+    render(MealDayEditor, {
+      props: baseProps({ day: { ...emptyDay, recipeIds: ['gone'] }, onNoteChange }),
+    });
+    await openPicker();
+    await filterPicker('roast');
+    await fireEvent.click(await screen.findByRole('option', { name: 'Sunday Roast' }));
+
+    expect(onNoteChange).toHaveBeenCalledWith('Sunday Roast');
+  });
+
   it('says so when nothing matches', async () => {
     render(MealDayEditor, { props: baseProps() });
     await openPicker();
