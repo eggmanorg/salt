@@ -370,11 +370,11 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 //
 // TWO rules, not one shared clause, because `takesComponents` is true for two
 // kinds that mean opposite things by it. A recipe's components are dishes SERVED
-// ALONGSIDE it — they are dished up together, normally onto one plate and in the
-// exceptional case out across the table. A cocktail's component is a part it is
-// MADE FROM (the house syrup, an infusion); it is already in the glass, and a
-// second glass beside it would be exactly wrong. One clause covering both would
-// have to be vague enough to direct neither.
+// ALONGSIDE it — normally dished up together onto one plate, a separate course held
+// on its own plate, and only in the exceptional case set out across the table. A
+// cocktail's component is a part it is MADE FROM (the house syrup, an infusion); it
+// is already in the glass, and a second glass beside it would be exactly wrong. One
+// clause covering both would have to be vague enough to direct neither.
 //
 // ONE PLATE IS THE DEFAULT, AND THAT IS AN INVERSION OF #838 (issue #1452). #838
 // directed every meal at the WHOLE TABLE — each dish in its own bowl, laid out
@@ -425,12 +425,13 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 // placeholders never receive either (`takesComponents` is false for both), which
 // is structural here rather than a promise: their arms below simply ignore it.
 const MEAL_SCENE_RULE = `This recipe is a MEAL. The dishes listed above are separate recipes served together as \
-one dinner, and they are the subject: describe it AS IT IS EATEN — dished up on ONE PLATE, those dishes composed \
-onto it together. Let the dish that carries the meal lead, and set each of the others where it naturally belongs — \
+one dinner. Setting aside any separate course (see below), the dishes eaten WITH the main are the subject: describe \
+it AS IT IS EATEN — dished up on ONE PLATE, each of the other dishes eaten with it composed onto it together. Let \
+the dish that carries the meal lead, and set each of the other dishes eaten with it where it naturally belongs — \
 under it, beside it or spooned over it — each still recognisably itself.
 
-A separate course is not part of that plate. A starter or a pudding is eaten before or after the main, not with it: \
-show it on its own plate or bowl beside the main, never composed onto it.
+A separate course is not part of that plate. A starter or a pudding (the sweet course) is eaten before or after the \
+main, not with it: show it on its own plate or bowl beside the main, never composed onto it.
 
 Set the dishes out separately across the table ONLY where this dinner plainly is not a single serving — food shared \
 from the middle rather than dished up per person, for example. That is an exception you may choose when the dishes \

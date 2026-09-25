@@ -578,6 +578,35 @@ describe('describeRecipeScene flow — meals', () => {
     expect(rule.indexOf(ONE_PLATE_MARKER)).toBeLessThan(rule.indexOf('A starter or a pudding'));
   });
 
+  // #1567 review: the opening sentence used to say "those dishes composed onto it
+  // together" and "each of the others", both of which quantify over every listed
+  // dish — pudding included — before the course carve-out ever runs. A roast with a
+  // sticky toffee pudding then had two readings: pudding on the plate (this
+  // sentence, which leads) or pudding on its own plate (the next sentence). The
+  // one-plate sentence must instead be scoped to the dishes eaten WITH the main.
+  it('scopes the one-plate sentence to the dishes eaten with the main, not every listed dish', async () => {
+    const rule = mealRule((await callFlow({ ...MEAL, kind: 'recipe' })).system);
+    const onePlateSentence = rule.slice(
+      0,
+      rule.indexOf('A separate course is not part of that plate'),
+    );
+
+    expect(onePlateSentence).not.toContain('those dishes composed');
+    expect(onePlateSentence).not.toContain('each of the others');
+    expect(onePlateSentence).toContain('each of the other dishes eaten with it');
+  });
+
+  // #1567 review: a bare "pudding" in a clause that runs for every meal catches the
+  // savoury puddings that belong ON the main plate — Yorkshire puddings with a
+  // roast, black pudding, steak and kidney pudding. The word must read as the sweet
+  // course, not any dish with "pudding" in its name.
+  it('marks "pudding" as the sweet course, not any savoury dish of that name', async () => {
+    const rule = mealRule((await callFlow({ ...MEAL, kind: 'recipe' })).system);
+
+    expect(rule).toContain('pudding');
+    expect(rule).toContain('pudding (the sweet course)');
+  });
+
   it('gives the one-plate direction no meat-and-mash picture to reach for', async () => {
     // #671's lesson: a concrete noun in an every-case clause becomes every brief's
     // noun. This pins the absence of the words that were there, not of every food
