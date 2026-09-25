@@ -110,7 +110,12 @@ if (jobsFile !== null) {
   } catch {
     // Missing log: the classifier says cannot-confirm if it needed one.
   }
-  emit(classifyHeavySuites({ jobs, changesLog, event }));
+  // No run status in file mode, so infer it from the jobs: any job not yet
+  // completed means the run is still going. The converse does not hold (a run
+  // between job batches lists only completed jobs), and that case stays
+  // `cannot-confirm` — the safe side.
+  const runCompleted = (jobsOf(jobs) ?? []).every((job) => job?.status === 'completed');
+  emit(classifyHeavySuites({ jobs, changesLog, event, runCompleted }));
 }
 
 // --- gh mode -----------------------------------------------------------------
