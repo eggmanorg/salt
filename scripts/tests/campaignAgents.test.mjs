@@ -85,3 +85,13 @@ describe('salt-campaign.md stays a lean coordinator prompt', () => {
     expect(bytes).toBeLessThanOrEqual(40_000);
   });
 });
+
+// Every campaign worker and every standalone /salt-run loads salt-run.md whole.
+// #1589 moved its incident history to docs/campaign-rationale.md (`## salt-run.md`)
+// and consolidated its cloud substitutions; this cap stops the file silently regrowing.
+describe('salt-run.md stays a lean worker prompt', () => {
+  it('is at most 30,000 bytes', () => {
+    const bytes = readFileSync(path.join(repo, '.claude/commands/salt-run.md')).length;
+    expect(bytes).toBeLessThanOrEqual(30_000);
+  });
+});
