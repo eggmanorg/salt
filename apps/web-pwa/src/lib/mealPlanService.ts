@@ -637,7 +637,10 @@ export async function weekHasEdits(date: string): Promise<ReadResult<boolean, Do
   const held = get(_weeks)[start];
   // `updatedAt` is stamped by every persist; the empty-week fallback carries ''.
   if (held) return success(held.updatedAt !== '');
-  const read = await loadMealPlanWeek(start);
+  // Reported here for the reason `loadWeekForDisplay` is (#1511): a one-shot
+  // read has no subscription `onError` to report it, and the caller only maps
+  // a Failure to "could not check".
+  const read = reportIfFailed(getErrorReporter(), await loadMealPlanWeek(start));
   if (read.kind !== 'ok') return read;
   return success(read.value !== null && read.value.updatedAt !== '');
 }
@@ -679,7 +682,8 @@ export async function addRecipeToDay(
   if (weekIsKnown(start)) {
     week = weekObjectFor(start);
   } else {
-    const read = await loadMealPlanWeek(start);
+    // Reported like `weekHasEdits`'s read: the caller only toasts.
+    const read = reportIfFailed(getErrorReporter(), await loadMealPlanWeek(start));
     if (read.kind !== 'ok') return read;
     week = read.value ?? emptyWeek(start);
   }

@@ -186,7 +186,9 @@
   // row leaves blank — you, the cook's name, or _No cook_ on a planned night
   // nobody has taken. A night whose `chefs` the roster cannot currently name
   // (still loading, or the member was removed) reads _Cooking_ here: someone
-  // has it, and _No cook_ would say otherwise.
+  // has it, and _No cook_ would say otherwise. On a night where only SOME of
+  // `chefs` resolve, the rest are counted rather than dropped — _Ben & 1 other_
+  // — so the row never reads as fewer cooks than the night has (#1578).
   // Whether anyone has it is `chefs.length`, as `MealDayEditor`'s `hasCook` is,
   // never whether `$members` resolved a name. "Am I
   // cooking" is `chefs.includes(currentMember.id)` and nothing else, the same
@@ -213,7 +215,10 @@
       const named = $members
         .filter((m) => chefs.includes(m.id) && m.id !== me?.id)
         .map((m) => m.name);
-      const cooks = [...(me && chefs.includes(me.id) ? ['You'] : []), ...named];
+      const mine = me !== null && chefs.includes(me.id);
+      const unnamed = chefs.length - named.length - (mine ? 1 : 0);
+      const cooks = [...(mine ? ['You'] : []), ...named];
+      if (cooks.length && unnamed > 0) cooks.push(unnamed === 1 ? '1 other' : `${unnamed} others`);
       const meal = known ? planned || 'Nothing planned' : '';
       const cook = planned
         ? cooks.length

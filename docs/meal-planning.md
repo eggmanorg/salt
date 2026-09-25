@@ -387,10 +387,10 @@ Nothing about the plan document changed to allow it: `recipeIds` was already a
   app-layer write, and each seeds only when the note is empty. There are three:
 
   1. **The day sheet's picker** — `addRecipe` in `MealDayDetail.svelte` — seeds
-     from the recipe just picked. On a night with no recipes yet that is the
-     first attached. Its limit: a night that already holds recipes with an empty
-     note (legacy data, or a note emptied without leaving the field) is named
-     after the pick, not the first recipe.
+     from `attachedRecipes[0]`, the first recipe on the night that still
+     resolves, and from the recipe just picked only when none does. Until #1578
+     it always seeded from the pick, so a night that already held recipes under
+     an empty note was named after the pick.
   2. **The day sheet's blur re-seed** — the Dinner textarea's `onblur` in the
      same file — refills a field left empty from `attachedRecipes[0]`, the first
      recipe on the night that still resolves.

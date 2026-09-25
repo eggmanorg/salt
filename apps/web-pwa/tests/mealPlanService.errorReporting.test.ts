@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mocked } from 'vitest';
 import type { DomainError } from '@salt/shared-types';
-import { emptyWeek, type MealPlanConfig } from '@salt/domain';
+import { emptyWeek, type MealPlanConfig, type Recipe } from '@salt/domain';
 
 // Issue #1511. `loadWeekForDisplay` is the one read of a week no subscription
 // holds, so its `Failure` has no `onError` to be reported through — the service
@@ -36,10 +36,12 @@ vi.mock('@salt/firebase-sync', () => ({
 
 import * as firebaseSync from '@salt/firebase-sync';
 import {
+  addRecipeToDay,
   initMealPlanSync,
   loadWeekForDisplay,
   seedMealPlanConfig,
   seedMealPlanWeek,
+  weekHasEdits,
   __resetMealPlanServiceForTest,
 } from '../src/lib/mealPlanService.js';
 
@@ -105,5 +107,47 @@ describe('mealPlanService — loadWeekForDisplay error reporting', () => {
     expect(fs.loadMealPlanWeek).not.toHaveBeenCalled();
     expect(reportSpy).not.toHaveBeenCalled();
     expect(read.kind).toBe('ok');
+  });
+});
+
+// #1578: the two other one-shot week reads, same shape as #1511.
+describe('mealPlanService — weekHasEdits / addRecipeToDay read error reporting', () => {
+  const RECIPE = { id: 'r1', title: 'Soup' } as unknown as Recipe;
+
+  it('weekHasEdits reports a corrupted week and still hands the Failure back', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({ kind: 'err', error: CORRUPTION });
+
+    const read = await weekHasEdits('2026-06-29');
+
+    expect(reportSpy).toHaveBeenCalledTimes(1);
+    expect(reportSpy).toHaveBeenCalledWith(CORRUPTION, 'StorageError');
+    expect(read).toEqual({ kind: 'err', error: CORRUPTION });
+  });
+
+  it('weekHasEdits does not report an offline read', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({ kind: 'err', error: NETWORK_ERR });
+
+    await weekHasEdits('2026-06-29');
+
+    expect(reportSpy).not.toHaveBeenCalled();
+  });
+
+  it('addRecipeToDay reports a corrupted week, writes nothing, and hands the Failure back', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({ kind: 'err', error: CORRUPTION });
+
+    const result = await addRecipeToDay('2026-06-30', RECIPE, new Map());
+
+    expect(reportSpy).toHaveBeenCalledTimes(1);
+    expect(reportSpy).toHaveBeenCalledWith(CORRUPTION, 'StorageError');
+    expect(fs.saveMealPlanWeek).not.toHaveBeenCalled();
+    expect(result).toEqual({ kind: 'err', error: CORRUPTION });
+  });
+
+  it('addRecipeToDay does not report an offline read', async () => {
+    fs.loadMealPlanWeek.mockResolvedValue({ kind: 'err', error: NETWORK_ERR });
+
+    await addRecipeToDay('2026-06-30', RECIPE, new Map());
+
+    expect(reportSpy).not.toHaveBeenCalled();
   });
 });
