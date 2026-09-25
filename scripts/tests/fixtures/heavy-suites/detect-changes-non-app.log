@@ -1,0 +1,32 @@
+﻿2026-09-25T06:19:53.6552032Z Run actions/checkout@v7 done
+2026-09-25T06:19:53.6552033Z ##[group]Run set -euo pipefail
+2026-09-25T06:19:53.6552034Z [36;1mset -euo pipefail[0m
+2026-09-25T06:19:53.6552035Z [36;1mif [ -n "$non_app" ]; then[0m
+2026-09-25T06:19:53.6552036Z [36;1m  echo "App-impacting changes detected — running full CI."[0m
+2026-09-25T06:19:53.6552037Z [36;1m  code=true[0m
+2026-09-25T06:19:53.6552038Z [36;1melse[0m
+2026-09-25T06:19:53.6552039Z [36;1m  echo "Non-app change (docs / CI / tooling) — skipping emulator + e2e suites."[0m
+2026-09-25T06:19:53.6552040Z [36;1m  code=false[0m
+2026-09-25T06:19:53.6552041Z [36;1mfi[0m
+2026-09-25T06:19:53.6552042Z [36;1muptodate=true[0m
+2026-09-25T06:19:53.6552043Z [36;1mif [ "$code" = "true" ] && [ "$EVENT_NAME" = "pull_request" ]; then[0m
+2026-09-25T06:19:53.6552044Z [36;1m  git fetch --no-tags origin main[0m
+2026-09-25T06:19:53.6552045Z [36;1m  if git merge-base --is-ancestor FETCH_HEAD "$HEAD_SHA"; then[0m
+2026-09-25T06:19:53.6552046Z [36;1m    echo "Branch is up to date with origin/main — heavy suites will run."[0m
+2026-09-25T06:19:53.6552047Z [36;1m  else[0m
+2026-09-25T06:19:53.6552048Z [36;1m    echo "Branch is behind origin/main — the merge queue will run the heavy suites against real main; skipping them this run."[0m
+2026-09-25T06:19:53.6552049Z [36;1m    uptodate=false[0m
+2026-09-25T06:19:53.6552050Z [36;1m  fi[0m
+2026-09-25T06:19:53.6552051Z [36;1mfi[0m
+2026-09-25T06:19:53.6552052Z shell: /usr/bin/bash -e {0}
+2026-09-25T06:19:53.6552053Z env:
+2026-09-25T06:19:53.6552054Z   EVENT_NAME: pull_request
+2026-09-25T06:19:53.6552055Z ##[endgroup]
+2026-09-25T06:19:53.6552056Z Changed files:
+2026-09-25T06:19:53.6552057Z .claude/commands/salt-campaign.md
+2026-09-25T06:19:53.6552058Z Non-app change (docs / CI / tooling) — skipping emulator + e2e suites.
+2026-09-25T06:19:53.6552059Z Post job cleanup.
+2026-09-25T06:19:53.6552060Z Evaluate and set job outputs
+2026-09-25T06:19:53.6552061Z Set output 'code'
+2026-09-25T06:19:53.6552062Z Set output 'uptodate'
+2026-09-25T06:19:53.6552063Z Cleaning up orphan processes

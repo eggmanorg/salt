@@ -41,7 +41,7 @@ Success is a clean tree when Daniel comes back: every issue merged to main, or p
 Only the route changes, to the **GitHub MCP server**:
 
 - **CI wait** — poll `pull_request_read` on a backgrounded timer (no longer one blocking call).
-- **Heavy-suite conclusions** — the workflow-jobs listing; **empty output → park** still.
+- **Heavy-suite verdict** — salt-run.md's **Heavy-suite files**, with `--event merge_group`, on the newest `merge_group` run whose `head_branch` starts `gh-readonly-queue/main/pr-<pr>-`.
 - **The `RUNNABLE: no` count** — an `Agent(…, model: "haiku")` (no `campaign-*` role, so it names a model) returns the count alone.
 - **`board.mjs add` / `parent` / `set`** — refused (GraphQL never reaches GitHub from here). Each becomes a **Board dispatch** ([`board-dispatch.yml`](../../.github/workflows/board-dispatch.yml)): `command: add` with `issue`, `class`, `queue`, `size`; `parent` with `issue`, `of`; `set` with `issue`, `status`. **A request, not a confirmation**: name the route in the ledger, and never report anything triaged, attached or moved on the strength of one.
 - **`board.mjs check` / `show`** (Finish) — cannot run: say so in the closing comment rather than report the check, and record actuals alone, the estimate unreadable.
@@ -311,19 +311,15 @@ It re-applies the eligibility rule, posts `--note` as a PR comment, enqueues the
 
 Then watch each enqueued PR (the merge watcher in **Standing rules**), or the queue at <https://github.com/eggmanorg/salt/queue/main>. Two outcomes matter.
 
-**Merged.** A skipped required check reports as passing, so confirm the heavy suites ran from the merge-group run's job conclusions, never the check summary (salt-run.md step 8's recipe, kept in lockstep with it; `pnpm mergequeue:check` fails if the ruleset's contexts stop reporting):
+**Merged.** A skipped required check reports as passing, so confirm the heavy suites ran from the verdict on this PR's merge-group run, never the check summary (`pnpm mergequeue:check` fails if the ruleset's contexts stop reporting):
 
 ```
-gh run list --limit 25 --json databaseId,event,headBranch,status,conclusion \
-  --jq '[.[] | select(.event=="merge_group")][0].databaseId'
-gh run view <id> --json jobs --jq '.jobs[] | select(.name | test("E2E|integration")) | "\(.name): \(.conclusion)"'
+node scripts/heavy-suites.mjs --pr <pr>
 ```
 
-Never `--branch main` here: a queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so that finds the still-running post-merge `push` run.
-
-- `success` → land it in the ledger.
-- `skipped`, and the batch changed only docs/CI/meta paths → a legitimate skip, the only one under the queue; say so in the ledger.
-- **empty output → park.** The job names moved and this check is blind. Cannot-confirm is never green.
+- `ran-green` → land it in the ledger.
+- `skipped-non-app` → the batch changed only docs/CI/meta paths: a legitimate skip, the only one under the queue; say so in the ledger.
+- **anything else → park.** Cannot-confirm is never green.
 
 **Ejected.** The branch rebuilt on current `main` went red or would not rebuild — two branches green apart, red together; signal, not noise. Classify the merge-group run's failure. In files a merged sibling of this campaign changed, or in `pnpm-lock.yaml` or the Docs map → this campaign's own work: a `campaign-resolver` fixes it on the branch and pushes (prompt: worktree, branch, PR, the classification and the sibling PRs), then you re-enqueue; `REJECTED` or `GATES: red` → **retry**. Anything else is someone's concurrent change, **not yours to resolve** but a fresh worker's: **retry** the issue, which brings it up to date with `main` and back through **Review**; park if its retry is spent.
 

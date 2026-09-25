@@ -36,6 +36,7 @@
       "Bash(pnpm --filter:*)",
       "Bash(node scripts/campaign-land.mjs:*)",
       "Bash(node /Users/daniel/Projects/salt-vscode/scripts/campaign-land.mjs:*)",
+      "Bash(node scripts/heavy-suites.mjs:*)",
       "mcp__firebase-prod__firebase_get_project",
       "mcp__firebase-prod__firebase_get_environment",
       "mcp__firebase-prod__firebase_get_sdk_config",

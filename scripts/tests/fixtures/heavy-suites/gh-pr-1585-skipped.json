@@ -1,0 +1,81 @@
+{
+  "jobs": [
+    {
+      "databaseId": 107967409443,
+      "name": "Detect changes",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409443"
+    },
+    {
+      "databaseId": 107967409491,
+      "name": "Static checks",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409491"
+    },
+    {
+      "databaseId": 107967409391,
+      "name": "Types",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409391"
+    },
+    {
+      "databaseId": 107967409367,
+      "name": "Unit tests + coverage (macOS)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409367"
+    },
+    {
+      "databaseId": 107967409336,
+      "name": "Boot payload",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409336"
+    },
+    {
+      "databaseId": 107967409152,
+      "name": "Unit tests + coverage",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967409152"
+    },
+    {
+      "databaseId": 107967450237,
+      "name": "Vitest integration (emulator)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967450237"
+    },
+    {
+      "databaseId": 107967450133,
+      "name": "E2E shard ${{ matrix.shard }}/3",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967450133"
+    },
+    {
+      "databaseId": 107967448845,
+      "name": "E2E (Playwright)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107967448845"
+    },
+    {
+      "databaseId": 107969953963,
+      "name": "Lint, typecheck, test, boundary",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107969953963"
+    },
+    {
+      "databaseId": 107969954003,
+      "name": "Coverage measures the same on both platforms",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/eggmanorg/salt/actions/runs/36102325167/job/107969954003"
+    }
+  ]
+}
