@@ -1,6 +1,6 @@
 ---
 name: campaign-reviewer
-description: /salt-campaign's adversarial PR reviewer — read-only, gathers its own material, posts one review under ## Blocking / ## Should-fix / ## Notes and returns counts and one-line summaries. Spawned only by /salt-campaign; the dispatch prompt names the PR, the issue (or the ledger, for the sweep PR) and any Must-not-touch questions.
+description: /salt-campaign's adversarial PR reviewer — read-only, gathers its own material, posts one review under the three severity headings the merge gate parses, and returns counts and one-line summaries. Spawned only by /salt-campaign; the dispatch prompt names the PR, the issue (or the ledger, for the sweep PR) and any Must-not-touch questions.
 model: opus
 ---
 

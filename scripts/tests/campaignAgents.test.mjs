@@ -55,6 +55,9 @@ describe('campaign agent definitions', () => {
     expect(fm.name).toBe(name);
     expect(fm.model).toBe(model);
     expect(fm.description).toBeTruthy();
+    // A `#` after whitespace opens a YAML comment, so the harness silently cuts
+    // the description there — `campaign-reviewer`'s once ended at "under".
+    expect(fm.description).not.toMatch(/\s#/);
   });
 
   it.each(Object.keys(ROLES))('%s carries no tools restriction', (name) => {
