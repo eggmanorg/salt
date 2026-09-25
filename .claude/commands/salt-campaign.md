@@ -80,7 +80,7 @@ You are unattended, so everything you say is read later, out of order, by someon
 Speak at exactly five moments, and at no others:
 
 1. **Dispatch** — the plan, once: order, what runs concurrently, the ledger number.
-2. **An issue reaching a terminal state** — merged, or parked. One message per issue, after you have confirmed it, not while you are confirming it. A park additionally goes out as a `PushNotification` — see **Decision envelope**. That is a separate channel, not a sixth moment, and it is the only tool call in this command that is allowed to interrupt Daniel.
+2. **An issue reaching a terminal state** — merged, or parked. The sweep PR counts as one. One message per issue, after you have confirmed it, not while you are confirming it. A park additionally goes out as a `PushNotification` — see **Decision envelope**. That is a separate channel, not a sixth moment, and it is the only tool call in this command that is allowed to interrupt Daniel.
 3. **A decision taken outside the envelope** — what you decided and why, in the two or three sentences it actually needs.
 4. **A full stop** — what broke and what a human must do.
 5. **The close** — see **Finish**.
@@ -102,6 +102,7 @@ So this command names a model at **every** `Agent` call rather than letting one 
 | worker (`/salt-run`) | `opus`   | owns validation and the git history                                                                        |
 | reviewer             | `opus`   | the other genuine reasoning job in this command                                                            |
 | fix agent            | `sonnet` | findings arrive enumerated and the scope is closed                                                         |
+| sweep agent          | `sonnet` | the same, across files: every line was marked decision-free before it reached the list                     |
 | conflict resolver    | `sonnet` | you have already classified the conflict; it applies a rule you handed it                                  |
 
 Never omit `model:` and let it inherit. If you find yourself running on anything other than Opus, say so once in the ledger's **Plan** block before you dispatch anything — that line is the only chance anyone gets to catch it before the bill.
@@ -220,6 +221,9 @@ Heartbeat: <shell-id>   ← one for the whole pool, re-armed on every wake
 | #b | feat/slug-b | #102 | in review | — | round 1: 1 blocking |
 | #c | fix/slug-c | — | dispatched | agent <id>, 09:14 | 3 phases, budget to 13:44 |
 | #d | — | — | queued | — | after #b |
+
+## Sweep
+- [ ] PR #101 — `packages/domain/src/recipe/queries/capabilities.ts`: header claims X, qualify to Y
 ```
 
 States: `queued → dispatched → PR open → in review → merge queue → merged | parked`. A split issue re-enters at `queued` after its intermediate PR merges — the same issue moving through the line a second time, carrying the PRs it has already landed.
@@ -361,6 +365,7 @@ So: confirm, don't carve. `gh pr view <pr> --json additions,deletions,changedFil
 >
 > - **blocking** — you can state a concrete failure: this input, this state, this wrong output or crash. If you cannot name one, it is not blocking.
 > - **should-fix** — real, but ships safely and can be a follow-up. Append `[fold-in]` to the line when the fix needs **no decision** and stays **inside this diff's files or their tests** — whatever its size. A stale line reference, a wrong glob, a sentence this PR made false, a missing test for behaviour this PR added: all fold in. What does not: a design choice, a new source file, a second call site outside the diff, or anything the issue's Out of scope list names. You are the only actor holding the diff, so you are the only one who can judge it; the coordinator decides what to do with the mark.
+>   Append `[sweep]` instead when the fix needs **no decision** but reaches **outside this diff** — a second call site elsewhere, a sibling file with the same stale sentence, a missing test for pre-existing code this PR leaned on. Name the file or symbol on the line: whoever fixes it will not have your diff. What gets neither mark: a design choice, a rule change, a question about the right shape, and anything the issue's Out of scope list names — deferring it was the decision.
 >   **A false invariant (lens 1) is `[fold-in]` by construction**, because it has three fixes and none of them needs a decision: pin the claim with a test, qualify it to its real boundary, or **delete the sentence**. Say which you mean on the line. Reach for delete when the claim restates what the code already expresses, and always when the sentence has been corrected before — `undrawnEquipment`'s header spent #1516, #1544 and #1548 on three successive re-wordings, and filing a wrong sentence rather than fixing it is what buys the fourth.
 > - **note** — style, taste, preference. Say them in one line each or not at all.
 >
@@ -389,13 +394,15 @@ Do not re-dispatch /salt-run for this. salt-run.md is a phase loop keyed to an i
 
 The reviewer's `[fold-in]` mark covers the rest, because judging whether a fix is closed-scope needs the diff and you do not read diffs. **Unmarked should-fix findings are never sent.** The one ceiling is `--max-diff`, and you put its number in the fix agent's brief. The agent rejects a fold-in that would push the PR over the ceiling, or any fold-in at all on a PR already over it by a declared final-phase overage, and that finding goes on the list. Campaign #1552 is why the rule is scope and not size. The old "≤5 lines" cap sent a two-test gap in a file its PR had already touched to #1561, and Daniel asked why it had not simply been fixed.
 
-Drop whatever comes back under `FIXED` from the should-fix list: a finding cannot both ship fixed and be filed as outstanding. Anything under `REJECTED` stays on the list, and the agent's reason goes on the line.
+Drop whatever comes back under `FIXED` from the should-fix list: a finding cannot both ship fixed and be filed as outstanding. Anything under `REJECTED` stays on the list, and the agent's reason goes on the line. A fold-in rejected **only** for the ceiling still needs no decision, so it moves to the sweep list below rather than the follow-ups list; one rejected because it turned out to need a design choice does not.
+
+**Decision-free findings that do not fit in their PR are fixed in the campaign's sweep.** A `[sweep]`-marked should-fix finding, and a fold-in the fix agent rejected for the ceiling alone, is still work nobody has to decide anything about — so it gets the same treatment as a fold-in, one PR later instead of an issue. Record each in the ledger body's `## Sweep` checklist (one line, PR number, the file or symbol the reviewer named) as it arrives; do not send it to the round-1 fix agent, whose worktree it would widen past its footprint. **Sweep** below runs them all as one PR once every run-set issue has reached a terminal state. The same doubt rule applies: if the one-line summary leaves you unsure whether it needs a decision, it goes on the follow-ups list, not the sweep.
 
 **If either is in doubt, list it** — reviewer and coordinator alike. A finding that looks mechanical and turns out to be a contract question is exactly what the list is for — #1051 (a chip icon clamp: one CSS selector, in fact an app-wide `Chip` contract question) is the shape to watch for. The asymmetry is deliberate: guessing wrong this way is a scope breach inside a PR that has already been reviewed, and guessing wrong the other way is a tracked issue whose body runs thirty times the length of its own diff.
 
 The cost being paid for today is on the record. #1026 exists because the round-1 fix agent drafted both of its doc corrections, **reverted them as out of its assigned scope**, and left an issue behind for someone to redo the work later — three payments for two lines. #1022 ("add a single line in two places"), #1015 ("one-line CLAUDE.md edit") and #1045's "one-token fix" are the same shape.
 
-Rounds are capped at two. Round 1 is the full review. Round 2 may only verify the blocking items from round 1 — no new findings, unless the fix introduced a new blocking regression. There is no round 3. A **blocking** item still open after round 2 parks the branch (see the envelope), or — if you adjudicate it as safe to ship — gets a filed issue before the merge. Everything else joins the should-fix list, which is filed as one issue at **Finish** — less anything the round-1 fix agent returned under `FIXED`.
+Rounds are capped at two. Round 1 is the full review. Round 2 may only verify the blocking items from round 1 — no new findings, unless the fix introduced a new blocking regression. There is no round 3. A **blocking** item still open after round 2 parks the branch (see the envelope), or — if you adjudicate it as safe to ship — gets a filed issue before the merge. Everything else joins the should-fix list — less anything the round-1 fix agent returned under `FIXED`; its decision-free lines are fixed by the **Sweep**, and the rest are filed as one issue at **Finish**.
 
 **You adjudicate, not the reviewer.** A rejection is a position, not a veto; you decide, record the decision in the ledger, and move on. Reviewer-wins is a deadlock and this command runs unattended.
 
@@ -407,7 +414,7 @@ gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <c
 
 Then triage and attach it per **Filing an issue** — `add` with a Class, band and size, then `parent --of <ledger>`. A list nobody can find is the failure this whole section exists to prevent, and an untriaged issue is not findable.
 
-Body is a `- [ ]` checklist, one line per finding, PR number on each line. Notes are dropped entirely, and so is anything already fixed in round 1 under the `[fold-in]` rule above. File it even when the list is short; skip it only when the list is empty.
+Body is a `- [ ]` checklist, one line per finding, PR number on each line. Notes are dropped entirely, and so is anything already fixed in round 1 under the `[fold-in]` rule above or landed by the **Sweep**. What is left is what needs a decision — a design fork, a rule change, deferred Out-of-scope work — plus anything the sweep agent returned under `REJECTED`, its reason on the line. File it even when the list is short; skip it only when the list is empty.
 
 **A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** Both, not one: the PR says where the finding was seen, the issue number is what ticks the line. [`board-status.yml`](../../.github/workflows/board-status.yml) rolls a closed issue up to its parent, ticks the one line that NAMES it, and closes this issue once every line is ticked and every sub-issue is closed. Nothing else ever closes it — this command leaves it open by design (step 4 of **Finish**), `/salt-run` closes the issue it ran and never looks upward, and `check` reads only Queue and Status. #1335 and #1370 both reached every-child-closed and stayed open, unticked, because their lines named only a PR.
 
@@ -567,9 +574,28 @@ On a full stop: leave every branch pushed and every worktree intact, write the s
 
 ---
 
+## Sweep
+
+When every run-set issue has reached a terminal state and the ledger's `## Sweep` checklist has any unticked line, run one more PR before **Finish**. It exists so that a finding nobody has to decide anything about is fixed by this campaign, not filed for the next one — the same **scope, not size** trade as the round-1 fold-in, paid once for the whole campaign instead of once per finding.
+
+1. **Drop what the run no longer supports.** A line whose PR ended up parked, not merged, comes off the sweep and goes to the follow-ups list: the code it names never reached `main`.
+2. **Cut a worktree from the new `main`** exactly as in **Worktrees** — fetch first — on `chore/<slug>-sweep`. Everything the findings were raised against has merged by now, so there is nothing left for the sweep to conflict with in flight.
+3. **Dispatch one sweep agent**, `Agent(…, model: "sonnet")`, in the background:
+
+   > In worktree `<path>` on branch `<branch>`, fix these review findings from campaign #<ledger>. Each was raised on a merged PR and marked as needing no decision: [the unticked `## Sweep` lines, verbatim]. Do only that. If a line turns out to need a design choice, a rule change or new behaviour, or has already been fixed on `main`, or would take this PR over `--max-diff <n>` changed lines (excluding `pnpm-lock.yaml`), put it under REJECTED with the reason instead of forcing it. Do not touch any file a parked branch of this campaign changes: [each parked branch — check with `git diff --name-only origin/main...origin/<branch>`]. Run the safe gate set, commit, push, and open a ready-for-review PR titled `chore: campaign #<ledger> sweep` whose body says `Refs #<ledger>` and lists one line per finding with the PR it came from. Never end your turn with a backgrounded command still running.
+   >
+   > Return: `PR: <n>`, `FIXED: [line → what changed]`, `REJECTED: [line → why]`, `CI: <green | red>`.
+
+4. **Then it is an ordinary campaign PR.** Confirm CI, review it (the reviewer brief with the ledger in place of issue #N — the `## Sweep` lines are its scope), fix round, and land it with `campaign-land.mjs`. Its own review's should-fix findings go straight to the follow-ups list, whatever their mark: **there is one sweep per campaign, never a second.** Blocking findings unresolved after round 2 park it like any other branch, and every line it carried moves to the follow-ups list.
+5. Tick each `FIXED` line in the ledger body. `REJECTED` lines move to the follow-ups list with the agent's reason.
+
+Empty `## Sweep` checklist → skip this section and say nothing about it. Under `--stop-at-green`, the sweep PR is left reviewed and green like everything else.
+
+---
+
 ## Finish
 
-When the queue is empty:
+When the queue is empty, and the **Sweep** has landed or had nothing to do:
 
 1. **File the should-fix issue first**, before anything closes — `campaign follow-ups: <slug> (#<ledger>)`, a `- [ ]` checklist, one line and one PR number per finding (see **Review**). Skip only if the list is empty. Its number goes in the closing comment below, so the ledger points at it rather than containing it.
 2. **Attach the ledger to the work it ran.** Look up the parent of every issue in the run-set — the `#N` list in the ledger's own title — and where all of them share one parent, that is the ledger's parent too:
@@ -593,6 +619,7 @@ When the queue is empty:
    ```
    ## Campaign complete
    **Landed:** #a (PR #1), #b (PR #2 → PR #3)   ← an issue split at the ceiling lists every PR that carried it, in order
+   **Swept:** PR #4 — n findings fixed, m moved to follow-ups   ← omit when the sweep had nothing to do
    **Parked:** #c — [reason, what a human needs to decide, branch name]
    **Issues filed:** #f follow-ups; #d, #e — [oversized re-specs and shipped-known-defects; see Review]
    **Estimated vs actual:** #a M / 812 · #b L / 2140 (2 PRs) · #c M / — (parked)
@@ -601,4 +628,4 @@ When the queue is empty:
    **Estimated vs actual** is the only place anything in this repo compares a `Size` estimate to what shipped, so it is one line per issue in the run-set and not optional. The estimate comes from `node scripts/board.mjs show <issue>` — a board read, since `Size` is a project field and is not in the issue body; the actual is the changed-line count you already have from `gh pr view <pr> --json additions,deletions` (see **Review**), summed across every PR that carried a split issue, and `—` for anything parked. You are recording the pair, not judging it: nothing gates on the gap, and a spec author reading a run of `M / 1900` lines is the correction path that has never existed. (`gh` absent, or `board.mjs` unable to run — see **Standing rules**: record the actual alone and say the estimate was unreadable.)
    **Close the ledger only if nothing is parked AND nothing under it is still open.** A parked issue is unfinished business and the open ledger is where it lives. The second half is the one that changed (#1534): the follow-ups issue step 1 just filed hangs off this ledger and is deliberately left open, so **a campaign with any findings at all leaves its ledger open** and says so — `**Ledger:** staying open until #f closes` in the comment above. Closing it anyway is not a tidier ending, it is a `check` failure the next morning and, worse, a family that vanishes from the `Hierarchies` view while its work is live: that view's filter reads sub-issue progress, which counts direct children only, so a closed ledger over an open follow-up reads 100% done. Seven of the eight issues reopened by hand on 2026-09-21 were exactly this campaign step. Nothing that must outlive the campaign may live only in this comment — the follow-ups issue does not close, and now nor does the ledger above it. The follow-ups issue closes itself once its lines are ticked and its own children are done: see **Review** for the one thing its lines must carry for that to work, and `board.mjs rollup` then rolls the closure up to this ledger.
 5. `TaskStop` the pool heartbeat if it is still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
-6. Report **once**, and stop. Landed, parked with reasons, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue; do not reproduce either. A clean campaign is a sentence. Do not follow this message with a second one that says the same thing in different words: the last run closed with four.
+6. Report **once**, and stop. Landed, parked with reasons, how many findings the sweep fixed, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue; do not reproduce either. A clean campaign is a sentence. Do not follow this message with a second one that says the same thing in different words: the last run closed with four.
