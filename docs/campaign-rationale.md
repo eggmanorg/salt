@@ -46,6 +46,8 @@ A campaign spoke **68 times in 88 minutes**, median 144 characters, mostly "chec
 
 A subagent with no model of its own inherits its parent's, so one selection at the top silently sets the price of a thirty-agent tree. Fable 5 is exactly twice Opus 5 on both input and output, so an unnoticed selection doubles the whole campaign and nothing in the run says so. The per-role models used to be a table the coordinator had to remember at every spawn; #1586 made each one agent-definition frontmatter, pinned by `scripts/tests/campaignAgents.test.mjs`. The `Agent` tool's `model` parameter overrides frontmatter, which is why the command forbids passing one.
 
+The coordinator itself runs on `opus` because it adjudicates technical disputes without reading the code, and its merges are irreversible.
+
 ## Setup
 
 ### Resume, and confirm each issue is still open
@@ -87,6 +89,8 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 **Why terminate before recycling a slot.** A worker left running still holds a worktree, still runs `pnpm test` against the resources the next worker needs, and can still commit and push to a branch that has been parked or is sitting in the merge queue — a `--force-with-lease` failure, or a merged branch containing work nobody reviewed.
 
 ## Review
+
+**Why the reviewer is shared with `/salt-review`.** Until #1590 the campaign reviewer and `/salt-review` were two copies of nearly the same brief, written apart and already drifting: different lens examples, different severity buckets, differently shaped reviews, so one PR read differently depending on which command reviewed it. Both now spawn `.claude/agents/pr-reviewer.md`; each command keeps only what it does with the findings. Campaign's three headings won because the merge gate and the fold-in adjudication already parse them — the unattended caller is the one that cannot absorb a shape change — and `Blocking` became _material impact_ because once both commands' failure-scenario bar applies, every surviving finding has a concrete failure, so "a concrete failure can be named" no longer splits anything.
 
 **Why split at a phase boundary but never carve a built branch.** A phase boundary was chosen by the spec, each side ends user-testable, and the reviewer of PR _k+1_ reads it against a base that already contains PR _k_, reviewed on its own terms. Carving a finished branch in half has none of that: the boundary is arbitrary, and neither reviewer can see a duplication or an architectural drift that spans it.
 

@@ -27,7 +27,8 @@ const read = (f) => readFileSync(path.join(repo, f), 'utf8');
 const ROLES = {
   'campaign-extractor': 'haiku',
   'campaign-worker': 'opus',
-  'campaign-reviewer': 'opus',
+  // Shared with /salt-review since #1590, hence not `campaign-`-prefixed.
+  'pr-reviewer': 'opus',
   'campaign-divider': 'opus',
   'campaign-fixer': 'sonnet',
   'campaign-sweeper': 'sonnet',
@@ -56,7 +57,7 @@ describe('campaign agent definitions', () => {
     expect(fm.model).toBe(model);
     expect(fm.description).toBeTruthy();
     // A `#` after whitespace opens a YAML comment, so the harness silently cuts
-    // the description there — `campaign-reviewer`'s once ended at "under".
+    // the description there — the reviewer's once ended at "under".
     expect(fm.description).not.toMatch(/\s#/);
   });
 
