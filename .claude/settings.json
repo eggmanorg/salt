@@ -92,7 +92,6 @@
     ]
   },
   "enabledPlugins": {
-    "ponytail@ponytail": true,
     "claude-security@claude-plugins-official": true
   },
   "autoMode": {
