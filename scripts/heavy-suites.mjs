@@ -98,6 +98,15 @@ if (jobsFile !== null) {
   let changesLog = null;
   try {
     changesLog = readFileSync(logFile, 'utf8');
+    // `get_job_logs --return_content true` wraps the log as JSON
+    // (`{"logs_content":"…\n…",…}`) instead of the raw text `gh` gives.
+    // Unwrap it so a skip's marker lines are still on their own lines.
+    try {
+      const parsed = JSON.parse(changesLog);
+      if (typeof parsed?.logs_content === 'string') changesLog = parsed.logs_content;
+    } catch {
+      // Not JSON: already the raw log text.
+    }
   } catch {
     // Missing log: the classifier says cannot-confirm if it needed one.
   }

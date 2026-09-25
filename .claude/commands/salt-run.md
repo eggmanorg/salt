@@ -42,7 +42,7 @@ Keep the loop's order: it is built so a run neither re-derives what the issue ho
 | Failing-step logs (step 8)       | `gh run view --log-failed`         | `get_job_logs`                             |
 
 - **Empty output is a failed fetch**, never "no jobs". The CI poll is the one wait here that no longer blocks inside a single call.
-- **Heavy-suite files**: the newest `ci.yml` run's jobs (`list_workflow_jobs`) and `Detect changes` log (`get_job_logs`), saved to files, then `node scripts/heavy-suites.mjs --jobs <file> --changes-log <file> --event pull_request`.
+- **Heavy-suite files**: the newest `ci.yml` run on `<branch>` (`list_workflow_runs`, `workflow_runs_filter.branch`) — its jobs (`list_workflow_jobs`) and `Detect changes` log (`get_job_logs`, `return_content: true`), saved to files, then `node scripts/heavy-suites.mjs --jobs <file> --changes-log <file> --event pull_request`.
 - **Board dispatch** is [`board-dispatch.yml`](../../.github/workflows/board-dispatch.yml) run through the MCP server: `command: set`, `issue: ISSUE_NUMBER`, `status: In progress`; an omitted input stays `(unchanged)`. No token fixes `board.mjs`: the session proxy refuses its `gh api graphql` before any credential is evaluated. **Never a shell `curl`** to the dispatches endpoint (403 `Resource not accessible by integration`; only the MCP path has `actions:write`). **A dispatch is a request, not a confirmation** — name the route you took; never report the board as moved on the strength of one. `check` is deliberately **not** relayed ([docs/issue-board.md](../../docs/issue-board.md) says why).
 
 ### An invariant you state, you make mechanical — or you state its limits
@@ -341,7 +341,7 @@ node scripts/heavy-suites.mjs --branch <type>/<slug>-ISSUE_NUMBER
 - `ran-green` → verified.
 - `skipped-non-app` → **not verified**, correctly: only non-app paths changed, so no e2e signal. `skipped-behind` → **not verified**: the branch is behind `origin/main`, which is no longer yours to fix — the merge queue runs these suites on current `main` before it lands ([docs/ci.md](../../docs/ci.md)); rebase only if you need the signal. `cannot-confirm` → **not verified**; its `reason:` line says why. Say which in the handoff comment; never report any of the three as green.
 - `pending` → re-read once the run finishes. `cancelled` → a later push superseded that run; re-run the command.
-- `failed` → `gh run view <run-id> --log-failed` (id on the `run:` line) gives the failing steps alone. Fix on the issue branch (delegate the triage if large), commit, push. Can't resolve it → stop and tell me.
+- `failed` → `gh run view <run-id> --log-failed` (id on the `run:` line) gives the failing steps alone, never the full log. Fix on the issue branch (delegate the triage if large), commit, push. Can't resolve it → stop and tell me.
 
 Blind spot: a phase editing the e2e or integration job setup **inside `.github/workflows/ci.yml`** skips those very suites. Flag it and validate on a follow-up that also touches app code.
 

@@ -93,6 +93,23 @@ describe('heavy-suites.mjs — file mode (no gh)', () => {
     expect(result.stdout.split('\n')[0]).toBe('skipped-behind');
   });
 
+  it('skipped-non-app, exit 0, when the log file is MCP-wrapped JSON (`return_content: true`)', () => {
+    const wrapped = file(
+      'mcp-log.json',
+      JSON.stringify({ job_id: 107967409443, logs_content: nonAppLog }),
+    );
+    const result = run([
+      '--jobs',
+      fx('gh-pr-1585-skipped.json'),
+      '--changes-log',
+      wrapped,
+      '--event',
+      'pull_request',
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout.split('\n')[0]).toBe('skipped-non-app');
+  });
+
   it('cannot-confirm, exit 5, when the log file does not exist', () => {
     const result = run([
       '--jobs',
