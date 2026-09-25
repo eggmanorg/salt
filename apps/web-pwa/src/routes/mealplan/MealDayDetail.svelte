@@ -206,7 +206,11 @@
     // `onNoteChange` — no title knowledge leaks into the domain or any mutator.
     // Guard on `day.note` AT ATTACH TIME: `onNoteChange` is fire-and-forget and
     // `day.note` only updates once the store re-emits, so a non-empty note is
-    // never overwritten and the first attached recipe wins.
+    // never overwritten. The seed is the night's FIRST resolvable recipe —
+    // `attachedRecipes[0]`, as the blur re-seed below reads it — falling back to
+    // the pick only when nothing on the night resolves yet, so a night that
+    // already holds recipes under an empty note is not named after the pick
+    // (#1578, completing #1513).
     //
     // Picking a MEAL attaches the whole dinner (#752, Phase 2): the meal, then
     // its component dishes, deduped against what the night already carries. The
@@ -222,7 +226,7 @@
     // the honest answer to a value we cannot expand.
     const picked = recipes.find((r) => r.id === id);
     if (!picked) return;
-    if (!day.note.trim()) onNoteChange?.(picked.title);
+    if (!day.note.trim()) onNoteChange?.((attachedRecipes[0] ?? picked).title);
     onRecipesChange?.(mergePlannerRecipeIds(day.recipeIds, expandForPlanner(picked)));
     recipePickerKey += 1;
   }

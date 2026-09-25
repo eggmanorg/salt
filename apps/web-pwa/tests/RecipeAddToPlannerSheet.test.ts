@@ -347,10 +347,11 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     expect(cookOf('2026-08-15')).toBeNull();
   });
 
-  it('marks nothing as yours while the roster is still loading', async () => {
+  it('names the cook but marks nothing as yours while the current member is unknown', async () => {
     // `currentMember` is null for a real window on every cold launch. Defaulting
     // to "not you" is the honest answer; falling back to the auth email would be
-    // a second definition of the same fact.
+    // a second definition of the same fact. The roster itself is populated here
+    // (the shared `beforeEach`); an unpopulated one is the next two tests.
     mockCurrentMember._set(null);
     const week = setDayChefs(
       setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
@@ -363,6 +364,63 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     // Named, not guessed at: naming needs no current member.
     await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Daniel'));
     expect(cookOf('2026-08-13')).not.toHaveTextContent('You');
+  });
+
+  it('never says "No cook" on a taken night while the roster is still loading', async () => {
+    // `day.chefs` comes off the plan document; the names come off `$members`,
+    // which may not have delivered yet. Someone has this night — the row must not
+    // read like the planned night nobody has taken.
+    mockCurrentMember._set(null);
+    mockMembers._set([]);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      [DANIEL.id],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Cooking'));
+    expect(cookOf('2026-08-13')).not.toHaveTextContent('No cook');
+    expect(nightRow('2026-08-13')).toHaveAttribute(
+      'aria-label',
+      'Thursday 13 August, Roast chicken, cooking: Cooking',
+    );
+
+    // And it names them as soon as the roster lands.
+    mockMembers._set([DANIEL, SAM]);
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Daniel'));
+  });
+
+  it('never says "No cook" on a night taken by someone no longer on the roster', async () => {
+    mockCurrentMember._set(DANIEL);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      ['m-removed'],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent('Cooking'));
+    expect(cookOf('2026-08-13')).not.toHaveTextContent('No cook');
+  });
+
+  it('counts the cooks the roster cannot name instead of dropping them (#1578)', async () => {
+    mockCurrentMember._set(DANIEL);
+    const week = setDayChefs(
+      setDayNote(emptyWeek('2026-08-10'), '2026-08-13', 'Roast chicken'),
+      '2026-08-13',
+      [SAM.id, 'm-removed'],
+    );
+    serveWeeks({ '2026-08-10': week });
+    renderSheet();
+
+    await waitFor(() => expect(cookOf('2026-08-13')).toHaveTextContent(`${SAM.name} & 1 other`));
+    expect(nightRow('2026-08-13')).toHaveAttribute(
+      'aria-label',
+      `Thursday 13 August, Roast chicken, cooking: ${SAM.name} & 1 other`,
+    );
   });
 
   it('never says a week it has not read is free', async () => {
@@ -443,7 +501,7 @@ describe('RecipeAddToPlannerSheet — what is planned, and who is cooking', () =
     await user.click(nightRow('2026-08-21'));
     await user.click(screen.getByTestId('recipe-add-to-planner-confirm'));
 
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE, expect.any(Map));
   });
 
   it('reads each week the window spans once, and only the new ones on extending', async () => {
@@ -502,7 +560,7 @@ describe('RecipeAddToPlannerSheet — committing', () => {
     // The whole RECIPE, not its id (#752): a meal expands to itself plus its
     // components, and that expansion is a pure function of the document — so the
     // service is handed the document rather than made to look it back up.
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-21', RECIPE, expect.any(Map));
     await waitFor(() =>
       expect(mockAddToast).toHaveBeenCalledWith('Added to Friday 21 August.', 'success'),
     );
@@ -516,7 +574,7 @@ describe('RecipeAddToPlannerSheet — committing', () => {
     await user.click(nightRow('2026-08-08'));
     await user.click(screen.getByTestId('recipe-add-to-planner-confirm'));
 
-    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-08', RECIPE);
+    expect(mockAddRecipeToDay).toHaveBeenCalledWith('2026-08-08', RECIPE, expect.any(Map));
     await waitFor(() =>
       expect(mockAddToast).toHaveBeenCalledWith('Added to Saturday 8 August.', 'success'),
     );

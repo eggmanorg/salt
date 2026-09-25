@@ -142,21 +142,15 @@ describe('Sheet', () => {
       expect(cn(sheetContentVariants({ side: 'bottom' }))).toContain('max-h-[85vh]');
     });
 
-    it('a caller can still opt out of the ceiling, with the arbitrary form', () => {
+    it('a caller can still opt out of the ceiling', () => {
       // ShoppingListPage does exactly this — it is the one bottom sheet with no
       // height cap, and it must stay that way after #930 moved the cap here.
-      expect(cn(sheetContentVariants({ side: 'bottom' }), 'max-h-[none]')).not.toContain(
+      // Plain `max-h-none` replaces the ceiling from tailwind-merge 3.7, which added
+      // `none` to the max-height group; before that it arrived alongside
+      // `max-h-[85vh]` and the call site had to use the arbitrary `max-h-[none]`.
+      expect(cn(sheetContentVariants({ side: 'bottom' }), 'max-h-none')).not.toContain(
         'max-h-[85vh]',
       );
-    });
-
-    it('the PLAIN max-h-none does NOT opt out — which is why no call site uses it', () => {
-      // Not a preference: tailwind-merge v3 omits `none` from the max-height
-      // group (it has it for max-width), so `max-h-none` arrives alongside the
-      // variant's ceiling instead of replacing it and stylesheet order decides.
-      // Recorded here so that if a future tailwind-merge fixes it, this goes red
-      // and the call-site comment explaining the workaround can go with it.
-      expect(cn(sheetContentVariants({ side: 'bottom' }), 'max-h-none')).toContain('max-h-[85vh]');
     });
 
     it('MealDayEditor’s two remaining overrides still win', () => {

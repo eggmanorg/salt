@@ -38,11 +38,9 @@
 //
 // ── The honest boundary ─────────────────────────────────────────────────────
 //
-//  - `stripComments` skips quoted strings so a `//` inside one does not eat the
-//    rest of the line, but it does not parse regex literals or template-literal
-//    interpolation. A comment opener inside a regex would truncate that line's
-//    scan. No file in the tree does this today and the self-tests pin the
-//    string case; treat it as a known limit, not a guarantee.
+//  - Comments are found by the TypeScript parser (`stripComments.mjs`), so a
+//    `//` inside a string, template or regex literal is not one. That holds for
+//    source that parses; `stripComments.mjs` states what happens when it does not.
 //  - A count is per FILE, not per occurrence: a file with eight `vi.mock` calls
 //    is one UT-B1 violation, not three. The ceilings are counts of files.
 //  - UT-B1's spec text permits exceeding the cap "with a comment naming why the
@@ -54,6 +52,8 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { stripComments } from './stripComments.mjs';
 
 /**
  * The repo root.
@@ -80,12 +80,6 @@ export function unitTestAreas(root = repoRoot) {
   );
 }
 
-const COMMENTS = [
-  ['/*', '*/'],
-  ['//', '\n'],
-];
-const QUOTES = ['"', "'", '`'];
-
 /**
  * Strip comments, keeping string literals intact.
  *
@@ -94,41 +88,11 @@ const QUOTES = ['"', "'", '`'];
  * path escape, and so does the header above — and a mention must never count as
  * an instance (that is a self-test case below). Strings STAY because an import
  * specifier is a string, and UT-E4 is a rule about import specifiers.
+ *
+ * Re-exported so the guard's self-tests run every sample through the same
+ * stripper the scan uses.
  */
-export function stripComments(src) {
-  let out = '';
-  let i = 0;
-  while (i < src.length) {
-    const comment = COMMENTS.find(([open]) => src.startsWith(open, i));
-    if (comment !== undefined) {
-      const [open, close] = comment;
-      const end = src.indexOf(close, i + open.length);
-      i = end === -1 ? src.length : end + close.length;
-      out += close === '\n' ? '\n' : ' ';
-      continue;
-    }
-    const quote = QUOTES.find((q) => src.startsWith(q, i));
-    if (quote !== undefined) {
-      out += src[i];
-      i += 1;
-      while (i < src.length && src[i] !== quote) {
-        if (src[i] === '\\') {
-          out += src.slice(i, i + 2);
-          i += 2;
-          continue;
-        }
-        out += src[i];
-        i += 1;
-      }
-      out += src[i] ?? '';
-      i += 1;
-      continue;
-    }
-    out += src[i];
-    i += 1;
-  }
-  return out;
-}
+export { stripComments } from './stripComments.mjs';
 
 /** Every file under `dir` matching `suffixes`, found by walking. */
 function walk(dir, suffixes) {
@@ -221,7 +185,13 @@ export const FILE_RULES = [
     what: 'resets document.body.style.pointerEvents, which tests/setup.ts already does',
     areas: ['apps/web-pwa'],
     violates: (code) => /document\.body\.style\.pointerEvents\s*=/.test(code),
-    catches: ["document.body.style.pointerEvents = '';", 'document.body.style.pointerEvents = "";'],
+    catches: [
+      "document.body.style.pointerEvents = '';",
+      'document.body.style.pointerEvents = "";',
+      // A `//` inside a regex literal is not a comment opener, so what follows
+      // it on the line is still scanned (#1559).
+      "const bare = url.replace(/\\/\\//g, '/'); document.body.style.pointerEvents = '';",
+    ],
     misses: [
       "expect(document.body.style.pointerEvents).toBe('');",
       "el.style.pointerEvents = 'none';",
@@ -290,7 +260,14 @@ export const AREA_RULES = [
   {
     id: 'UT-G3',
     what: 'sets a retry count in its vitest config',
-    catches: [{ 'pkg/thing/vitest.config.ts': 'export default { test: { retry: 2 } };' }],
+    catches: [
+      { 'pkg/thing/vitest.config.ts': 'export default { test: { retry: 2 } };' },
+      // The same config behind a regex literal holding `//` (#1559).
+      {
+        'pkg/thing/vitest.config.ts':
+          'const slash = /\\/\\//; export default { test: { retry: 2 } };',
+      },
+    ],
     misses: [
       { 'pkg/thing/vitest.config.ts': "export default { test: { pool: 'threads' } };" },
       // A comment saying the suite has no retries must not read as one.

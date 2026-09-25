@@ -370,11 +370,11 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 //
 // TWO rules, not one shared clause, because `takesComponents` is true for two
 // kinds that mean opposite things by it. A recipe's components are dishes SERVED
-// ALONGSIDE it — they are dished up together, normally onto one plate and in the
-// exceptional case out across the table. A cocktail's component is a part it is
-// MADE FROM (the house syrup, an infusion); it is already in the glass, and a
-// second glass beside it would be exactly wrong. One clause covering both would
-// have to be vague enough to direct neither.
+// ALONGSIDE it — normally dished up together onto one plate, a separate course held
+// on its own plate, and only in the exceptional case set out across the table. A
+// cocktail's component is a part it is MADE FROM (the house syrup, an infusion); it
+// is already in the glass, and a second glass beside it would be exactly wrong. One
+// clause covering both would have to be vague enough to direct neither.
 //
 // ONE PLATE IS THE DEFAULT, AND THAT IS AN INVERSION OF #838 (issue #1452). #838
 // directed every meal at the WHOLE TABLE — each dish in its own bowl, laid out
@@ -396,24 +396,46 @@ Write ONE paragraph of plain prose, at most about 80 words. Return only the revi
 //
 // The table stays REACHABLE in the brief rather than gone from it: the rule below
 // names it as the exception the art director may choose from the dishes
-// themselves (a curry night, tapas, a buffet). That is a claim about a string and
-// nothing else can pin it short of an AI call, so it is pinned by a string
-// assertion — see tests/flows/describeRecipeScene.test.ts, "leaves the table
-// reachable". The assertion is scoped the same way: it pins that the brief names
-// the exception, not that a photograph ends up showing the table.
+// themselves, decided by #1452's general test — the dinner is plainly not a single
+// serving — with one example that says it is one. It used to follow that test with
+// a colon and four shared-eating scenarios, which read as the definition and left
+// every other shape (a separate course above all) to the one-plate default (#1567).
+// That is a claim about a string and nothing else can pin it short of an AI call,
+// so it is pinned by a string assertion — see tests/flows/describeRecipeScene.test.ts,
+// "leaves the table reachable". The assertion is scoped the same way: it pins that
+// the brief names the exception, not that a photograph ends up showing the table.
+//
+// A SEPARATE COURSE gets its own plate (#1567). A starter or a pudding attached to
+// a meal is neither shared eating nor part of the main's plate, and the general
+// test alone may not reach it — a roast with a pudding is still one plated serving
+// for the roast — so the rule names it outright. MEAL_CHEF_FRAMING in
+// componentContext.ts already treats a pudding on a meal as a real shape; this is
+// the art director agreeing with the chef. Nothing in code detects a course (no
+// field marks a dish as one); the model reads it off the listed dishes.
+//
+// The one-plate direction describes COMPOSITION — what leads, what sits under,
+// beside or over it — and names no food. It used to say "the meat resting on the
+// mash", the only concrete picture in a clause sent for every meal, which is the
+// #671 failure recorded under CHEF'S SPECIALS above: a first concrete noun becomes
+// every brief's noun. The test pins the absence of those words, not of every food
+// word; the paragraph is short enough to read.
 //
 // Both are APPENDED ONLY when dishes are actually listed, so a recipe that is not
 // a meal gets byte-for-byte the system prompt it got before. Specials and
 // placeholders never receive either (`takesComponents` is false for both), which
 // is structural here rather than a promise: their arms below simply ignore it.
 const MEAL_SCENE_RULE = `This recipe is a MEAL. The dishes listed above are separate recipes served together as \
-one dinner, and they are the subject: describe it AS IT IS EATEN — dished up on ONE PLATE, those dishes composed \
-onto it together. Let the dish that carries the meal lead and the others be plated around, under or over it — the \
-meat resting on the mash, the greens alongside, the sauce over the lot — each still recognisably itself.
+one dinner. Setting aside any separate course (see below), the dishes eaten WITH the main are the subject: describe \
+it AS IT IS EATEN — dished up on ONE PLATE, each of the other dishes eaten with it composed onto it together. Let \
+the dish that carries the meal lead, and set each of the other dishes eaten with it where it naturally belongs — \
+under it, beside it or spooned over it — each still recognisably itself.
 
-Set the dishes out separately across the table ONLY where this dinner plainly is not one plated serving: food shared \
-from the middle, a grazing spread, a buffet, a table of small plates. That is an exception you may choose when the \
-dishes themselves call for it, never the default.
+A separate course is not part of that plate. A starter or a pudding (the sweet course) is eaten before or after the \
+main, not with it: show it on its own plate or bowl beside the main, never composed onto it.
+
+Set the dishes out separately across the table ONLY where this dinner plainly is not a single serving — food shared \
+from the middle rather than dished up per person, for example. That is an exception you may choose when the dishes \
+themselves call for it, never the default.
 
 Any ingredients and method given above belong to the DINNER as a whole — a sauce made at the end, the timing that \
 runs the dishes together — and never to any one dish. Read them that way, and read each dish's own description for \

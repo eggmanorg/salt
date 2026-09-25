@@ -7,8 +7,8 @@ import type { EquipmentIconDoc } from '../../src/schemas/equipmentIcon.js';
 // no picture at all. Every case here is one of the four states the header
 // enumerates — nothing drawn, drawn, hidden, borrowed — plus the boundary it
 // admits to: a borrow is a reference, never resolved, so a record pointed at a
-// drawing that is hidden (the reachable trigger) or gone (the merely possible
-// one) reads as "has a picture" here regardless.
+// drawing that is hidden, or at a record since removed, reads as "has a picture"
+// here regardless.
 
 function item(overrides: Partial<EquipmentItem> = {}): EquipmentItem {
   return {
@@ -98,8 +98,7 @@ describe('undrawnEquipment', () => {
     ).toEqual([]);
   });
 
-  // THE REACHABLE FORM OF THE SAME BOUNDARY. There is no delete-a-drawing
-  // command, but Hide is reachable, and `hideEquipmentIconFor` withdraws only
+  // THE SAME BOUNDARY, REACHED BY HIDE. `hideEquipmentIconFor` withdraws only
   // the borrow HELD BY the record being hidden — never the borrows POINTING AT
   // it. This query reads only `item.borrowedPicture`'s presence, so a borrower
   // of a now-hidden drawing still reads as "has a picture" here.

@@ -335,6 +335,44 @@ describe('day mutators (immutability + correctness)', () => {
     expect(base.days[key]!.note).toBe('');
   });
 
+  // Issue #1513: the planner headline reads the note's first line, the "is it
+  // named?" guards read the whole note. A leading blank line split the two.
+  it('setDayNote drops a leading blank line, so the first line is the content', () => {
+    const next = setDayNote(base, key, '\nbring wine');
+    expect(next.days[key]!.note).toBe('bring wine');
+    expect(next.days[key]!.note.split('\n')[0]!.trim()).not.toBe('');
+  });
+
+  it('setDayNote drops only whole blank leading lines, keeping a leading space on real content', () => {
+    // "Pie and mash", first word deleted: " and mash" must survive untouched —
+    // it is not a blank line, so trimming it would rewrite the field mid-edit.
+    expect(setDayNote(base, key, ' and mash').days[key]!.note).toBe(' and mash');
+  });
+
+  it('setDayNote strips a leading blank line even with \\r\\n endings', () => {
+    expect(setDayNote(base, key, '\r\nbring wine').days[key]!.note).toBe('bring wine');
+    expect(setDayNote(base, key, ' \r\npie').days[key]!.note).toBe('pie');
+  });
+
+  it('setDayNote agrees with the first-line headline for any leading whitespace', () => {
+    for (const raw of ['  \n\t\n roast\nwith gravy', ' \r\n pie', '\n\n\n', ' and mash']) {
+      const note = setDayNote(base, key, raw).days[key]!.note;
+      // The two tests the planner uses must never disagree about a stored note.
+      expect(Boolean(note.split('\n')[0]?.trim())).toBe(Boolean(note.trim()));
+    }
+  });
+
+  it('setDayNote keeps trailing whitespace, which the typed field depends on', () => {
+    expect(setDayNote(base, key, 'Pasta ').days[key]!.note).toBe('Pasta ');
+    expect(setDayNote(base, key, 'Pasta\n').days[key]!.note).toBe('Pasta\n');
+  });
+
+  it('setDayNote tidies a template note too, which instantiateWeek copies verbatim', () => {
+    const template = setDayNote(emptyTemplate(), 'mon', '\nlasagne');
+    const week = instantiateWeek('2026-06-08', config('mon'), template);
+    expect(week.days['2026-06-08']!.note).toBe('lasagne');
+  });
+
   it('setDayChefs replaces chefs with a fresh array', () => {
     const next = setDayChefs(base, key, ['a@x.org', 'b@x.org']);
     expect(next.days[key]!.chefs).toEqual(['a@x.org', 'b@x.org']);
