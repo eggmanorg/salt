@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, vi, type Mocked } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock, type Mocked } from 'vitest';
+import type { PersistenceOutcome } from '@salt/domain/schemas';
+import type { DomainError, ReadResult } from '@salt/shared-types';
 import { emptyRecipe } from '@salt/domain';
 import type { Recipe, CanonItem, IngredientGroup } from '@salt/domain';
 
@@ -18,8 +20,12 @@ vi.mock('@salt/firebase-sync', () => ({
 // store as the shopping-list suites do: nobody signed in, so no name is
 // available and nothing is stamped.
 vi.mock('../src/lib/auth.svelte.js', () => ({ auth: { user: null } }));
+// ONE `report` spy for every reporter the service creates: it caches its
+// reporter across tests, so a per-call `vi.fn()` would leave a later test looking
+// at a spy nobody holds.
+const { mockReport } = vi.hoisted(() => ({ mockReport: vi.fn() }));
 vi.mock('@salt/observability', () => ({
-  createObservabilityErrorReportingAdapter: vi.fn(() => ({ report: vi.fn() })),
+  createObservabilityErrorReportingAdapter: vi.fn(() => ({ report: mockReport })),
 }));
 
 // ─── Mock canonService ───────────────────────────────────────────────────────
@@ -35,6 +41,14 @@ import * as firebaseSync from '@salt/firebase-sync';
 import { canonicaliseIngredients, matchIngredient } from '../src/lib/recipeService.js';
 
 const fs = firebaseSync as Mocked<typeof firebaseSync>;
+// An overloaded function's mock is typed by its LAST signature — the bare array
+// `matchIngredient` reads. The `recipeId` arm `canonicaliseIngredients` drives
+// answers the envelope (issue #1601), so that describe mocks through this view.
+const canonicaliseForRecipe = fs.callCanonicaliseRecipeIngredients as unknown as Mock<
+  (
+    input: unknown,
+  ) => Promise<ReadResult<{ results: unknown[]; persistence: PersistenceOutcome }, DomainError>>
+>;
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -114,7 +128,7 @@ describe('canonicaliseIngredients', () => {
 
     const result = await canonicaliseIngredients(recipe);
 
-    expect(result).toEqual({ kind: 'ok', value: undefined });
+    expect(result).toEqual({ kind: 'ok', value: 'skipped' });
     expect(fs.callCanonicaliseRecipeIngredients).not.toHaveBeenCalled();
     expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
@@ -124,9 +138,12 @@ describe('canonicaliseIngredients', () => {
     // two-minute await, so a tab that went away performed none of it. This
     // asserts the browser write is GONE, not merely moved later.
     const canon = makeCanonItem('canon-flour', false);
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+    canonicaliseForRecipe.mockResolvedValue({
       kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+      value: {
+        results: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+        persistence: 'written',
+      },
     });
 
     const recipe = makeRecipe([
@@ -145,15 +162,18 @@ describe('canonicaliseIngredients', () => {
 
     const result = await canonicaliseIngredients(recipe);
 
-    expect(result).toEqual({ kind: 'ok', value: undefined });
+    expect(result).toEqual({ kind: 'ok', value: 'written' });
     expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
 
   it('sends the recipe id and the per-row ingredient id, so the function can name what it writes', async () => {
     const canon = makeCanonItem('canon-butter', false);
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+    canonicaliseForRecipe.mockResolvedValue({
       kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+      value: {
+        results: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+        persistence: 'written',
+      },
     });
 
     const recipe = makeRecipe([
@@ -182,9 +202,12 @@ describe('canonicaliseIngredients', () => {
 
   it('retries failed ingredients (matchState failed + parsed)', async () => {
     const canon = makeCanonItem('canon-butter', false);
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+    canonicaliseForRecipe.mockResolvedValue({
       kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+      value: {
+        results: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+        persistence: 'written',
+      },
     });
 
     const recipe = makeRecipe([
@@ -226,7 +249,7 @@ describe('canonicaliseIngredients', () => {
 
     const result = await canonicaliseIngredients(recipe);
 
-    expect(result).toEqual({ kind: 'ok', value: undefined });
+    expect(result).toEqual({ kind: 'ok', value: 'skipped' });
     expect(fs.callCanonicaliseRecipeIngredients).not.toHaveBeenCalled();
     expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
   });
@@ -236,9 +259,12 @@ describe('canonicaliseIngredients', () => {
     mockGetCanonItemsSnapshot.mockReturnValue([]);
 
     const canon = makeCanonItem('canon-flour-new');
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+    canonicaliseForRecipe.mockResolvedValue({
       kind: 'ok',
-      value: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+      value: {
+        results: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+        persistence: 'written',
+      },
     });
 
     const recipe = makeRecipe([
@@ -264,12 +290,15 @@ describe('canonicaliseIngredients', () => {
   it('handles multiple ingredients across groups in a single batch call', async () => {
     const canonFlour = makeCanonItem('canon-flour', false);
     const canonSugar = makeCanonItem('canon-sugar', false);
-    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+    canonicaliseForRecipe.mockResolvedValue({
       kind: 'ok',
-      value: [
-        { kind: 'ok', value: { decision: 'matched', item: canonFlour } },
-        { kind: 'ok', value: { decision: 'matched', item: canonSugar } },
-      ],
+      value: {
+        results: [
+          { kind: 'ok', value: { decision: 'matched', item: canonFlour } },
+          { kind: 'ok', value: { decision: 'matched', item: canonSugar } },
+        ],
+        persistence: 'written',
+      },
     });
 
     const recipe = makeRecipe([
@@ -311,6 +340,69 @@ describe('canonicaliseIngredients', () => {
     // Both groups' rows go in one call, each carrying its own id so the function
     // can tell them apart.
     expect(sentIds()).toEqual(['i1', 'i2']);
+  });
+
+  // Issue #1601: the function now says whether its fold onto the recipe landed,
+  // and this hands that on for the page's toast. A `failed` fold is still `ok` —
+  // the call succeeded and the matching is durable — and it is NOT reported
+  // again: the function reported it as a StorageError when the write failed.
+  it('hands on a failed fold as the outcome, and does not report it a second time', async () => {
+    const canon = makeCanonItem('canon-flour', false);
+    canonicaliseForRecipe.mockResolvedValue({
+      kind: 'ok',
+      value: {
+        results: [{ kind: 'ok', value: { decision: 'matched', item: canon } }],
+        persistence: 'failed',
+      },
+    });
+
+    const recipe = makeRecipe([
+      makeGroup([
+        {
+          id: 'i1',
+          rawText: '2 cups flour',
+          parsed: parsedIngredient,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ]),
+    ]);
+
+    const result = await canonicaliseIngredients(recipe);
+
+    expect(result).toEqual({ kind: 'ok', value: 'failed' });
+    expect(fs.saveRecipeDoc).not.toHaveBeenCalled();
+    expect(mockReport).not.toHaveBeenCalled();
+  });
+
+  it('still reports a transport failure — the one the function never saw', async () => {
+    // Anti-vacuity for the case above: the spy is on the handle the service
+    // actually reports through.
+    fs.callCanonicaliseRecipeIngredients.mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'SyncError', reason: 'pull-failed' },
+    });
+
+    const recipe = makeRecipe([
+      makeGroup([
+        {
+          id: 'i1',
+          rawText: '2 cups flour',
+          parsed: parsedIngredient,
+          canonId: null,
+          matchState: 'pending',
+          isOptional: false,
+          firstUsedInStepId: null,
+        },
+      ]),
+    ]);
+
+    const result = await canonicaliseIngredients(recipe);
+
+    expect(result.kind).toBe('err');
+    expect(mockReport).toHaveBeenCalledOnce();
   });
 });
 

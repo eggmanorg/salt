@@ -638,15 +638,17 @@
       addToast('Canonicalisation failed.', 'destructive');
       return;
     }
-    // `result.kind === 'ok'` confirms the callable returned and the matching it
-    // ran is durable (the canon documents it created or reused). It does NOT
-    // confirm the recipe row itself was updated: the flow's own fold onto
-    // `recipes/{id}` is best-effort and swallows a Firestore failure server-side
-    // (logged + reported, never thrown — Rule 10), and nothing on this wire says
-    // whether that write landed (#1475 review, finding 3). A toast claiming the
-    // row was matched would be wrong on that rare path, so this one asserts only
-    // what the response actually establishes — the list itself, via the
-    // subscription, is what shows whether the row changed.
+    // `ok` means the matching ran and is durable; the value says whether the
+    // function's fold onto `recipes/{id}` landed (issue #1601). On `failed` the
+    // rows were not updated and their ✗ markers stay, so say so and name the
+    // retry — the server has already reported the failure.
+    if (result.value === 'failed') {
+      addToast(
+        "Matches found, but the recipe wasn't updated. Tap Canonicalise again to retry.",
+        'destructive',
+      );
+      return;
+    }
     addToast('Matching complete.', 'success');
   }
 

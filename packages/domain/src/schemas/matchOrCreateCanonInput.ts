@@ -27,3 +27,5 @@ export const MatchOrCreateCanonOutputSchema = z.union([
     error: z.any(),
   }),
 ]);
+
+export type MatchOrCreateCanonOutput = z.infer<typeof MatchOrCreateCanonOutputSchema>;

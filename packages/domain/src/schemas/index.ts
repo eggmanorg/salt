@@ -30,6 +30,7 @@ export {
   MatchOrCreateCanonInputSchema,
   MatchOrCreateCanonOutputSchema,
 } from './matchOrCreateCanonInput.js';
+export type { MatchOrCreateCanonOutput } from './matchOrCreateCanonInput.js';
 // Browser→CF trace-continuity wire envelopes (issue #362): the base callable
 // input + an optional, named, typed `traceparent` transport field. The CF
 // entrypoint validates these, strips `traceparent`, and passes the pure domain
@@ -57,8 +58,16 @@ export {
   CanonicaliseRecipeIngredientsInputSchema,
   CanonicaliseRecipeIngredientsItemSchema,
   CanonicaliseRecipeIngredientsOutputSchema,
+  CanonicaliseRecipeIngredientsResultsSchema,
+  CanonicaliseRecipeIngredientsEnvelopeSchema,
 } from './canonicaliseRecipeIngredientsInput.js';
-export type { CanonicaliseRecipeIngredientsInput } from './canonicaliseRecipeIngredientsInput.js';
+export type {
+  CanonicaliseRecipeIngredientsInput,
+  CanonicaliseRecipeIngredientsEnvelope,
+} from './canonicaliseRecipeIngredientsInput.js';
+
+export { PersistenceOutcomeSchema } from './persistenceOutcome.js';
+export type { PersistenceOutcome } from './persistenceOutcome.js';
 
 export { RegenerateCanonIconInputSchema } from './regenerateCanonIcon.js';
 export { RegenerateProductFormIconInputSchema } from './regenerateProductFormIcon.js';

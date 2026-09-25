@@ -1091,7 +1091,8 @@ through the `canonicaliseRecipeIngredients` callable (issue #187):
   and runs `resolveOne` per ingredient against a growing in-memory snapshot so
   two ingredients resolving to the same new item collapse to one canon item.
 - Results come back as an **order-preserving array**, one `{ kind, value/error }`
-  per input item.
+  per input item — bare when the caller named no recipe, and wrapped as
+  `{ results, persistence }` when it did (#1601; see the next bullet).
 - **The function writes `canonId` + `matchState` back onto the recipe itself
   (#1434), when the caller named one.** It used to hand that half back to the
   browser, as the statement _after_ a two-minute `await` — so a locked phone or a
@@ -1101,7 +1102,10 @@ through the `canonicaliseRecipeIngredients` callable (issue #187):
   folding results onto rows by `ingredientId`, skipping ids the document no
   longer has, stamping `updatedAt`, and never throwing — a failure is logged and
   reported and the results still return (Rule 10, `persistAuthoredRecipe`'s
-  shape). The client applies nothing optimistically and registers no
+  shape) — beside a `persistence` outcome (`written` / `skipped` / `failed`,
+  #1601), so the Canonicalise toast can say the rows were not updated instead of
+  "Matching complete.". The server reports a `failed` fold; the client does not
+  report it again. The client applies nothing optimistically and registers no
   `latestLocalEdit`: a local-edit stamp for a write it is not making would make
   `applySnapshot` discard the server's own result.
 - **`recipeId` is optional, and the absent arm is a different job, not a

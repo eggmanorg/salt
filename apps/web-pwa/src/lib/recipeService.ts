@@ -14,7 +14,12 @@ import {
   saveShoppingListItem,
 } from '@salt/firebase-sync';
 import { createObservabilityErrorReportingAdapter, startUserActionSpan } from '@salt/observability';
-import type { AuthorRecipeInput, DescribeRecipeSceneInput, RecipeDoc } from '@salt/domain/schemas';
+import type {
+  AuthorRecipeInput,
+  DescribeRecipeSceneInput,
+  PersistenceOutcome,
+  RecipeDoc,
+} from '@salt/domain/schemas';
 import { reportIfFailed, reportSubscriptionError, reportWriteError } from './errorReporting.js';
 import {
   addItem,
@@ -912,9 +917,15 @@ export function takeImportedDraft(expectedId: string): Recipe | null {
 // The selection rules stay here, because they read the browser's live canon
 // snapshot: an ingredient already matched to a canon item that still exists is
 // skipped, one whose canon item has been deleted is re-matched.
+//
+// THE ANSWER IS WHETHER THE RECIPE WAS UPDATED (issue #1601): `ok` carries the
+// function's own `PersistenceOutcome` for that fold, `skipped` when there was
+// nothing to send. A `failed` outcome is still `ok` here — the call succeeded and
+// the matching is durable — and it is NOT reported: the function reported it
+// when the write failed, and a second report would count one failure twice.
 export async function canonicaliseIngredients(
   recipe: Recipe,
-): Promise<ReadResult<void, DomainError>> {
+): Promise<ReadResult<PersistenceOutcome, DomainError>> {
   // Collect ingredients that need canonicalisation: parsed and without a live match
   // (pending, failed, or matched-but-canon-item-deleted).
   const canonIds = new Set(getCanonItemsSnapshot().map((c) => c.id));
@@ -927,7 +938,7 @@ export async function canonicaliseIngredients(
     }
   }
 
-  if (toProcess.length === 0) return success(undefined);
+  if (toProcess.length === 0) return success('skipped');
 
   const batchResult = await callCanonicaliseRecipeIngredients({
     recipeId: recipe.id,
@@ -946,8 +957,8 @@ export async function canonicaliseIngredients(
   // failures — so they are still intentionally not reported.
   if (batchResult.kind === 'err') return reportIfFailed(getErrorReporter(), batchResult);
   // The returned results are not folded here: the function has already recorded
-  // them on the recipe, and the subscription delivers them.
-  return success(undefined);
+  // them on the recipe (or says it could not), and the subscription delivers them.
+  return success(batchResult.value.persistence);
 }
 
 // Parse and canon-match a single ingredient line. Chains callParseRecipeIngredients

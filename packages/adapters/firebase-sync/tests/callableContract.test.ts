@@ -259,10 +259,12 @@ const rows: readonly Row[] = [
     name: 'callCanonicaliseRecipeIngredients',
     callable: 'canonicaliseRecipeIngredients',
     timeout: 120_000,
-    data: [],
+    // The input names a recipe, so the function answers with the envelope
+    // (issue #1601), forwarded untouched inside the `ok` wrap.
+    data: { results: [], persistence: 'written' },
     call: () => barrel.callCanonicaliseRecipeIngredients(cast(CANONICALISE_INPUT)),
     payload: CANONICALISE_INPUT,
-    ok: { kind: 'ok', value: [] },
+    ok: { kind: 'ok', value: { results: [], persistence: 'written' } },
     traced: {
       call: () => barrel.callCanonicaliseRecipeIngredients(cast(CANONICALISE_INPUT), TRACEPARENT),
       payload: { ...CANONICALISE_INPUT, traceparent: TRACEPARENT },

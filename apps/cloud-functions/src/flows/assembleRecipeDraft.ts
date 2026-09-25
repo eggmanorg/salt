@@ -4,6 +4,7 @@ import type {
   RecipeSourceDoc,
   IngredientGroupDoc,
   IngredientDoc,
+  MatchOrCreateCanonOutput,
 } from '@salt/domain/schemas';
 import { RecipeSchema } from '@salt/domain/schemas';
 import { normaliseTags, reconcileRecipePhases } from '@salt/domain';
@@ -58,7 +59,7 @@ type ParsedIngredient = Awaited<
   ReturnType<typeof parseRecipeIngredientsFlow>
 >[number]['items'][number]['parsed'];
 
-type CanonResult = Awaited<ReturnType<typeof canonicaliseRecipeIngredientsFlow>>[number];
+type CanonResult = MatchOrCreateCanonOutput;
 
 export async function assembleRecipeDraft(
   raw: LibrarianOutput,
@@ -224,8 +225,13 @@ export async function assembleRecipeDraft(
           rawText,
         })),
       });
+      // No `recipeId` is sent, so this is the content arm and the answer is the
+      // bare array. The union type still admits the `{ results, persistence }`
+      // envelope (issue #1601); unwrapping it rather than asserting it away keeps
+      // this correct should the call ever name a recipe.
+      const slots = Array.isArray(canonResults) ? canonResults : canonResults.results;
       toCanon.forEach((rawText, k) => {
-        const r = canonResults[k];
+        const r = slots[k];
         if (r) canonByRawText.set(rawText, r);
       });
     } catch {
