@@ -110,7 +110,16 @@ beforeEach(() => {
 
 describe('writeChefChatTurn — the turn reaches Firestore', () => {
   it('appends both turns to the document it read', async () => {
-    const { db, set, collection } = fakeDb({ exists: true, data: storedSession() });
+    // Non-null values for every carried-forward field, so the assertions at the
+    // end catch a write that resets one to null, not only one that drops it.
+    const { db, set, collection } = fakeDb({
+      exists: true,
+      data: storedSession({
+        title: 'Pilaf ideas',
+        basedOnRecipeId: 'recipe-7',
+        reopenedAt: '2026-09-18T09:00:00.000Z',
+      }),
+    });
 
     await writeChefChatTurn(db, turn());
 
@@ -136,10 +145,10 @@ describe('writeChefChatTurn — the turn reaches Firestore', () => {
     // brought back that this write doesn't touch has to be carried forward
     // explicitly. A later edit that dropped one of these would do it silently —
     // `reopenedAt` in particular would flip a reopened chat back to read-only.
-    expect(doc['title']).toBe('New chat');
+    expect(doc['title']).toBe('Pilaf ideas');
     expect(doc['createdAt']).toBe('2026-09-17T08:00:00.000Z');
-    expect(doc['reopenedAt']).toBeNull();
-    expect(doc['basedOnRecipeId']).toBeNull();
+    expect(doc['reopenedAt']).toBe('2026-09-18T09:00:00.000Z');
+    expect(doc['basedOnRecipeId']).toBe('recipe-7');
   });
 
   it('appends to the STORED transcript, not to the history that was on the wire', async () => {

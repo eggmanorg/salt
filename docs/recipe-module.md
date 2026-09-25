@@ -643,7 +643,8 @@ and from every planner day already pointing at them.
   migrates it.
 - **Phase 2.** `scripts/migrate-recipe-kind-outing-to-special.mjs` rewrites the
   eight documents (a field `.update()`, never a full `setDoc` — a whole-document
-  write would clobber a `thumbnail` or `embedding` a trigger holds), then the
+  write would clobber the fields `onRecipeWritten` writes back partially:
+  `image`/`imageBrief`, `kit`/`kitInferredAt`, `metadata.phases`/`metadata.timingSummary`), then the
   `z.preprocess` and its test are removed and replaced by one asserting `outing`
   is now rejected.
 
@@ -1113,8 +1114,9 @@ through the `canonicaliseRecipeIngredients` callable (issue #187):
 - **What it does not buy.** The match now survives **the browser going away**. It
   is not un-clobberable: `recipes/{id}` is written whole by the client, so an
   in-place edit composed from a copy older than the function's write still
-  overwrites it — document-level LWW, the same contract that governs `thumbnail`
-  and `embedding`. The transaction narrows the window from the whole 120 s call
+  overwrites it — document-level LWW, the same contract that governs the fields
+  `onRecipeWritten` writes back (`image`/`imageBrief`, `kit`/`kitInferredAt`,
+  `metadata.phases`/`metadata.timingSummary`). The transaction narrows the window from the whole 120 s call
   to the transaction itself; it does not close it.
 - Unmatched/ambiguous results flow into the **existing review queue** via
   `needs_approval` — same semantics as all other entry points.

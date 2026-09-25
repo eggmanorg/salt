@@ -13,7 +13,9 @@
 //      import and chat-authored recipe; and `scripts/rematch-ingredients.ts`. The
 //      three import paths already persist at the right moment, once and whole, via
 //      `persistAuthoredRecipe`, so a write here would fire mid-assembly, writing
-//      partial ingredient state for a recipe that does not exist yet. The script's
+//      partial ingredient state — onto a recipe that does not exist yet on the
+//      import and create paths, and onto a LIVE recipe the family can already
+//      read on `authorRecipe`'s edit path (a non-null `baseRecipe`). The script's
 //      default mode is deliberately read-only, and a write here would break that
 //      promise silently.
 //
