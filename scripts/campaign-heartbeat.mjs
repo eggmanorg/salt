@@ -15,8 +15,10 @@
  *   BREACHED #<issue> <worker cell> ended HH:MM     (one per breach)
  *
  * Exit 0 no breach, 1 at least one breach, 2 input it cannot read: no
- * `## Status` table, or a `dispatched` row without its two times. Exit 2 is
- * never an empty pool.
+ * `## Status` table; a `dispatched` row without its two times; a Note with more
+ * than one `budget to HH:MM` (a retry appended rather than replaced it); or a
+ * row whose resolved budget exceeds the 360-minute cap. Exit 2 is never an
+ * empty pool — fix the row it names, by hand, then re-run.
  *
  * Dispatch mode prints the budget and the two cells to write:
  *

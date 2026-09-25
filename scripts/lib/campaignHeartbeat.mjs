@@ -27,17 +27,29 @@
 //
 // THE ROWS. A live row is one whose State cell is `dispatched` — the only state
 // in the template that holds a worker. Its Worker cell ends `, HH:MM` (the
-// dispatch time) and its Note contains `budget to HH:MM` anywhere, so a retried
-// row (`retried: <reason>`, #1585) or any other annotation parses unchanged. A
-// live row that does not fit is an ERROR, never skipped — a skipped row is an
-// unwatched worker, the exact failure the heartbeat exists to prevent. Rows in
-// any other state are not read beyond their State cell.
+// dispatch time) and its Note contains exactly one `budget to HH:MM`, so a
+// retried row (`retried: <reason>`, #1585) or any other annotation parses
+// unchanged. A live row that does not fit is an ERROR, never skipped — a
+// skipped row is an unwatched worker, the exact failure the heartbeat exists to
+// prevent. Rows in any other state are not read beyond their State cell.
+//
+// TWO MORE WAYS A ROW CAN LIE, BOTH ERRORS. A retry appends its new
+// `budget to HH:MM` after the old one (#1585) rather than replacing it, and a
+// stale first match combined with `end <= dispatched` rolling to the next day
+// can sleep the heartbeat for nearly 24 hours over a live, unwatched retry —
+// so a Note with more than one `budget to HH:MM` is refused, not guessed at.
+// Likewise a resolved budget (end minus dispatch) over the 360-minute cap means
+// one of the two cells is stale, not a valid long-running row — refused rather
+// than trusted. Both name the row and ask for it to be fixed by hand, the same
+// posture as an unparseable row above.
 
 const WORKER_TIME = /,\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
 const NOTE_END = /\bbudget to ([01]\d|2[0-3]):([0-5]\d)\b/;
+const NOTE_END_ALL = /\bbudget to ([01]\d|2[0-3]):([0-5]\d)\b/g;
 const COLUMNS = ['Issue', 'Worker', 'State', 'Note'];
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
+const MAX_BUDGET_MINUTES = 360;
 
 /**
  * Per-worker budget in minutes: `min(360, max(180, 90 × phases))`, `phases`
@@ -147,10 +159,22 @@ export function heartbeat(rows, now) {
         : '"budget to HH:MM" in its Note cell';
       throw new Error(`dispatched row ${row.issue || '(no issue)'} has no ${what}: ${row.line}`);
     }
+    const noteMatches = row.note.match(NOTE_END_ALL) ?? [];
+    if (noteMatches.length > 1) {
+      throw new Error(
+        `dispatched row ${row.issue || '(no issue)'} has more than one "budget to HH:MM" in its Note cell (a retry appends rather than replaces) — fix the row by hand: ${row.line}`,
+      );
+    }
     let dispatched = atTime(now, Number(d[1]), Number(d[2]));
     if (dispatched > now) dispatched = new Date(dispatched.getTime() - DAY);
     let end = atTime(dispatched, Number(e[1]), Number(e[2]));
     if (end <= dispatched) end = new Date(end.getTime() + DAY);
+    const budgetMinutesUsed = (end.getTime() - dispatched.getTime()) / MINUTE;
+    if (budgetMinutesUsed > MAX_BUDGET_MINUTES) {
+      throw new Error(
+        `dispatched row ${row.issue || '(no issue)'} resolves to a ${budgetMinutesUsed}-minute budget, over the ${MAX_BUDGET_MINUTES}-minute cap — its Worker or Note cell is stale: ${row.line}`,
+      );
+    }
     return { issue: row.issue, worker: row.worker, end };
   });
 

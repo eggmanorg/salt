@@ -276,6 +276,34 @@ describe('heartbeat', () => {
   });
 });
 
+describe('a retried row whose Note was appended rather than replaced (#1587 follow-up)', () => {
+  it('throws when the Note holds more than one "budget to HH:MM"', () => {
+    const body = ledger(
+      row(
+        '#5',
+        'dispatched',
+        'agent b2, 13:50',
+        '3 phases, budget to 13:44; retried: timeout; 3 phases, budget to 18:20',
+      ),
+    );
+    expect(() => run(at('14:00'), body)).toThrow(/more than one "budget to HH:MM"/);
+    expect(() => run(at('14:00'), body)).toThrow(/#5/);
+  });
+
+  it('throws when the resolved budget exceeds the 360-minute cap', () => {
+    // A single, stale "budget to" combined with the day-roll means this row
+    // resolves to a ~24h budget rather than a valid one.
+    const body = ledger(row('#6', 'dispatched', 'agent c3, 13:50', '3 phases, budget to 13:44'));
+    expect(() => run(at('14:00'), body)).toThrow(/over the 360-minute cap/);
+    expect(() => run(at('14:00'), body)).toThrow(/#6/);
+  });
+
+  it('does not throw on a normal row within the cap', () => {
+    const body = ledger(row('#7', 'dispatched', 'agent d4, 09:00', '2 phases, budget to 12:00'));
+    expect(() => run(at('09:30'), body)).not.toThrow();
+  });
+});
+
 describe('the CLI, spawned', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'campaign-heartbeat-'));
   const minutesFromNow = (m) => formatHHMM(new Date(Date.now() + m * 60_000));
