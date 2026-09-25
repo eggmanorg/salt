@@ -61,7 +61,7 @@
 //   node scripts/board.mjs parent 1234 --of 1129            # sub-issue link
 //   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
 //   node scripts/board.mjs release --sha <deployed sha>
-//   node scripts/board.mjs rollup 1364                      # a closed sub-issue → its checklist
+//   node scripts/board.mjs rollup 1364                      # a closed issue → its checklist, and up
 //   node scripts/board.mjs check
 
 import { execFileSync } from 'node:child_process';
@@ -69,7 +69,7 @@ import { execFileSync } from 'node:child_process';
 import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
 import { closedAboveOpenWorkMessage, openDescendants } from './lib/boardHierarchy.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
-import { NUDGE_MARKER, tickTask, verdict } from './lib/boardRollup.mjs';
+import { NUDGE_MARKER, rollupTargets, tickTask, verdict } from './lib/boardRollup.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -973,7 +973,7 @@ function cmdCheck(project) {
 }
 
 /**
- * Roll a closed issue up to the checklist that asked for it.
+ * Roll a closed issue up to the checklist that asked for it — and on up.
  *
  * The gap this closes, and why no existing command could: `/salt-campaign` files
  * a `campaign follow-ups:` issue, hangs the issues that action its lines off it
@@ -983,33 +983,110 @@ function cmdCheck(project) {
  * box unticked; #1370 was closed by hand the same way. See lib/boardRollup.mjs
  * for what this deliberately cannot see.
  *
- * Two tokens, and the split is not incidental: the ambient GH_TOKEN writes the
- * project field (PROJECT_TOKEN in Actions), and ISSUE_WRITE_TOKEN — the Actions
- * GITHUB_TOKEN — writes the issue. A GITHUB_TOKEN-authored close raises no
- * further `issues` event, so a parent that is itself somebody's sub-issue does
- * not cascade.
+ * ONE CLOSE RE-EVALUATES TWO KINDS OF ISSUE (`rollupTargets`): its sub-issue
+ * parent, and every open campaign ledger whose title names it. The second is
+ * how a PARKED campaign's ledger closes once the parked issue finally lands —
+ * that issue is never attached beneath the ledger.
+ *
+ * AND IT CASCADES, IN THIS PROCESS (#1606). Two tokens, and the split is not
+ * incidental: the ambient GH_TOKEN writes the project field (PROJECT_TOKEN in
+ * Actions), and ISSUE_WRITE_TOKEN — the Actions GITHUB_TOKEN — writes the issue.
+ * A GITHUB_TOKEN-authored close raises no further `issues` event, so a
+ * follow-ups issue closed HERE never woke the ledger above it: #1485 closed
+ * through this and #1466 was never asked. So every issue this closes is treated
+ * as the next closed child and rolled up in turn, each hop applying the same
+ * `verdict` — nothing closes that would not have closed had a person closed the
+ * child. It stops at the first `wait` or `nudge`, at an issue with nothing to
+ * re-evaluate, or after MAX_HOPS levels: GitHub nests sub-issues at most eight
+ * deep, so the cap only bounds a chain that also runs sideways through ledgers.
  */
+const MAX_HOPS = 8;
+
 function cmdRollup(project, [num]) {
-  const child = Number(num);
-  if (!Number.isInteger(child)) die('usage: board.mjs rollup <closed issue>');
+  const first = Number(num);
+  if (!Number.isInteger(first)) die('usage: board.mjs rollup <closed issue>');
   const writeToken = process.env.ISSUE_WRITE_TOKEN || undefined;
 
+  const closedHere = new Set();
+  let queue = [first];
+  for (let hop = 0; queue.length; hop++) {
+    if (hop === MAX_HOPS) {
+      console.log(
+        `stopping after ${MAX_HOPS} levels of cascade — not rolled up: ` +
+          queue.map((n) => `#${n}`).join(', '),
+      );
+      return;
+    }
+    const next = [];
+    for (const child of queue) {
+      for (const target of rollupTargetsOf(child)) {
+        if (closedHere.has(target)) continue;
+        if (rollupOne(project, child, target, writeToken)) {
+          closedHere.add(target);
+          next.push(target);
+        }
+      }
+    }
+    queue = next;
+  }
+}
+
+/** `rollupTargets` for one closed issue, fetched live. */
+function rollupTargetsOf(child) {
   const c = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${child}){
-    number state parent{ id number title state body } } } }`).repository?.issue;
+    state parent{ number state title } } } }`).repository?.issue;
   if (!c) die(`issue #${child} not found in ${OWNER}/${REPO}`);
   if (c.state !== 'CLOSED') {
     console.log(`#${child} is not closed — nothing to roll up`);
-    return;
+    return [];
   }
-  const parent = c.parent;
-  if (!parent) {
-    console.log(`#${child} has no parent — nothing to roll up`);
-    return;
-  }
+  // Every open title with the WORD `campaign` in it, filtered by `rollupTargets`
+  // — which drops `campaign follow-ups:` through `isLedger` and keeps only the
+  // ledgers naming this child. The number cannot go in the query: GitHub's
+  // search does not match `1588` against a title's `#1588`. The first hundred
+  // are a floor, not a guarantee; five ledgers were open when this was written.
+  const ledgers = gql(`{ search(type:ISSUE, first:100,
+    query:"repo:${OWNER}/${REPO} is:issue is:open in:title campaign"){
+    nodes{ ... on Issue { number state title } } } }`).search.nodes;
+  const targets = rollupTargets(child, { parent: c.parent, ledgers });
+  if (!targets.length)
+    console.log(
+      c.parent
+        ? `#${child}'s parent #${c.parent.number} is already closed, and no open ledger names it`
+        : `#${child} has no parent and no open ledger names it — nothing to roll up`,
+    );
+  return targets;
+}
+
+/** The open issues among `numbers`, fetched in one round trip. */
+function openIssues(numbers) {
+  if (!numbers.length) return [];
+  const data = gql(
+    `{ repository(owner:"${OWNER}",name:"${REPO}"){ ${numbers
+      .map(
+        (n) =>
+          `i${n}: issueOrPullRequest(number:${n}){ ... on Issue{ state } ... on PullRequest{ state } }`,
+      )
+      .join(' ')} } }`,
+    undefined,
+    { notFoundIsNull: true },
+  )?.repository;
+  // A number the query could not resolve counts as OPEN: a run-set member this
+  // cannot see must hold the ledger open, never let it close.
+  return numbers.filter((n) => !['CLOSED', 'MERGED'].includes(data?.[`i${n}`]?.state));
+}
+
+/** Tick, judge and act on one parent. True when it closed it. */
+function rollupOne(project, child, number, writeToken) {
+  // Re-read here rather than trusting what found it: an earlier hop in this run
+  // may have ticked it, and another run may have closed it.
+  const parent = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${number}){
+    id number title state body } } }`).repository.issue;
   if (parent.state !== 'OPEN') {
-    console.log(`#${child}'s parent #${parent.number} is already closed`);
-    return;
+    console.log(`#${number} is already closed`);
+    return false;
   }
+  const ledger = isLedger(parent.title);
 
   // Tick first, so the verdict below reads the body this run just wrote rather
   // than the one it was handed.
@@ -1031,17 +1108,19 @@ function cmdRollup(project, [num]) {
   // `check` now fails on, and this job runs on every `issues: closed` — so the
   // walk that feeds the check feeds the closer too, rather than each keeping
   // its own idea of what "nothing left open" means.
+  const runSet = ledger ? ledgerRunSet(parent.title) : [];
   const v = verdict({
     title: parent.title,
     body,
     openBeneath: openDescendants(parent.number, fetchSubIssueTree([parent.number])),
+    openRunSet: ledger ? openIssues(runSet) : undefined,
   });
 
   if (v.action === 'wait') {
     console.log(
       `#${parent.number} stays open — still open: ${v.open.map((n) => `#${n}`).join(', ')}`,
     );
-    return;
+    return false;
   }
 
   if (v.action === 'nudge') {
@@ -1051,13 +1130,13 @@ function cmdRollup(project, [num]) {
     ).repository.issue.comments.nodes.some((n) => n.body.includes(NUDGE_MARKER));
     if (already) {
       console.log(`#${parent.number} — already nudged`);
-      return;
+      return false;
     }
     // Quoted, not repeated as live task items: a second interactive checklist on
     // the comment is a second place to tick, and only the body's counts.
     const lines = v.unticked.map((t) => `> ${t.text.trim().slice(0, 140)}`).join('\n');
     const note =
-      `${NUDGE_MARKER}\nEvery sub-issue of this one is now closed (the last was #${child}), ` +
+      `${NUDGE_MARKER}\n#${child} just closed and nothing is open beneath this one any more, ` +
       `but it is not being closed automatically — ${v.why}.\n\n` +
       (lines ? `Still unticked:\n\n${lines}\n\n` : '') +
       `Tick what has shipped and close this, or say what is outstanding. ` +
@@ -1067,20 +1146,25 @@ function cmdRollup(project, [num]) {
       writeToken,
     );
     console.log(`#${parent.number} — nudged: ${v.why}`);
-    return;
+    return false;
   }
 
   // A closed board item must carry `Merged` or `Released` — `check` fails on one
-  // that does not, and this issue never had a PR to move it there.
+  // that does not, and this issue never had a PR to move it there. A ledger is
+  // promoted on to `Released` by `release`, from its run-set.
   const item = itemFor(project, parent.number);
   if (item && item.status !== 'Merged' && item.status !== 'Released') {
     setSelect(project, item.id, 'Status', 'Merged');
     console.log(`#${parent.number} → Status=Merged`);
   }
 
-  const done =
-    `Closing — every one of the ${v.items} items on this list is ticked and every sub-issue is ` +
-    `closed, the last being #${child}.`;
+  const done = ledger
+    ? `Closing — all ${runSet.length} issues this campaign's title names are closed, nothing is ` +
+      `open beneath it` +
+      (v.items ? `, and all ${v.items} of its task lines are ticked` : '') +
+      `. The last to close was #${child}.`
+    : `Closing — every one of the ${v.items} items on this list is ticked and every sub-issue is ` +
+      `closed, the last being #${child}.`;
   gql(
     `mutation{ addComment(input:{subjectId:"${parent.id}", body:${JSON.stringify(done)}}){ clientMutationId } }`,
     writeToken,
@@ -1089,7 +1173,12 @@ function cmdRollup(project, [num]) {
     `mutation{ closeIssue(input:{issueId:"${parent.id}", stateReason: COMPLETED}){ issue{ number } } }`,
     writeToken,
   );
-  console.log(`#${parent.number} closed — ${v.items} items, every sub-issue closed`);
+  console.log(
+    ledger
+      ? `#${parent.number} closed — ledger, run-set of ${runSet.length} all closed`
+      : `#${parent.number} closed — ${v.items} items, every sub-issue closed`,
+  );
+  return true;
 }
 
 const [command, ...args] = process.argv.slice(2);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { taskLines, tickTask, verdict } from '../lib/boardRollup.mjs';
+import { rollupTargets, taskLines, tickTask, verdict } from '../lib/boardRollup.mjs';
 
 // #1335's real shape: lines citing the campaign's PR, not the issues that
 // actioned them. It is the body this deliberately cannot tick, and the reason
@@ -127,15 +127,110 @@ describe('verdict', () => {
     expect(v).toMatchObject({ action: 'nudge', why: 'it states no checklist of its own' });
   });
 
-  // A ledger closes by hand: a parked branch is unfinished business its
-  // children cannot show, and since #1534 Finish leaves it open anyway.
-  it('never closes a campaign ledger', () => {
-    const v = verdict({ title: 'campaign: x (#1)', body: '- [x] all done', openBeneath: closed });
-    expect(v).toMatchObject({ action: 'nudge', why: 'a campaign ledger closes by hand' });
+  // A LEDGER CLOSES ON ITS OWN RECORD (#1606). It used to be refused outright,
+  // "closed by hand", which in practice meant never: #1466, #1497 and #1565 sat
+  // finished and open. Its done-ness is its run-set plus any `## Sweep` lines.
+  describe('a campaign ledger', () => {
+    const title = 'campaign: board fixes (#1587 #1588 #1589 #1590)';
+    // #1466/#1497/#1565's real shape: no task lines at all outside the fence.
+    const plain = ['## Plan', '```', '- [ ] template line', '```', '## Status', '| a |'].join('\n');
+
+    it('closes with nothing beneath, its run-set closed and no task lines', () => {
+      expect(verdict({ title, body: plain, openBeneath: closed, openRunSet: [] })).toEqual({
+        action: 'close',
+        items: 0,
+      });
+    });
+
+    it('closes when every `## Sweep` line is ticked', () => {
+      const body = `${plain}\n## Sweep\n- [x] a stale comment (#1598)`;
+      expect(verdict({ title, body, openBeneath: closed, openRunSet: [] })).toEqual({
+        action: 'close',
+        items: 1,
+      });
+    });
+
+    // THE PARKED CASE. A parked run-set issue is never attached beneath the
+    // ledger, so only the title can hold the ledger open for it.
+    it('waits on an open run-set issue, naming it', () => {
+      const v = verdict({ title, body: plain, openBeneath: closed, openRunSet: [1590, 1588] });
+      expect(v).toEqual({ action: 'wait', open: [1588, 1590] });
+    });
+
+    it('waits on open work beneath it before asking about the run-set', () => {
+      const v = verdict({ title, body: plain, openBeneath: [1599], openRunSet: [1590] });
+      expect(v).toEqual({ action: 'wait', open: [1599] });
+    });
+
+    it('nudges on an unticked `## Sweep` line', () => {
+      const body = `${plain}\n## Sweep\n- [ ] a stale comment`;
+      const v = verdict({ title, body, openBeneath: closed, openRunSet: [] });
+      expect(v).toMatchObject({ action: 'nudge', why: '1 item still unticked' });
+    });
+
+    it('nudges rather than closing when its title names no run-set', () => {
+      const v = verdict({ title: 'campaign: x', body: plain, openBeneath: closed, openRunSet: [] });
+      expect(v).toMatchObject({ action: 'nudge', why: 'its title names no run-set' });
+    });
+
+    // Omitted, a parked campaign's ledger would read as "nothing parked" and
+    // close — the same silent-wrong-closure shape the openBeneath guard refuses.
+    it('throws rather than reading a missing openRunSet as "nothing parked"', () => {
+      expect(() => verdict({ title, body: plain, openBeneath: closed })).toThrow(/openRunSet/);
+    });
+
+    it('does not demand openRunSet of anything that is not a ledger', () => {
+      const v = verdict({ title: 'campaign follow-ups: x', body: '- [x] a', openBeneath: closed });
+      expect(v).toEqual({ action: 'close', items: 1 });
+    });
   });
 
   it('says one item singular', () => {
     const v = verdict({ title: 'campaign follow-ups: x', body: '- [ ] a', openBeneath: closed });
     expect(v.why).toBe('1 item still unticked');
+  });
+});
+
+describe('rollupTargets', () => {
+  const ledger = (number, title, state = 'OPEN') => ({ number, title, state });
+
+  it('is the open sub-issue parent, then every open ledger naming the child', () => {
+    const t = rollupTargets(1588, {
+      parent: { number: 1586, state: 'OPEN' },
+      ledgers: [
+        ledger(1593, 'campaign: a (#1587 #1588)'),
+        ledger(1600, 'campaign: b (#1500)'),
+        ledger(1601, 'campaign: c (+#1588)'),
+      ],
+    });
+    expect(t).toEqual([1586, 1593, 1601]);
+  });
+
+  it('lists an issue that is both the parent and a ledger naming the child once', () => {
+    const l = ledger(1593, 'campaign: a (#1588)');
+    expect(rollupTargets(1588, { parent: l, ledgers: [l] })).toEqual([1593]);
+  });
+
+  it('never targets a closed ledger or a closed parent', () => {
+    const t = rollupTargets(1588, {
+      parent: { number: 1586, state: 'CLOSED' },
+      ledgers: [ledger(1593, 'campaign: a (#1588)', 'CLOSED')],
+    });
+    expect(t).toEqual([]);
+  });
+
+  // The search that feeds this matches words, not prefixes, so a follow-ups
+  // issue naming the child can reach it. `isLedger` is the test, not the search.
+  it('ignores a campaign follow-ups issue whose title names the child', () => {
+    const t = rollupTargets(1588, {
+      parent: null,
+      ledgers: [ledger(1599, 'campaign follow-ups: a (#1588)')],
+    });
+    expect(t).toEqual([]);
+  });
+
+  it('matches the child exactly, not as a prefix', () => {
+    const t = rollupTargets(158, { parent: null, ledgers: [ledger(1593, 'campaign: a (#1588)')] });
+    expect(t).toEqual([]);
   });
 });

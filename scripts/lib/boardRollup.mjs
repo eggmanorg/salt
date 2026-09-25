@@ -11,6 +11,12 @@
 // two days with all three children closed, and #1370 was closed by hand with
 // six boxes still unticked.
 //
+// A CAMPAIGN LEDGER CLOSES HERE TOO (#1606), on its own record rather than on a
+// checklist: nothing open beneath it, every issue its TITLE names closed, and no
+// unticked task line (its `## Sweep` lines, when it has any). Until #1606 it was
+// refused outright and "closed by hand", which in practice meant never — #1466,
+// #1497 and #1565 sat finished and open, holding their parents open above them.
+//
 // WHAT THIS CANNOT SEE, stated rather than implied (CLAUDE.md rule 12).
 //
 //   A tick only ever follows a line that NAMES the issue that closed. #1335's
@@ -27,10 +33,19 @@
 //   every sub-issue closed and still hold real work, which is exactly what the
 //   unticked-line gate catches.
 //
-//   Nothing here ever un-ticks, re-opens, or closes a parent that states no
-//   checklist of its own. An epic whose children all closed is a human's call.
+//   A ledger's run-set is what its TITLE names (`ledgerRunSet`'s own caveat in
+//   ./boardTitles.mjs). An issue added to a campaign mid-run without a title
+//   edit does not hold the ledger open. And a ledger CAN close before its own
+//   Finish step, if every run-set issue has closed, nothing is open beneath it
+//   and a sub-issue closes in that window; Finish's `board.mjs parent
+//   <follow-ups> --of <ledger>` then reopens it, because an open child now sits
+//   under a closed parent. Accepted as a narrow window, not engineered away.
+//
+//   Nothing here ever un-ticks, re-opens, or closes a NON-ledger parent that
+//   states no checklist of its own. An epic whose children all closed is a
+//   human's call.
 
-import { isLedger } from './boardTitles.mjs';
+import { isLedger, ledgerRunSet } from './boardTitles.mjs';
 
 /**
  * Every task-list line in a body, in order, as `{ index, ticked, text }`.
@@ -83,18 +98,22 @@ export function tickTask(body, number) {
 /**
  * What should happen to the parent now one of its children has closed.
  *
- * `wait`  — work is still open beneath the parent. The common case, and silent.
+ * `wait`  — work is still open beneath the parent, or — for a ledger — a
+ *           run-set issue is still open. The common case, and silent.
  * `close` — nothing open beneath it and every box ticked. The issue's own record
- *           says it is finished, so finishing it invents nothing.
- * `nudge` — nothing open beneath it but the body still claims open work, or
- *           states no checklist at all. Says so on the issue and stops. A
- *           campaign ledger always lands here: it closes by hand, because a
- *           parked branch is unfinished business its children cannot show —
- *           and since #1534 it outlives its own campaign's Finish step, which
- *           leaves it open while the follow-ups issue beneath it is open.
+ *           says it is finished, so finishing it invents nothing. A ledger needs
+ *           no checklist to get here: zero task lines is zero unticked.
+ * `nudge` — nothing open beneath it but the body still claims open work, or —
+ *           for anything but a ledger — states no checklist at all, or is a
+ *           ledger whose title names no run-set. Says so on the issue and stops.
  *
  * `openBeneath` is every issue still open below the parent AT ANY DEPTH —
  * `openDescendants` in `./boardHierarchy.mjs` computes it from a fetched tree.
+ *
+ * `openRunSet` is, for a ledger only, every issue `ledgerRunSet(title)` names
+ * that is still open. It is what keeps a PARKED campaign's ledger open: a parked
+ * run-set issue is never attached beneath the ledger (salt-campaign.md → never
+ * re-parent a run-set issue), so `openBeneath` alone cannot see it.
  *
  * DEPTH, AND THAT IS A CORRECTION. This took `subIssues` and filtered it for
  * `state === 'OPEN'`, which reads DIRECT children only — so a parent whose own
@@ -112,23 +131,38 @@ export function tickTask(body, number) {
  * omission: left optional, a caller still passing `subIssues` would land
  * `openBeneath === undefined`, read as "nothing open", and take the CLOSE arm —
  * turning a stale call site into silent wrong closures rather than a stack
- * trace. So the one thing that can go red here does.
+ * trace. So the one thing that can go red here does. `openRunSet` is required
+ * of a ledger for the same reason: omitted, a parked campaign's ledger would
+ * close.
  */
-export function verdict({ title, body, openBeneath }) {
+export function verdict({ title, body, openBeneath, openRunSet }) {
   if (!Array.isArray(openBeneath))
     throw new TypeError(
       'verdict needs openBeneath: every issue open below the parent at any depth ' +
         '(openDescendants in ./boardHierarchy.mjs) — not the parent’s direct sub-issues',
     );
+  const ledger = isLedger(title);
+  if (ledger && !Array.isArray(openRunSet))
+    throw new TypeError(
+      'verdict needs openRunSet for a campaign ledger: every issue its title names ' +
+        '(ledgerRunSet in ./boardTitles.mjs) that is still open',
+    );
   const open = [...openBeneath].sort((a, b) => a - b);
   if (open.length) return { action: 'wait', open };
+  if (ledger && openRunSet.length)
+    return { action: 'wait', open: [...openRunSet].sort((a, b) => a - b) };
 
   const tasks = taskLines(body);
   const unticked = tasks.filter((t) => !t.ticked);
 
-  if (isLedger(title))
-    return { action: 'nudge', why: 'a campaign ledger closes by hand', unticked };
-  if (!tasks.length) return { action: 'nudge', why: 'it states no checklist of its own', unticked };
+  // "Every issue it names is closed" is vacuously true of a title naming none —
+  // `campaign: <slug>` with the numbers left off — and would close on no
+  // evidence at all. `ledgerFullyReleased` refuses the same case the same way.
+  if (ledger && !ledgerRunSet(title).length)
+    return { action: 'nudge', why: 'its title names no run-set', unticked };
+
+  if (!ledger && !tasks.length)
+    return { action: 'nudge', why: 'it states no checklist of its own', unticked };
   if (unticked.length)
     return {
       action: 'nudge',
@@ -136,6 +170,26 @@ export function verdict({ title, body, openBeneath }) {
       unticked,
     };
   return { action: 'close', items: tasks.length };
+}
+
+/**
+ * Which open issues one close should re-evaluate, in order: the closed issue's
+ * sub-issue parent, then every open ledger whose title names it.
+ *
+ * The second half is what closes a PARKED campaign's ledger once its parked
+ * issue finally lands: that issue is never beneath the ledger, so without it the
+ * ledger would get no verdict at all. `parent` and `ledgers` are
+ * `{ number, state, title? }`; a closed one is never a target, and an issue that
+ * is both the parent and a ledger naming the child is listed once.
+ */
+export function rollupTargets(child, { parent, ledgers }) {
+  const out = [];
+  if (parent?.state === 'OPEN') out.push(parent.number);
+  for (const l of ledgers ?? []) {
+    if (l.state !== 'OPEN' || !isLedger(l.title) || out.includes(l.number)) continue;
+    if (ledgerRunSet(l.title).includes(child)) out.push(l.number);
+  }
+  return out;
 }
 
 /** The hidden marker that makes the nudge idempotent across re-closes. */

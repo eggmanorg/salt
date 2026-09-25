@@ -5,7 +5,8 @@
 /**
  * A `/salt-campaign` ledger — the tracking issue that command opens so a fresh session
  * can resume, and the parent it hangs its own filings off. It is not work: no
- * `Queue`, no `Class`, closed by hand rather than through a PR, and GitHub's own
+ * `Queue`, no `Class`, closed by `board.mjs rollup` on its own record rather than
+ * through a PR (lib/boardRollup.mjs → `verdict`), and GitHub's own
  * "add item to project" workflow puts it on the board regardless. `check` skips
  * it in the untriaged rule, or every campaign that ever ran would sit in its
  * output forever.
@@ -155,7 +156,7 @@ export function ledgerShouldAttachTo(runSet, parentOf) {
 /**
  * Has every issue a ledger's title names reached `Released`?
  *
- * A ledger closes by hand and has no PR, so `board.mjs release` — which promotes
+ * A ledger has no PR, so `board.mjs release` — which promotes
  * `Merged` → `Released` by asking whether a closing PR's merge commit is an
  * ancestor of the deployed sha — can never promote one on its own. Left at that,
  * a ledger set to `Merged` on close would sit there forever while the work it

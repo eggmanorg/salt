@@ -190,7 +190,8 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
   rule above now fails, and seven of the eight issues reopened by hand that day
   were this exact step. Finish now leaves the ledger **open** whenever anything
   under it is, which for a campaign with any findings at all is always;
-  `board.mjs rollup` closes it later, when the follow-ups issue does.
+  `board.mjs rollup` closes it later (#1606), once nothing is open beneath it and
+  every issue its title names is closed — see the rollup section below.
 
 ---
 
@@ -388,7 +389,7 @@ that is populated.
 
 **A `/salt-campaign` ledger takes no work fields, but it does take a parent and a
 Status.** An issue titled `campaign:` is a coordination artefact: no `Queue`, no
-`Class`, closed by hand rather than by a PR, and it is the parent the campaign
+`Class`, closed by `board.mjs rollup` rather than by a PR, and it is the parent the campaign
 hangs its own filings off — which is also why it now outlives its own campaign,
 since one of those filings is the follow-ups issue and that stays open. `check` skips it in the untriaged rule, or every
 campaign that ever ran would sit in its output forever. `campaign follow-ups:`
@@ -710,9 +711,20 @@ does three things and refuses to do a fourth:
    item must carry and which no PR was ever going to set here — but only once nothing
    is open **anywhere beneath it** and every line is ticked.
 3. **Nudges instead** when nothing is open beneath it and the body still claims open
-   work, states no checklist at all, or is a `campaign:` ledger (a ledger closes by
-   hand, because a parked branch is unfinished business its children cannot show).
-   One comment, marked so a re-close does not repeat it.
+   work, or — for anything but a ledger — states no checklist at all. One comment,
+   marked so a re-close does not repeat it.
+
+**A `campaign:` ledger closes on its own record** (#1606): nothing open beneath it,
+every issue its **title** names closed, and no unticked task line (its `## Sweep`
+lines, when it has any — zero lines is zero unticked). Until #1606 it was refused
+outright, "closed by hand", which meant never: #1466, #1497 and #1565 sat finished
+and open. The title is what holds a **parked** campaign open, because a parked
+run-set issue is never attached beneath the ledger — so a close also re-evaluates
+every open ledger whose title names the closed issue, and the ledger closes when
+its parked issue finally does. Its limits: an issue added mid-run without a title
+edit does not hold it open, and a ledger can close before its own Finish if the
+whole run-set has closed and a sub-issue closes in that window — Finish's
+`board.mjs parent` then reopens it.
 
 **"Anywhere beneath it" is depth, and that is a correction** (#1534). This asked
 whether the parent's own sub-issues were closed, so a parent over an open
@@ -734,10 +746,13 @@ closed and still hold real work — the unticked-line gate is what catches that.
 
 **Two tokens, and neither will do alone.** `PROJECT_TOKEN` writes the project field
 and can only _read_ issues; the Actions `GITHUB_TOKEN` writes the issue and cannot
-touch an org project. `rollup` takes the issue half as `ISSUE_WRITE_TOKEN`, which is
-also why the close does not cascade: a `GITHUB_TOKEN`-authored close raises no
-further `issues` event, so a parent that is itself a sub-issue is left for its own
-close to handle. One hop per close, deliberately.
+touch an org project. `rollup` takes the issue half as `ISSUE_WRITE_TOKEN`, and a
+`GITHUB_TOKEN`-authored close raises no further `issues` event — so **the cascade
+happens in the same process** (#1606). Every issue `rollup` closes is treated as the
+next closed child and rolled up in turn, with the same verdict, stopping at the
+first wait or nudge, at an issue with nothing above it, or after eight levels. It
+used to stop at one hop, and that is how #1485 closed through the rollup while its
+ledger #1466 was never asked.
 
 ---
 

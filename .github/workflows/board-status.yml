@@ -25,8 +25,10 @@ name: Board status
 #
 # A seventh move is not a status at all: when an issue closes, the checklist it
 # hangs off gets its line ticked, and closes itself once every line is ticked and
-# every sibling is closed. `scripts/lib/boardRollup.mjs` holds what that cannot
-# see; the `rolled-up` job below holds why it needs two tokens.
+# every sibling is closed — as does a campaign ledger once everything its title
+# names is closed, and each such close carries on up. `scripts/lib/boardRollup.mjs`
+# holds what that cannot see; the `rolled-up` job below holds why it needs two
+# tokens.
 #
 # The issue→PR link is the `Closes #N` that /salt-run writes into every PR body. That
 # is not a convention this workflow invented: GitHub's own "linked issue" is
@@ -104,8 +106,9 @@ jobs:
   # field and can only READ issues; the Actions GITHUB_TOKEN writes the issue and
   # cannot touch an org project at all. `board.mjs rollup` takes the issue half
   # as ISSUE_WRITE_TOKEN. A GITHUB_TOKEN-authored close raises no further
-  # `issues` event by design, so a parent that is itself a sub-issue does not
-  # cascade — one hop per close, deliberately.
+  # `issues` event by design, so the cascade up to a grandparent, or to the
+  # ledger above a follow-ups issue, happens inside that one `board.mjs rollup`
+  # process rather than through another run of this job (#1606).
   #
   # Like `started`, this never reads the payload's body text: `board.mjs` fetches
   # both issues over GraphQL from the number alone, in a job holding the PAT.

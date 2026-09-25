@@ -62,7 +62,7 @@ Never later: an issue with no `Queue` is in no queue view, and `board.mjs check`
 - **An adjudicated blocking finding** — `Defect`, `Medium` (`Recommended` only per the rule below), `S`; parent: the ledger.
 - **The follow-ups checklist** (Finish) — `Refactor`, or `Defect` if most lines are; `Low`, or `Medium` if a line has a real user-facing consequence; `S` up to 3 lines, else `M`; parent: the ledger.
 
-**The ledger is exempt from `Queue` and `Class`, deliberately** — it is not work: no priority, closed by hand, there to be resumed from; `board.mjs check` skips `campaign:` titles for fields. `campaign follow-ups:` is ordinary work. **Not exempt from `Status` or reachability**: a closed ledger carries both, set at **Finish** step 2.
+**The ledger is exempt from `Queue` and `Class`, deliberately** — it is not work: no priority, no PR, closed by `board.mjs rollup` on its own record (**Finish** step 4), there to be resumed from; `board.mjs check` skips `campaign:` titles for fields. `campaign follow-ups:` is ordinary work. **Not exempt from `Status` or reachability**: a closed ledger carries both, set at **Finish** step 2.
 
 **A parent is not an epic**, and this command creates neither; `parent` writes only the sub-issue link, and a shared parent may be ordinary work. **The ledger goes up, the work stays put**: sub-issue links are a strict tree, so attaching the _ledger_ to the shared parent buys reachability without emptying it. **Never re-parent a run-set issue to sit under the ledger.**
 
@@ -206,7 +206,7 @@ Use `git worktree add`, **not** `isolation: "worktree"` (no base, no branch name
 - **One worker per worktree.** Never two agents in one checkout; they share a HEAD.
 - **Helpers run the safe gate set only**, coverage gates included — named in the fixer, sweeper and resolver files, and salt-run.md step 3 for workers. `scripts/host-guard.mjs` refuses `dev`, `dev:emulators`, `test:emulator` and `e2e*` in a worktree, correctly: never `SALT_TAKE_HOST=1`, which from there kills whatever Daniel is sitting in. The heavy suites are CI's, at merge time.
 - **On merge:** remove the worktree and delete the local branch (the queue section says in which order — it matters).
-- **On park:** the branch must survive and be findable. Push it (`git push -u origin <branch>`, WIP commit first if dirty), label the PR `status: on-hold` (invent no other label), comment the reason on the PR and the ledger, then remove the worktree.
+- **On park:** the branch must survive and be findable. Push it (`git push -u origin <branch>`, WIP commit first if dirty), label the PR `status: on-hold` (invent no other label), comment the reason on the PR and the ledger, then remove the worktree. Attach nothing: its place in the ledger's title holds the ledger open until it closes, however it closes.
 - Finish with `git worktree prune`; leave no stale worktrees.
 
 ---
@@ -285,7 +285,7 @@ Rounds are capped at two. Round 1 is the full review. Round 2 only verifies roun
 
 **What is left becomes one issue per campaign**, not one per finding or a ledger comment: at **Finish**, `gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <checklist>`, triaged and attached per **Filing an issue**. The body is a `- [ ]` checklist, one line per finding with its PR number — no notes, nothing fixed in round 1 or by the **Sweep**: what needs a decision (a design fork, a rule change, deferred Out-of-scope work) plus the sweeper's `REJECTED` lines with reasons. File it however short; skip only when empty.
 
-**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue and closes the follow-ups issue once every line is ticked and every sub-issue closed. Nothing else closes it: this command leaves it open (**Finish** step 4), `/salt-run` never looks upward, and `check` reads only Queue and Status.
+**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue and closes the follow-ups issue once every line is ticked and every sub-issue closed. Nothing else closes it: this command leaves it open (**Finish** step 4), `/salt-run` never looks upward, and `check` reads only Queue and Status. The rollup carries on to the ledger.
 
 One finding is filed at the time instead, triaged and attached per **Filing an issue**: **a blocking finding you adjudicated real but chose not to hold the queue for** — a known defect shipping to main, which needs a number first; `campaign-land.mjs --adjudicated` will not merge without one. It also goes on `## Sweep`, whose PR closes it unless the fix needs a decision.
 
@@ -422,6 +422,6 @@ When the queue is empty, and the **Sweep** has landed or had nothing to do:
    **Decisions taken:** [one line each]
    ```
    **Estimated vs actual** — the repo's only `Size`-vs-shipped comparison — is one line per run-set issue, not optional: the estimate from `node scripts/board.mjs show <issue>` (a project field), the actual from `gh pr view <pr> --json additions,deletions`, summed across a split's PRs, `—` if parked. Record the pair; nothing gates on the gap. `board.mjs` unable to run → the actual alone, estimate unreadable.
-   **Close the ledger only if nothing is parked AND nothing under it is still open.** The step-1 follow-ups issue hangs off it and stays open, so **any findings at all leave the ledger open**, saying so: `**Ledger:** staying open until #f closes`. Nothing that must outlive the campaign lives only in this comment. The follow-ups issue closes itself once its lines are ticked and children done; `board.mjs rollup` carries that up to the ledger.
+   **Close the ledger only if nothing is parked AND nothing under it is still open.** The step-1 follow-ups issue hangs off it and stays open, so **any findings at all leave the ledger open**, saying so: `**Ledger:** staying open until #f closes`. Nothing that must outlive the campaign lives only in this comment. `board.mjs rollup` closes it later: nothing open beneath, every title-named issue closed, no unticked `## Sweep` line ([docs/issue-board.md](../../docs/issue-board.md)).
 5. `TaskStop` the pool heartbeat if it is still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
 6. Report **once**, and stop: landed, parked with reasons, the sweep's fix count, the follow-ups issue number, and — if there is one — the single finding worth Daniel's attention, with your recommendation. Everything else is in the ledger and the follow-ups issue. A clean campaign is a sentence. Never a second closing message saying the same thing.
