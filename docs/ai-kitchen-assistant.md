@@ -547,10 +547,16 @@ raw.kind`:
   the librarian takes no longer loses it. The leg sends the call, stashes what comes
   back for the page it is about to navigate to, and fires one `recipe.created` with
   `recipe_method: 'chat'` — a browser usage event, so a suspend now loses the event and
-  keeps the recipe. It writes nothing to Firestore, and there is one failure message
-  rather than two, because a write failure deliberately does not fail the call. The
-  page owns its busy state, its toasts, its navigation and whether the conversation
-  goes on to claim what it produced. The three:
+  keeps the recipe. It writes nothing to Firestore itself, and a generation failure
+  still gets the one message it always did (`Failed to generate recipe.`) — but the
+  flow's own write is best-effort and does not fail the call, so whether THAT write
+  landed is a separate `persistence` outcome on the answer (issue #1601). Each caller
+  turns a `'failed'` outcome into words for where it lands: the recipe's own page,
+  reachable by an edit, gets `NOT_SAVED_YET_COPY`; `returnToMeal` — which does not —
+  gets `COULD_NOT_SAVE_COPY` and attaches nothing. See `recipeService.ts` § "A recipe
+  the server could not save" for the two-copy rationale. The page owns its busy state,
+  its toasts, its navigation and whether the conversation goes on to claim what it
+  produced. The three:
   - **"Save as recipe"** on a general chat (`chat-save-recipe-btn`) — passes the
     session's `basedOnRecipeId` through, so a variation chat is grounded on the dish
     it started from, and CLAIMS the session for the recipe it invented.
