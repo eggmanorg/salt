@@ -1,0 +1,111 @@
+{
+  "jobs": {
+    "total_count": 13,
+    "jobs": [
+      {
+        "id": 108055879829,
+        "run_id": 36130333805,
+        "name": "Detect changes",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055879941,
+        "run_id": 36130333805,
+        "name": "Boot payload",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055880024,
+        "run_id": 36130333805,
+        "name": "Unit tests + coverage",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055880068,
+        "run_id": 36130333805,
+        "name": "Unit tests + coverage (macOS)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055880083,
+        "run_id": 36130333805,
+        "name": "Static checks",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055880229,
+        "run_id": 36130333805,
+        "name": "Types",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055920472,
+        "run_id": 36130333805,
+        "name": "Vitest integration (emulator)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055920484,
+        "run_id": 36130333805,
+        "name": "E2E shard 1/3",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055920604,
+        "run_id": 36130333805,
+        "name": "E2E shard 2/3",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108055920664,
+        "run_id": 36130333805,
+        "name": "E2E shard 3/3",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108057256095,
+        "run_id": 36130333805,
+        "name": "E2E (Playwright)",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108058399436,
+        "run_id": 36130333805,
+        "name": "Lint, typecheck, test, boundary",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      },
+      {
+        "id": 108058452506,
+        "run_id": 36130333805,
+        "name": "Coverage measures the same on both platforms",
+        "status": "completed",
+        "conclusion": "success",
+        "head_branch": "gh-readonly-queue/main/pr-1596-44edc775ad9fa59551e963e05c210b2908c5e4d3"
+      }
+    ]
+  }
+}
