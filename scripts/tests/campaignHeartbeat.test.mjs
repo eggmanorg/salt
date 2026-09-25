@@ -358,3 +358,30 @@ describe('the CLI, spawned', () => {
     expect(cli(['--dispatch', ...rest]).status).toBe(2);
   });
 });
+
+describe('salt-campaign.md → Dispatch sends the coordinator to the script', () => {
+  // The prose half of #1587 Phase 2. It holds only that the section names the
+  // two commands and the exit-2 rule; it cannot hold that a coordinator runs them.
+  const dispatch = () => {
+    const src = campaign();
+    const start = src.indexOf('\n## Dispatch\n');
+    if (start === -1) throw new Error('no "## Dispatch" heading in salt-campaign.md');
+    const next = src.indexOf('\n## ', start + 1);
+    return src.slice(start, next === -1 ? undefined : next);
+  };
+
+  it('names the dispatch-time command and the wake-time command', () => {
+    expect(dispatch()).toMatch(/node scripts\/campaign-heartbeat\.mjs --dispatch <phases>/);
+    expect(dispatch()).toMatch(/node scripts\/campaign-heartbeat\.mjs <ledger-body-file>/);
+  });
+
+  it('never lets exit 2 read as an empty pool', () => {
+    expect(dispatch()).toMatch(/\*\*Exit 2\*\* is a pause, \*\*never an empty pool\*\*/);
+  });
+
+  it('re-arms only when EARLIEST moved', () => {
+    expect(dispatch()).toMatch(
+      /re-arm to `SLEEP` if `EARLIEST` differs from the deadline you last armed/,
+    );
+  });
+});
