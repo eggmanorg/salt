@@ -116,7 +116,7 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 ## salt-run.md
 
-[`/salt-run`](../.claude/commands/salt-run.md) is the worker every campaign dispatches and every standalone run loads, so it too carries each rule as an instruction and nothing more. Moved here by #1589: the incident, cost or measurement behind each of its rules, under the rule it justifies. Headings follow the order the rules appear in the command.
+[`/salt-run`](../.claude/commands/salt-run.md) is the worker every campaign dispatches and every standalone run loads, so it too carries each rule as an instruction. Moved here by #1589: the incident, cost or measurement behind each of its rules, under the rule it justifies. Headings follow the order the rules appear in the command.
 
 ### The diff ceiling default
 
@@ -168,7 +168,7 @@ There used to be a `pre-push` hook. It ran the full suite on every push — a th
 
 ### Rebase every phase
 
-The "Main" ruleset is strict, so a behind-branch must rebase before it can merge anyway, and that rebase re-triggers CI. `auto-update-prs.yml` does the rebase automatically, but only for PRs with auto-merge enabled, which a `/salt-run` draft is not.
+A behind-main branch's run skips the heavy suites; the merge queue supplies that signal at landing.
 
 ### Why Closes before Refs is safe
 
