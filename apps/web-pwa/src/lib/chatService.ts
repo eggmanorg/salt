@@ -93,10 +93,11 @@ const latestLocalEdit = new Map<string, string>();
 // actually meets `expectedMessageCount`. The residual boundary, since that
 // snapshot is still not PROVABLY the flow's rather than a coincidence: another
 // device appending exactly two messages to this session between the send and
-// the flow's write would take the bypass instead. That costs nothing — it is a
-// real document from the server, the flow's write lands moments later and
-// supersedes it, and no turn is lost, because the store's optimistic copy is no
-// longer the only copy of anything.
+// the flow's write would take the bypass instead. That snapshot is a real
+// server document, but it does not carry THIS device's in-flight turn, so the
+// user's just-typed sentence drops off screen until the flow's write lands and
+// restores it — and if that write never lands, it is gone from this device's
+// view, the same loss the flow-write-failure boundary below describes.
 //
 // `arrived` is what `sendMessage` awaits before applying a generated title, so
 // the title is composed onto the flow's document rather than racing it. It
