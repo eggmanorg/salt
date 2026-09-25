@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MessageSchema } from './chatSession.js';
-import { AuthoredRecipePhasesSchema, AuthoredTimingSummarySchema, RecipeSchema } from './recipe.js';
+import { AuthoredRecipePhasesSchema, AuthoredTimingSummarySchema } from './recipe.js';
+import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
 import {
   AuthoredCureCategorySchema,
   AuthoredRecipeKindSchema,
@@ -45,14 +46,18 @@ export const AuthorRecipeInputSchema = z.object({
   // and equally when the roster has not loaded — both fields are left exactly as
   // the assembler produced them (blank on a create), never a placeholder.
   authorName: z.string().optional(),
+  // Same opt-in as the two imports (issue #1601). Edit mode writes nothing, so it
+  // answers `persistence: 'skipped'` when asked.
+  reportPersistence: ReportPersistenceSchema,
 });
 
 export type AuthorRecipeInput = z.infer<typeof AuthorRecipeInputSchema>;
 
 // What the librarian flow returns: a complete, persistable recipe document.
 // The canonical RecipeSchema, exactly as the two extractor flows use it — a
-// draft that does not satisfy it is not a recipe, whichever path authored it.
-export const AuthorRecipeOutputSchema = RecipeSchema;
+// draft that does not satisfy it is not a recipe, whichever path authored it —
+// bare, or inside the persistence envelope when asked (issue #1601).
+export const AuthorRecipeOutputSchema = AuthoredRecipeOutputSchema;
 
 // The shape the AI model emits inside the flow (never leaves the CF boundary).
 // The model uses 0-based step ordinals for ingredient links; the flow resolves

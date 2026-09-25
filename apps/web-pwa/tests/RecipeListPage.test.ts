@@ -73,6 +73,8 @@ vi.mock('../src/lib/recipeService.js', () => ({
   isSignedOutFailure: vi.fn((outcome: { kind: string }) => outcome.kind === 'AuthError'),
   stashPendingImportUrl: vi.fn(),
   takePendingImportUrl: vi.fn(() => null),
+  NOT_SAVED_YET_COPY: 'copy:not-saved-yet',
+  COULD_NOT_SAVE_COPY: 'copy:could-not-save',
   // The New sheet's write (issue #1319 Phase 6). It is mounted by this page, so
   // its import has to be in this factory even for the tests that never open it.
   persistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -95,6 +97,7 @@ import {
   stashImportedDraft,
   takePendingImportUrl,
 } from '../src/lib/recipeService.js';
+import { addToast } from '../src/lib/toastStore.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -1178,7 +1181,10 @@ describe('RecipeListPage — import from photo', () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-9' };
-    vi.mocked(importRecipeFromPhoto).mockResolvedValue({ kind: 'ok', value: draft });
+    vi.mocked(importRecipeFromPhoto).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: draft, persistence: 'written' },
+    });
     seed([APPLE]);
     render(RecipeListPage);
 
@@ -1199,6 +1205,34 @@ describe('RecipeListPage — import from photo', () => {
     await waitFor(() => expect(stashImportedDraft).toHaveBeenCalledWith(draft));
     expect(push).toHaveBeenCalledWith('/recipes/imported-9');
     expect(push).not.toHaveBeenCalledWith(expect.stringContaining('/edit'));
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  // Issue #1601: the server could not save it. It still opens — the page's first
+  // edit saves it — and the cook is told so, because otherwise it looks saved.
+  it('opens a recipe the server could not save, and says it is not saved yet', async () => {
+    const user = userEvent.setup();
+    const { push } = await import('svelte-spa-router');
+    const draft = { ...APPLE, id: 'imported-9' };
+    vi.mocked(importRecipeFromPhoto).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: draft, persistence: 'failed' },
+    });
+    seed([APPLE]);
+    render(RecipeListPage);
+
+    await user.click(screen.getByTestId('recipe-new-btn'));
+    await user.click(screen.getByTestId('recipe-new-import-photo'));
+    await user.upload(
+      await screen.findByTestId('recipe-import-photo-input'),
+      new File(['bytes'], 'page.jpg', { type: 'image/jpeg' }),
+    );
+    await user.click(await screen.findByTestId('recipe-import-photo-use'));
+    await user.click(await screen.findByTestId('recipe-import-photo-btn'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/imported-9'));
+    expect(stashImportedDraft).toHaveBeenCalledWith(draft);
+    expect(addToast).toHaveBeenCalledWith('copy:not-saved-yet', 'destructive');
   });
 });
 
@@ -1244,7 +1278,10 @@ describe('RecipeListPage — import from URL', () => {
     const user = userEvent.setup();
     const { push } = await import('svelte-spa-router');
     const draft = { ...APPLE, id: 'imported-7' };
-    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: draft });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: draft, persistence: 'written' },
+    });
     seed([APPLE]);
     render(RecipeListPage);
 

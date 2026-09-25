@@ -6,7 +6,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 //  • forward the optional traceparent on the payload (Rule 4: no observability
 //    import here — firebase-sync only carries the string);
 //  • NEVER throw (Rule 10) — every failure crosses as a Failure carrying the
-//    photo-import failure code, its own closed set, not the URL one.
+//    photo-import failure code, its own closed set, not the URL one;
+//  • ask whether the server's write of the recipe landed, and hand that on
+//    (issue #1601) — reading an older function's bare recipe as "did not say".
 
 const callableMock = vi.fn();
 const httpsCallable = vi.fn(() => callableMock);
@@ -28,7 +30,7 @@ const rejectWith = (code: string) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  callableMock.mockResolvedValue({ data: RECIPE });
+  callableMock.mockResolvedValue({ data: { recipe: RECIPE, persistence: 'written' } });
   // Node >= 21 exposes navigator globally with onLine = false, and since #916 the
   // offline check runs FIRST in classifyCallableError — so every code-based case
   // has to say it is online, exactly as firestoreErrors.test.ts does.
@@ -40,9 +42,23 @@ afterEach(() => {
 });
 
 describe('callExtractRecipeFromPhoto', () => {
-  it('returns the assembled draft on success', async () => {
+  it('returns the assembled draft on success, with whether it was saved', async () => {
     const result = await callExtractRecipeFromPhoto(INPUT);
-    expect(result).toEqual({ kind: 'ok', value: RECIPE });
+    expect(result).toEqual({ kind: 'ok', value: { recipe: RECIPE, persistence: 'written' } });
+  });
+
+  it('hands on a failed server write as the outcome, not as a failure', async () => {
+    callableMock.mockResolvedValue({ data: { recipe: RECIPE, persistence: 'failed' } });
+    const result = await callExtractRecipeFromPhoto(INPUT);
+    expect(result).toEqual({ kind: 'ok', value: { recipe: RECIPE, persistence: 'failed' } });
+  });
+
+  it('reads a function older than the flag — a bare recipe — as "did not say"', async () => {
+    // A function deployed before #1601 ignores `reportPersistence` and answers
+    // the bare recipe. It is still a working recipe, so it is read, not rejected.
+    callableMock.mockResolvedValue({ data: RECIPE });
+    const result = await callExtractRecipeFromPhoto(INPUT);
+    expect(result).toEqual({ kind: 'ok', value: { recipe: RECIPE, persistence: null } });
   });
 
   it('passes an explicit client timeout matching the server budget', async () => {
@@ -57,12 +73,16 @@ describe('callExtractRecipeFromPhoto', () => {
 
   it('forwards the traceparent on the payload when supplied', async () => {
     await callExtractRecipeFromPhoto(INPUT, TRACEPARENT);
-    expect(callableMock).toHaveBeenCalledWith({ ...INPUT, traceparent: TRACEPARENT });
+    expect(callableMock).toHaveBeenCalledWith({
+      ...INPUT,
+      reportPersistence: true,
+      traceparent: TRACEPARENT,
+    });
   });
 
   it('omits the field entirely when no traceparent is supplied', async () => {
     await callExtractRecipeFromPhoto(INPUT);
-    expect(callableMock).toHaveBeenCalledWith(INPUT);
+    expect(callableMock).toHaveBeenCalledWith({ ...INPUT, reportPersistence: true });
     expect(callableMock.mock.calls[0]![0]).not.toHaveProperty('traceparent');
   });
 

@@ -13,7 +13,7 @@ import { setActiveSpanName } from '@salt/observability/server';
 import { AI_TEXT_FLOW_TIMEOUT, withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
-import { persistAuthoredRecipe } from './persistAuthoredRecipe.js';
+import { authoredAnswer, persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
 import { recipeFieldRules } from './recipeFieldRules.js';
 import { readEquipmentContext, equipmentSectionForLibrarian } from './equipmentContext.js';
@@ -187,14 +187,16 @@ export const authorRecipeFlow = ai.defineFlow(
     //
     // THE BOUNDARY, rather than "the recipe can no longer be lost": this removes
     // the loss caused by the PAGE going away, which was 100% of occurrences. A
-    // FAILED WRITE still loses it — deliberately, because failing the call would
-    // throw away a generation that succeeded — recovered only by the stash and the
-    // first in-place edit, with the limits written out in `persistAuthoredRecipe`.
+    // FAILED WRITE does not fail the call — that would throw away a generation
+    // that succeeded — and is answered as `persistence: 'failed'` when asked
+    // (#1601); it is recovered only by the stash and the first in-place edit, with
+    // the limits written out in `persistAuthoredRecipe`.
     //
     // NOT FLAGGED `needs_approval`: that is `assembleRecipeDraft`'s option and the
     // librarian does not pass it. A chat-authored recipe is something you talked
     // through and asked for, not raw AI output nobody has read.
-    if (input.recipeId) return draft;
+    // Edit mode writes nothing, so there is no outcome to report beyond that.
+    if (input.recipeId) return authoredAnswer(draft, 'skipped', input.reportPersistence);
 
     // The same stamp the browser applies to every other recipe write, from
     // `@salt/domain` so there is one rule and not two: `createdBy` filled only
@@ -202,11 +204,11 @@ export const authorRecipeFlow = ai.defineFlow(
     // over the wire. The assembler carries `createdBy` forward from a base recipe
     // and blanks it on a create, so fill-once here re-points nothing.
     const recipe = stampAttribution(draft, input.authorName ?? '');
-    await persistAuthoredRecipe(recipe, 'authorRecipe');
+    const persistence = await persistAuthoredRecipe(recipe, 'authorRecipe');
     // The document that was written, not the one before the stamp: the client
     // stashes this for the page it navigates to, so a divergence would paint a
     // recipe that disagrees with Firestore the moment the listener catches up.
-    return recipe;
+    return authoredAnswer(recipe, persistence, input.reportPersistence);
   },
 );
 

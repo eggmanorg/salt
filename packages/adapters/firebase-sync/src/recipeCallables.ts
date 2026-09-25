@@ -2,6 +2,7 @@ import { failure, success, type DomainError, type ReadResult } from '@salt/share
 import type { IngredientGroup } from '@salt/domain';
 import { PHOTO_IMPORT_TIMEOUT_SECONDS } from '@salt/domain/schemas';
 import type {
+  AuthoredRecipeEnvelope,
   DescribeRecipeSceneInput,
   DescribeRecipeSceneOutput,
   ExtractRecipeFromUrlInput,
@@ -10,6 +11,7 @@ import type {
   RecipeDoc,
   UrlImportFailure,
 } from '@salt/domain/schemas';
+import { readAuthoredAnswer, type AuthoredRecipe } from './authoredRecipeAnswer.js';
 import { classifyCallableError, isBrowserOffline } from './callableErrors.js';
 import { callFunction, invokeCallable } from './callFunction.js';
 
@@ -167,21 +169,26 @@ export async function callDescribeRecipeScene(
 }
 
 // SSRF-hardened URL import. Sends a URL, receives a fully-assembled, metric +
-// British recipe draft (source.type='url'). On failure returns the specific
-// UrlImportFailureCode so the caller can show the right copy.
+// British recipe draft (source.type='url') and whether the server's write of it
+// landed (issue #1601 — the flag is always sent; see `readAuthoredAnswer`). On
+// failure returns the specific UrlImportFailureCode so the caller can show the
+// right copy.
 // `traceparent` (issue #362) rides on the payload; see `withTraceparent`.
 export async function callExtractRecipeFromUrl(
-  input: ExtractRecipeFromUrlInput,
+  input: Omit<ExtractRecipeFromUrlInput, 'reportPersistence'>,
   traceparent?: string,
-): Promise<ReadResult<RecipeDoc, UrlImportFailure>> {
+): Promise<ReadResult<AuthoredRecipe, UrlImportFailure>> {
   // `invokeCallable` rather than `callFunction`: this answers with its OWN
   // failure vocabulary, which the web copy map keys off, so the catch cannot be
   // the shared one. Region, payload and the absent timeout still come from the
   // one place.
   try {
-    const data = await invokeCallable<ExtractRecipeFromUrlInput, RecipeDoc>({
+    const data = await invokeCallable<
+      ExtractRecipeFromUrlInput,
+      RecipeDoc | AuthoredRecipeEnvelope
+    >({
       name: 'extractRecipeFromUrl',
-      input,
+      input: { ...input, reportPersistence: true },
       traceparent,
       // The function declares 120 s (`cloud-functions/src/index.ts:471`) against
       // the callable client's 70 s default. Fetching and reading a page is the
@@ -189,7 +196,7 @@ export async function callExtractRecipeFromUrl(
       // (#928, B2-010).
       timeoutMs: 120_000,
     });
-    return success(data);
+    return success(readAuthoredAnswer(data));
   } catch (err) {
     return failure(classifyUrlImportError(err));
   }
@@ -255,19 +262,23 @@ function classifyPhotoImportError(err: unknown): PhotoImportFailure {
 //
 // `traceparent` (issue #362) rides on the payload; see `withTraceparent`.
 export async function callExtractRecipeFromPhoto(
-  input: ExtractRecipeFromPhotoInput,
+  input: Omit<ExtractRecipeFromPhotoInput, 'reportPersistence'>,
   traceparent?: string,
-): Promise<ReadResult<RecipeDoc, PhotoImportFailure>> {
+): Promise<ReadResult<AuthoredRecipe, PhotoImportFailure>> {
   // `invokeCallable` for the same reason as the URL import: its own closed
-  // failure vocabulary, so its own catch.
+  // failure vocabulary, so its own catch. The persistence flag is sent and read
+  // back exactly as the URL import does (issue #1601).
   try {
-    const data = await invokeCallable<ExtractRecipeFromPhotoInput, RecipeDoc>({
+    const data = await invokeCallable<
+      ExtractRecipeFromPhotoInput,
+      RecipeDoc | AuthoredRecipeEnvelope
+    >({
       name: 'extractRecipeFromPhoto',
-      input,
+      input: { ...input, reportPersistence: true },
       traceparent,
       timeoutMs: PHOTO_IMPORT_TIMEOUT_SECONDS * 1000,
     });
-    return success(data);
+    return success(readAuthoredAnswer(data));
   } catch (err) {
     return failure(classifyPhotoImportError(err));
   }

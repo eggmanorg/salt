@@ -135,6 +135,7 @@ vi.mock('../src/lib/clipboardImage.js', () => ({
   imageFromClipboardData: vi.fn(),
 }));
 vi.mock('../src/lib/recipeService.js', () => ({
+  NOT_SAVED_YET_COPY: 'copy:not-saved-yet',
   // Issue #1319 Phase 7: the page claims an import's stashed draft so a
   // just-imported recipe paints before the Firestore listener delivers it, and
   // it owns the meal attach the retired editor's save used to make.
@@ -350,7 +351,10 @@ describe('RecipeViewPage — saving the conversation as a new dish', () => {
     mockSessions._set([makeSession([USER_TURN, ASSISTANT_TURN])]);
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+      value: {
+        recipe: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+        persistence: 'written' as const,
+      },
     });
     renderPage();
     await openChatActions();
@@ -426,7 +430,10 @@ describe('RecipeViewPage — "Save as new recipe" says it has started', () => {
 
     settle({
       kind: 'ok',
-      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+      value: {
+        recipe: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+        persistence: 'written' as const,
+      },
     } as LibrarianResult);
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
     expect(toastSpy.live()).not.toContain('Writing the new recipe…');
@@ -517,7 +524,10 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
   it('routes "Save as new recipe" into a create with no base, leaving the dish alone', async () => {
     vi.mocked(authorRecipeTraced).mockResolvedValue({
       kind: 'ok',
-      value: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+      value: {
+        recipe: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+        persistence: 'written',
+      },
     } as never);
     await askAndWait();
 
@@ -530,6 +540,25 @@ describe('RecipeViewPage — a save the chef was asked for', () => {
     // The lamb is not written to, and the conversation stays listed on it.
     expect(saveRecipeDoc).not.toHaveBeenCalled();
     expect(claimRecipe).not.toHaveBeenCalled();
+  });
+
+  // Issue #1601: the flow's write failed. The new recipe still opens — its first
+  // edit saves it — but it is not "created", and the toast says what to do.
+  it('opens a new recipe the server could not save with the not-saved warning', async () => {
+    vi.mocked(authorRecipeTraced).mockResolvedValue({
+      kind: 'ok',
+      value: {
+        recipe: { ...emptyRecipe('salad', '2026-01-01T00:00:00.000Z'), title: 'Fennel Salad' },
+        persistence: 'failed',
+      },
+    } as never);
+    await askAndWait();
+
+    await fireEvent.click(screen.getByTestId('chat-save-intent-new'));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/salad'));
+    expect(toastSpy.addToast).toHaveBeenCalledWith('copy:not-saved-yet', 'destructive');
+    expect(toastSpy.addToast).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
   it('routes "Update recipe" into the review gate, and writes nothing on the way', async () => {

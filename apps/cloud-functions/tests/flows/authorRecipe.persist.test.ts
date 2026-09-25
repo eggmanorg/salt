@@ -321,3 +321,56 @@ describe('authorRecipe — attribution travels with the write', () => {
   // It is pinned where the rule lives, in
   // `packages/domain/tests/recipe/stampAttribution.test.ts`.
 });
+
+// Issue #1601: a caller that sends `reportPersistence: true` is told whether the
+// write landed; one that does not — every tab on an older bundle — gets the bare
+// recipe exactly as before.
+describe('authorRecipe — says whether the write landed, when asked (#1601)', () => {
+  it('answers { recipe, persistence: written } when asked and the write lands', async () => {
+    const answer = await run({ messages: MESSAGES, existingTags: [], reportPersistence: true });
+
+    expect(answer.persistence).toBe('written');
+    expect(answer.recipe).toBe(mockSet.mock.calls[0]![2]);
+  });
+
+  it('answers persistence: failed when asked and the write fails', async () => {
+    mockSet.mockRejectedValue(new Error('firestore unavailable'));
+
+    const answer = await run({ messages: MESSAGES, existingTags: [], reportPersistence: true });
+
+    expect(answer.persistence).toBe('failed');
+    expect((answer.recipe as { title: string }).title).toBe('Fennel, Orange & Olive Salad');
+  });
+
+  it('answers persistence: skipped in edit mode, which writes nothing', async () => {
+    mockGet.mockResolvedValue({ exists: true, data: () => baseRecipeDoc() });
+
+    const answer = await run({
+      messages: MESSAGES,
+      existingTags: [],
+      recipeId: 'r1',
+      reportPersistence: true,
+    });
+
+    expect(mockSet).not.toHaveBeenCalled();
+    expect(answer.persistence).toBe('skipped');
+  });
+
+  it('answers the BARE recipe when not asked, even on a failed write', async () => {
+    // The shape an older tab reads `.id` straight off. Wrapping it would send
+    // that tab to `/recipes/undefined`.
+    mockSet.mockRejectedValue(new Error('firestore unavailable'));
+
+    const answer = await run({ messages: MESSAGES, existingTags: [] });
+
+    expect(answer).not.toHaveProperty('persistence');
+    expect(answer).not.toHaveProperty('recipe');
+    expect(answer.title).toBe('Fennel, Orange & Olive Salad');
+  });
+
+  it('never writes the outcome onto the stored recipe', async () => {
+    await run({ messages: MESSAGES, existingTags: [], reportPersistence: true });
+
+    expect(mockSet.mock.calls[0]![2]).not.toHaveProperty('persistence');
+  });
+});

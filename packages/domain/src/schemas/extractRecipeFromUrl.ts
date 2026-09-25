@@ -3,9 +3,9 @@ import {
   AuthoredRecipePhasesSchema,
   AuthoredTimingSummarySchema,
   CureCategorySchema,
-  RecipeSchema,
 } from './recipe.js';
 import { AUTHORABLE_RECIPE_KINDS } from '../recipe/queries/capabilities.js';
+import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
 
 // SSRF-hardened URL import (recipe URL import epic, Phase 1).
 //
@@ -17,13 +17,17 @@ export const ExtractRecipeFromUrlInputSchema = z.object({
   // Validated again inside the flow against the SSRF guard; here we only assert
   // it is a non-empty string. The flow rejects non-https / private hosts.
   url: z.string().min(1),
+  // Ask for `{ recipe, persistence }` instead of the bare recipe (issue #1601).
+  // Optional: an older bundle sends nothing and gets the bare recipe.
+  reportPersistence: ReportPersistenceSchema,
 });
 
 export type ExtractRecipeFromUrlInput = z.infer<typeof ExtractRecipeFromUrlInputSchema>;
 
 // The flow returns a complete recipe draft. Reuse the canonical RecipeSchema so
-// the draft is guaranteed to be a valid, persistable recipe document.
-export const ExtractRecipeFromUrlOutputSchema = RecipeSchema;
+// the draft is guaranteed to be a valid, persistable recipe document — bare, or
+// inside the persistence envelope when the input asked for it (issue #1601).
+export const ExtractRecipeFromUrlOutputSchema = AuthoredRecipeOutputSchema;
 
 // The closed set of user-facing failure modes for URL import. The CF flow tags
 // each failure with one of these; the callable wrapper re-derives it from the

@@ -67,6 +67,12 @@ export type {
 } from './canonicaliseRecipeIngredientsInput.js';
 
 export { PersistenceOutcomeSchema } from './persistenceOutcome.js';
+export {
+  AuthoredRecipeEnvelopeSchema,
+  AuthoredRecipeOutputSchema,
+  ReportPersistenceSchema,
+} from './authoredRecipeEnvelope.js';
+export type { AuthoredRecipeEnvelope } from './authoredRecipeEnvelope.js';
 export type { PersistenceOutcome } from './persistenceOutcome.js';
 
 export { RegenerateCanonIconInputSchema } from './regenerateCanonIcon.js';

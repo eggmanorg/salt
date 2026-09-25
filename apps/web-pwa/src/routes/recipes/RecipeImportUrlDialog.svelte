@@ -26,8 +26,8 @@
     DialogTitle,
     TextField,
   } from '@salt/ui-components';
-  import type { Recipe } from '@salt/domain';
   import {
+    type AuthoredRecipe,
     importRecipeFromUrl,
     urlImportMessage,
     isSignedOutFailure,
@@ -38,10 +38,11 @@
 
   interface Props {
     open?: boolean;
-    /** Called with the persisted recipe once the import succeeds. The caller
-     * stashes it and routes to the recipe's own page — navigation is not this
-     * dialog's job. */
-    onImported: (recipe: Recipe) => void;
+    /** Called with the recipe, and whether the server saved it (issue #1601),
+     * once the import succeeds. The caller stashes it, routes to the recipe's own
+     * page and says so if it is not saved yet — navigation is not this dialog's
+     * job. */
+    onImported: (authored: AuthoredRecipe) => void;
     /** Pre-fills the field. Read ONCE, at mount: the host uses it to hand back a
      * URL rescued from an import that died on a signed-out session (see
      * `stashPendingImportUrl`), so signing back in costs the user nothing. */

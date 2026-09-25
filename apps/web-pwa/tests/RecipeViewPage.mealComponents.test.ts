@@ -141,6 +141,7 @@ vi.mock('../src/lib/recipeService.js', () => ({
   // The attach, which issue #1319 Phase 7 moved onto this page.
   attachComponentToMeal: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   stashImportedDraft: vi.fn(),
+  NOT_SAVED_YET_COPY: 'copy:not-saved-yet',
   takeImportedDraft: vi.fn().mockReturnValue(null),
   authorRecipeTraced: vi.fn(),
   regenerateRecipeImage: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -280,7 +281,10 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
 
   it('imports a link, attaches the dish as it lands, and opens the DISH', async () => {
     const imported = makeEntry({ id: 'imported-9', title: 'Onion gravy' });
-    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: imported, persistence: 'written' as const },
+    });
     renderPage();
     await importALink();
 
@@ -307,7 +311,10 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     // through no other path. Asserted as the absence of a second write rather than
     // re-expressed here.
     const imported = makeEntry({ id: 'chicken', title: 'Roast chicken' });
-    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: imported, persistence: 'written' as const },
+    });
     renderPage();
     await importALink();
 
@@ -322,7 +329,10 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
     // The dish is already saved on the server, so a failed attach must not strand
     // it: say what happened (Rule 10) and still go to what was imported.
     const imported = makeEntry({ id: 'imported-9', title: 'Onion gravy' });
-    vi.mocked(importRecipeFromUrl).mockResolvedValue({ kind: 'ok', value: imported });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: imported, persistence: 'written' as const },
+    });
     vi.mocked(attachComponentToMeal).mockResolvedValue({
       kind: 'err',
       error: { kind: 'NotFound', resource: 'recipe', id: MEAL_ID },
@@ -332,6 +342,29 @@ describe('RecipeViewPage — adding a dish to a meal', () => {
 
     await waitFor(() => expect(addToast).toHaveBeenCalledTimes(1));
     expect(vi.mocked(addToast).mock.calls[0]![1]).toBe('destructive');
+    expect(push).toHaveBeenCalledWith('/recipes/imported-9');
+  });
+
+  // Issue #1601: the dish was not saved on the server. "Saved the dish" would be
+  // false; the dish's own page is where the first edit saves it, so say that.
+  it('never says "Saved the dish" for a dish the server could not save', async () => {
+    const imported = makeEntry({ id: 'imported-9', title: 'Onion gravy' });
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      kind: 'ok',
+      value: { recipe: imported, persistence: 'failed' as const },
+    });
+    vi.mocked(attachComponentToMeal).mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NotFound', resource: 'recipe', id: MEAL_ID },
+    });
+    renderPage();
+    await importALink();
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('copy:not-saved-yet', 'destructive'));
+    expect(addToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('Saved the dish'),
+      expect.anything(),
+    );
     expect(push).toHaveBeenCalledWith('/recipes/imported-9');
   });
 

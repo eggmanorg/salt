@@ -142,7 +142,10 @@ beforeEach(() => {
   vi.mocked(consumeSaveIntent).mockResolvedValue(true);
   vi.mocked(sendMessage).mockResolvedValue({ kind: 'ok', value: makeSession() });
   vi.mocked(proposeRecipeAmendment).mockResolvedValue({ kind: 'err', error: OFFLINE });
-  vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: SAVED });
+  vi.mocked(authorRecipeTraced).mockResolvedValue({
+    kind: 'ok',
+    value: { recipe: SAVED, persistence: 'written' as const },
+  });
   window.history.replaceState(null, '', '#/');
 });
 
@@ -409,7 +412,10 @@ describe('ChatSessionPage — a save the chef was asked for, while one is alread
   it('drops the request when the in-flight save succeeded, rather than saving twice', async () => {
     const settle = await raceAgainstTheButton();
 
-    settle({ kind: 'ok', value: SAVED } as LibrarianResult);
+    settle({
+      kind: 'ok',
+      value: { recipe: SAVED, persistence: 'written' as const },
+    } as LibrarianResult);
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
     await new Promise((resolve) => setTimeout(resolve, 0));

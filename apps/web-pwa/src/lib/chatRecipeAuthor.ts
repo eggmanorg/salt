@@ -1,8 +1,12 @@
-import type { Recipe } from '@salt/domain';
 import type { AuthorRecipeInput } from '@salt/domain/schemas';
 import { trackUsageEvent } from '@salt/observability';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
-import { authorRecipeTraced, currentMemberName, stashImportedDraft } from './recipeService.js';
+import {
+  authorRecipeTraced,
+  currentMemberName,
+  stashImportedDraft,
+  type AuthoredRecipe,
+} from './recipeService.js';
 
 // Authoring a NEW recipe out of a conversation — the create leg (issues #696,
 // #763, #798).
@@ -30,12 +34,10 @@ import { authorRecipeTraced, currentMemberName, stashImportedDraft } from './rec
 // does not (it belongs to the dish it is attached to and stays listed there, and
 // the new recipe has no origin chat).
 //
-// There is no longer a failure `stage`. There were two — "the chef could not write
-// it" and "it was written but not kept" — and the second leg no longer exists on
-// this side: the flow's write is best-effort and deliberately does not fail the
-// call (see `persistAuthoredRecipe`), so a save failure is not something this
-// module can observe, let alone report. Every surface says one thing because
-// there is one thing to say.
+// There is no failure `stage`. The flow's write is best-effort and deliberately
+// does not fail the call (see `persistAuthoredRecipe`); whether it landed comes
+// back as the answer's `persistence` (issue #1601), handed on for the page to put
+// into words. It is not reported here — the flow already reported it.
 
 export interface AuthorRecipeFromChatInput {
   /** The transcript. The base recipe of an attached chat is NOT in here — it is
@@ -73,7 +75,7 @@ export interface AuthorRecipeFromChatInput {
  */
 export async function authorRecipeFromChat(
   input: AuthorRecipeFromChatInput,
-): Promise<ReadResult<Recipe, DomainError>> {
+): Promise<ReadResult<AuthoredRecipe, DomainError>> {
   // No title hint: the dish being authored has no name yet, and the only title in
   // reach on the recipe page is the WRONG dish's. The span stays 'Author recipe'.
   const result = await authorRecipeTraced({
@@ -93,7 +95,7 @@ export async function authorRecipeFromChat(
   });
   if (result.kind !== 'ok') return failure(result.error);
 
-  const saved: Recipe = result.value;
+  const saved = result.value.recipe;
 
   // The write happened on the SERVER, so the local Firestore cache has no echo to
   // hand back synchronously and the page can arrive before the listener does. The
@@ -117,5 +119,5 @@ export async function authorRecipeFromChat(
     recipe_method: 'chat',
   });
 
-  return success(saved);
+  return success(result.value);
 }

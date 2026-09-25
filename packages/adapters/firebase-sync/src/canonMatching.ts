@@ -37,6 +37,9 @@ export async function callMatchOrCreate(
 
 type WireBatchResult = ReadResult<MatchOrCreateResult, DomainError>[];
 type WireBatchEnvelope = { results: WireBatchResult; persistence: PersistenceOutcome };
+// `persistence: null` — a function deployed before #1601 answers the bare array
+// even when a recipe is named; it did not say whether its fold landed.
+type BatchEnvelope = { results: WireBatchResult; persistence: PersistenceOutcome | null };
 
 // The batch canon matcher. Since issue #1434 the input can also carry the
 // IDENTITY of what is being matched — a `recipeId` and a per-item
@@ -47,12 +50,11 @@ type WireBatchEnvelope = { results: WireBatchResult; persistence: PersistenceOut
 // function answers `{ results, persistence }` so the caller can tell whether the
 // recipe was updated; without it, the bare results array. The overloads carry
 // that into the type, so a content-only caller (`matchIngredient`) keeps reading
-// an array and cannot mistake it for the envelope. No branch here — the value is
-// forwarded as the function sent it.
+// an array and cannot mistake it for the envelope.
 export async function callCanonicaliseRecipeIngredients(
   input: CanonicaliseRecipeIngredientsInput & { recipeId: string },
   traceparent?: string,
-): Promise<ReadResult<WireBatchEnvelope, DomainError>>;
+): Promise<ReadResult<BatchEnvelope, DomainError>>;
 export async function callCanonicaliseRecipeIngredients(
   input: CanonicaliseRecipeIngredientsInput & { recipeId?: undefined },
   traceparent?: string,
@@ -60,8 +62,12 @@ export async function callCanonicaliseRecipeIngredients(
 export async function callCanonicaliseRecipeIngredients(
   input: CanonicaliseRecipeIngredientsInput,
   traceparent?: string,
-): Promise<ReadResult<WireBatchResult | WireBatchEnvelope, DomainError>> {
-  return callFunction<CanonicaliseRecipeIngredientsInput, WireBatchResult | WireBatchEnvelope>({
+): Promise<ReadResult<WireBatchResult | BatchEnvelope, DomainError>> {
+  return callFunction<
+    CanonicaliseRecipeIngredientsInput,
+    WireBatchResult | WireBatchEnvelope,
+    WireBatchResult | BatchEnvelope
+  >({
     name: 'canonicaliseRecipeIngredients',
     input,
     traceparent,
@@ -70,6 +76,10 @@ export async function callCanonicaliseRecipeIngredients(
     // matcher here, so the long tail is the ordinary case rather than the
     // exception (#928, B2-010).
     timeoutMs: 120_000,
+    project: (wire) =>
+      input.recipeId !== undefined && Array.isArray(wire)
+        ? { results: wire, persistence: null }
+        : wire,
   });
 }
 

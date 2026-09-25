@@ -30,17 +30,21 @@
     Spinner,
     type ImageCropperHandle,
   } from '@salt/ui-components';
-  import type { Recipe } from '@salt/domain';
   import { MAX_RECIPE_PAGE_PHOTOS, type RecipePagePhoto } from '@salt/domain/schemas';
-  import { importRecipeFromPhoto, photoImportMessage } from '../../lib/recipeService.js';
+  import {
+    type AuthoredRecipe,
+    importRecipeFromPhoto,
+    photoImportMessage,
+  } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
 
   interface Props {
     open?: boolean;
-    /** Called with the persisted recipe once extraction succeeds. The caller
-     * stashes it and routes to the recipe's own page — navigation is not this
-     * dialog's job. */
-    onImported: (recipe: Recipe) => void;
+    /** Called with the recipe, and whether the server saved it (issue #1601),
+     * once extraction succeeds. The caller stashes it, routes to the recipe's own
+     * page and says so if it is not saved yet — navigation is not this dialog's
+     * job. */
+    onImported: (authored: AuthoredRecipe) => void;
   }
 
   let { open = $bindable(false), onImported }: Props = $props();

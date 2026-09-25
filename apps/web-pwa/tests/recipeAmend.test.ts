@@ -271,9 +271,11 @@ describe('mergeAmendedRecipe — identity and the fields the librarian never ret
 
 /** The librarian answered; hand back a draft that forgot every metadata field. */
 function librarianReturns(draft: RecipeDoc = draftWithoutMetadata()): void {
-  vi.mocked(authorRecipeTraced).mockResolvedValue({ kind: 'ok', value: draft } as Awaited<
-    ReturnType<typeof authorRecipeTraced>
-  >);
+  // Edit mode writes nothing, so the flow answers `skipped` (issue #1601).
+  vi.mocked(authorRecipeTraced).mockResolvedValue({
+    kind: 'ok',
+    value: { recipe: draft, persistence: 'skipped' },
+  } as Awaited<ReturnType<typeof authorRecipeTraced>>);
 }
 
 describe('proposeRecipeAmendment — what the librarian is asked to read', () => {
