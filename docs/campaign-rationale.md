@@ -183,3 +183,27 @@ The distinction is load-bearing. `board-status.yml` derives the issue→PR link 
 ### The ceiling looks backward
 
 The step 9 check is backward-looking on purpose: it measures what is built, never a forecast of what a phase will be.
+
+### The conditional production build
+
+`pnpm --filter @salt/web-pwa build` catches the class of failure `tsc` structurally cannot see — a bare specifier inside a CSS `url()`, a dynamic import that doesn't resolve — which is why CI's `boot-payload` job blocks on it. It is the one conditional gate because, unlike the rest, it is slow.
+
+### Smaller reasons, by step
+
+Trimmed from the command by #1589 Phase 2, each beside the rule it explains.
+
+- **No argument, no guess.** Without an issue number there is nothing safe to guess.
+- **Loop order.** The two things that dominate what a run costs are re-deriving context the issue already holds and waiting serially on things that could overlap; the ordering _is_ the optimisation.
+- **Falsified premises.** The builder is the actor who finds out, and the answer arrives with the cheapest possible fix already in hand. The no-new-footprint test is what keeps a reviewed PR reviewable and the merge queue's conflict model intact.
+- **Outcome field names.** Looking for the feature spelling on a defect issue is how a run starts improvising.
+- **Missing phase fields.** Filling them in converts a spec contract into the builder's own guess at one — precisely what `/salt-run` exists to prevent.
+- **`Safe to stop here?: No`.** Saying so plainly avoids implying a resting point that doesn't exist.
+- **Invariants.** The unqualified absolute nobody can falsify is the failure mode; the commonest way a true sentence goes false is a later fix introducing a second path it never contemplated.
+- **Format.** Hand-editing whitespace the pre-commit hook would rewrite anyway is pure waste.
+- **Pre-commit hook.** A commit that looks hung usually isn't; prettier's rewrite means what lands can differ from what was validated; and by the time the hook catches something the commit message has been written twice. Skipping step 3's suite leaves CI to notice a broken test, seven minutes after the run has moved on.
+- **Heavy suites.** They are exactly what step 3's gates cannot cover, and CI is the only place they run without taking the host stacks off Daniel. Pushing while behind `origin/main` earns a green tick for suites that never ran (step 8).
+- **Draft PR at phase 1.** It exists so every later phase gets a real CI signal. One PR per issue is the common case, which is why it opens with `Closes`.
+- **Handoff comment.** A contract written for a phase N+1 that does not exist is filler.
+- **Step 8.** A skipped required check passes deliberately — that is how a docs-only PR merges. `cancelled` is PR runs cancelling in progress, not a defect. The full log runs to tens of thousands of lines nobody needs.
+- **Step 9.** A final phase carrying the branch to 2400 lines is not split for the sake of a number: cutting one would produce a PR containing nothing. A continuation PR's base already contains the earlier phases, and a reviewer who doesn't know that reads them as missing work. The per-phase handoff comments hold the detail, so restating it only lengthens the thread. On a green, mergeable, out-of-draft PR the only thing left to observe is Daniel clicking merge.
+- **Pause conditions.** A single oversized phase was specced too big, and no PR boundary fixes it. Resolving someone else's concurrent change is not a run's scope.
