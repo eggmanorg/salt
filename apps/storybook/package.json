@@ -14,13 +14,13 @@
     "svelte": "^5.56.10"
   },
   "devDependencies": {
-    "@lucide/svelte": "^1.45.0",
+    "@lucide/svelte": "^1.47.0",
     "@storybook/addon-a11y": "^10.6.0",
     "@storybook/svelte": "^10.6.0",
     "@storybook/svelte-vite": "^10.6.0",
     "@sveltejs/vite-plugin-svelte": "^7",
     "@tailwindcss/vite": "^4",
-    "chromatic": "^18.8.1",
+    "chromatic": "^18.9.4",
     "storybook": "^10.6.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4",

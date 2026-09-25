@@ -22,7 +22,7 @@
     "@floating-ui/dom": "^1.8.0",
     "@fontsource-variable/epilogue": "^5.3.0",
     "@fontsource-variable/inter": "^5.3.0",
-    "@lucide/svelte": "^1.45.0",
+    "@lucide/svelte": "^1.47.0",
     "bits-ui": "^2.19.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
@@ -33,7 +33,7 @@
     "svelte-dnd-action": "^0.9.79",
     "svelte-easy-crop": "^5.0.1",
     "svelte-exmarkdown": "^5.0.2",
-    "tailwind-merge": "^3.6.0",
+    "tailwind-merge": "^3.7.0",
     "tw-animate-css": "^1.0.0"
   },
   "devDependencies": {
@@ -41,8 +41,8 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",
     "@testing-library/user-event": "^14.6.7",
-    "@types/node": "^26.5.1",
-    "jsdom": "^30.0.1",
+    "@types/node": "^26.6.1",
+    "jsdom": "^30.1.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",

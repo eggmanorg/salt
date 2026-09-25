@@ -1262,15 +1262,9 @@
   <!-- Opts OUT of the bottom variant's 85vh ceiling, deliberately: this sheet
        has never had one, and the combobox listbox that portals into it (below)
        needs the room. Explicit rather than silent — #930 moved the ceiling into
-       the primitive, and this is the one site it must not reach.
-
-       `max-h-[none]`, not `max-h-none`: tailwind-merge v3 does not list `none`
-       in the max-height group (it does for max-width), so the plain utility
-       arrives ALONGSIDE the variant's `max-h-[85vh]` rather than replacing it,
-       and which one wins is then down to stylesheet order. The arbitrary form
-       merges correctly. Pinned by `Sheet.test.ts` → "a caller can still opt out
-       of the ceiling". -->
-  <SheetContent class="flex max-h-[none] flex-col gap-4">
+       the primitive, and this is the one site it must not reach. Pinned by
+       `Sheet.test.ts` → "a caller can still opt out of the ceiling". -->
+  <SheetContent class="flex max-h-none flex-col gap-4">
     <SheetHeader>
       <div class="flex items-center gap-3">
         {#if editingItem}

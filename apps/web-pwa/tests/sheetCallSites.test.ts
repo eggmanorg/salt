@@ -115,7 +115,7 @@ describe('SheetContent call sites do not fight the primitive', () => {
   it.each([
     ['gap-4 — contains "p-4" as a substring and is not a violation', 'flex flex-col gap-4'],
     ['MealDayEditor’s surviving dvh ceiling', 'max-h-[85dvh] gap-3'],
-    ['ShoppingListPage’s deliberate opt-out', 'flex max-h-[none] flex-col gap-4'],
+    ['ShoppingListPage’s deliberate opt-out', 'flex max-h-none flex-col gap-4'],
     ['a caller’s own overflow', 'overflow-y-auto'],
   ])('leaves alone: %s', (_name, classes) => {
     expect(violations(`<SheetContent class="${classes}">`)).toEqual([]);
