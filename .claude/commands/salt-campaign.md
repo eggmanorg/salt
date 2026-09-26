@@ -84,9 +84,11 @@ Otherwise stay silent — no "checking…" or "confirmed". Each message: the sta
 
 ## Models
 
-Each helper is a subagent under `.claude/agents/`, its model in frontmatter: `campaign-extractor` `haiku`; `campaign-worker`, `pr-reviewer` and `campaign-divider` `opus`; `campaign-fixer`, `campaign-sweeper` and `campaign-resolver` `sonnet`. You run on `opus` too (rationale doc says why). **Spawn them as `Agent(subagent_type: "<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
+Each helper is a subagent under `.claude/agents/`, its model in its frontmatter; you run on `opus` (rationale doc says why). **Spawn them as `Agent(subagent_type: "<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
 
 Your own model propagates to any agent spawned without one: if you are not on Opus, say so once in the ledger's **Plan** block before dispatching — the only chance to catch it before the bill.
+
+**So does where you run:** `printenv CLAUDE_CODE_ENTRYPOINT`. `claude-desktop` (the desktop app's Code tab) roughly doubles every helper's starting context. Write the value on the Plan's `Session:` line; if `claude-desktop`, say so at dispatch, then carry on.
 
 ---
 
@@ -168,6 +170,7 @@ No label and no fields (**Filing an issue**) — the `campaign:` prefix is what 
 Order: #a → #b → #c
 Pool: 2   Max diff: 2000   Ending: merge to main
 Models: coordinator opus · workers opus · reviewers opus · fixes and conflict resolution sonnet · extractors haiku
+Session: sdk-cli
 Conflicts: #b after #a (shared packages/domain/src/recipe/**)
 Envelope: <the decision envelope you are operating under>
 Heartbeat: <shell-id>   ← one for the whole pool, re-armed on every wake

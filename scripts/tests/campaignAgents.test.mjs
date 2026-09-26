@@ -80,6 +80,21 @@ describe('salt-campaign.md spawns them by name', () => {
   });
 });
 
+// The desktop app's Code tab loads its own connectors into every helper, roughly
+// doubling each one's starting context (docs/campaign-rationale.md → Models).
+describe('salt-campaign.md records which session it runs in', () => {
+  const src = read('.claude/commands/salt-campaign.md');
+
+  it('checks CLAUDE_CODE_ENTRYPOINT and names the desktop value', () => {
+    expect(src).toContain('printenv CLAUDE_CODE_ENTRYPOINT');
+    expect(src).toContain('`claude-desktop`');
+  });
+
+  it('carries a Session: line in the ledger Plan block', () => {
+    expect(src).toMatch(/^Session: /m);
+  });
+});
+
 describe('salt-campaign.md stays a lean coordinator prompt', () => {
   it('is at most 40,000 bytes', () => {
     const bytes = readFileSync(path.join(repo, '.claude/commands/salt-campaign.md')).length;
