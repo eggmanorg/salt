@@ -66,7 +66,7 @@ Never pass `model:` — it would override the agent's frontmatter. The prompt ca
 
 It posts the review and returns one line per finding, or `STALE` if the head moved mid-review — then say so and stop: nothing was posted, and a re-run reviews the new head.
 
-**When the `Agent` tool is unavailable** — this command is itself sometimes run as a subagent ([the follow-ups runbook](../../docs/runbooks/campaign-followups-cleanup.md) does), and a subagent's tool list need not include `Agent` — read `.claude/agents/pr-reviewer.md` and follow its brief in this session with the same parameters. Its read-only rule then binds you until the review is posted: nothing is edited before it exists.
+**When the `Agent` tool is unavailable** — this command is sometimes run as a subagent, and a subagent's tool list need not include `Agent` — read `.claude/agents/pr-reviewer.md` and follow its brief in this session with the same parameters. Its read-only rule then binds you until the review is posted: nothing is edited before it exists.
 
 ## 3. Disposition
 
