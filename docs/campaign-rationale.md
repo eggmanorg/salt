@@ -48,6 +48,8 @@ A subagent with no model of its own inherits its parent's, so one selection at t
 
 The coordinator itself runs on `opus` because it adjudicates technical disputes without reading the code, and its merges are irreversible.
 
+**Why the coordinator records where it runs.** The same command costs different amounts depending on what launched Claude Code. The desktop app's Code tab (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`) delivers its own connectors and extensions in-process — Home Assistant, Blender, Gmail, Calendar, computer-use, Chrome — and no Claude Code setting reaches them ([docs](https://code.claude.com/docs/en/mcp#how-connectors-reach-claude-code)). Across the 25 campaigns of 17–24 Sep 2026, the median first-call context was 97K for a desktop-tab coordinator and 62K for its subagents (21 campaigns, 304 subagents), against 63K and 30K under `claude remote-control` (`sdk-cli`; 4 campaigns, 43 subagents). That baseline is re-read on every call. Daniel had been choosing between the two by accident, so the check makes the choice visible; it never stops a run, because the command runs unattended and a stop would hold the fleet until Daniel is back. The remote-control sample is small, and part of the gap may be version drift (#1613).
+
 ## Setup
 
 ### Resume, and confirm each issue is still open
