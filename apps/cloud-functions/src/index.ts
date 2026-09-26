@@ -476,8 +476,8 @@ export const authorRecipe = makeTracedCallable({
 // needed, for any child" holds here only because nothing is written. `recipes/{id}`
 // is already member-readable and member-writable, so a durable version would need no
 // new rules clause at all — the friction that argued against a draft document in
-// #1428 is simply absent here, and fact two is doing all the work on its own. The CF
-// side's own "writes nothing" is pinned by tests/callables/describeRecipeScene.test.ts;
+// #1428 is simply absent here. The CF side's own "writes nothing" is pinned by
+// tests/callables/describeRecipeScene.test.ts;
 // the trigger-vs-callable split is restated at the flow header; the decision is
 // recorded in docs/recipe-module.md → "The scene brief's two lives".
 //

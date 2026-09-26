@@ -86,17 +86,6 @@ function regenerate(data: unknown) {
   return (regenerateRecipeImage as unknown as Function)({ auth: { uid: 'uid-a' }, data });
 }
 
-// What the Regenerate dialog sends for a recipe as it stands: the box is seeded from
-// the saved brief, or '' when there is none, and an empty box is sent as no brief.
-// That client half is RecipeViewPage.svelte's openRegenerate/handleRegenerateConfirm,
-// pinned in apps/web-pwa/tests/RecipeViewPage.imageBrief.test.ts ("shows an empty box
-// and generates with no brief for a recipe that has none"); it is restated here only
-// so one test can follow the document through both callables.
-function regenerateUnedited(recipeId: string) {
-  const brief = String(recipes.get(recipeId)?.imageBrief ?? '').trim();
-  return regenerate(brief ? { recipeId, brief } : { recipeId });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   recipes.clear();
@@ -151,10 +140,14 @@ describe('setRecipeImageUpload callable', () => {
     recipes.set('never-generated', { title: 'Stew', image: null });
 
     await upload({ recipeId: 'uploaded', imageBase64: IMAGE_BASE64 });
+    // The guard. With no saved brief, the client's unedited Regenerate sends no brief
+    // (RecipeViewPage.svelte's openRegenerate, pinned in
+    // apps/web-pwa/tests/RecipeViewPage.imageBrief.test.ts) — so both calls below are
+    // what the dialog sends only while this assertion holds.
     expect(recipes.get('uploaded')).not.toHaveProperty('imageBrief');
 
-    await regenerateUnedited('uploaded');
-    await regenerateUnedited('never-generated');
+    await regenerate({ recipeId: 'uploaded' });
+    await regenerate({ recipeId: 'never-generated' });
 
     const afterUpload = recipes.get('uploaded');
     expect(afterUpload).toEqual(recipes.get('never-generated'));
