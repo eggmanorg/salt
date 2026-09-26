@@ -2,9 +2,10 @@
  * The save-intent handoff on the recipe page, where it goes wrong (issue #1505).
  *
  * `RecipeViewPage.saveNewRecipe.test.ts` already pins what the ask DOES once it
- * opens — the two words it offers, the leg each answer takes, the feature gate,
- * and Finding 1's "a request that was already sitting there is nobody's". This
- * file pins the two things that were wrong about WHEN and ON WHAT it asks:
+ * opens — the two words it offers, the leg each answer takes, and Finding 1's "a
+ * request that was already sitting there is nobody's". This file pins the two
+ * things that were wrong about WHEN and ON WHAT it asks, plus the refusal that
+ * stops it opening at all (#1540):
  *
  *  1. THE CHAT THE REQUEST WAS RECORDED ON ANSWERS IT, not whichever chat the
  *     selector happens to be showing when the dialog is answered. The dialog
@@ -496,6 +497,30 @@ describe('RecipeViewPage — a request it could not clear on first sight (#1494)
     await tick();
 
     expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+  });
+});
+
+describe('RecipeViewPage — a refusal from consumeSaveIntent (#1540)', () => {
+  // The compensating half of moving the `chatSave` gate inside
+  // `consumeSaveIntent` (#1512): this page has no flag read left of its own, so
+  // honouring the `false` IS the gate here. Every other `false` case in this file
+  // is a request the page did not ask for, which returns before the take is even
+  // read — so without this one, dropping `if (!taken) return;` from the acting
+  // branch left the whole suite green (#1540, from PR #1536's review).
+  //
+  // What answers `false` is not distinguishable from here and is not this file's
+  // to pin (`chatService.saveIntent.test.ts`): the feature key off, or another
+  // surface having taken this same request first.
+  it('does not ask about a request it asked for but was refused', async () => {
+    vi.mocked(consumeSaveIntent).mockResolvedValue(false);
+
+    await renderAndArm([chatA()]);
+
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+    await tick();
+    expect(screen.queryByTestId('chat-save-intent-dialog')).toBeNull();
+    expect(proposeRecipeAmendment).not.toHaveBeenCalled();
+    expect(authorRecipeFromChat).not.toHaveBeenCalled();
   });
 });
 

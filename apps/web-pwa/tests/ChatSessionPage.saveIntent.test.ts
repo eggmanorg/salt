@@ -409,6 +409,61 @@ describe('ChatSessionPage — a save the chef was asked for, while one is alread
     await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
   });
 
+  // The same duplicate, through the window the guard above does not close
+  // (#1540, from PR #1533's review): `runSave` releases `isSavingRecipe` and the
+  // handler then awaits the claim and the meal return before it navigates. A
+  // request whose `consumeSaveIntent` resolves inside that window reads the flag
+  // as false and takes the DIRECT path — a second librarian call for a save that
+  // has already landed. The fix is the latch, not the timing.
+  it('drops the request that arrives after the save landed but before the page leaves', async () => {
+    const before = makeSession();
+    mockSessions._set([before]);
+    renderPage();
+    await sendFromPage();
+
+    const settleLibrarian = heldLibrarian();
+    // Held too, so the window between "flag released" and "navigated" is wide
+    // enough to land in — as it is on a real device, where it is a Firestore
+    // write.
+    let settleClaim!: () => void;
+    vi.mocked(claimRecipe).mockReturnValueOnce(
+      new Promise((resolve) => {
+        settleClaim = () => resolve({ kind: 'ok', value: undefined });
+      }),
+    );
+    // The request is taken while the button's save is still running, and answers
+    // only once that save has released the flag.
+    let settleTake!: () => void;
+    vi.mocked(consumeSaveIntent).mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        settleTake = () => resolve(true);
+      }),
+    );
+
+    await fireEvent.click(screen.getByTestId('chat-save-recipe-btn'));
+    await waitFor(() => expect(authorRecipeTraced).toHaveBeenCalledTimes(1));
+    mockSessions._set([withReply(before)]);
+    await waitFor(() => expect(consumeSaveIntent).toHaveBeenCalled());
+
+    settleLibrarian({
+      kind: 'ok',
+      value: { recipe: SAVED, persistence: 'written' as const },
+    } as LibrarianResult);
+    // The save has landed and `isSavingRecipe` is false: the handler is sitting
+    // on the claim, and has not navigated yet.
+    await waitFor(() => expect(claimRecipe).toHaveBeenCalled());
+    expect(push).not.toHaveBeenCalled();
+
+    settleTake();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(authorRecipeTraced).toHaveBeenCalledTimes(1);
+
+    settleClaim();
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/recipe-new'));
+    expect(authorRecipeTraced).toHaveBeenCalledTimes(1);
+  });
+
   it('drops the request when the in-flight save succeeded, rather than saving twice', async () => {
     const settle = await raceAgainstTheButton();
 

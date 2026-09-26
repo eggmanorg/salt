@@ -126,6 +126,16 @@
   // on a general chat, the other only on an attached one.
   let isSavingRecipe = $state(false);
 
+  // A recipe HAS BEEN WRITTEN from this conversation, so this page is on its way
+  // to it. Latched for the life of the page rather than released with
+  // `isSavingRecipe`, which is the difference that matters: every ok path here
+  // navigates, but only after one or two further awaited writes (the claim, the
+  // meal attach), and `isSavingRecipe` is already false through all of them.
+  // Anything that would start a second save reads this and stops — a duplicate
+  // dish, not a recovery (issue #1540, from PR #1533's review, which found the
+  // duplicate still reachable through that window).
+  let saveLanded = $state(false);
+
   // The meal this conversation was started FROM, if any (issue #752, Phase 3).
   // Carried in the querystring across both chat hops — /chat then /chat/{id} —
   // and read live off the router, so a reload mid-conversation keeps it. See
@@ -196,10 +206,11 @@
     );
     // A save that LANDED has answered the chef's recorded request too, so the
     // deferred retry below is dropped rather than making a second recipe (issue
-    // #1505). Cleared in the same synchronous step as `isSavingRecipe`, before
-    // the effect watching that flag can be flushed — an `await` between the two
-    // is the gap through which the retry would fire.
-    if (result.kind === 'ok') pendingSaveRetry = false;
+    // #1505), and so is a request taken any time after this (issue #1540). Set in
+    // the same synchronous step as `isSavingRecipe`, before the effect watching
+    // that flag can be flushed — an `await` between the two is the gap through
+    // which the retry would fire.
+    if (result.kind === 'ok') saveLanded = true;
     isSavingRecipe = false;
     if (result.kind !== 'ok') {
       addToast('Failed to generate recipe.', 'destructive');
@@ -211,7 +222,7 @@
   // Save as recipe — the general-chat button. The conversation invented this dish,
   // so it goes on to belong to it.
   async function handleSaveAsRecipe(): Promise<void> {
-    if (!session || isSavingRecipe) return;
+    if (!session || isSavingRecipe || saveLanded) return;
     // `basedOnRecipeId` grounds the librarian on the dish this conversation
     // started from, so a variation carries forward everything the chat never
     // mentioned. It stays the CREATE path: the flow assembles with no base
@@ -262,14 +273,14 @@
   // here instead and run when the in-flight save settles.
   //
   // THE BOUNDARY (CLAUDE.md Rule 12): this recovers the case the in-flight save
-  // FAILS. One that succeeds clears this flag in `runSave` and then navigates to
-  // the recipe it wrote — the ask has been honoured by that save, and a retry
+  // FAILS. One that succeeds latches `saveLanded` in `runSave` and then navigates
+  // to the recipe it wrote — the ask has been honoured by that save, and a retry
   // there would be a duplicate dish, not a recovery.
   let pendingSaveRetry = $state(false);
 
   $effect(() => {
-    // Reads both, so it re-runs when the in-flight save releases the flag.
-    if (isSavingRecipe || !pendingSaveRetry) return;
+    // Reads all three, so it re-runs when the in-flight save releases the flag.
+    if (isSavingRecipe || saveLanded || !pendingSaveRetry) return;
     pendingSaveRetry = false;
     void handleSaveAsRecipe();
   });
@@ -299,6 +310,10 @@
       // regardless of `taken` — it is not this page's to act on, only to stop
       // re-arming.
       if (!askedHere || !taken) return;
+      // A recipe already written from this conversation has answered the ask, and
+      // this page is leaving for it: neither door opens again (issue #1540). The
+      // request is taken above either way, so it is not left to re-ask on reload.
+      if (saveLanded) return;
       if (current.recipeId !== null) {
         saveChoiceOpen = true;
         return;
@@ -325,7 +340,7 @@
   // to and stays listed there. The new recipe has no origin chat, which is right —
   // the chat is not about it, it merely produced it.
   async function handleSaveAsNewRecipe(): Promise<void> {
-    if (!session || isSavingRecipe) return;
+    if (!session || isSavingRecipe || saveLanded) return;
     const authored = await runSave(session, null, 'Writing the new recipe…');
     if (!authored) return;
     if (await returnToMeal(authored)) return;
@@ -474,7 +489,7 @@
                   chatActionsOpen = false;
                   void handleSaveAsNewRecipe();
                 }}
-                disabled={isSavingRecipe || thread.isSending}
+                disabled={isSavingRecipe || saveLanded || thread.isSending}
                 data-testid="chat-save-new-recipe-btn"
               >
                 Save as new recipe
@@ -496,7 +511,7 @@
             class="inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             aria-label="Save as recipe"
             onclick={handleSaveAsRecipe}
-            disabled={isSavingRecipe || thread.isSending}
+            disabled={isSavingRecipe || saveLanded || thread.isSending}
             data-testid="chat-save-recipe-btn"
           >
             <Icon name="Save" size={20} />
