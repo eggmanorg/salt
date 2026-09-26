@@ -466,9 +466,12 @@ describe.skipIf(!reachable)('firestore.rules — weatherForecast (issue #382)', 
   beforeEach(async () => {
     await testEnv.clearFirestore();
     // The cache is written by the refreshWeatherForecast CF (Admin SDK, bypasses
-    // rules); seed one with rules disabled so the read assertions have a doc.
+    // rules); seed one with rules disabled so the read assertions have a doc. The
+    // admin member is seeded too, so the write-denied case would go red under an
+    // `allow write: if isAdmin()` loosening rather than pass for want of a roster.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
+      await setDoc(doc(db, 'members', 'admin@e.org'), memberDoc('admin@e.org', true));
       await setDoc(doc(db, 'weatherForecast', 'singleton'), forecast);
     });
   });
