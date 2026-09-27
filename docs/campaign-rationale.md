@@ -62,6 +62,10 @@ A phased spec issue runs 10–25 KB; the coordinator needs about 200 tokens of i
 
 **Why a footprint is a prompt, never a gate.** It is a cheap model's transcription of prose written for a human, and over-collection is the mistake it actually makes. Campaign #1064 hit it twice in one day — once ruling `packages/domain/src/schemas/recipe.ts` untouchable when the issue only prohibited the `RecipeMetadataSchema` symbol, which the PR had left alone.
 
+### Conflict graph — be generous
+
+Overlap serialises even logically independent issues because of where the cost lands: found at merge time, an overlap costs a rebase, a re-review and a CI run; predicted at Setup, it costs only ordering.
+
 ### Pool of two
 
 The constraint is the host, not the plan: each worktree needs its own `pnpm install`, and every worker runs `pnpm test` and `pnpm check` on the same laptop. Past saturation a further worker makes all of them slower, and slower workers hit their time budgets — a throughput problem turned into parked branches.
@@ -87,6 +91,8 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 **The `timeout` observation.** In campaign #1495 (2026-09-20) a Bash `sleep 10800` carrying `timeout: 600000` was accepted, ran the full three hours and delivered a single completion at exit 0. That is one dated observation of this harness rather than a promise about every future version of it — so if a long sleep is ever refused, report the refusal actually seen. What is not evidence is the parameter name: inferring a cap from it, _after_ a three-hour sleep had already succeeded, is how a false claim got into the command, into a ledger and into a closed issue, all three agreeing with each other (#1541).
 
 **Why retry once with a fresh worker.** A stuck worker is usually a worker that ran out of road, not an issue that cannot be built; a fresh one reading the branch cold gets past most of them. One retry, never two, keeps a genuinely unbuildable issue from eating the campaign.
+
+**Why no helper's prompt-cache TTL is raised** (#1612). A subagent's prompt cache lives 5 minutes; the main session's lives an hour. A helper that idles past 5 minutes — a worker blocked ~10 minutes on CI at a phase boundary, a sweeper waiting on its own CI — re-writes its whole context at write price on its next call, and across the 25 campaigns of 17–24 Sep 2026 those reloads were 62% of all worker cache writes. Two controls exist to lengthen it: the `subagentPromptCacheTtl` setting (or the `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` environment variable), and `cacheTtl` under an agent's `experimental` frontmatter (Claude Code v2.1.248+). Neither is set, deliberately: #1612 removes the idle instead — the sweeper, and a worker once it builds one phase per dispatch, return at their push, and the coordinator, on its 1-hour cache, does the CI waiting — and a 1-hour cache write costs 2× input against 1.25× for 5 minutes, so on helpers that no longer idle it would _add_ roughly 15% of worker cost. The one condition that would justify either control is a helper that idles for more than 5 minutes inside its turn; `scripts/tests/campaignAgents.test.mjs` pins their absence, so adding one means editing that test and this entry together.
 
 **Why terminate before recycling a slot.** A worker left running still holds a worktree, still runs `pnpm test` against the resources the next worker needs, and can still commit and push to a branch that has been parked or is sitting in the merge queue — a `--force-with-lease` failure, or a merged branch containing work nobody reviewed.
 
@@ -168,7 +174,7 @@ The two coverage gates are the ones that bit hardest: campaign #1176 lost one CI
 
 ### The commit trailer
 
-The `Co-Authored-By` trailer is the repo's convention throughout, and the only per-commit record of which model wrote a phase — which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`).
+The `Co-Authored-By` trailer is the repo's convention throughout, and the only per-commit record of which model wrote a phase — which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`). A squash repeats it once per phase commit plus GitHub's deduped copy; that is expected, not a reason to strip it.
 
 ### No pre-push hook
 
@@ -186,7 +192,7 @@ The distinction is load-bearing. `board-status.yml` derives the issue→PR link 
 
 ### The backgrounded CI watch
 
-`--fail-fast` on a broken phase is four or five minutes back, and there is nothing a run would have done differently had it waited for the rest. The `sleep` covers the few seconds GitHub takes to register the run.
+`--fail-fast` on a broken phase is four or five minutes back, and there is nothing a run would have done differently had it waited for the rest. The `sleep` covers the few seconds GitHub takes to register the run. "About 10 minutes" is the p50 over successful `ci.yml` `pull_request` runs, range 8–15.
 
 ### The ceiling looks backward
 

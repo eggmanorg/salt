@@ -111,3 +111,70 @@ describe('salt-run.md stays a lean worker prompt', () => {
     expect(bytes).toBeLessThanOrEqual(30_000);
   });
 });
+
+// #1612 Phase 1. About 70% of campaign cost is re-reading context on every call,
+// and 91% of worker and fixer calls carried a single tool. These pin that each
+// rule's sentence is still in the prompt that carries it. What they cannot pin:
+// that an agent actually batches its reads, returns at its push, or skips the
+// steward cadence — those are run-time acts of a model reading prose, checked
+// only by reading a campaign's transcripts.
+describe('campaign helpers batch independent reads (#1612)', () => {
+  const BATCHING = /issue independent reads, searches and greps together in one message/i;
+
+  it.each([
+    '.claude/commands/salt-run.md',
+    '.claude/agents/campaign-fixer.md',
+    '.claude/agents/campaign-resolver.md',
+    '.claude/agents/campaign-sweeper.md',
+  ])('%s carries the batching sentence', (file) => {
+    expect(read(file)).toMatch(BATCHING);
+  });
+});
+
+describe('campaign-worker.md overrides salt-run.md step 9 item 5 (#1612)', () => {
+  it('says the steward subscription does not apply to a worker', () => {
+    const src = read('.claude/agents/campaign-worker.md');
+    expect(src).toMatch(/step 9 item 5 does not apply to you/);
+    // The reason is the backgrounded-command rule; the override must cite it.
+    expect(src).toMatch(/Never end your turn with a backgrounded command still running/);
+  });
+});
+
+describe('the sweeper returns at its push and the coordinator watches its CI (#1612)', () => {
+  it('campaign-sweeper.md returns no CI field and does not wait', () => {
+    const src = read('.claude/agents/campaign-sweeper.md');
+    const ret = src.slice(src.lastIndexOf('Return:'));
+    expect(ret).not.toMatch(/CI:/);
+    expect(src).toMatch(/do not wait for its CI/);
+  });
+
+  it('salt-campaign.md → Sweep arms the CI watcher on the sweep PR', () => {
+    const src = read('.claude/commands/salt-campaign.md');
+    const sweep = src.slice(src.indexOf('\n## Sweep\n'), src.indexOf('\n## Finish\n'));
+    expect(sweep).toContain('gh pr checks <pr> --watch --fail-fast');
+    expect(sweep).not.toMatch(/`REJECTED`, `CI`/);
+  });
+});
+
+// Decision 9 of #1612: the subagent prompt-cache TTL is deliberately left at
+// 5 minutes. This pins the rationale entry and the absence of both controls in
+// the repo. It cannot see a user-level `~/.claude/settings.json` or an
+// environment variable set on the host — only what this repo configures.
+describe('no helper prompt-cache TTL is raised (#1612)', () => {
+  it('the rationale doc names both controls and the 5-minute idle condition', () => {
+    const doc = read('docs/campaign-rationale.md');
+    const entry = doc.slice(doc.indexOf("**Why no helper's prompt-cache TTL is raised**"));
+    expect(doc).toContain("**Why no helper's prompt-cache TTL is raised**");
+    expect(entry).toContain('`subagentPromptCacheTtl`');
+    expect(entry).toContain('`cacheTtl`');
+    expect(entry).toMatch(/idles for more than 5 minutes/);
+  });
+
+  it.each(Object.keys(ROLES))('%s sets no cacheTtl', (name) => {
+    expect(read(`.claude/agents/${name}.md`)).not.toMatch(/cacheTtl/i);
+  });
+
+  it('.claude/settings.json sets no subagent prompt-cache TTL', () => {
+    expect(read('.claude/settings.json')).not.toMatch(/cacheTtl/i);
+  });
+});

@@ -140,7 +140,7 @@ Two issues are **in conflict** when either holds:
 - one names the other as a dependency;
 - their footprints share a file, or share a **module directory** — the deepest named directory under a package's `src/` (`packages/domain/src/recipe/**` overlapping `packages/domain/src/recipe/queries/**` counts; two issues that merely both touch somewhere in `packages/domain` do not).
 
-Overlap serialises even logically independent issues — found at merge time it costs a rebase, re-review and CI run; predicted here, only ordering. Be generous about what counts.
+Overlap serialises even logically independent issues. Be generous about what counts.
 
 Two files never count — they collide on almost every campaign, never really; a `campaign-resolver` handed the rule resolves them, never a park:
 
@@ -383,8 +383,8 @@ When every run-set issue is terminal and `## Sweep` has an unticked line, run on
 
 1. **Drop what the run no longer supports.** A line whose PR was parked, not merged, moves to the follow-ups list: its code never reached `main`.
 2. **Cut `chore/<slug>-sweep` from the new `main`** as in **Worktrees**.
-3. **Dispatch one `campaign-sweeper`** in the background with the worktree path, branch, ledger number, the unticked `## Sweep` lines verbatim, every parked branch (whose files it must not touch), and `--max-diff <n>`. It opens the PR `chore: campaign #<ledger> sweep` and returns `PR`, `FIXED`, `REJECTED`, `CI`.
-4. **Then it is an ordinary campaign PR**: confirm CI, review (a `pr-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]` **and** `[sweep]` findings both go to its round-1 fixer, ceiling permitting; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
+3. **Dispatch one `campaign-sweeper`** in the background with the worktree path, branch, ledger number, the unticked `## Sweep` lines verbatim, every parked branch (whose files it must not touch), and `--max-diff <n>`. It opens the PR `chore: campaign #<ledger> sweep` and returns `PR`, `FIXED`, `REJECTED` at the push, not waiting for CI.
+4. **Then it is an ordinary campaign PR**: arm the CI watcher (`gh pr checks <pr> --watch --fail-fast`) on it; once green, review (a `pr-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]` **and** `[sweep]` findings both go to its round-1 fixer, ceiling permitting; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
 5. Tick each `FIXED` line in the ledger body; `REJECTED` lines move to follow-ups with the reason.
 
 Empty `## Sweep` → skip silently. Under `--stop-at-green` the sweep PR is left reviewed and green too.
