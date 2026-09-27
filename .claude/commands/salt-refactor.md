@@ -181,9 +181,9 @@ Split at:
   whenever existing coverage isn't strong enough to prove preservation;
 - **a mechanical sweep** — a wide call-site migration separates cleanly from the structural change it follows;
 - **dead-code removal** — deleting the old shape after the new one is proven, never in the same phase; or
-- **too large to build inside the budget** — a worker gets **90 minutes** per phase, and about 10 of those
-  are the CI wait at the boundary rather than building. A sweep that cannot be built, gated and pushed
-  through CI inside that is two sweeps — and a mechanical migration is the easiest thing here to cut in
+- **too large to build inside the budget** — a worker gets **90 minutes** per phase, to build, gate and push
+  it; the CI wait at the boundary is the coordinator's, not part of the 90. A sweep that cannot be built,
+  gated and pushed inside that is two sweeps — and a mechanical migration is the easiest thing here to cut in
   half, since any point part-way through it is a safe resting point by construction.
 
 **A phase boundary is also a PR boundary**, so a long migration never has to fit in one PR: `/salt-run` cuts one

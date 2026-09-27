@@ -143,7 +143,7 @@ gh pr list --search "ISSUE_NUMBER in:body" --state all --json number,title,state
 git log --oneline origin/main --grep='(#PR)'
 ```
 
-Search the issue reference rather than a head branch. A split issue has more than one branch, so `--head <branch>` answers only for the branch you happened to guess and stays silent about the rest — and silence here reads exactly like "nothing landed". Confirm each hit against the squash subjects before believing it.
+Search the issue reference, never a head branch ([why](../../docs/campaign-rationale.md#search-the-issue-not-the-branch)). Confirm each hit against the squash subjects before believing it.
 
 `merged` means that PR is finished: it cannot track new work and its branch must not be reused. If phases remain, start the continuation from `main` — `git checkout -B <type>/<slug>-ISSUE_NUMBER-2 origin/main` — and let the first push open a new PR.
 
@@ -305,7 +305,7 @@ Stop there. **Do not start implementing N+1 until you have read phase N's CI res
 
 ### 7. Handoff comment
 
-Comment on issue #ISSUE_NUMBER — the audit trail and the AI PR reviewers' brief. Keep every heading, drop any filler line:
+Comment on issue #ISSUE_NUMBER — the audit trail and the AI PR reviewers' brief. On the campaign path it is also all the next phase inherits: a fresh worker builds it. Keep every heading, drop any filler line:
 
 ```
 ## Phase N complete

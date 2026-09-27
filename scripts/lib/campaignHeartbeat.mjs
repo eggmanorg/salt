@@ -20,7 +20,7 @@
 // strictly after that dispatch instant. That is unambiguous only for a worker
 // dispatched less than 24 hours before `now`: a row older than that resolves to
 // the wrong day and its breach is under-reported by whole days. The budget cap
-// is 360 minutes, so a row that old is a dead session's row, which Setup's
+// is 90 minutes, so a row that old is a dead session's row, which Setup's
 // resume check re-verifies by hand anyway. A DST change between dispatch and
 // `now` shifts the result by the size of the change; nothing here corrects for
 // it.
@@ -38,9 +38,11 @@
 // stale first match combined with `end <= dispatched` rolling to the next day
 // can sleep the heartbeat for nearly 24 hours over a live, unwatched retry —
 // so a Note with more than one `budget to HH:MM` is refused, not guessed at.
-// Likewise a resolved budget (end minus dispatch) over the 360-minute cap means
+// Likewise a resolved budget (end minus dispatch) over the 90-minute cap means
 // one of the two cells is stale, not a valid long-running row — refused rather
-// than trusted. Both name the row and ask for it to be fixed by hand, the same
+// than trusted. That includes a row written before #1612, when a worker built a
+// whole issue under `N phases, budget to HH:MM` for up to 360 minutes: it reads
+// as stale, which is why #1612 landed between campaigns. Both name the row and ask for it to be fixed by hand, the same
 // posture as an unparseable row above.
 
 const WORKER_TIME = /,\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
@@ -49,20 +51,17 @@ const NOTE_END_ALL = /\bbudget to ([01]\d|2[0-3]):([0-5]\d)\b/g;
 const COLUMNS = ['Issue', 'Worker', 'State', 'Note'];
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
-const MAX_BUDGET_MINUTES = 360;
 
 /**
- * Per-worker budget in minutes: `min(360, max(180, 90 × phases))`, `phases`
- * being what this dispatch builds. The same formula is stated in
- * salt-campaign.md → Dispatch; `campaignHeartbeat.test.mjs` reads that file's
- * `Worked values:` line and asserts this function agrees with every value on it.
+ * Every dispatch's budget in minutes. Since #1612 a worker builds one phase and
+ * returns at its push, so the budget is flat; salt-campaign.md → Dispatch
+ * states the same number, and `campaignBudget.test.mjs` pins it there.
  */
-export function budgetMinutes(phases) {
-  if (!Number.isInteger(phases) || phases < 1) {
-    throw new Error(`phases must be a positive integer, got ${String(phases)}`);
-  }
-  return Math.min(360, Math.max(180, 90 * phases));
-}
+export const BUDGET_MINUTES = 90;
+// A resolved budget over this means a stale cell. It equals the budget because
+// `dispatchCells` floors both times from one instant, so a fresh row resolves
+// to exactly BUDGET_MINUTES.
+const MAX_BUDGET_MINUTES = BUDGET_MINUTES;
 
 /** `HH:MM` of a Date in local time. */
 export function formatHHMM(date) {
@@ -77,16 +76,18 @@ function atTime(date, h, m) {
 
 /**
  * The cells to write at dispatch: the Worker cell's time (the coordinator
- * prefixes `agent <id>, `) and the whole Note cell.
+ * prefixes `agent <id>, `) and the whole Note cell, naming `phase`, the phase
+ * number this dispatch builds.
  */
-export function dispatchCells(phases, now) {
-  const budget = budgetMinutes(phases);
-  const end = new Date(now.getTime() + budget * MINUTE);
-  const noun = phases === 1 ? 'phase' : 'phases';
+export function dispatchCells(phase, now) {
+  if (!Number.isInteger(phase) || phase < 1) {
+    throw new Error(`phase must be a positive integer, got ${String(phase)}`);
+  }
+  const end = new Date(now.getTime() + BUDGET_MINUTES * MINUTE);
   return {
-    budget,
+    budget: BUDGET_MINUTES,
     worker: formatHHMM(now),
-    note: `${phases} ${noun}, budget to ${formatHHMM(end)}`,
+    note: `phase ${phase}, budget to ${formatHHMM(end)}`,
   };
 }
 
