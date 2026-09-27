@@ -144,10 +144,17 @@ export const ledgerRunSet = (title) =>
  *
  * `parentOf` is `issue number → parent number | null`. A run-set member missing
  * from it counts as unparented, which fails safe: the ledger stays a root.
+ *
+ * ADOPTED ISSUES ARE SET ASIDE (#1614). A campaign that adopts work files an
+ * issue born under the ledger and names it in the ledger's title, so it is a
+ * run-set member whose parent is `ledger`. Counted, it would break every
+ * shared parent and leave the ledger a root — the orphaning this function
+ * exists to stop. It is reachable through the ledger, so members whose parent
+ * is `ledger` are ignored. A run-set of nothing but those is treated as empty.
  */
-export function ledgerShouldAttachTo(runSet, parentOf) {
-  if (!runSet.length) return null;
-  const parents = runSet.map((n) => parentOf.get(n) ?? null);
+export function ledgerShouldAttachTo(runSet, parentOf, ledger) {
+  const parents = runSet.map((n) => parentOf.get(n) ?? null).filter((p) => p !== ledger);
+  if (!parents.length) return null;
   const [first] = parents;
   if (first === null) return null;
   return parents.every((p) => p === first) ? first : null;

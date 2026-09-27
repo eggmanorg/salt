@@ -10,7 +10,10 @@
 //
 // WHAT THIS DOES NOT PIN (CLAUDE.md rule 12): that a coordinator actually runs
 // the script, or acts on its output. That is prose, and a prose pin in
-// campaignBudget.test.mjs's style is the most any test can hold for it.
+// campaignBudget.test.mjs's style is the most any test can hold for it. The
+// same holds for `--may-adopt` (#1614): the termination guard's answer is
+// tested here, but nothing makes a coordinator ask it before adopting —
+// campaignAgents.test.mjs holds only that salt-campaign.md still says to.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -21,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  adoptionVerdict,
   BUDGET_MINUTES,
   dispatchCells,
   formatHHMM,
@@ -107,6 +111,17 @@ describe('the ledger template in salt-campaign.md', () => {
     const cells = dispatchCells(phase, at(time));
     expect(row_.worker.endsWith(`, ${cells.worker}`)).toBe(true);
     expect(row_.note).toBe(cells.note);
+  });
+
+  it('holds an adopted example row that parses and answers no (#1614)', () => {
+    const rows = parseStatusTable(template());
+    const adopted = rows.filter((r) => /\badopted\b/.test(r.issue));
+    expect(adopted).toHaveLength(1);
+    // Not `dispatched`, so the one-live-row assertion above still holds.
+    expect(adopted[0].state).not.toBe('dispatched');
+    const id = /#(\w+)/.exec(adopted[0].issue)[1];
+    expect(adoptionVerdict(rows, id).adopt).toBe(false);
+    expect(adoptionVerdict(rows, 'a').adopt).toBe(true);
   });
 });
 
@@ -296,6 +311,50 @@ describe('a retried row whose Note was appended rather than replaced (#1587 foll
   });
 });
 
+describe('adoptionVerdict — the termination guard (#1614)', () => {
+  const rows = parseStatusTable(
+    ledger(
+      row('#1601', 'merged', '—', ''),
+      row('#1602', 'in review', '—', 'round 1'),
+      row('#1640 adopted', 'queued', '—', 'from PR #1650, after #1601'),
+    ),
+  );
+
+  it('an ordinary run-set row: yes', () => {
+    expect(adoptionVerdict(rows, '1601')).toMatchObject({ adopt: true });
+    expect(adoptionVerdict(rows, '#1602')).toMatchObject({ adopt: true });
+    expect(adoptionVerdict(rows, 1602)).toMatchObject({ adopt: true });
+  });
+
+  it('a row marked adopted: no', () => {
+    const verdict = adoptionVerdict(rows, '1640');
+    expect(verdict.adopt).toBe(false);
+    expect(verdict.reason).toMatch(/itself adopted/);
+  });
+
+  it("an issue with no row — the ledger, the sweep PR's scope: no", () => {
+    const verdict = adoptionVerdict(rows, '1630');
+    expect(verdict.adopt).toBe(false);
+    expect(verdict.reason).toMatch(/no row/);
+  });
+
+  it('matches the whole id, not a prefix', () => {
+    expect(adoptionVerdict(rows, '160').adopt).toBe(false);
+    expect(adoptionVerdict(rows, '16400').adopt).toBe(false);
+  });
+
+  it('any adopted row for the issue wins over an ordinary one', () => {
+    const dup = parseStatusTable(
+      ledger(row('#7', 'merged', '—', ''), row('#7 adopted', 'queued', '—', '')),
+    );
+    expect(adoptionVerdict(dup, '7').adopt).toBe(false);
+  });
+
+  it.each(['', '1-2', '#', '1 2'])('refuses the issue %j', (issue) => {
+    expect(() => adoptionVerdict(rows, issue)).toThrow(/issue must be/);
+  });
+});
+
 describe('the CLI, spawned', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'campaign-heartbeat-'));
   const minutesFromNow = (m) => formatHHMM(new Date(Date.now() + m * 60_000));
@@ -376,6 +435,44 @@ describe('the CLI, spawned', () => {
 
   it.each([[[]], [['0']], [['two']]])('--dispatch %j exits 2', (rest) => {
     expect(cli(['--dispatch', ...rest]).status).toBe(2);
+  });
+
+  describe('--may-adopt (#1614)', () => {
+    const body = ledger(
+      row('#1601', 'merged', '—', ''),
+      row('#1640 adopted', 'queued', '—', 'from PR #1650'),
+    );
+    const file = path.join(dir, 'adopt.md');
+    writeFileSync(file, body);
+
+    it('prints ADOPT yes for a run-set issue, exit 0', () => {
+      const res = cli(['--may-adopt', '1601', file]);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toMatch(/^ADOPT yes — #1601 /);
+    });
+
+    it('prints ADOPT no for an adopted issue, exit 1', () => {
+      const res = cli(['--may-adopt', '#1640', file]);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toMatch(/^ADOPT no — #1640 is itself adopted/);
+    });
+
+    it('prints ADOPT no for the ledger (the sweep PR), reading stdin, exit 1', () => {
+      const res = cli(['--may-adopt', '1630'], body);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toMatch(/^ADOPT no — #1630 has no row/);
+    });
+
+    it('exits 2 on an unreadable table, printing no verdict', () => {
+      const res = cli(['--may-adopt', '1601'], '## Plan\nnothing here\n');
+      expect(res.status).toBe(2);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toMatch(/Status/);
+    });
+
+    it.each([[[]], [['x']], [['-1']]])('--may-adopt %j exits 2', (rest) => {
+      expect(cli(['--may-adopt', ...rest], body).status).toBe(2);
+    });
   });
 });
 

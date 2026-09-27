@@ -24,6 +24,10 @@ Before the CI and merge watchers existed, the pool heartbeat was left to notice 
 
 These two shapes were the largest source of permission stops in the command outside the merge queue, and every one of them blocked the fleet on a human. The allowlist matches whole command strings, so a compound line matches none of the entries that would have let each part through.
 
+### The git guard refuses a bare stash
+
+The stash stack is shared across every worktree and every agent on the host, so one agent's `git stash pop` can apply — and drop — another's work. A WIP commit sets work aside on the branch that owns it.
+
 ### One command lands a branch
 
 A hand-written `gh pr merge` is gated by `~/.claude/hooks/gh-merge-guard.mjs`, and that gate can only clear a line it recognises in full. Composing the landing steps by hand cost ten consecutive campaign runs a permission stop each: every line came out slightly different, so the gate recognised none of them, and each blocked the fleet on Daniel. `scripts/campaign-land.mjs` is one allowlisted command with nothing to compose.
@@ -35,6 +39,8 @@ A hand-written `gh pr merge` is gated by `~/.claude/hooks/gh-merge-guard.mjs`, a
 **Why the ledger's exemption stops at `Queue` and `Class`** (2026-09-12). Extending it to `Status` let 19 closed ledgers pile up at no Status, invisible to `check` and visible to Daniel as a column of cards on the `Workflow` board nobody could account for.
 
 **Why the ledger takes a parent** (#1346). A ledger used to take no parent. Everything a campaign throws off attaches to the ledger, so a root ledger put every follow-up and mid-run defect one hop from unreachable. Campaign #1266 ran #968, #971 and #993 — all three under epic #913 — and left #1269 behind where nobody opening #913 would ever see it.
+
+**Why adopted work is born under the ledger** (#1614). An adopted issue is the campaign's own output, like a follow-up, so the ledger is its parent — rung 1 of every spec command's parent ladder. The originating issue will not do: it is closed by the time the adopted work lands, and `board.mjs check` fails a closed issue over an open sub-issue. That makes it the one run-set member that sits under the ledger, which is why Finish's shared-parent lookup — and `ledgerShouldAttachTo` in `board.mjs check` — set such members aside: counted, they would break every shared parent and leave the ledger a root, the orphaning the attachment exists to prevent. The lookup reads parents through GraphQL, because the REST issue endpoint reports `parent: null` for every issue in this repo ([issue-board.md](issue-board.md)).
 
 **Why a parent need not be an epic.** A run-set frequently shares an ordinary work issue as its parent rather than an epic — #1122 and #1202 each hold their own phase issues from inside a work band — and the ledger attaches to that exactly the same way.
 
@@ -55,6 +61,8 @@ The coordinator itself runs on `opus` because it adjudicates technical disputes 
 ## Setup
 
 ### Resume, and confirm each issue is still open
+
+The cross-check runs one `gh pr list --head` per table row rather than one listing, so no listing limit can truncate what it sees. Re-dispatching an issue that already merged is the worst outcome a resume can produce.
 
 Campaign #1479 skipped the open-check and paid two extractors, two workers and two worktrees to be told by `/salt-run`'s own resume check what one call would have shown — both its issues had merged hours earlier, under the same epic. The resume check is the backstop and it held; a backstop is not a reason to skip the look.
 
@@ -77,6 +85,8 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 **Why fetch before every `worktree add`.** The rolling pool creates worktrees over hours, and `origin/main` is only what the last fetch saw; a dependent issue's premise is that it cuts from a `main` already holding its merged dependency.
 
 **Why `git worktree add`, not `isolation: "worktree"`.** That flag branches from `main` with no way to choose a base or name the branch, and `/salt-run` needs to own a branch it can push and PR. `.husky/post-checkout` fires `ensure-checkout.mjs` on `worktree add`, which installs dependencies, writes the gitignored dev env files, and restores `core.hooksPath`; a worktree created any other way has dead commit hooks.
+
+**Why never `SALT_TAKE_HOST=1`.** `scripts/host-guard.mjs` refuses `dev`, `dev:emulators`, `test:emulator` and `e2e*` in a worktree, correctly: they seize host-global ports and emulator state, and would kill Daniel's dev session or another worker's run. Each agent file names its safe gate set, and salt-run.md step 3 names a worker's; the heavy suites are CI's.
 
 **Why the coverage gates are in the safe set.** They block CI's `unit` job with near-zero slack. A worker that skipped them went green locally and red in CI minutes later — one CI cycle on #1140 and two on #1137.
 
@@ -124,6 +134,10 @@ Until #1612 one `campaign-worker` ran every phase of its issue in one context: b
 
 **Why one follow-ups issue, and not the ledger's closing comment.** The previous rule put the list in the ledger's closing comment, but Finish closes the ledger when nothing is parked, so the list landed in a closed issue with no trace anywhere a human looks. Campaign #1040 lost seven that way, two of them live prod risks. That rule's stated grounds were also wrong: it claimed campaign #1009's seventeen filed follow-ups were "never actioned", when most closed within a day — and #1021, #1023 and #1030, the entire contents of campaign #1040, were three of them. Filing is the mechanism that feeds the next campaign; one issue rather than seventeen is the concession to noise. Since #1614 it is filed only when a question is left for Daniel — an unmarked finding, a rejected line, a park — each line phrased as that question with what each answer costs him; a campaign whose findings were all engineering choices files nothing and closes with a sentence.
 
+**Why adopt, not file** (#1614). A filed follow-up was always done in the end — 39 of the 40 lists since 27 August closed — but a second time round: a new spec, a new campaign, a new worktree, a new review, and Daniel's reading and deciding in between. Work too big for a fix round or the sweep (a sweep line rejected for the ceiling or for needing phases, a `[decide]` whose chosen fix does not work, a worker's falsified premise that failed the footprint or ceiling test) is the same work, so the campaign now files it through the matching spec command — a `campaign-filer` on opus, since writing a spec is design work — and runs it the same night as a run-set member: its own extractor, a conflict edge to the issue whose PR produced it (the finding is about code that PR adds, so built without it the premise is false), a place in the ledger's title and an `adopted` row. It costs a longer night, one more spec, worker, review and PR per adoption — the same work the follow-ups issue would have caused the next week, done while he sleeps. A fork in one of Daniel's five calls is still his: the filer files nothing and returns the question, because a filed issue carrying an open Daniel question passes the shape check and looks runnable. Rejected: filing it on the follow-ups list for a later campaign (the old rule).
+
+**Why adopted PRs and the sweep PR never adopt** (#1614). A reviewer asked to look again always finds something — which is why `/salt-review` runs once, with no second pass over its own fixes (`salt-review.md`; the #1590 history). If every PR could adopt, every adopted PR's review would yield findings that adopt more, and the campaign would never end. So only a PR of the original run-set adopts: an adopted issue's PR and the sweep PR still send in-footprint findings to their own round-1 fixer, and out-of-footprint ones to `## Sweep` while the sweep has not run, but anything that would need adoption — and anything out of footprint once the one sweep has run — goes on the morning list. Depth is at most one, and breadth is bounded by the findings on the run-set's own PRs. The rule is decided by `node scripts/campaign-heartbeat.mjs --may-adopt`, over the ledger's `## Status` table (an `adopted` row, or no row — the sweep PR's scope is the ledger — answers no); its limit is that nothing makes the coordinator ask it, which the test header says. Rejected: a numeric cap on adoptions (arbitrary, and it still lets an adopted PR adopt); no guard (unbounded).
+
 **Why a line carries its issue number too.** [`board-status.yml`](../.github/workflows/board-status.yml) ticks the one line that names a closed sub-issue and closes the follow-ups issue once every line is ticked. #1335 and #1370 both reached every-child-closed and stayed open, unticked, because their lines named only a PR.
 
 ## Merge queue
@@ -134,7 +148,7 @@ Until #1612 one `campaign-worker` ran every phase of its issue in one context: b
 
 **Why the reviewer does not win.** A rejection is a position, not a veto; reviewer-wins is a deadlock in a command that runs unattended, so the coordinator adjudicates and records it.
 
-**Why the heavy-suite read selects by PR** (#1588). A merge-queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so `--branch main --limit 1` returns the post-merge `push` run instead — still `in_progress` with empty job conclusions at that moment, which parks a good merge; `heavy-suites.mjs` refuses it. And the newest `merge_group` run of _any_ PR is another entry's when two are queued, so `--pr` matches that prefix rather than taking the newest.
+**Why the heavy-suite read selects by PR** (#1588). A merge-queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so `--branch main --limit 1` returns the post-merge `push` run instead — still `in_progress` with empty job conclusions at that moment, which parks a good merge; `heavy-suites.mjs` refuses it. And the newest `merge_group` run of _any_ PR is another entry's when two are queued, so `--pr` matches that prefix rather than taking the newest. `pnpm mergequeue:check` fails if the ruleset's required contexts stop reporting at all.
 
 ## Decision envelope
 
@@ -172,7 +186,7 @@ Of pin, qualify or delete, deletion is the option that gets skipped, and re-word
 
 ### Falsified premises: why the default flips
 
-The reason the default is to correct a falsified premise in-phase is pure cost. A deferred premise is not a note: it is a spec pass, a board row, a triage, a worktree, a run, a PR and a review, to deliver what was frequently two lines.
+The reason the default is to correct a falsified premise in-phase is pure cost. Under a campaign, a premise that still fails a test is not filed by the worker at all: it returns under `DEFERRED` with the test it failed, and the coordinator adopts a `footprint` or `ceiling` one the same night (#1614) or parks a `decision` one. `salt-run.md` is unchanged — a standalone run still defers — because the campaign-side handling lives in `campaign-worker.md` and salt-run.md has no room under its cap. A deferred premise is not a note: it is a spec pass, a board row, a triage, a worktree, a run, a PR and a review, to deliver what was frequently two lines.
 
 #1518 is the worked example in both directions — its reproduction said renaming an entry would show the stale-picture banner, and the build proved it does not. That gap was correctly deferred (it is a Cloud Functions change with three candidate shapes — a real fork). But the same PR also found the issue's `DESCRIBED` fixture does not serve as the "current, not stale" case it was promised as, and folding _that_ in was correct and cost nothing.
 

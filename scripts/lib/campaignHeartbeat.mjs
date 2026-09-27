@@ -189,6 +189,53 @@ export function heartbeat(rows, now) {
 }
 
 /**
+ * May the finding raised on `issue`'s PR be adopted — filed and run tonight as
+ * part of this campaign? Issue #1614, the termination guard.
+ *
+ * A reviewer asked to look again always finds something, so if every PR could
+ * adopt work, every adopted PR would yield findings that adopt more and the
+ * campaign would never end. The guard caps depth at one: only a PR of the
+ * original run-set adopts.
+ *
+ * - `no` for a row whose Issue cell carries the word `adopted` — that issue was
+ *   itself adopted;
+ * - `no` for an issue that is not a row at all — the sweep PR's case, since its
+ *   scope issue is the ledger, which has no row;
+ * - `yes` otherwise.
+ *
+ * `issue` is the id after the `#` (`'1640'`, `'#1640'` and `1640` alike; the
+ * template's `#a`-style ids work too). A row is matched on the first `#<id>` in
+ * its Issue cell. More than one row for the same issue answers `no` if any of
+ * them is adopted.
+ *
+ * WHAT THIS CANNOT DO (CLAUDE.md rule 12). It is tested; nothing mechanical
+ * makes the coordinator call it before an adoption. That is an agent reading
+ * salt-campaign.md → Adopting work, and `campaignAgents.test.mjs` holds only
+ * that the instruction is still there. It also trusts the table: an adopted row
+ * written without the word `adopted` reads as an ordinary run-set issue.
+ */
+export function adoptionVerdict(rows, issue) {
+  const id = String(issue ?? '')
+    .trim()
+    .replace(/^#/, '');
+  if (!/^\w+$/.test(id)) throw new Error(`issue must be "#<id>" or "<id>", got "${String(issue)}"`);
+  const matching = rows.filter((r) => /#(\w+)/.exec(r.issue)?.[1] === id);
+  if (matching.length === 0) {
+    return {
+      adopt: false,
+      reason: `#${id} has no row in the ledger's Status table — the sweep PR (scope: the ledger) never adopts`,
+    };
+  }
+  if (matching.some((r) => /\badopted\b/i.test(r.issue))) {
+    return {
+      adopt: false,
+      reason: `#${id} is itself adopted — an adopted issue's PR never adopts`,
+    };
+  }
+  return { adopt: true, reason: `#${id} is a run-set issue of this campaign` };
+}
+
+/**
  * What the CLI prints for a verdict, and its exit code: 0 no breach, 1 at least
  * one breach. (Exit 2 — unreadable input — is the CLI's, from a throw above.)
  */

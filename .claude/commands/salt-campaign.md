@@ -26,14 +26,14 @@ Success is a clean tree when Daniel comes back: every issue merged to main, or p
 - **Context hygiene is a hard rule.** Never read source files, diffs, CI logs or test output; a Read under `packages/`, `apps/` or `docs/` is a delegation. You read structured agent returns, the reviewer's summary, and `gh`/`git` status output — not even issue bodies, which are extracted for you (Setup 2). File names are not diffs: `git diff --name-only`, `gh pr view --json files` and `git status` are yours. **Hardest for a retry, a divide and the sweep**: hand over a one-line reason and the ledger row, take back the structured return, and never read what went wrong — the agent does.
 - **Unattended by default.** A question (AskUserQuestion included) blocks the fleet for hours. Decide inside the envelope below; outside it, park the branch and keep the queue moving.
 - **CLAUDE.md is binding**, for you and every agent you spawn.
-- **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear` — the stash stack is shared across every worktree and agent. Land things with `gh pr merge`; set work aside with a WIP commit, never a stash.
+- **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear`. Land things with `gh pr merge`; set work aside with a WIP commit, never a stash.
 - **/salt-run is the worker.** Never reimplement the phase loop — two copies drift within a month. `campaign-worker` runs `.claude/commands/salt-run.md` with the overrides it needs.
 - **Settle how you reach GitHub before your first `gh` call** — `command -v gh`, a property of where this session runs. Recipes here assume `gh`; each `.claude/agents/` file handles this itself, so a dispatch prompt never carries it.
   - **`gh` present (the Mac).** Plain `gh issue view` / `gh pr view` exit 0 with **empty stdout** in a non-TTY session: use `--json` forms or `gh api`, and treat empty comment output as a failed fetch, not "no comments". Every `gh` call needs the sandbox disabled.
   - **`gh` absent (a cloud session)** — it cannot be made present. Use the GitHub MCP server per **`gh` absent** below; `git push` is unaffected. `issue_read` strips raw angle brackets from a body, so never "correct" an issue on the strength of what it returned. Record the deviation once in the ledger's **Plan** block.
 - **Waiting is ending your turn, not running a command.** Once a helper is dispatched, stop — a final line and **no tool call**; never a no-op "yield" (`echo hold`, `true`, a foreground `sleep`). A returning background `Agent` or the heartbeat's `sleep` wakes you. The only legitimate blocking wait blocks _inside_ one call, like `gh pr checks <pr> --watch`.
 - **Waiting on a named event is a watcher, not a heartbeat.** Arm a backgrounded watcher (Bash, `run_in_background: true`) that wakes you once, **on** the event: `gh pr checks <pr> --watch --fail-fast` for CI, `until [ "$(gh pr view <pr> --json state --jq .state)" != "OPEN" ]; do sleep 30; done` for a merge. Never leave these to the pool heartbeat: `subscribe_pr_activity` and `send_later` do not exist in this harness.
-- **Never open a shell command with `cd`, and never with a variable assignment** (`cd <path> && cat x`, `W=<path>; grep foo $W/src`): the allowlist matches neither. Use `git -C <worktree>` and absolute paths (`(cd <path> && …)` as a last resort), and `pnpm test | tail -20` over `pnpm test 2>&1 | tail -20`. Every campaign agent carries this rule.
+- **Never open a shell command with `cd`, and never with a variable assignment** (`cd <path> && cat x`, `W=<path>; grep foo $W/src`): the allowlist matches neither. Use `git -C <worktree>` and absolute paths (`(cd <path> && …)` as a last resort), and `pnpm test | tail -20` over `pnpm test 2>&1 | tail -20`.
 - **One command lands a branch, and you compose nothing around it:** `node scripts/campaign-land.mjs <pr>` (**Merge queue**). A hand-written `gh pr merge` meets `~/.claude/hooks/gh-merge-guard.mjs`.
 
 ### `gh` absent
@@ -48,7 +48,7 @@ Only the route changes, to the **GitHub MCP server**:
 
 ## Filing an issue
 
-This command files the ledger, any adjudicated blocking finding, and — only when a question is left for Daniel — the follow-ups checklist. **All but the ledger are triaged and attached as they are created; the ledger gets its parent at Finish:**
+This command files the ledger, any adjudicated blocking finding, and — only when a question is left for Daniel — the follow-ups checklist; a `campaign-filer` files adopted work. **All but the ledger are triaged and attached as they are created; the ledger gets its parent at Finish:**
 
 ```
 gh issue create --title "…" --body-file <file>       # take the number out of the URL it prints
@@ -58,13 +58,12 @@ node scripts/board.mjs parent <new> --of <parent>
 
 Never later.
 
-- **The ledger** — no `--class`, `--queue` or `--size`; parent at **Finish**.
+- **The ledger** — no `--class`, `--queue` or `--size`; `Status` and parent at **Finish** step 2.
+- **An adopted issue** — the filer's, per its spec command; parent: the ledger, where it is born.
 - **An adjudicated blocking finding** — `Defect`, `Medium` (`Recommended` only per the rule below), `S`; parent: the ledger.
 - **The follow-ups checklist** (Finish) — `Refactor`, or `Defect` if most lines are; `Low`, or `Medium` if a line has a real user-facing consequence; `S` up to 3 lines, else `M`; parent: the ledger.
 
-**The ledger is exempt from `Queue` and `Class`, not from `Status` or reachability** — both set at **Finish** step 2. `campaign follow-ups:` is ordinary work.
-
-**A parent is not an epic**, and may be ordinary work. **The ledger goes up, the work stays put** (sub-issue links are a strict tree). **Never re-parent a run-set issue to sit under the ledger.**
+**A parent is not an epic**, and may be ordinary work. **The ledger goes up, the work stays put** (sub-issue links are a strict tree). **Never re-parent a run-set issue to sit under the ledger** — only adopted work is born there.
 
 **`Recommended` still means proven.** Real, agreed and never once triggered is `Low`, however alarming ([docs/issue-board.md](../../docs/issue-board.md), #1056). Err low, and say in the issue what would prove it higher.
 
@@ -88,7 +87,7 @@ Each helper is a subagent under `.claude/agents/`, its model in its frontmatter;
 
 Your own model propagates to any agent spawned without one: if you are not on Opus, say so once in the ledger's **Plan** block before dispatching.
 
-**So does where you run:** `printenv CLAUDE_CODE_ENTRYPOINT`. `claude-desktop` (the desktop app's Code tab) roughly doubles every helper's starting context. Write the value on the Plan's `Session:` line; if `claude-desktop`, say so at dispatch, then carry on.
+**So does where you run:** write `printenv CLAUDE_CODE_ENTRYPOINT` on the Plan's `Session:` line; if `claude-desktop` (the desktop app, doubling every helper's context), say so at dispatch, then carry on.
 
 ---
 
@@ -96,9 +95,9 @@ Your own model propagates to any agent spawned without one: if you are not on Op
 
 ### 1. Resume, don't restart
 
-Before anything: `gh issue list --search 'in:title "campaign:"' --state open`. An open campaign issue covering this set is your state — read its body (the status table), not its comments, and announce where you resume. Re-dispatching a merged issue is the worst outcome here.
+Before anything: `gh issue list --search 'in:title "campaign:"' --state open`. An open campaign issue covering this set is your state — read its body (the status table), not its comments, and announce where you resume.
 
-Cross-check the table against reality, per branch you control, so no listing limit can truncate what you see:
+Cross-check the table against reality, per branch you control:
 
 ```
 gh pr list --head <branch> --state all --json number,state,mergedAt   # one call per table row
@@ -107,7 +106,7 @@ git worktree list
 
 A row disagreeing with `gh` — "merged" with an open PR, "in progress" with no branch — broke mid-queue: park that issue, correct the row, say so. Never build on an unconfirmed row.
 
-A `dispatched` row from a dead session has no live worker: verify what its branch holds (the check above, plus `git log --oneline origin/main..origin/<branch>` if pushed), then re-dispatch from there — /salt-run's resume picks up landed phases — or park it. A `CI wait` row: re-arm the CI watcher on its PR and carry on from **Dispatch** → _One phase per worker_.
+A `dispatched` row from a dead session has no live worker: verify what its branch holds (the check above, plus `git log --oneline origin/main..origin/<branch>` if pushed), then re-dispatch from there or park it. A `CI wait` row: re-arm the CI watcher on its PR and carry on from **Dispatch** → _One phase per worker_.
 
 **Then confirm each issue is still open**, before the extractors — somebody else may have finished it:
 
@@ -121,14 +120,14 @@ gh api repos/{owner}/{repo}/issues/N --jq '"#\(.number) \(.state) — \(.title)"
 
 **Never open the issue bodies yourself.**
 
-Spawn one `campaign-extractor` per issue, all in one message, its prompt the issue number. Its definition carries the rule it is prone to break — **transcribe; do not interpret**: a `Must not touch` entry naming a symbol, export, behaviour or rule stays those words, never resolved to a file.
+Spawn one `campaign-extractor` per issue, all in one message, its prompt the issue number. Its definition carries the rule it is prone to break — **transcribe; do not interpret**.
 
 `DELIVERABLES` plus the `MUST_NOT_TOUCH` entries that are literally paths is the issue's **footprint**. Its one job is ordering the conflict graph.
 
-**A footprint is a prompt, never a gate** — a cheap model's transcription, prone to over-collect.
+**A footprint is a prompt, never a gate.**
 
-- **Ordering may act on it** — over-collection there costs only an unneeded serialisation.
-- **Nothing else may** — never a scope breach, a finding, a park reason, or a line in a review or ledger; you hold neither the issue's wording nor the diff.
+- **Ordering may act on it.**
+- **Nothing else may** — never a scope breach, a finding, a park reason, or a line in a review or ledger.
 - **When it looks breached, ask**: add to that PR's `pr-reviewer` prompt — _"the issue's Must-not-touch says `<the entry, verbatim>`; check whether the diff breaches it"_ — and take the reviewer's answer, including no, as the verdict.
 
 `RUNNABLE: no` → **confirm it first**: `gh api repos/{owner}/{repo}/issues/N --jq '.body' | grep -c '^### Phase'` returns a count, not prose. Zero → park it and say which. Non-zero → dispatch, and let /salt-run judge; it returns BLOCKED on a phase block missing its fields.
@@ -151,7 +150,7 @@ Order: dependencies first, then cheapest (fewest phases) — an early merge free
 
 ### 4. Rolling pool, not a barrier
 
-Run `--pool` workers, default 2. Raise it with host headroom (more cores, Daniel not in the main checkout). Above 4, note once in the ledger that you run wide and why, then do it; the flag is Daniel's call.
+Run `--pool` workers, default 2. Above 4, note once in the ledger that you run wide and why, then do it; the flag is Daniel's call.
 
 When an issue leaves the dispatch loop — to **Review**, a split or a park; a `CI wait` between phases keeps its slot — start the next listed issue whose conflicts are all terminal (merged or parked); never wait for a batch. A dependent issue cuts from `origin/main` after its dependency merged, so there is no integration branch. Nothing startable → run below capacity; that is not a stall.
 
@@ -163,13 +162,13 @@ gh issue create --title "campaign: <slug> (#a #b #c)" --body-file <file>   # wri
 
 Name the session too, where `mcp__ccd_session_mgmt__set_session_title` exists (the desktop app; skip silently elsewhere): `session_id: "self"`, `title: "CAMPAIGN: #<ledger> — <the run-set's shared theme, not issue numbers>"`.
 
-No label and no fields (**Filing an issue**) — the `campaign:` prefix is what the resume search and `board.mjs check` match. **Set no `Status`**: [`board-status.yml`](../../.github/workflows/board-status.yml) moves a new ledger to `In progress`; `Merged` at **Finish** is yours. **No parent until Finish.** The body is the live state a fresh session reads; `gh issue edit <ledger> --body-file <file>` on every transition:
+No label and no fields (**Filing an issue**); the `campaign:` prefix is what the resume search and `board.mjs check` match. **Set no `Status`** (`board-status.yml` moves a new ledger to `In progress`) **and no parent** until **Finish**. The body is the live state a fresh session reads; `gh issue edit <ledger> --body-file <file>` on every transition:
 
 ```
 ## Plan
 Order: #a → #b → #c
 Pool: 2   Max diff: 2000   Ending: merge to main
-Models: coordinator opus · workers opus · reviewers opus · fixes and conflict resolution sonnet · extractors haiku
+Models: coordinator opus · workers opus · reviewers opus · fixes and conflict resolution sonnet · extractors haiku · filer opus
 Session: sdk-cli
 Conflicts: #b after #a (shared packages/domain/src/recipe/**)
 Envelope: <the decision envelope you are operating under>
@@ -183,6 +182,7 @@ Heartbeat: <shell-id>   ← one for the whole pool, re-armed on every wake
 | #c | fix/slug-c | #103 | dispatched | agent <id>, 09:14 | phase 2, budget to 10:44 |
 | #e | feat/slug-e | #104 | CI wait | — | phase 1 pushed |
 | #d | — | — | queued | — | after #b |
+| #h adopted | — | — | queued | — | from PR #101; after #a |
 
 ## Sweep
 - [ ] PR #101 — `packages/domain/src/recipe/queries/capabilities.ts`: header claims X, qualify to Y
@@ -205,10 +205,10 @@ git worktree add -b <type>/<slug>-N .claude/worktrees/<slug>-N origin/main
 
 **Fetch immediately before every `worktree add`.** A **continuation** branch (phases left after a split) is the same `<type>/<slug>` plus `-2`, then `-3`, cut from the `main` holding the preceding PR — never from that PR's branch.
 
-Use `git worktree add`, **not** `isolation: "worktree"` (no base, no branch name); only `worktree add` fires `.husky/post-checkout`.
+Use `git worktree add`, **not** `isolation: "worktree"`.
 
 - **One worker per worktree.** Never two agents in one checkout; they share a HEAD.
-- **Helpers run the safe gate set only**, coverage gates included — named in the fixer, sweeper and resolver files, and salt-run.md step 3 for workers. `scripts/host-guard.mjs` refuses `dev`, `dev:emulators`, `test:emulator` and `e2e*` in a worktree, correctly: never `SALT_TAKE_HOST=1`. The heavy suites are CI's.
+- **Helpers run the safe gate set only**, coverage gates included, as each agent file says; never `SALT_TAKE_HOST=1`. The heavy suites are CI's.
 - **On merge:** remove the worktree and delete the local branch (the queue section says in which order — it matters).
 - **On park:** the branch must survive and be findable. Push it (`git push -u origin <branch>`, WIP commit first if dirty), label the PR `status: on-hold` (invent no other label), comment the reason on the PR and the ledger, then remove the worktree. Attach nothing: its place in the ledger's title holds the ledger open.
 - Finish with `git worktree prune`; leave no stale worktrees.
@@ -223,7 +223,7 @@ Use `git worktree add`, **not** `isolation: "worktree"` (no base, no branch name
 
 A hung worker returns nothing. **One heartbeat covers the whole pool** — one backgrounded `sleep` (Bash, `run_in_background: true`), its shell id on the Plan block. **Arm it to the earliest budget end-time across the live pool** — `sleep <SLEEP>`, never a fixed interval — and **re-arm it only when that earliest deadline actually changes**: a worker dispatched, returned or terminated.
 
-**The `timeout` parameter does not kill a backgrounded command** — its 600000 ms cap bounds foreground calls (rationale doc). If a long sleep is ever refused, report the refusal you saw.
+**The `timeout` parameter does not kill a backgrounded command** (rationale doc). If a long sleep is ever refused, report the refusal you saw.
 
 **The script does the comparison.** On every wake — **including a wake caused by an agent returning, not only a heartbeat exit** — run `node scripts/campaign-heartbeat.mjs <ledger-body-file>` (resume: pipe in the ledger body) and act on each `BREACHED` line. **Exit 2** is a pause, **never an empty pool**: fix the row it names. Hold **a heartbeat armed for the current earliest deadline whenever the pool is non-empty**: before ending a turn, re-arm to `SLEEP` if `EARLIEST` differs from the deadline you last armed.
 
@@ -263,9 +263,9 @@ Never refill a slot whose occupant is not confirmed dead. Unconfirmable → run 
 
 File no split issue, and never choose the phase boundary — the spec did.
 
-**`BLOCKED: oversized`** means only **a single phase unbuildable under the ceiling on its own**; crossing it _across_ phases splits.
-
 **FLAGS naming another campaign issue** → record it and re-check the conflict graph; it is the one signal of an overlap the footprints missed.
+
+**`DEFERRED`** — a falsified premise the worker could not correct in place: `footprint` or `ceiling` → **Adopting work**; `decision` parks (**Decision envelope**).
 
 ---
 
@@ -286,6 +286,7 @@ A `campaign-fixer`, never /salt-run (it no-ops on a finished branch), its prompt
 - **`[fold-in]`**, in the footprint → the round-1 fixer. The only ceiling is `--max-diff`: the fixer rejects a fix that would breach it, or any on a PR already over by a declared overage.
 - **`[decide]`** → **adopt the reviewer's recommended choice** (**Decision envelope**) and record it in a ledger comment. In the footprint → the round-1 fixer, the choice on its line; outside it → a `## Sweep` line carrying `decided: <the choice>`.
 - **`[sweep]`**, a `[fold-in]` outside the footprint, or a fold-in or `[decide]` rejected **only** for the ceiling → a `## Sweep` line in the ledger as it arrives (PR number, file or symbol, a `[decide]`'s choice), never the round-1 fixer, whose footprint it would widen.
+- A `[decide]` whose choice does not work as written, or a `[fold-in]` needing a design choice → **Adopting work**.
 - **Unmarked** — one of Daniel's five calls or Out of scope, its reason word on the line — or rejected for any other reason → the follow-ups list.
 
 `FIXED` findings leave the list; `REJECTED` ones route as above, with the reason. **Classify against the five, never defer on doubt** — reviewer and coordinator alike. A line whose mark or reason word you cannot read fails safe to the list.
@@ -294,17 +295,27 @@ Rounds are capped at two. Round 1 is the full review. Round 2 only verifies roun
 
 **You adjudicate, not the reviewer**: a rejection is a position, not a veto. Decide, record it in the ledger, move on.
 
-**What is left for Daniel becomes one issue per campaign — and only if something is**: at **Finish**, `gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <checklist>`, triaged and attached per **Filing an issue**. The body is a `- [ ]` checklist, one line per item with its PR number — unmarked findings, `REJECTED` lines, parks; nothing fixed or decided. **Each line is a question for Daniel with what each answer costs him**, built from the reason word and summary, never the diff. Nothing left → nothing filed.
+**What is left for Daniel becomes one issue per campaign — and only if something is**: at **Finish**, `gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <checklist>`, triaged and attached per **Filing an issue**. The body is a `- [ ]` checklist, one line per item with its PR number — unmarked findings, `REJECTED` lines, parks, and what **Adopting work** turned away; nothing fixed or decided. **Each line is a question for Daniel with what each answer costs him**, built from the reason word and summary, never the diff. Nothing left → nothing filed.
 
 **A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue and closes the follow-ups issue once every line is ticked and every sub-issue closed. Nothing else closes it.
 
 One finding is filed at the time instead, triaged and attached per **Filing an issue**: **a blocking finding you adjudicated real but chose not to hold the queue for** — a known defect shipping to main, which needs a number first; `campaign-land.mjs --adjudicated` will not merge without one. It also goes on `## Sweep`, whose PR closes it unless the fix needs a decision.
 
+### Adopting work
+
+Work too big for a fix round or the sweep is **adopted** — filed and run tonight, never listed: the rejects **Review**, **Sweep** and **Dispatch** route here.
+
+1. **Guard:** `node scripts/campaign-heartbeat.mjs --may-adopt <issue> <ledger-body-file>`, `<issue>` the one whose PR raised it (the ledger, for the sweep PR). `ADOPT no` → follow-ups: **an adopted issue's PR and the sweep PR never adopt**, or the campaign never ends. Exit 2 → fix the table.
+2. **File:** a `campaign-filer` — the finding or premise verbatim, its choice, the originating PR and issue, the ledger, and the kind (`defect`, `refactor`, `feature`). `NEEDS_DANIEL: <line>` → that line on the follow-ups list.
+3. **Join the run-set** on `FILED: #n`: a `campaign-extractor`; a conflict edge to the originating issue; `#n` added to the ledger title (`gh issue edit <ledger> --title`); a `queued` row, Issue cell `#n adopted`; dispatch when startable. The originating PR parks → so does #n's row, the issue left as backlog.
+
+Its out-of-footprint findings are `## Sweep` lines until the sweep has run, then follow-ups — one sweep per campaign.
+
 ---
 
 ## Merge queue
 
-**GitHub's merge queue lands everything** ([docs/ci.md](../../docs/ci.md)): you never rebase, re-run gates or merge by hand; workers keep working meanwhile.
+**GitHub's merge queue lands everything**: you never rebase, re-run gates or merge by hand; workers keep working meanwhile.
 
 `--stop-at-green` skips this section: reviewed, green, unmerged PRs are the deliverable. Go to **Finish**, leaving the worktrees for Daniel to land by hand.
 
@@ -316,11 +327,11 @@ A branch is queue-eligible when: PR out of draft, review closed with no blocking
 node scripts/campaign-land.mjs <pr> [--note <file>] [--adjudicated <issue>]
 ```
 
-It re-applies the eligibility rule and posts `--note`; **nothing local is touched until the PR is queued**, so a failure is a no-op to re-run: exit 0 means enqueued; any other exit printed why and changed nothing; a `warning:` line means queued, with a leftover worktree to tidy — not a failure, not ledgered as one. `--adjudicated <issue>` is the one escape hatch: a blocking finding judged shippable merges only against a filed, open issue (**Review**). To post a note, write the file and pass `--note`; never inline prose into `--body`, where a backtick or quote makes the gate refuse the line.
+It re-applies the eligibility rule and posts `--note`. Exit 0 means enqueued; any other exit printed why and changed nothing, so re-run it; a `warning:` line means queued, with a worktree left to tidy — not a failure. `--adjudicated <issue>` is the one escape hatch: a blocking finding judged shippable merges only against a filed, open issue (**Review**). To post a note, write the file and pass `--note`; never inline prose into `--body`, where a backtick or quote makes the gate refuse the line.
 
-Watch each enqueued PR (the merge watcher in **Standing rules**) or the queue at <https://github.com/eggmanorg/salt/queue/main>. Two outcomes matter.
+Watch each enqueued PR (the merge watcher in **Standing rules**). Two outcomes matter.
 
-**Merged.** A skipped required check reports as passing, so confirm the heavy suites ran from the verdict on this PR's merge-group run, not the check summary (`pnpm mergequeue:check` fails if the ruleset's contexts stop reporting):
+**Merged.** A skipped required check reports as passing, so confirm the heavy suites ran from the verdict on this PR's merge-group run, not the check summary:
 
 ```
 node scripts/heavy-suites.mjs --pr <pr>
@@ -346,14 +357,14 @@ Unattended, salt-run.md's pause conditions deadlock. Resolve these yourself, rec
 - a flaky CI job — re-run once; a second failure is real;
 - ordering among issues that don't conflict;
 - whether a FLAG changes the conflict graph;
-- a **falsified premise** a worker corrected in place (salt-run.md → _Standing rules_) — confirm its three tests from the return and record it. One needing a **decision** parks, like a UX deviation.
+- a **falsified premise** a worker corrected in place (salt-run.md → _Standing rules_) — confirm its three tests from the return and record it. One deferred for `footprint` or `ceiling` is adopted; one needing a **decision** parks, like a UX deviation.
 
 **Only five calls are Daniel's:** a change to what a user sees or does; a spec-versus-clean-code fork (no bodges); a CLAUDE.md rule change; a production data write or migration; a new dependency.
 
 **Retry once with a fresh worker, then park** (**Dispatch** → _Retry_) — a worker that ran out of road, not a decision:
 
 - a worker returns BLOCKED for a reason that is not Daniel's — a second consecutive red on one phase included — or blows its budget (terminate and confirm first);
-- a PR over `--max-diff` with phases unbuilt and `SPLIT: NO` — the worker's check did not run (a declared final-phase overage is not this; a ceiling crossed with phases left is a split);
+- a PR over `--max-diff` with phases unbuilt and `SPLIT: NO` — the worker's check did not run;
 - a queue ejection, whoever's change it collided with, and gates red on the queue's rebuild;
 - heavy suites that will not run green.
 
@@ -394,7 +405,7 @@ When every run-set issue is terminal and `## Sweep` has an unticked line, run on
 2. **Cut `chore/<slug>-sweep` from the new `main`** as in **Worktrees**.
 3. **Dispatch one `campaign-sweeper`** in the background with the worktree path, branch, ledger number, the unticked `## Sweep` lines verbatim, every parked branch (whose files it must not touch), and `--max-diff <n>`. It opens the PR `chore: campaign #<ledger> sweep` and returns `PR`, `FIXED`, `REJECTED` at the push, not waiting for CI.
 4. **Then it is an ordinary campaign PR**: arm the CI watcher (`gh pr checks <pr> --watch --fail-fast`) on it; once green, review (a `pr-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]`, `[sweep]` **and** `[decide]` findings all go to its round-1 fixer, ceiling permitting — a `[decide]`'s choice adopted and recorded as in **Review**; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
-5. Tick each `FIXED` line in the ledger body; `REJECTED` lines move to follow-ups with the reason.
+5. Tick each `FIXED` line in the ledger body, and each `REJECTED` as `fixed`; `ceiling`, `phases` or `choice` → **Adopting work**; the rest move to follow-ups with the reason.
 
 Empty `## Sweep` → skip silently. Under `--stop-at-green` the sweep PR is left reviewed and green too.
 
@@ -402,16 +413,16 @@ Empty `## Sweep` → skip silently. Under `--stop-at-green` the sweep PR is left
 
 ## Finish
 
-When the queue is empty, and the **Sweep** has landed or had nothing to do:
+When the queue is empty — adopted issues included — and the **Sweep** has landed or had nothing to do:
 
 1. **File the follow-ups issue first**, before anything closes — only if a line is left for Daniel (**Review**). The closing comment points at its number rather than containing the list.
-2. **Attach the ledger to the work it ran.** Look up the parent of every issue in the ledger title's `#N` list; where all share one parent, it is the ledger's too:
+2. **Attach the ledger to the work it ran.** Look up the parent of every issue in the ledger title's `#N` list, setting aside adopted ones (under the ledger itself); where all share one parent, it is the ledger's too:
 
    ```
    node scripts/board.mjs parent <ledger> --of <the shared parent>
    ```
 
-   Ask GraphQL, never REST ([docs/issue-board.md](../../docs/issue-board.md)). **No single shared parent → leave the ledger a root** and say so in the closing comment. Do this before the check below.
+   **No single shared parent → leave the ledger a root** and say so in the closing comment. Do this before the check below.
 
    **Set the ledger's Status in the same breath** — `check` fails on a closed ledger without one:
 
@@ -425,7 +436,7 @@ When the queue is empty, and the **Sweep** has landed or had nothing to do:
 4. Final ledger comment, and set the body's table to its terminal state:
    ```
    ## Campaign complete
-   **Landed:** #a (PR #1), #b (PR #2 → PR #3)   ← an issue split at the ceiling lists every PR that carried it, in order
+   **Landed:** #a (PR #1), #b (PR #2 → PR #3), #h adopted (PR #5)   ← an issue split at the ceiling lists every PR that carried it, in order
    **Swept:** PR #4 — n findings fixed, m moved to follow-ups   ← omit when the sweep had nothing to do
    **Parked:** #c — [reason, what a human needs to decide, branch name]
    **Issues filed:** #f follow-ups (only if a question was left); #d, #e — [shipped-known-defects not fixed by the sweep; see Review]
@@ -433,7 +444,7 @@ When the queue is empty, and the **Sweep** has landed or had nothing to do:
    **Estimated vs actual:** #a M / 812 · #b L / 2140 (2 PRs) · #c M / — (parked)
    **Decisions taken:** PR #2 — [the finding] → [the choice]   ← one line per engineering choice, the detail in the ledger comment
    ```
-   **Estimated vs actual** is one line per run-set issue, not optional: the estimate from `node scripts/board.mjs show <issue>` (a project field), the actual from `gh pr view <pr> --json additions,deletions`, summed across a split's PRs, `—` if parked. Record the pair; nothing gates on the gap. `board.mjs` unable to run → the actual alone, estimate unreadable.
-   **Close the ledger only if nothing is parked AND nothing under it is still open.** A step-1 follow-ups issue hangs off it and stays open, so **filing one leaves the ledger open**, saying so: `**Ledger:** staying open until #f closes`. Nothing that must outlive the campaign lives only in this comment. `board.mjs rollup` closes it later ([docs/issue-board.md](../../docs/issue-board.md)).
+   **Estimated vs actual** is one line per run-set issue, not optional: the estimate from `node scripts/board.mjs show <issue>`, the actual from `gh pr view <pr> --json additions,deletions`, summed across a split's PRs, `—` if parked. Record the pair; nothing gates on the gap.
+   **Close the ledger only if nothing is parked AND nothing under it is still open.** A step-1 follow-ups issue hangs off it and stays open, so **filing one leaves the ledger open**, saying so: `**Ledger:** staying open until #f closes`. Nothing that must outlive the campaign lives only in this comment. `board.mjs rollup` closes it later.
 5. `TaskStop` the pool heartbeat if it is still running; `git worktree prune`; confirm no campaign worktrees remain, and that every remaining remote branch is one you deliberately parked (labelled `status: on-hold`, reason on the PR).
 6. Report **once**, and stop: landed, parked with reasons, the sweep's fix count, and the follow-ups issue number with its questions — his decisions first. Engineering choices stay in **Decisions taken**. Nothing left for Daniel → the close is a sentence. Never a second closing message saying the same thing.

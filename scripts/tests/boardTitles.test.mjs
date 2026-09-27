@@ -229,6 +229,69 @@ describe('ledgerShouldAttachTo', () => {
       ),
     ).toBe(913);
   });
+
+  // #1614: a campaign that adopts work names the adopted issue in its ledger's
+  // title and files it under the ledger itself. Counted, that parent would
+  // break the shared one and leave the ledger a root.
+  describe('with an adopted issue parented by the ledger (#1614)', () => {
+    it('returns the shared parent of the other run-set members', () => {
+      expect(
+        ledgerShouldAttachTo(
+          [968, 971, 1640],
+          parents([
+            [968, 913],
+            [971, 913],
+            [1640, 1630],
+          ]),
+          1630,
+        ),
+      ).toBe(913);
+    });
+
+    it('still returns null when the others share no parent', () => {
+      expect(
+        ledgerShouldAttachTo(
+          [1202, 1203, 1640],
+          parents([
+            [1202, 1122],
+            [1203, 1129],
+            [1640, 1630],
+          ]),
+          1630,
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null when a member sits under anything other than the ledger', () => {
+      // 1640 under 1631, not the ledger 1630: an ordinary disagreement.
+      expect(
+        ledgerShouldAttachTo(
+          [968, 1640],
+          parents([
+            [968, 913],
+            [1640, 1631],
+          ]),
+          1630,
+        ),
+      ).toBeNull();
+    });
+
+    it('does not set anything aside without the ledger number', () => {
+      expect(
+        ledgerShouldAttachTo(
+          [968, 1640],
+          parents([
+            [968, 913],
+            [1640, 1630],
+          ]),
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null for a run-set of nothing but adopted issues', () => {
+      expect(ledgerShouldAttachTo([1640], parents([[1640, 1630]]), 1630)).toBeNull();
+    });
+  });
 });
 
 describe('ledgerFullyReleased', () => {

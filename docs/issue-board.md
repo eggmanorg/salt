@@ -121,7 +121,10 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
 - **A campaign ledger is attached to the work it ran.** Where every issue a
   ledger's title names sits under one parent, the ledger sits under that parent
   too; where they do not share one, it stays a root and `check` says nothing in
-  either direction. Open and closed alike, because a ledger does eventually
+  either direction. Title-named issues whose parent is the ledger itself are set
+  aside first: that is work the campaign adopted (#1614), born under the ledger
+  and reachable through it, and counting it would leave every adopting ledger a
+  root. Open and closed alike, because a ledger does eventually
   close and closed is where nearly every orphan was. The rule's real
   boundary is worth stating: the run-set is what the ledger's **title** names,
   never every issue the campaign touched, so an issue added mid-run without a
@@ -418,6 +421,11 @@ campaign's output, while **no work issue moves**, so its progress count is
 exactly what it was. A sub-issue link is a strict tree,
 which is why it is the ledger that moves up rather than the work that moves
 down.
+
+Work a campaign **adopts** mid-run (#1614) is the one exception to "the work
+stays put", because it is not moved there — it is filed under the ledger, named
+in its title, and run the same night. It stays reachable from the parent through
+the ledger, and the shared-parent test ignores it.
 
 Where a run-set shares no single parent — a campaign over four unrelated issues
 — the ledger stays a root and that is correct, not a miss. Inventing a parent
