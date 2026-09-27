@@ -81,14 +81,15 @@ Never a finding, whatever the reasoning around it: naming, file layout, comment 
 Every surviving finding has a failure scenario, so that cannot be what splits them. **Materiality** does. Impact is material when someone feels it: wrong data, lost data, a user-visible failure, a security or privacy hole, a gate that has stopped gating. It is not material when the consequence is confined to future maintenance. Alarming is not material — a defect that is real but cannot be triggered by anything the app does today is not material, and saying so is not softening it.
 
 - **blocking** — material impact.
-- **should-fix** — immaterial. Mark each line by where its fix lives:
+- **should-fix** — immaterial. Mark each line by where its fix lives and whose call it is:
   - **`[fold-in]`** when the fix needs **no decision** and stays **inside this diff's files or their tests** — whatever its size. A stale line reference, a wrong glob, a sentence this PR made false, a missing test for behaviour this PR added: all fold in. You are the only actor holding the diff, so you are the only one who can judge it.
   - **`[sweep]`** when the fix needs **no decision** but reaches **outside this diff** — a second call site elsewhere, a sibling file with the same stale sentence, a missing test for pre-existing code this PR leaned on. Name the file or symbol on the line: whoever fixes it will not have your diff.
-  - **Unmarked** when the fix needs a decision — a design choice, a rule change, a question about the right shape — or when the scope issue's Out of scope list names it: deferring it was the decision.
+  - **`[decide]`** when the fix needs an **engineering decision** and nothing more — which of several clean fixes, where a check lives, whether to pin, qualify or delete, a test's shape, a second call site or a sibling file: anything that leaves what a user sees and what the spec promised unchanged. **Name your recommended choice on the line**, and in a clause why it beats the alternative: the caller adopts it rather than asking anyone, so a `[decide]` without a choice is unusable. Outside this diff's files, name the file or symbol as for `[sweep]`.
+  - **Unmarked** only when the fix needs one of **Daniel's five calls**, or the scope issue's Out of scope list names it — deferring it was the decision. Name which on the line, as its first word: `ux` (a change to what a user sees or does), `spec-vs-clean` (the spec as written can be built only as a bodge — he chooses, never the caller), `rule` (a CLAUDE.md rule change), `prod-data` (a production data write or migration), `dependency` (a new dependency), or `out-of-scope`.
 
 **A false invariant (lens 1) is blocking when material and otherwise `should-fix [fold-in]` — never an unmarked should-fix**, because it has three fixes and none of them needs a decision: pin the claim with a test, qualify it to its real boundary, or **delete the sentence**. Say which you mean on the line. Reach for delete when the claim restates what the code already expresses, and always when the sentence has been corrected before — `undrawnEquipment`'s header spent #1516, #1544 and #1548 on three successive re-wordings, and filing a wrong sentence rather than fixing it is what buys the fourth.
 
-**If either mark is in doubt, leave it off.** A finding that looks mechanical and turns out to be a contract question belongs with a human, not in a fix agent's hands.
+**Marking is a classification, not a confidence test.** Test the finding against the six unmarked reasons; if none fits, it is `[fold-in]`, `[sweep]` or `[decide]`, however unsure you are of the fix — an engineering choice you find hard is `[decide]` with your best recommendation, never unmarked. A finding that looks mechanical and turns out to be a contract question is caught by that test: an app-wide component contract changes what a user sees, so it is `ux`.
 
 Rank within each section most severe first: blocking failure modes before latent ones.
 
@@ -109,7 +110,7 @@ gh pr review <pr> --comment --body-file <file>
 The same gate parses the body, so the three headings below are literal and **always all present, even when a section is empty**. `## Blocking` naming nothing is what tells the gate this PR is clear; omit the heading and the verdict is `ask`, which stops the merge on a prompt just as a denial would.
 
 - **`## Blocking`** — every blocking finding.
-- **`## Should-fix`** — every should-fix finding, each with its `[fold-in]` or `[sweep]` mark where it carries one.
+- **`## Should-fix`** — every should-fix finding, each with its `[fold-in]`, `[sweep]` or `[decide]` mark, or an unmarked one's reason word.
 - **`## Notes`** — your heavy-suite line, verbatim, and nothing else: the record of what was and was not exercised. Never a style remark, never a finding.
 
 Each finding: the failure scenario, then `file:line`, then the fix in a sentence.
@@ -145,7 +146,8 @@ FINDINGS:
 - blocking | file:line | <the fix, in a sentence>
 - should-fix [fold-in] | file:line | <the fix, in a sentence>
 - should-fix [sweep] | <file or symbol> | <the fix, in a sentence>
-- should-fix | file:line | <the decision it needs>
+- should-fix [decide] | <file:line, or file or symbol> | <your recommended choice, and why over the alternative>
+- should-fix | file:line | <reason word>: <the question for Daniel, and what each answer costs>
 ```
 
 `FINDINGS: NONE` when there are none. In `verify:` mode, one line per round-1 item instead: `FIXED` or `OPEN`, `file:line`, and why.

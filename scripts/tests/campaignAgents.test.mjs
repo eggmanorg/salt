@@ -236,3 +236,73 @@ describe('one fresh worker per phase (#1612)', () => {
     expect(step7).toMatch(/On the campaign path it is also all the next phase inherits/);
   });
 });
+
+// #1614 Phase 1: the campaign takes engineering decisions itself, and files a
+// follow-ups issue only when a question is left for Daniel. These pin that the
+// prose routing each `[decide]` finding, and gating the follow-ups issue, is
+// still in the prompts that carry it. What they cannot pin: that a coordinator
+// actually routes a given finding this way, or that the fixer and sweeper
+// apply the given choice rather than their own — run-time acts of a model
+// reading prose, checked only by reading a campaign's ledger.
+describe('the campaign decides engineering choices itself (#1614)', () => {
+  const campaign = read('.claude/commands/salt-campaign.md');
+  const review = campaign.slice(
+    campaign.indexOf('\n### Fixing findings\n'),
+    campaign.indexOf('\n## Merge queue\n'),
+  );
+  const finish = campaign.slice(campaign.indexOf('\n## Finish\n'));
+
+  it('sends an in-footprint `[decide]` to the round-1 fixer and an outside one to `## Sweep`', () => {
+    const line = review.split('\n').find((l) => l.startsWith('- **`[decide]`**'));
+    expect(line).toMatch(/adopt the reviewer's recommended choice/);
+    expect(line).toMatch(/In the footprint → the round-1 fixer/);
+    expect(line).toMatch(/outside it → a `## Sweep` line carrying `decided: <the choice>`/);
+  });
+
+  it('names the five calls that stay with Daniel, and records engineering choices', () => {
+    expect(campaign).toMatch(
+      /\*\*Only five calls are Daniel's:\*\* a change to what a user sees or does; a spec-versus-clean-code fork \(no bodges\); a CLAUDE\.md rule change; a production data write or migration; a new dependency\./,
+    );
+    expect(campaign).toMatch(/report it only under \*\*Decisions taken\*\*/);
+    expect(finish).toMatch(/\*\*Decisions taken:\*\* PR #2 — \[the finding\] → \[the choice\]/);
+  });
+
+  it('files the follow-ups issue only when a line is left for Daniel, each line a question', () => {
+    expect(review).toMatch(/and only if something is\*\*/);
+    expect(review).toMatch(/Nothing left → nothing filed\./);
+    expect(review).toMatch(
+      /\*\*Each line is a question for Daniel with what each answer costs him\*\*/,
+    );
+    expect(finish).toMatch(/only if a line is left for Daniel/);
+    expect(campaign).not.toMatch(/File it however short/);
+  });
+
+  it('keeps the tick-and-close contract board-status.yml depends on', () => {
+    expect(review).toMatch(
+      /The body is a `- \[ \]` checklist, one line per item with its PR number/,
+    );
+    expect(review).toMatch(/ticks the line that NAMES a closed sub-issue/);
+  });
+
+  it("sends the sweep PR's `[decide]` findings to its round-1 fixer", () => {
+    const sweep = campaign.slice(
+      campaign.indexOf('\n## Sweep\n'),
+      campaign.indexOf('\n## Finish\n'),
+    );
+    expect(sweep).toMatch(
+      /`\[fold-in\]`, `\[sweep\]` \*\*and\*\* `\[decide\]` findings all go to its round-1 fixer/,
+    );
+  });
+
+  it('campaign-fixer.md applies a `[decide]` line as a choice already made', () => {
+    const src = read('.claude/agents/campaign-fixer.md');
+    expect(src).toMatch(/plus any marked `\[fold-in\]` or `\[decide\]`/);
+    expect(src).toMatch(/A `\[decide\]` line carries a choice already made: apply that choice/);
+  });
+
+  it('campaign-sweeper.md applies a `decided:` line as a choice already made', () => {
+    const src = read('.claude/agents/campaign-sweeper.md');
+    expect(src).toMatch(/carries `decided: <choice>` — a choice already made/);
+    expect(src).toMatch(/apply that choice, and do not re-open it/);
+  });
+});
