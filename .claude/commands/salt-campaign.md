@@ -172,7 +172,7 @@ Models: coordinator opus · workers opus · reviewers opus · fixes and conflict
 Session: sdk-cli
 Conflicts: #b after #a (shared packages/domain/src/recipe/**)
 Envelope: <the decision envelope you are operating under>
-Heartbeat: <shell-id>   ← one for the whole pool, re-armed on every wake
+Heartbeat: <shell-id> ← one for the whole pool, re-armed on every wake
 
 ## Status
 | Issue | Branch | PR | State | Worker | Note |
@@ -306,7 +306,7 @@ One finding is filed at the time instead, triaged and attached per **Filing an i
 Work too big for a fix round or the sweep is **adopted** — filed and run tonight, never listed: the rejects **Review**, **Sweep** and **Dispatch** route here.
 
 1. **Guard:** `node scripts/campaign-heartbeat.mjs --may-adopt <issue> <ledger-body-file>`, `<issue>` the one whose PR raised it (the ledger, for the sweep PR). `ADOPT no` → follow-ups: **an adopted issue's PR and the sweep PR never adopt**, or the campaign never ends. Exit 2 → fix the table.
-2. **File:** a `campaign-filer` — the finding or premise verbatim, its choice, the originating PR and issue, the ledger, and the kind (`defect`, `refactor`, `feature`). `NEEDS_DANIEL: <line>` → that line on the follow-ups list.
+2. **File:** a `campaign-filer` — the finding or premise verbatim, its choice and, if rejected, why, the originating PR and issue, the ledger, and the kind (`defect`, `refactor`, `feature`). `NEEDS_DANIEL: <line>` → that line on the follow-ups list.
 3. **Join the run-set** on `FILED: #n`: a `campaign-extractor`; a conflict edge to the originating issue; `#n` added to the ledger title (`gh issue edit <ledger> --title`); a `queued` row, Issue cell `#n adopted`; dispatch when startable. The originating PR parks → so does #n's row, the issue left as backlog.
 
 Its out-of-footprint findings are `## Sweep` lines until the sweep has run, then follow-ups — one sweep per campaign.
@@ -405,7 +405,7 @@ When every run-set issue is terminal and `## Sweep` has an unticked line, run on
 2. **Cut `chore/<slug>-sweep` from the new `main`** as in **Worktrees**.
 3. **Dispatch one `campaign-sweeper`** in the background with the worktree path, branch, ledger number, the unticked `## Sweep` lines verbatim, every parked branch (whose files it must not touch), and `--max-diff <n>`. It opens the PR `chore: campaign #<ledger> sweep` and returns `PR`, `FIXED`, `REJECTED` at the push, not waiting for CI.
 4. **Then it is an ordinary campaign PR**: arm the CI watcher (`gh pr checks <pr> --watch --fail-fast`) on it; once green, review (a `pr-reviewer` with the ledger for issue #N — the `## Sweep` lines are its scope), fix round, `campaign-land.mjs`. Its `[fold-in]`, `[sweep]` **and** `[decide]` findings all go to its round-1 fixer, ceiling permitting — a `[decide]`'s choice adopted and recorded as in **Review**; unmarked and rejected ones go to follow-ups. **One sweep per campaign, never a second.** Blocking findings open after round 2 park it, and all its lines move to follow-ups.
-5. Tick each `FIXED` line in the ledger body, and each `REJECTED` as `fixed`; `ceiling`, `phases` or `choice` → **Adopting work**; the rest move to follow-ups with the reason.
+5. Tick each `FIXED` line in the ledger body, and each `REJECTED` as `fixed`; `ceiling`, `phases` or `choice` → **Adopting work**, `#n` on the line to self-tick; the rest move to follow-ups with the reason.
 
 Empty `## Sweep` → skip silently. Under `--stop-at-green` the sweep PR is left reviewed and green too.
 
@@ -436,13 +436,13 @@ When the queue is empty — adopted issues included — and the **Sweep** has la
 4. Final ledger comment, and set the body's table to its terminal state:
    ```
    ## Campaign complete
-   **Landed:** #a (PR #1), #b (PR #2 → PR #3), #h adopted (PR #5)   ← an issue split at the ceiling lists every PR that carried it, in order
-   **Swept:** PR #4 — n findings fixed, m moved to follow-ups   ← omit when the sweep had nothing to do
+   **Landed:** #a (PR #1), #b (PR #2 → PR #3), #h adopted (PR #5) ← a split issue lists every PR that carried it, in order
+   **Swept:** PR #4 — n findings fixed, m moved to follow-ups ← omit when the sweep had nothing to do
    **Parked:** #c — [reason, what a human needs to decide, branch name]
    **Issues filed:** #f follow-ups (only if a question was left); #d, #e — [shipped-known-defects not fixed by the sweep; see Review]
-   **Retried:** #c (timeout → landed) · #g (ejection → parked)   ← omit when nothing was
+   **Retried:** #c (timeout → landed) · #g (ejection → parked) ← omit when nothing was
    **Estimated vs actual:** #a M / 812 · #b L / 2140 (2 PRs) · #c M / — (parked)
-   **Decisions taken:** PR #2 — [the finding] → [the choice]   ← one line per engineering choice, the detail in the ledger comment
+   **Decisions taken:** PR #2 — [the finding] → [the choice] ← one line per engineering choice, the detail in the ledger comment
    ```
    **Estimated vs actual** is one line per run-set issue, not optional: the estimate from `node scripts/board.mjs show <issue>`, the actual from `gh pr view <pr> --json additions,deletions`, summed across a split's PRs, `—` if parked. Record the pair; nothing gates on the gap.
    **Close the ledger only if nothing is parked AND nothing under it is still open.** A step-1 follow-ups issue hangs off it and stays open, so **filing one leaves the ledger open**, saying so: `**Ledger:** staying open until #f closes`. Nothing that must outlive the campaign lives only in this comment. `board.mjs rollup` closes it later.
