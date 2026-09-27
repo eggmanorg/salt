@@ -88,4 +88,23 @@ describe('keepAwake', () => {
     expect(createWakeLock).not.toHaveBeenCalled();
     expect(keepAwake.held).toBe(false);
   });
+
+  it('release() turns the switch off without a toast, for sign-out (#1620)', async () => {
+    await keepAwake.toggle();
+    expect(keepAwake.held).toBe(true);
+    vi.mocked(addToast).mockClear();
+
+    await keepAwake.release();
+
+    expect(mockWakeLock.disable).toHaveBeenCalledTimes(1);
+    expect(keepAwake.held).toBe(false);
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it('release() is a no-op when the switch is already off', async () => {
+    await keepAwake.release();
+
+    expect(mockWakeLock.disable).not.toHaveBeenCalled();
+    expect(keepAwake.held).toBe(false);
+  });
 });

@@ -10,8 +10,9 @@ import { createWakeLock, isWakeLockSupported, type WakeLockController } from './
  * is being held.
  *
  * It has no teardown: nothing here listens for a button unmounting, so leaving a
- * cook does not turn the switch off (pinned in keepAwake.test.ts). It goes off
- * when someone taps a button, or with the page itself. What the switch does NOT
+ * cook does not turn the switch off (pinned in KeepAwakeButton.test.ts). It goes
+ * off when someone taps a button, when `release()` is called (sign-out — see
+ * App.svelte), or with the page itself. What the switch does NOT
  * promise is that the platform holds a lock at every instant it is on — the OS
  * drops a wake lock while the page is hidden, and `createWakeLock` re-acquires
  * when it is shown again. That lifetime is the decision #1620 records; before it,
@@ -61,6 +62,19 @@ async function toggle(): Promise<void> {
   }
 }
 
+// Sign-out's release: the sign-in screen shows no keep-awake button (there is
+// nothing to hold the screen awake for), so a lock left on by the previous
+// session could otherwise only be cleared by the visibility re-acquire, which
+// defeats the power button instead of respecting it. No toast — the switch
+// visibly disappears with the rest of the signed-in UI, so confirming it would
+// be noise, and nothing here should watch `auth.user` to trigger this itself
+// (see App.svelte's sign-out handler, which calls it explicitly).
+async function release(): Promise<void> {
+  if (!held) return;
+  await wake?.disable();
+  held = false;
+}
+
 export const keepAwake = {
   /** Whether the Screen Wake Lock API is there to offer at all. */
   get supported(): boolean {
@@ -71,6 +85,7 @@ export const keepAwake = {
     return held;
   },
   toggle,
+  release,
 };
 
 /**

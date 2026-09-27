@@ -14,6 +14,7 @@
   import KeepAwakeButton from './components/KeepAwakeButton.svelte';
   import KitchenLink from './components/KitchenLink.svelte';
   import { auth } from './lib/auth.svelte.js';
+  import { keepAwake } from './lib/keepAwake.svelte.js';
   import { navItems, overflowNavItemsFor, adminNavItem } from './lib/nav.js';
   import { breadGate, libraryGate } from './lib/featureGate.js';
   import { routes } from './routes/index.js';
@@ -179,7 +180,18 @@
         -->
         <KeepAwakeButton placement="bar" data-testid="topbar-wakelock" />
         <KitchenLink />
-        <Button variant="outline" size="sm" onclick={() => void auth.signOut()}>Sign out</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => {
+            // The sign-in screen has no keep-awake button, so a lock left on
+            // by the previous session could otherwise only clear itself via
+            // the visibility re-acquire — defeating the power button instead
+            // of respecting it (#1620).
+            void keepAwake.release();
+            void auth.signOut();
+          }}>Sign out</Button
+        >
       {/snippet}
       <Router {routes} />
     </AppShell>
