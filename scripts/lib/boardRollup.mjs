@@ -194,3 +194,75 @@ export function rollupTargets(child, { parent, ledgers }) {
 
 /** The hidden marker that makes the nudge idempotent across re-closes. */
 export const NUDGE_MARKER = '<!-- board-rollup:nudge -->';
+
+// A MERGED PR TICKS THE LINES IT SAYS IT SETTLED — the other half of "nothing
+// ticks a line". `tickTask` only follows a line that names a closed ISSUE, and a
+// PR that settles a line directly, with no issue of its own, closes nothing: #1628
+// settled two of #1627's three lines, said so in prose under `Refs`, and both
+// stayed unticked until Daniel asked why.
+//
+// The PR names each line in its body as `Ticks #<issue>: <words from the line>`
+// — words, not a line number, because an ordinal points at whatever line sits
+// there when the PR merges, and a wrong tick is silent. The words must occur in
+// exactly one unticked line of that issue or nothing is ticked, the same
+// refuse-to-guess rule as `tickTask`.
+//
+// WHAT THIS CANNOT SEE: a PR that settles a line without writing the `Ticks`
+// line. It is a convention the PR author follows, prompted by the follow-ups
+// body's own footer (salt-campaign.md → Review) — not a check anything enforces.
+
+/** Shorter words than this match too much to be trusted as a line's identity. */
+export const MIN_TICK_WORDS = 12;
+
+const squash = (s) => String(s).replace(/\s+/g, ' ').trim();
+
+/**
+ * Every `Ticks #N: <words>` line in a PR body, as `{ issue, words }`.
+ *
+ * Must open the line, and fenced blocks are skipped as in `taskLines`: a PR
+ * documenting this syntax quotes it, and a quote is not a claim. One pair of
+ * surrounding quotes or backticks on the words is dropped — that is the
+ * natural way to write a quotation, and the line itself never carries them.
+ */
+export function prTicks(body) {
+  const out = [];
+  let fenced = false;
+  for (const line of String(body ?? '').split(/\r?\n/)) {
+    if (/^[ \t]*(?:```|~~~)/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const m = /^[ \t]*Ticks[ \t]+#(\d+)[ \t]*:[ \t]*(.*)$/.exec(line);
+    if (!m) continue;
+    let words = m[2].trim();
+    const q = /^(["'`“‘])(.*)(["'`”’])$/.exec(words);
+    if (q) words = q[2].trim();
+    out.push({ issue: Number(m[1]), words });
+  }
+  return out;
+}
+
+/**
+ * Tick the one unticked line containing `words`, or say why not.
+ *
+ * Returns `{ body, text }` on a tick, else `{ why, text? }` with `why` one of
+ * `short` (under MIN_TICK_WORDS), `none`, `many` or `already` — the last when
+ * the only match is a line somebody already ticked, which is not a failure.
+ * Whitespace runs compare as one space on both sides; case is kept.
+ */
+export function tickWords(body, words) {
+  const want = squash(words);
+  if (want.length < MIN_TICK_WORDS) return { why: 'short' };
+  const matches = taskLines(body).filter((t) => squash(t.text).includes(want));
+  const open = matches.filter((t) => !t.ticked);
+  if (open.length > 1) return { why: 'many' };
+  if (open.length === 0)
+    return matches.length === 1
+      ? { why: 'already', text: matches[0].text.trim() }
+      : { why: matches.length ? 'many' : 'none' };
+  const [hit] = open;
+  const lines = String(body ?? '').split(/\r?\n/);
+  lines[hit.index] = hit.text.replace(/\[ \]/, '[x]');
+  return { body: lines.join('\n'), text: hit.text.trim() };
+}

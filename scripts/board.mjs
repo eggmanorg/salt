@@ -62,6 +62,7 @@
 //   node scripts/board.mjs parent 1234 --of 1129 --detach-from 900   # move it
 //   node scripts/board.mjs release --sha <deployed sha>
 //   node scripts/board.mjs rollup 1364                      # a closed issue → its checklist, and up
+//   node scripts/board.mjs ticks 1628                       # a merged PR's `Ticks #N:` lines, and up
 //   node scripts/board.mjs check
 
 import { execFileSync } from 'node:child_process';
@@ -69,7 +70,15 @@ import { execFileSync } from 'node:child_process';
 import { absentTargetVerdict, closedItemVerdict } from './lib/boardClosedState.mjs';
 import { closedAboveOpenWorkMessage, openDescendants } from './lib/boardHierarchy.mjs';
 import { BEFORE_WORK, startReason } from './lib/boardProgress.mjs';
-import { NUDGE_MARKER, rollupTargets, tickTask, verdict } from './lib/boardRollup.mjs';
+import {
+  MIN_TICK_WORDS,
+  NUDGE_MARKER,
+  prTicks,
+  rollupTargets,
+  tickTask,
+  tickWords,
+  verdict,
+} from './lib/boardRollup.mjs';
 import {
   isEpicTitle,
   isLedger,
@@ -95,9 +104,10 @@ const die = (msg) => {
 /**
  * `token` overrides the ambient one for this call alone.
  *
- * Only `rollup` passes it, and it has to: PROJECT_TOKEN is a fine-grained PAT
- * with WRITE on the org's projects and READ on issues, so the one command that
- * both moves a field and edits an issue cannot do it under a single token. The
+ * Only `rollup` and `ticks` pass it, and they have to: PROJECT_TOKEN is a
+ * fine-grained PAT with WRITE on the org's projects and READ on issues, so a
+ * command that both moves a field and edits an issue cannot do it under a
+ * single token. The
  * workflow hands it the Actions GITHUB_TOKEN for the issue half.
  */
 function gql(query, token, { notFoundIsNull = false } = {}) {
@@ -1006,10 +1016,11 @@ const MAX_HOPS = 8;
 function cmdRollup(project, [num]) {
   const first = Number(num);
   if (!Number.isInteger(first)) die('usage: board.mjs rollup <closed issue>');
-  const writeToken = process.env.ISSUE_WRITE_TOKEN || undefined;
+  cascade(project, [first], new Set(), process.env.ISSUE_WRITE_TOKEN || undefined);
+}
 
-  const closedHere = new Set();
-  let queue = [first];
+/** Roll each closed issue in `queue` up, and each issue that closes on up. */
+function cascade(project, queue, closedHere, writeToken) {
   for (let hop = 0; queue.length; hop++) {
     if (hop === MAX_HOPS) {
       console.log(
@@ -1030,6 +1041,86 @@ function cmdRollup(project, [num]) {
     }
     queue = next;
   }
+}
+
+/**
+ * A merged PR → tick the checklist lines its body says it settled, then close
+ * and roll up anything that finishes. See `prTicks` in lib/boardRollup.mjs for
+ * the `Ticks #N: <words>` form and what it cannot see.
+ *
+ * A `Ticks` line that ticks nothing — words matching no unticked line, or
+ * several, or an issue that is closed or is not an issue — is said on the PR
+ * and fails the run. The tick is the durable record that the line shipped, and
+ * a silent miss is exactly how #1627 sat open with nothing ticked.
+ */
+function cmdTicks(project, [num]) {
+  const number = Number(num);
+  if (!Number.isInteger(number)) die('usage: board.mjs ticks <merged pr>');
+  const writeToken = process.env.ISSUE_WRITE_TOKEN || undefined;
+
+  const pr = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ pullRequest(number:${number}){
+    id merged body } } }`).repository?.pullRequest;
+  if (!pr) die(`PR #${number} not found`);
+  if (!pr.merged) {
+    console.log(`PR #${number} is not merged — nothing to tick`);
+    return;
+  }
+  const wanted = prTicks(pr.body);
+  if (!wanted.length) {
+    console.log(`PR #${number} names no \`Ticks #N:\` line — nothing to tick`);
+    return;
+  }
+
+  const problems = [];
+  const closedHere = new Set();
+  for (const issue of [...new Set(wanted.map((w) => w.issue))]) {
+    const words = wanted.filter((w) => w.issue === issue).map((w) => w.words);
+    const found = gql(
+      `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${issue}){ state } } }`,
+      undefined,
+      { notFoundIsNull: true },
+    )?.repository?.issue;
+    if (found?.state !== 'OPEN') {
+      problems.push(`#${issue} is ${found ? 'closed' : 'not an issue'} — nothing ticked there`);
+      continue;
+    }
+    const tick = (body) => {
+      const texts = [];
+      for (const w of words) {
+        const r = tickWords(body, w);
+        if (r.body) {
+          body = r.body;
+          texts.push(r.text);
+        } else if (r.why === 'already') {
+          console.log(`#${issue} — already ticked: ${r.text.slice(0, 90)}`);
+        } else {
+          const why = {
+            short: `is under ${MIN_TICK_WORDS} characters`,
+            none: 'match no unticked line',
+            many: 'match more than one line',
+          }[r.why];
+          problems.push(`\`Ticks #${issue}: ${w.slice(0, 80)}\` — the words ${why}`);
+        }
+      }
+      return texts.length ? { body, text: texts.join(' | ') } : null;
+    };
+    if (rollupOne(project, null, issue, writeToken, { number, tick })) {
+      closedHere.add(issue);
+      cascade(project, [issue], closedHere, writeToken);
+    }
+  }
+
+  if (!problems.length) return;
+  const note =
+    `This PR's \`Ticks\` lines did not all land, so tick these by hand:\n\n` +
+    problems.map((p) => `- ${p}`).join('\n') +
+    `\n\nThe words after \`Ticks #N:\` must occur in exactly one unticked line of #N.`;
+  gql(
+    `mutation{ addComment(input:{subjectId:"${pr.id}", body:${JSON.stringify(note)}}){ clientMutationId } }`,
+    writeToken,
+  );
+  for (const p of problems) console.error(`ticks: ${p}`);
+  process.exit(1);
 }
 
 /** `rollupTargets` for one closed issue, fetched live. */
@@ -1077,8 +1168,15 @@ function openIssues(numbers) {
   return numbers.filter((n) => !['CLOSED', 'MERGED'].includes(data?.[`i${n}`]?.state));
 }
 
-/** Tick, judge and act on one parent. True when it closed it. */
-function rollupOne(project, child, number, writeToken) {
+/**
+ * Tick, judge and act on one parent. True when it closed it.
+ *
+ * `pr` is the other way in (`cmdTicks`): a merged PR whose `Ticks #N:` lines
+ * name lines of this parent. Then `tick` ticks those lines rather than the one
+ * naming `child`, and a `nudge` verdict stays silent — a PR settling one line of
+ * three is the ordinary case, not a stalled list.
+ */
+function rollupOne(project, child, number, writeToken, pr) {
   // Re-read here rather than trusting what found it: an earlier hop in this run
   // may have ticked it, and another run may have closed it.
   const parent = gql(`{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${number}){
@@ -1092,7 +1190,7 @@ function rollupOne(project, child, number, writeToken) {
   // Tick first, so the verdict below reads the body this run just wrote rather
   // than the one it was handed.
   let body = parent.body;
-  const tick = tickTask(body, child);
+  const tick = pr ? pr.tick(body) : tickTask(body, child);
   if (tick) {
     body = tick.body;
     gql(
@@ -1100,6 +1198,8 @@ function rollupOne(project, child, number, writeToken) {
       writeToken,
     );
     console.log(`#${parent.number} — ticked: ${tick.text.slice(0, 90)}`);
+  } else if (pr) {
+    return false;
   } else {
     console.log(`#${parent.number} — no single unticked line names #${child}`);
   }
@@ -1124,6 +1224,11 @@ function rollupOne(project, child, number, writeToken) {
     return false;
   }
 
+  if (v.action === 'nudge' && pr) {
+    console.log(`#${parent.number} stays open — ${v.why}`);
+    return false;
+  }
+
   if (v.action === 'nudge') {
     const already = gql(
       `{ repository(owner:"${OWNER}",name:"${REPO}"){ issue(number:${parent.number}){
@@ -1141,7 +1246,8 @@ function rollupOne(project, child, number, writeToken) {
       `but it is not being closed automatically — ${v.why}.\n\n` +
       (lines ? `Still unticked:\n\n${lines}\n\n` : '') +
       `Tick what has shipped and close this, or say what is outstanding. ` +
-      `A line that names the issue actioning it (\`#1364\`) ticks itself when that issue closes.`;
+      `A line that names the issue actioning it (\`#1364\`) ticks itself when that issue closes; ` +
+      `a PR that settles a line itself ticks it on merge with \`Ticks #${parent.number}: <words from the line>\` in its body.`;
     gql(
       `mutation{ addComment(input:{subjectId:"${parent.id}", body:${JSON.stringify(note)}}){ clientMutationId } }`,
       writeToken,
@@ -1164,8 +1270,11 @@ function rollupOne(project, child, number, writeToken) {
       `open beneath it` +
       (v.items ? `, and all ${v.items} of its task lines are ticked` : '') +
       `. The last to close was #${child}.`
-    : `Closing — every one of the ${v.items} items on this list is ticked and every sub-issue is ` +
-      `closed, the last being #${child}.`;
+    : pr
+      ? `Closing — every one of the ${v.items} items on this list is ticked and nothing is open ` +
+        `beneath it, the last ticked by PR #${pr.number}.`
+      : `Closing — every one of the ${v.items} items on this list is ticked and every sub-issue is ` +
+        `closed, the last being #${child}.`;
   gql(
     `mutation{ addComment(input:{subjectId:"${parent.id}", body:${JSON.stringify(done)}}){ clientMutationId } }`,
     writeToken,
@@ -1193,6 +1302,7 @@ if (!command || command === '--help' || command === '-h') {
   board.mjs parent <issue> --of <parent issue> [--detach-from <current parent>]
   board.mjs release --sha <deployed sha>
   board.mjs rollup <closed issue>
+  board.mjs ticks <merged pr>
   board.mjs check`);
   process.exit(command ? 0 : 1);
 }
@@ -1212,8 +1322,9 @@ else if (command === 'start') cmdStart(project, args);
 else if (command === 'pr') cmdPr(project, args);
 else if (command === 'release') cmdRelease(project, args);
 else if (command === 'rollup') cmdRollup(project, args);
+else if (command === 'ticks') cmdTicks(project, args);
 else if (command === 'check') cmdCheck(project);
 else
   die(
-    `unknown command "${command}" — expected add, set, show, start, pr, parent, release, rollup or check`,
+    `unknown command "${command}" — expected add, set, show, start, pr, parent, release, rollup, ticks or check`,
   );
