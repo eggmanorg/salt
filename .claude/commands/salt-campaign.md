@@ -297,7 +297,7 @@ Rounds are capped at two. Round 1 is the full review. Round 2 only verifies roun
 
 **What is left for Daniel becomes one issue per campaign — and only if something is**: at **Finish**, `gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <checklist>`, triaged and attached per **Filing an issue**. The body is a `- [ ]` checklist, one line per item with its PR number — unmarked findings, `REJECTED` lines, parks, and what **Adopting work** turned away; nothing fixed or decided. **Each line is a question for Daniel with what each answer costs him**, built from the reason word and summary, never the diff. Nothing left → nothing filed.
 
-**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue, and closes the issue once every line is ticked and every sub-issue closed. Nothing else does.
+**Whoever files an issue for a line adds its number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks a line that NAMES a closed sub-issue, or that a merged PR's `Ticks #N: <words from the line>` quotes, and closes the issue once all are ticked and no sub-issue is open. End the body with that form, for a PR settling a line.
 
 One finding is filed at the time instead, triaged and attached per **Filing an issue**: **a blocking finding you adjudicated real but chose not to hold the queue for** — a known defect shipping to main, which needs a number first; `campaign-land.mjs --adjudicated` will not merge without one. It also goes on `## Sweep`, whose PR closes it unless the fix needs a decision.
 

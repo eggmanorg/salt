@@ -561,14 +561,14 @@ _In review_ is a PR raised, _Merged_ is on `main` and not yet live, _Released_ i
 in production. **Blocked and Deferred are deliberately not statuses** — an issue
 can be in progress _and_ blocked, and the old board could not say so.
 
-| To          | Set by                                                                                                                                                                                                             |                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Triage      | GitHub's built-in "Item added to project" project workflow — a **UI setting**, and `check` now asserts it is on                                                                                                    |                                                                                                                     |
-| Todo        | a person, or `/triage`                                                                                                                                                                                             | the one real decision; no event can observe it                                                                      |
-| In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session; **and `board-status.yml`** for the two kinds of issue no branch is ever cut for | a branch push is too noisy to key on                                                                                |
-| In review   | `board-status.yml`                                                                                                                                                                                                 | `pull_request` opened / ready_for_review                                                                            |
-| Merged      | `board-status.yml`                                                                                                                                                                                                 | `pull_request` closed && merged, **or** `rollup`'s `close` arm when a checklist parent's last box ticks (see below) |
-| Released    | `board-status.yml`                                                                                                                                                                                                 | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha                             |
+| To          | Set by                                                                                                                                                                                                             |                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Triage      | GitHub's built-in "Item added to project" project workflow — a **UI setting**, and `check` now asserts it is on                                                                                                    |                                                                                                                                |
+| Todo        | a person, or `/triage`                                                                                                                                                                                             | the one real decision; no event can observe it                                                                                 |
+| In progress | `/salt-run`, when the branch is cut — `board.mjs` directly where `gh` is, or a `board-dispatch.yml` dispatch from a cloud session; **and `board-status.yml`** for the two kinds of issue no branch is ever cut for | a branch push is too noisy to key on                                                                                           |
+| In review   | `board-status.yml`                                                                                                                                                                                                 | `pull_request` opened / ready_for_review                                                                                       |
+| Merged      | `board-status.yml`                                                                                                                                                                                                 | `pull_request` closed && merged, **or** `rollup`'s / `ticks`' `close` arm when a checklist parent's last box ticks (see below) |
+| Released    | `board-status.yml`                                                                                                                                                                                                 | production deploy succeeded **and** the merge commit is an ancestor of the deployed sha                                        |
 
 The issue↔PR link is the `Closes #N` that `/salt-run` writes into every PR body —
 the same text GitHub derives its own linked-issue relation from.
@@ -748,6 +748,25 @@ actioned them were recorded only in a comment — so on that body this ticks not
 which is why the nudge arm exists rather than closing on sub-issue state alone.
 `/salt-defect`, `/salt-spec` and `/salt-refactor` now say to write the new issue's
 number into the line it actions at the moment they set the parent link.
+
+**A PR that settles a line itself ticks it on merge** (`board.mjs ticks <pr>`, the
+`ticked` job). Such a PR closes no issue, so step 1 above never fires for it:
+#1628 settled two of #1627's three lines under `Refs`, said so in prose, and both
+sat unticked until Daniel asked why. The PR body now carries one line per settled
+checklist line —
+
+```
+Ticks #1627: `REJECTED` reasons are still free-worded
+```
+
+— words copied from the line, not its position, because an ordinal ticks whatever
+line sits there at merge time and a wrong tick is silent. The words must occur in
+exactly one unticked line (at least 12 characters), or nothing is ticked and the
+run comments on the PR and goes red. After ticking, the parent gets the same
+verdict and cascade as a closed child, except that "lines still unticked" stays
+silent — a PR settling one line of three is the normal case. What this cannot
+see is a PR that settles a line without writing the `Ticks` line; the follow-ups
+body ends with the form to prompt it, and the rollup nudge names it too.
 
 Sub-issue state is not the whole of "done" either: #1335's item 6 shipped as #1362,
 which was never attached as a sub-issue at all. A parent can have every sub-issue

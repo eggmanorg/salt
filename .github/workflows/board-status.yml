@@ -23,9 +23,10 @@ name: Board status
 #   Released    — HERE. A production deploy succeeded AND the issue's merge
 #                 commit is an ancestor of the deployed sha. See below.
 #
-# A seventh move is not a status at all: when an issue closes, the checklist it
-# hangs off gets its line ticked, and closes itself once every line is ticked and
-# every sibling is closed — as does a campaign ledger once everything its title
+# A seventh move is not a status at all: when an issue closes — or a PR merges
+# whose body says `Ticks #N: <words from the line>` — the checklist gets its
+# line ticked, and closes itself once every line is ticked and every sibling is
+# closed — as does a campaign ledger once everything its title
 # names is closed, and each such close carries on up. `scripts/lib/boardRollup.mjs`
 # holds what that cannot see; the `rolled-up` job below holds why it needs two
 # tokens.
@@ -167,6 +168,36 @@ jobs:
       - run: node scripts/board.mjs pr ${{ github.event.pull_request.number }} --status "Merged"
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+
+  # A merged PR → the checklist lines its body says it settled (`Ticks #N:
+  # <words from the line>`), and the close and cascade that can follow.
+  #
+  # `rolled-up` only ticks a line that NAMES a closed issue. A PR that settles a
+  # line itself closes no issue, so before this nothing ticked it: #1628 settled
+  # two of #1627's lines under `Refs` and both sat unticked. Same two tokens as
+  # `rolled-up` and for the same reason; the body is fetched by `board.mjs`
+  # from the number alone, never read from the payload. A `Ticks` line that
+  # ticks nothing is commented on the PR and turns this run red.
+  ticked:
+    name: PR merged → tick the lines it settled
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed'
+      && github.event.pull_request.merged
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/board.mjs ticks ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE_WRITE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   released:
     name: Deployed to production → Released

@@ -283,7 +283,11 @@ describe('the campaign decides engineering choices itself (#1614)', () => {
     expect(review).toMatch(
       /The body is a `- \[ \]` checklist, one line per item with its PR number/,
     );
-    expect(review).toMatch(/ticks the line that NAMES a closed sub-issue/);
+    expect(review).toMatch(/ticks a line that NAMES a closed sub-issue/);
+    // The form `board.mjs ticks` parses (prTicks), and the footer that prompts
+    // a PR settling a line directly to write it — #1627 sat unticked without.
+    expect(review).toMatch(/a merged PR's `Ticks #N: <words from the line>` quotes/);
+    expect(review).toMatch(/End the body with that form, for a PR settling a line\./);
   });
 
   it("sends the sweep PR's `[decide]` findings to its round-1 fixer", () => {

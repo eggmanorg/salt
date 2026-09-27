@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { rollupTargets, taskLines, tickTask, verdict } from '../lib/boardRollup.mjs';
+import {
+  prTicks,
+  rollupTargets,
+  taskLines,
+  tickTask,
+  tickWords,
+  verdict,
+} from '../lib/boardRollup.mjs';
 
 // #1335's real shape: lines citing the campaign's PR, not the issues that
 // actioned them. It is the body this deliberately cannot tick, and the reason
@@ -232,5 +239,79 @@ describe('rollupTargets', () => {
   it('matches the child exactly, not as a prefix', () => {
     const t = rollupTargets(158, { parent: null, ledgers: [ledger(1593, 'campaign: a (#1588)')] });
     expect(t).toEqual([]);
+  });
+});
+
+// #1627's real shape: three lines all citing the same originating PR, so no
+// number can tell them apart — only their words can.
+const BODY_1627 = [
+  'Follow-ups from campaign #1623.',
+  '',
+  '- [ ] PR #1625 — `.claude/commands/salt-campaign.md` Sweep step 5: a `## Sweep` line names its filed issue.',
+  '- [ ] PR #1625 — `.claude/agents/campaign-fixer.md`: `REJECTED` reasons are still free-worded.',
+  "- [ ] PR #1625 — #1614's spec asks for the first campaign run to be read by hand.",
+].join('\n');
+
+describe('prTicks', () => {
+  it('reads every Ticks line with its issue and words', () => {
+    const body = [
+      'Settles two lines.',
+      '',
+      'Ticks #1627: Sweep step 5',
+      '  Ticks #1627 : `REJECTED` reasons are still',
+      'Refs #1627',
+    ].join('\n');
+    expect(prTicks(body)).toEqual([
+      { issue: 1627, words: 'Sweep step 5' },
+      { issue: 1627, words: '`REJECTED` reasons are still' },
+    ]);
+  });
+
+  it('drops one pair of surrounding quotes but keeps inner backticks', () => {
+    expect(prTicks('Ticks #9: "a `code` bit here"')).toEqual([
+      { issue: 9, words: 'a `code` bit here' },
+    ]);
+  });
+
+  it('ignores a Ticks line inside a fence or not opening the line', () => {
+    // A PR documenting the syntax quotes it; that is not a claim.
+    const body = ['```', 'Ticks #1: words from a line', '```', 'say Ticks #2: something'].join(
+      '\n',
+    );
+    expect(prTicks(body)).toEqual([]);
+  });
+});
+
+describe('tickWords', () => {
+  it('ticks the one unticked line containing the words', () => {
+    const out = tickWords(BODY_1627, '`REJECTED` reasons are still free-worded');
+    expect(out.text).toContain('campaign-fixer.md');
+    expect(taskLines(out.body).map((t) => t.ticked)).toEqual([false, true, false]);
+  });
+
+  it('compares whitespace runs as one space', () => {
+    expect(tickWords(BODY_1627, 'read   by\nhand').body).toBeDefined();
+  });
+
+  it('refuses words shared by more than one line — never guesses', () => {
+    expect(tickWords(BODY_1627, '- [ ] PR #1625 — ')).toEqual({ why: 'many' });
+  });
+
+  it('refuses words matching no line', () => {
+    expect(tickWords(BODY_1627, 'nothing like this at all')).toEqual({ why: 'none' });
+  });
+
+  it('refuses words too short to identify a line', () => {
+    expect(tickWords(BODY_1627, 'step 5')).toEqual({ why: 'short' });
+  });
+
+  it('reports an already-ticked match without treating it as a miss', () => {
+    const once = tickWords(BODY_1627, 'read by hand').body;
+    expect(tickWords(once, 'read by hand').why).toBe('already');
+  });
+
+  it('ignores lines inside a fence', () => {
+    const body = ['```', '- [ ] a template line to copy', '```'].join('\n');
+    expect(tickWords(body, 'a template line to copy')).toEqual({ why: 'none' });
   });
 });
