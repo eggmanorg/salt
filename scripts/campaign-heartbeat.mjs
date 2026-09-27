@@ -3,7 +3,7 @@
  * The campaign pool heartbeat's arithmetic, so the coordinator does none by hand.
  *
  *   node scripts/campaign-heartbeat.mjs [<ledger-body-file>]   # stdin when absent
- *   node scripts/campaign-heartbeat.mjs --dispatch <phases>
+ *   node scripts/campaign-heartbeat.mjs --dispatch <k>        # k: the phase this dispatch builds
  *
  * Wake mode reads the ledger body — the local file the coordinator writes for
  * `gh issue edit <ledger> --body-file`, or `gh issue view <ledger> --json body
@@ -17,14 +17,14 @@
  * Exit 0 no breach, 1 at least one breach, 2 input it cannot read: no
  * `## Status` table; a `dispatched` row without its two times; a Note with more
  * than one `budget to HH:MM` (a retry appended rather than replaced it); or a
- * row whose resolved budget exceeds the 360-minute cap. Exit 2 is never an
+ * row whose resolved budget exceeds the 90-minute cap. Exit 2 is never an
  * empty pool — fix the row it names, by hand, then re-run.
  *
  * Dispatch mode prints the budget and the two cells to write:
  *
- *   BUDGET <minutes>
+ *   BUDGET 90
  *   WORKER HH:MM          (the Worker cell is `agent <id>, HH:MM`)
- *   NOTE <n> phases, budget to HH:MM
+ *   NOTE phase <k>, budget to HH:MM
  *
  * It computes; it never sleeps, arms or stops anything. Network-free, so the
  * `gh` and the cloud (GitHub MCP) routes feed it the same way. Every decision
@@ -44,10 +44,10 @@ const args = process.argv.slice(2);
 const now = new Date();
 
 if (args[0] === '--dispatch') {
-  const phases = /^\d+$/.test(args[1] ?? '') ? Number(args[1]) : NaN;
+  const phase = /^\d+$/.test(args[1] ?? '') ? Number(args[1]) : NaN;
   let cells;
   try {
-    cells = dispatchCells(phases, now);
+    cells = dispatchCells(phase, now);
   } catch (err) {
     die(`--dispatch: ${err.message}`);
   }

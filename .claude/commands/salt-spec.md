@@ -187,10 +187,8 @@ Split only where there is a reason to:
 - **a learning dependency** — the next increment's design depends on what this one reveals in practice;
 - **a point of no return** — after this, backing out gets expensive; or
 - **too large to validate as one diff** — the reviewer (human or AI) can't reliably judge it in one pass; or
-- **too large to build inside the budget** — a worker gets **90 minutes** per phase, and about 10 of those
-  are the CI wait at the boundary rather than building (`/salt-run` pushes and waits at every phase, and
-  forbids starting the next one before that result is read). If the increment cannot be built, gated and
-  pushed through CI inside that, it is two phases. This is the builder's criterion; the four above are the
+- **too large to build inside the budget** — a worker gets **90 minutes** per phase, to build, gate and push
+  it; a fresh worker takes each phase, and the CI wait at the boundary is the coordinator's, not part of the 90. If the increment cannot be built, gated and pushed inside that, it is two phases. This is the builder's criterion; the four above are the
   reviewer's, and a phase has to pass both.
 
 **A phase boundary is also a PR boundary**, so a large feature never has to fit in one PR: `/salt-run` cuts one

@@ -1,13 +1,12 @@
 // The campaign pool heartbeat's arithmetic (#1587): the lib with an injected
 // clock, the prose it must agree with, and the CLI spawned for real.
 //
-// Two halves of this file read salt-campaign.md rather than restating it. The
-// budget formula exists twice — prose a spec author reads, and the function the
-// coordinator runs — so the prose's `Worked values:` line is asserted against
-// the function, and the two cannot drift apart silently. Likewise the parser is
-// run over the ledger template's own example table, lifted from the command
-// file, so a change to the template's shape goes red here rather than in a live
-// campaign.
+// Part of this file reads salt-campaign.md rather than restating it: the
+// parser is run over the ledger template's own example table, lifted from the
+// command file, so a change to the template's shape goes red here rather than
+// in a live campaign. The budget itself is flat since #1612 (one phase per
+// dispatch); campaignBudget.test.mjs pins the prose's number and the absence of
+// the old `min(360, …)` formula, and BUDGET_MINUTES below pins the code's.
 //
 // WHAT THIS DOES NOT PIN (CLAUDE.md rule 12): that a coordinator actually runs
 // the script, or acts on its output. That is prose, and a prose pin in
@@ -22,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
-  budgetMinutes,
+  BUDGET_MINUTES,
   dispatchCells,
   formatHHMM,
   heartbeat,
@@ -47,51 +46,36 @@ const ledger = (...rows) =>
 const row = (issue, state, worker, note) => `| ${issue} | b | — | ${state} | ${worker} | ${note} |`;
 const run = (at_, body) => heartbeat(parseStatusTable(body), at_);
 
-describe('budgetMinutes', () => {
-  it.each([
-    [1, 180],
-    [2, 180],
-    [3, 270],
-    [4, 360],
-    [5, 360],
-    [12, 360],
-  ])('%i phases → %i minutes', (phases, minutes) => {
-    expect(budgetMinutes(phases)).toBe(minutes);
+describe('BUDGET_MINUTES', () => {
+  it('is a flat 90 minutes per dispatch (#1612)', () => {
+    expect(BUDGET_MINUTES).toBe(90);
   });
 
-  it.each([0, -1, 1.5, NaN])('refuses %s', (phases) => {
-    expect(() => budgetMinutes(phases)).toThrow(/positive integer/);
-  });
-
-  it('agrees with every value on salt-campaign.md\'s "Worked values:" line', () => {
-    const line = campaign()
-      .split('\n')
-      .find((l) => l.includes('Worked values:'));
-    expect(line, 'salt-campaign.md lost its "Worked values:" line').toBeDefined();
-    const pairs = [...line.slice(line.indexOf('Worked values:')).matchAll(/(\d+)(\+?) → (\d+)/g)];
-    expect(pairs.length).toBeGreaterThanOrEqual(4);
-    for (const [, n, plus, minutes] of pairs) {
-      const probes = plus ? [Number(n), Number(n) + 1, Number(n) + 6] : [Number(n)];
-      for (const p of probes) expect(budgetMinutes(p), `${p} phases`).toBe(Number(minutes));
-    }
+  it('agrees with the number salt-campaign.md hands the worker', () => {
+    expect(campaign()).toContain(`**${BUDGET_MINUTES} minutes per dispatch**`);
   });
 });
 
 describe('dispatchCells', () => {
   it('prints the Worker time and the Note for the current clock', () => {
     expect(dispatchCells(3, at('09:14'))).toEqual({
-      budget: 270,
+      budget: 90,
       worker: '09:14',
-      note: '3 phases, budget to 13:44',
+      note: 'phase 3, budget to 10:44',
     });
   });
 
   it('writes an end-time past midnight as the bare wall-clock time', () => {
-    expect(dispatchCells(4, at('22:30')).note).toBe('4 phases, budget to 04:30');
+    expect(dispatchCells(2, at('23:30')).note).toBe('phase 2, budget to 01:00');
   });
 
-  it('says "phase" for one', () => {
-    expect(dispatchCells(1, at('08:00')).note).toBe('1 phase, budget to 11:00');
+  it('gives every phase the same budget', () => {
+    expect(dispatchCells(1, at('08:00')).note).toBe('phase 1, budget to 09:30');
+    expect(dispatchCells(7, at('08:00')).budget).toBe(90);
+  });
+
+  it.each([0, -1, 1.5, NaN])('refuses phase %s', (phase) => {
+    expect(() => dispatchCells(phase, at('08:00'))).toThrow(/positive integer/);
   });
 });
 
@@ -119,8 +103,8 @@ describe('the ledger template in salt-campaign.md', () => {
   it('holds an example row whose cells are what --dispatch would have printed', () => {
     const [row_] = parseStatusTable(template()).filter((r) => r.state === 'dispatched');
     const time = /(\d\d:\d\d)\s*$/.exec(row_.worker)[1];
-    const phases = Number(/^(\d+) phases?/.exec(row_.note)[1]);
-    const cells = dispatchCells(phases, at(time));
+    const phase = Number(/^phase (\d+),/.exec(row_.note)[1]);
+    const cells = dispatchCells(phase, at(time));
     expect(row_.worker.endsWith(`, ${cells.worker}`)).toBe(true);
     expect(row_.note).toBe(cells.note);
   });
@@ -165,16 +149,16 @@ describe('heartbeat', () => {
     const verdict = run(
       at('10:00'),
       ledger(
-        row('#1', 'dispatched', 'agent a1, 09:00', '4 phases, budget to 15:00'),
-        row('#2', 'dispatched', 'agent a2, 09:30', '1 phase, budget to 12:30'),
-        row('#3', 'dispatched', 'agent a3, 09:45', '3 phases, budget to 14:15'),
+        row('#1', 'dispatched', 'agent a1, 09:40', 'phase 2, budget to 11:10'),
+        row('#2', 'dispatched', 'agent a2, 09:00', 'phase 1, budget to 10:30'),
+        row('#3', 'dispatched', 'agent a3, 09:50', 'phase 3, budget to 11:20'),
       ),
     );
     expect(verdict.live).toBe(3);
-    expect(formatHHMM(verdict.earliest)).toBe('12:30');
-    expect(verdict.sleepSeconds).toBe(150 * 60);
+    expect(formatHHMM(verdict.earliest)).toBe('10:30');
+    expect(verdict.sleepSeconds).toBe(30 * 60);
     expect(report(verdict)).toEqual({
-      lines: ['LIVE 3', 'EARLIEST 12:30', 'SLEEP 9000'],
+      lines: ['LIVE 3', 'EARLIEST 10:30', 'SLEEP 1800'],
       exitCode: 0,
     });
   });
@@ -186,25 +170,26 @@ describe('heartbeat', () => {
         row('#1', 'merged', '—', ''),
         row('#2', 'PR open', 'agent old, 01:00', '2 phases, budget to 04:00'),
         row('#3', 'parked', 'garbage', 'garbage'),
-        row('#4', 'dispatched', 'agent a4, 09:00', '2 phases, budget to 12:00'),
+        row('#5', 'CI wait', 'agent old2, 03:00', 'phase 1, budget to 04:30'),
+        row('#4', 'dispatched', 'agent a4, 09:00', 'phase 2, budget to 10:30'),
       ),
     );
     expect(verdict.live).toBe(1);
-    expect(formatHHMM(verdict.earliest)).toBe('12:00');
+    expect(formatHHMM(verdict.earliest)).toBe('10:30');
   });
 
   it('reads a retried row, whose Note carries more than the budget', () => {
     const verdict = run(
       at('10:00'),
       ledger(
-        row('#5', 'dispatched', 'agent r2, 09:50', '2 phases, budget to 12:50; retried: timeout'),
+        row('#5', 'dispatched', 'agent r2, 09:50', 'phase 2, budget to 11:20; retried: timeout'),
       ),
     );
-    expect(formatHHMM(verdict.earliest)).toBe('12:50');
+    expect(formatHHMM(verdict.earliest)).toBe('11:20');
   });
 
   describe('breach is at the end-time, not after it', () => {
-    const body = ledger(row('#9', 'dispatched', 'agent z, 09:00', '1 phase, budget to 12:00'));
+    const body = ledger(row('#9', 'dispatched', 'agent z, 10:30', 'phase 1, budget to 12:00'));
 
     it('one second before: no breach, sleep 1', () => {
       const verdict = run(new Date(at('12:00').getTime() - 1000), body);
@@ -217,7 +202,7 @@ describe('heartbeat', () => {
       expect(verdict.breached).toHaveLength(1);
       expect(verdict.sleepSeconds).toBe(0);
       expect(report(verdict)).toEqual({
-        lines: ['LIVE 1', 'EARLIEST 12:00', 'SLEEP 0', 'BREACHED #9 agent z, 09:00 ended 12:00'],
+        lines: ['LIVE 1', 'EARLIEST 12:00', 'SLEEP 0', 'BREACHED #9 agent z, 10:30 ended 12:00'],
         exitCode: 1,
       });
     });
@@ -231,8 +216,8 @@ describe('heartbeat', () => {
     const verdict = run(
       at('12:10'),
       ledger(
-        row('#1', 'dispatched', 'agent a, 09:00', '1 phase, budget to 12:00'),
-        row('#2', 'dispatched', 'agent b, 12:05', '1 phase, budget to 15:05'),
+        row('#1', 'dispatched', 'agent a, 10:30', 'phase 1, budget to 12:00'),
+        row('#2', 'dispatched', 'agent b, 12:05', 'phase 1, budget to 13:35'),
       ),
     );
     expect(verdict.sleepSeconds).toBe(0);
@@ -240,23 +225,23 @@ describe('heartbeat', () => {
   });
 
   describe('midnight rollover', () => {
-    const body = ledger(row('#4', 'dispatched', 'agent n, 22:30', '4 phases, budget to 04:30'));
+    const body = ledger(row('#4', 'dispatched', 'agent n, 23:30', 'phase 4, budget to 01:00'));
 
     it('dispatched before midnight, checked before midnight: the end is tomorrow', () => {
-      const verdict = run(at('23:00'), body);
+      const verdict = run(at('23:45'), body);
       expect(verdict.breached).toEqual([]);
-      expect(verdict.sleepSeconds).toBe(330 * 60);
+      expect(verdict.sleepSeconds).toBe(75 * 60);
       expect(verdict.earliest.getDate()).toBe(26);
     });
 
     it('dispatched before midnight, checked after: the dispatch was yesterday', () => {
-      const verdict = run(at('01:00', 26), body);
+      const verdict = run(at('00:30', 26), body);
       expect(verdict.breached).toEqual([]);
-      expect(verdict.sleepSeconds).toBe(210 * 60);
+      expect(verdict.sleepSeconds).toBe(30 * 60);
     });
 
     it('and breaches once the post-midnight end passes', () => {
-      expect(run(at('04:31', 26), body).breached).toHaveLength(1);
+      expect(run(at('01:01', 26), body).breached).toHaveLength(1);
     });
   });
 
@@ -267,7 +252,7 @@ describe('heartbeat', () => {
       ['an impossible time', 'agent a1, 25:00', '2 phases, budget to 12:00', /Worker/],
     ])('%s', (_, worker, note, message) => {
       const body = ledger(
-        row('#1', 'dispatched', 'agent ok, 09:00', '1 phase, budget to 12:00'),
+        row('#1', 'dispatched', 'agent ok, 09:00', 'phase 1, budget to 10:30'),
         row('#2', 'dispatched', worker, note),
       );
       expect(() => run(at('10:00'), body)).toThrow(message);
@@ -283,23 +268,30 @@ describe('a retried row whose Note was appended rather than replaced (#1587 foll
         '#5',
         'dispatched',
         'agent b2, 13:50',
-        '3 phases, budget to 13:44; retried: timeout; 3 phases, budget to 18:20',
+        'phase 3, budget to 13:44; retried: timeout; phase 3, budget to 15:20',
       ),
     );
     expect(() => run(at('14:00'), body)).toThrow(/more than one "budget to HH:MM"/);
     expect(() => run(at('14:00'), body)).toThrow(/#5/);
   });
 
-  it('throws when the resolved budget exceeds the 360-minute cap', () => {
+  it('throws when the resolved budget exceeds the 90-minute cap', () => {
     // A single, stale "budget to" combined with the day-roll means this row
     // resolves to a ~24h budget rather than a valid one.
-    const body = ledger(row('#6', 'dispatched', 'agent c3, 13:50', '3 phases, budget to 13:44'));
-    expect(() => run(at('14:00'), body)).toThrow(/over the 360-minute cap/);
+    const body = ledger(row('#6', 'dispatched', 'agent c3, 13:50', 'phase 3, budget to 13:44'));
+    expect(() => run(at('14:00'), body)).toThrow(/over the 90-minute cap/);
     expect(() => run(at('14:00'), body)).toThrow(/#6/);
   });
 
+  it('refuses a whole-issue row written before #1612 as stale', () => {
+    // `--dispatch 3` used to print a 270-minute budget. An open ledger carrying
+    // one reads as stale under the flat cap — why #1612 lands between campaigns.
+    const body = ledger(row('#8', 'dispatched', 'agent e5, 09:14', '3 phases, budget to 13:44'));
+    expect(() => run(at('09:30'), body)).toThrow(/270-minute budget, over the 90-minute cap/);
+  });
+
   it('does not throw on a normal row within the cap', () => {
-    const body = ledger(row('#7', 'dispatched', 'agent d4, 09:00', '2 phases, budget to 12:00'));
+    const body = ledger(row('#7', 'dispatched', 'agent d4, 09:00', 'phase 2, budget to 10:30'));
     expect(() => run(at('09:30'), body)).not.toThrow();
   });
 });
@@ -323,11 +315,11 @@ describe('the CLI, spawned', () => {
 
   it('reads a body file and prints the verdict, exit 0', () => {
     const file = path.join(dir, 'live.md');
-    const end = minutesFromNow(170);
+    const end = minutesFromNow(80);
     writeFileSync(
       file,
       ledger(
-        row('#1', 'dispatched', `agent a, ${minutesFromNow(-10)}`, `1 phase, budget to ${end}`),
+        row('#1', 'dispatched', `agent a, ${minutesFromNow(-10)}`, `phase 1, budget to ${end}`),
       ),
     );
     const res = cli([file]);
@@ -336,7 +328,7 @@ describe('the CLI, spawned', () => {
     expect(out[0]).toBe('LIVE 1');
     expect(out[1]).toBe(`EARLIEST ${end}`);
     expect(out[2]).toMatch(/^SLEEP \d+$/);
-    expect(Number(out[2].split(' ')[1])).toBeGreaterThan(160 * 60);
+    expect(Number(out[2].split(' ')[1])).toBeGreaterThan(70 * 60);
     expect(out).toHaveLength(3);
   });
 
@@ -345,8 +337,8 @@ describe('the CLI, spawned', () => {
       row(
         '#8',
         'dispatched',
-        `agent h, ${minutesFromNow(-200)}`,
-        `1 phase, budget to ${minutesFromNow(-20)}`,
+        `agent h, ${minutesFromNow(-100)}`,
+        `phase 1, budget to ${minutesFromNow(-10)}`,
       ),
     );
     const res = cli([], body);
@@ -378,7 +370,7 @@ describe('the CLI, spawned', () => {
     const res = cli(['--dispatch', '3']);
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(
-      /^BUDGET 270\nWORKER \d\d:\d\d\nNOTE 3 phases, budget to \d\d:\d\d\n$/,
+      /^BUDGET 90\nWORKER \d\d:\d\d\nNOTE phase 3, budget to \d\d:\d\d\n$/,
     );
   });
 
@@ -399,7 +391,7 @@ describe('salt-campaign.md → Dispatch sends the coordinator to the script', ()
   };
 
   it('names the dispatch-time command and the wake-time command', () => {
-    expect(dispatch()).toMatch(/node scripts\/campaign-heartbeat\.mjs --dispatch <phases>/);
+    expect(dispatch()).toMatch(/node scripts\/campaign-heartbeat\.mjs --dispatch <k>/);
     expect(dispatch()).toMatch(/node scripts\/campaign-heartbeat\.mjs <ledger-body-file>/);
   });
 

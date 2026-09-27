@@ -38,6 +38,8 @@ A hand-written `gh pr merge` is gated by `~/.claude/hooks/gh-merge-guard.mjs`, a
 
 **Why a parent need not be an epic.** A run-set frequently shares an ordinary work issue as its parent rather than an epic — #1122 and #1202 each hold their own phase issues from inside a work band — and the ledger attaches to that exactly the same way.
 
+**Why an unattended band errs low.** Nobody corrects an inflated `Queue` band after an unattended run, so the campaign files at the lower band and says in the issue what would prove it higher.
+
 ## Reporting
 
 A campaign spoke **68 times in 88 minutes**, median 144 characters, mostly "checking main's health" / "confirmed" / "waiting on #1021" — and closed with four messages in three minutes that all said the campaign had finished. Narration is worthless to a reader catching up later, out of order; hence five moments and silence in between.
@@ -62,6 +64,10 @@ A phased spec issue runs 10–25 KB; the coordinator needs about 200 tokens of i
 
 **Why a footprint is a prompt, never a gate.** It is a cheap model's transcription of prose written for a human, and over-collection is the mistake it actually makes. Campaign #1064 hit it twice in one day — once ruling `packages/domain/src/schemas/recipe.ts` untouchable when the issue only prohibited the `RecipeMetadataSchema` symbol, which the PR had left alone.
 
+### Conflict graph — be generous
+
+Overlap serialises even logically independent issues because of where the cost lands: found at merge time, an overlap costs a rebase, a re-review and a CI run; predicted at Setup, it costs only ordering.
+
 ### Pool of two
 
 The constraint is the host, not the plan: each worktree needs its own `pnpm install`, and every worker runs `pnpm test` and `pnpm check` on the same laptop. Past saturation a further worker makes all of them slower, and slower workers hit their time budgets — a throughput problem turned into parked branches.
@@ -80,7 +86,7 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 **Why workers are Agent-tool subagents.** A subagent has a task id the harness can kill (`TaskStop`) and confirm killed, it cannot outlive the session — so a resumed campaign never inherits a live worker it cannot see — and it runs unattended without permission-flag guesswork. A handle not recorded at dispatch cannot be recovered afterwards.
 
-**Why 90 minutes a phase.** About 10 minutes of every phase boundary is CI wait that `/salt-run` makes serial by design (step 6 pushes and waits, and it forbids starting phase N+1 before phase N's CI result is read), and merged campaign PRs put a real phase between 45 and 115 minutes. `scripts/tests/campaignBudget.test.mjs` explains why the number is pinned and what the pin does not claim.
+**Why 90 minutes a dispatch.** Since #1612 a dispatch builds one phase and the worker returns at its push, so the budget covers building, gating and pushing that phase — not the CI wait after it, which is the coordinator's. Merged campaign PRs put a real phase between 45 and 115 minutes when the worker still waited ~10 minutes for CI inside it, so 90 without the wait is generous. It replaced `min(360, max(180, 90 × phases))`, the whole-issue formula: kept with one phase per dispatch, its 180-minute floor would double the real budget and hide a hung worker for an extra hour and a half. The heartbeat's stale-row cap moved to the same 90, so an open ledger carrying an old `N phases, budget to …` row reads as stale on resume — which is why #1612 landed between campaigns. `scripts/tests/campaignBudget.test.mjs` explains why the number is pinned and what the pin does not claim.
 
 **Why the heartbeat is armed to the earliest deadline.** Re-arming on a fixed short interval turns it into a polling clock: campaign #1495's coordinator spent 47 turns and 6.96M tokens — 23% of its session, ~$4.45 — on ten-minute cycles that learned nothing on 42 of them.
 
@@ -88,7 +94,21 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 **Why retry once with a fresh worker.** A stuck worker is usually a worker that ran out of road, not an issue that cannot be built; a fresh one reading the branch cold gets past most of them. One retry, never two, keeps a genuinely unbuildable issue from eating the campaign.
 
+**Why no helper's prompt-cache TTL is raised** (#1612). A subagent's prompt cache lives 5 minutes; the main session's lives an hour. A helper that idles past 5 minutes — a worker blocked ~10 minutes on CI at a phase boundary, a sweeper waiting on its own CI — re-writes its whole context at write price on its next call, and across the 25 campaigns of 17–24 Sep 2026 those reloads were 62% of all worker cache writes. Two controls exist to lengthen it: the `subagentPromptCacheTtl` setting (or the `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` environment variable), and `cacheTtl` under an agent's `experimental` frontmatter (Claude Code v2.1.248+). Neither is set, deliberately: #1612 removes the idle instead — the sweeper and each per-phase worker return at their push, and the coordinator, on its 1-hour cache, does the CI waiting — and a 1-hour cache write costs 2× input against 1.25× for 5 minutes, so on helpers that no longer idle it would _add_ roughly 15% of worker cost. The one condition that would justify either control is a helper that idles for more than 5 minutes inside its turn; `scripts/tests/campaignAgents.test.mjs` pins their absence, so adding one means editing that test and this entry together.
+
 **Why terminate before recycling a slot.** A worker left running still holds a worktree, still runs `pnpm test` against the resources the next worker needs, and can still commit and push to a branch that has been parked or is sitting in the merge queue — a `--force-with-lease` failure, or a merged branch containing work nobody reviewed.
+
+### Why one worker per phase
+
+Until #1612 one `campaign-worker` ran every phase of its issue in one context: build phase 1, push, wait ~10 minutes for CI, build phase 2 on top of everything phase 1 left behind, and so on. A transcript review of the 25 campaigns of 17–24 Sep 2026 (~460 subagents) put workers at ~56% of all campaign spend, and about 70% of all cost is re-reading context on every call — so cost is calls × context size. A worker's context grew phase by phase: 165K tokens per call on average for 2-phase issues and 235K for 3-phase, a median peak of 362K, every phase-3 call re-reading phase 1's file reads, gate runs and edits. And the CI wait outlived the subagent's 5-minute prompt cache at every boundary, so the next call re-wrote the whole context at write price: 62% of all worker cache writes were those reloads. Replaying the 41 cleanly-classified workers with a fresh worker per phase (baseline plus ~25K tokens to re-read the issue and its handoff comments) gave ~35% less worker cost — 37% / 35% / 31% at 12.5K / 25K / 50K rehydration — about a fifth of a campaign, before the coordinator's extra ~3 turns per phase.
+
+**History, so nobody re-merges the loop for simplicity.** `/run` originally handed each phase to its own implementer subagent. #646 moved implementation in place on the issue branch, and #1037 made "write the phase yourself" the default to stop paying for a duplicated context — which also removed the fresh context per phase. #1612 gets it back without undoing #1037: _within_ a phase the worker still writes it itself ([Why write the phase yourself](#why-write-the-phase-yourself) still holds), and _between_ phases the context is dropped rather than carried. The coordinator does the waiting because its session keeps a 1-hour cache and already arms CI watchers, so its wait reloads nothing. `/salt-run`'s resume check and handoff comment — which already let a fresh session pick up at phase N — carry the work from one worker to the next.
+
+**Why a red CI is not a retry.** A worker used to fix an ordinary red in-loop at no cost; spending the issue's one retry on it would park issues that are merely mid-build. So the same-phase dispatch after a red is part of the normal loop, and only a second consecutive red on one phase — a red a fresh worker could not fix — enters the retry-then-park rule.
+
+**Why the pool slot is kept during the wait.** The pool counts issues in flight; freeing the slot while an issue waits on CI would change which issues run concurrently, a scheduling change #1612 deliberately did not make.
+
+**Standalone `/salt-run` keeps its whole-issue loop.** Daniel attends those runs, and they run in a main session with a 1-hour cache, so the reload never happens there.
 
 ## Review
 
@@ -114,7 +134,13 @@ The constraint is the host, not the plan: each worktree needs its own `pnpm inst
 
 **Why the heavy-suite read selects by PR** (#1588). A merge-queue build's `headBranch` is `gh-readonly-queue/main/pr-<n>-<sha>`, so `--branch main --limit 1` returns the post-merge `push` run instead — still `in_progress` with empty job conclusions at that moment, which parks a good merge; `heavy-suites.mjs` refuses it. And the newest `merge_group` run of _any_ PR is another entry's when two are queued, so `--pr` matches that prefix rather than taking the newest.
 
+## Decision envelope
+
+**Why a park sends a notification, and a merge never does.** Parking never stops the queue, but Daniel must hear while the campaign can still be redirected, and he is not reading the ledger. One notification per park and none per merge, because a noisy channel stops being read.
+
 ## Finish
+
+**Why Estimated vs actual is not optional.** It is the repo's only `Size`-vs-shipped comparison: every spec command writes a `Size`, and nothing else ever reads one back.
 
 **Why the ledger stays open while its follow-ups issue is open** (#1534). A closed ledger over an open follow-up is a `check` failure the next morning and a family that vanishes from the `Hierarchies` view while its work is live: that view reads sub-issue progress, which counts direct children only, so it reads 100% done. Seven of the eight issues reopened by hand on 2026-09-21 were exactly this step.
 
@@ -148,6 +174,10 @@ The reason the default is to correct a falsified premise in-phase is pure cost. 
 
 #1518 is the worked example in both directions — its reproduction said renaming an entry would show the stale-picture banner, and the build proved it does not. That gap was correctly deferred (it is a Cloud Functions change with three candidate shapes — a real fork). But the same PR also found the issue's `DESCRIBED` fixture does not serve as the "current, not stale" case it was promised as, and folding _that_ in was correct and cost nothing.
 
+### Search the issue, not the branch
+
+A split issue has more than one branch, so `gh pr list --head <branch>` answers only for the branch the run happened to guess and stays silent about the rest — and silence there reads exactly like "nothing landed".
+
 ### Session titles
 
 The title a session is given automatically is the prompt that started it, so a sidebar of `salt-run 1333` rows is unreadable at the four concurrent sessions the command is normally run at.
@@ -168,7 +198,7 @@ The two coverage gates are the ones that bit hardest: campaign #1176 lost one CI
 
 ### The commit trailer
 
-The `Co-Authored-By` trailer is the repo's convention throughout, and the only per-commit record of which model wrote a phase — which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`).
+The `Co-Authored-By` trailer is the repo's convention throughout, and the only per-commit record of which model wrote a phase — which is how the Fable 5 campaign was identified after the fact (`git log --grep='Claude Fable 5' -i --all`). A squash repeats it once per phase commit plus GitHub's deduped copy; that is expected, not a reason to strip it.
 
 ### No pre-push hook
 
@@ -186,7 +216,7 @@ The distinction is load-bearing. `board-status.yml` derives the issue→PR link 
 
 ### The backgrounded CI watch
 
-`--fail-fast` on a broken phase is four or five minutes back, and there is nothing a run would have done differently had it waited for the rest. The `sleep` covers the few seconds GitHub takes to register the run.
+`--fail-fast` on a broken phase is four or five minutes back, and there is nothing a run would have done differently had it waited for the rest. This is the standalone run's wait; a campaign worker returns at its push and the coordinator waits instead ([Why one worker per phase](#why-one-worker-per-phase)). The `sleep` covers the few seconds GitHub takes to register the run. "About 10 minutes" is the p50 over successful `ci.yml` `pull_request` runs, range 8–15.
 
 ### The ceiling looks backward
 

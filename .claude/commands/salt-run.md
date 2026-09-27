@@ -143,13 +143,15 @@ gh pr list --search "ISSUE_NUMBER in:body" --state all --json number,title,state
 git log --oneline origin/main --grep='(#PR)'
 ```
 
-Search the issue reference rather than a head branch. A split issue has more than one branch, so `--head <branch>` answers only for the branch you happened to guess and stays silent about the rest — and silence here reads exactly like "nothing landed". Confirm each hit against the squash subjects before believing it.
+Search the issue reference, never a head branch ([why](../../docs/campaign-rationale.md#search-the-issue-not-the-branch)). Confirm each hit against the squash subjects before believing it.
 
 `merged` means that PR is finished: it cannot track new work and its branch must not be reused. If phases remain, start the continuation from `main` — `git checkout -B <type>/<slug>-ISSUE_NUMBER-2 origin/main` — and let the first push open a new PR.
 
 ---
 
 ## Per-phase loop (N = 1 to final)
+
+In steps 1–2, issue independent reads, searches and greps together in one message: each extra call re-reads the whole context.
 
 ### 1. Context
 
@@ -254,7 +256,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 `Refs #ISSUE_NUMBER` on every phase commit including the last — the PR closes the issue. No `#N` anywhere but that footer.
 
-**Keep the `Co-Authored-By` trailer the harness appends by default**, below `Refs`, naming the model you are running as ([why](../../docs/campaign-rationale.md#the-commit-trailer)). A squash repeats it once per phase commit plus GitHub's deduped copy; that is expected, not a reason to strip it.
+**Keep the `Co-Authored-By` trailer the harness appends by default**, below `Refs`, naming the model you are running as ([why](../../docs/campaign-rationale.md#the-commit-trailer)).
 
 The pre-commit hook runs `lint-staged` (prettier `--write`, then eslint), then `pnpm typecheck` and `pnpm depcruise` again. So:
 
@@ -297,13 +299,13 @@ sleep 20 && gh pr checks --watch --fail-fast      # Bash tool, run_in_background
 
 The `sleep` is not padding: without it `gh pr checks` can exit at once with _"no checks reported"_, which looks like a finished CI. A watch that returns within seconds is that — re-issue it, never read it as a result ([why](../../docs/campaign-rationale.md#the-backgrounded-ci-watch)).
 
-A run takes about 10 minutes — p50 over successful `ci.yml` `pull_request` runs, range 8–15 — and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
+A run takes about 10 minutes and you are re-invoked when the watch exits, so blocking here is the single largest waste in a multi-phase run. Do step 7 while it runs, then step 1 of phase N+1 if there is one — a context read is cheap and CI cannot invalidate it.
 
 Stop there. **Do not start implementing N+1 until you have read phase N's CI result** (step 8): building on a red phase turns one rework into two.
 
 ### 7. Handoff comment
 
-Comment on issue #ISSUE_NUMBER — the audit trail and the AI PR reviewers' brief. Keep every heading, drop any filler line:
+Comment on issue #ISSUE_NUMBER — the audit trail and the AI PR reviewers' brief. On the campaign path it is also all the next phase inherits: a fresh worker builds it. Keep every heading, drop any filler line:
 
 ```
 ## Phase N complete

@@ -111,3 +111,128 @@ describe('salt-run.md stays a lean worker prompt', () => {
     expect(bytes).toBeLessThanOrEqual(30_000);
   });
 });
+
+// #1612 Phase 1. About 70% of campaign cost is re-reading context on every call,
+// and 91% of worker and fixer calls carried a single tool. These pin that each
+// rule's sentence is still in the prompt that carries it. What they cannot pin:
+// that an agent actually batches its reads, returns at its push, or skips the
+// steward cadence — those are run-time acts of a model reading prose, checked
+// only by reading a campaign's transcripts.
+describe('campaign helpers batch independent reads (#1612)', () => {
+  const BATCHING = /issue independent reads, searches and greps together in one message/i;
+
+  it.each([
+    '.claude/commands/salt-run.md',
+    '.claude/agents/campaign-fixer.md',
+    '.claude/agents/campaign-resolver.md',
+    '.claude/agents/campaign-sweeper.md',
+  ])('%s carries the batching sentence', (file) => {
+    expect(read(file)).toMatch(BATCHING);
+  });
+});
+
+describe('campaign-worker.md overrides salt-run.md step 9 item 5 (#1612)', () => {
+  it('says the steward subscription does not apply to a worker', () => {
+    const src = read('.claude/agents/campaign-worker.md');
+    expect(src).toMatch(/step 9 item 5 does not apply to you/);
+    // The reason is the backgrounded-command rule; the override must cite it.
+    expect(src).toMatch(/Never end your turn with a backgrounded command still running/);
+  });
+});
+
+describe('the sweeper returns at its push and the coordinator watches its CI (#1612)', () => {
+  it('campaign-sweeper.md returns no CI field and does not wait', () => {
+    const src = read('.claude/agents/campaign-sweeper.md');
+    const ret = src.slice(src.lastIndexOf('Return:'));
+    expect(ret).not.toMatch(/CI:/);
+    expect(src).toMatch(/do not wait for its CI/);
+  });
+
+  it('salt-campaign.md → Sweep arms the CI watcher on the sweep PR', () => {
+    const src = read('.claude/commands/salt-campaign.md');
+    const sweep = src.slice(src.indexOf('\n## Sweep\n'), src.indexOf('\n## Finish\n'));
+    expect(sweep).toContain('gh pr checks <pr> --watch --fail-fast');
+    expect(sweep).not.toMatch(/`REJECTED`, `CI`/);
+  });
+});
+
+// Decision 9 of #1612: the subagent prompt-cache TTL is deliberately left at
+// 5 minutes. This pins the rationale entry and the absence of both controls in
+// the repo. It cannot see a user-level `~/.claude/settings.json` or an
+// environment variable set on the host — only what this repo configures.
+describe('no helper prompt-cache TTL is raised (#1612)', () => {
+  it('the rationale doc names both controls and the 5-minute idle condition', () => {
+    const doc = read('docs/campaign-rationale.md');
+    const entry = doc.slice(doc.indexOf("**Why no helper's prompt-cache TTL is raised**"));
+    expect(doc).toContain("**Why no helper's prompt-cache TTL is raised**");
+    expect(entry).toContain('`subagentPromptCacheTtl`');
+    expect(entry).toContain('`cacheTtl`');
+    expect(entry).toMatch(/idles for more than 5 minutes/);
+  });
+
+  it.each(Object.keys(ROLES))('%s sets no cacheTtl', (name) => {
+    expect(read(`.claude/agents/${name}.md`)).not.toMatch(/cacheTtl/i);
+  });
+
+  it('.claude/settings.json sets no subagent prompt-cache TTL', () => {
+    expect(read('.claude/settings.json')).not.toMatch(/cacheTtl/i);
+  });
+});
+
+// #1612 Phase 2: one fresh worker per phase. These pin that the prose carrying
+// each half of the loop is still there — the worker's return at its push, the
+// coordinator's between-phase CI wait, the red-verdict dispatch and its limit.
+// What they cannot pin: that a coordinator actually waits and dispatches this
+// way, or that the handoff comment carries enough. The first campaign after
+// merge is compared against the issue's Behavior Contract by hand.
+describe('one fresh worker per phase (#1612)', () => {
+  const worker = read('.claude/agents/campaign-worker.md');
+  const campaign = read('.claude/commands/salt-campaign.md');
+  const dispatch = campaign.slice(
+    campaign.indexOf('\n## Dispatch\n'),
+    campaign.indexOf('\n## Review\n'),
+  );
+
+  it('campaign-worker.md builds one phase and returns at its push', () => {
+    expect(worker).toMatch(/You build exactly one phase/);
+    expect(worker).toMatch(/then return, without waiting for CI/);
+  });
+
+  it('campaign-worker.md sends a red verdict to step 8 for the same phase', () => {
+    expect(worker).toMatch(/A red verdict in your prompt/);
+    expect(worker).toMatch(/your job is step 8 for that phase/);
+    expect(worker).toMatch(/Build nothing further/);
+  });
+
+  it('campaign-worker.md returns the phase built and the next, and no CI claim', () => {
+    const ret = worker.slice(worker.lastIndexOf('```\nISSUE: N'));
+    expect(ret).toMatch(/^PHASE_BUILT: /m);
+    expect(ret).toMatch(/^NEXT: /m);
+    expect(ret).not.toMatch(/^CI: /m);
+  });
+
+  it('salt-campaign.md → Dispatch owns the between-phase CI wait and verdict', () => {
+    expect(dispatch).toMatch(/\*\*One phase per worker\.\*\*/);
+    expect(dispatch).toContain('gh pr checks <pr> --watch --fail-fast');
+    expect(dispatch).toContain('node scripts/heavy-suites.mjs --branch <branch>');
+  });
+
+  it('a same-phase red dispatch does not spend the retry; a second red does', () => {
+    expect(dispatch).toMatch(/a fresh worker for the \*\*same\*\* phase/);
+    expect(dispatch).toMatch(/This does \*\*not\*\* spend the retry/);
+    expect(dispatch).toMatch(/\*\*second consecutive `failed` on one phase\*\* is `BLOCKED`/);
+  });
+
+  it('the between-phase state is not `dispatched`, and resume handles it', () => {
+    // The heartbeat reads only `dispatched` rows as live (campaignHeartbeat.mjs).
+    expect(campaign).toMatch(/\| CI wait \|/);
+    expect(campaign).toMatch(/A `CI wait` row: re-arm the CI watcher/);
+    expect(campaign).toMatch(/a `CI wait` between phases keeps its slot/);
+  });
+
+  it('salt-run.md step 7 names the campaign path', () => {
+    const src = read('.claude/commands/salt-run.md');
+    const step7 = src.slice(src.indexOf('### 7. Handoff comment'), src.indexOf('### 8.'));
+    expect(step7).toMatch(/On the campaign path it is also all the next phase inherits/);
+  });
+});

@@ -39,16 +39,21 @@ const readDoc = (f) => readFileSync(path.join(repo, 'docs', f), 'utf8');
 describe('salt-campaign.md — the budget the coordinator hands each worker', () => {
   const src = read('salt-campaign.md');
 
-  it('states the per-phase budget as 90 minutes', () => {
-    expect(src).toMatch(/no single phase longer than 90 minutes/);
+  it('states the budget as a flat 90 minutes per dispatch, one phase each (#1612)', () => {
+    expect(src).toMatch(/\*\*90 minutes per dispatch\*\*/);
+    expect(src).toMatch(/A worker builds one phase per dispatch/);
   });
 
-  it('states the per-worker formula with its floor and its cap', () => {
-    expect(src).toMatch(/min\(360, max\(180, 90 × phases\)\)/);
+  // #1612 replaced the whole-issue formula. A one-phase worker under it would
+  // get a 180-minute floor — double the real budget, hiding a hung worker.
+  it('carries no trace of the whole-issue formula or its worked values', () => {
+    expect(src).not.toMatch(/min\(360/);
+    expect(src).not.toMatch(/Worked values:/);
+    expect(src).not.toMatch(/--dispatch <phases>/);
   });
 
-  it('takes the phase count from the extractor, and from PHASES_UNBUILT on a continuation', () => {
-    expect(src).toMatch(/`PHASES`/);
+  it('names the phase the dispatch builds, and PHASES_UNBUILT on a continuation', () => {
+    expect(src).toMatch(/--dispatch <k>/);
     expect(src).toMatch(/`PHASES_UNBUILT`/);
   });
 
@@ -131,8 +136,14 @@ describe('the spec commands size a phase against the budget', () => {
     expect(phasesSection(file)).toMatch(/\*\*90 minutes\*\* per phase/);
   });
 
-  it.each(SPEC_COMMANDS)('%s names the CI wait the budget has to absorb', (file) => {
-    expect(phasesSection(file)).toMatch(/about 10 of those/);
+  // Since #1612 the worker returns at its push, so the CI wait is no longer
+  // inside the 90 — the sentence that said it was ("about 10 of those") is
+  // gone rather than re-worded, and the replacement names who waits.
+  it.each(SPEC_COMMANDS)('%s says the CI wait is not part of the budget', (file) => {
+    expect(phasesSection(file)).not.toMatch(/about 10 of those/);
+    expect(phasesSection(file)).toMatch(
+      /the CI wait at the boundary is the coordinator's, not part of the\s+90/,
+    );
   });
 });
 
