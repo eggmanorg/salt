@@ -1,6 +1,6 @@
 // Screen Wake Lock wrapper (cooking mode, Phase 1). A thin, feature-detected
-// wrapper around the Screen Wake Lock API (`navigator.wakeLock`) so the cook page
-// can keep the screen awake while the user has their hands full. This is a DISPLAY
+// wrapper around the Screen Wake Lock API (`navigator.wakeLock`) so the app can
+// keep the screen awake while the user has their hands full. This is a DISPLAY
 // API, not storage — no Rule 3 concern.
 //
 // Everything here degrades gracefully and NEVER throws: an unsupported browser, a
@@ -51,8 +51,8 @@ export interface WakeLockController {
   disable(): Promise<void>;
 }
 
-// Create an idempotent wake-lock controller. Not a singleton — the cook page owns
-// one instance for its lifetime and disables it on teardown.
+// Create an idempotent wake-lock controller. This factory makes a fresh one per
+// call; the app makes one, lazily, in `./keepAwake.svelte.ts` (issue #1620).
 export function createWakeLock(): WakeLockController {
   let sentinel: WakeLockSentinelLike | null = null;
   // Desired state: true once the user enables, false once they disable. The

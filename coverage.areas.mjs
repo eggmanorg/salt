@@ -693,11 +693,18 @@ export const coverageThresholds = {
   // already carries at its own `useCurrentPage` guard, kept for the same
   // reason: the type only proves the OTHER two disjuncts, `busy` still has to
   // be re-checked in case a click and the busy flip land in the same tick.
+  // BANKED 77.89/58.52 → 78.96/61.05 in #1620 Phase 1: `KeepAwakeButton.svelte`
+  // arrived with its own suite (`KeepAwakeButton.test.ts`), so both ratios rose
+  // past the staleness tolerance. Uncovered lines held at 65; uncovered
+  // branches rose 73 → 74, and that one is the `?? ''` Svelte emits for the
+  // `class="… {glyphClass}"` interpolation — `glyphClass` is a `$derived`
+  // string that is never nullish, so the fallback side cannot run. Located by
+  // running that suite alone under v8 coverage; the four figures are CI's.
   'apps/web-pwa/src/components/**': {
-    lines: 77.89,
-    branches: 58.52,
+    lines: 78.96,
+    branches: 61.05,
     uncoveredLines: 65,
-    uncoveredBranches: 73,
+    uncoveredBranches: 74,
   },
 };
 

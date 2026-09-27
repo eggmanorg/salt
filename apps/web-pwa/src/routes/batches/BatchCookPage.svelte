@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, CanonIcon, EmptyState, Icon, Spinner } from '@salt/ui-components';
-  import { onDestroy } from 'svelte';
   import { push } from 'svelte-spa-router';
   import {
     flattenIngredients,
@@ -12,6 +11,7 @@
   import type { BatchStageDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
+  import KeepAwakeButton from '../../components/KeepAwakeButton.svelte';
   import {
     batch,
     initBatchSync,
@@ -24,7 +24,6 @@
   import { observations, initBatchObservationsSync } from '../../lib/batchObservationService.js';
   import { recipes } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { isWakeLockSupported, createWakeLock } from '../../lib/wakeLock.js';
   import { tick as hapticTick } from '../../lib/haptics.js';
   // The #994 cook parts, reused verbatim: the pager and its geometry, the collapsed
   // row, the kit chips, the done controls, the timeline and the amber banner.
@@ -514,34 +513,6 @@
   // ─── The log, from here ───────────────────────────────────────────────────────
   let logOpen = $state(false);
 
-  // ─── Keep awake ───────────────────────────────────────────────────────────────
-  const wakeLockSupported = isWakeLockSupported();
-  const wake = wakeLockSupported ? createWakeLock() : null;
-  let keepAwake = $state(false);
-  let togglingWakeLock = false;
-  onDestroy(() => void wake?.disable());
-
-  async function toggleWakeLock(): Promise<void> {
-    if (togglingWakeLock) return;
-    togglingWakeLock = true;
-    try {
-      if (keepAwake) {
-        await wake?.disable();
-        keepAwake = false;
-        addToast('Screen can sleep again', 'success');
-        return;
-      }
-      // Report what actually happened: `enable()` resolves false when the browser or
-      // OS refuses, and the toggle must not claim a lock it never got.
-      const acquired = (await wake?.enable()) ?? false;
-      keepAwake = acquired;
-      if (acquired) addToast('Screen will stay awake', 'success');
-      else addToast("Your browser wouldn't let the screen stay awake.", 'destructive');
-    } finally {
-      togglingWakeLock = false;
-    }
-  }
-
   // Focus entry for a full-viewport route (ui-spec-v05 §2.4). The chrome that had
   // focus is unmounted as this route activates, so without this the next Tab would
   // restart at the top of the document. No restore on the way out: this page is
@@ -670,33 +641,7 @@
               class="text-muted-foreground"
             />{/snippet}
         </Button>
-        {#if wakeLockSupported}
-          <Button
-            variant="ghost"
-            size="icon"
-            onclick={() => void toggleWakeLock()}
-            ariaLabel="Keep screen awake"
-            title={keepAwake ? 'Screen stays awake' : 'Keep screen awake'}
-            aria-pressed={keepAwake}
-            data-testid="batch-cook-wakelock"
-            data-active={keepAwake}
-          >
-            {#snippet leading()}
-              <span
-                class="relative inline-flex transition-colors {keepAwake
-                  ? 'text-warning'
-                  : 'text-muted-foreground'}"
-              >
-                <Icon name="Smartphone" size={20} />
-                <Icon
-                  name="Lock"
-                  size={14}
-                  class="absolute -right-1 -bottom-1 rounded-full bg-background"
-                />
-              </span>
-            {/snippet}
-          </Button>
-        {/if}
+        <KeepAwakeButton placement="cook" data-testid="batch-cook-wakelock" />
       </header>
 
       {#if showTimeline}

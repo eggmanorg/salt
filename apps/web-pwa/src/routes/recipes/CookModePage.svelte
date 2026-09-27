@@ -7,9 +7,10 @@
     getCookSessionSnapshot,
   } from '../../lib/cookSessionService.js';
   // The session lifecycle — subscribe, bootstrap, ended-elsewhere, orphan, restart,
-  // finish, close, keep-awake — shared with guided cook (issue #994), because both
-  // screens are the same cook on the same session document.
+  // finish, close — shared with guided cook (issue #994), because both screens are
+  // the same cook on the same session document.
   import { createCookLifecycle } from '../../lib/cookLifecycle.svelte.js';
+  import KeepAwakeButton from '../../components/KeepAwakeButton.svelte';
   // The step timers — projection, tick, start/dismiss/progress and the sheet — also
   // shared with guided cook (issue #994), because they are the same timers on that
   // same document. The defaults and the push floor it runs on live in
@@ -93,9 +94,8 @@
   let { params }: Props = $props();
 
   // ─── Session lifecycle ─────────────────────────────────────────────────────────
-  // Subscribe, bootstrap, ended-elsewhere, orphan, restart, finish, close and the
-  // keep-awake lock — all of it in `$lib/cookLifecycle`, shared verbatim with the
-  // guided cook (issue #994). No ready-guard: plain cook mode has nothing to wait
+  // Subscribe, bootstrap, ended-elsewhere, orphan, restart, finish and close — all
+  // of it in `$lib/cookLifecycle`, shared verbatim with the guided cook (issue #994). No ready-guard: plain cook mode has nothing to wait
   // for beyond the session itself.
   const lifecycle = createCookLifecycle({ recipeId: () => params.id });
 
@@ -110,11 +110,9 @@
     recipe: () => lifecycle.recipe,
     session: () => $cookSession,
   });
-  const { wakeLockSupported, handleRestart, handleComplete, handleClose, toggleWakeLock } =
-    lifecycle;
+  const { handleRestart, handleComplete, handleClose } = lifecycle;
   const restarting = $derived(lifecycle.restarting);
   const completing = $derived(lifecycle.completing);
-  const keepAwake = $derived(lifecycle.keepAwake);
 
   // ─── Mise-en-place ticking ─────────────────────────────────────────────────────
   const checkedIds = $derived(new Set($cookSession?.checkedIngredientIds ?? []));
@@ -469,8 +467,8 @@
     hasRecipeChanged($cookSession?.recipeUpdatedAtAtStart ?? null, recipe?.updatedAt ?? null),
   );
 
-  // Restart, Finish, Close and the keep-awake toggle all live on the shared
-  // lifecycle, bound at the top of this script.
+  // Restart, Finish and Close live on the shared lifecycle, bound at the top of
+  // this script. The keep-awake toggle is the app-wide one (`KeepAwakeButton`).
 </script>
 
 <!-- "Click anywhere else" for the expanded first-use chip. On window rather than the
@@ -531,41 +529,7 @@
       >
         {#snippet leading()}<Icon name="Timer" size={20} class="text-muted-foreground" />{/snippet}
       </Button>
-      {#if wakeLockSupported}
-        <!-- Keep-awake is an icon toggle, not a labelled switch: cook mode is a
-           heads-down surface and the header has to stay legible next to a long recipe
-           title. State is carried by colour (muted → `warning`, the family the cook
-           surfaces already spend on "pay attention to this") plus aria-pressed, and every tap fires a toast so the
-           change is never silent. -->
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={toggleWakeLock}
-          ariaLabel="Keep screen awake"
-          title={keepAwake ? 'Screen stays awake' : 'Keep screen awake'}
-          aria-pressed={keepAwake}
-          data-testid="cook-mode-wakelock"
-          data-active={keepAwake}
-        >
-          {#snippet leading()}
-            <!-- Lucide has no phone-with-padlock glyph, so it's composed: a Lock badge on
-               the corner of Smartphone, with a bg-background ring so it punches out of
-               the phone outline instead of muddling into it. -->
-            <span
-              class="relative inline-flex transition-colors {keepAwake
-                ? 'text-warning'
-                : 'text-muted-foreground'}"
-            >
-              <Icon name="Smartphone" size={20} />
-              <Icon
-                name="Lock"
-                size={14}
-                class="absolute -right-1 -bottom-1 rounded-full bg-background"
-              />
-            </span>
-          {/snippet}
-        </Button>
-      {/if}
+      <KeepAwakeButton placement="cook" data-testid="cook-mode-wakelock" />
     </header>
 
     <!-- Timeline. Its own full-width band directly under the header, which is why the

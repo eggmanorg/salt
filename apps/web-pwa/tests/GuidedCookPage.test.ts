@@ -189,6 +189,7 @@ vi.mock('../src/lib/cookSessionService.js', () => ({
 }));
 
 import GuidedCookPage from '../src/routes/recipes/GuidedCookPage.svelte';
+import { __resetKeepAwakeForTest } from '../src/lib/keepAwake.svelte.js';
 import { push } from 'svelte-spa-router';
 import { addToast } from '../src/lib/toastStore.js';
 import {
@@ -397,6 +398,8 @@ async function enterSteps() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The keep-awake switch is app-wide by design (#1620), so it outlives a test.
+  __resetKeepAwakeForTest();
   mockAuth.user = { uid: UID };
   mockCanonItems._set([]);
   mockProductForms._set([]);

@@ -137,6 +137,7 @@ vi.mock('../src/lib/featureGate.js', () => ({
 
 import { push } from 'svelte-spa-router';
 import BatchCookPage from '../src/routes/batches/BatchCookPage.svelte';
+import { __resetKeepAwakeForTest } from '../src/lib/keepAwake.svelte.js';
 import {
   advanceStage,
   startStage,
@@ -287,6 +288,8 @@ async function goToSteps(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The keep-awake switch is app-wide by design (#1620), so it outlives a test.
+  __resetKeepAwakeForTest();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(NOW);
   mockBatch._set(makeBatch());
@@ -1054,6 +1057,21 @@ describe('keep awake', () => {
 
     await waitFor(() => expect(mockWakeLock.enable).toHaveBeenCalled());
     expect(screen.getByTestId('batch-cook-wakelock').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  // #1620: the switch is app-wide. Leaving the batch cook must not let the screen
+  // sleep — until then this page released its own lock on destroy.
+  it('keeps the screen awake after the page is left', async () => {
+    const { unmount } = renderPage();
+    const toggle = screen.getByTestId('batch-cook-wakelock');
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
+
+    unmount();
+
+    expect(mockWakeLock.disable).not.toHaveBeenCalled();
+    renderPage();
+    expect(screen.getByTestId('batch-cook-wakelock').getAttribute('aria-pressed')).toBe('true');
   });
 });
 
