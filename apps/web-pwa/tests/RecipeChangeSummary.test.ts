@@ -485,8 +485,8 @@ describe('RecipeChangeSummary — the phase strip', () => {
 
     const card = onlyCard();
     expect(card.textContent).toContain('Timing');
-    expect(card.textContent).toContain('10 hands-on');
-    expect(card.textContent).toContain('0 hands-on');
+    expect(card.textContent).toContain('Prove 1 hr (10 min hands-on)');
+    expect(card.textContent).toContain('Prove 1 hr (0 min hands-on)');
   });
 
   // Issue #1239. The rule the card is drawn by is stated on `metadata.phases`
@@ -522,7 +522,7 @@ describe('RecipeChangeSummary — the phase strip', () => {
         { label: 'Mix', handsOnMinutes: 5, handsOffMinutes: 0 },
         { label: 'Bake', handsOnMinutes: 5, handsOffMinutes: 0 },
       ],
-      [{ label: 'Mix 5 min (5 hands-on) · Bake', handsOnMinutes: 5, handsOffMinutes: 0 }],
+      [{ label: 'Mix 5 min (5 min hands-on) · Bake', handsOnMinutes: 5, handsOffMinutes: 0 }],
     ],
   ] as [string, RecipePhase[], RecipePhase[]][])(
     'a strip movement whose two sides render identically (%s)',

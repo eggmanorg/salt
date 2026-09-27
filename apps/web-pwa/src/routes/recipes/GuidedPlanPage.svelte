@@ -33,6 +33,7 @@
   import GuidedStepLookahead from './GuidedStepLookahead.svelte';
   import GuidedPlanProblem from './GuidedPlanProblem.svelte';
   import { halfwayThroughTimer } from './guidedHalfway.js';
+  import { formatMinutes } from '../../lib/durationDisplay.js';
 
   // READ THE PLAN THE WAY YOU WILL COOK IT (issue #1453) — `/recipes/:id/guided`.
   //
@@ -384,10 +385,10 @@
     stepNote.checkIns.forEach((checkIn, i) => {
       if (checkIn.atMinutes < timerMinutes) return;
       out.push({
-        message: `The reminder at ${checkIn.atMinutes} min would never go off — this step's timer is ${timerMinutes} min.`,
+        message: `The reminder at ${formatMinutes(checkIn.atMinutes)} would never go off — this step's timer is ${formatMinutes(timerMinutes)}.`,
         fixes: [
           {
-            label: `Move it to ${halfwayThroughTimer(timerMinutes)} min`,
+            label: `Move it to ${formatMinutes(halfwayThroughTimer(timerMinutes))}`,
             run: () =>
               setCheckIn(s.id, i, { ...checkIn, atMinutes: halfwayThroughTimer(timerMinutes) }),
           },
@@ -810,7 +811,7 @@
                 >{step.text}
                 {#if step.timer}
                   <span class="ml-1 text-xs text-muted-foreground"
-                    >({step.timer.durationMinutes} min timer)</span
+                    >({formatMinutes(step.timer.durationMinutes)} timer)</span
                   >
                 {/if}
               </p>

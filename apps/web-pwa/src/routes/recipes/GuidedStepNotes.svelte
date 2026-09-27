@@ -9,6 +9,7 @@
   import GuidedPlanLine from './GuidedPlanLine.svelte';
   import GuidedPlanProblem from './GuidedPlanProblem.svelte';
   import { halfwayThroughTimer } from './guidedHalfway.js';
+  import { formatMinutes } from '../../lib/durationDisplay.js';
 
   // WHAT THE PLAN ADDS UNDER ONE STEP, drawn once for both screens that draw it
   // (issue #1453): the guided cook deck, and the review screen the plan is read on
@@ -329,7 +330,9 @@
                   if (minutes !== null) edit.onSetCheckIn(i, { ...checkIn, atMinutes: minutes });
                 }}
               >
-                <span class="font-medium text-foreground">{checkIn.atMinutes} min in</span>
+                <span class="font-medium text-foreground"
+                  >{formatMinutes(checkIn.atMinutes)} in</span
+                >
               </GuidedPlanLine>
               <span>—</span>
               <GuidedPlanLine
@@ -347,7 +350,7 @@
               </GuidedPlanLine>
             </span>
           {:else}
-            <span class="font-medium text-foreground">{checkIn.atMinutes} min in</span>
+            <span class="font-medium text-foreground">{formatMinutes(checkIn.atMinutes)} in</span>
             —
             <span class="whitespace-pre-wrap">{checkIn.text}</span>
           {/if}
@@ -377,7 +380,7 @@
                  beside them would take the focus that keeps it alive and delete
                  the thing the tap was trying to adjust. Say the words, then move
                  the minutes on the row that is now there. -->
-            <span class="font-medium text-foreground">{pending.atMinutes} min in</span>
+            <span class="font-medium text-foreground">{formatMinutes(pending.atMinutes)} in</span>
             <span>—</span>
             <GuidedPlanLine
               class="min-w-0 flex-1"

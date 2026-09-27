@@ -1237,7 +1237,7 @@ describe('CookModePage — step timers', () => {
     await enterSteps();
 
     expect(screen.getByTestId('cook-step-timer-start')).toHaveTextContent(
-      'Start 5 minute timer (Simmer the sauce)',
+      'Start 5 min timer (Simmer the sauce)',
     );
   });
 
@@ -1246,9 +1246,51 @@ describe('CookModePage — step timers', () => {
     await enterSteps();
 
     // The default recipe's step-2 timer is 20 minutes, description: null.
-    expect(screen.getByTestId('cook-step-timer-start')).toHaveTextContent(
-      /^Start 20 minute timer$/,
+    expect(screen.getByTestId('cook-step-timer-start')).toHaveTextContent(/^Start 20 min timer$/);
+  });
+
+  // #1621: an hour and over reads in the app's hr/min words — on the start button,
+  // the step's countdown and the bar's chip alike — never as `120:00`.
+  it('reads a two-hour timer in hours, unstarted and running', async () => {
+    mockRecipes._set([
+      makeRecipe({
+        steps: [
+          { id: 'step-1', text: 'Soften the onions.', timer: null, note: null },
+          {
+            id: 'step-2',
+            text: 'Braise.',
+            timer: { durationMinutes: 120, description: null },
+            note: null,
+          },
+        ],
+      }),
+    ]);
+    renderCookMode();
+    await enterSteps();
+    expect(screen.getByTestId('cook-step-timer-start')).toHaveTextContent(/^Start 2 hr timer$/);
+  });
+
+  it('counts a running two-hour timer in hr/min words on the step and the chip', async () => {
+    mockCookSession._set(
+      makeCookSession({
+        activeTimers: [
+          {
+            id: 'step-2',
+            stepId: 'step-2',
+            label: null,
+            durationMinutes: null,
+            endsAt: new Date(Date.now() + 7_200_000).toISOString(),
+            notify: true,
+          },
+        ],
+      }),
     );
+    renderCookMode();
+    await enterSteps();
+
+    // CEILed to the minute, so a fresh two hours reads `2 hr` for its first minute.
+    expect(screen.getByTestId('cook-step-timer-countdown')).toHaveTextContent(/^2 hr$/);
+    expect(screen.getByTestId('cook-timer-chip-time')).toHaveTextContent(/^2 hr$/);
   });
 
   it('cancelling from the persistent bar takes the timer off the session', async () => {

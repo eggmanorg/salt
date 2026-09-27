@@ -479,9 +479,7 @@ describe('the deck', () => {
     // down — which is exactly when a timer is the right answer (Phase 2).
     renderPage();
     await goToSteps();
-    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain(
-      'Start 10 minute timer',
-    );
+    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain('Start 10 min timer');
     // And no "the recipe says…" text beside it: the button IS the recipe's
     // duration, said once.
     expect(screen.queryByTestId('batch-cook-step-timer')).toBeNull();
@@ -1375,7 +1373,9 @@ describe('timers on the steps the schedule does not cover', () => {
 
     expect(screen.queryByTestId('cook-step-timer-start')).toBeNull();
     // Shown as the recipe's opinion instead, never armed.
-    expect(screen.getByTestId('batch-cook-step-timer').textContent).toContain('60 min');
+    expect(screen.getByTestId('batch-cook-step-timer').textContent).toContain(
+      'The recipe says 1 hr for this step.',
+    );
     expect(screen.getByTestId('batch-cook-stage-countdown').textContent).toContain('30 min left');
   });
 
@@ -1416,9 +1416,7 @@ describe('timers on the steps the schedule does not cover', () => {
 
     // The band is there and says its piece; what it does not do is tick.
     expect(screen.queryByTestId('batch-cook-stage-countdown')).toBeNull();
-    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain(
-      'Start 20 minute timer',
-    );
+    expect(screen.getByTestId('cook-step-timer-start').textContent).toContain('Start 20 min timer');
   });
 });
 

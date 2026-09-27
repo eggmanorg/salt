@@ -17,7 +17,6 @@
   } from '@salt/ui-components';
   import {
     cookSessionId,
-    formatClock,
     hasComponents,
     isCookable,
     latestHomeTimeFor,
@@ -48,7 +47,7 @@
     subscribeKitchenWeeks,
   } from '../../lib/mealPlanService.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { formatMinutes } from '../../lib/durationDisplay.js';
+  import { formatCountdown, formatMinutes } from '../../lib/durationDisplay.js';
   import { phaseMinutes } from './recipeTiming.js';
   import { kindOf } from './recipeKind.js';
   import { quarterHourOptions } from '../../lib/timeOptions.js';
@@ -458,7 +457,7 @@
                     : ''}"
                   data-testid="cook-plan-timer-time"
                 >
-                  {fired ? 'Finished' : formatClock(remaining)}
+                  {fired ? 'Finished' : formatCountdown(remaining)}
                 </span>
                 <Button
                   size="sm"

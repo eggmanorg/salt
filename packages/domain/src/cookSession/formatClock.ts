@@ -6,7 +6,10 @@
 // countdown must start at the number the button promised. The trade is that the
 // display sits on "0:01" for the final second and hits "0:00" exactly at expiry.
 //
-// Minutes are NOT capped at 59: a 90-minute braise reads "90:00", not "30:00".
+// Minutes are NOT capped at 59 — 90 minutes is "90:00", not "30:00" — so the
+// arithmetic stays right at any length. That is not how the app shows an hour:
+// web-pwa's `formatCountdown` (lib/durationDisplay.ts) uses this only for spans
+// under an hour and reads anything longer in hr/min words (#1621).
 export function formatClock(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);

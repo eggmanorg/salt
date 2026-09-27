@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, Icon } from '@salt/ui-components';
-  import { formatClock, isCheckInTimerId } from '@salt/domain';
+  import { isCheckInTimerId } from '@salt/domain';
+  import { formatCountdown } from '../../lib/durationDisplay.js';
   import type { CookActiveTimerDoc, StepDoc } from '@salt/domain/schemas';
 
   // Persistent timers bar, shared by both cook modes (issue #994). Every live/fired
@@ -87,7 +88,7 @@
                 : ''}"
               data-testid="cook-timer-chip-time"
             >
-              {fired ? 'Finished' : formatClock(remaining)}
+              {fired ? 'Finished' : formatCountdown(remaining)}
             </span>
           {/snippet}
           {#if checkIn}

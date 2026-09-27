@@ -19,7 +19,6 @@
   import { push } from 'svelte-spa-router';
   import {
     recipeHeroUrl,
-    formatClock,
     isChatReadOnly,
     timerHeat,
     timerProgress,
@@ -47,6 +46,7 @@
   import { dismissKitchenTimer, startKitchenTimer } from '../../lib/kitchenTimerService.js';
   import { persistRecipe, recipes } from '../../lib/recipeService.js';
   import { addToast } from '../../lib/toastStore.js';
+  import { formatCountdown } from '../../lib/durationDisplay.js';
   import { AD_HOC_TIMER_LABEL, AD_HOC_TIMER_MINUTES } from '../../lib/timerDefaults.js';
   import CookTimerSheet from '../recipes/CookTimerSheet.svelte';
   import {
@@ -507,7 +507,7 @@
           <div class="flex items-center gap-3 {cardPad}" style="--salt-dial-heat: {HEAT_VAR[heat]}">
             <Dial value={elapsed === null ? 0 : 1 - elapsed} size="lg" tone="heat" ariaLabel={null}>
               <span data-testid="mine-timer-time">
-                {fired ? '—' : formatClock(remaining)}
+                {fired ? '—' : formatCountdown(remaining, 'compact')}
               </span>
             </Dial>
             {#if t.kind === 'cook'}

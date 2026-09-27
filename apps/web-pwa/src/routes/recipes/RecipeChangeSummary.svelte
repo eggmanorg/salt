@@ -13,6 +13,7 @@
   import type { DiffPart, RecipePhase } from '@salt/domain';
   import type { NullableStringChange, RecipeDiff } from '@salt/domain';
   import type { StepTimerDoc } from '@salt/domain/schemas';
+  import { formatMinutes } from '../../lib/durationDisplay.js';
 
   // Review-and-approve gate for an AI-chef recipe edit. Renders the pure
   // `RecipeDiff` produced by `diffRecipe` as a DIFF: one card per change,
@@ -107,8 +108,8 @@
   function timerLabel(t: StepTimerDoc | null): string {
     if (!t) return 'no timer';
     return t.description
-      ? `${t.durationMinutes} min (${t.description})`
-      : `${t.durationMinutes} min`;
+      ? `${formatMinutes(t.durationMinutes)} (${t.description})`
+      : formatMinutes(t.durationMinutes);
   }
 
   function servingsValue(n: number | null): string {
@@ -152,7 +153,7 @@
     return phases
       .map((p) => {
         const label = p.label.trim() === '' ? 'Untitled' : p.label;
-        return `${label} ${phaseElapsedMinutes(p)} min (${p.handsOnMinutes} hands-on)`;
+        return `${label} ${formatMinutes(phaseElapsedMinutes(p))} (${formatMinutes(p.handsOnMinutes)} hands-on)`;
       })
       .join(' · ');
   }
