@@ -75,6 +75,31 @@ describe('hasBlockingFindings', () => {
   });
 });
 
+// #1614 adds a `[decide]` should-fix mark. The gate reads only `## Blocking`,
+// so a review whose should-fix lines all carry the new mark must still clear.
+describe('a review carrying `[decide]` should-fix lines', () => {
+  const decided = [
+    '## Blocking',
+    'None.',
+    '',
+    '## Should-fix',
+    '- [decide] | scripts/lib/x.mjs:12 | pin the claim with a test rather than qualify it — the boundary is checkable',
+    '- [decide] | docs/y.md | delete the sentence: the code already says it',
+    '',
+    '## Notes',
+    'Both heavy suites ran.',
+  ].join('\n');
+
+  it('reads as no blocking findings', () => {
+    expect(hasBlockingFindings(reviewSections(decided))).toBe(false);
+  });
+
+  it('leaves an otherwise-green PR allowed', () => {
+    const v = judgePr(green({ reviews: [{ submittedAt: REVIEWED, body: decided }] }));
+    expect(v.verdict).toBe('allow');
+  });
+});
+
 describe('judgePr', () => {
   it('allows a reviewed, green, blocking-free PR and reports its head branch', () => {
     const v = judgePr(green());

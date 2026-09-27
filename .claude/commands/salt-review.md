@@ -1,5 +1,5 @@
 ---
-description: Have the shared pr-reviewer agent adversarially review one green PR for the defects CI structurally cannot see and post them as a single PR review. Fixes every blocking and fold-in finding before merge; proposes the rest to Daniel as follow-ups.
+description: Have the shared pr-reviewer agent adversarially review one green PR for the defects CI structurally cannot see and post them as a single PR review. Fixes every blocking, fold-in and in-footprint decide finding before merge, naming each choice it took; proposes the rest to Daniel as follow-ups.
 argument-hint: <pr number | url | branch>
 disable-model-invocation: true
 model: opus
@@ -72,10 +72,10 @@ It posts the review and returns one line per finding, or `STALE` if the head mov
 
 The review's grades decide what step 4 does, and there are only two outcomes:
 
-- **Fix before merge** — every `## Blocking` finding and every `[fold-in]` should-fix. The first are material; the second need no decision and stay inside this PR's footprint, so fixing them now is cheaper than filing them.
-- **Proposed follow-up** — every `[sweep]` should-fix and every unmarked one. A `[sweep]` fix reaches outside this PR's footprint, and widening a reviewed PR is Daniel's call, not yours; an unmarked one needs a decision. Propose a `[sweep]` as needing no decision beyond a yes to file it — the file or symbol its line names is the issue's scope.
+- **Fix before merge** — every `## Blocking` finding, every `[fold-in]` should-fix, and every `[decide]` should-fix whose file is in this PR's footprint (step 1's `files`, or the test file for one of them). The first are material; the others stay inside this PR's footprint and need no call of Daniel's, so fixing them now is cheaper than filing them. A `[decide]` line carries the reviewer's recommended choice: take it — an engineering decision is yours, not a question for him — unless it does not work, in which case take the cleanest alternative and say why.
+- **Proposed follow-up** — every `[sweep]` should-fix, every `[decide]` outside the footprint, and every unmarked one. A fix outside this PR's footprint widens a reviewed PR, and that is Daniel's call, not yours; an unmarked one is one of his calls by definition, its reason word on the line. Propose a `[sweep]` or `[decide]` as needing no decision beyond a yes to file it — the file or symbol its line names is the issue's scope, and a `[decide]`'s choice is already made.
 
-`## Blocking` holds material findings only, so a PR whose findings are all `[fold-in]` reads as clear to the merge gate before step 4's fix is pushed. Step 4 still fixes them, in this session, before you report.
+`## Blocking` holds material findings only, so a PR whose findings are all `[fold-in]` or `[decide]` reads as clear to the merge gate before step 4's fix is pushed. Step 4 still fixes them, in this session, before you report.
 
 ## 4. Fix, then report
 
@@ -92,5 +92,5 @@ then, on the report `test:coverage` just wrote: `pnpm coverage:files:check` · `
 Then report, in CLAUDE.md's shape:
 
 - **Nothing found** → "**Nothing needed from you** — nothing found beyond what CI covers." and the review link. That is the whole reply.
-- **Fixed** → what the defect would have done to someone using the app, in one or two plain sentences, then the link. Not a list of the fixes.
-- **A follow-up proposed** → the question is the whole reply: what the finding costs if left, and what fixing it now would cost the PR.
+- **Fixed** → what the defect would have done to someone using the app, in one or two plain sentences, then the link. Not a list of the fixes — but each `[decide]` fixed gets one plain sentence naming the choice taken, so Daniel can overrule it.
+- **A follow-up proposed** → the question is the whole reply: what the finding costs if left, and what fixing it now would cost the PR. For an unmarked finding, ask the question its reason word names, with what each answer costs him.

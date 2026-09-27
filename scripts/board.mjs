@@ -883,7 +883,8 @@ function cmdCheck(project) {
   // THE RULE'S REAL BOUNDARY. The run-set is what the ledger's TITLE names —
   // see `ledgerRunSet` — never every issue the campaign touched. A ledger whose
   // run-set shares no single parent passes in both directions, deliberately:
-  // see `ledgerShouldAttachTo`. Open and closed alike are checked, because a
+  // see `ledgerShouldAttachTo`, which also sets aside members parented by the
+  // ledger itself (adopted work, #1614). Open and closed alike are checked, because a
   // ledger closes when its campaign finishes and closed is where nearly every
   // orphan was.
   //
@@ -899,7 +900,7 @@ function cmdCheck(project) {
     }
     const parentOf = fetchParents([...wanted]);
     for (const led of ledgers) {
-      const expected = ledgerShouldAttachTo(ledgerRunSet(led.title), parentOf);
+      const expected = ledgerShouldAttachTo(ledgerRunSet(led.title), parentOf, led.number);
       if (expected === null) continue;
       const held = parentOf.get(led.number) ?? null;
       if (held === expected) continue;

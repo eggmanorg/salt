@@ -42,10 +42,53 @@ describe('the posting shape the shared reviewer is told to use', () => {
     expect(read(AGENT)).toMatch(/## Blocking/);
   });
 
-  it('defines both should-fix marks the callers route on', () => {
+  it('defines the three should-fix marks the callers route on', () => {
     const src = read(AGENT);
     expect(src).toMatch(/\*\*`\[fold-in\]`\*\* when/);
     expect(src).toMatch(/\*\*`\[sweep\]`\*\* when/);
+    expect(src).toMatch(/\*\*`\[decide\]`\*\* when/);
+  });
+});
+
+// #1614. What these pin is the prose of the line between the campaign's calls
+// and Daniel's: a `[decide]` line names its recommended choice, an unmarked
+// line is one of Daniel's five calls or Out of scope and names which, and the
+// doubt rule that sent every engineering choice to him is gone. What they
+// cannot pin: that a reviewer classifies a given finding correctly, or that a
+// caller adopts the choice rather than asking — those are run-time acts of a
+// model reading prose, checked only against a campaign's ledger.
+describe("the line between an engineering choice and a call of Daniel's (#1614)", () => {
+  const agent = read(AGENT);
+  const unmarked = agent.slice(agent.indexOf('**Unmarked** only when'));
+
+  it('makes a `[decide]` line name the recommended choice', () => {
+    expect(agent).toMatch(/\*\*Name your recommended choice on the line\*\*/);
+    expect(agent).toMatch(/should-fix \[decide\] \| .* \| <your recommended choice/);
+  });
+
+  it('defines unmarked as the five calls or Out of scope, each named by a reason word', () => {
+    expect(unmarked).toMatch(
+      /^\*\*Unmarked\*\* only when the fix needs one of \*\*Daniel's five calls\*\*/,
+    );
+    for (const word of ['ux', 'spec-vs-clean', 'rule', 'prod-data', 'dependency', 'out-of-scope']) {
+      expect(unmarked.slice(0, unmarked.indexOf('\n'))).toContain(`\`${word}\``);
+    }
+    expect(agent).toMatch(/should-fix \| file:line \| <reason word>:/);
+  });
+
+  it('carries no doubt rule in the reviewer or the campaign', () => {
+    expect(agent).not.toMatch(/If either mark is in doubt/);
+    expect(read('.claude/commands/salt-campaign.md')).not.toMatch(/If either is in doubt, list it/);
+  });
+
+  it("salt-review.md's Fix before merge takes an in-footprint `[decide]`", () => {
+    const src = read('.claude/commands/salt-review.md');
+    const fix = src.slice(
+      src.indexOf('- **Fix before merge**'),
+      src.indexOf('- **Proposed follow-up**'),
+    );
+    expect(fix).toMatch(/every `\[decide\]` should-fix whose file is in this PR's footprint/);
+    expect(src).toMatch(/each `\[decide\]` fixed gets one plain sentence naming the choice taken/);
   });
 });
 

@@ -121,7 +121,10 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
 - **A campaign ledger is attached to the work it ran.** Where every issue a
   ledger's title names sits under one parent, the ledger sits under that parent
   too; where they do not share one, it stays a root and `check` says nothing in
-  either direction. Open and closed alike, because a ledger does eventually
+  either direction. Title-named issues whose parent is the ledger itself are set
+  aside first: that is work the campaign adopted (#1614), born under the ledger
+  and reachable through it, and counting it would leave every adopting ledger a
+  root. Open and closed alike, because a ledger does eventually
   close and closed is where nearly every orphan was. The rule's real
   boundary is worth stating: the run-set is what the ledger's **title** names,
   never every issue the campaign touched, so an issue added mid-run without a
@@ -185,11 +188,12 @@ when a Recommended item's blocker is absent from Recommended or ordered below it
 
   **"When its campaign finishes" is no longer the same moment as Finish**
   (2026-09-21, #1534). `/salt-campaign`'s Finish step files a
-  `campaign follow-ups:` issue under the ledger and deliberately leaves it open,
+  `campaign follow-ups:` issue under the ledger — since #1614 only when a
+  question is left for Daniel — and deliberately leaves it open,
   so closing the ledger there put a closed parent over open work — the state the
   rule above now fails, and seven of the eight issues reopened by hand that day
   were this exact step. Finish now leaves the ledger **open** whenever anything
-  under it is, which for a campaign with any findings at all is always;
+  under it is, which it is whenever a follow-ups issue was filed;
   `board.mjs rollup` closes it later (#1606), once nothing is open beneath it and
   every issue its title names is closed — see the rollup section below.
 
@@ -390,8 +394,8 @@ that is populated.
 **A `/salt-campaign` ledger takes no work fields, but it does take a parent and a
 Status.** An issue titled `campaign:` is a coordination artefact: no `Queue`, no
 `Class`, closed by `board.mjs rollup` rather than by a PR, and it is the parent the campaign
-hangs its own filings off — which is also why it now outlives its own campaign,
-since one of those filings is the follow-ups issue and that stays open. `check` skips it in the untriaged rule, or every
+hangs its own filings off — which is also why it can outlive its own campaign,
+since one of those filings, when a question is left for Daniel, is the follow-ups issue and that stays open. `check` skips it in the untriaged rule, or every
 campaign that ever ran would sit in its output forever. `campaign follow-ups:`
 gets no such exemption — that one is ordinary work and is triaged like any.
 
@@ -417,6 +421,11 @@ campaign's output, while **no work issue moves**, so its progress count is
 exactly what it was. A sub-issue link is a strict tree,
 which is why it is the ledger that moves up rather than the work that moves
 down.
+
+Work a campaign **adopts** mid-run (#1614) is the one exception to "the work
+stays put", because it is not moved there — it is filed under the ledger, named
+in its title, and run the same night. It stays reachable from the parent through
+the ledger, and the shared-parent test ignores it.
 
 Where a run-set shares no single parent — a campaign over four unrelated issues
 — the ledger stays a root and that is correct, not a miss. Inventing a parent
@@ -692,7 +701,7 @@ the same reasoning that makes a missing `PROJECT_TOKEN` fail loudly rather than 
 
 ### A closed sub-issue rolls up to the checklist that asked for it
 
-`/salt-campaign` files a `campaign follow-ups:` issue at **Finish**, hangs the issues
+`/salt-campaign` files a `campaign follow-ups:` issue at **Finish** when a question is left for Daniel, hangs the issues
 that action its lines off it as sub-issues, and deliberately leaves it open. Nothing
 afterwards owned it. `/salt-run` closes the issue it ran and never looks at a parent;
 `check` reads only `Queue` and `Status`; the `- [ ]` lines are ticked by whoever

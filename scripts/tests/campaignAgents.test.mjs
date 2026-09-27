@@ -1,4 +1,4 @@
-// `/salt-campaign` spawns seven helper roles, and each role's model used to be
+// `/salt-campaign` spawns eight helper roles, and each role's model used to be
 // a row in a table the coordinator had to remember to apply at every `Agent`
 // call — enforced by nothing. #1586 moved each role into a project subagent
 // under `.claude/agents/`, where the model is frontmatter the harness applies.
@@ -33,6 +33,8 @@ const ROLES = {
   'campaign-fixer': 'sonnet',
   'campaign-sweeper': 'sonnet',
   'campaign-resolver': 'sonnet',
+  // #1614: writing a spec is design work.
+  'campaign-filer': 'opus',
 };
 
 /** The `key: value` lines between a file's leading `---` fences. */
@@ -234,5 +236,158 @@ describe('one fresh worker per phase (#1612)', () => {
     const src = read('.claude/commands/salt-run.md');
     const step7 = src.slice(src.indexOf('### 7. Handoff comment'), src.indexOf('### 8.'));
     expect(step7).toMatch(/On the campaign path it is also all the next phase inherits/);
+  });
+});
+
+// #1614 Phase 1: the campaign takes engineering decisions itself, and files a
+// follow-ups issue only when a question is left for Daniel. These pin that the
+// prose routing each `[decide]` finding, and gating the follow-ups issue, is
+// still in the prompts that carry it. What they cannot pin: that a coordinator
+// actually routes a given finding this way, or that the fixer and sweeper
+// apply the given choice rather than their own — run-time acts of a model
+// reading prose, checked only by reading a campaign's ledger.
+describe('the campaign decides engineering choices itself (#1614)', () => {
+  const campaign = read('.claude/commands/salt-campaign.md');
+  const review = campaign.slice(
+    campaign.indexOf('\n### Fixing findings\n'),
+    campaign.indexOf('\n## Merge queue\n'),
+  );
+  const finish = campaign.slice(campaign.indexOf('\n## Finish\n'));
+
+  it('sends an in-footprint `[decide]` to the round-1 fixer and an outside one to `## Sweep`', () => {
+    const line = review.split('\n').find((l) => l.startsWith('- **`[decide]`**'));
+    expect(line).toMatch(/adopt the reviewer's recommended choice/);
+    expect(line).toMatch(/In the footprint → the round-1 fixer/);
+    expect(line).toMatch(/outside it → a `## Sweep` line carrying `decided: <the choice>`/);
+  });
+
+  it('names the five calls that stay with Daniel, and records engineering choices', () => {
+    expect(campaign).toMatch(
+      /\*\*Only five calls are Daniel's:\*\* a change to what a user sees or does; a spec-versus-clean-code fork \(no bodges\); a CLAUDE\.md rule change; a production data write or migration; a new dependency\./,
+    );
+    expect(campaign).toMatch(/report it only under \*\*Decisions taken\*\*/);
+    expect(finish).toMatch(/\*\*Decisions taken:\*\* PR #2 — \[the finding\] → \[the choice\]/);
+  });
+
+  it('files the follow-ups issue only when a line is left for Daniel, each line a question', () => {
+    expect(review).toMatch(/and only if something is\*\*/);
+    expect(review).toMatch(/Nothing left → nothing filed\./);
+    expect(review).toMatch(
+      /\*\*Each line is a question for Daniel with what each answer costs him\*\*/,
+    );
+    expect(finish).toMatch(/only if a line is left for Daniel/);
+    expect(campaign).not.toMatch(/File it however short/);
+  });
+
+  it('keeps the tick-and-close contract board-status.yml depends on', () => {
+    expect(review).toMatch(
+      /The body is a `- \[ \]` checklist, one line per item with its PR number/,
+    );
+    expect(review).toMatch(/ticks the line that NAMES a closed sub-issue/);
+  });
+
+  it("sends the sweep PR's `[decide]` findings to its round-1 fixer", () => {
+    const sweep = campaign.slice(
+      campaign.indexOf('\n## Sweep\n'),
+      campaign.indexOf('\n## Finish\n'),
+    );
+    expect(sweep).toMatch(
+      /`\[fold-in\]`, `\[sweep\]` \*\*and\*\* `\[decide\]` findings all go to its round-1 fixer/,
+    );
+  });
+
+  it('campaign-fixer.md applies a `[decide]` line as a choice already made', () => {
+    const src = read('.claude/agents/campaign-fixer.md');
+    expect(src).toMatch(/plus any marked `\[fold-in\]` or `\[decide\]`/);
+    expect(src).toMatch(/A `\[decide\]` line carries a choice already made: apply that choice/);
+  });
+
+  it('campaign-sweeper.md applies a `decided:` line as a choice already made', () => {
+    const src = read('.claude/agents/campaign-sweeper.md');
+    expect(src).toMatch(/carries `decided: <choice>` — a choice already made/);
+    expect(src).toMatch(/apply that choice, and do not re-open it/);
+  });
+});
+
+// #1614 Phase 2: adoption and its termination guard. These pin that the prose
+// carrying each piece is still in the prompt that carries it — the guard and
+// the command that answers it, the adopted row, the worker's DEFERRED field,
+// the sweeper's reason words and the filer's non-interactive overrides. What
+// they cannot pin: that a coordinator runs `--may-adopt` before it adopts,
+// that it adopts at all, or that the filer's issue is any good. Those are
+// run-time acts of a model reading prose. `adoptionVerdict` itself is tested in
+// campaignHeartbeat.test.mjs; this file holds only that the instruction to ask
+// it is there.
+describe('the campaign adopts work, and the guard ends it (#1614)', () => {
+  const campaign = read('.claude/commands/salt-campaign.md');
+  const adopting = campaign.slice(
+    campaign.indexOf('\n### Adopting work\n'),
+    campaign.indexOf('\n## Merge queue\n'),
+  );
+
+  it('has an Adopting work section that runs the guard first, by command', () => {
+    expect(adopting.length).toBeGreaterThan(0);
+    expect(adopting).toMatch(
+      /1\. \*\*Guard:\*\* `node scripts\/campaign-heartbeat\.mjs --may-adopt <issue> <ledger-body-file>`/,
+    );
+    expect(adopting).toMatch(/`ADOPT no` → follow-ups/);
+  });
+
+  it('states the guard for adopted and sweep PRs', () => {
+    expect(adopting).toMatch(/\*\*an adopted issue's PR and the sweep PR never adopt\*\*/);
+    expect(adopting).toMatch(/the ledger, for the sweep PR/);
+  });
+
+  it('files through the filer, and joins the run-set with an adopted row', () => {
+    expect(adopting).toMatch(/a `campaign-filer`/);
+    expect(adopting).toMatch(/`NEEDS_DANIEL: <line>` → that line on the follow-ups list/);
+    expect(adopting).toMatch(/a conflict edge to the originating issue/);
+    expect(adopting).toMatch(/`#n` added to the ledger title/);
+    expect(adopting).toMatch(/Issue cell `#n adopted`/);
+  });
+
+  it('keeps one sweep per campaign for adopted work', () => {
+    expect(adopting).toMatch(/until the sweep has run, then follow-ups — one sweep per campaign/);
+  });
+
+  it('routes the worker, fixer and sweeper rejects that adopt', () => {
+    expect(campaign).toMatch(
+      /\*\*`DEFERRED`\*\* — .*`footprint` or `ceiling` → \*\*Adopting work\*\*; `decision` parks/,
+    );
+    expect(campaign).toMatch(
+      /A `\[decide\]` whose choice does not work as written, .* → \*\*Adopting work\*\*/,
+    );
+    expect(campaign).toMatch(/`ceiling`, `phases` or `choice` → \*\*Adopting work\*\*/);
+  });
+
+  it('attaches the ledger setting aside the issues born under it', () => {
+    const finish = campaign.slice(campaign.indexOf('\n## Finish\n'));
+    expect(finish).toMatch(/setting aside adopted ones \(under the ledger itself\)/);
+    expect(finish).toMatch(/#h adopted \(PR #5\)/);
+  });
+
+  it('campaign-worker.md files nothing and returns DEFERRED', () => {
+    const worker = read('.claude/agents/campaign-worker.md');
+    expect(worker).toMatch(/\*\*Never file a follow-on issue yourself\.\*\*/);
+    const ret = worker.slice(worker.lastIndexOf('```\nISSUE: N'));
+    expect(ret).toMatch(
+      /^DEFERRED: \[falsified premise → the test it failed: decision \| footprint \| ceiling — or NONE\]$/m,
+    );
+  });
+
+  it('campaign-sweeper.md starts each reject with a reason word', () => {
+    const src = read('.claude/agents/campaign-sweeper.md');
+    for (const word of ['ceiling', 'phases', 'choice', 'fixed'])
+      expect(src).toContain(`\`${word}\``);
+    expect(src).toMatch(/REJECTED: \[line → <reason word>: why\]/);
+  });
+
+  it('campaign-filer.md is non-interactive and parents on the ledger', () => {
+    const src = read('.claude/agents/campaign-filer.md');
+    expect(src).toMatch(/Never `AskUserQuestion`/);
+    expect(src).toMatch(/\*\*Parent: the ledger\.\*\*/);
+    expect(src).toMatch(/check-spec-shape\.mjs/);
+    expect(src).toMatch(/^FILED: #<n> /m);
+    expect(src).toMatch(/^NEEDS_DANIEL: /m);
   });
 });
