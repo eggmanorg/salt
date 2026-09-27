@@ -92,9 +92,7 @@
     ]
   },
   "enabledPlugins": {
-    "claude-security@claude-plugins-official": true,
-    "engineering@synced": false,
-    "cowork-plugin-management@synced": false
+    "claude-security@claude-plugins-official": true
   },
   "skillOverrides": {
     "appmap-config": "off",
