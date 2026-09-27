@@ -8,9 +8,10 @@
     getCookSessionSnapshot,
   } from '../../lib/cookSessionService.js';
   // The session lifecycle — subscribe, bootstrap, ended-elsewhere, orphan, restart,
-  // finish, close, keep-awake — shared with plain cook mode (issue #994), because
-  // both screens are the same cook on the same session document.
+  // finish, close — shared with plain cook mode (issue #994), because both screens
+  // are the same cook on the same session document.
   import { createCookLifecycle } from '../../lib/cookLifecycle.svelte.js';
+  import KeepAwakeButton from '../../components/KeepAwakeButton.svelte';
   // The step timers — projection, tick, start/dismiss/progress and the sheet — also
   // shared with plain cook mode (issue #994). The plan's check-ins are the one thing
   // this screen hands it; see the timer section below.
@@ -137,7 +138,7 @@
 
   // ─── Session lifecycle ─────────────────────────────────────────────────────────
   // The whole of it — subscribe, bootstrap, ended-elsewhere, orphan, restart,
-  // finish, close, keep-awake — is plain cook mode's, from `$lib/cookLifecycle`
+  // finish, close — is plain cook mode's, from `$lib/cookLifecycle`
   // (issue #994). The ONE thing this screen passes in is the ready-guard: the
   // opening stage must not be settled until the plan has landed, because until it
   // does there is no prep board to be past and a session that arrives first would
@@ -148,11 +149,9 @@
   });
 
   const recipe = $derived(lifecycle.recipe);
-  const { wakeLockSupported, handleRestart, handleComplete, handleClose, toggleWakeLock } =
-    lifecycle;
+  const { handleRestart, handleComplete, handleClose } = lifecycle;
   const restarting = $derived(lifecycle.restarting);
   const completing = $derived(lifecycle.completing);
-  const keepAwake = $derived(lifecycle.keepAwake);
 
   // ─── Cooking for a different number (issue #1314) ──────────────────────────────
   // Plain cook mode's, verbatim — the same session, so the same rule about which
@@ -440,8 +439,8 @@
     hasRecipeChanged($cookSession?.recipeUpdatedAtAtStart ?? null, recipe?.updatedAt ?? null),
   );
 
-  // Restart, Finish, Close and the keep-awake toggle all live on the shared
-  // lifecycle, bound at the top of this script.
+  // Restart, Finish and Close live on the shared lifecycle, bound at the top of
+  // this script. The keep-awake toggle is the app-wide one (`KeepAwakeButton`).
 </script>
 
 <!-- `z-dialog` (50), not a raw z-50: a full-viewport route shares the dialog rung of
@@ -547,33 +546,7 @@
       >
         {#snippet leading()}<Icon name="Timer" size={20} class="text-muted-foreground" />{/snippet}
       </Button>
-      {#if wakeLockSupported}
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={toggleWakeLock}
-          ariaLabel="Keep screen awake"
-          title={keepAwake ? 'Screen stays awake' : 'Keep screen awake'}
-          aria-pressed={keepAwake}
-          data-testid="cook-mode-wakelock"
-          data-active={keepAwake}
-        >
-          {#snippet leading()}
-            <span
-              class="relative inline-flex transition-colors {keepAwake
-                ? 'text-warning'
-                : 'text-muted-foreground'}"
-            >
-              <Icon name="Smartphone" size={20} />
-              <Icon
-                name="Lock"
-                size={14}
-                class="absolute -right-1 -bottom-1 rounded-full bg-background"
-              />
-            </span>
-          {/snippet}
-        </Button>
-      {/if}
+      <KeepAwakeButton placement="cook" data-testid="cook-mode-wakelock" />
     </header>
 
     <!-- Timeline. One segment per step, each a jump to it. Same band, same colours

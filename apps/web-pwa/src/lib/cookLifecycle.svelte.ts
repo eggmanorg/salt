@@ -16,11 +16,12 @@ import {
   removeCookSession,
 } from './cookSessionService.js';
 import { addToast } from './toastStore.js';
-import { isWakeLockSupported, createWakeLock } from './wakeLock.js';
 
 /**
  * The session lifecycle a cook screen runs on — subscription, bootstrap, the two
- * ways a cook can end under you, restart, finish, close, and the keep-awake lock.
+ * ways a cook can end under you, restart, finish and close. Keep-awake is not
+ * here: it is one app-wide switch (`./keepAwake.svelte.ts`, issue #1620), and a
+ * cook screen leaving does not turn it off.
  *
  * There are two cook screens (plain cook mode and the guided cook, issue #751) and
  * they are the same cook: the SAME `cookSessions/{recipeId}_{uid}` document, so a
@@ -222,44 +223,6 @@ export function createCookLifecycle(options: CookLifecycleOptions) {
     goBack(`/recipes/${options.recipeId()}`);
   }
 
-  // ─── Wake lock ─────────────────────────────────────────────────────────────────
-  const wakeLockSupported = isWakeLockSupported();
-  const wake = wakeLockSupported ? createWakeLock() : null;
-  let keepAwake = $state(false);
-
-  // The icon alone is a quiet affordance — a toast makes the state change explicit,
-  // since nothing else on screen confirms it. The ON path reports what actually
-  // happened rather than assuming: `enable()` resolves false when the browser or OS
-  // refuses the lock, and the toggle must not claim a lock it never got.
-  // Plain `let`, not `$state` — a re-entrancy guard only read inside the handler, so
-  // it needs no reactivity.
-  let togglingWakeLock = false;
-  async function toggleWakeLock(): Promise<void> {
-    if (togglingWakeLock) return;
-    togglingWakeLock = true;
-    try {
-      if (keepAwake) {
-        await wake?.disable();
-        keepAwake = false;
-        addToast('Screen can sleep again', 'success');
-        return;
-      }
-      const acquired = (await wake?.enable()) ?? false;
-      keepAwake = acquired;
-      if (acquired) addToast('Screen will stay awake', 'success');
-      else addToast("Your browser wouldn't let the screen stay awake.", 'destructive');
-    } finally {
-      togglingWakeLock = false;
-    }
-  }
-
-  // Release the lock when leaving cook mode.
-  $effect(() => {
-    return () => {
-      void wake?.disable();
-    };
-  });
-
   return {
     /** The recipe being cooked, or `null` once the store has loaded without it. */
     get recipe(): Recipe | null {
@@ -280,15 +243,8 @@ export function createCookLifecycle(options: CookLifecycleOptions) {
     get completing(): boolean {
       return completing;
     },
-    /** Whether the Screen Wake Lock API is there to offer at all. */
-    wakeLockSupported,
-    /** Whether the screen is currently being held awake. */
-    get keepAwake(): boolean {
-      return keepAwake;
-    },
     handleRestart,
     handleComplete,
     handleClose,
-    toggleWakeLock,
   };
 }

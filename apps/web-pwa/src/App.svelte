@@ -11,6 +11,7 @@
     ToastViewport,
   } from '@salt/ui-components';
   import AuthGate from './components/AuthGate.svelte';
+  import KeepAwakeButton from './components/KeepAwakeButton.svelte';
   import KitchenLink from './components/KitchenLink.svelte';
   import { auth } from './lib/auth.svelte.js';
   import { navItems, overflowNavItemsFor, adminNavItem } from './lib/nav.js';
@@ -171,7 +172,12 @@
           signed-in email address, hidden below `sm` and of no use to anyone at any
           width: nobody needs an app they are signed in to to tell them who they
           signed in as.
+
+          The keep-awake toggle sits left of it (#1620): the same app-wide switch
+          the cook screens show in their own headers, since they have no title bar.
+          It renders nothing where the browser has no Screen Wake Lock.
         -->
+        <KeepAwakeButton placement="bar" data-testid="topbar-wakelock" />
         <KitchenLink />
         <Button variant="outline" size="sm" onclick={() => void auth.signOut()}>Sign out</Button>
       {/snippet}

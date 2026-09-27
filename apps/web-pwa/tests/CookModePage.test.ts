@@ -137,6 +137,7 @@ vi.mock('../src/lib/cookSessionService.js', () => ({
 }));
 
 import CookModePage from '../src/routes/recipes/CookModePage.svelte';
+import { __resetKeepAwakeForTest } from '../src/lib/keepAwake.svelte.js';
 import { push } from 'svelte-spa-router';
 import { addToast } from '../src/lib/toastStore.js';
 import {
@@ -256,6 +257,8 @@ async function enterSteps() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The keep-awake switch is app-wide by design (#1620), so it outlives a test.
+  __resetKeepAwakeForTest();
   mockAuth.user = { uid: UID };
   mockCanonItems._set([]);
   mockProductForms._set([]);
@@ -1750,6 +1753,22 @@ describe('CookModePage — keeping the screen awake', () => {
       ),
     );
     expect(screen.getByTestId('cook-mode-wakelock')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // #1620: the switch is app-wide, so leaving the cook no longer lets the screen
+  // sleep — the lifecycle used to release the lock on teardown.
+  it('keeps the screen awake after the cook is left', async () => {
+    const { unmount } = renderCookMode();
+    await userEvent.click(screen.getByTestId('cook-mode-wakelock'));
+    await waitFor(() =>
+      expect(screen.getByTestId('cook-mode-wakelock')).toHaveAttribute('aria-pressed', 'true'),
+    );
+
+    unmount();
+
+    expect(mockWakeLock.disable).not.toHaveBeenCalled();
+    renderCookMode();
+    expect(screen.getByTestId('cook-mode-wakelock')).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
