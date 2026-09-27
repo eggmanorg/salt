@@ -285,11 +285,11 @@ A `campaign-fixer`, never /salt-run (it no-ops on a finished branch), its prompt
 
 - **`[fold-in]`**, in the footprint → the round-1 fixer. The only ceiling is `--max-diff`: the fixer rejects a fix that would breach it, or any on a PR already over by a declared overage.
 - **`[decide]`** → **adopt the reviewer's recommended choice** (**Decision envelope**) and record it in a ledger comment. In the footprint → the round-1 fixer, the choice on its line; outside it → a `## Sweep` line carrying `decided: <the choice>`.
-- **`[sweep]`**, a `[fold-in]` outside the footprint, or a fold-in or `[decide]` rejected **only** for the ceiling → a `## Sweep` line in the ledger as it arrives (PR number, file or symbol, a `[decide]`'s choice), never the round-1 fixer, whose footprint it would widen.
-- A `[decide]` whose choice does not work as written, or a `[fold-in]` needing a design choice → **Adopting work**.
-- **Unmarked** — one of Daniel's five calls or Out of scope, its reason word on the line — or rejected for any other reason → the follow-ups list.
+- **`[sweep]`**, a `[fold-in]` outside the footprint, or a fixer's `ceiling` reject → a `## Sweep` line in the ledger as it arrives (PR number, file or symbol, a `[decide]`'s choice), never the round-1 fixer, whose footprint it would widen.
+- A fixer's `choice` or `phases` reject → **Adopting work**.
+- **Unmarked** — one of Daniel's five calls or Out of scope, its reason word on the line — or any other reject → the follow-ups list.
 
-`FIXED` findings leave the list; `REJECTED` ones route as above, with the reason. **Classify against the five, never defer on doubt** — reviewer and coordinator alike. A line whose mark or reason word you cannot read fails safe to the list.
+`FIXED` findings and `fixed` rejects leave the list; the rest route by their word. **Classify against the five, never defer on doubt** — reviewer and coordinator alike. A line whose mark or reason word you cannot read fails safe to the list.
 
 Rounds are capped at two. Round 1 is the full review. Round 2 only verifies round 1's blocking items — no new findings, unless the fix introduced a new blocking regression. No round 3. A **blocking** item open after round 2 parks the branch — or, adjudicated safe to ship, gets a filed issue before the merge and a `## Sweep` line naming it. Everything else is routed as above.
 
@@ -297,7 +297,7 @@ Rounds are capped at two. Round 1 is the full review. Round 2 only verifies roun
 
 **What is left for Daniel becomes one issue per campaign — and only if something is**: at **Finish**, `gh issue create --title "campaign follow-ups: <slug> (#<ledger>)" --body-file <checklist>`, triaged and attached per **Filing an issue**. The body is a `- [ ]` checklist, one line per item with its PR number — unmarked findings, `REJECTED` lines, parks, and what **Adopting work** turned away; nothing fixed or decided. **Each line is a question for Daniel with what each answer costs him**, built from the reason word and summary, never the diff. Nothing left → nothing filed.
 
-**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue and closes the follow-ups issue once every line is ticked and every sub-issue closed. Nothing else closes it.
+**A line carries the PR it came from; whoever later files an issue for it adds that issue's number to the line.** [`board-status.yml`](../../.github/workflows/board-status.yml) ticks the line that NAMES a closed sub-issue, and closes the issue once every line is ticked and every sub-issue closed. Nothing else does.
 
 One finding is filed at the time instead, triaged and attached per **Filing an issue**: **a blocking finding you adjudicated real but chose not to hold the queue for** — a known defect shipping to main, which needs a number first; `campaign-land.mjs --adjudicated` will not merge without one. It also goes on `## Sweep`, whose PR closes it unless the fix needs a decision.
 
@@ -306,7 +306,7 @@ One finding is filed at the time instead, triaged and attached per **Filing an i
 Work too big for a fix round or the sweep is **adopted** — filed and run tonight, never listed: the rejects **Review**, **Sweep** and **Dispatch** route here.
 
 1. **Guard:** `node scripts/campaign-heartbeat.mjs --may-adopt <issue> <ledger-body-file>`, `<issue>` the one whose PR raised it (the ledger, for the sweep PR). `ADOPT no` → follow-ups: **an adopted issue's PR and the sweep PR never adopt**, or the campaign never ends. Exit 2 → fix the table.
-2. **File:** a `campaign-filer` — the finding or premise verbatim, its choice and, if rejected, why, the originating PR and issue, the ledger, and the kind (`defect`, `refactor`, `feature`). `NEEDS_DANIEL: <line>` → that line on the follow-ups list.
+2. **File:** a `campaign-filer` — the finding or premise verbatim, its choice and, if rejected, why, the originating PR and issue, the ledger, and the kind (`defect`, `refactor`, `feature`), and any `#d` the line already names — rewritten in place, never filed twice. `NEEDS_DANIEL: <line>` → that line on the follow-ups list.
 3. **Join the run-set** on `FILED: #n`: a `campaign-extractor`; a conflict edge to the originating issue; `#n` added to the ledger title (`gh issue edit <ledger> --title`); a `queued` row, Issue cell `#n adopted`; dispatch when startable. The originating PR parks → so does #n's row, the issue left as backlog.
 
 Its out-of-footprint findings are `## Sweep` lines until the sweep has run, then follow-ups — one sweep per campaign.
