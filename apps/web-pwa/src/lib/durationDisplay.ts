@@ -1,3 +1,4 @@
+import { formatClock } from '@salt/domain';
 import type { StageDuration } from '@salt/domain/schemas';
 
 // How a LENGTH OF TIME reads (epic #778) — one vocabulary for every surface in the
@@ -62,10 +63,46 @@ export function formatMinutes(minutes: number): string {
   const whole = Math.round(minutes);
   if (!Number.isFinite(whole) || whole <= 0) return '0 min';
   if (whole < MINUTES_PER_HOUR) return `${whole} min`;
+  return hoursAndMinutes(whole, ' hr', ' min');
+}
 
+/** Whole minutes of an hour or more, split and spelled with the given units. */
+function hoursAndMinutes(whole: number, hr: string, min: string): string {
   const hours = Math.floor(whole / MINUTES_PER_HOUR);
   const rest = whole % MINUTES_PER_HOUR;
-  return rest === 0 ? `${hours} hr` : `${hours} hr ${rest} min`;
+  return rest === 0 ? `${hours}${hr}` : `${hours}${hr} ${rest}${min}`;
+}
+
+const SECONDS_PER_HOUR = 60 * MINUTES_PER_HOUR;
+
+/**
+ * `full` is the app's one spelling (`2 hr 30 min`). `compact` (`2h 30m`) is the
+ * same duration for a surface that cannot fit the words, and only there — #1621
+ * chose it for the Mine page's kitchen-timer dial, which holds about six
+ * characters. Where the words fit, a surface uses `full`.
+ */
+export type CountdownForm = 'full' | 'compact';
+
+/**
+ * How a RUNNING timer reads: `formatClock`'s ticking `mm:ss` under an hour, and
+ * `formatMinutes`' words at an hour and over (#1621) — so a 2½-hour braise reads
+ * `2 hr 30 min`, not `150:00`, and the same words as the step that set it.
+ *
+ * The switch is on the seconds `formatClock` would show (CEILed): `3_600_000` ms
+ * is `1 hr`, `3_599_000` is `59:59`. Over the hour the minutes are CEILed too, for
+ * `formatClock`'s own reason — never show less time than is left — so the display
+ * reads `1 hr 1 min` until the last hour begins, and changes once a minute.
+ *
+ * A non-finite span (`NaN`, `Infinity`) reads `0:00`, as a negative one already
+ * does through `formatClock`'s clamp: a nonsense value renders, never throws.
+ */
+export function formatCountdown(ms: number, form: CountdownForm = 'full'): string {
+  const safe = Number.isFinite(ms) ? ms : 0;
+  const seconds = Math.ceil(safe / 1000);
+  if (seconds < SECONDS_PER_HOUR) return formatClock(safe);
+
+  const minutes = Math.ceil(seconds / 60);
+  return form === 'compact' ? hoursAndMinutes(minutes, 'h', 'm') : formatMinutes(minutes);
 }
 
 /**

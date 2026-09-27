@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatMinutes } from '../src/lib/durationDisplay.js';
+import { formatCountdown, formatMinutes } from '../src/lib/durationDisplay.js';
 
 /**
  * The app's one duration vocabulary (issues #878, #933).
@@ -94,5 +94,54 @@ describe('formatMinutes — behaviour both implementations always shared', () =>
 
   it('rounds the leftover minutes of an over-the-hour fraction', () => {
     expect(formatMinutes(90.5)).toBe('1 hr 31 min');
+  });
+});
+
+/**
+ * A running timer (#1621): `mm:ss` under an hour, the vocabulary above at an hour
+ * and over. Both forms are pinned at every boundary — the switch sits on the
+ * CEILed second, and the minutes over it are CEILed, so the display never shows
+ * less time than is left.
+ */
+describe('formatCountdown — mm:ss under an hour, words at and over it', () => {
+  const cases = [
+    { name: 'zero', ms: 0, full: '0:00', compact: '0:00' },
+    {
+      name: 'a 40-minute timer, as it always read',
+      ms: 2_400_000,
+      full: '40:00',
+      compact: '40:00',
+    },
+    {
+      name: 'a hair under 59:59 still reads 59:59',
+      ms: 3_598_500,
+      full: '59:59',
+      compact: '59:59',
+    },
+    { name: 'the last second before the hour', ms: 3_599_000, full: '59:59', compact: '59:59' },
+    { name: 'the hour itself', ms: 3_600_000, full: '1 hr', compact: '1h' },
+    { name: 'a millisecond past the hour', ms: 3_600_001, full: '1 hr 1 min', compact: '1h 1m' },
+    { name: 'a second past the hour', ms: 3_601_000, full: '1 hr 1 min', compact: '1h 1m' },
+    { name: 'exactly 61 minutes', ms: 3_660_000, full: '1 hr 1 min', compact: '1h 1m' },
+    { name: 'a second past 61 minutes', ms: 3_661_000, full: '1 hr 2 min', compact: '1h 2m' },
+    { name: 'a 2-hour timer just started', ms: 7_199_900, full: '2 hr', compact: '2h' },
+    { name: 'a 2½-hour braise', ms: 9_000_000, full: '2 hr 30 min', compact: '2h 30m' },
+    { name: 'negative clamps to 0:00', ms: -5_000, full: '0:00', compact: '0:00' },
+    { name: 'NaN reads 0:00', ms: Number.NaN, full: '0:00', compact: '0:00' },
+    { name: 'Infinity reads 0:00', ms: Number.POSITIVE_INFINITY, full: '0:00', compact: '0:00' },
+  ];
+
+  it.each(cases)('$name → $full', ({ ms, full }) => {
+    expect(formatCountdown(ms)).toBe(full);
+    expect(formatCountdown(ms, 'full')).toBe(full);
+  });
+
+  it.each(cases)('$name → $compact (compact)', ({ ms, compact }) => {
+    expect(formatCountdown(ms, 'compact')).toBe(compact);
+  });
+
+  it('ticks from 2 hr to 1 hr 59 min once a whole minute has gone', () => {
+    expect(formatCountdown(7_140_001)).toBe('2 hr');
+    expect(formatCountdown(7_140_000)).toBe('1 hr 59 min');
   });
 });

@@ -99,6 +99,18 @@ describe('GuidedStepNotes — what the cook sees', () => {
     expect(queryByTestId('guided-plan-line')).toBeNull();
   });
 
+  it('reads a reminder an hour or more in as hours and minutes (#1621)', () => {
+    const { getByTestId } = render(GuidedStepNotes, {
+      props: {
+        note: makeNote({ checkIns: [{ atMinutes: 75, text: 'turn the joint' }] }),
+        containerContents: [],
+        loose: [],
+        checkIns: [{ atMinutes: 75, text: 'turn the joint' }],
+      },
+    });
+    expect(getByTestId('guided-step-check-in').textContent).toContain('1 hr 15 min in');
+  });
+
   it('draws nothing at all for a step the plan said nothing about', () => {
     const { queryByTestId } = render(GuidedStepNotes, {
       props: { note: null, containerContents: [], loose: [], checkIns: [] },

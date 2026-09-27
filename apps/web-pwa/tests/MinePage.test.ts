@@ -427,6 +427,23 @@ describe('MinePage — timers', () => {
     expect(getByTestId('mine-timer-time')).toHaveTextContent('3:01');
   });
 
+  it('fits an hour-plus timer in the dial as compact hours and minutes (#1621)', async () => {
+    // The dial holds about six characters: `2h 30m`, never `150:00` and never the
+    // full `2 hr 30 min` the roomier surfaces use.
+    mockMyTimers._set([mineTimer('r1', 'r1-s0', 150 * 60_000)]);
+    const { getByTestId } = render(MinePage);
+    expect(getByTestId('mine-timer-time').textContent?.trim()).toBe('2h 30m');
+
+    mockTimerNowMs._set(NOW + 60_000);
+    await tick();
+    expect(getByTestId('mine-timer-time').textContent?.trim()).toBe('2h 29m');
+
+    // Under an hour it is the same ticking clock as everywhere else.
+    mockTimerNowMs._set(NOW + 150 * 60_000 - 3_599_000);
+    await tick();
+    expect(getByTestId('mine-timer-time').textContent?.trim()).toBe('59:59');
+  });
+
   it('says the heat in words, never in colour alone', () => {
     // ui-spec-v02 §7: the ramp is a second encoding on top of the word, never a
     // replacement for it.

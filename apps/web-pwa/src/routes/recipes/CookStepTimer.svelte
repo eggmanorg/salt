@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, Icon } from '@salt/ui-components';
-  import { formatClock } from '@salt/domain';
+  import { formatCountdown, formatMinutes } from '../../lib/durationDisplay.js';
   import type { CookActiveTimerDoc, StepTimerDoc } from '@salt/domain/schemas';
 
   // The per-step timer, identical in both cook modes (issue #994). Press-to-start
@@ -53,7 +53,7 @@
             class="{timer.description ? 'shrink-0' : 'flex-1'} font-mono text-2xl tabular-nums"
             data-testid="cook-step-timer-countdown"
           >
-            {formatClock(remaining)}
+            {formatCountdown(remaining)}
           </span>
           <Button
             variant="ghost"
@@ -104,7 +104,7 @@
     <!-- Unstarted: the label goes IN the button, never under it — one ordinary
        centred button line, in the button's own type. The whole string truncates as
        one, and since the label is last it is the part that gives way; "Start 20
-       minute timer" always survives, which is the part you have to be able to read. -->
+       min timer" always survives, which is the part you have to be able to read. -->
     <!-- The button starts the recipe's timer in ONE tap — that is the common case and
        it stays a single tap. The pencil beside it is the other case: change the name
        or the time first. Two controls, because a button that sometimes starts and
@@ -119,7 +119,7 @@
       >
         {#snippet leading()}<Icon name="Timer" size={18} />{/snippet}
         <span class="min-w-0 truncate">
-          Start {timer.durationMinutes} minute timer{timer.description
+          Start {formatMinutes(timer.durationMinutes)} timer{timer.description
             ? ` (${timer.description})`
             : ''}
         </span>

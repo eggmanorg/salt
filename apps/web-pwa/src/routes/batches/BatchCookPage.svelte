@@ -1172,7 +1172,7 @@
                           class="text-sm text-muted-foreground"
                           data-testid="batch-cook-step-timer"
                         >
-                          The recipe says {stepTimer.durationMinutes} min for this step.
+                          The recipe says {formatMinutes(stepTimer.durationMinutes)} for this step.
                         </p>
                       {/if}
                     {/if}
