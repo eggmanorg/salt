@@ -92,7 +92,17 @@
     ]
   },
   "enabledPlugins": {
-    "claude-security@claude-plugins-official": true
+    "claude-security@claude-plugins-official": true,
+    "engineering@synced": false,
+    "cowork-plugin-management@synced": false
+  },
+  "skillOverrides": {
+    "appmap-config": "off",
+    "appmap-gold-traces": "off",
+    "appmap-record": "off",
+    "appmap-review": "off",
+    "appmap-setup": "off",
+    "appmap-setup-review": "off"
   },
   "autoMode": {
     "soft_deny": [
