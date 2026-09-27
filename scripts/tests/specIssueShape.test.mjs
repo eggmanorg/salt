@@ -329,8 +329,25 @@ describe('issue-filing commands route to the other shape', () => {
   ];
   const ALL = [...WORK_COMMANDS, '.claude/commands/salt-epic.md'];
 
+  // #1611 moved the text the three work commands share into one file they each
+  // read first and point into by section name. The strings below are asserted
+  // exactly as before; they are looked for in the command PLUS that file, which
+  // is what an agent running the command reads. salt-epic.md does not read that
+  // file, so its strings are still looked for in it alone.
+  const SHARED = '.claude/shared/spec-writing.md';
+  const shared = read(SHARED);
+  const withShared = (relative) =>
+    WORK_COMMANDS.includes(relative) ? `${prose(relative)}\n${shared}` : prose(relative);
+  /** One `## ` section of the shared file, heading to next heading. */
+  const sharedSection = (heading) => {
+    const start = shared.indexOf(`\n## ${heading}\n`);
+    expect(start, `no "## ${heading}" in ${SHARED}`).toBeGreaterThan(-1);
+    const next = shared.indexOf('\n## ', start + 1);
+    return shared.slice(start, next === -1 ? undefined : next);
+  };
+
   it.each(WORK_COMMANDS)('%s says when the work is too big, and routes upward', (file) => {
-    const text = prose(file);
+    const text = withShared(file);
     // The criterion, written the same way in all three so it reads as one rule.
     expect(text).toContain('`Size` and a `Queue` band honestly');
     // The floor, which is what stops the steer becoming a licence to file epics.
@@ -357,8 +374,16 @@ describe('issue-filing commands route to the other shape', () => {
     // Sited by what the steps ARE, not by their numbers: salt-defect.md numbers
     // one higher than the other two.
     expect(checkpoint).toBeLessThan(drafting);
-    // The checkpoint carries the route too, or it is only an observation.
-    expect(text.slice(checkpoint, drafting)).toContain('.claude/commands/salt-');
+    // The checkpoint carries the route too, or it is only an observation. For
+    // the three work commands the section body is shared: the command's own
+    // checkpoint must point at it, and the route is looked for there.
+    let section = text.slice(checkpoint, drafting);
+    if (WORK_COMMANDS.includes(file)) {
+      const title = 'Checkpoint — is this still one work issue?';
+      expect(section).toContain(`\`spec-writing.md\` → _${title}_`);
+      section += sharedSection(title);
+    }
+    expect(section).toContain('.claude/commands/salt-');
   });
 
   it.each(ALL)(
