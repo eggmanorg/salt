@@ -354,9 +354,7 @@ describe('the campaign adopts work, and the guard ends it (#1614)', () => {
     expect(campaign).toMatch(
       /\*\*`DEFERRED`\*\* — .*`footprint` or `ceiling` → \*\*Adopting work\*\*; `decision` parks/,
     );
-    expect(campaign).toMatch(
-      /A `\[decide\]` whose choice does not work as written, .* → \*\*Adopting work\*\*/,
-    );
+    expect(campaign).toMatch(/A fixer's `choice` or `phases` reject → \*\*Adopting work\*\*/);
     expect(campaign).toMatch(/`ceiling`, `phases` or `choice` → \*\*Adopting work\*\*/);
   });
 
@@ -389,5 +387,41 @@ describe('the campaign adopts work, and the guard ends it (#1614)', () => {
     expect(src).toMatch(/check-spec-shape\.mjs/);
     expect(src).toMatch(/^FILED: #<n> /m);
     expect(src).toMatch(/^NEEDS_DANIEL: /m);
+  });
+});
+
+// #1627: the fixer's rejects carry the sweeper's routing words, so the
+// coordinator routes them by that word rather than by reading prose; and a
+// finding already filed as `#d` is adopted as `#d`, not filed a second time.
+// What these cannot pin: that the fixer picks the right word, or that the
+// coordinator passes `#d` — run-time acts of a model reading prose.
+describe('rejects route by a reason word, and a filed finding adopts itself (#1627)', () => {
+  const campaign = read('.claude/commands/salt-campaign.md');
+
+  it('campaign-fixer.md starts each reject with a reason word', () => {
+    const src = read('.claude/agents/campaign-fixer.md');
+    for (const word of ['ceiling', 'phases', 'choice', 'fixed', 'wrong', 'out-of-scope'])
+      expect(src).toContain(`\`${word}\``);
+    for (const word of ['ux', 'spec-vs-clean', 'rule', 'prod-data', 'dependency'])
+      expect(src).toContain(`\`${word}\``);
+    expect(src).toMatch(/REJECTED: \[finding → <reason word>: why\]/);
+  });
+
+  it('salt-campaign.md routes a fixer reject by its word', () => {
+    expect(campaign).toMatch(/or a fixer's `ceiling` reject → a `## Sweep` line/);
+    expect(campaign).toMatch(/`FIXED` findings and `fixed` rejects leave the list/);
+  });
+
+  it('passes an already-filed `#d` to the filer, which rewrites it in place', () => {
+    const adopting = campaign.slice(
+      campaign.indexOf('\n### Adopting work\n'),
+      campaign.indexOf('\n## Merge queue\n'),
+    );
+    expect(adopting).toMatch(
+      /any `#d` the line already names — rewritten in place, never filed twice/,
+    );
+    const filer = read('.claude/agents/campaign-filer.md');
+    expect(filer).toMatch(/An already-filed `#d` is rewritten, never duplicated/);
+    expect(filer).toMatch(/`gh issue edit d --body-file <file>` instead of `gh issue create`/);
   });
 });
