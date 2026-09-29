@@ -12,7 +12,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockGenerate = vi.fn();
 const mockJsonLd = vi.fn();
-const mockFetch = vi.fn(async () => ({ html: '<html><body>a recipe page</body></html>' }));
+const mockFetch = vi.fn(async (_url: string) => ({
+  html: '<html><body>a recipe page</body></html>',
+}));
 const mockResolveModel = vi.fn(async (_flowId: string) => 'gemini-flash-latest');
 const mockTimeout = vi.fn((_label: string, op: () => unknown, _opts?: unknown) => op());
 const mockSpanName = vi.fn();
@@ -254,10 +256,11 @@ describe('extractRecipeFromUrl — recipe or cocktail', () => {
 });
 
 // ─── A YouTube video (issue #1637) ──────────────────────────────────────────────
-// A video link is imported by handing the video itself to Gemini, never by
-// fetching the page. These pin the road it takes: no SSRF fetch, the normalised
-// watch URL as a media part clipped at 30 minutes, its own flow id and budget,
-// the failure codes, and that the draft's source points back at the video.
+// A video link is imported by handing the video itself to Gemini. These pin the
+// road it takes: the normalised watch URL as a media part clipped at 30 minutes,
+// its own flow id and budget, the failure codes, the draft's source pointing
+// back at the video, and (Phase 2) the watch page read for its description and
+// length — best effort, so its failure is silent.
 
 const SHORT_LINK = 'https://youtu.be/dQw4w9WgXcQ?si=tracker';
 const WATCH = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
@@ -292,11 +295,26 @@ async function failureCode(p: Promise<unknown>): Promise<string> {
   return (err as InstanceType<typeof UrlImportError>).code;
 }
 
+// A watch page as YouTube serves it, reduced to the object the parser reads.
+function watchPage(details: { shortDescription?: string; lengthSeconds?: string }): {
+  html: string;
+} {
+  const response = { videoDetails: { videoId: 'dQw4w9WgXcQ', ...details } };
+  return {
+    html: `<html><body><script>var ytInitialPlayerResponse = ${JSON.stringify(response)};</script></body></html>`,
+  };
+}
+
+const videoText = (): string =>
+  videoRequest()
+    .prompt.map((p) => p.text ?? '')
+    .join('\n');
+
 describe('extractRecipeFromUrl — a YouTube video (#1637)', () => {
-  it('never fetches the page', async () => {
+  it('fetches only the normalised watch page, through the SSRF guard', async () => {
     await (extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK });
 
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockFetch.mock.calls).toEqual([[WATCH]]);
   });
 
   it('sends the NORMALISED watch URL as a video part clipped at 30 minutes', async () => {
@@ -340,8 +358,13 @@ describe('extractRecipeFromUrl — a YouTube video (#1637)', () => {
     );
   });
 
-  it('maps any other model failure to ai-failed', async () => {
-    mockGenerate.mockRejectedValue(new Error('upstream 500'));
+  it.each([
+    ['a plain error', new Error('upstream 500')],
+    ['a server error', Object.assign(new Error('500'), { detail: { error: { code: 500 } } })],
+    ['an error body with no error', Object.assign(new Error('odd'), { detail: {} })],
+    ['a non-Error rejection', null],
+  ])('maps any other model failure to ai-failed: %s', async (_label, err) => {
+    mockGenerate.mockRejectedValue(err);
 
     expect(await failureCode((extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK }))).toBe(
       'ai-failed',
@@ -363,5 +386,53 @@ describe('extractRecipeFromUrl — a YouTube video (#1637)', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockResolveModel).toHaveBeenCalledWith('extractRecipeFromUrl');
+  });
+
+  it('refuses a video over 30 minutes before any model call', async () => {
+    mockFetch.mockResolvedValueOnce(watchPage({ lengthSeconds: '2700' }));
+
+    expect(await failureCode((extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK }))).toBe(
+      'video-too-long',
+    );
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockResolveModel).not.toHaveBeenCalled();
+  });
+
+  it('lets a video of exactly 30 minutes through', async () => {
+    mockFetch.mockResolvedValueOnce(watchPage({ lengthSeconds: '1800' }));
+
+    await (extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK });
+
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the model the creator's description, which wins on amounts", async () => {
+    mockFetch.mockResolvedValueOnce(
+      watchPage({ shortDescription: 'INGREDIENTS\n250g 00 flour\n3 eggs', lengthSeconds: '600' }),
+    );
+
+    await (extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK });
+
+    expect(videoText()).toContain("The creator's written description of this video:");
+    expect(videoText()).toContain('250g 00 flour');
+    expect(videoRequest().system).toContain('that amount wins over what is said or shown');
+  });
+
+  it.each([
+    ['the fetch fails', () => mockFetch.mockRejectedValueOnce(new Error('too-large'))],
+    [
+      'a consent page is served',
+      () => mockFetch.mockResolvedValueOnce({ html: '<h1>Before you continue to YouTube</h1>' }),
+    ],
+  ])('carries on from the video alone when %s', async (_label, arrange) => {
+    arrange();
+
+    const recipe = await (extractRecipeFromUrlFlow as Function)({ url: SHORT_LINK });
+
+    expect(recipe.title).toBe('Carbonara');
+    expect(videoText()).not.toContain('description');
+    // Unknown length: the clip still holds the cost ceiling.
+    const media = videoRequest().prompt.find((p) => p.media !== undefined)!;
+    expect(media.metadata).toEqual({ videoMetadata: { endOffset: '1800s' } });
   });
 });

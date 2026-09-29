@@ -23,6 +23,7 @@ describe('parseYouTubeVideo', () => {
     ['a live link', `https://www.youtube.com/live/${ID}`],
     ['an upper-case host', `https://WWW.YouTube.com/watch?v=${ID}`],
     ['a link with a fragment', `https://www.youtube.com/watch?v=${ID}#comments`],
+    ['a query with a valueless parameter first', `https://www.youtube.com/watch?feature&v=${ID}`],
   ])('recognises %s and normalises it to the watch URL', (_label, url) => {
     expect(parseYouTubeVideo(url)).toEqual({ videoId: ID, watchUrl: WATCH });
   });

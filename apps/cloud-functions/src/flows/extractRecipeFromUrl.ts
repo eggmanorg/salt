@@ -1,5 +1,5 @@
 import { z } from 'genkit';
-import { isHttpsScheme, parseImportUrl, parseYouTubeVideo } from '@salt/domain';
+import { isHttpsScheme, parseImportUrl, parseYouTubeVideo, type YouTubeVideo } from '@salt/domain';
 import {
   ExtractRecipeFromUrlInputSchema,
   ExtractRecipeAIOutputSchema,
@@ -17,6 +17,7 @@ import { withAiTimeout } from '../adapters/withAiTimeout.js';
 import { ai } from '../genkit.js';
 import { ssrfGuardedFetch, SsrfFetchError } from '../adapters/ssrfFetch.js';
 import { extractRecipeJsonLd, type JsonLdRecipe } from '../adapters/jsonLdRecipe.js';
+import { parseYouTubeWatchPage, type YouTubeWatchPage } from '../adapters/youTubeWatchPage.js';
 import { assembleRecipeDraft } from './assembleRecipeDraft.js';
 import { authoredAnswer, persistAuthoredRecipe } from './persistAuthoredRecipe.js';
 import { flowModel } from '../ai/fakeModel.js';
@@ -31,10 +32,11 @@ import { recipeFieldRules } from './recipeFieldRules.js';
 // canonicalise flows for ingredient matching → assemble a RecipeDoc draft with
 // source.type='url'.
 //
-// A YouTube video link takes a different road (issue #1637): no fetch at all.
-// The video itself goes to Gemini as a media part and Google fetches it, so the
-// server never downloads it; the answer then rejoins the same not-a-recipe gate,
-// assembler and persistence as a page.
+// A YouTube video link takes a different road (issue #1637). The video itself
+// goes to Gemini as a media part and Google fetches it, so the server never
+// downloads it. The only thing this server fetches is the watch page, best
+// effort, for the creator's description and the video's length; the answer then
+// rejoins the same not-a-recipe gate, assembler and persistence as a page.
 //
 // The flow throws a UrlImportError tagged with a failure code; the onCall
 // entrypoint maps each code to the right HttpsError + user-facing copy.
@@ -50,9 +52,10 @@ const MAX_HTML_CHARS = 200_000;
 const MIN_INGREDIENTS_NO_JSON_LD = 2;
 const MIN_STEPS_NO_JSON_LD = 1;
 
-// The 30-minute ceiling on a YouTube import (issue #1637), sent as the media
-// part's `endOffset`: Gemini watches no further than this, so no import is ever
-// billed for more than 30 minutes of video, whatever else fails.
+// The 30-minute ceiling on a YouTube import (issue #1637), held two ways. When
+// the watch page states the length, a longer video is refused before any model
+// call. Whether or not it does, the media part's `endOffset` stops Gemini
+// watching past this point.
 const MAX_VIDEO_SECONDS = 30 * 60;
 
 // The video call's own budget. Watching a video takes far longer than reading a
@@ -101,7 +104,11 @@ export const extractRecipeFromUrlFlow = ai.defineFlow(
     const video = parseYouTubeVideo(parsed.href);
     if (video !== null) {
       setActiveSpanName('Import recipe from YouTube');
-      const extracted = await extractFromVideo(video.watchUrl);
+      const page = await readWatchPage(video);
+      if (page?.lengthSeconds != null && page.lengthSeconds > MAX_VIDEO_SECONDS) {
+        throw new UrlImportError('video-too-long', `video is ${page.lengthSeconds}s`);
+      }
+      const extracted = await extractFromVideo(video.watchUrl, page?.description ?? null);
       // A video has no JSON-LD, so it is held to the stricter no-JSON-LD bar.
       if (!hasUsableRecipe(extracted, false)) {
         throw new UrlImportError('not-a-recipe', 'no recipe found in video');
@@ -214,12 +221,29 @@ async function finishImport(
   return authoredAnswer(recipe, persistence, reportPersistence);
 }
 
+// The watch page, best effort (issue #1637, Phase 2). Through the same SSRF
+// guard as any page. Every failure — the fetch refused or failing, a consent
+// wall, a page over MAX_RESPONSE_BYTES, a shape the parser no longer recognises
+// — answers null, and the import carries on from the video alone: never an
+// error the user sees, never reported.
+async function readWatchPage(video: YouTubeVideo): Promise<YouTubeWatchPage | null> {
+  try {
+    const { html } = await ssrfGuardedFetch(video.watchUrl);
+    return parseYouTubeWatchPage(html, video.videoId);
+  } catch {
+    return null;
+  }
+}
+
 // The video road (issue #1637): hand Gemini the watch URL as a media part.
 // Genkit's google-genai plugin forwards any https media URL untouched as
 // `fileData.fileUri` and `part.metadata.videoMetadata` beside it, so Google
 // fetches the video and this server never does. Default media resolution:
 // on-screen amounts have to stay legible.
-async function extractFromVideo(watchUrl: string): Promise<ExtractRecipeAIOutput> {
+async function extractFromVideo(
+  watchUrl: string,
+  description: string | null,
+): Promise<ExtractRecipeAIOutput> {
   const model = await flowModel('extractRecipeFromVideo');
   try {
     return await withAiTimeout(
@@ -233,7 +257,7 @@ async function extractFromVideo(watchUrl: string): Promise<ExtractRecipeAIOutput
               media: { url: watchUrl, contentType: 'video/mp4' },
               metadata: { videoMetadata: { endOffset: `${MAX_VIDEO_SECONDS}s` } },
             },
-            { text: `Source URL: ${watchUrl}\n\n${EXTRACT_VIDEO_INSTRUCTION}` },
+            { text: buildVideoInstruction(watchUrl, description) },
           ],
           output: { schema: ExtractRecipeAIOutputSchema },
           config: { temperature: 0 },
@@ -403,6 +427,9 @@ recipe at all (e.g. a music video, a vlog, a product review). If a recipe is coo
 - Amounts come from what is said aloud or shown on screen (captions, overlays, packaging, the scales). \
 Where the video never gives an amount, write the ingredient without one rather than guessing it.
 - The title is the dish's name, not the video's title with its channel branding and hooks.
+- When the creator's written description is given with the video, it is their own written recipe. \
+Where it gives an amount, that amount wins over what is said or shown. Use it for amounts and \
+ingredients; ignore its links, sponsors and social-media plugs.
 
 ${IMPORT_RULES}
 
@@ -412,6 +439,15 @@ Ignore sponsor segments, channel promotion and chat unrelated to the cooking.`;
 
 const EXTRACT_VIDEO_INSTRUCTION = `Extract the single recipe cooked in this video and convert it fully \
 to UK conventions, following the rules you were given.`;
+
+function buildVideoInstruction(watchUrl: string, description: string | null): string {
+  const lines = [`Source URL: ${watchUrl}`, ''];
+  if (description !== null) {
+    lines.push("The creator's written description of this video:", description, '');
+  }
+  lines.push(EXTRACT_VIDEO_INSTRUCTION);
+  return lines.join('\n');
+}
 
 // JSON-LD path: the recipe has already been located and structured for us by the
 // page's schema.org/Recipe data, so the model's job is conversion + tidy-up, not

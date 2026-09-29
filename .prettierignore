@@ -22,3 +22,9 @@ pnpm-lock.yaml
 # the salt-autofix bot would force-push the reflow onto every PR. Same trade as
 # the lockfile above — nothing to gain on the other side.
 infra/bigquery-export/vendor/
+
+# Saved third-party pages the YouTube watch-page parser is tested against
+# (issue #1637). The test is only as good as the fixture's fidelity to what
+# YouTube serves — its inline <script> layout included — and a reformat would
+# rewrite exactly that.
+apps/cloud-functions/tests/adapters/fixtures/

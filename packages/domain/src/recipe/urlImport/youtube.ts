@@ -25,9 +25,6 @@ const ID_IN_PATH = new Set(['shorts', 'live']);
 
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
-// Everything after the authority: the path, then the query without its `?`.
-const PATH_AND_QUERY_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*([^?#]*)(?:\?([^#]*))?/;
-
 // Recognises `youtube.com/watch?v=`, `youtu.be/`, `m.youtube.com/watch?v=`,
 // `youtube.com/shorts/` and `youtube.com/live/`, and normalises each to
 // `https://www.youtube.com/watch?v=<id>`. Returns null for anything else.
@@ -35,9 +32,13 @@ export function parseYouTubeVideo(raw: string): YouTubeVideo | null {
   const parsed = parseImportUrl(raw);
   if (parsed === null) return null;
   const host = parsed.hostname.toLowerCase();
-  const m = PATH_AND_QUERY_RE.exec(parsed.href);
-  const segments = (m?.[1] ?? '').split('/').filter((s) => s !== '');
-  const query = m?.[2] ?? '';
+  // Everything after the authority, minus any fragment: the path, then the
+  // query. `parseImportUrl` has already proved `href` is `scheme://authority…`.
+  const afterScheme = parsed.href.slice(parsed.href.indexOf('//') + 2);
+  const tail = afterScheme.replace(/^[^/?#]*/, '').replace(/#.*$/, '');
+  const q = tail.indexOf('?');
+  const segments = (q < 0 ? tail : tail.slice(0, q)).split('/').filter((s) => s !== '');
+  const query = q < 0 ? '' : tail.slice(q + 1);
 
   let id: string | null = null;
   if (host === SHORT_LINK_HOST) {
