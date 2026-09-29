@@ -28,6 +28,13 @@ describe('parseYouTubeVideo', () => {
     expect(parseYouTubeVideo(url)).toEqual({ videoId: ID, watchUrl: WATCH });
   });
 
+  it('stays linear on a pathological run of fragment marks (CodeQL js/polynomial-redos)', () => {
+    const hostile = `https://www.youtube.com/watch?v=${ID}${'#\n'.repeat(50_000)}`;
+    const start = Date.now();
+    parseYouTubeVideo(hostile);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
   it.each([
     ['a channel', 'https://www.youtube.com/@SomeChef'],
     ['a legacy channel', 'https://www.youtube.com/channel/UC1234567890abcdefghij'],

@@ -34,8 +34,10 @@ export function parseYouTubeVideo(raw: string): YouTubeVideo | null {
   const host = parsed.hostname.toLowerCase();
   // Everything after the authority, minus any fragment: the path, then the
   // query. `parseImportUrl` has already proved `href` is `scheme://authority…`.
+  // Plain index slicing, no regex: the input is user-supplied.
   const afterScheme = parsed.href.slice(parsed.href.indexOf('//') + 2);
-  const tail = afterScheme.replace(/^[^/?#]*/, '').replace(/#.*$/, '');
+  const withFragment = afterScheme.slice(firstIndexOf(afterScheme, '/?#'));
+  const tail = withFragment.slice(0, firstIndexOf(withFragment, '#'));
   const q = tail.indexOf('?');
   const segments = (q < 0 ? tail : tail.slice(0, q)).split('/').filter((s) => s !== '');
   const query = q < 0 ? '' : tail.slice(q + 1);
@@ -63,4 +65,12 @@ function queryParam(query: string, name: string): string | null {
     if (eq >= 0 && pair.slice(0, eq) === name) return pair.slice(eq + 1);
   }
   return null;
+}
+
+// Index of the first character of `text` found in `chars`, or text.length.
+function firstIndexOf(text: string, chars: string): number {
+  for (let i = 0; i < text.length; i++) {
+    if (chars.includes(text[i]!)) return i;
+  }
+  return text.length;
 }
