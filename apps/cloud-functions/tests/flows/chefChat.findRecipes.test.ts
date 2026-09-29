@@ -1,15 +1,15 @@
 /**
- * The chef's library-search tool (issue #840, phase 1).
+ * The chef's library-search tool (issues #840, #1636).
  *
  * Three properties this feature CLAIMS, each pinned here because a sentence
  * nothing can falsify is worth nothing:
  *
- *  1. A SEARCH NEVER READS `ingredients` OR `steps` OFF THE WIRE. The stub
- *     Firestore below REFUSES an unprojected read — `get()` throws unless
- *     `select()` was called first — so replacing the projection with a full
- *     collection read turns this suite red rather than merely slower and more
- *     expensive. The projected field list is asserted exactly, both for what it
- *     contains and for what it must not.
+ *  1. A SEARCH READS ONLY ITS PROJECTIONS OFF THE WIRE — five recipe fields
+ *     (ingredients included since #1636, `steps` never) and two canon fields.
+ *     The stub Firestore below REFUSES an unprojected read of either collection
+ *     — `get()` throws unless `select()` was called first — so replacing a
+ *     projection with a full collection read turns this suite red rather than
+ *     merely slower and more expensive. Both field lists are asserted exactly.
  *  2. THE TOOL DESCRIPTION SAYS WHEN NOT TO CALL. That clause is the whole
  *     mitigation for the failure mode design principle #1 was protecting — a
  *     chef with a tool reaches for it — and it is prompt text, so nothing but a
@@ -79,28 +79,35 @@ interface StoredRecipe {
 }
 
 let lastSelect: string[] | null = null;
+let lastCanonSelect: string[] | null = null;
 
 /**
- * A `recipes` collection that can ONLY be read through `select()`.
+ * `recipes` and `canonItems` collections that can ONLY be read through `select()`.
  *
- * The refusal is the assertion: a handler that dropped the projection would call
+ * The refusal is the assertion: a handler that dropped a projection would call
  * `get()` on the collection itself and get an exception, not a slower success.
  */
-function dbWith(docs: StoredRecipe[]): never {
+function dbWith(docs: StoredRecipe[], canon: StoredRecipe[] = []): never {
   lastSelect = null;
-  const snapshot = { docs: docs.map((d) => ({ id: d.id, data: () => d.data })) };
+  lastCanonSelect = null;
+  const snapshotOf = (stored: StoredRecipe[]) => ({
+    docs: stored.map((d) => ({ id: d.id, data: () => d.data })),
+  });
   const db = {
     collection: (name: string) => {
-      if (name !== 'recipes') throw new Error(`unexpected collection ${name}`);
+      if (name !== 'recipes' && name !== 'canonItems') {
+        throw new Error(`unexpected collection ${name}`);
+      }
       return {
         select: (...fields: string[]) => {
-          lastSelect = fields;
-          return { get: () => Promise.resolve(snapshot) };
+          if (name === 'recipes') lastSelect = fields;
+          else lastCanonSelect = fields;
+          return { get: () => Promise.resolve(snapshotOf(name === 'recipes' ? docs : canon)) };
         },
         get: () => {
           throw new Error(
-            'findRecipes read the recipes collection WITHOUT select(): a search must never ' +
-              'pull ingredients or steps off the wire',
+            `findRecipes read ${name} WITHOUT select(): a search must never pull more than ` +
+              'its projection off the wire',
           );
         },
       };
@@ -109,12 +116,25 @@ function dbWith(docs: StoredRecipe[]): never {
   return db as never;
 }
 
+function ingredient(item: string, canonId: string | null = null): Record<string, unknown> {
+  return {
+    id: `i-${item}`,
+    rawText: item,
+    parsed: { quantity: null, unit: null, item, preparation: [], notes: null, displayText: null },
+    canonId,
+    matchState: canonId === null ? 'pending' : 'matched',
+    isOptional: false,
+    firstUsedInStepId: null,
+  };
+}
+
 function recipeDoc(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     title: 'Slow-roast lamb shoulder',
     description: 'Six hours in a low oven.',
     kind: 'recipe',
     metadata: { servings: 4, tags: ['sunday'], phases: [] },
+    ingredients: [],
     ...over,
   };
 }
@@ -122,13 +142,17 @@ function recipeDoc(over: Record<string, unknown> = {}): Record<string, unknown> 
 // ─── 1. The projected read ────────────────────────────────────────────────────
 
 describe('findRecipes — what crosses the wire', () => {
-  it('reads through select(), and never fetches ingredients or steps', async () => {
+  it('reads recipes through select(), with ingredients and never steps', async () => {
     await findRecipesInLibrary(dbWith([{ id: 'r-1', data: recipeDoc() }]), {});
 
     expect(lastSelect).not.toBeNull();
-    expect(lastSelect).toEqual(['title', 'description', 'kind', 'metadata']);
-    expect(lastSelect).not.toContain('ingredients');
+    expect(lastSelect).toEqual(['title', 'description', 'kind', 'metadata', 'ingredients']);
     expect(lastSelect).not.toContain('steps');
+  });
+
+  it('reads canon through select(), name and synonyms only', async () => {
+    await findRecipesInLibrary(dbWith([{ id: 'r-1', data: recipeDoc() }]), {});
+    expect(lastCanonSelect).toEqual(['name', 'synonyms']);
   });
 
   it('takes the id from the document, not from a projected field', async () => {
@@ -175,6 +199,9 @@ describe('findRecipes — the shallow line', () => {
         servings: 6,
         elapsedMinutes: 360,
         handsOnMinutes: 25,
+        // A browse matched nothing, so it names nothing — and the ingredient list
+        // itself never rides along.
+        usesIngredients: [],
       },
     ]);
   });
@@ -268,6 +295,76 @@ describe('findRecipes — the search', () => {
   });
 });
 
+// ─── By what is in it (issue #1636) ───────────────────────────────────────────
+
+describe('findRecipes — by ingredient', () => {
+  const canon = [
+    { id: 'c-bacon', data: { name: 'Bacon', synonyms: ['lardons'] } },
+    { id: 'c-leek', data: { name: 'Leeks', synonyms: [] } },
+  ];
+  const library = [
+    {
+      id: 'r-gratin',
+      data: recipeDoc({
+        title: 'Gratin',
+        description: null,
+        ingredients: [
+          {
+            id: 'g',
+            name: null,
+            items: [ingredient('leeks', 'c-leek'), ingredient('streaky bacon', 'c-bacon')],
+          },
+        ],
+      }),
+    },
+    {
+      id: 'r-pie',
+      data: recipeDoc({
+        title: 'Chicken pie',
+        description: null,
+        ingredients: [
+          { id: 'g', name: null, items: [ingredient('chicken'), ingredient('leeks', 'c-leek')] },
+        ],
+      }),
+    },
+    { id: 'r-lamb', data: recipeDoc() },
+  ];
+
+  it('finds dishes by their ingredients, both-of-two first, naming what each uses', async () => {
+    const result = await findRecipesInLibrary(dbWith(library, canon), { query: 'leeks bacon' });
+    expect(result.matches.map((m) => [m.id, m.usesIngredients])).toEqual([
+      ['r-gratin', ['leeks', 'streaky bacon']],
+      ['r-pie', ['leeks']],
+    ]);
+  });
+
+  it('finds a dish through a canon synonym, named in the recipe’s words', async () => {
+    const result = await findRecipesInLibrary(dbWith(library, canon), { query: 'lardons' });
+    expect(result.matches.map((m) => [m.id, m.usesIngredients])).toEqual([
+      ['r-gratin', ['streaky bacon']],
+    ]);
+  });
+
+  it('never returns the ingredient list itself', async () => {
+    const result = await findRecipesInLibrary(dbWith(library, canon), { query: 'leeks' });
+    for (const match of result.matches) expect(match).not.toHaveProperty('ingredients');
+  });
+
+  it('skips a canon item that fails validation, keeping the line on its own words', async () => {
+    const result = await findRecipesInLibrary(
+      dbWith(library, [{ id: 'c-bacon', data: { nonsense: true } }]),
+      { query: 'lardons' },
+    );
+    expect(result.matches).toEqual([]);
+    const byWording = await findRecipesInLibrary(
+      dbWith(library, [{ id: 'c-bacon', data: { nonsense: true } }]),
+      { query: 'bacon' },
+    );
+    expect(byWording.matches.map((m) => m.id)).toEqual(['r-gratin']);
+    expect(mockWarn).toHaveBeenCalled();
+  });
+});
+
 // ─── Degrading ────────────────────────────────────────────────────────────────
 
 describe('findRecipes — degrading', () => {
@@ -349,10 +446,17 @@ describe('findRecipes — the tool the model is shown', () => {
     expect(description).toMatch(/keywords/i);
   });
 
-  it('says the results carry no ingredients and no method, and where to get them', () => {
+  it('says the results carry no ingredient list and no method, and where to get them', () => {
     const description = tool?.config.description ?? '';
-    expect(description).toMatch(/does NOT include ingredients or a method/i);
+    expect(description).toMatch(/does NOT include the full ingredient list or a method/i);
     expect(description).toMatch(/read the dish with readRecipe/i);
+  });
+
+  it('tells the model it can search by what is in a dish, and what comes back', () => {
+    const description = tool?.config.description ?? '';
+    expect(description).toMatch(/I've got leeks and some bacon/);
+    expect(description).toMatch(/found by what is in it/);
+    expect(description).toMatch(/usesIngredients/);
   });
 });
 

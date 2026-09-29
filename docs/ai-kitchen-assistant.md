@@ -335,12 +335,19 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   as it did before the feature existed.
 - It searches the **household's own recipes** on the turns that need it (issue #840), via the
   `findRecipes` tool rather than an ambient index — principle #2 says why. The tool
-  is one projected Firestore read (`title`, `description`, `kind`, `metadata`, so a
-  search never pulls a recipe's ingredients or method off the wire) wrapped around
-  the pure ranking in `packages/domain/src/recipe/queries/searchRecipes.ts`. A tool
-  round-trip is silence to the stream guard below, which is why the handler must
-  stay fast; a failure degrades to no matches and the chef answers from its own
-  knowledge, exactly as it did before the tool existed.
+  is two projected Firestore reads run in parallel — `recipes` (`title`,
+  `description`, `kind`, `metadata`, `ingredients`; never `steps`) and `canonItems`
+  (`name`, `synonyms`) — wrapped around the pure ranking in
+  `packages/domain/src/recipe/queries/searchRecipes.ts`, the same scorer the Recipes
+  page search box uses. Since #1636 a dish is found by what is in it: its own
+  ingredient wording plus each linked canon item's name and synonyms, so "leeks and
+  bacon" finds a gratin that never says so in its title. Each match carries
+  `usesIngredients` — the dish's own ingredient names that hit — never the list.
+  No stored index: a few hundred document reads per search at 2026-09 library size,
+  only on turns that search. A tool round-trip is silence to the stream guard
+  below, which is why the handler must stay fast; a failure degrades to no matches
+  and the chef answers from its own knowledge, exactly as it did before the tool
+  existed.
 - It reads one dish in full through `readRecipe`, which is `readRecipeContext` and
   **no second rendering** — so it is `formatRecipeForPrompt` (#890) and it is
   component-aware (#838) for free, and a dish read this way carries the dishes it is
