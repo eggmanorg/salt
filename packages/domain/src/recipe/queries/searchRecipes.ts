@@ -238,8 +238,10 @@ const STOP_WORDS = new Set([
  * servings, timings — without this function knowing or caring about it. Ranking
  * reads only the fields `RecipeSearchCandidate` names.
  *
- * ORDER. With a query: score descending, then title ascending. Without one:
- * title ascending. Ties break on the title rather than on input order so the
+ * ORDER. With a query: query words matched descending, then score descending,
+ * then title ascending. Without one: title ascending. Words matched leads so
+ * "leeks bacon" puts a dish using both above one merely titled for leeks — the
+ * promise the chef's tool description makes. Ties break on the title rather than on input order so the
  * same library and the same question give the same answer twice — a stable
  * result is what makes a prompt-behaviour problem reproducible.
  *
@@ -271,9 +273,14 @@ export function searchRecipes<T extends RecipeSearchCandidate>(
   }
 
   return filtered
-    .map((candidate) => ({ candidate, score: scoreRecipeSearch(candidate, query).score }))
+    .map((candidate) => ({ candidate, ...scoreRecipeSearch(candidate, query) }))
     .filter((scored) => scored.score > 0)
-    .sort((a, b) => b.score - a.score || byTitle(a.candidate, b.candidate))
+    .sort(
+      (a, b) =>
+        b.matchedTokenCount - a.matchedTokenCount ||
+        b.score - a.score ||
+        byTitle(a.candidate, b.candidate),
+    )
     .slice(0, limit)
     .map((scored) => scored.candidate);
 }

@@ -485,6 +485,16 @@ describe('scoreRecipeSearch — ingredients', () => {
     expect(scoreRecipeSearch(pie, words('kimchi')).matchedTokenCount).toBe(0);
   });
 
+  it('ranks a dish using both words above one titled for only one', () => {
+    // The title match scores higher on its own, but "leeks bacon" asks for a
+    // dish with both — the chef is told dishes matching more words come first.
+    const gratin = withIngredients(dish('r-g', 'Gratin'), [line('1', 'leeks'), line('2', 'bacon')]);
+    expect(scoreRecipeSearch(soup, words('leeks bacon')).score).toBeGreaterThan(
+      scoreRecipeSearch(gratin, words('leeks bacon')).score,
+    );
+    expect(ids(searchRecipes([soup, gratin], { query: 'leeks bacon' }))).toEqual(['r-g', 'r-soup']);
+  });
+
   it('scores nothing on ingredients a candidate does not carry', () => {
     expect(scoreRecipeSearch(dish('r-x', 'Chicken pie'), words('leek')).score).toBe(0);
   });
