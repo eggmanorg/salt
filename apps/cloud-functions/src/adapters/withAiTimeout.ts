@@ -41,9 +41,9 @@ export const AI_CALL_RETRIES = 1;
 // So this constant's real scope is NARROWER than "every text flow": it is the
 // budget for a flow whose host is a callable someone is sat watching. A flow
 // whose only host is a 300s trigger takes `AI_TRIGGER_FLOW_TIMEOUT` below.
-// Two callables ARE exported at 300s — `extractRecipeFromPhoto` and
-// `drawEquipmentIcon` — and neither takes this budget: each keeps its own, for
-// its own stated reasons. So the 90–120s range above describes the callables
+// Three callables ARE exported at 300s — `extractRecipeFromPhoto`,
+// `extractRecipeFromUrl` and `drawEquipmentIcon` — and none takes this budget:
+// each keeps its own, for its own stated reasons. So the 90–120s range above describes the callables
 // that actually use this constant, and is not a claim about callables generally.
 //
 // TWO SITES STILL ON THIS BUDGET ARE NOT PURELY CALLABLE, and are knowingly left
