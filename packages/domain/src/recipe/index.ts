@@ -101,15 +101,28 @@ export { kitByStep } from './queries/kitByStep.js';
 export { groupKitByEquipment } from './queries/groupKitByEquipment.js';
 export type { KitEquipmentGroup } from './queries/groupKitByEquipment.js';
 export { findProducingRecipes } from './queries/producers.js';
-// Keyword search over the library (issue #840) — the ranking half of the chef's
-// findRecipes tool. Pure; the Cloud Function does the projected Firestore read
-// and nothing else.
+// Keyword search over the library (issues #840, #1636) — the chef's findRecipes
+// ranking, and the one per-recipe scorer the Recipes page search box shares
+// with it. Pure; each caller does its own reads and nothing else.
 export {
   searchRecipes,
+  parseRecipeSearchQuery,
+  scoreRecipeSearch,
   RECIPE_SEARCH_DEFAULT_MAX_RESULTS,
   RECIPE_SEARCH_RESULT_CEILING,
 } from './queries/searchRecipes.js';
-export type { RecipeSearchCandidate, RecipeSearchFilters } from './queries/searchRecipes.js';
+export type {
+  IngredientSearchTerms,
+  RecipeSearchCandidate,
+  RecipeSearchField,
+  RecipeSearchFilters,
+  RecipeSearchMode,
+  RecipeSearchQuery,
+  RecipeSearchScore,
+  RecipeSearchText,
+} from './queries/searchRecipes.js';
+export { ingredientSearchTerms } from './queries/ingredientSearchTerms.js';
+export type { CanonSearchNames } from './queries/ingredientSearchTerms.js';
 export { diffRecipe } from './queries/diffRecipe.js';
 // The diff's own contract, beside the function that produces it since #973 (it
 // was zod in `schemas/` until then, and validated nothing). Only the three names

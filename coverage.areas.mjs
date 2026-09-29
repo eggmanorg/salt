@@ -283,8 +283,8 @@ export const coverageThresholds = {
   // is a denominator that grew under new tested code rather than anything
   // becoming less tested. Nothing moved down.
   'packages/domain/src/**': {
-    lines: 99.06,
-    branches: 92.81,
+    lines: 99.19,
+    branches: 93.84,
     uncoveredLines: 23,
     uncoveredBranches: 143,
   },

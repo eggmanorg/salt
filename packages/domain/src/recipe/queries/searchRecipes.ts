@@ -1,32 +1,55 @@
 import type { RecipeKind } from '../entities/Recipe.js';
 
-// Keyword search over the recipe library (issue #840). The ranking half of the
-// chef's `findRecipes` tool: the Cloud Function does the Firestore I/O and this
-// decides what comes back and in what order.
+// Keyword search over the recipe library (issues #840, #1636). Two consumers
+// share ONE per-recipe scorer, `scoreRecipeSearch`:
+//
+//  - the chef's `findRecipes` tool, through `searchRecipes` — the Cloud Function
+//    does the Firestore I/O and this decides what comes back and in what order;
+//  - the Recipes page search box, which scores every recipe itself and keeps its
+//    own sections, filters and sort. It cannot call `searchRecipes` wholesale:
+//    the result cap, placeholder hiding and score order below are chef policy.
 //
 // PURE (CLAUDE.md rule 1). Plain data in, plain data out — no clock, no I/O, no
-// randomness, no mutation of any argument. The CF is a thin adapter around it,
-// which is what makes the thing the chef actually depends on unit-testable
-// without an emulator.
+// randomness, no mutation of any argument. Both callers are thin adapters around
+// it, which is what makes what they depend on unit-testable without an emulator.
 //
 // WHY KEYWORDS AND NOT EMBEDDINGS. Vector search is the right end state for a
 // library of thousands, and the tool's signature is shaped so it is a swap
 // inside `findRecipes` and nothing else. What it costs today is a server-only
 // `recipeEmbeddings` collection, an embedding branch on `onRecipeWritten`, a
 // vector index configured in three Firebase projects and a backfill — against a
-// bar this clears easily: the app's own search box is a substring match on title
-// and tags alone. Title + description + tags with ranking already beats it, and
-// the chef turns a vibe into keywords before it ever calls (that instruction is
-// in the tool description, which is where the model reads it).
+// library of tens of dishes, where title + description + tags + ingredients with
+// ranking is enough, and the chef turns a vibe into keywords before it ever calls
+// (that instruction is in the tool description, which is where the model reads it).
 //
-// The candidate is a SHALLOW projection on purpose. `ingredients` and `steps`
-// never reach this function because they never leave Firestore for a search —
-// see the `select()` in the CF handler. Ingredient search is deferred by
-// decision and needs either a full-document read per search or a maintained
-// summary index; neither is this.
+// Ingredients reach the scorer as pre-built terms (`ingredientSearchTerms`), not
+// as ingredient lines: the recipe's own wording plus the linked canon item's name
+// and synonyms. A candidate without them is scored on the other three fields.
 
 /**
- * One recipe as search sees it — the shallow line, never the whole dish.
+ * One ingredient as search sees it — see `ingredientSearchTerms`, which builds
+ * these. `label` is what a match reports; `terms` is everything it matches on.
+ */
+export interface IngredientSearchTerms {
+  readonly label: string;
+  readonly terms: readonly string[];
+}
+
+/**
+ * The text a recipe is scored on — what both consumers hand the scorer.
+ *
+ * `ingredients` is optional: a caller that has not read them scores on the
+ * other three fields, exactly as if the recipe had none.
+ */
+export interface RecipeSearchText {
+  readonly title: string;
+  readonly description: string | null;
+  readonly tags: readonly string[];
+  readonly ingredients?: readonly IngredientSearchTerms[] | undefined;
+}
+
+/**
+ * One recipe as the chef's search sees it — a projection, never the whole dish.
  *
  * `tags` and `kind` are here because they are filtered and ranked on. Times and
  * servings are deliberately NOT: they are carried on the caller's own row type
@@ -34,12 +57,47 @@ import type { RecipeKind } from '../entities/Recipe.js';
  * ranks by them. "Something quick" is answered by the chef reading the minutes
  * on the lines it got back, not by this function guessing what quick means.
  */
-export interface RecipeSearchCandidate {
+export interface RecipeSearchCandidate extends RecipeSearchText {
   readonly id: string;
-  readonly title: string;
-  readonly description: string | null;
   readonly kind: RecipeKind;
-  readonly tags: readonly string[];
+}
+
+/**
+ * How the query is read.
+ *
+ * - `words` — the chef. Every token is a finished word; stop words drop out and a
+ *   prefix must be four letters to count (`MIN_PREFIX_MATCH_LENGTH`).
+ * - `typing` — a search box, read on every keystroke. The LAST word, when the text
+ *   does not end in a space or punctuation, is still being typed: it is kept even
+ *   if it is one letter or looks like a stop word, and any token matches the
+ *   START of a word at any length. So "b" and "ba" already find "bacon", and "be"
+ *   finds "beef" rather than being dropped as a stop word.
+ */
+export type RecipeSearchMode = 'words' | 'typing';
+
+/** A tokenised query — build with `parseRecipeSearchQuery`, pass to the scorer. */
+export interface RecipeSearchQuery {
+  readonly tokens: readonly string[];
+  readonly mode: RecipeSearchMode;
+}
+
+/** A field the scorer can hit, in weight order. */
+export type RecipeSearchField = 'title' | 'tags' | 'ingredients' | 'description';
+
+/** What one recipe scored, and why. */
+export interface RecipeSearchScore {
+  /** Zero means no match at all. */
+  readonly score: number;
+  /** Every field any token hit, in `RecipeSearchField` order. */
+  readonly fields: readonly RecipeSearchField[];
+  /**
+   * How many distinct query tokens hit anything. "leek bacon" gives a recipe
+   * with both a 2 and a recipe with either a 1 — the Recipes page ranks on this
+   * rather than `score` so its own sort still governs within a tie.
+   */
+  readonly matchedTokenCount: number;
+  /** The `label` of every ingredient any token hit, in recipe order, de-duplicated. */
+  readonly matchedIngredients: readonly string[];
 }
 
 /**
@@ -105,12 +163,17 @@ export const RECIPE_SEARCH_RESULT_CEILING = 60;
 
 // Field weights. Title carries most because a dish's name is what someone
 // searching for it types; tags are curated and therefore trustworthy but coarse;
-// a description mentions half a dozen things the dish merely contains. The ratio
-// is a judgement, not a measurement — nothing depends on the exact numbers, and
-// they are safe to retune.
+// a description mentions half a dozen things the dish merely contains. An
+// ingredient line is concrete evidence the dish contains the thing, so it sits
+// with tags, above a description mention and below the name. The ratio is a
+// judgement, not a measurement — nothing depends on the exact numbers, and they
+// are safe to retune.
 const TITLE_WEIGHT = 3;
 const TAG_WEIGHT = 2;
+const INGREDIENT_WEIGHT = 2;
 const DESCRIPTION_WEIGHT = 1;
+
+const FIELD_ORDER: readonly RecipeSearchField[] = ['title', 'tags', 'ingredients', 'description'];
 
 /**
  * Shortest token that may match by prefix.
@@ -173,7 +236,7 @@ const STOP_WORDS = new Set([
  *
  * Generic in the row type so the caller keeps whatever else it projected —
  * servings, timings — without this function knowing or caring about it. Ranking
- * reads only the five fields `RecipeSearchCandidate` names.
+ * reads only the fields `RecipeSearchCandidate` names.
  *
  * ORDER. With a query: score descending, then title ascending. Without one:
  * title ascending. Ties break on the title rather than on input order so the
@@ -197,18 +260,18 @@ export function searchRecipes<T extends RecipeSearchCandidate>(
     return wantedTags.every((tag) => own.has(tag));
   });
 
-  const queryTokens = tokenise(filters.query ?? '');
-  const limit = resultLimit(filters.maxResults, queryTokens.length === 0);
+  const query = parseRecipeSearchQuery(filters.query ?? '', 'words');
+  const limit = resultLimit(filters.maxResults, query.tokens.length === 0);
 
   // Browse: no query, or a query that was nothing but stop words and
   // punctuation. Both mean "show me the library", and collapsing them is what
   // stops a query of "and" returning zero dishes.
-  if (queryTokens.length === 0) {
+  if (query.tokens.length === 0) {
     return [...filtered].sort(byTitle).slice(0, limit);
   }
 
   return filtered
-    .map((candidate) => ({ candidate, score: scoreCandidate(candidate, queryTokens) }))
+    .map((candidate) => ({ candidate, score: scoreRecipeSearch(candidate, query).score }))
     .filter((scored) => scored.score > 0)
     .sort((a, b) => b.score - a.score || byTitle(a.candidate, b.candidate))
     .slice(0, limit)
@@ -258,26 +321,84 @@ function byTitle(a: RecipeSearchCandidate, b: RecipeSearchCandidate): number {
 }
 
 /**
- * How well one dish answers the query.
+ * Read a query the way `mode` says (see `RecipeSearchMode`).
+ *
+ * No tokens means no search — a blank query, or one that was only stop words and
+ * punctuation. What that shows is the caller's call: the chef browses, the
+ * Recipes page shows its list unfiltered.
+ */
+export function parseRecipeSearchQuery(text: string, mode: RecipeSearchMode): RecipeSearchQuery {
+  const tokens = tokenise(text);
+  if (mode === 'typing') {
+    // The word under the cursor, if the text ends inside one. It is a prefix in
+    // progress, not a word, so neither the length floor nor the stop list applies.
+    const inProgress = /[\p{L}\p{N}]+$/u.exec(text.toLowerCase())?.[0];
+    if (inProgress !== undefined && tokens.at(-1) !== inProgress) tokens.push(inProgress);
+  }
+  return { tokens, mode };
+}
+
+/**
+ * How well one recipe answers the query, and which fields and ingredients said so.
  *
  * Each query token scores AT MOST ONCE PER FIELD, at that field's weight. A
  * description that says "chicken" eight times is not eight times the answer to
  * "chicken" — without the cap, one long rambling description outranks the dish
  * actually called "Roast chicken", which is the failure this shape exists to
- * avoid.
+ * avoid. Ingredients are one field under the same cap: a recipe with chicken
+ * thighs AND chicken stock scores "chicken" once, though both are reported in
+ * `matchedIngredients`. An ingredient's terms (its wording, canon name and
+ * synonyms) are one ingredient, so however many of them hit, it is reported once.
  */
-function scoreCandidate(candidate: RecipeSearchCandidate, queryTokens: string[]): number {
-  const title = tokenSet(candidate.title);
-  const description = tokenSet(candidate.description ?? '');
-  const tags = tokenSet(candidate.tags.join(' '));
+export function scoreRecipeSearch(
+  recipe: RecipeSearchText,
+  query: RecipeSearchQuery,
+): RecipeSearchScore {
+  const title = tokenSet(recipe.title);
+  const tags = tokenSet(recipe.tags.join(' '));
+  const description = tokenSet(recipe.description ?? '');
+  const ingredients = (recipe.ingredients ?? []).map((ingredient) => ({
+    label: ingredient.label,
+    words: tokenSet(ingredient.terms.join(' ')),
+  }));
 
   let score = 0;
-  for (const token of queryTokens) {
-    if (matches(title, token)) score += TITLE_WEIGHT;
-    if (matches(tags, token)) score += TAG_WEIGHT;
-    if (matches(description, token)) score += DESCRIPTION_WEIGHT;
+  let matchedTokenCount = 0;
+  const hitFields = new Set<RecipeSearchField>();
+  const hitIngredients = new Set<number>();
+  const hit = (field: RecipeSearchField, weight: number): void => {
+    score += weight;
+    hitFields.add(field);
+  };
+
+  for (const token of query.tokens) {
+    const before = score;
+    if (matches(title, token, query.mode)) hit('title', TITLE_WEIGHT);
+    if (matches(tags, token, query.mode)) hit('tags', TAG_WEIGHT);
+    let ingredientHit = false;
+    ingredients.forEach((ingredient, i) => {
+      if (!matches(ingredient.words, token, query.mode)) return;
+      ingredientHit = true;
+      hitIngredients.add(i);
+    });
+    if (ingredientHit) hit('ingredients', INGREDIENT_WEIGHT);
+    if (matches(description, token, query.mode)) hit('description', DESCRIPTION_WEIGHT);
+    if (score > before) matchedTokenCount += 1;
   }
-  return score;
+
+  const labels = new Map<string, string>();
+  for (const i of [...hitIngredients].sort((a, b) => a - b)) {
+    const label = ingredients[i]!.label;
+    const key = normalise(label);
+    if (!labels.has(key)) labels.set(key, label);
+  }
+
+  return {
+    score,
+    fields: FIELD_ORDER.filter((field) => hitFields.has(field)),
+    matchedTokenCount,
+    matchedIngredients: [...labels.values()],
+  };
 }
 
 /**
@@ -285,12 +406,16 @@ function scoreCandidate(candidate: RecipeSearchCandidate, queryTokens: string[])
  *
  * Equality, or a prefix relation in either direction once the shorter side is
  * long enough to mean something — "lamb" finds "lambs", "roasted" finds "roast".
+ * In `typing` mode the token may also be the start of a word at any length, so
+ * "ba" finds "bacon"; the other direction keeps the floor, or a word as short as
+ * "pie" would match a query for "pieces".
  * Deliberately not a stemmer: a stemmer is a dependency and a vocabulary, and
  * the chef is already decomposing the question into words a recipe would use.
  */
-function matches(field: ReadonlySet<string>, token: string): boolean {
+function matches(field: ReadonlySet<string>, token: string, mode: RecipeSearchMode): boolean {
   for (const word of field) {
     if (word === token) return true;
+    if (mode === 'typing' && word.startsWith(token)) return true;
     const shorter = word.length < token.length ? word : token;
     if (shorter.length < MIN_PREFIX_MATCH_LENGTH) continue;
     if (word.startsWith(token) || token.startsWith(word)) return true;

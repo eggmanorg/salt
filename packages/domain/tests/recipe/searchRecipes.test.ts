@@ -16,12 +16,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  ingredientSearchTerms,
+  parseRecipeSearchQuery,
+  scoreRecipeSearch,
   searchRecipes,
   RECIPE_SEARCH_DEFAULT_MAX_RESULTS,
   RECIPE_SEARCH_RESULT_CEILING,
+  type CanonSearchNames,
   type RecipeSearchCandidate,
 } from '../../src/index.js';
-import type { RecipeKind } from '../../src/index.js';
+import type { Ingredient, RecipeKind } from '../../src/index.js';
 
 function dish(
   id: string,
@@ -288,5 +292,235 @@ describe('searchRecipes — placeholders', () => {
     // The exclusion is a default, not a ban: a caller that names the kind has
     // asked for exactly these and is not the chef browsing for dinner.
     expect(ids(searchRecipes([photo, stew], { kind: 'placeholder' }))).toEqual(['r-photo']);
+  });
+});
+
+// ─── Ingredients (issue #1636) ────────────────────────────────────────────────
+// The shared scorer the Recipes page search box uses too. Ingredient terms are
+// built from the recipe's own wording plus the linked canon item's name and
+// synonyms, so "white pepper" and the family's own words both find a dish.
+
+function line(
+  id: string,
+  item: string | null,
+  canonId: string | null = null,
+  rawText = item ?? '',
+): Ingredient {
+  return {
+    id,
+    rawText,
+    parsed:
+      item === null
+        ? null
+        : {
+            quantity: null,
+            unit: null,
+            item,
+            preparation: [],
+            notes: null,
+            displayText: null,
+          },
+    canonId,
+    matchState: canonId === null ? 'pending' : 'matched',
+    isOptional: false,
+    firstUsedInStepId: null,
+  };
+}
+
+const CANON = new Map<string, CanonSearchNames>([
+  ['c-leek', { name: 'Leeks', synonyms: [] }],
+  ['c-ginger', { name: 'Ginger Biscuits', synonyms: ['gingernut'] }],
+  ['c-chickpea', { name: 'Chickpeas', synonyms: [] }],
+]);
+
+function withIngredients(
+  base: RecipeSearchCandidate,
+  lines: Ingredient[],
+  canon: ReadonlyMap<string, CanonSearchNames> = CANON,
+): RecipeSearchCandidate {
+  return {
+    ...base,
+    ingredients: ingredientSearchTerms([{ id: 'g', name: null, items: lines }], canon),
+  };
+}
+
+const words = (text: string) => parseRecipeSearchQuery(text, 'words');
+const typing = (text: string) => parseRecipeSearchQuery(text, 'typing');
+
+describe('ingredientSearchTerms', () => {
+  it('reads the parsed item, never the raw line, when the line was parsed', () => {
+    const [terms] = ingredientSearchTerms(
+      [
+        {
+          id: 'g',
+          name: null,
+          items: [line('i', 'chopped tomatoes', null, '400g tin chopped tomatoes, drained')],
+        },
+      ],
+      CANON,
+    );
+    expect(terms).toEqual({ label: 'chopped tomatoes', terms: ['chopped tomatoes'] });
+  });
+
+  it('falls back to the raw line when the line was never parsed', () => {
+    const [terms] = ingredientSearchTerms(
+      [{ id: 'g', name: null, items: [line('i', null, null, 'a knob of butter')] }],
+      CANON,
+    );
+    expect(terms?.label).toBe('a knob of butter');
+  });
+
+  it('adds the canon name and every synonym when the line is linked', () => {
+    const [terms] = ingredientSearchTerms(
+      [{ id: 'g', name: null, items: [line('i', 'ginger nuts', 'c-ginger')] }],
+      CANON,
+    );
+    expect(terms).toEqual({
+      label: 'ginger nuts',
+      terms: ['ginger nuts', 'Ginger Biscuits', 'gingernut'],
+    });
+  });
+
+  it('keeps a line whose canon item has gone, on its own wording', () => {
+    const [terms] = ingredientSearchTerms(
+      [{ id: 'g', name: null, items: [line('i', 'leeks', 'c-deleted')] }],
+      CANON,
+    );
+    expect(terms).toEqual({ label: 'leeks', terms: ['leeks'] });
+  });
+
+  it('walks every group, in document order', () => {
+    const terms = ingredientSearchTerms(
+      [
+        { id: 'a', name: 'Filling', items: [line('1', 'leeks')] },
+        { id: 'b', name: 'Pastry', items: [line('2', 'butter'), line('3', 'flour')] },
+      ],
+      CANON,
+    );
+    expect(terms.map((t) => t.label)).toEqual(['leeks', 'butter', 'flour']);
+  });
+});
+
+describe('scoreRecipeSearch — ingredients', () => {
+  const soup = withIngredients(dish('r-soup', 'Leek and potato soup'), [
+    line('1', 'leeks', 'c-leek'),
+    line('2', 'potatoes'),
+  ]);
+  const pie = withIngredients(dish('r-pie', 'Chicken pie'), [
+    line('1', 'chicken thighs'),
+    line('2', 'chicken stock'),
+    line('3', 'leeks', 'c-leek'),
+  ]);
+
+  it('finds a recipe by an ingredient it uses, and says which', () => {
+    const result = scoreRecipeSearch(pie, words('leek'));
+    expect(result.score).toBeGreaterThan(0);
+    expect(result.fields).toEqual(['ingredients']);
+    expect(result.matchedIngredients).toEqual(['leeks']);
+  });
+
+  it('finds a recipe through the canon name when its own wording differs', () => {
+    const hummus = withIngredients(dish('r-h', 'Hummus'), [
+      line('1', 'garbanzo beans', 'c-chickpea'),
+    ]);
+    expect(scoreRecipeSearch(hummus, words('chickpeas')).matchedIngredients).toEqual([
+      'garbanzo beans',
+    ]);
+  });
+
+  it('finds a recipe through a canon synonym, reporting the recipe’s own word', () => {
+    const cheesecake = withIngredients(dish('r-c', 'Cheesecake'), [
+      line('1', 'crushed biscuits', 'c-ginger'),
+    ]);
+    expect(scoreRecipeSearch(cheesecake, words('gingernut')).matchedIngredients).toEqual([
+      'crushed biscuits',
+    ]);
+  });
+
+  it('finds an unlinked ingredient on its own wording', () => {
+    const stew = withIngredients(dish('r-s', 'Stew'), [line('1', 'smoked paprika')]);
+    expect(scoreRecipeSearch(stew, words('paprika')).matchedIngredients).toEqual([
+      'smoked paprika',
+    ]);
+  });
+
+  it('scores the ingredients field once per token, however many lines hit', () => {
+    // Two chicken lines are not twice the answer to "chicken": the cap that keeps
+    // a rambling description from outranking a title holds here too.
+    const once = withIngredients(dish('r-1', 'Pie'), [line('1', 'chicken thighs')]);
+    expect(
+      scoreRecipeSearch(pie, words('chicken')).score -
+        scoreRecipeSearch(dish('r-pie', 'Chicken pie'), words('chicken')).score,
+    ).toBe(scoreRecipeSearch(once, words('chicken')).score);
+    // …but every line that hit is reported.
+    expect(scoreRecipeSearch(pie, words('chicken')).matchedIngredients).toEqual([
+      'chicken thighs',
+      'chicken stock',
+    ]);
+  });
+
+  it('reports an ingredient once however many of its terms hit', () => {
+    // "leeks" hits both the wording and the canon name "Leeks".
+    expect(scoreRecipeSearch(soup, words('leeks')).matchedIngredients).toEqual(['leeks']);
+  });
+
+  it('reports two lines with the same wording once', () => {
+    // A pie with leeks in the filling and leeks in the topping says "leeks", not
+    // "leeks, leeks".
+    const twice = withIngredients(dish('r-t', 'Pie'), [line('1', 'leeks'), line('2', 'Leeks')]);
+    expect(scoreRecipeSearch(twice, words('leek')).matchedIngredients).toEqual(['leeks']);
+  });
+
+  it('ranks a dish named for the word above one that merely uses it', () => {
+    expect(scoreRecipeSearch(soup, words('leek')).score).toBeGreaterThan(
+      scoreRecipeSearch(pie, words('leek')).score,
+    );
+    expect(scoreRecipeSearch(soup, words('leek')).fields).toEqual(['title', 'ingredients']);
+  });
+
+  it('counts the query words that hit, so both-of-two outranks one-of-two', () => {
+    const gratin = withIngredients(dish('r-g', 'Gratin'), [line('1', 'leeks'), line('2', 'bacon')]);
+    expect(scoreRecipeSearch(gratin, words('leek bacon')).matchedTokenCount).toBe(2);
+    expect(scoreRecipeSearch(pie, words('leek bacon')).matchedTokenCount).toBe(1);
+    expect(scoreRecipeSearch(pie, words('kimchi')).matchedTokenCount).toBe(0);
+  });
+
+  it('scores nothing on ingredients a candidate does not carry', () => {
+    expect(scoreRecipeSearch(dish('r-x', 'Chicken pie'), words('leek')).score).toBe(0);
+  });
+
+  it('lets searchRecipes rank on ingredients when the candidates carry them', () => {
+    expect(ids(searchRecipes([pie, soup], { query: 'leek' }))).toEqual(['r-soup', 'r-pie']);
+  });
+});
+
+describe('parseRecipeSearchQuery — typing mode', () => {
+  const bacon = dish('r-b', 'Bacon butty');
+  const beef = dish('r-beef', 'Beef stew');
+
+  it('matches the start of a word from the second letter', () => {
+    expect(scoreRecipeSearch(bacon, typing('ba')).score).toBeGreaterThan(0);
+    // The chef's reading keeps its four-letter floor, pinned above.
+    expect(scoreRecipeSearch(bacon, words('ba')).score).toBe(0);
+  });
+
+  it('keeps the word still being typed, even one letter or a stop word', () => {
+    expect(typing('b').tokens).toEqual(['b']);
+    expect(scoreRecipeSearch(beef, typing('be')).score).toBeGreaterThan(0);
+  });
+
+  it('drops a finished stop word or single letter as the chef does', () => {
+    expect(typing('leek and bacon').tokens).toEqual(['leek', 'bacon']);
+    expect(typing('be ').tokens).toEqual([]);
+  });
+
+  it('does not match a short field word against a longer query', () => {
+    // "pie" is a prefix of "pieces", but three letters is not evidence the query
+    // meant it — only the typed token may be a short prefix.
+    expect(scoreRecipeSearch(dish('r-p', 'Pie'), typing('pieces')).score).toBe(0);
+  });
+
+  it('matches the start of a word, not the middle of one', () => {
+    expect(scoreRecipeSearch(dish('r-k', 'Chickenkatsu'), typing('katsu')).score).toBe(0);
   });
 });
