@@ -122,18 +122,22 @@ describe('extractRecipeFromUrl callable — selective failure reporting', () => 
     expect(mockReport).toHaveBeenCalledWith(aiFail, undefined);
   });
 
-  it.each(['invalid-url', 'blocked-url', 'fetch-failed', 'not-a-recipe'])(
-    "does NOT report the EXPECTED UrlImportError code '%s' (suppressed)",
-    async (code) => {
-      extractRecipeFromUrlFlow.mockRejectedValue(new UrlImportError(code, 'expected outcome'));
+  it.each([
+    'invalid-url',
+    'blocked-url',
+    'fetch-failed',
+    'not-a-recipe',
+    'video-unavailable',
+    'video-too-long',
+  ])("does NOT report the EXPECTED UrlImportError code '%s' (suppressed)", async (code) => {
+    extractRecipeFromUrlFlow.mockRejectedValue(new UrlImportError(code, 'expected outcome'));
 
-      await expect(invoke(VALID)).rejects.toBeInstanceOf(FakeHttpsError);
+    await expect(invoke(VALID)).rejects.toBeInstanceOf(FakeHttpsError);
 
-      // Expected user outcomes are suppressed — only the mapped HttpsError
-      // reaches the client; nothing is sent to PostHog error tracking.
-      expect(mockReport).not.toHaveBeenCalled();
-    },
-  );
+    // Expected user outcomes are suppressed — only the mapped HttpsError
+    // reaches the client; nothing is sent to PostHog error tracking.
+    expect(mockReport).not.toHaveBeenCalled();
+  });
 
   it('does not report on the success path', async () => {
     extractRecipeFromUrlFlow.mockResolvedValue({ id: 'r1', title: 'Soup' });

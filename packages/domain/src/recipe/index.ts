@@ -129,9 +129,10 @@ export type { PlaceholderMood, PlaceholderCondition } from './queries/pickPlaceh
 
 // URL import — pure SSRF/URL classification helpers (no I/O). The live fetch +
 // DNS resolution lives in cloud-functions; this module only holds the policy.
-export type { ParsedImportUrl, IpClass } from './urlImport/index.js';
+export type { ParsedImportUrl, IpClass, YouTubeVideo } from './urlImport/index.js';
 export {
   parseImportUrl,
+  parseYouTubeVideo,
   isHttpsScheme,
   hostnameAsIpLiteral,
   classifyIp,
