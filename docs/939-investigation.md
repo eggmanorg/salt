@@ -9,9 +9,21 @@ taken.
 The issue's own numbers were measured before #928. **Every count below was
 re-derived against this tree**, and where the issue is now stale it says so.
 
+> **Status — both headline recommendations have landed; read the rest as the
+> point-in-time record.** The `docChanges()` fix (§0, §4 Stage 1) shipped in #984,
+> pinned by `packages/adapters/firebase-sync/tests/snapshotParseCount.test.ts`.
+> `chatSessions` growth (§2 row 5, A5-012, §4 Stage 2) was settled by #1008's TTL
+> sweep instead of a `limit()` — see
+> [`docs/runbooks/ttl-policies.md`](runbooks/ttl-policies.md) for which projects are
+> armed. Line numbers and "appears nowhere" claims below describe the tree this was
+> written against, not today's.
+
 ---
 
 ## 0. Headline, restated honestly
+
+> **Done — landed in #984.** `subscribeCollection.ts` now re-parses only the
+> documents `snap.docChanges()` names. The paragraph below is the pre-#984 state.
 
 The mechanism is real: `docChanges()` appears **nowhere** in the repo
 (`grep -rn docChanges packages apps --include='*.ts' --include='*.svelte'` → 0
@@ -124,8 +136,11 @@ before the descriptor refactor and should be corrected on the issue.
   > `chatSessions.expiresAt` is written as a `Timestamp`, and
   > `scripts/migrate-ttl-timestamps.mjs` converts the documents already written.
 
-This is the only subscription whose document count grows without bound, whose
-documents are large, and which is attached for the whole life of the app.
+At the time of writing, this was the only subscription whose document count grew
+without bound, whose documents are large, and which is attached for the whole
+life of the app. Once a project's TTL policy is armed, growth is bounded by the
+retention windows (`CHAT_TTL_MS` / `CHAT_RECIPE_TTL_MS` in
+`packages/domain/src/chat/queries/chatExpiry.ts`) — see §4 Stage 2.
 
 ### A5-011 — whole kitchen-memory collection per chat turn
 
@@ -331,7 +346,7 @@ quoted as fact.
 | 2   | `subscribeBatches`             | `batches`                   | none                             | page (`BatchListPage`)    | 0 (collection absent)  | **correct unbounded.** Bread batches; expect tens, page-scoped. Revisit if #778 phases 03–05 land and it becomes a log.                                                                                                                                            |
 | 3   | `subscribeBatchObservations`   | `batches/{id}/observations` | `orderBy('at')`                  | page (`BatchDetailPage`)  | n/a                    | **correct.** Path-bounded to one run.                                                                                                                                                                                                                              |
 | 4   | `subscribeCanonItems`          | `canonItems`                | none                             | app-lifetime              | **281**                | **deliberately unbounded — do not add a `limit`.** The whole canon _is_ the client-side matching index, and offline matching needs all of it. A bound would break matching, not speed it up. Size gate tracked at #410.                                            |
-| 5   | `subscribeChatSessions`        | `chatSessions`              | `where(ownerUid)`                | **app-lifetime, at auth** | **76, never expiring** | **DEFECT.** The only unbounded-growth, app-lifetime, fat-document read. See §4.                                                                                                                                                                                    |
+| 5   | `subscribeChatSessions`        | `chatSessions`              | `where(ownerUid)`                | **app-lifetime, at auth** | **76, never expiring** | **DEFECT at the time — resolved by #1008** (TTL sweep; see §1 A5-012 and §4 Stage 2). Was the only unbounded-growth, app-lifetime, fat-document read.                                                                                                              |
 | 6   | `subscribeMyCookSessions`      | `cookSessions`              | `where` + `orderBy` + `limit(5)` | app-lifetime              | 1                      | **already bounded.** The reference implementation.                                                                                                                                                                                                                 |
 | 7   | `subscribeEquipmentIcons`      | `equipmentIcons`            | none                             | app-lifetime              | 20                     | **correct unbounded.** Bounded by the equipment manifest (one doc, ~19 items). Permanently tiny.                                                                                                                                                                   |
 | 8   | `subscribeKitchenMemories`     | `kitchenMemories`           | none                             | page (`ChatMemoryPage`)   | **1**                  | **correct unbounded.** Hand-written notes; tens forever.                                                                                                                                                                                                           |
@@ -601,6 +616,10 @@ unrelated changes wearing one hat, and only the first two belong on this branch.
 
 ### Stage 1 — `docChanges()` in `subscribeCollection.ts` — THIS BRANCH, first commit
 
+> **Done — landed in #984.** The regression guard is
+> `packages/adapters/firebase-sync/tests/snapshotParseCount.test.ts`. What follows
+> is the plan as written.
+
 **The single highest-value change, and the only one I would make first.**
 
 One function, `subscribeCollection.ts:78-90`. Keep a per-listener cache of parsed
@@ -644,6 +663,14 @@ Add one _unit_ test alongside (no emulator): a fake snapshot sequence proving th
 change. That is the regression guard the benchmark cannot be.
 
 ### Stage 2 — bound `chatSessions` — THIS BRANCH, second commit, but ASK FIRST
+
+> **Superseded by #1008 — not an open decision.** The growth this stage set out to
+> bound is now swept by a Firestore TTL policy on `chatSessions.expiresAt` (see
+> [`docs/runbooks/ttl-policies.md`](runbooks/ttl-policies.md) for which projects are
+> armed). No `limit()` was added. What TTL does not cap is the size of the
+> _in-window_ set — recipe-attached sessions live 540 days — so a subscription-side
+> bound would only return as a boot-payload question, on fresh counts, in its own
+> issue. The options below are the record of what was weighed.
 
 The one genuine bound defect (§2 row 5). Two candidate fixes, and they are not
 equivalent:
@@ -725,7 +752,7 @@ Flagged explicitly per the brief:
   `B2-013` finding's own "nine" is correct as stated.
 - "`docChanges()` … that is the fix with the widest reach and it is a single
   pattern" → still true, and now literally a single **function**, not a pattern
-  repeated 15 times. #928 did that work.
+  repeated 15 times. #928 did that work; #984 then made the change.
 - "Subscriptions carry a bound appropriate to the collection" (Done-when) → for
   twelve of the fifteen, the appropriate bound is **none**, and §2 is the written
   record the Done-when asks for.
