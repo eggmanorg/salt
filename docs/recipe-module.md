@@ -356,7 +356,9 @@ Two decisions worth keeping:
   never stored (`jsonLdRecipe.ts`, the one place those names survive). The rationale
   is comparability: a library where half the recipes use blog convention and half
   use ours has a "quickest first" sort that means nothing. Ingredients, steps and
-  servings stay verbatim.
+  servings stay verbatim — except that a page stating none gets the number its
+  quantities make; AI-authored recipes never save without servings (stored
+  `servings` stays nullable for older recipes).
 
 The cook plan starts a dish at `serve − recipePhaseTotals().elapsedMinutes` — the
 whole process, start to serve; the decisions are recorded below at _The cook plan_.

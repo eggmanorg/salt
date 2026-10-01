@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CanonItemSchema } from './canonItem.js';
 import { RecipeKindSchema, RecipeSchema } from './recipe.js';
 
 // The chef's `findRecipes` tool (issue #840) — the first Genkit tool in this
@@ -57,10 +58,12 @@ export type FindRecipesInput = z.infer<typeof FindRecipesInputSchema>;
 
 /**
  * One dish as the chef sees it before deciding to look closer — a title, what it
- * is, and the numbers that decide whether tonight is possible.
+ * is, the numbers that decide whether tonight is possible, and which of its
+ * ingredients answered the query.
  *
- * NO ingredients and NO method: those never leave Firestore for a search (the
- * handler projects four fields), and reading a dish properly is its own step.
+ * NOT its ingredient list and NO method. The handler reads ingredients to rank on
+ * them (issue #1636), but a match carries only the names that hit — every row is
+ * paid for in the next model turn, and reading a dish properly is its own step.
  */
 export const FindRecipesMatchSchema = z.object({
   id: z.string().describe('Use this to link the dish: [Title](#/recipes/<id>).'),
@@ -74,6 +77,12 @@ export const FindRecipesMatchSchema = z.object({
     .nullable()
     .describe('Wall clock start to serving. Null when this dish has never been timed.'),
   handsOnMinutes: z.number().nullable().describe('Minutes of actual attention, of the above.'),
+  usesIngredients: z
+    .array(z.string())
+    .describe(
+      "Which of this dish's own ingredients matched your query, in its words. Empty when it " +
+        'matched on its name, tags or description only, or when you browsed.',
+    ),
 });
 
 export const FindRecipesOutputSchema = z.object({
@@ -94,21 +103,23 @@ export const FindRecipesOutputSchema = z.object({
 export type FindRecipesOutput = z.infer<typeof FindRecipesOutputSchema>;
 
 /**
- * The four fields a search reads off a `recipes/{id}` document, and nothing else.
+ * The five fields a search reads off a `recipes/{id}` document, and nothing else.
  *
  * DERIVED FROM `RecipeSchema` by `.pick()` rather than restated, so the search
  * projection cannot drift from the document it reads. `kind` keeps its
  * `.default('recipe')` through the pick, which is what lets the ~59 documents
  * written before #637 parse here exactly as they do everywhere else.
  *
- * The absentees are the point: `ingredients` and `steps` are not in this list, so
- * a `select()` built from it cannot fetch them. See the handler.
+ * `ingredients` is here so the chef can search by what is in a dish (issue
+ * #1636). `steps` is not, and that absentee is the point: a `select()` built
+ * from this list cannot fetch a recipe's method. See the handler.
  */
 export const RecipeSearchProjectionSchema = RecipeSchema.pick({
   title: true,
   description: true,
   kind: true,
   metadata: true,
+  ingredients: true,
 });
 
 export type RecipeSearchProjection = z.infer<typeof RecipeSearchProjectionSchema>;
@@ -123,3 +134,19 @@ export type RecipeSearchProjection = z.infer<typeof RecipeSearchProjectionSchema
 export const RECIPE_SEARCH_PROJECTION_FIELDS = Object.keys(
   RecipeSearchProjectionSchema.shape,
 ) as (keyof RecipeSearchProjection)[];
+
+/**
+ * The two fields a search reads off a `canonItems/{id}` document — the catalogue
+ * name and the family's synonyms a recipe's linked ingredient is also found by.
+ * Picked from `CanonItemSchema` for the same no-drift reason as the recipe
+ * projection above.
+ */
+export const CanonSearchProjectionSchema = CanonItemSchema.pick({
+  name: true,
+  synonyms: true,
+});
+
+/** The field names above, as the array Firestore's `select()` takes. */
+export const CANON_SEARCH_PROJECTION_FIELDS = Object.keys(
+  CanonSearchProjectionSchema.shape,
+) as (keyof z.infer<typeof CanonSearchProjectionSchema>)[];

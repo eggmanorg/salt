@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { ExtractRecipeAIOutputSchema } from './extractRecipeFromUrl.js';
+import {
+  ExtractRecipeAIOutputObjectSchema,
+  requireServingsOnARecipe,
+} from './extractRecipeFromUrl.js';
 import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
 
 // Import a recipe from photographs of a cookbook page (issue #649, Phase 3).
@@ -92,7 +95,7 @@ export const PHOTO_IMPORT_FAILURE_CODES = [
 export type PhotoImportFailureCode = (typeof PHOTO_IMPORT_FAILURE_CODES)[number];
 
 // ─── AI extraction output ─────────────────────────────────────────────────────
-// EXTENDS ExtractRecipeAIOutputSchema rather than forking it, so the recipe half
+// EXTENDS ExtractRecipeAIOutputObjectSchema rather than forking it, so the recipe half
 // of the contract — and therefore the metric/British conversion the whole
 // pipeline downstream relies on — is literally the same schema the URL import
 // uses and cannot drift from it. The extension is the one thing a photograph can
@@ -110,9 +113,9 @@ export const ExtractedBookSourceSchema = z.object({
   page: z.number().int().positive().nullable(),
 });
 
-export const ExtractRecipeFromPhotoAIOutputSchema = ExtractRecipeAIOutputSchema.extend({
+export const ExtractRecipeFromPhotoAIOutputSchema = ExtractRecipeAIOutputObjectSchema.extend({
   // null when nothing about the book is legible on the pages supplied.
   book: ExtractedBookSourceSchema.nullable(),
-});
+}).superRefine(requireServingsOnARecipe);
 
 export type ExtractRecipeFromPhotoAIOutput = z.infer<typeof ExtractRecipeFromPhotoAIOutputSchema>;

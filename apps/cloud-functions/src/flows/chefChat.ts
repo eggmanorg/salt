@@ -12,6 +12,8 @@ import {
   FindRecipesOutputSchema,
   RecipeSearchProjectionSchema,
   RECIPE_SEARCH_PROJECTION_FIELDS,
+  CanonSearchProjectionSchema,
+  CANON_SEARCH_PROJECTION_FIELDS,
 } from '@salt/domain/schemas';
 import { ReadRecipeInputSchema, ReadRecipeOutputSchema } from '@salt/domain/schemas';
 import {
@@ -48,13 +50,16 @@ import { SaveRecipeInputSchema, SaveRecipeOutputSchema } from '@salt/domain/sche
 import type { SaveRecipeOutput } from '@salt/domain/schemas';
 import {
   chatExpiresAt,
+  ingredientSearchTerms,
   libraryPageSummary,
+  parseRecipeSearchQuery,
   recipePhaseTotals,
   resolveEquipmentItem,
+  scoreRecipeSearch,
   searchLibraryPages,
   searchRecipes,
 } from '@salt/domain';
-import type { LibraryPageCandidate, RecipeSearchCandidate } from '@salt/domain';
+import type { CanonSearchNames, LibraryPageCandidate, RecipeSearchCandidate } from '@salt/domain';
 // The SERVER subpath, never the default one: the default wraps posthog-js and
 // cannot run in Node (CLAUDE.md Rule 5).
 import {
@@ -175,18 +180,28 @@ type SearchRow = RecipeSearchCandidate & {
  * Searches the household's saved recipes for the chef.
  *
  * The I/O half of `findRecipes`, and deliberately nothing more: it projects,
- * validates, hands the rows to the pure `searchRecipes` in `@salt/domain` and
- * renders what comes back. No ranking logic lives here (CLAUDE.md rule 1).
+ * validates, builds each recipe's ingredient terms with the pure
+ * `ingredientSearchTerms`, hands the rows to the pure `searchRecipes` in
+ * `@salt/domain` and renders what comes back. No ranking logic lives here
+ * (CLAUDE.md rule 1).
  *
- * WHAT CROSSES THE WIRE. `select(...RECIPE_SEARCH_PROJECTION_FIELDS)` fetches
- * four fields — title, description, kind, metadata. `ingredients` and `steps` are
- * not among them, so a search never pays for a recipe's body; that field list is
- * read off `RecipeSearchProjectionSchema`'s own keys, so widening the projection
- * and widening the query are one edit. Pinned by `chefChat.findRecipes.test.ts`,
- * whose Firestore stub refuses an unprojected read.
+ * WHAT CROSSES THE WIRE. Two projected reads, run in parallel because a tool
+ * round-trip is silence to the chat stream guard:
+ * `select(...RECIPE_SEARCH_PROJECTION_FIELDS)` on `recipes` — title,
+ * description, kind, metadata and ingredients, never `steps` — and
+ * `select(...CANON_SEARCH_PROJECTION_FIELDS)` on `canonItems` — name and
+ * synonyms, so a linked ingredient is also found by the catalogue's words and
+ * the family's. Both field lists are read off their projection schemas' own
+ * keys, so widening a projection and widening its query are one edit. Pinned by
+ * `chefChat.findRecipes.test.ts`, whose Firestore stub refuses an unprojected
+ * read of either collection.
+ *
+ * WHAT GOES BACK is still the shallow line plus `usesIngredients` — the names of
+ * the dish's own ingredients that matched — never its ingredient list.
  *
  * A doc that fails validation is SKIPPED, as in every other list read here — one
- * corrupt recipe costs the chef that recipe, not the search.
+ * corrupt recipe costs the chef that recipe, and one corrupt canon item costs
+ * the lines linked to it only their catalogue words, not the search.
  *
  * ON FAILURE it returns no matches and a library size of zero, which the model
  * cannot tell from a genuinely empty library. That is the accepted trade rather
@@ -199,10 +214,32 @@ export async function findRecipesInLibrary(
   input: FindRecipesInput,
 ): Promise<FindRecipesOutput> {
   try {
-    const snap = await db
-      .collection('recipes')
-      .select(...RECIPE_SEARCH_PROJECTION_FIELDS)
-      .get();
+    const [snap, canonSnap] = await Promise.all([
+      db
+        .collection('recipes')
+        .select(...RECIPE_SEARCH_PROJECTION_FIELDS)
+        .get(),
+      db
+        .collection('canonItems')
+        .select(...CANON_SEARCH_PROJECTION_FIELDS)
+        .get(),
+    ]);
+
+    const canonById = new Map<string, CanonSearchNames>();
+    let skippedCanon = 0;
+    for (const doc of canonSnap.docs) {
+      const parsed = CanonSearchProjectionSchema.safeParse(doc.data());
+      if (!parsed.success) {
+        skippedCanon += 1;
+        continue;
+      }
+      canonById.set(doc.id, parsed.data);
+    }
+    if (skippedCanon > 0) {
+      logger.warn('chefChat: findRecipes skipped canon items that failed validation', {
+        skipped: skippedCanon,
+      });
+    }
 
     const rows: SearchRow[] = [];
     let skipped = 0;
@@ -212,7 +249,7 @@ export async function findRecipesInLibrary(
         skipped += 1;
         continue;
       }
-      const { title, description, kind, metadata } = parsed.data;
+      const { title, description, kind, metadata, ingredients } = parsed.data;
       // Times come from the phase strip summed at the point of use (#1122) —
       // there is no stored total, and a recipe authored before phases existed
       // has none at all, which reads as null rather than as zero minutes.
@@ -223,6 +260,7 @@ export async function findRecipesInLibrary(
         description,
         kind,
         tags: metadata.tags,
+        ingredients: ingredientSearchTerms(ingredients, canonById),
         servings: metadata.servings,
         elapsedMinutes: totals.hasPhases ? totals.elapsedMinutes : null,
         handsOnMinutes: totals.hasPhases ? totals.handsOnMinutes : null,
@@ -232,12 +270,21 @@ export async function findRecipesInLibrary(
       logger.warn('chefChat: findRecipes skipped recipes that failed validation', { skipped });
     }
 
+    // Scored a second time for the names that hit, through the same scorer the
+    // ranking used — the only way to report them without a second matcher. A
+    // browse has no query, so nothing matched and nothing is named. The terms
+    // themselves are dropped: the chef gets the names that hit, not the list.
+    const query = parseRecipeSearchQuery(input.query ?? '', 'words');
     return {
-      matches: searchRecipes(rows, input).map((row) => ({
-        ...row,
-        tags: [...row.tags],
-        description: trimDescription(row.description),
-      })),
+      matches: searchRecipes(rows, input).map((row) => {
+        const { ingredients: _terms, ...line } = row;
+        return {
+          ...line,
+          tags: [...line.tags],
+          description: trimDescription(line.description),
+          usesIngredients: [...scoreRecipeSearch(row, query).matchedIngredients],
+        };
+      }),
       totalInLibrary: rows.length,
     };
   } catch (err) {
@@ -256,6 +303,8 @@ const FIND_RECIPES_DESCRIPTION = `Search this household's OWN saved recipes — 
 CALL THIS when the answer depends on what they have saved:
 - planning nights ("what shall we have this week?") — leave query out entirely and browse
 - "we've got lamb in", "what can we do with the chicken?"
+- "I've got leeks and some bacon, what can I make?" — search for the ingredients themselves \
+("leek bacon"); a dish is found by what is in it, not only by its name
 - "something quick and vegetarian"
 - building a meal out of dishes they already have
 
@@ -267,9 +316,11 @@ them spends the turn without helping. When in doubt, just answer.
 Turn a vibe into keywords BEFORE calling: search for the words a recipe would actually contain, \
 not the mood. "Something warming for a cold night" is a search for "stew braise soup roast".
 
-What comes back is shallow — a title, its kind, tags, timings and the opening of its description. \
-That is enough to name a dish, link it and suggest it. It does NOT include ingredients or a method: \
-when you need those, read the dish with readRecipe.`;
+What comes back is shallow — a title, its kind, tags, timings, the opening of its description, \
+and usesIngredients: which of the dish's own ingredients matched your words. Dishes matching more \
+of your words come first, so "your Leek & Bacon Gratin uses both" is something you can say from \
+the result. That is enough to name a dish, link it and suggest it. It does NOT include the full \
+ingredient list or a method: when you need those, read the dish with readRecipe.`;
 
 /**
  * The `findRecipes` tool.
@@ -1737,6 +1788,9 @@ and anything else related to cooking and food. \
 Speak naturally and warmly — like a knowledgeable friend in the kitchen, not a recipe generator. \
 When you suggest a recipe or technique, feel free to riff, improvise, and add your own perspective. \
 You are not bound to any particular list of ingredients. \
+Whenever you write out a recipe, say how many it serves, at the top ("Serves 4"). If the user has \
+not said, choose a sensible number yourself rather than asking, state it, and write every quantity \
+for that number. \
 ${UK_INGREDIENT_PRINCIPLE} \
 ${READER_UNIT_PRINCIPLE} \
 Temperatures in °C only — never Fahrenheit.`;

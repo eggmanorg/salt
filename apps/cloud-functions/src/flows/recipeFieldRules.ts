@@ -212,12 +212,25 @@ however they are preserved — gravlax, sauerkraut, kimchi and cheese are all re
 not clearly cured meat, answer "recipe".
 ${CURE_CATEGORY_RULES}`;
 
+// Every recipe says how many it serves. It used to be "or null if not stated",
+// which on the librarian path meant a recipe the chef wrote without saying
+// lost its servings entirely — though every quantity in it was written for SOME
+// number of people. Working that number out from the amounts is reading the
+// recipe, not inventing it, which is why the "extract only what is present"
+// closings do not forbid it.
+//
+// The schemas hold the other half: `LibrarianOutputSchema` has no null, and
+// `ExtractRecipeAIOutputSchema` allows one only on a not-a-recipe answer.
+const SERVINGS_RULE = `- servings: integer portions — ALWAYS a number, never null. Use the count the source \
+states. When it states none, give the number of portions the quantities as written make, judged \
+from the amounts (500 g of pasta with a sauce serves 4; a 1.5 kg shoulder serves 6).`;
+
 function fields(measures: MeasurePolicy): string {
   return `## Fields
 - title: clear, concise recipe name.
 ${KIND_RULES}
 - description: 1–2 sentence summary, or null.
-- servings: integer portions, or null if not stated.
+${SERVINGS_RULE}
 ${PHASE_RULES}
 ${CATEGORY_TAG_RULES}
 - ingredientGroups: group ingredients by course/stage (null name = default group).

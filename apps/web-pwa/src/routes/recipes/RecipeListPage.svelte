@@ -13,7 +13,16 @@
   } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
   import { trackUsageEvent } from '@salt/observability';
-  import { recipeHeroUrl, recipeMatchIssueCount, type Recipe } from '@salt/domain';
+  import {
+    ingredientSearchTerms,
+    parseRecipeSearchQuery,
+    recipeHeroUrl,
+    recipeMatchIssueCount,
+    scoreRecipeSearch,
+    type Recipe,
+    type RecipeSearchScore,
+    type RecipeSearchText,
+  } from '@salt/domain';
   import {
     recipes,
     isLoadingRecipes,
@@ -172,14 +181,65 @@
 
   const hiddenSectionCount = $derived(LIST_SECTIONS.length - shownSections.length);
 
-  const query = $derived(searchText.trim().toLowerCase());
+  // ─── Search (issue #1636) ─────────────────────────────────────────────────────
+  // Scored by the SAME pure scorer the chef's findRecipes tool ranks with — title,
+  // tags, description and ingredients, the last read as the recipe's own wording
+  // plus the linked canon item's name and synonyms. Never a second matcher here:
+  // the page owns only what it does with the score (grouping, the "Uses …" line).
+  //
+  // The text is built once per library or canon change, not per keystroke — the
+  // canon synonyms are the only part that is not on the recipe itself.
+  const searchTextById = $derived(
+    new Map<string, RecipeSearchText>(
+      $recipes.map((r) => [
+        r.id,
+        {
+          title: r.title,
+          description: r.description,
+          tags: r.metadata.tags,
+          ingredients: ingredientSearchTerms(r.ingredients, canonById),
+        },
+      ]),
+    ),
+  );
+
+  const searchQuery = $derived(parseRecipeSearchQuery(searchText, 'typing'));
+
+  // Null while not searching: nothing is scored, nothing is grouped, and every
+  // card is exactly as it was. A query of only stop words is not a search.
+  const scoreById = $derived.by((): ReadonlyMap<string, RecipeSearchScore> | null => {
+    if (searchQuery.tokens.length === 0) return null;
+    const scores = new Map<string, RecipeSearchScore>();
+    for (const [id, text] of searchTextById) {
+      const scored = scoreRecipeSearch(text, searchQuery);
+      if (scored.score > 0) scores.set(id, scored);
+    }
+    return scores;
+  });
 
   function matchesSearch(r: Recipe): boolean {
-    if (query === '') return true;
-    return (
-      r.title.toLowerCase().includes(query) ||
-      r.metadata.tags.some((t) => t.toLowerCase().includes(query))
-    );
+    return scoreById === null || scoreById.has(r.id);
+  }
+
+  // Name matches first, then the rest; inside each, more of your words before
+  // fewer ("leek bacon": both, then either). The chosen sort decides everything
+  // after that — so a one-word search never overrides it within a group.
+  function searchRank(a: Recipe, b: Recipe): number {
+    const sa = scoreById?.get(a.id);
+    const sb = scoreById?.get(b.id);
+    if (sa === undefined || sb === undefined) return 0;
+    const byName = Number(sb.fields.includes('title')) - Number(sa.fields.includes('title'));
+    return byName !== 0 ? byName : sb.matchedTokenCount - sa.matchedTokenCount;
+  }
+
+  // A card found without its name matching says which of its own ingredients
+  // did — so a hit through a canon synonym explains itself. Null for a name
+  // match, which looks exactly as it always did.
+  function usesLine(recipe: Recipe): string | null {
+    const scored = scoreById?.get(recipe.id);
+    if (scored === undefined || scored.fields.includes('title')) return null;
+    if (scored.matchedIngredients.length === 0) return null;
+    return `Uses ${scored.matchedIngredients.join(', ')}`;
   }
 
   // AND-narrowing: a recipe must carry every selected tag ("quick" + "vegetarian").
@@ -241,6 +301,8 @@
           sectionOf(r) === sectionFilter && matchesSearch(r) && matchesTags(r) && matchesAuthors(r),
       )
       .sort((a, b) => {
+        const ranked = searchRank(a, b);
+        if (ranked !== 0) return ranked;
         switch (sortBy) {
           case 'recent':
             return b.createdAt.localeCompare(a.createdAt);
@@ -258,7 +320,9 @@
   // The section is NOT part of this. Clearing filters must not teleport you back
   // to Recipes, and "· filtered" must not appear merely because you are looking
   // at Chef's Specials.
-  const hasFilters = $derived(query !== '' || activeTags.length > 0 || addedByMe || editedByMe);
+  const hasFilters = $derived(
+    searchText.trim() !== '' || activeTags.length > 0 || addedByMe || editedByMe,
+  );
 
   // Ingredients are a capability, so this asks the domain rather than the kind.
   // Every card in `visible` shares `sectionFilter`, so one answer covers the grid.
@@ -706,6 +770,7 @@
           {@const count = ingredientCount(recipe)}
           {@const tags = recipe.metadata.tags}
           {@const issues = matchIssueCount(recipe)}
+          {@const uses = usesLine(recipe)}
           <li>
             <button
               class="group flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-shadow hover:shadow-md"
@@ -787,6 +852,15 @@
                 <h3 class="line-clamp-2 text-sm font-medium leading-snug text-foreground">
                   {recipe.title}
                 </h3>
+
+                {#if uses !== null}
+                  <p
+                    class="line-clamp-1 text-xs text-muted-foreground"
+                    data-testid="recipe-list-uses"
+                  >
+                    {uses}
+                  </p>
+                {/if}
 
                 <div
                   class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"

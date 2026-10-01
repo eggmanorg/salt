@@ -243,3 +243,16 @@ describe('recipeFieldRules — is it a drink you mix, or something you eat (#765
     }
   });
 });
+
+describe('recipeFieldRules — servings', () => {
+  it('asks for a number on every path, and never offers null', () => {
+    // The old "or null if not stated" let a chat-authored recipe the chef wrote
+    // without a serving count save with none at all. The schemas refuse the null
+    // (authorRecipe.schema.test.ts); this pins that the prompt no longer invites it.
+    for (const rules of [PRESERVE, METRICATE]) {
+      expect(rules).toContain('- servings: integer portions — ALWAYS a number, never null.');
+      expect(rules).toContain('judged from the amounts');
+      expect(rules).not.toContain('or null if not stated');
+    }
+  });
+});
