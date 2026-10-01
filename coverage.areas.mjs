@@ -348,10 +348,16 @@ export const coverageThresholds = {
   // had the uncovered count risen by even one, the fix would have been a test.
   // Lines UNMOVED at 89.14 (measured 89.15) — a pin that does not need to move
   // does not move.
+  // BANKED 89.14/74.52 → 89.59/75.73 in #1634 (svelte 5.57.0 → 5.57.1): the
+  // compiler now emits 14 more branch-paths across `CanonIcon`, `Checkbox`,
+  // `Markdown` and `ListPage`, every one already covered, so branches crossed
+  // the staleness tolerance with the uncovered count unmoved at 216. Uncovered
+  // lines fell 191 → 190. Nothing about the tests changed; the figures are the
+  // ratchet's paste block over CI's report.
   'packages/ui-components/src/**': {
-    lines: 89.14,
-    branches: 74.52,
-    uncoveredLines: 191,
+    lines: 89.59,
+    branches: 75.73,
+    uncoveredLines: 190,
     uncoveredBranches: 216,
   },
   // Lines CORRECTED DOWN 83.56 → 82.58 in #977, and this is the one case
@@ -700,11 +706,22 @@ export const coverageThresholds = {
   // `class="… {glyphClass}"` interpolation — `glyphClass` is a `$derived`
   // string that is never nullish, so the fallback side cannot run. Located by
   // running that suite alone under v8 coverage; the four figures are CI's.
+  // BANKED 78.96/61.05 → 80.19/63.68 in #1634 (svelte 5.57.0 → 5.57.1): the
+  // new compiler maps one more source line in four components — the tail
+  // statement of a function body, e.g. `ImagePromptDialog`'s `else failed =
+  // true` — so the basis grew 309 → 313 lines and three of the four newly
+  // counted lines were already-unexercised code, taking lines to 78.27 with
+  // nothing about the tests changed. Answered by testing the most-used one
+  // rather than lowering the floor: `LoginPage`'s magic-link send (the default
+  // sign-in path off-standalone) had no case, and its `else void onSend()` arm
+  // was one of the three. That covers six lines and five branches, so both
+  // ratios cleared the staleness tolerance. Measured with the web-pwa project
+  // alone over this glob, whose 313/190 basis matches CI's macOS report.
   'apps/web-pwa/src/components/**': {
-    lines: 78.96,
-    branches: 61.05,
-    uncoveredLines: 65,
-    uncoveredBranches: 74,
+    lines: 80.19,
+    branches: 63.68,
+    uncoveredLines: 62,
+    uncoveredBranches: 69,
   },
 };
 

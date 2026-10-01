@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "1.0.68",
-    "@lucide/svelte": "^1.47.0",
+    "@lucide/svelte": "^1.48.0",
     "@salt/domain": "workspace:*",
     "@salt/firebase-sync": "workspace:*",
     "@salt/observability": "workspace:*",
@@ -28,7 +28,7 @@
     "@salt/ui-components": "workspace:*",
     "leaflet": "^1.9.4",
     "pluralize": "^8.0.0",
-    "svelte": "^5.56.10",
+    "svelte": "^5.57.1",
     "svelte-spa-router": "^5.1.1",
     "turndown": "7.2.4"
   },
