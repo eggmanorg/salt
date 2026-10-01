@@ -23,7 +23,7 @@
  *     → ⋮ → Ask/amend opens a chat on the dish
  *       → a message runs the real chefChat callable against the fake model
  *         → "Review changes" runs the real authorRecipe callable, whose canned
- *           answer OMITS servings, all three times and the tags
+ *           answer OMITS the timings and the tags
  *           → the diff proposes the title change and NOTHING about metadata
  *             → Apply writes a document that still has Serves 4 and its tag
  *
@@ -73,9 +73,10 @@ const STUB_REPLY =
 const STUB_CHAT_TITLE = 'Stubbed Chilli Conversation';
 
 // The librarian's canned answer: the change the user asked for is in the title
-// and the method, and the metadata it was never asked about is DROPPED — null
-// servings, null times, no tags. That omission is the defect this spec exists
-// for. The ingredient repeats the seeded rawText verbatim, as edit mode
+// and the method, and the metadata it was never asked about is DROPPED — no
+// timings, no tags. That omission is the defect this spec exists for. Servings
+// are not among the dropped: the librarian's schema has required them since
+// servings became mandatory, so the stub carries the seeded 4 back. The ingredient repeats the seeded rawText verbatim, as edit mode
 // instructs, so it is carried over rather than re-parsed.
 const AMENDED_TITLE = 'Stubbed Chilli Pilaf';
 const AMENDED_STEP = 'Fry the chorizo, then stir in the chilli flakes.';
@@ -83,7 +84,7 @@ const AMENDED_STEP = 'Fry the chorizo, then stir in the chilli flakes.';
 const STUB_AUTHOR = {
   title: AMENDED_TITLE,
   description: 'The pilaf, with chilli.',
-  servings: null,
+  servings: 4,
   tags: [],
   ingredientGroups: [
     {

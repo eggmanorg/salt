@@ -27,7 +27,11 @@ import { reportServerError } from '../observability/reportServerError.js';
 // `raw` is typed as LibrarianOutput because that is the common structural shape
 // of the two AI outputs — ExtractRecipeAIOutput is assignable to it (it adds
 // `isRecipe` and narrows the numeric fields to non-negative ints, neither of
-// which this module reads or relies on).
+// which this module reads or relies on). Servings is the one field widened back
+// to nullable: the librarian's is required, the extractor's may be null on a
+// not-a-recipe answer, and the type cannot see that `requireServingsOnARecipe`
+// has already refused a null on any recipe that reaches here.
+type AssemblyInput = Omit<LibrarianOutput, 'servings'> & { servings: number | null };
 
 export interface AssembleRecipeDraftOptions {
   /** Provenance stamped on the assembled doc — `{ type: 'manual' }` for the
@@ -62,7 +66,7 @@ type ParsedIngredient = Awaited<
 type CanonResult = MatchOrCreateCanonOutput;
 
 export async function assembleRecipeDraft(
-  raw: LibrarianOutput,
+  raw: AssemblyInput,
   { source, baseRecipe = null, kindHint = null, needsApproval = false }: AssembleRecipeDraftOptions,
 ): Promise<RecipeDoc> {
   const now = new Date().toISOString();

@@ -104,3 +104,15 @@ describe('chefChat — the unit policy', () => {
     expect(system).toContain('prefer British ingredient names');
   });
 });
+
+describe('chefChat — servings', () => {
+  it('states how many a recipe serves, choosing a number rather than leaving it out', async () => {
+    // The chef used to write a recipe without a serving count whenever the user
+    // gave none, and the librarian then saved it with none. The librarian now
+    // works one out regardless; this is the half that puts it in the chat, where
+    // the user can see the number and change it.
+    const system = await systemPrompt();
+    expect(system).toContain('Whenever you write out a recipe, say how many it serves');
+    expect(system).toContain('choose a sensible number yourself rather than asking');
+  });
+});
