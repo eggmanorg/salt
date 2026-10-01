@@ -45,7 +45,7 @@
     "jsdom": "^30.1.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "vitest-axe": "^0.1.0"
   }
 }
