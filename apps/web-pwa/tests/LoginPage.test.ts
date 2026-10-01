@@ -51,6 +51,14 @@ describe('LoginPage — email OTP (#546)', () => {
     expect(screen.queryByText('Send magic link')).not.toBeInTheDocument();
   });
 
+  it('sends a magic link for the entered email', async () => {
+    render(LoginPage);
+    await userEvent.type(screen.getByLabelText('Email'), 'cook@example.com');
+    await userEvent.click(screen.getByText('Send magic link'));
+    expect(mockAuth.sendLink).toHaveBeenCalledWith('cook@example.com');
+    expect(mockAuth.requestCode).not.toHaveBeenCalled();
+  });
+
   it('switches from magic link to the code method', async () => {
     render(LoginPage);
     await userEvent.click(screen.getByTestId('login-switch-to-code'));
