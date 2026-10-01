@@ -81,6 +81,20 @@ describe('callExtractRecipeFromUrl', () => {
     });
   });
 
+  it('maps not-found to video-unavailable and out-of-range to video-too-long (#1637)', async () => {
+    rejectWith('functions/not-found');
+    await expect(callExtractRecipeFromUrl(INPUT)).resolves.toEqual({
+      kind: 'err',
+      error: { kind: 'ImportError', code: 'video-unavailable' },
+    });
+
+    rejectWith('functions/out-of-range');
+    await expect(callExtractRecipeFromUrl(INPUT)).resolves.toEqual({
+      kind: 'err',
+      error: { kind: 'ImportError', code: 'video-too-long' },
+    });
+  });
+
   it('maps a reader failure to ai-failed', async () => {
     for (const code of ['functions/deadline-exceeded', 'functions/internal']) {
       rejectWith(code);

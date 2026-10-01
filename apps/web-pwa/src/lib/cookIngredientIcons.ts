@@ -9,7 +9,10 @@ import { addToast } from './toastStore.js';
 import { addItemToDefaultList, deleteItemFromList } from './shoppingListService.svelte.js';
 
 // The picture beside an ingredient, and the gesture that puts that ingredient on
-// the shopping list — for every cook surface (issues #714, #871, #994).
+// the shopping list — for every cook surface (issues #714, #871, #994). The
+// recipe page's ingredient list and method rail draw their tiles from this same
+// lookup, so a product-form line shows the same picture there as in cook mode;
+// the hold-to-add gesture stays on the cook surfaces.
 //
 // THE POINT OF PUTTING THIS HERE. Plain cook mode and guided cook draw the same
 // ingredient rows, and until #994 each carried its own byte-identical copy of the

@@ -13,6 +13,7 @@ import {
   PopulateEquipmentEntryWireInputSchema,
   RefreshWeatherForecastWireInputSchema,
   PHOTO_IMPORT_TIMEOUT_SECONDS,
+  URL_IMPORT_TIMEOUT_SECONDS,
   PROPOSE_SCHEDULE_TIMEOUT_SECONDS,
   PROPOSE_KITCHEN_TOOLS_TIMEOUT_SECONDS,
 } from '@salt/domain/schemas';
@@ -829,8 +830,9 @@ export const proposeKitchenTools = onCallGenkit(
 // SSRF-hardened URL import (recipe URL import epic). A custom onError maps the
 // flow's UrlImportError taxonomy to specific HttpsError codes with user-safe copy
 // (no internal SSRF detail leaked). The flow does outbound DNS + a network fetch
-// in addition to the AI call, so the function timeout is generous. Memory comes
-// from the 512MiB global floor.
+// in addition to the AI call — or, for a YouTube link, has Gemini watch a video
+// (issue #1637) — so the function timeout is generous. Memory comes from the
+// 512MiB global floor.
 function mapUrlImportFailure(code: UrlImportFailureCode): HttpsError {
   switch (code) {
     case 'invalid-url':
@@ -850,19 +852,33 @@ function mapUrlImportFailure(code: UrlImportFailureCode): HttpsError {
         'internal',
         'The recipe reader had trouble with that page — try again, or add it manually.',
       );
+    // The two YouTube outcomes (issue #1637), each on a gRPC code no other
+    // URL-import failure uses, so the client's reverse mapping stays exact.
+    case 'video-unavailable':
+      return new HttpsError(
+        'not-found',
+        "We couldn't watch that video — it may be private, removed, or restricted.",
+      );
+    case 'video-too-long':
+      return new HttpsError(
+        'out-of-range',
+        "That video is over 30 minutes — it's likely more than one recipe. Try a shorter video.",
+      );
   }
 }
 
 export const extractRecipeFromUrl = makeTracedCallable({
   wireSchema: ExtractRecipeFromUrlWireInputSchema,
   flow: extractRecipeFromUrlFlow,
-  options: { secrets: [geminiApiKey, posthogApiKey], timeoutSeconds: 120 },
+  // URL_IMPORT_TIMEOUT_SECONDS is shared with the firebase-sync wrapper, which
+  // passes it as the callable client's explicit timeout — one constant, no drift.
+  options: { secrets: [geminiApiKey, posthogApiKey], timeoutSeconds: URL_IMPORT_TIMEOUT_SECONDS },
   // A bad wire envelope is a malformed URL from the client — user-safe copy.
   invalidArgumentMessage: "That doesn't look like a valid web address.",
   // Report the GENUINE cause before mapping to a user-facing HttpsError — the raw
   // error/stack, never the HttpsError envelope. The UrlImportError taxonomy
   // encodes EXPECTED user outcomes (bad/blocked URL, unreachable page,
-  // not-a-recipe) which are suppressed per policy; only `ai-failed` (the
+  // not-a-recipe, an unwatchable or over-long video) which are suppressed per policy; only `ai-failed` (the
   // recipe-reader model itself failing) is the unexpected one worth surfacing. A
   // non-UrlImportError throw is an unexpected bug → report.
   onError: async (err) => {
