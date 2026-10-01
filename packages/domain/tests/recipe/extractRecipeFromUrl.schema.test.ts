@@ -27,8 +27,14 @@ describe('ExtractRecipeAIOutputSchema — the base shape', () => {
     expect(ExtractRecipeAIOutputSchema.safeParse(BASE).success).toBe(true);
   });
 
-  it('accepts servings: null — "not stated" keeps its own sentinel', () => {
-    expect(ExtractRecipeAIOutputSchema.safeParse({ ...BASE, servings: null }).success).toBe(true);
+  it('rejects servings: null on a recipe — every recipe says how many it serves', () => {
+    expect(ExtractRecipeAIOutputSchema.safeParse({ ...BASE, servings: null }).success).toBe(false);
+  });
+
+  it('accepts servings: null on a not-a-recipe answer', () => {
+    expect(
+      ExtractRecipeAIOutputSchema.safeParse({ ...BASE, isRecipe: false, servings: null }).success,
+    ).toBe(true);
   });
 });
 

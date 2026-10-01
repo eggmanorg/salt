@@ -563,6 +563,9 @@ const URL_IMPORT_COPY: Record<UrlImportFailureCode, string> = {
   'not-a-recipe': "We couldn't find a recipe on that page.",
   'ai-failed':
     'The recipe reader had trouble with that page — try again, or paste the recipe into the chef.',
+  'video-unavailable': "We couldn't watch that video — it may be private, removed, or restricted.",
+  'video-too-long':
+    "That video is over 30 minutes — it's likely more than one recipe. Try a shorter video.",
 };
 
 // Copy for the failures that are NOT about the recipe site (issue #740). Shared

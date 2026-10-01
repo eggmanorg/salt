@@ -39,15 +39,31 @@ export const ExtractRecipeFromUrlOutputSchema = AuthoredRecipeOutputSchema;
 //   - fetch-failed: DNS / connect / timeout / non-200 / too-large / wrong type.
 //   - not-a-recipe: page fetched but no recipe found.
 //   - ai-failed: AI timeout or unparseable/invalid model output.
+//   - video-unavailable: a YouTube video the model could not watch — private,
+//     removed, age-restricted, region-blocked (issue #1637).
+//   - video-too-long: a YouTube video over the 30-minute ceiling (issue #1637).
 export const URL_IMPORT_FAILURE_CODES = [
   'invalid-url',
   'blocked-url',
   'fetch-failed',
   'not-a-recipe',
   'ai-failed',
+  'video-unavailable',
+  'video-too-long',
 ] as const;
 
 export type UrlImportFailureCode = (typeof URL_IMPORT_FAILURE_CODES)[number];
+
+// The URL import's function ceiling, in seconds, shared by the CF
+// (`timeoutSeconds`) and the firebase-sync wrapper (× 1000, as the callable
+// client's explicit timeout) — one constant so the two cannot drift, exactly as
+// PHOTO_IMPORT_TIMEOUT_SECONDS does for the photo import.
+//
+// 300 rather than the page import's old 120 because a YouTube link is read by
+// having Gemini watch the video (issue #1637), a single call budgeted at 180 s,
+// and the assemble stage's own AI calls still have to fit after it. A page
+// import keeps its 40 s AI budget; only the outer ceiling moved.
+export const URL_IMPORT_TIMEOUT_SECONDS = 300;
 
 // ─── AI extraction output ─────────────────────────────────────────────────────
 // The shape Gemini emits inside the flow (never leaves the CF boundary). The
@@ -118,7 +134,10 @@ export const AuthoredRecipeKindSchema = z.enum(AUTHORABLE_RECIPE_KINDS).catch('r
 // anybody has said, and the recipe page offers the correction either way.
 export const AuthoredCureCategorySchema = CureCategorySchema.nullish().catch(null);
 
-export const ExtractRecipeAIOutputSchema = z.object({
+// The plain object, exported so the photo import can `.extend` it — a refined
+// schema cannot be extended. Never parse against this one: it lacks the
+// servings refinement below. Parse against `ExtractRecipeAIOutputSchema`.
+export const ExtractRecipeAIOutputObjectSchema = z.object({
   // false when the page is not a recipe at all → maps to the not-a-recipe
   // failure. true with a populated recipe otherwise.
   isRecipe: z.boolean(),
@@ -136,8 +155,10 @@ export const ExtractRecipeAIOutputSchema = z.object({
   cureCategory: AuthoredCureCategorySchema,
   title: z.string(),
   description: z.string().nullable(),
-  // A positive integer or null — null is the "not stated" sentinel, and is what an
-  // isRecipe=false response uses, which is why it is not required.
+  // A positive integer, or null ONLY on an isRecipe=false answer — a page with
+  // no recipe on it serves nobody. On a recipe, null is refused by
+  // `requireServingsOnARecipe` below rather than here, because the not-a-recipe
+  // answer must still parse into the friendly not-a-recipe failure.
   //
   // 0 is REJECTED here (issue #739): a recipe nobody can eat is a model glitch,
   // and this is the number things divide by — a stored 0 scaled a shopping list by
@@ -165,5 +186,32 @@ export const ExtractRecipeAIOutputSchema = z.object({
   steps: z.array(ExtractedStepSchema),
   notes: z.string().nullable(),
 });
+
+// Every recipe says how many it serves (`SERVINGS_RULE` in the cloud functions'
+// `recipeFieldRules.ts`). The prompt asks for it; this makes it so. A recipe
+// answer with null servings fails the parse, which every extractor path
+// already treats as a bad generation: retried where the path retries, then
+// `ai-failed`. Shared by the URL, video and photo imports — the photo schema
+// applies it to its own extension of the object above.
+//
+// Its boundary: it trusts `isRecipe`. The JSON-LD road accepts a page as a
+// recipe whatever `isRecipe` says (`hasUsableRecipe` in the flow), so a model
+// that answered isRecipe=false there, against its prompt, could still save a
+// recipe with no servings.
+export function requireServingsOnARecipe(
+  output: { isRecipe: boolean; servings: number | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (output.isRecipe && output.servings === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['servings'],
+      message: 'a recipe must say how many it serves',
+    });
+  }
+}
+
+export const ExtractRecipeAIOutputSchema =
+  ExtractRecipeAIOutputObjectSchema.superRefine(requireServingsOnARecipe);
 
 export type ExtractRecipeAIOutput = z.infer<typeof ExtractRecipeAIOutputSchema>;

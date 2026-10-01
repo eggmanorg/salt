@@ -119,7 +119,13 @@ export const LibrarianOutputSchema = z.object({
   // these four numbers that anything DIVIDES by — a stored 0 scaled a shopping
   // list by Infinity (issue #1123) — so this path was the last one able to mint
   // that state.
-  servings: z.number().int().positive().nullable(),
+  //
+  // And NOT nullable: every recipe says how many it serves (`SERVINGS_RULE` in
+  // `recipeFieldRules.ts`). A conversation is always a recipe, so unlike the
+  // extractor there is no not-a-recipe answer for a null to stand for. Required
+  // here means required in the structured-output schema the model is held to,
+  // which is what stops a chat-authored recipe saving without servings.
+  servings: z.number().int().positive(),
   // The recipe's timing as an ordered strip (issue #1122), and since #1211 the
   // whole of what this path says about it. Shared shape rather than a fourth
   // hand-written copy: the librarian, both extractors and the re-estimator answer

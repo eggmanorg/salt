@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   LibrarianOutputSchema,
   ExtractRecipeAIOutputSchema,
+  ExtractRecipeFromPhotoAIOutputSchema,
   MAX_RECIPE_PHASES,
 } from '../../src/schemas/index.js';
 
@@ -27,9 +28,12 @@ const BASE = {
 };
 
 describe('LibrarianOutputSchema — servings', () => {
-  it('accepts a positive whole count, and null for "not stated"', () => {
+  it('accepts a positive whole count', () => {
     expect(LibrarianOutputSchema.safeParse(BASE).success).toBe(true);
-    expect(LibrarianOutputSchema.safeParse({ ...BASE, servings: null }).success).toBe(true);
+  });
+
+  it('rejects null — every recipe says how many it serves', () => {
+    expect(LibrarianOutputSchema.safeParse({ ...BASE, servings: null }).success).toBe(false);
   });
 
   it('rejects servings: 0 — a recipe nobody can eat is a model glitch', () => {
@@ -42,6 +46,39 @@ describe('LibrarianOutputSchema — servings', () => {
 
   it('rejects a fractional count — these are whole servings', () => {
     expect(LibrarianOutputSchema.safeParse({ ...BASE, servings: 2.5 }).success).toBe(false);
+  });
+});
+
+// The importers can answer "this is not a recipe", and only that answer may
+// leave servings null — every recipe says how many it serves. The photo schema
+// extends the URL one, and a refinement does not survive `.extend`, so it is
+// pinned separately: dropping its `.superRefine` would otherwise go unnoticed.
+describe('the import schemas — servings may be null only on a not-a-recipe answer', () => {
+  const recipe = { ...BASE, isRecipe: true };
+  const notARecipe = { ...BASE, isRecipe: false, servings: null };
+  const book = { title: null, author: null, page: null };
+
+  it('URL: rejects a recipe with null servings', () => {
+    expect(ExtractRecipeAIOutputSchema.safeParse({ ...recipe, servings: null }).success).toBe(
+      false,
+    );
+  });
+
+  it('URL: accepts null servings on a not-a-recipe answer', () => {
+    expect(ExtractRecipeAIOutputSchema.safeParse(notARecipe).success).toBe(true);
+  });
+
+  it('photo: rejects a recipe with null servings', () => {
+    expect(
+      ExtractRecipeFromPhotoAIOutputSchema.safeParse({ ...recipe, servings: null, book }).success,
+    ).toBe(false);
+  });
+
+  it('photo: accepts a recipe with servings, and null servings on a not-a-recipe answer', () => {
+    expect(ExtractRecipeFromPhotoAIOutputSchema.safeParse({ ...recipe, book }).success).toBe(true);
+    expect(ExtractRecipeFromPhotoAIOutputSchema.safeParse({ ...notARecipe, book }).success).toBe(
+      true,
+    );
   });
 });
 

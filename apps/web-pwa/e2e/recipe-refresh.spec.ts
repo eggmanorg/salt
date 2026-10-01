@@ -53,7 +53,8 @@ const TAG = 'refreshgate';
 
 // The metadata the user typed. A refresh may PUT BACK what a recipe has lost, but
 // it has no business clearing what the cook entered — and the librarian's canned
-// answer forgets all of it, so this doubles as the metadata-preserve assertion.
+// answer forgets the timings and the tags, so this doubles as the
+// metadata-preserve assertion.
 const SEEDED_METADATA = {
   servings: 4,
   // An empty strip and no timing sentence, stated rather than defaulted: this is a
@@ -78,14 +79,16 @@ const STUB_CHAT_TITLE = 'Refreshing the pilaf';
 
 // The librarian's canned transcription of that reply: the run-on step comes back
 // as two (the one-operation rule), the title is tidied, and the metadata it was
-// never given a reason to touch is DROPPED — null servings, null times, no tags.
+// never given a reason to touch is DROPPED — no timings, no tags. Servings are
+// not among the dropped: the librarian's schema requires them, so the stub
+// carries the seeded 4 back.
 const REFRESHED_TITLE = 'Chorizo Pilaf';
 const REFRESHED_STEPS = ['Fry the chorizo.', 'Add the rice and stir it through, then cover.'];
 
 const STUB_AUTHOR = {
   title: REFRESHED_TITLE,
   description: 'A one-pan chorizo pilaf.',
-  servings: null,
+  servings: 4,
   tags: [],
   ingredientGroups: [
     {

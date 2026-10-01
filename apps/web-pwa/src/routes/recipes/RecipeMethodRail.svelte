@@ -116,8 +116,8 @@
      * domain's published surface that this phase has no business making.
      */
     kitByStep: ReadonlyMap<string, readonly Recipe['kit'][number][]>;
-    thumbnailFor: (canonId: string | null) => string | null;
-    iconVersionFor: (canonId: string | null) => string | number | undefined;
+    thumbnailFor: (ing: Ingredient) => string | null;
+    iconVersionFor: (ing: Ingredient) => string | number | undefined;
     /** The ingredients panel names its rows the same way; one helper, on the page. */
     ingredientLabel: (ing: Ingredient) => string;
     liveCanonIds: ReadonlySet<string>;
@@ -415,9 +415,9 @@
                   <li class="flex items-center" title={ingredientLabel(ing)}>
                     <span class="flex" aria-hidden="true">
                       <CanonIcon
-                        thumbnail={thumbnailFor(ing.canonId)}
+                        thumbnail={thumbnailFor(ing)}
                         name={ingredientLabel(ing)}
-                        version={iconVersionFor(ing.canonId)}
+                        version={iconVersionFor(ing)}
                         matched={hasLiveCanonMatch(ing, liveCanonIds)}
                         size={32}
                       />

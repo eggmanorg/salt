@@ -281,9 +281,12 @@ export {
   kitByStep,
   groupKitByEquipment,
   findProducingRecipes,
-  // Keyword search over the library (issue #840) — what the chef's findRecipes
-  // tool ranks with, once the CF has done the projected read.
+  // Keyword search over the library (issues #840, #1636) — what the chef's
+  // findRecipes tool ranks with, and the scorer the Recipes page shares with it.
   searchRecipes,
+  parseRecipeSearchQuery,
+  scoreRecipeSearch,
+  ingredientSearchTerms,
   RECIPE_SEARCH_DEFAULT_MAX_RESULTS,
   RECIPE_SEARCH_RESULT_CEILING,
   diffRecipe,
@@ -299,13 +302,30 @@ export {
   // `createdBy` rule cannot come to mean two things.
   stampAttribution,
 } from './recipe/index.js';
-export type { RecipeSearchCandidate, RecipeSearchFilters } from './recipe/index.js';
+export type {
+  CanonSearchNames,
+  IngredientSearchTerms,
+  RecipeSearchCandidate,
+  RecipeSearchField,
+  RecipeSearchFilters,
+  RecipeSearchMode,
+  RecipeSearchQuery,
+  RecipeSearchScore,
+  RecipeSearchText,
+} from './recipe/index.js';
 export type { RecipePhaseTotals } from './recipe/index.js';
 export type { KitEquipmentGroup } from './recipe/index.js';
 export type { PlaceholderMood, PlaceholderCondition } from './recipe/index.js';
 export type { DiffPart } from './recipe/index.js';
 export type { NullableStringChange, StepChange, RecipeDiff } from './recipe/index.js';
-export { parseImportUrl, isHttpsScheme, hostnameAsIpLiteral, isPublicIp } from './recipe/index.js';
+export {
+  parseImportUrl,
+  parseYouTubeVideo,
+  isHttpsScheme,
+  hostnameAsIpLiteral,
+  isPublicIp,
+} from './recipe/index.js';
+export type { YouTubeVideo } from './recipe/index.js';
 
 // Weather module — pure forecast aggregation + staleness logic (Phase 2) and
 // pure render-policy classifiers (Phase 3) (issue #382).

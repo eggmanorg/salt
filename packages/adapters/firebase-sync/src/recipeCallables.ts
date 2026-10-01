@@ -1,6 +1,6 @@
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import type { IngredientGroup } from '@salt/domain';
-import { PHOTO_IMPORT_TIMEOUT_SECONDS } from '@salt/domain/schemas';
+import { PHOTO_IMPORT_TIMEOUT_SECONDS, URL_IMPORT_TIMEOUT_SECONDS } from '@salt/domain/schemas';
 import type {
   AuthoredRecipeEnvelope,
   DescribeRecipeSceneInput,
@@ -62,6 +62,12 @@ function classifyUrlImportError(err: unknown): UrlImportFailure {
       return { kind: 'ImportError', code: 'fetch-failed' };
     case 'functions/failed-precondition':
       return { kind: 'ImportError', code: 'not-a-recipe' };
+    // The two YouTube outcomes (issue #1637). Each gets a gRPC code no other
+    // URL-import failure uses, so the reverse mapping stays exact.
+    case 'functions/not-found':
+      return { kind: 'ImportError', code: 'video-unavailable' };
+    case 'functions/out-of-range':
+      return { kind: 'ImportError', code: 'video-too-long' };
     case 'functions/deadline-exceeded':
     case 'functions/internal':
       return { kind: 'ImportError', code: 'ai-failed' };
@@ -190,11 +196,10 @@ export async function callExtractRecipeFromUrl(
       name: 'extractRecipeFromUrl',
       input: { ...input, reportPersistence: true },
       traceparent,
-      // The function declares 120 s (`cloud-functions/src/index.ts:471`) against
-      // the callable client's 70 s default. Fetching and reading a page is the
-      // slowest thing this callable does and the one most likely to overrun
-      // (#928, B2-010).
-      timeoutMs: 120_000,
+      // The SAME constant the function passes as `timeoutSeconds`, against the
+      // callable client's 70 s default (#928, B2-010). Watching a YouTube video
+      // is the slowest thing this callable does (issue #1637).
+      timeoutMs: URL_IMPORT_TIMEOUT_SECONDS * 1000,
     });
     return success(readAuthoredAnswer(data));
   } catch (err) {

@@ -277,6 +277,8 @@ export {
   FindRecipesOutputSchema,
   RecipeSearchProjectionSchema,
   RECIPE_SEARCH_PROJECTION_FIELDS,
+  CanonSearchProjectionSchema,
+  CANON_SEARCH_PROJECTION_FIELDS,
 } from './findRecipes.js';
 export type { FindRecipesInput, FindRecipesOutput, RecipeSearchProjection } from './findRecipes.js';
 
@@ -382,6 +384,7 @@ export {
   ExtractRecipeAIOutputSchema,
   ExtractRecipeFromUrlOutputSchema,
   URL_IMPORT_FAILURE_CODES,
+  URL_IMPORT_TIMEOUT_SECONDS,
 } from './extractRecipeFromUrl.js';
 export type {
   ExtractRecipeFromUrlInput,
