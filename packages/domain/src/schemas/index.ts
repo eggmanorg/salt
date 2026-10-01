@@ -277,6 +277,8 @@ export {
   FindRecipesOutputSchema,
   RecipeSearchProjectionSchema,
   RECIPE_SEARCH_PROJECTION_FIELDS,
+  CanonSearchProjectionSchema,
+  CANON_SEARCH_PROJECTION_FIELDS,
 } from './findRecipes.js';
 export type { FindRecipesInput, FindRecipesOutput, RecipeSearchProjection } from './findRecipes.js';
 

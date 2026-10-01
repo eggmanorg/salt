@@ -382,6 +382,202 @@ describe('RecipeListPage', () => {
     expect(screen.getByTestId('recipe-tag-show-less')).toBeInTheDocument();
   });
 
+  // ─── Ingredient search (issue #1636) ─────────────────────────────────────────
+  // The shared domain scorer, fed the recipe's own ingredient wording plus the
+  // linked canon item's name and synonyms.
+
+  function withLines(recipe: Recipe, lines: { item: string; canonId?: string }[]): Recipe {
+    return {
+      ...recipe,
+      ingredients: [
+        {
+          id: `${recipe.id}-g`,
+          name: null,
+          items: lines.map((l, i) => ({
+            id: `${recipe.id}-l${i}`,
+            rawText: l.item,
+            parsed: {
+              quantity: null,
+              unit: null,
+              item: l.item,
+              preparation: [],
+              notes: null,
+              displayText: null,
+            },
+            canonId: l.canonId ?? null,
+            matchState: l.canonId === undefined ? ('pending' as const) : ('matched' as const),
+            isOptional: false,
+            firstUsedInStepId: null,
+          })),
+        },
+      ],
+    };
+  }
+
+  const LEEK_SOUP = withLines(
+    makeRecipe({
+      id: 'leek-soup',
+      title: 'Leek and Potato Soup',
+      tags: [],
+      servings: 4,
+      ingredientCount: 0,
+      image: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }),
+    [{ item: 'leeks' }, { item: 'potatoes' }],
+  );
+  const CHICKEN_PIE = withLines(
+    makeRecipe({
+      id: 'chicken-pie',
+      title: 'Chicken Pie',
+      tags: [],
+      servings: 4,
+      ingredientCount: 0,
+      image: null,
+      createdAt: '2026-02-01T00:00:00.000Z',
+    }),
+    [{ item: 'chicken thighs' }, { item: 'leeks' }, { item: 'streaky bacon', canonId: 'c-bacon' }],
+  );
+  const CHEESECAKE = withLines(
+    makeRecipe({
+      id: 'cheesecake',
+      title: 'Aardvark Cheesecake',
+      tags: [],
+      servings: 8,
+      ingredientCount: 0,
+      image: null,
+      createdAt: '2026-03-01T00:00:00.000Z',
+    }),
+    [{ item: 'ginger nuts', canonId: 'c-ginger' }],
+  );
+
+  function canon(id: string, name: string, synonyms: string[]): unknown {
+    return {
+      id,
+      schemaVersion: 5,
+      name,
+      synonyms,
+      aisleId: null,
+      thumbnail: null,
+      needs_approval: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  function usesLines(): string[] {
+    return screen.queryAllByTestId('recipe-list-uses').map((el) => normalized(el));
+  }
+
+  it('finds every recipe using an ingredient, saying so on the cards found that way', async () => {
+    const user = userEvent.setup();
+    seed([APPLE, CHICKEN_PIE, LEEK_SOUP]);
+    render(RecipeListPage);
+
+    await user.type(screen.getByTestId('recipe-search-input'), 'leek');
+
+    // The dish NAMED for it first, however the sort would order them; the pie
+    // found only by its ingredients follows, and says why.
+    expect(cardTitles()).toEqual(['Leek and Potato Soup', 'Chicken Pie']);
+    expect(usesLines()).toEqual(['Uses leeks']);
+    const pie = screen
+      .getAllByTestId('recipe-list-item')
+      .find((el) => el.getAttribute('data-recipe-id') === 'chicken-pie')!;
+    expect(within(pie).getByTestId('recipe-list-uses')).toHaveTextContent('Uses leeks');
+  });
+
+  it('finds a recipe through the catalogue name and synonyms, in the recipe’s words', async () => {
+    const user = userEvent.setup();
+    mockCanonItems._set([
+      canon('c-ginger', 'Ginger Biscuits', ['gingernut']),
+      canon('c-bacon', 'Bacon', ['lardons']),
+    ]);
+    seed([CHEESECAKE, CHICKEN_PIE, LEEK_SOUP]);
+    render(RecipeListPage);
+
+    const search = screen.getByTestId('recipe-search-input');
+    await user.type(search, 'gingernut');
+    expect(cardTitles()).toEqual(['Aardvark Cheesecake']);
+    expect(usesLines()).toEqual(['Uses ginger nuts']);
+
+    await user.clear(search);
+    await user.type(search, 'lardons');
+    expect(cardTitles()).toEqual(['Chicken Pie']);
+    expect(usesLines()).toEqual(['Uses streaky bacon']);
+  });
+
+  it('finds from the first two letters as you type', async () => {
+    const user = userEvent.setup();
+    seed([APPLE, CHICKEN_PIE, LEEK_SOUP]);
+    render(RecipeListPage);
+
+    await user.type(screen.getByTestId('recipe-search-input'), 'ba');
+    // Bacon in the pie, and Apple Pie's #baking tag — both start "ba". The soup
+    // has no word that does.
+    expect(cardTitles()).toEqual(['Apple Pie', 'Chicken Pie']);
+    expect(usesLines()).toEqual(['Uses streaky bacon']);
+  });
+
+  it('shows recipes with either word, those with both first', async () => {
+    const user = userEvent.setup();
+    const potatoBake = withLines(
+      makeRecipe({
+        id: 'bake',
+        title: 'A Bake',
+        tags: [],
+        servings: 4,
+        ingredientCount: 0,
+        image: null,
+        createdAt: '2026-04-01T00:00:00.000Z',
+      }),
+      [{ item: 'potatoes' }],
+    );
+    seed([potatoBake, CHICKEN_PIE, LEEK_SOUP]);
+    render(RecipeListPage);
+
+    await user.type(screen.getByTestId('recipe-search-input'), 'bacon potato');
+    // The soup is named for potato, so it leads; the other two each use one
+    // word, so the A–Z sort decides between them.
+    expect(cardTitles()).toEqual(['Leek and Potato Soup', 'A Bake', 'Chicken Pie']);
+  });
+
+  it('keeps the chosen sort inside each group', async () => {
+    const user = userEvent.setup();
+    const leekTart = withLines(
+      makeRecipe({
+        id: 'tart',
+        title: 'Leek Tart',
+        tags: [],
+        servings: 4,
+        ingredientCount: 0,
+        image: null,
+        createdAt: '2026-06-01T00:00:00.000Z',
+      }),
+      [{ item: 'leeks' }],
+    );
+    seed([LEEK_SOUP, leekTart, CHICKEN_PIE]);
+    render(RecipeListPage);
+
+    await user.type(screen.getByTestId('recipe-search-input'), 'leek');
+    expect(cardTitles()).toEqual(['Leek and Potato Soup', 'Leek Tart', 'Chicken Pie']);
+
+    await user.click(screen.getByTestId('recipe-sort-trigger'));
+    await user.click(
+      screen.getAllByTestId('recipe-sort-option').find((el) => el.dataset.sort === 'recent')!,
+    );
+    // Newest first among the name matches; the ingredient-only pie still after.
+    expect(cardTitles()).toEqual(['Leek Tart', 'Leek and Potato Soup', 'Chicken Pie']);
+  });
+
+  it('shows no "Uses" line on a card found by its name', async () => {
+    const user = userEvent.setup();
+    seed([LEEK_SOUP]);
+    render(RecipeListPage);
+
+    await user.type(screen.getByTestId('recipe-search-input'), 'leek');
+    expect(cardTitles()).toEqual(['Leek and Potato Soup']);
+    expect(usesLines()).toEqual([]);
+  });
+
   it('shows an empty-filter state when nothing matches', async () => {
     const user = userEvent.setup();
     seed([APPLE, BANANA, CARROT]);
@@ -606,7 +802,7 @@ describe('RecipeListPage — sections', () => {
     expect(cardTitles()).toEqual(['Banana Bread']);
 
     const search = screen.getByTestId('recipe-search-input');
-    await user.type(search, 'a');
+    await user.type(search, 'ta');
 
     await pickKind(user, 'special');
 
@@ -616,8 +812,9 @@ describe('RecipeListPage — sections', () => {
         .getAllByTestId('recipe-tag-filter')
         .every((b) => b.getAttribute('aria-pressed') === 'false'),
     ).toBe(true);
-    // Search kept: "Picnic food" has no "a", "Takeaway — Indian" does.
-    expect(search).toHaveValue('a');
+    // Search kept: "Takeaway — Indian" has a word starting "ta"; "Picnic food"
+    // does not.
+    expect(search).toHaveValue('ta');
     expect(cardTitles()).toEqual(['Takeaway — Indian']);
   });
 
