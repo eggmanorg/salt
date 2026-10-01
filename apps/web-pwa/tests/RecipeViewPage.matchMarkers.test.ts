@@ -572,3 +572,47 @@ describe('RecipeViewPage — Canonicalise says whether the recipe was updated', 
     expect(addToast).toHaveBeenCalledOnce();
   });
 });
+
+// The tile beside a line that names a product form shows the FORM's picture, the
+// same lookup cook mode uses (`cookIngredientIcons.ts`) — lemon zest, not a whole
+// lemon. Until the page used that lookup it drew the canon item's picture only,
+// so the same line looked different here and in cook mode.
+describe('RecipeViewPage — ingredient tile picture', () => {
+  const LEMON_ART = 'https://img.test/lemon.png';
+  const ZEST_ART = 'https://img.test/lemon-zest.png';
+  const zestLine = () =>
+    line({
+      id: 'ing-zest',
+      rawText: '5g lemon zest',
+      parsed: {
+        quantity: { type: 'single', value: 5 },
+        unit: 'g',
+        item: 'lemon zest',
+        preparation: [],
+        notes: null,
+        displayText: '5g',
+      },
+    });
+  const tileSrc = (getByTestId: (id: string) => HTMLElement) =>
+    getByTestId('recipe-view-ingredient')
+      .querySelector('[data-testid="canon-icon-img"]')
+      ?.getAttribute('src');
+
+  it("shows the product form's own picture for a line that names the form", () => {
+    mockCanonItems._set([{ ...LEMON, thumbnail: LEMON_ART }]);
+    mockProductForms._set([{ ...LEMON_ZEST, thumbnail: ZEST_ART }]);
+    mockRecipes._set([makeRecipe([zestLine()])]);
+    const { getByTestId } = renderPage();
+
+    expect(tileSrc(getByTestId)).toContain(ZEST_ART);
+  });
+
+  it("falls back to the canon item's picture while the form has none", () => {
+    mockCanonItems._set([{ ...LEMON, thumbnail: LEMON_ART }]);
+    mockProductForms._set([LEMON_ZEST]);
+    mockRecipes._set([makeRecipe([zestLine()])]);
+    const { getByTestId } = renderPage();
+
+    expect(tileSrc(getByTestId)).toContain(LEMON_ART);
+  });
+});
