@@ -39,15 +39,31 @@ export const ExtractRecipeFromUrlOutputSchema = AuthoredRecipeOutputSchema;
 //   - fetch-failed: DNS / connect / timeout / non-200 / too-large / wrong type.
 //   - not-a-recipe: page fetched but no recipe found.
 //   - ai-failed: AI timeout or unparseable/invalid model output.
+//   - video-unavailable: a YouTube video the model could not watch — private,
+//     removed, age-restricted, region-blocked (issue #1637).
+//   - video-too-long: a YouTube video over the 30-minute ceiling (issue #1637).
 export const URL_IMPORT_FAILURE_CODES = [
   'invalid-url',
   'blocked-url',
   'fetch-failed',
   'not-a-recipe',
   'ai-failed',
+  'video-unavailable',
+  'video-too-long',
 ] as const;
 
 export type UrlImportFailureCode = (typeof URL_IMPORT_FAILURE_CODES)[number];
+
+// The URL import's function ceiling, in seconds, shared by the CF
+// (`timeoutSeconds`) and the firebase-sync wrapper (× 1000, as the callable
+// client's explicit timeout) — one constant so the two cannot drift, exactly as
+// PHOTO_IMPORT_TIMEOUT_SECONDS does for the photo import.
+//
+// 300 rather than the page import's old 120 because a YouTube link is read by
+// having Gemini watch the video (issue #1637), a single call budgeted at 180 s,
+// and the assemble stage's own AI calls still have to fit after it. A page
+// import keeps its 40 s AI budget; only the outer ceiling moved.
+export const URL_IMPORT_TIMEOUT_SECONDS = 300;
 
 // ─── AI extraction output ─────────────────────────────────────────────────────
 // The shape Gemini emits inside the flow (never leaves the CF boundary). The

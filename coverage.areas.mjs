@@ -461,9 +461,9 @@ export const coverageThresholds = {
   // than only the lines #1480 wrote, hence a move larger than the diff. Measured
   // on a full local run; the pre-existing CI figure was 88.37/81.81.
   'apps/cloud-functions/src/**': {
-    lines: 88.59,
-    branches: 82.52,
-    uncoveredLines: 367,
+    lines: 89.72,
+    branches: 83.33,
+    uncoveredLines: 345,
     uncoveredBranches: 346,
   },
   // Banked by #935: `AppSettingsPage.svelte` had no test at all and now has one

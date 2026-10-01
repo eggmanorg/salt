@@ -107,6 +107,9 @@
   // App.svelte, same as `kitIcons` and `kitchenTools`.
   import { enrichmentFailures, hasEnrichmentFailure } from '../../lib/enrichmentFailureService.js';
   import { productForms, isLoadingProductForms } from '../../lib/productFormService.js';
+  // The ingredient tile's picture, the same lookup cook mode draws with — so a
+  // line matched to a product form shows the form here too (lime juice, not a lime).
+  import { ingredientIcons } from '../../lib/cookIngredientIcons.js';
   import {
     recipeHeroUrl,
     duplicateRecipe,
@@ -593,24 +596,15 @@
 
   // ─── Ingredient pictograms (issue #878) ──────────────────────────────────────
   // The tile the shopping list and cook mode already use, on the recipe's own
-  // list: a picture is faster to find in nineteen lines than a word is. The row
-  // already carries its canon id and `canonById` above is already derived from the
-  // app-wide store, so this is a lookup, not a read — and a Map rather than a
-  // `.find()` per row, which on a long recipe is forty scans of the whole canon.
+  // list: a picture is faster to find in nineteen lines than a word is.
   //
-  // Lookup mirrors ShoppingListPage's `thumbnailFor`/`iconVersionFor` exactly,
-  // cache-bust nonce included: a regenerated icon reuses its Storage download URL,
-  // so without the nonce the browser serves the stale image.
-  function thumbnailFor(canonId: string | null): string | null {
-    if (!canonId) return null;
-    return canonById.get(canonId)?.thumbnail ?? null;
-  }
-
-  function iconVersionFor(canonId: string | null): string | number | undefined {
-    if (!canonId) return undefined;
-    const ci = canonById.get(canonId);
-    return ci ? (ci.iconRequestedAt ?? ci.updatedAt) : undefined;
-  }
+  // The SAME lookup cook mode uses (`cookIngredientIcons.ts`), not a canon-only
+  // copy of it: a line matched to a product form shows the form's own picture,
+  // falling back to the canon item's when the form has none yet. Until this used
+  // the shared lookup, the recipe page showed a whole lime for "lime juice" and
+  // cook mode a bottle — the same line, two pictures.
+  const thumbnailFor = $derived($ingredientIcons.thumbnailFor);
+  const iconVersionFor = $derived($ingredientIcons.iconVersionFor);
 
   // The NAME only, which is what the tile is labelled with — never
   // `IngredientText`'s rendering. Same helper, same reasoning, as CookModePage's.

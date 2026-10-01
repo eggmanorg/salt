@@ -112,6 +112,11 @@ export const AI_FLOW_ROLES = {
   // a re-embed.
   embedText: 'embedding',
   extractRecipeFromUrl: 'fast',
+  // The YouTube branch of the URL import (issue #1637): the video itself is the
+  // prompt. Its own id so its model can be tuned apart from the page import —
+  // a video call costs tens of times a page call — and `fast` for the same
+  // reason the page import is.
+  extractRecipeFromVideo: 'fast',
   // Multimodal: 1–4 cookbook-page images in, structured recipe JSON out (#649).
   // Same tier as the URL import — accuracy over creativity, and the same model
   // family reads both, so a model change moves the two together.

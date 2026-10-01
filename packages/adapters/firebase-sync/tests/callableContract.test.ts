@@ -96,6 +96,7 @@ import { ErrorCode } from '@salt/shared-types';
 import {
   PHOTO_IMPORT_TIMEOUT_SECONDS,
   PROPOSE_SCHEDULE_CLIENT_TIMEOUT_MS,
+  URL_IMPORT_TIMEOUT_SECONDS,
 } from '@salt/domain/schemas';
 import * as barrel from '../src/index.js';
 import { FUNCTIONS_REGION } from '../src/functionsRegion.js';
@@ -484,7 +485,8 @@ const rows: readonly Row[] = [
   {
     name: 'callExtractRecipeFromUrl',
     callable: 'extractRecipeFromUrl',
-    timeout: 120_000,
+    // From the SAME constant the CF passes as `timeoutSeconds` (issue #1637).
+    timeout: URL_IMPORT_TIMEOUT_SECONDS * 1000,
     data: AUTHORED,
     call: () => barrel.callExtractRecipeFromUrl(cast(URL_INPUT)),
     payload: { ...URL_INPUT, ...ASK },

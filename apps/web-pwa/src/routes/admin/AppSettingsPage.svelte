@@ -146,6 +146,7 @@
     estimateRecipeTimes: 'Recipe time re-estimate (phase strip + timing summary)',
     extractRecipeFromUrl: 'Recipe import from URL',
     extractRecipeFromPhoto: 'Recipe import from photo',
+    extractRecipeFromVideo: 'Recipe import from YouTube',
     extractProcessStages: 'Process stages (bread, ferments, cures)',
     generateGuidedPlan: 'Guided plan (prep list + step notes)',
     generateCanonIcon: 'Canon icon generation',
