@@ -201,8 +201,8 @@
     scaling: { base: number; active: number } | null;
     isScaled: boolean;
     setServings: (next: number, base: number) => void;
-    thumbnailFor: (canonId: string | null) => string | null;
-    iconVersionFor: (canonId: string | null) => string | number | undefined;
+    thumbnailFor: (ing: Ingredient) => string | null;
+    iconVersionFor: (ing: Ingredient) => string | number | undefined;
     /** The tile's label. One helper, on the page — the method rail's first-use row uses it too. */
     ingredientLabel: (ing: Ingredient) => string;
     rowMarker: (ing: Ingredient) => 'unmatched' | 'no-amount' | 'mismatched' | null;
@@ -688,9 +688,9 @@
             >
               <div class="relative shrink-0">
                 <CanonIcon
-                  thumbnail={thumbnailFor(ingredient.canonId)}
+                  thumbnail={thumbnailFor(ingredient)}
                   name={ingredientLabel(ingredient)}
-                  version={iconVersionFor(ingredient.canonId)}
+                  version={iconVersionFor(ingredient)}
                   matched={marker === null && hasLiveCanonMatch(ingredient, liveCanonIds)}
                   size={40}
                 />
