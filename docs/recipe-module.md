@@ -122,15 +122,22 @@ Key invariants:
   destroys the original ingredient line.
 - **Canon owns the name.** The recipe stores `canonId`, never an echoed canonical
   string. `parsed.item` is the cleaned pre-canon name only.
-- **`parsed.unit` is metric-or-nothing** — `'g' | 'ml' | null`. `null` means the
-  amount is a COUNT, and it is far narrower than "count-based ingredient": most
-  counted things (onions, rashers, tins, bunches) are deliberately flattened to
-  grams by the parse prompt. `null` is reserved for the cases where the
-  shopper's own unit IS the count — bought-whole discrete proteins, garlic
-  cloves, and equipment-prep lines with no dish amount. The parse prompt is the
-  authority on which is which; do not infer it from the ingredient's name. The
-  original non-metric measure moves to `displayText`, so "½ tsp" still reads as
-  "½ tsp" — but only up to a **3 tbsp** spoon-measure cap (the reader-facing
+- **A line holds both amounts it states; data picks which one it is read in**
+  (issue #1643). `parsed.quantity`/`parsed.unit` are the metric estimate
+  (`'g' | 'ml'`), and `parsed.statedCount` is the number of whole things the
+  line states ("1 red onion" → 150 g AND 1). The parser records both and never
+  chooses. `chooseIngredientAmount` (`recipe/queries/ingredientAmount.ts`)
+  chooses, at read time, from the matched canon item and product form: a form
+  resolving to the line's own canon decides by its `yield.formUnit`, otherwise a
+  canon item whose `unit` is `count` reads as a count, otherwise metric. The
+  parse prompt carries no list of counted names (pinned in
+  `apps/cloud-functions/tests/flows/parseRecipeIngredients.test.ts`), and
+  changing a canon item's unit or adding a form changes how every recipe reads
+  without a re-match. `parsed.unit: null` with a quantity is the pre-#1643
+  count shape, read as a count with no weight until the line is re-read; both
+  null is an equipment-prep or unquantifiable line. The original non-metric
+  measure moves to `displayText`, so "½ tsp" still reads as "½ tsp" — but only
+  up to a **3 tbsp** spoon-measure cap (the reader-facing
   `READER_UNIT_PRINCIPLE`, `@salt/domain/prompts/unitPolicy.ts`, issue #934):
   above that, the spoon has stopped being the useful way to read the amount, so
   `displayText` is `null` and the amount reads metric-only.

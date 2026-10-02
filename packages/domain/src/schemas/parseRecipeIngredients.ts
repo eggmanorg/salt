@@ -16,6 +16,12 @@ const ParsedIngredientAISchema = z.object({
   isOptional: z.boolean(),
   // Human-friendly original measure (e.g. "½ tsp"). null if source was already metric.
   displayText: z.string().nullable(),
+  // The count of whole things the line states (issue #1643) — see
+  // `ParsedIngredientSchema.statedCount`. Optional rather than required so a
+  // stubbed model answer written before the field existed (the e2e
+  // `_e2e_ai_stubs` fixtures) still validates; the flow writes an absent one as
+  // null.
+  statedCount: QuantitySchema.nullable().optional(),
 });
 
 const IngredientGroupAISchema = z.object({

@@ -60,6 +60,11 @@ export type { ServingsScale } from './queries/servings.js';
 // the two can never disagree about what counts as wrong.
 export { ingredientMatchIssue, recipeMatchIssueCount } from './queries/matchIssues.js';
 export type { IngredientMatchIssue } from './queries/matchIssues.js';
+// Count or weight (issue #1643): which of the two amounts a parsed line holds it
+// is read in, decided from its canon item and product form at read time. The
+// recipe page, cook screens and the add-to-list plan all ask this one function.
+export { chooseIngredientAmount, preferredIngredientUnit } from './queries/ingredientAmount.js';
+export type { IngredientAmount, PreferredIngredientUnit } from './queries/ingredientAmount.js';
 export {
   takesIngredients,
   isCookable,
