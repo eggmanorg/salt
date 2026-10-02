@@ -51,6 +51,7 @@ vi.mock('../src/lib/productFormService.js', () => ({
 }));
 
 import { buildRecipeAddPlan, commitRecipeAddPlan } from '../src/lib/recipeService.js';
+import { aggregateParentCount } from '@salt/domain';
 import * as fs from '@salt/firebase-sync';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -441,5 +442,125 @@ describe('commitRecipeAddPlan — originalText', () => {
     const saved = vi.mocked(fs.saveShoppingListItem).mock.calls[0]![1];
     expect(saved.originalText).toBeUndefined();
     expect('originalText' in saved).toBe(false);
+  });
+});
+
+// ─── Count or weight, decided by data (issue #1643) ──────────────────────────
+//
+// The parse records a line's stated count beside its metric estimate, and the
+// add plan reads whichever the canon item and product form prefer. The two
+// recipes below are the production pair the issue was filed from: a stock that
+// needs "1 roast chicken carcass" (stored as 1500 g before the re-read) and a
+// Caesar salad that needs "2 chicken breasts". Both are forms of one bird.
+
+describe('buildRecipeAddPlan — counted lines add as counts (issue #1643)', () => {
+  const chicken: CanonItem = { ...makeCanonItem('canon-chicken'), unit: 'count' };
+  const onion: CanonItem = { ...makeCanonItem('canon-onion'), unit: 'count' };
+
+  function counted(
+    id: string,
+    canonId: string,
+    item: string,
+    grams: number,
+    count: number | null,
+    displayText: string | null = null,
+  ) {
+    const base = formIngredient(id, canonId, item, grams, 'g');
+    return {
+      ...base,
+      rawText: `${count ?? grams} ${item}`,
+      parsed: {
+        ...(base.parsed as object),
+        statedCount: count === null ? null : { type: 'single' as const, value: count },
+        displayText,
+      } as never,
+    };
+  }
+
+  beforeEach(() => {
+    mockGetCanonItemsSnapshot.mockReturnValue([chicken, onion]);
+    mockGetProductFormsSnapshot.mockReturnValue([
+      makeForm('form-carcass', 'roast chicken carcass', 'canon-chicken', 'count', 1),
+      makeForm('form-breast', 'chicken breast', 'canon-chicken', 'count', 2),
+    ]);
+  });
+
+  it('adds the carcass as one bird, from its stated count rather than its grams', () => {
+    const [row] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-chicken', 'roast chicken carcass', 500, 1)]),
+      2,
+    );
+    expect(row).toMatchObject({ amount: 1, unit: 'count' });
+    expect(row!.formDemand).toEqual([{ formId: 'form-carcass', parentCount: 1 }]);
+  });
+
+  it('adds the stock and the Caesar salad up to one chicken, not a count plus grams', () => {
+    const [stock] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-chicken', 'roast chicken carcass', 500, 1)]),
+      2,
+    );
+    const [salad] = buildRecipeAddPlan(
+      makeRecipe([counted('i2', 'canon-chicken', 'chicken breast', 350, 2)]),
+      2,
+    );
+    // Distinct forms of one parent MAX across the list (one bird gives both).
+    expect(stock!.unit).toBe('count');
+    expect(salad!.unit).toBe('count');
+    expect(
+      aggregateParentCount({
+        demands: [...stock!.formDemand!, ...salad!.formDemand!],
+        legacyFormCounts: [],
+        wholeCounts: [],
+      }),
+    ).toBe(1);
+  });
+
+  it('still adds a stored-in-grams carcass by weight — no count is invented', () => {
+    // The pre-re-read shape: `missing_count` flags it; the plan degrades as before.
+    const [row] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-chicken', 'roast chicken carcass', 1500, null)]),
+      2,
+    );
+    expect(row).toMatchObject({ amount: 1500, unit: 'g' });
+    expect(row!.formDemand).toBeUndefined();
+  });
+
+  it('adds "1 red onion" against a counted canon item as a count of 1, carrying its weight', () => {
+    const [row] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-onion', 'red onion', 150, 1, 'about 1 medium')]),
+      2,
+    );
+    expect(row!.amount).toBe(1);
+    expect(row!.unit).toBeUndefined();
+    expect(row!.weightGrams).toBe(150);
+    // The count wording would only restate the count; the weight is the bracket.
+    expect(row!.measureNote).toBeUndefined();
+  });
+
+  it('scales a counted line’s count AND its weight together', () => {
+    const [row] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-onion', 'red onion', 150, 1)]),
+      6, // 3× the recipe's 2 servings
+    );
+    expect(row!.amount).toBe(3);
+    expect(row!.weightGrams).toBe(450);
+  });
+
+  it('adds the same line by weight once its canon item is sold by weight — data decides', () => {
+    mockGetCanonItemsSnapshot.mockReturnValue([{ ...onion, unit: 'g' }]);
+    const [row] = buildRecipeAddPlan(
+      makeRecipe([counted('i1', 'canon-onion', 'red onion', 150, 1, 'about 1 medium')]),
+      2,
+    );
+    expect(row).toMatchObject({ amount: 150, unit: 'g', measureNote: 'about 1 medium' });
+    expect(row!.weightGrams).toBeUndefined();
+  });
+
+  it('writes the counted row’s weight through to the shopping item', async () => {
+    const recipe = makeRecipe([counted('i1', 'canon-onion', 'red onion', 150, 1)]);
+    await commitRecipeAddPlan(recipe, 'list-1', 2, buildRecipeAddPlan(recipe, 2));
+    const written = vi.mocked(fs.saveShoppingListItem).mock.calls[0]![1];
+    expect(written).toMatchObject({ amount: 1, weightGrams: 150 });
+    expect(written).not.toHaveProperty('unit');
   });
 });

@@ -28,6 +28,7 @@
   import { ingredientIcons, ingredientLabel } from '../../lib/cookIngredientIcons.js';
   import { kitIcons } from '../../lib/kitIcons.js';
   import IngredientText from './IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import GuidedPlanLine from './GuidedPlanLine.svelte';
   import GuidedStepNotes from './GuidedStepNotes.svelte';
   import GuidedStepLookahead from './GuidedStepLookahead.svelte';
@@ -732,7 +733,7 @@
                                     size={32}
                                   />
                                   <span class="min-w-0 flex-1 text-base">
-                                    <IngredientText {ingredient} />
+                                    <IngredientText amounts={$ingredientAmounts} {ingredient} />
                                   </span>
                                   <Icon name="X" size={14} class="shrink-0 text-muted-foreground" />
                                 </button>

@@ -32,6 +32,7 @@
   import { ingredientIcons, ingredientLabel } from '../../lib/cookIngredientIcons.js';
   import { firstUseByStep, kitByStep, stageTemperatureText } from '@salt/domain';
   import IngredientText from '../recipes/IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import CookTimeline from '../recipes/CookTimeline.svelte';
   import CookStepCollapsed from '../recipes/CookStepCollapsed.svelte';
   import CookStepKit from '../recipes/CookStepKit.svelte';
@@ -782,7 +783,7 @@
                   size={40}
                 />
                 <span class="min-w-0 flex-1 text-base {checked ? 'text-muted-foreground' : ''}">
-                  <IngredientText {ingredient} />
+                  <IngredientText amounts={$ingredientAmounts} {ingredient} />
                 </span>
               </button>
             {/each}
@@ -1131,7 +1132,7 @@
                                   </span>
                                   {ingredientLabel(ing)}
                                 {:else}
-                                  <IngredientText ingredient={ing} />
+                                  <IngredientText amounts={$ingredientAmounts} ingredient={ing} />
                                 {/if}
                               </span>
                             </span>

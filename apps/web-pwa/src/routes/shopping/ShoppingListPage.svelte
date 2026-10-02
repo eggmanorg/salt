@@ -691,9 +691,16 @@
     return first ? displayLabel(first) : '';
   }
 
+  // The `'count'` unit is the product-form parent-count sentinel, never a word to
+  // show: a row mixing it with a measure read "1 count + 1500 g" (issue #1643).
+  // It is written the way every other count on the list is, as "×N".
   function formatSubtotals(subtotals: readonly AmountSubtotal[]): string | null {
     if (subtotals.length === 0) return null;
-    return subtotals.map((s) => (s.unit ? `${s.amount} ${s.unit}` : `${s.amount}`)).join(' + ');
+    return subtotals
+      .map((s) =>
+        s.unit === 'count' ? `×${s.amount}` : s.unit ? `${s.amount} ${s.unit}` : `${s.amount}`,
+      )
+      .join(' + ');
   }
 
   // The single merged product-form parent count for a combined row, or null when

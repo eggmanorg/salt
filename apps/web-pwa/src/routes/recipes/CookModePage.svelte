@@ -35,6 +35,7 @@
   import { createCookSessionStepProgress } from '../../lib/cookSessionStepProgress.svelte.js';
   import { sectionMinHeight, PEEK_MAX_PX } from '../../lib/cookDeck.js';
   import IngredientText from './IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import CookTimerSheet from './CookTimerSheet.svelte';
   // The regions this screen draws byte-for-byte the same way the guided cook does
   // (issue #994). Composition, not a design-system primitive: they are app-level
@@ -714,7 +715,11 @@
                             ? 'text-muted-foreground line-through'
                             : ''}"
                         >
-                          <IngredientText {ingredient} scale={servings.scale} />
+                          <IngredientText
+                            amounts={$ingredientAmounts}
+                            {ingredient}
+                            scale={servings.scale}
+                          />
                         </span>
                       </button>
                     </li>
@@ -891,7 +896,11 @@
                               class="min-w-0 {expandedChip ? 'break-words' : 'truncate'}"
                               data-chip-text
                             >
-                              <IngredientText ingredient={ing} scale={servings.scale} />
+                              <IngredientText
+                                amounts={$ingredientAmounts}
+                                ingredient={ing}
+                                scale={servings.scale}
+                              />
                             </span>
                           </button>
                         </li>

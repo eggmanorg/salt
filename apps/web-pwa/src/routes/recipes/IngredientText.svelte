@@ -1,9 +1,10 @@
 <script lang="ts">
   import pluralize from 'pluralize';
   import { sentenceCase } from '../../lib/sentenceCase.js';
-  import { scaleQuantity } from '@salt/domain';
-  import type { Ingredient } from '@salt/domain';
+  import { chooseIngredientAmount, scaleQuantity } from '@salt/domain';
+  import type { Ingredient, IngredientAmount } from '@salt/domain';
   import type { QuantityDoc } from '@salt/domain/schemas';
+  import type { IngredientAmountLookup } from '../../lib/ingredientAmounts.js';
 
   // The single source of truth for how one ingredient reads as text. RecipeViewPage
   // (the recipe detail page) and CookModePage (mise-en-place + per-step first-use)
@@ -13,14 +14,15 @@
   // canon-match (✗) affordance is NOT part of this — RecipeViewPage appends it
   // after.
   //
-  // An amount is an amount whether or not it carries a unit. `parsed.unit` is
-  // `'g' | 'ml' | null`, and `null` means the amount is a COUNT — a complete parse,
-  // not a failed one (`packages/domain/src/schemas/recipe.ts`, `docs/recipe-module.md`).
-  // So "1 large egg" splits into `1` and `large egg` exactly as "300g red lentils"
-  // splits, and its `displayText` (the gram estimate, "about 50g") stacks under the
-  // number just as a metric line's original measure does. Gating the split on the
-  // unit made every count line render as raw text with an empty amount column —
-  // 14% of the library, all of them eggs, garlic cloves and poultry joints (#951).
+  // An amount is an amount whether or not it carries a unit. WHICH amount a line is
+  // read in — its count or its weight — is not decided here: the parse stores both,
+  // and `chooseIngredientAmount` picks from the line's canon item and product form
+  // (issue #1643; `docs/recipe-module.md`). A counted line reads count-first with
+  // its weight as the bracketed second way of saying it — "1 roast chicken carcass
+  // (about 500g)" — and splits into `1` and `roast chicken carcass` exactly as
+  // "300g red lentils" splits. Gating the split on a unit once made every count
+  // line render as raw text with an empty amount column — 14% of the library, all
+  // of them eggs, garlic cloves and poultry joints (#951).
   //
   // `part` splits that ONE rendering into pieces rather than forking the component
   // (issue #878): the recipe page lays an ingredient out as three columns — the
@@ -69,8 +71,14 @@
     part?: 'all' | 'quantity' | 'name' | 'display';
     /** 1 means "as written", and is the only value that renders exactly as before. */
     scale?: number;
+    /**
+     * The shared count-or-weight lookup (`$ingredientAmounts`, lib/ingredientAmounts.ts).
+     * Every page passes it. Absent, the line has no canon item or form to consult
+     * and reads exactly as it is stored: metric, or as a pre-#1643 count.
+     */
+    amounts?: IngredientAmountLookup | null;
   }
-  let { ingredient, part = 'all', scale = 1 }: Props = $props();
+  let { ingredient, part = 'all', scale = 1, amounts = null }: Props = $props();
 
   // The common cooking fractions, as the single glyph a recipe would print. Halves
   // through eighths covers what a mixed quantity actually holds; anything outside
@@ -114,13 +122,26 @@
 
   const parsed = $derived(ingredient.parsed);
 
-  // The amount this line actually states, at the scale being read. Everything
-  // below — the figure, and the plural agreement of the item beside it — reads
-  // this and never `parsed.quantity`, so a scaled "4½ garlic cloves" agrees with
-  // itself. At scale 1 `scaleQuantity` returns the stored quantity itself, so an
-  // unscaled line is byte-for-byte what it was.
+  // The amount this line is read in (issue #1643): a count or a measure, chosen
+  // from data, never from the item's name. Every figure below reads this.
+  const chosen: IngredientAmount | null = $derived(
+    amounts !== null
+      ? amounts.amountFor(ingredient)
+      : parsed
+        ? chooseIngredientAmount(parsed, null, [], [])
+        : null,
+  );
+  const isCount = $derived(chosen?.unit === 'count');
+
+  // That amount at the scale being read. Everything below — the figure, and the
+  // plural agreement of the item beside it — reads this and never
+  // `parsed.quantity`, so a scaled "4½ garlic cloves" agrees with itself. At
+  // scale 1 `scaleQuantity` returns the stored quantity itself, so an unscaled
+  // line is byte-for-byte what it was.
   const quantity = $derived(
-    parsed && parsed.quantity ? scaleQuantity(parsed.quantity, scale, parsed.unit) : null,
+    chosen
+      ? scaleQuantity(chosen.quantity, scale, chosen.unit === 'count' ? null : chosen.unit)
+      : null,
   );
 
   // The amount, or null when the line has none. `quantity` alone decides whether
@@ -129,10 +150,14 @@
   // ShoppingItemRow's `leadingQuantity` has always written the same value.
   //
   // This is also the test the name half reads: a line with no amount shows its raw
-  // text, exactly as the single-run template did. Reading `unit` here as well made a
-  // count indistinguishable from an unparsed line and sent it down that same raw-text
-  // branch (#951).
-  const amount = $derived(parsed && quantity ? `${formatQty(quantity)}${parsed.unit ?? ''}` : null);
+  // text, exactly as the single-run template did. Reading the unit here as well made
+  // a count indistinguishable from an unparsed line and sent it down that same
+  // raw-text branch (#951).
+  const amount = $derived(
+    parsed && chosen && quantity
+      ? `${formatQty(quantity)}${chosen.unit === 'count' ? '' : chosen.unit}`
+      : null,
+  );
 
   // `parsed.item` is not reliably plural-agreed with `quantity` — staging stores
   // `item: "garlic clove"` against `quantity: 4`. That never showed while count lines
@@ -154,7 +179,7 @@
   const itemText = $derived(
     parsed === null
       ? ''
-      : parsed.unit === null && quantity !== null && exceedsOne(quantity)
+      : isCount && quantity !== null && exceedsOne(quantity)
         ? pluralize(parsed.item)
         : parsed.item,
   );
@@ -184,13 +209,29 @@
 
   const showQuantity = $derived(part === 'all' || part === 'quantity');
   const showName = $derived(part === 'all' || part === 'name');
-  // The OTHER way of saying the amount — "1 ½ cups", "about 50g" — is a verbatim
-  // restating of the amount the recipe STATES. The moment anything is scaled it is
-  // a second figure on the row that is simply false, so a scaled line renders none
-  // of it. Recomputing it is not on the table: it is the source's own wording, not
-  // a conversion this app owns. `buildRecipeAddPlan` drops it on a scaled add for
-  // exactly this reason (issue #724), and the two now agree.
-  const showDisplay = $derived((part === 'all' || part === 'display') && scale === 1);
+  const showDisplay = $derived(part === 'all' || part === 'display');
+
+  // The OTHER way of saying the amount, and there are two kinds of it.
+  //
+  // A counted line's weight — "about 500g" beside "1 roast chicken carcass" — is a
+  // structured number (issue #1643), so it SCALES with the count: a scaled count
+  // never sits beside an unscaled weight. "about" because it is the parser's
+  // estimate, never a weighing.
+  //
+  // Otherwise it is `displayText` — "1 ½ cups" — a verbatim restating of the amount
+  // the recipe STATES. The moment anything is scaled that is a second figure on the
+  // row that is simply false, so a scaled line renders none of it. Recomputing it
+  // is not on the table: it is the source's own wording, not a conversion this app
+  // owns. `buildRecipeAddPlan` drops it on a scaled add for exactly this reason
+  // (issue #724), and the two agree. A counted line whose count stands alone (a
+  // pre-#1643 count, with no structured weight) keeps its `displayText` this way.
+  const displayNote = $derived.by(() => {
+    if (chosen !== null && chosen.unit === 'count' && chosen.measure !== null) {
+      const { quantity: weight, unit } = chosen.measure;
+      return `about ${formatQty(scaleQuantity(weight, scale, unit))}${unit}`;
+    }
+    return scale === 1 ? (parsed?.displayText ?? null) : null;
+  });
 
   // The recipe page's ingredients tab reads as a list of THINGS, one per line, so
   // the thing starts with a capital — the library stores "red lentils" as the
@@ -216,10 +257,10 @@
         class="text-xs text-muted-foreground">{preparation}</span
       >{/if}{:else}{rawText}{/if}{#if notes}<span class="ml-1 text-xs text-muted-foreground"
       >({notes})</span
-    >{/if}{/if}{#if showDisplay && parsed && amount && parsed.displayText}<span
+    >{/if}{/if}{#if showDisplay && parsed && amount && displayNote}<span
     class="text-xs text-muted-foreground"
     class:ml-1={part === 'all'}
-    class:block={part === 'display'}>({parsed.displayText})</span
+    class:block={part === 'display'}>({displayNote})</span
   >{/if}{#if showName && ingredient.isOptional}<span class="ml-1 text-xs text-muted-foreground"
     >(optional)</span
   >{/if}

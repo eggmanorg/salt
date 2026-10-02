@@ -26,6 +26,7 @@
   import { isBlankIngredientRow } from './blankRows';
   import EditableZone from './EditableZone.svelte';
   import IngredientText from './IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import ReorderControl from './ReorderControl.svelte';
 
   /**
@@ -493,7 +494,7 @@
      of this panel rather than merely intended. -->
 {#snippet rowColumns(ingredient: Ingredient)}
   <span class="min-w-0 flex-1">
-    <IngredientText {ingredient} part="name" scale={ingredientScale} />
+    <IngredientText amounts={$ingredientAmounts} {ingredient} part="name" scale={ingredientScale} />
   </span>
   <!-- The metric amount, and the measure the source actually printed sitting UNDER
        it: "1 ½ cups" is a second way of saying 300g, so it belongs beneath the
@@ -502,7 +503,13 @@
        separable amount, so both are empty and the whole raw text sits in the name
        cell — which is what keeps a part-parsed list from ragging. -->
   <span class="shrink-0 text-right tabular-nums leading-tight">
-    <IngredientText {ingredient} part="quantity" scale={ingredientScale} /><IngredientText
+    <IngredientText
+      amounts={$ingredientAmounts}
+      {ingredient}
+      part="quantity"
+      scale={ingredientScale}
+    /><IngredientText
+      amounts={$ingredientAmounts}
       {ingredient}
       part="display"
       scale={ingredientScale}

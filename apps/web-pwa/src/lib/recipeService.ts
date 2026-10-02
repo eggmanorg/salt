@@ -29,7 +29,7 @@ import {
   insertComponentByElapsedTime,
   resolveComponents,
   componentDisplayLines,
-  resolveProductForm,
+  chooseIngredientAmount,
   formParentCount,
   convertYield,
   maxCountWinners,
@@ -43,9 +43,8 @@ import type {
   IngredientGroup,
   SourceRef,
   ProductForm,
-  CanonItemUnit,
   FormDemand,
-  CanonNaming,
+  IngredientAmount,
 } from '@salt/domain';
 import type {
   UrlImportFailureCode,
@@ -1115,6 +1114,12 @@ export interface RecipeAddRow {
   // Present only on an UNSCALED add; see the gate in buildRecipeAddPlan. Display
   // only — nothing branches on it.
   readonly measureNote?: string;
+  // The weight a COUNTED row stands for, in grams, scaled to the servings added
+  // (issue #1643) — the parser's estimate for "3 large onions", carried so the
+  // list can write one bracketed weight for a combined row. Set only on a plain
+  // counted row whose line holds a gram estimate; a metric row's amount already
+  // IS its weight, and a product-form row's weight is its parent's, not its own.
+  readonly weightGrams?: number;
   add: boolean;
   check: boolean;
   // ─── Buy-or-make (Phase 2) ───────────────────────────────────────────────────
@@ -1161,46 +1166,57 @@ export interface RecipeAddRow {
   subRows: RecipeAddRow[] | null;
 }
 
-// Compute the scaled amount/unit for an ingredient. quantity is always in metric
-// (g/ml) so no conversion needed — scale and round directly.
-function scaledAmountUnit(ing: Ingredient, scale: number): { amount?: number; unit?: string } {
-  if (ing.parsed === null || ing.parsed.quantity === null) return {};
-  const amount = Math.round(quantityToNumber(ing.parsed.quantity) * scale * 10) / 10;
-  return ing.parsed.unit !== null ? { amount, unit: ing.parsed.unit } : { amount };
+// The scaled amount/unit a row is written with, from the amount the line is READ
+// in (issue #1643: `chooseIngredientAmount`, a count or a measure, decided from
+// the line's canon item and product form). A measure keeps its unit; a count is
+// written with NO unit — the shape every counted row has always had ("2" eggs),
+// which the list sums as whole items and which a product-form parent row reads
+// as the parent bought as itself (`buildSubtotals`'s whole counts). The `'count'`
+// sentinel stays reserved for a product-form parent count.
+function scaledAmountUnit(
+  chosen: IngredientAmount,
+  scale: number,
+): { amount: number; unit?: string } {
+  const amount = Math.round(quantityToNumber(chosen.quantity) * scale * 10) / 10;
+  return chosen.unit === 'count' ? { amount } : { amount, unit: chosen.unit };
+}
+
+// The weight a counted row stands for, scaled (issue #1643), or undefined when it
+// has none to give: a measure row (its amount is its weight), a count with no gram
+// estimate (a pre-#1643 count, or a count estimated in ml).
+function scaledWeightGrams(chosen: IngredientAmount, scale: number): number | undefined {
+  if (chosen.unit !== 'count' || chosen.measure === null || chosen.measure.unit !== 'g') {
+    return undefined;
+  }
+  return Math.round(quantityToNumber(chosen.measure.quantity) * scale * 10) / 10;
 }
 
 // Product-form quantity resolution (issue #500, Phase 2). When a recipe
 // ingredient resolves to a ProductForm whose parent is the ingredient's OWN canon
-// match, its scaled metric amount converts to a whole parent-product count (e.g.
-// 90 ml lime juice → 3 limes), written with the `'count'` unit sentinel that the
-// shopping row reads to render "Lime ×3". Re-derives the form from the snapshot
-// (no schema change, no CF→client plumbing); the parent-match guard keeps it
-// back-compatible — an ingredient matched before its form existed stays as-is.
+// match, the amount it is read in converts to a whole parent-product count (e.g.
+// 90 ml lime juice → 3 limes; 2 chicken breasts → 1 chicken), written with the
+// `'count'` unit sentinel that the shopping row reads to render "Lime ×3". The
+// form and the unit both come from `chooseIngredientAmount` (issue #1643), which
+// already applied the parent-match guard and — for a counted form — hands over
+// the line's stated count rather than its grams, so a carcass reads as one bird.
 // Returns null (identity-only degrade) on no form, a unit mismatch, or a
-// degenerate yield, so the caller keeps the metric amount and today's behaviour.
+// degenerate yield, so the caller keeps the line's own amount.
 //
 // `rawCount` is the UNROUNDED parent-count (issue #501): `count` is rounded per
 // recipe and is only the row's own display amount, so summing it across recipes
 // double-rounds (6 g + 6 g of zest is 12 g = 3 limes, but 2 + 2 = 4). The raw
 // value is what gets persisted as `formDemand` and summed at display time.
 function formCountFor(
-  ing: Ingredient,
+  chosen: IngredientAmount,
   scale: number,
-  forms: readonly ProductForm[],
-  // Pass-through for `resolveProductForm`'s contested-phrase rule (issue #1180).
-  canon: readonly CanonNaming[],
 ): { form: ProductForm; count: number; rawCount: number } | null {
-  if (forms.length === 0 || !ing.canonId || ing.parsed === null || ing.parsed.quantity === null) {
-    return null;
-  }
-  const form = resolveProductForm(ing.parsed.item, forms, canon);
-  if (!form || form.parentCanonId !== ing.canonId) return null;
-  const metricAmount = quantityToNumber(ing.parsed.quantity) * scale;
-  const ingUnit: CanonItemUnit = ing.parsed.unit ?? 'count';
-  const count = formParentCount(metricAmount, ingUnit, form);
+  const form = chosen.form;
+  if (form === null) return null;
+  const amount = quantityToNumber(chosen.quantity) * scale;
+  const count = formParentCount(amount, chosen.unit, form);
   // formParentCount already rejects a unit mismatch and a degenerate/zero yield,
   // so a non-null count guarantees convertYield agrees on the same units.
-  return count === null ? null : { form, count, rawCount: convertYield(metricAmount, form.yield) };
+  return count === null ? null : { form, count, rawCount: convertYield(amount, form.yield) };
 }
 
 // The unit sentinel written on a product-form shopping row: marks `amount` as a
@@ -1252,10 +1268,16 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
     for (const ing of group.items) {
       const matched = hasLiveCanonMatch(ing, liveCanonIds);
       const canon = matched ? (canonById.get(ing.canonId!) ?? null) : null;
+      // Count or weight, from the data (issue #1643). Only a matched line has an
+      // amount to add — an unmatched one has nothing to buy it against.
+      const chosen =
+        matched && ing.parsed !== null
+          ? chooseIngredientAmount(ing.parsed, canon, forms, canonSnapshot)
+          : null;
       // A product-form ingredient carries a parent-count (unit sentinel 'count');
-      // otherwise fall back to the scaled metric amount. formCountFor requires a
-      // live canon match (parentCanonId === ing.canonId), so it implies `matched`.
-      const fc = matched ? formCountFor(ing, scale, forms, canonSnapshot) : null;
+      // otherwise the line's own scaled amount. `chosen.form` is set only for a
+      // form resolving to the line's OWN canon, so a form row implies `matched`.
+      const fc = chosen ? formCountFor(chosen, scale) : null;
       if (fc) {
         formEntries.push({
           rowIndex: rows.length,
@@ -1266,11 +1288,12 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
           rawText: ing.rawText,
         });
       }
-      const { amount, unit } = fc
+      const { amount, unit }: { amount?: number; unit?: string } = fc
         ? { amount: fc.count, unit: PRODUCT_FORM_COUNT_UNIT }
-        : matched
-          ? scaledAmountUnit(ing, scale)
+        : chosen
+          ? scaledAmountUnit(chosen, scale)
           : {};
+      const weightGrams = !fc && chosen ? scaledWeightGrams(chosen, scale) : undefined;
 
       const dflt = recipeItemAddDefault(
         canon?.shoppingBehavior ?? null,
@@ -1299,7 +1322,12 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
       // simply untrue and have the shopper buy the wrong thing. Dropping it costs
       // a hint; keeping it costs correctness, so it goes. The scaled metric
       // amount/unit remains the only quantity a scaled row shows.
-      const measureNote = scale === 1 ? (ing.parsed?.displayText ?? null) : null;
+      //
+      // Nor on a counted row that carries its own weight (issue #1643): there the
+      // frozen string is the count wording ("about 2 medium") restating the count
+      // beside it, and the scaled weight replaces it as the bracket.
+      const measureNote =
+        scale === 1 && weightGrams === undefined ? (ing.parsed?.displayText ?? null) : null;
 
       // Buy-or-make (Phase 2): a row is eligible when its ingredient's canon link
       // is produced by some OTHER recipe. Keyed off the ingredient's raw `canonId`
@@ -1322,6 +1350,7 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
         ...(amount !== undefined ? { amount } : {}),
         ...(unit !== undefined ? { unit } : {}),
         ...(measureNote ? { measureNote } : {}),
+        ...(weightGrams !== undefined ? { weightGrams } : {}),
         add: dflt.add,
         check: dflt.check,
         producers,
@@ -1476,6 +1505,7 @@ function buildAddedItem(row: RecipeAddRow, source: SourceRef, now: string) {
       ...(row.formDemand !== undefined ? { formDemand: row.formDemand } : {}),
       ...(row.originalText !== undefined ? { originalText: row.originalText } : {}),
       ...(row.measureNote !== undefined ? { measureNote: row.measureNote } : {}),
+      ...(row.weightGrams !== undefined ? { weightGrams: row.weightGrams } : {}),
     },
     _itemIds,
   );
