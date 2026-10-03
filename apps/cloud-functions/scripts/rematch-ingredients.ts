@@ -113,6 +113,12 @@ interface WorkItem {
   readonly quantity: string;
   readonly unit: string | null;
   readonly canonName: string;
+  /**
+   * The stored stated count (#1643), rendered — `absent` for a line never parsed
+   * since that issue. Missing from a work list scanned before it, in which case
+   * the diff below compares the metric amount alone, exactly as it always did.
+   */
+  readonly statedCount?: string;
 }
 
 const workList = JSON.parse(readFileSync(fromPath, 'utf8')) as {
@@ -185,8 +191,13 @@ for (const recipeId of recipeIds) {
   failed += lines.length - parsedLines.length;
 
   for (const { work, parsed } of parsedLines) {
-    const before = `${work.quantity} ${work.unit ?? '·'} ${work.item ?? '·'}`;
-    const after = `${describeQuantity(parsed['quantity'])} ${(parsed['unit'] as string) ?? '·'} ${(parsed['item'] as string) ?? '·'}`;
+    // The stated count is the whole point of a #1643 re-read: "1 red onion" keeps
+    // its 150 g and gains its 1, so a diff of the metric amount alone would call
+    // every one of those lines `same`.
+    const countOf = (rendered: string): string =>
+      work.statedCount === undefined ? '' : `  ×${rendered}`;
+    const before = `${work.quantity} ${work.unit ?? '·'} ${work.item ?? '·'}${countOf(work.statedCount ?? '')}`;
+    const after = `${describeQuantity(parsed['quantity'])} ${(parsed['unit'] as string) ?? '·'} ${(parsed['item'] as string) ?? '·'}${countOf(describeQuantity(parsed['statedCount']))}`;
     if (before === after) {
       unchanged += 1;
       console.log(`   same       ${work.rawText.slice(0, 46).padEnd(46)} ${after}`);
