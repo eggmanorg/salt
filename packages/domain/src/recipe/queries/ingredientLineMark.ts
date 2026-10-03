@@ -35,8 +35,7 @@ export type IngredientLineIssue =
  * - `match_again_then_add_form` — `missing_form`. Whether a re-match mints the
  *   missing product form is arbitration's call (it can answer `none`), so nothing
  *   here can know in advance; a form added in the catalogue is the second rung.
- *   Only a mass/volume form clears it — a COUNT form covering the line turns it
- *   into `missing_count` instead.
+ *   A COUNT form covering a line that states no count turns it into `missing_count` instead.
  * - `match_again_then_state_count` — `missing_count` on a line parsed before
  *   #1643 (`statedCount` absent). The re-parse records a count only if the line
  *   states one; a line giving only a weight comes back as `state_count`.

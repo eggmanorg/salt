@@ -701,7 +701,7 @@
   // deleting a product form leaves NOTHING dangling (the ingredient's canonId
   // points at the form's PARENT canon, which is still very much alive), so the ✗
   // never appears and the line's now-formless match is unreachable. Re-running
-  // finds no form, falls to product-form arbitration, and writes a fresh one.
+  // finds no form, falls to product-form arbitration.
   //
   // It toasts on success where the ✗ stays silent: from here the outcome is
   // frequently invisible (the same canon item, now reached a different way), so
