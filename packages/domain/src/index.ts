@@ -49,6 +49,7 @@ export {
   setCanonItemSynonyms,
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemGramsPerItem,
   setCanonItemThumbnail,
   // The one description of an icon-regeneration write (issue #1054) — the admin
   // screens and the canon/product-form callables are different apps and cannot

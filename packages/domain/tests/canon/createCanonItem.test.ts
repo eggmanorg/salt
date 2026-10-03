@@ -131,4 +131,12 @@ describe('createCanonItem', () => {
     const result = createCanonItem({ name: 'Flour', largeQuantityThreshold: 500 }, counterIds());
     expect(result.kind === 'ok' && result.value.largeQuantityThreshold).toBe(500);
   });
+
+  it('sets the weight of one when supplied (issue #1643)', () => {
+    const result = createCanonItem(
+      { name: 'Onion', unit: 'count', gramsPerItem: 150 },
+      counterIds(),
+    );
+    expect(result.kind === 'ok' && result.value.gramsPerItem).toBe(150);
+  });
 });

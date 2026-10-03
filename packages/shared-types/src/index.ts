@@ -121,6 +121,8 @@ export type CanonItemUnit = (typeof CANON_ITEM_UNITS)[number];
 
 export const ErrorCode = {
   INVALID_CANON_NAME: 'INVALID_CANON_NAME',
+  // A canon item's weight of one must be a positive number of grams (#1643).
+  INVALID_CANON_GRAMS_PER_ITEM: 'INVALID_CANON_GRAMS_PER_ITEM',
   INVALID_PRODUCT_FORM: 'INVALID_PRODUCT_FORM',
   INVALID_AISLE_NAME: 'INVALID_AISLE_NAME',
   DUPLICATE_AISLE_NAME: 'DUPLICATE_AISLE_NAME',

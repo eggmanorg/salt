@@ -46,6 +46,7 @@
     saveCanonAisle,
     saveCanonShoppingBehavior,
     saveCanonThreshold,
+    saveCanonGramsPerItem,
   } from './canonDecisions.js';
   import { aisles } from '../../lib/aisleService.js';
   import {
@@ -96,6 +97,7 @@
 
   let editingSynonyms = $state('');
   let editingThreshold = $state('');
+  let editingGramsPerItem = $state('');
   let editingUnit = $state<CanonItemUnit>(DEFAULT_THRESHOLD_UNIT);
 
   let matchersText = $state('');
@@ -114,6 +116,7 @@
       editingSynonyms = i.synonyms.join(', ');
       editingThreshold = i.largeQuantityThreshold?.toString() ?? '';
       editingUnit = i.unit ?? DEFAULT_THRESHOLD_UNIT;
+      editingGramsPerItem = i.gramsPerItem?.toString() ?? '';
     } else {
       const f = record.form;
       matchersText = f.matchers.join(', ');
@@ -184,6 +187,17 @@
     if (!item) return;
     const result = await saveCanonShoppingBehavior(item, value, {
       onBusy: (b) => (behaviorBusy = b),
+    });
+    if (result === 'saved') saved.flash();
+  }
+
+  let gramsBusy = $state(false);
+
+  async function saveGramsPerItem(): Promise<void> {
+    const item = canon;
+    if (!item) return;
+    const result = await saveCanonGramsPerItem(item, editingGramsPerItem, {
+      onBusy: (b) => (gramsBusy = b),
     });
     if (result === 'saved') saved.flash();
   }
@@ -652,6 +666,33 @@
         </div>
       </div>
     </section>
+
+    <!-- The weight of ONE (issue #1643): only meaningful when the item is bought
+         by the count, so it is offered only then. It turns weight-only recipe
+         amounts into whole items on the shopping list, once per row. -->
+    {#if item.unit === 'count'}
+      <section class="flex flex-col gap-2" data-testid="canon-detail-grams-section">
+        <h2 class="text-sm font-medium text-foreground">Weight of one (g)</h2>
+        <TextField
+          label=""
+          inputmode="decimal"
+          value={editingGramsPerItem}
+          onValueChange={(v) => (editingGramsPerItem = v)}
+          placeholder="e.g. 150"
+          data-testid="canon-detail-grams-input"
+          disabled={gramsBusy}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              saveGramsPerItem();
+            } else if (e.key === 'Escape') {
+              editingGramsPerItem = item.gramsPerItem?.toString() ?? '';
+            }
+          }}
+          onblur={saveGramsPerItem}
+        />
+      </section>
+    {/if}
 
     <!-- The item's product forms. Rendered even when empty: the add affordance
          is the point, and hiding it behind "has at least one" is how forms end

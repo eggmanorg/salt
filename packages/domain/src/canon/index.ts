@@ -62,6 +62,7 @@ export { setCanonItemSynonyms } from './commands/setCanonItemSynonyms.js';
 export {
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemGramsPerItem,
 } from './commands/setCanonItemShoppingFields.js';
 export { setCanonItemThumbnail } from './commands/setCanonItemThumbnail.js';
 // The one description of an icon-regeneration write (issue #1054), shared by the

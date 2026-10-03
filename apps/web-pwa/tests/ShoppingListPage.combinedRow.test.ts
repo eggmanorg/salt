@@ -340,4 +340,47 @@ describe('combined aisle row — the count sentinel is never a word (issue #1643
     const row = await combinedRow(view);
     expect(row.textContent).toContain('(5)');
   });
+
+  it('writes a counted item as one count and one weight for the row', async () => {
+    mockCanonItems._set([
+      canonItem({ id: 'c-onion', name: 'red onion', unit: 'count', gramsPerItem: 150 }),
+    ]);
+    mockItems._set([
+      item({ id: 'i1', amount: 4, weightGrams: 400, sources: fromRecipe('Stew', 'r1') }),
+      item({ id: 'i2', amount: 2, weightGrams: 500, sources: fromRecipe('Soup', 'r2') }),
+    ]);
+    const view = render(ShoppingListPage, props);
+    const row = await combinedRow(view);
+    expect(row.textContent).toContain('Red Onion ×6(900g)');
+    expect(row.textContent).toContain('2 recipes');
+  });
+
+  it('weighs a form-parent row as whole birds', async () => {
+    mockCanonItems._set([
+      canonItem({ id: 'c-chicken', name: 'chicken', unit: 'count', gramsPerItem: 1500 }),
+    ]);
+    mockItems._set([
+      item({
+        id: 'i1',
+        rawText: 'roast chicken carcass',
+        canonId: 'c-chicken',
+        amount: 1,
+        unit: 'count',
+        formDemand: [{ formId: 'form-carcass', parentCount: 1 }],
+        sources: fromRecipe('Stock', 'r1'),
+      }),
+      item({
+        id: 'i2',
+        rawText: 'chicken breast',
+        canonId: 'c-chicken',
+        amount: 1,
+        unit: 'count',
+        formDemand: [{ formId: 'form-breast', parentCount: 1 }],
+        sources: fromRecipe('Caesar Salad', 'r2'),
+      }),
+    ]);
+    const view = render(ShoppingListPage, props);
+    const row = await combinedRow(view);
+    expect(row.textContent).toContain('Chicken ×1(1500g)');
+  });
 });

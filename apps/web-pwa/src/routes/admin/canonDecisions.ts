@@ -4,6 +4,7 @@ import {
   updateCanonItemAisle,
   updateCanonItemShoppingBehavior,
   updateCanonItemThreshold,
+  updateCanonItemGramsPerItem,
 } from '../../lib/canonService.js';
 
 /**
@@ -96,4 +97,23 @@ export function saveCanonThreshold(
     return Promise.resolve('unchanged');
   }
   return commit(() => updateCanonItemThreshold(item, value, nextUnit), options);
+}
+
+/**
+ * The weight of one item, in grams (issue #1643). Blank clears it. Text that is
+ * not a positive number is left unsaved ("unchanged") rather than clearing a
+ * stored weight by accident; the domain command refuses one anyway.
+ */
+export function saveCanonGramsPerItem(
+  item: CanonItem,
+  rawGrams: string,
+  options?: DecisionSaveOptions,
+): Promise<DecisionSave> {
+  const raw = rawGrams.trim();
+  const parsed = raw ? Number(raw) : undefined;
+  if (parsed !== undefined && !(Number.isFinite(parsed) && parsed > 0)) {
+    return Promise.resolve('unchanged');
+  }
+  if (parsed === item.gramsPerItem) return Promise.resolve('unchanged');
+  return commit(() => updateCanonItemGramsPerItem(item, parsed), options);
 }

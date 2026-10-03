@@ -1364,3 +1364,38 @@ describe('inputItemCount on the forced-creation path', () => {
     expect(written[0]?.inputItemCount).toBe(2);
   });
 });
+
+describe('matchOrCreate — a counted item is minted with its weight of one (issue #1643)', () => {
+  it('carries the arbitrated unit and weight of one onto the new item', async () => {
+    const { run } = makePipeline({
+      aisleStore: makeAisleStoreWithAisles(),
+      arbitration: {
+        arbitrate: async () => ({
+          kind: 'ok',
+          value: {
+            kind: 'new',
+            canonName: 'Red Onion',
+            aisleId: 'produce',
+            shoppingBehavior: 'needed' as const,
+            unit: 'count' as const,
+            gramsPerItem: 150,
+          },
+        }),
+      },
+    });
+    const result = await run('red onion xyz');
+    expect(result.kind === 'ok' && result.value.item).toMatchObject({
+      unit: 'count',
+      gramsPerItem: 150,
+    });
+  });
+
+  it('mints no weight of one when arbitration gives none', async () => {
+    const { run } = makePipeline({
+      aisleStore: makeAisleStoreWithAisles(),
+      arbitration: newArbitration('Garlic', 'produce'),
+    });
+    const result = await run('garlic-xyz-unique');
+    expect(result.kind === 'ok' && result.value.item).not.toHaveProperty('gramsPerItem');
+  });
+});

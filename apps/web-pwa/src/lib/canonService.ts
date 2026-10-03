@@ -25,6 +25,7 @@ import {
   setCanonItemSynonyms,
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemGramsPerItem,
   setCanonItemThumbnail,
   CANON_ICON_HIDDEN,
 } from '@salt/domain';
@@ -348,6 +349,17 @@ export async function updateCanonItemThreshold(
   unit: CanonItemUnit | undefined,
 ): Promise<Result<CanonItem, DomainError>> {
   const result = setCanonItemThreshold(item, largeQuantityThreshold, unit);
+  if (result.kind !== 'ok') return result;
+  const written = await commitCanonItemUpdate(result.value);
+  return written.kind === 'err' ? written : result;
+}
+
+// The weight of one item (issue #1643). `undefined` clears it.
+export async function updateCanonItemGramsPerItem(
+  item: CanonItem,
+  gramsPerItem: number | undefined,
+): Promise<Result<CanonItem, DomainError>> {
+  const result = setCanonItemGramsPerItem(item, gramsPerItem);
   if (result.kind !== 'ok') return result;
   const written = await commitCanonItemUpdate(result.value);
   return written.kind === 'err' ? written : result;

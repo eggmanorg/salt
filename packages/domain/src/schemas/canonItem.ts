@@ -80,7 +80,19 @@ export const CanonItemSchema = z.object({
   needs_approval: z.boolean(),
   shoppingBehavior: z.enum(SHOPPING_BEHAVIORS),
   largeQuantityThreshold: z.number().optional(),
+  // The unit the household buys this in (issue #1643). Set by arbitration as the
+  // unit of the pack threshold above, and read since #1643 as the item's
+  // preferred unit too: `count` makes a recipe line of it read and shop as a
+  // count (`chooseIngredientAmount`). Unset reads as metric, as before.
   unit: z.enum(CANON_ITEM_UNITS).optional(),
+  // The weight of ONE of this item, in grams (issue #1643) — meaningful only when
+  // `unit` is `count`. It lets a combined shopping row turn weight-only recipe
+  // contributions into whole items once per row ("200 g onion" beside "2 onions"
+  // → 4 onions at 150 g each) and write one bracketed weight for the row. Set by
+  // arbitration when it mints a counted item, editable in admin. OPTIONAL and
+  // additive: absent on every item written before it, and absent means "no
+  // conversion" — such a row keeps its separate grams subtotal.
+  gramsPerItem: z.number().positive().optional(),
   reasoning: z.string().optional(),
   updatedAt: z.string(),
   // Distributed-trace correlation field (issue #362, Phase 5). A W3C
