@@ -676,11 +676,18 @@ export const coverageThresholds = {
   // simply the first PR measured against the merged result. Banking is still
   // right: unbanked headroom is room for a later PR to delete those tests and
   // land green.
+  // BANKED 79.84/73.43 → 80.45/74.7 in #1644 (#1643, counted ingredients). The
+  // branch ratio rose 1.27 points past the staleness tolerance. Both uncovered
+  // counts fell (736 → 732 lines, 561 → 553 branches): the new, fully-covered
+  // `ingredientAmounts.ts` and tests for `buildRecipeAddPlan`'s count/weight
+  // paths, plus whatever main gained since this was last banked. Pasted from
+  // `coverage:ratchet:check`'s own block on a full `pnpm test:coverage` run on
+  // Linux (the cloud session; CI's logs were unreachable from it), not retyped.
   'apps/web-pwa/src/lib/**': {
-    lines: 79.84,
-    branches: 73.43,
-    uncoveredLines: 736,
-    uncoveredBranches: 561,
+    lines: 80.45,
+    branches: 74.7,
+    uncoveredLines: 732,
+    uncoveredBranches: 553,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,
