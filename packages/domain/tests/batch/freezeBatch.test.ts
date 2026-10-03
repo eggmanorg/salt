@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { deriveFormula, freezeBatch, targetYield } from '../../src/index.js';
+import {
+  deriveFormula,
+  freezeBatch,
+  targetYield,
+  withCureSaltSubstituted,
+} from '../../src/index.js';
 import { BatchSchema } from '../../src/schemas/index.js';
 import type { Formula, ProcessStage, StageDuration } from '../../src/schemas/index.js';
 
@@ -128,6 +133,8 @@ describe('freezeBatch — the quantities', () => {
       grams: 816,
       // At the start, because the formula assigned it to no stage (issue #1405).
       stageId: null,
+      // Flour names no salt product (issue #1645), and the freeze says so explicitly.
+      saltProduct: null,
     });
   });
 
@@ -698,5 +705,82 @@ describe('freezeBatch — when each thing goes on (issue #1405)', () => {
     const oil = result.batch.quantities.find((q) => q.ingredientId === OIL)!;
     expect(oil.stageId).toBe('a-stage-that-is-not-in-this-process');
     expect(oil.grams).toBe(24);
+  });
+});
+
+// ─── Which curing salt went on (issue #1645) ──────────────────────────────────
+//
+// A ninety-day coppa with Cure #1 on it: the run has to carry the product itself, or
+// its page cannot say "this run used a nitrite-only salt" without reading through to
+// a formula a later edit can rewrite.
+describe('freezeBatch — which salt product each line was (issue #1645)', () => {
+  const MEAT = 'ing-pork-collar';
+  const CURE_SALT = 'ing-salt';
+  const CURE = 'ing-prague-powder';
+
+  function coppa(): Formula {
+    const derived = deriveFormula({
+      recipeId: 'coppa',
+      components: [
+        { ingredientId: MEAT, grams: 1000, inBasis: true },
+        { ingredientId: CURE_SALT, grams: 25, inBasis: false, saltProduct: 'plain' },
+        { ingredientId: CURE, grams: 2.5, inBasis: false, saltProduct: 'cure1' },
+      ],
+    });
+    if (!derived.ok) throw new Error(`fixture failed to derive: ${derived.reason.kind}`);
+    return {
+      ...derived.formula,
+      referenceYield: { kind: 'basis', grams: 1000 },
+      process: [stage('dry', 'Hang to dry', 'wait', null)],
+    };
+  }
+
+  function freezeCoppa(
+    formula: Formula,
+    cureSaltSubstitution?: Parameters<typeof freezeBatch>[0]['cureSaltSubstitution'],
+  ) {
+    const result = freezeBatch({
+      id: 'batch-coppa',
+      formula,
+      ...(cureSaltSubstitution === undefined ? {} : { cureSaltSubstitution }),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Coppa',
+      recipeKind: 'cure',
+      cureCategory: 'dry_cured_whole_muscle',
+      startedBy: null,
+      labels: { [MEAT]: 'Pork collar', [CURE_SALT]: 'Salt', [CURE]: 'Prague powder #1' },
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+    return result.batch;
+  }
+
+  const productById = (batch: ReturnType<typeof freezeCoppa>) =>
+    Object.fromEntries(batch.quantities.map((q) => [q.ingredientId, q.saltProduct]));
+
+  it('freezes the product the formula named onto each line, and null where it named none', () => {
+    const batch = freezeCoppa(coppa());
+    expect(productById(batch)).toEqual({ [MEAT]: null, [CURE_SALT]: 'plain', [CURE]: 'cure1' });
+    // Written explicitly, not left to the read default: the key is ON the document.
+    for (const quantity of batch.quantities) expect(Object.keys(quantity)).toContain('saltProduct');
+    // And it survives the read path rather than being stripped on the way back.
+    expect(productById(BatchSchema.parse(batch))).toEqual(productById(batch));
+  });
+
+  it('freezes the jar that actually went on after a swap, which agrees with the swap record', () => {
+    // The caller hands in the SUBSTITUTED formula, exactly as `startBatch` does; the
+    // freeze itself never reads `cureSaltSubstitution`.
+    const swapped = withCureSaltSubstituted(coppa(), { to: 'nitritedCuringSalt' });
+    if (!swapped.ok) throw new Error(`expected a substitution: ${swapped.reason.kind}`);
+    const swap = { from: 'cure1', to: 'nitritedCuringSalt' } as const;
+    const batch = freezeCoppa(swapped.formula, swap);
+    expect(productById(batch)[CURE]).toBe('nitritedCuringSalt');
+    expect(productById(batch)[CURE]).toBe(batch.cureSaltSubstitution?.to);
+  });
+
+  it('takes the product off the formula, never off the substitution note', () => {
+    // A nonsense note beside an unswapped formula changes no line's product.
+    const withNote = freezeCoppa(coppa(), { from: 'cure2', to: 'salvianda' });
+    expect(productById(withNote)).toEqual(productById(freezeCoppa(coppa())));
   });
 });

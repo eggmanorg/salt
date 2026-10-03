@@ -193,6 +193,15 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     // wherever it is rendered (`stageAdditions`). What the caller MUST have done is
     // rewrite the ids when it replaced the process — see `startBatch`.
     stageId: component.stageId,
+    // WHICH PRODUCT THIS LINE WAS (issue #1645), off the solved component for the
+    // reason `stageId` above is — and written explicitly, `null` included, rather than
+    // left to `BatchQuantitySchema`'s read default, which is what a run written before
+    // the field existed gets and never what a new one is born with.
+    //
+    // NOT FROM `cureSaltSubstitution`, which this function still does not read. After
+    // a swap the line already names the jar that went on, because the caller hands in
+    // the substituted formula (`withCureSaltSubstituted` re-stamps the product).
+    saltProduct: component.saltProduct,
   }));
 
   const totals: BatchTotalsDoc = {
