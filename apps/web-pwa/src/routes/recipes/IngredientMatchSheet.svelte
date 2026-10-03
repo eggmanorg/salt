@@ -182,8 +182,9 @@
               class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
               data-testid="ingredient-match-missing-count"
             >
-              This line has a weight but no count, so it can't be bought as whole ones and shops as
-              {ingredient.parsed?.unit} of {titleCase(canon.name)}. Match again to read the count.
+              This line has a weight but no count, so it is bought by weight rather than as whole {titleCase(
+                canon.name,
+              )}. Match again to read the count.
             </p>
           {/if}
         {:else if missingForm}
