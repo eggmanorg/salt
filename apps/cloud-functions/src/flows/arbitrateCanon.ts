@@ -114,6 +114,15 @@ export const arbitrateCanonFlow = ai.defineFlow(
   },
 );
 
+/**
+ * What a canon item's weight of one IS, worded for a model (issue #1643). One
+ * definition for both askers: Rule 5 below, for an item arbitration creates, and
+ * `scripts/fill-canon-weight-of-one.ts`, for the counted items created before
+ * the field existed.
+ */
+export const GRAMS_PER_ITEM_RULE =
+  'the typical weight in grams of ONE of the item as a UK shopper buys it (one medium onion → 150; one egg → 50; one whole chicken → 1500)';
+
 function buildPrompt(req: z.infer<typeof ArbitrationRequestSchema>): string {
   const candidateList = req.candidates.length
     ? req.candidates
@@ -166,7 +175,7 @@ function buildPrompt(req: z.infer<typeof ArbitrationRequestSchema>): string {
     `If the item is sold in a standard UK pack, set largeQuantityThreshold to 60% of the pack size and unit to "g", "ml", or "count". For example: plain flour → 600 g; eggs → 8 count. If there is no clear standard UK pack, set both to null.`,
     ``,
     `## Rule 5 — gramsPerItem`,
-    `When unit is "count", set gramsPerItem to the typical weight in grams of ONE of the item as a UK shopper buys it (one medium onion → 150; one egg → 50; one whole chicken → 1500). Otherwise set gramsPerItem to null.`,
+    `When unit is "count", set gramsPerItem to ${GRAMS_PER_ITEM_RULE}. Otherwise set gramsPerItem to null.`,
     ``,
   ].join('\n');
 }

@@ -74,9 +74,13 @@ export const ParsedIngredientSchema = z.object({
   // `apps/cloud-functions/tests/flows/parseRecipeIngredients.test.ts`; a model
   // can still disobey them, which nothing downstream re-checks.
   //
-  // OPTIONAL on read: every recipe written before #1643 lacks the key, and an
-  // absent key means "not recorded", read exactly as null. Not defaulted, so
-  // code building a parsed line by hand is not forced to restate it.
+  // OPTIONAL on read: every recipe written before #1643 lacks the key. The app
+  // reads an absent key exactly as null. One reader tells them apart on purpose:
+  // the #1643 re-read scan (`apps/cloud-functions/scripts/lib/countedLineNet.ts`)
+  // treats absent as "never parsed for a count" and null as "parsed, none
+  // stated". Not defaulted — that would erase the distinction the scan needs
+  // (pinned in countedLineNet.test.ts), and code building a parsed line by hand
+  // is not forced to restate it.
   statedCount: QuantitySchema.nullable().optional(),
 });
 
