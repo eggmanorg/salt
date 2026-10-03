@@ -129,6 +129,12 @@ import {
   persistRecipe,
 } from '../src/lib/recipeService.js';
 import { addToast } from '../src/lib/toastStore.js';
+import { canonIndex } from '../src/lib/canonIndex.js';
+import {
+  LINE_REMEDY,
+  lineIssueProblem,
+  lineMarkContext,
+} from '../src/routes/recipes/lineMarkCopy.js';
 
 const RECIPE_ID = 'recipe-1';
 
@@ -533,6 +539,182 @@ describe('RecipeViewPage — what a repaired row actually does', () => {
     // never happened, the other that it happened and did not stick. A cook who
     // taps again is right in the first case and wasting a call in the second.
     expect(addToast).not.toHaveBeenCalledWith('Failed to match ingredient.', 'destructive');
+  });
+});
+
+// ─── What a mark says, and a tap that did not work (issue #1647) ─────────────
+//
+// Every mark's label is the problem and the remedy the domain picked for THAT
+// line, and the glyph is the one each issue has always worn. A ✗ or ? tap whose
+// write leaves the line still marked opens the match sheet on it, so a mark that
+// stayed put explains itself; a tap that clears the mark opens nothing.
+describe('RecipeViewPage — each mark says what is wrong and what clears it', () => {
+  const GARLIC: CanonItem = { ...LEMON, id: 'canon-garlic', name: 'Garlic Bulbs' };
+  const GARLIC_CLOVE: ProductForm = {
+    ...LEMON_ZEST,
+    id: 'form-garlic-clove',
+    parentCanonId: 'canon-garlic',
+    label: 'Garlic clove',
+    yield: { formUnit: 'count', amountPerParent: 10 },
+  };
+  // Read after #1643 (`statedCount: null`): weight only, under a counted form.
+  const weighedCloves = line({
+    id: 'ing-garlic',
+    rawText: '9 g garlic cloves',
+    canonId: 'canon-garlic',
+    parsed: {
+      quantity: { type: 'single', value: 9 },
+      unit: 'g',
+      item: 'garlic clove',
+      preparation: [],
+      notes: null,
+      displayText: null,
+      statedCount: null,
+    },
+  });
+
+  const CANON = [LEMON, BAY_LEAVES, GARLIC];
+  const FORMS = [LEMON_ZEST, GARLIC_CLOVE];
+
+  beforeEach(() => {
+    mockCanonItems._set(CANON);
+    mockProductForms._set(FORMS);
+    // `clearAllMocks` keeps implementations, and the suite above leaves this one
+    // failing — which would make every "opens nothing" case below pass vacuously.
+    vi.mocked(persistRecipe).mockResolvedValue({ kind: 'ok', value: undefined });
+  });
+
+  it.each([
+    [
+      'a never-matched line',
+      line({ id: 'i', canonId: null, matchState: 'pending' }),
+      'match-state-unmatched',
+      'not_matched',
+      'match_again',
+    ],
+    [
+      'a line the parse could not read',
+      line({ id: 'i', parsed: null, canonId: null, matchState: 'failed' }),
+      'match-state-unmatched',
+      'unreadable',
+      'match_again_then_reword',
+    ],
+    [
+      'a line matched to a deleted canon',
+      line({ id: 'i', canonId: 'canon-deleted' }),
+      'match-state-unmatched',
+      'dangling_canon',
+      'match_again',
+    ],
+    [
+      'a line with no amount',
+      line({ id: 'i', parsed: null }),
+      'match-state-no-amount',
+      'missing_amount',
+      'match_again',
+    ],
+    [
+      'a line with no form to buy it by',
+      line({ id: 'i' }),
+      'match-state-mismatched',
+      'missing_form',
+      'match_again_then_add_form',
+    ],
+    [
+      'a weighed line under a counted form',
+      weighedCloves,
+      'match-state-mismatched',
+      'missing_count',
+      'state_count',
+    ],
+  ] as const)('labels %s with its problem and its remedy', (_name, ing, testId, issue, remedy) => {
+    mockRecipes._set([makeRecipe([ing])]);
+    const { getByTestId } = renderPage();
+
+    const marker = getByTestId(testId);
+    const label = marker.getAttribute('aria-label') ?? '';
+    expect(label).toContain(LINE_REMEDY[remedy]);
+    expect(label).toContain(
+      lineIssueProblem(issue, lineMarkContext(ing, canonIndex(CANON), FORMS, CANON)),
+    );
+    expect(marker.getAttribute('title')).toBe(label);
+  });
+
+  it('never tells the weighed counted line to match again', () => {
+    // The mark the review on #1644 found lying: matching again reads the same
+    // words, so its label must send you to edit the line instead.
+    mockRecipes._set([makeRecipe([weighedCloves])]);
+    const { getByTestId } = renderPage();
+
+    const label = getByTestId('match-state-mismatched').getAttribute('aria-label') ?? '';
+    expect(label).toContain('garlic clove is bought by the count');
+    expect(label).not.toContain('Match again');
+  });
+
+  const unmatched = line({
+    id: 'ing-bay',
+    rawText: '2 bay leaves',
+    canonId: null,
+    matchState: 'pending',
+  });
+
+  async function tapAndLand(result: Ingredient) {
+    vi.mocked(matchIngredient).mockResolvedValue({ kind: 'ok', value: result } as never);
+    mockRecipes._set([makeRecipe([unmatched])]);
+    const view = renderPage();
+    await fireEvent.click(view.getByTestId('match-state-unmatched'));
+    await waitFor(() => expect(persistRecipe).toHaveBeenCalledTimes(1));
+    // What the write's own subscription delivers back.
+    mockRecipes._set([makeRecipe([result])]);
+    // Let the tap's continuation after the write run before asserting absence.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return view;
+  }
+
+  it('opens the sheet on the line when a ✗ tap leaves it unreadable', async () => {
+    const view = await tapAndLand({
+      ...unmatched,
+      parsed: null,
+      canonId: null,
+      matchState: 'failed',
+    });
+
+    expect(await view.findByTestId('ingredient-match-unreadable')).toBeInTheDocument();
+    expect(view.getByTestId('ingredient-match-remedy')).toHaveTextContent(
+      LINE_REMEDY.match_again_then_reword,
+    );
+  });
+
+  it('opens nothing when the ✗ tap clears the mark', async () => {
+    const bay = line({
+      id: 'ing-bay',
+      rawText: '2 bay leaves',
+      canonId: 'canon-bay',
+      parsed: {
+        quantity: { type: 'single', value: 1 },
+        unit: 'g',
+        item: 'bay leaf',
+        preparation: [],
+        notes: null,
+        displayText: '2',
+      },
+    });
+    const view = await tapAndLand(bay);
+
+    expect(view.queryByTestId('match-state-unmatched')).toBeNull();
+    expect(view.queryByTestId('ingredient-match-sheet')).toBeNull();
+  });
+
+  it('opens nothing for a match whose new canon this page has not received yet', async () => {
+    // The canon the match just created reads as dangling until the canon snapshot
+    // catches up — the lag, not a deleted item, so nothing to explain.
+    const view = await tapAndLand({
+      ...unmatched,
+      canonId: 'canon-just-created',
+      matchState: 'matched',
+    });
+
+    expect(view.queryByTestId('ingredient-match-sheet')).toBeNull();
   });
 });
 

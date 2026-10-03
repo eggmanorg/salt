@@ -259,6 +259,7 @@ export {
   usableServings,
   servingsScale,
   ingredientMatchIssue,
+  ingredientLineMark,
   recipeMatchIssueCount,
   chooseIngredientAmount,
   preferredIngredientUnit,
@@ -318,6 +319,11 @@ export type {
 } from './recipe/index.js';
 export type { RecipePhaseTotals } from './recipe/index.js';
 export type { IngredientAmount, PreferredIngredientUnit } from './recipe/index.js';
+export type {
+  IngredientLineIssue,
+  IngredientLineMark,
+  IngredientLineRemedy,
+} from './recipe/index.js';
 export type { KitEquipmentGroup } from './recipe/index.js';
 export type { PlaceholderMood, PlaceholderCondition } from './recipe/index.js';
 export type { DiffPart } from './recipe/index.js';

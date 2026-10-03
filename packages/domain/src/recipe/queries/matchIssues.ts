@@ -18,22 +18,22 @@ import type { Recipe } from '../entities/Recipe.js';
  *   amount to scale with servings and contributes nothing to the shopping list.
  *   It reads as matched because it IS matched: canon and parse are two separate
  *   joins, and for months a batch-authored line could lose the second one and
- *   keep the first (issue #949). Re-matching is exactly the remedy — the
- *   single-line path re-parses before it matches.
+ *   keep the first (issue #949).
  * - `missing_form` — the line names something OTHER than the canon item it
  *   matched, is measured by mass or volume, and the thing it buys is sold by the
  *   count, with no product form bridging the two. It reads as matched and buys
- *   "90 ml lime" instead of three limes (issue #855). A product form is exactly
- *   the missing piece, and re-matching is what mints one. Reported only when the
+ *   "90 ml lime" instead of three limes (issue #855). Reported only when the
  *   matched canon ALREADY carries at least one product form — see the guard
  *   below for why a form-less canon is out of this marker's reach (issue #867).
  * - `missing_count` — the line resolves to a product form of its own canon item,
  *   that form is counted (a carcass, a clove, a slice), and the line holds only
  *   a weight: no stated count, and grams cannot feed a counted form. It reads as
- *   matched and shops as "1500 g Chicken" instead of one bird (issue #1643).
- *   Re-matching is the remedy, because the re-parse records the count the line
- *   states. A form line is never converted through its PARENT's weight to make
- *   one up — 400 g of thighs ÷ one chicken is not a thigh count.
+ *   matched and shops as "1500 g Chicken" instead of one bird (issue #1643). A
+ *   form line is never converted through its PARENT's weight to make one up —
+ *   400 g of thighs ÷ one chicken is not a thigh count.
+ *
+ * What clears each of these is `ingredientLineMark`'s answer, not this one's
+ * (issue #1647): the remedy is not a function of the kind alone.
  */
 export type IngredientMatchIssue =
   'dangling_canon' | 'missing_amount' | 'missing_form' | 'missing_count';

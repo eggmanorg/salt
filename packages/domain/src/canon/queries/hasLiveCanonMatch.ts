@@ -16,9 +16,13 @@ export function isResolvedMatchState(matchState: string): boolean {
   return matchState === 'matched' || matchState === 'needs_approval';
 }
 
+/**
+ * `canonIds` needs only membership, so a `ReadonlySet<string>` of live ids and a
+ * `ReadonlyMap<string, CanonItem>` keyed by them both serve.
+ */
 export function hasLiveCanonMatch(
   ref: { matchState: string; canonId: string | null },
-  canonIds: ReadonlySet<string>,
+  canonIds: Pick<ReadonlySet<string>, 'has'>,
 ): boolean {
   return isResolvedMatchState(ref.matchState) && ref.canonId !== null && canonIds.has(ref.canonId);
 }

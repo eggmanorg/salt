@@ -233,8 +233,8 @@ describe('IngredientMatchSheet', () => {
     });
 
     const body = await screen.findByTestId('ingredient-match-unmatched');
-    expect(body).toHaveTextContent('Not matched yet.');
-    expect(body).toHaveTextContent('lime juice');
+    expect(body).toHaveTextContent('Not matched yet');
+    expect(screen.getByText(/It would match on “lime juice”/)).toBeInTheDocument();
   });
   it('flags a metric line whose canon is bought by the count as having no form', async () => {
     // The #855 smell and the reason a deleted product form needs naming: nothing
@@ -310,8 +310,12 @@ describe('IngredientMatchSheet', () => {
     });
 
     const hint = await screen.findByTestId('ingredient-match-missing-count');
-    expect(hint).toHaveTextContent('whole Chicken');
-    expect(hint).toHaveTextContent('Match again');
+    expect(hint).toHaveTextContent('chicken carcass is bought by the count');
+    // Parsed before #1643 (no `statedCount` key): a re-parse may read the count,
+    // so Match again is the first rung — and the second is named with it.
+    const remedy = screen.getByTestId('ingredient-match-remedy');
+    expect(remedy).toHaveTextContent('Match again to read the count');
+    expect(remedy).toHaveTextContent('edit it to say how many');
     // The form that resolved is still named — the line found its bridge.
     expect(screen.getByTestId('ingredient-match-form')).toHaveTextContent('Chicken carcass');
   });
@@ -346,5 +350,116 @@ describe('IngredientMatchSheet', () => {
     });
     await screen.findByTestId('ingredient-match-form');
     expect(screen.queryByTestId('ingredient-match-missing-count')).not.toBeInTheDocument();
+  });
+
+  describe('what clears each mark (issue #1647)', () => {
+    const CHICKEN: CanonItem = { ...LIME, id: 'canon-chicken', name: 'whole chicken' };
+    const BREAST: ProductForm = {
+      ...LIME_JUICE_FORM,
+      id: 'form-breast',
+      parentCanonId: 'canon-chicken',
+      label: 'Chicken breast',
+      yield: { formUnit: 'count', amountPerParent: 2 },
+    };
+    const breasts = (statedCount: null | undefined) =>
+      ingredient({
+        rawText: '400 g chicken breasts',
+        canonId: 'canon-chicken',
+        parsed: {
+          quantity: { type: 'single', value: 400 },
+          unit: 'g',
+          item: 'chicken breast',
+          preparation: [],
+          notes: null,
+          displayText: null,
+          ...(statedCount === undefined ? {} : { statedCount }),
+        },
+      });
+
+    const remedyFor = async (ing: Ingredient) => {
+      render(IngredientMatchSheet, { props: { ingredient: ing, open: true, onRematch: () => {} } });
+      return screen.findByTestId('ingredient-match-remedy');
+    };
+
+    it('state_count: a weight-only line already read says to edit it, never to Match again', async () => {
+      mockCanonItems._set([CHICKEN]);
+      mockProductForms._set([BREAST]);
+      const remedy = await remedyFor(breasts(null));
+      // Matching again reads the same words and changes nothing (the domain's
+      // negative pin), so the copy must not offer it as the fix.
+      expect(remedy).not.toHaveTextContent(/match again/i);
+      expect(remedy).toHaveTextContent('says how many');
+      expect(screen.getByTestId('ingredient-match-missing-count')).toHaveTextContent(
+        'chicken breast is bought by the count',
+      );
+    });
+
+    it('moves from the first rung to the second when Match again finds no count', async () => {
+      mockCanonItems._set([CHICKEN]);
+      mockProductForms._set([BREAST]);
+      const { rerender } = render(IngredientMatchSheet, {
+        props: { ingredient: breasts(undefined), open: true, onRematch: () => {} },
+      });
+      expect(await screen.findByTestId('ingredient-match-remedy')).toHaveTextContent(
+        'Match again to read the count',
+      );
+      await rerender({ ingredient: breasts(null), open: true, onRematch: () => {} });
+      expect(screen.getByTestId('ingredient-match-remedy')).not.toHaveTextContent(/match again/i);
+    });
+
+    it('missing_form: Match again, then a product form in the catalogue', async () => {
+      mockCanonItems._set([LIME]);
+      mockProductForms._set([LIME_ZEST_FORM]);
+      const remedy = await remedyFor(ingredient());
+      expect(remedy).toHaveTextContent('Match again');
+      expect(remedy).toHaveTextContent('If the mark is still here afterwards');
+      expect(remedy).toHaveTextContent('product form has to be added');
+    });
+
+    it('missing_amount: Match again', async () => {
+      mockCanonItems._set([LIME]);
+      const remedy = await remedyFor(ingredient({ parsed: null }));
+      expect(remedy).toHaveTextContent('Match again');
+    });
+
+    it('dangling: says what happened and Match again', async () => {
+      mockCanonItems._set([LIME]);
+      const remedy = await remedyFor(ingredient({ canonId: 'canon-gone' }));
+      expect(screen.getByTestId('ingredient-match-dangling')).toHaveTextContent(
+        'deleted or merged away',
+      );
+      expect(remedy).toHaveTextContent('Match again');
+    });
+
+    it('not matched and never parsed: keeps its own anchor, and names Match again', async () => {
+      mockCanonItems._set([LIME]);
+      const remedy = await remedyFor(
+        ingredient({ canonId: null, matchState: 'pending', parsed: null }),
+      );
+      expect(screen.getByTestId('ingredient-match-unparsed')).toHaveTextContent('Not matched yet');
+      expect(remedy).toHaveTextContent('Match again');
+    });
+
+    it('unreadable: Match again, then reword the line', async () => {
+      mockCanonItems._set([LIME]);
+      const remedy = await remedyFor(
+        ingredient({ canonId: null, matchState: 'failed', parsed: null }),
+      );
+      expect(screen.getByTestId('ingredient-match-unreadable')).toHaveTextContent(
+        "couldn't be read",
+      );
+      expect(remedy).toHaveTextContent('Match again');
+      expect(remedy).toHaveTextContent('edit the recipe');
+    });
+
+    it('a clean line carries no remedy at all', async () => {
+      mockCanonItems._set([LIME]);
+      mockProductForms._set([LIME_JUICE_FORM]);
+      render(IngredientMatchSheet, {
+        props: { ingredient: ingredient(), open: true, onRematch: () => {} },
+      });
+      await screen.findByTestId('ingredient-match-form');
+      expect(screen.queryByTestId('ingredient-match-remedy')).not.toBeInTheDocument();
+    });
   });
 });
