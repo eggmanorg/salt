@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { roundGrams } from '@salt/domain';
-import type { BatchDoc, BatchStageDoc } from '@salt/domain/schemas';
+import { BatchSchema } from '@salt/domain/schemas';
+import type { BatchDoc, BatchQuantityDoc, BatchStageDoc, SaltProduct } from '@salt/domain/schemas';
 import {
   categoriesPresent,
   categoryChips,
   categoryLabel,
+  cureSaltRecord,
   defaultObservationStageId,
   formatGrams,
   formatStatedDuration,
@@ -279,6 +281,70 @@ describe('substitutionSummary', () => {
     // Null rather than a dash: every line on these screens says one thing, and a
     // dash would be a second thing that means nothing.
     expect(substitutionSummary(batch())).toBeNull();
+  });
+});
+
+describe('cureSaltRecord (issue #1645)', () => {
+  function line(ingredientId: string, saltProduct: SaltProduct | null): BatchQuantityDoc {
+    return { ingredientId, label: ingredientId, percent: 1, grams: 10, stageId: null, saltProduct };
+  }
+
+  // A coppa: meat, plain salt, and whichever curing salt the run froze.
+  function coppa(cure: SaltProduct | null, over: Partial<BatchDoc> = {}): BatchDoc {
+    return batch({
+      recipeKind: 'cure',
+      cureCategory: 'dry_cured_whole_muscle',
+      quantities: [line('ing-meat', null), line('ing-salt', 'plain'), line('ing-cure', cure)],
+      ...over,
+    });
+  }
+
+  it('records a nitrite-only salt on a long dry, past tense, naming the nitrate-bearing one', () => {
+    expect(cureSaltRecord(coppa('cure1'))).toEqual({
+      nitrateBearing: 'cure2',
+      text: 'This run used Cure #1 (Prague powder #1), which is nitrite only. Cure #2 (Prague powder #2) is the same strength and carries nitrate for a long dry.',
+    });
+  });
+
+  it('says it of the jar that went on after a swap', () => {
+    // The frozen line names the substitute, so the record is about that jar.
+    const record = cureSaltRecord(
+      coppa('nitritedCuringSalt', {
+        cureSaltSubstitution: { from: 'cure1', to: 'nitritedCuringSalt' },
+      }),
+    );
+    expect(record?.text).toContain('This run used Nitrited curing salt');
+    expect(record?.nitrateBearing).toBe('salvianda');
+  });
+
+  it('says nothing for a salt that carries nitrate', () => {
+    expect(cureSaltRecord(coppa('cure2'))).toBeNull();
+  });
+
+  it('says nothing for a cooked cure', () => {
+    expect(cureSaltRecord(coppa('cure1', { cureCategory: 'cooked_whole_muscle' }))).toBeNull();
+  });
+
+  it('says nothing for an uncategorised cure', () => {
+    expect(cureSaltRecord(coppa('cure1', { cureCategory: null }))).toBeNull();
+  });
+
+  it('says nothing for a run written before the product was frozen', () => {
+    // A real legacy read, not a hand-typed null: the key is absent on the document
+    // and the schema's read default is what this function sees.
+    const legacy = BatchSchema.parse({
+      ...coppa('cure1'),
+      quantities: [{ ingredientId: 'ing-cure', label: 'Cure', percent: 0.25, grams: 2.5 }],
+    });
+    expect(legacy.quantities[0]?.saltProduct).toBeNull();
+    expect(cureSaltRecord(legacy)).toBeNull();
+  });
+
+  it('speaks about the first line that draws a note', () => {
+    const run = coppa('cure1', {
+      quantities: [line('ing-a', 'nitritedCuringSalt'), line('ing-b', 'cure1')],
+    });
+    expect(cureSaltRecord(run)?.text).toContain('This run used Nitrited curing salt');
   });
 });
 

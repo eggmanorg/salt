@@ -217,3 +217,34 @@ describe('a batch document written before #1405', () => {
     expect(parsed.quantities.map((q) => q.stageId)).toEqual([null, 'bulk']);
   });
 });
+
+// Issue #1645 added `saltProduct` to each frozen quantity: a read default, no
+// migration, no back-fill. Unlike `stageId` above, `null` here is NOT a claim about
+// what an old run used — it is "nothing recorded the product", which is the truth of
+// every run written before the field. The run's page shows no cure-salt note for
+// such a run (`cureSaltRecord` in web-pwa's `batchDisplay.ts`).
+describe('a batch document written before #1645', () => {
+  it('reads as a run that recorded no salt product on any line', () => {
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.quantities.map((q) => q.saltProduct)).toEqual([null]);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('carries a frozen product through the parse when a run has one', () => {
+    const parsed = BatchSchema.parse({
+      ...LEGACY_BATCH,
+      quantities: [
+        ...LEGACY_BATCH.quantities,
+        {
+          ingredientId: 'ing-cure',
+          label: 'Prague powder #1',
+          percent: 0.25,
+          grams: 2.5,
+          stageId: null,
+          saltProduct: 'cure1',
+        },
+      ],
+    });
+    expect(parsed.quantities.map((q) => q.saltProduct)).toEqual([null, 'cure1']);
+  });
+});

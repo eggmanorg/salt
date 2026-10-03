@@ -41,6 +41,7 @@
   import BatchReadingRow from './BatchReadingRow.svelte';
   import {
     categoryLabel,
+    cureSaltRecord,
     formatDate,
     formatGrams,
     formatStatedDuration,
@@ -254,6 +255,10 @@
   // Which curing salt actually went on, off the run's own frozen snapshot (#1402).
   // Null for every run that used what the recipe named.
   const substitution = $derived(run == null ? null : substitutionSummary(run));
+  // What sort of curing salt went on, as a record (issue #1645): off the run's own
+  // frozen quantity lines and category, so it survives any edit to the formula. In
+  // every run state, and on no control's path — it gates nothing.
+  const cureSaltNote = $derived(run == null ? null : cureSaltRecord(run));
 
   let logOpen = $state(false);
   // Dismissal of the end-of-run invitation, for this visit only. In memory by
@@ -595,6 +600,20 @@
                 </div>
               {/if}
             </dl>
+
+            <!-- WHAT SORT OF CURING SALT THIS RUN USED (issue #1645), when it was
+                 nitrite only on a long dry. A plain record in the past tense: the
+                 meat is already cured, so it offers no advice and nothing here or
+                 anywhere on the page is disabled by it. -->
+            {#if cureSaltNote !== null}
+              <p
+                class="text-sm text-muted-foreground"
+                data-testid="batch-cure-salt-note"
+                data-nitrate-bearing={cureSaltNote.nitrateBearing}
+              >
+                {cureSaltNote.text}
+              </p>
+            {/if}
 
             <p class="text-xs text-muted-foreground" data-testid="batch-frozen-note">
               These were worked out when the batch started. Editing the recipe or its formula

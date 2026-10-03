@@ -132,17 +132,40 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         percent: 100,
         grams: 816,
         stageId: null,
+        saltProduct: null,
       },
-      { ingredientId: 'ing-water', label: '350 g water', percent: 70, grams: 571, stageId: null },
-      { ingredientId: 'ing-salt', label: '10 g salt', percent: 2, grams: 16, stageId: null },
+      {
+        ingredientId: 'ing-water',
+        label: '350 g water',
+        percent: 70,
+        grams: 571,
+        stageId: null,
+        saltProduct: null,
+      },
+      {
+        ingredientId: 'ing-salt',
+        label: '10 g salt',
+        percent: 2,
+        grams: 16,
+        stageId: null,
+        saltProduct: null,
+      },
       {
         ingredientId: 'ing-yeast',
         label: '7 g instant yeast',
         percent: 1.4,
         grams: 11,
         stageId: null,
+        saltProduct: null,
       },
-      { ingredientId: 'ing-oil', label: '15 g olive oil', percent: 3, grams: 24, stageId: null },
+      {
+        ingredientId: 'ing-oil',
+        label: '15 g olive oil',
+        percent: 3,
+        grams: 24,
+        stageId: null,
+        saltProduct: null,
+      },
     ],
     totals: {
       basisGrams: 816,
@@ -321,7 +344,16 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
     renderPage();
     mockBatch._set(
       makeBatch({
-        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 17, stageId: null }],
+        quantities: [
+          {
+            ingredientId: 'ing-gone',
+            label: '',
+            percent: 2,
+            grams: 17,
+            stageId: null,
+            saltProduct: null,
+          },
+        ],
       }),
     );
 
@@ -1713,6 +1745,83 @@ describe('BatchDetailPage — cure type', () => {
   });
 });
 
+describe('BatchDetailPage — the curing salt this run used (issue #1645)', () => {
+  // A coppa whose cure line froze `cure` — off the run's own quantities, which is
+  // what lets the note survive an edited formula or a deleted recipe.
+  function coppa(cure: 'cure1' | 'cure2', over: Partial<BatchDoc> = {}): Partial<BatchDoc> {
+    return {
+      recipeId: 'deleted-recipe',
+      recipeTitle: 'Coppa',
+      recipeKind: 'cure',
+      cureCategory: 'dry_cured_whole_muscle',
+      quantities: [
+        {
+          ingredientId: 'ing-meat',
+          label: 'Pork collar',
+          percent: 100,
+          grams: 1000,
+          stageId: null,
+          saltProduct: null,
+        },
+        {
+          ingredientId: 'ing-cure',
+          label: 'Prague powder',
+          percent: 0.25,
+          grams: 2.5,
+          stageId: null,
+          saltProduct: cure,
+        },
+      ],
+      ...over,
+    };
+  }
+
+  const RECORD =
+    'This run used Cure #1 (Prague powder #1), which is nitrite only. Cure #2 (Prague powder #2) is the same strength and carries nitrate for a long dry.';
+
+  /** Every control on the page, by its text and whether it is disabled. */
+  function controls(): string[] {
+    return Array.from(document.querySelectorAll('button, input, textarea, select')).map(
+      (el) => `${el.textContent?.trim() ?? ''}:${(el as HTMLButtonElement).disabled}`,
+    );
+  }
+
+  it('records a nitrite-only salt on a long dry, on a running run', async () => {
+    await showRun(coppa('cure1'));
+    const note = screen.getByTestId('batch-cure-salt-note');
+    expect(note).toHaveTextContent(RECORD);
+    expect(note).toHaveAttribute('data-nitrate-bearing', 'cure2');
+  });
+
+  it('records it on an abandoned run too — it stays true however the run ended', async () => {
+    await showRun(coppa('cure1', { state: 'abandoned', abandonedAt: '2026-08-16T08:10:00.000Z' }));
+    expect(screen.getByTestId('batch-cure-salt-note')).toHaveTextContent(RECORD);
+  });
+
+  it('says nothing for a nitrate-bearing salt', async () => {
+    await showRun(coppa('cure2'));
+    expect(screen.queryByTestId('batch-cure-salt-note')).toBeNull();
+  });
+
+  it('says nothing on a bread run', async () => {
+    await showRun();
+    expect(screen.queryByTestId('batch-cure-salt-note')).toBeNull();
+  });
+
+  it('disables nothing — every control is as it is on the same run without the note', async () => {
+    // The same run with a nitrate-bearing salt draws no note: the baseline.
+    await showRun(coppa('cure2'));
+    const without = controls();
+    expect(without.length).toBeGreaterThan(0);
+    cleanup();
+
+    await showRun(coppa('cure1'));
+    expect(screen.getByTestId('batch-cure-salt-note')).toBeInTheDocument();
+    // The same controls, in the same order, each enabled or disabled as before.
+    expect(controls()).toEqual(without);
+  });
+});
+
 describe('BatchDetailPage — how far along the run is (issue #1407)', () => {
   // The frozen totals put `basisGrams` at 816 (see `makeBatch`), so a reading of
   // 604 g is 26% lost. The arithmetic itself is `targetProgress`'s and is pinned in
@@ -1885,6 +1994,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             percent: 100,
             grams: 1800,
             stageId: null,
+            saltProduct: null,
           },
           {
             ingredientId: 'ing-wine',
@@ -1892,6 +2002,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             percent: 2.2,
             grams: 40,
             stageId: 'stage-2',
+            saltProduct: null,
           },
           {
             ingredientId: 'ing-bung',
@@ -1899,6 +2010,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             percent: 0.5,
             grams: 9,
             stageId: 'stage-2',
+            saltProduct: null,
           },
         ],
       }),
@@ -1927,6 +2039,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             percent: 2.2,
             grams: 40,
             stageId: 'stage-2',
+            saltProduct: null,
           },
         ],
       }),
@@ -1945,6 +2058,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             percent: 2.2,
             grams: 40,
             stageId: 'stage-that-is-gone',
+            saltProduct: null,
           },
         ],
       }),
@@ -1961,7 +2075,14 @@ describe('BatchDetailPage — what goes on at each stage', () => {
     mockBatch._set(
       makeBatch({
         quantities: [
-          { ingredientId: 'ing-gone', label: '', percent: 2, grams: 17, stageId: 'stage-2' },
+          {
+            ingredientId: 'ing-gone',
+            label: '',
+            percent: 2,
+            grams: 17,
+            stageId: 'stage-2',
+            saltProduct: null,
+          },
         ],
       }),
     );

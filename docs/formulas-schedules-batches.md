@@ -688,9 +688,9 @@ them.
   `cureSaltFitness` (`packages/domain/src/formula/cureSalt.ts`) reads the product
   named on the formula and the recipe's `cureCategory` and returns a **fact** — the
   nitrate-bearing product at the same nitrite strength, derived from
-  `CURE_SALT_PRODUCTS` rather than from a second cross-pair list. Two surfaces word
-  it: the formula screen, and the start-a-run sheet, where it is re-read against the
-  jar the person actually picks.
+  `CURE_SALT_PRODUCTS` rather than from a second cross-pair list. Three surfaces word
+  it: the formula screen, the start-a-run sheet, where it is re-read against the jar
+  the person actually picks, and the run's own page (below).
 
   **How narrowly, because "Salt prevents an unsuitable cure" is what this must never
   be read as.** It **gates nothing** — no refusal, no disabled control, no
@@ -703,11 +703,17 @@ them.
   (`duration: null`) and the note has to work on the formula screen where there may
   be no process at all. The cooked categories (bacon, mortadella) are silent by
   design: a note there would be wrong and would teach people to stop reading notes.
-  **The running batch carries nothing** — `BatchQuantitySchema` does not freeze which
-  salt product went on, so a note there would have to read through to a live formula
-  a later edit can rewrite. Adding `saltProduct` to that schema is the honest
-  prerequisite and wants its own issue.
   `packages/domain/tests/formula/cureSalt.test.ts` pins each of these.
+
+  **The run says it too, as a record** (issue #1645). Each frozen quantity line
+  carries `saltProduct` (`BatchQuantitySchema`), copied by `freezeBatch` off the
+  solved component — after a jar swap that is the jar that went on, because the
+  formula reaching the freeze is already substituted. `cureSaltRecord`
+  (`apps/web-pwa/src/routes/batches/batchDisplay.ts`) asks the same predicate of
+  those lines and the run's frozen `cureCategory`, so `/batches/:id` words it
+  without loading the formula, past tense and with no advice, in every run state.
+  Not on the cook-along page, by decision. A run written before #1645 froze no
+  product and reads `null` there, so it shows no note; nothing back-fills it.
 
 - **How good are the two AI passes.** The gate on everything: hand three real
   bread recipes to the cheap model and check the wait stages come out clean, then
