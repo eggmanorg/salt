@@ -124,13 +124,11 @@
 
   // The amount this line is read in (issue #1643): a count or a measure, chosen
   // from data, never from the item's name. Every figure below reads this.
-  const chosen: IngredientAmount | null = $derived(
-    amounts !== null
-      ? amounts.amountFor(ingredient)
-      : parsed
-        ? chooseIngredientAmount(parsed, null, [], [])
-        : null,
-  );
+  const chosen: IngredientAmount | null = $derived.by(() => {
+    if (parsed === null) return null;
+    if (amounts !== null) return amounts.amountFor(ingredient);
+    return chooseIngredientAmount(parsed, null, [], []);
+  });
   const isCount = $derived(chosen?.unit === 'count');
 
   // That amount at the scale being read. Everything below — the figure, and the
@@ -138,11 +136,10 @@
   // `parsed.quantity`, so a scaled "4½ garlic cloves" agrees with itself. At
   // scale 1 `scaleQuantity` returns the stored quantity itself, so an unscaled
   // line is byte-for-byte what it was.
-  const quantity = $derived(
-    chosen
-      ? scaleQuantity(chosen.quantity, scale, chosen.unit === 'count' ? null : chosen.unit)
-      : null,
-  );
+  const quantity = $derived.by(() => {
+    if (chosen === null) return null;
+    return scaleQuantity(chosen.quantity, scale, chosen.unit === 'count' ? null : chosen.unit);
+  });
 
   // The amount, or null when the line has none. `quantity` alone decides whether
   // there is something to render; the unit only decides how it is spelled — appended
@@ -153,11 +150,10 @@
   // text, exactly as the single-run template did. Reading the unit here as well made
   // a count indistinguishable from an unparsed line and sent it down that same
   // raw-text branch (#951).
-  const amount = $derived(
-    parsed && chosen && quantity
-      ? `${formatQty(quantity)}${chosen.unit === 'count' ? '' : chosen.unit}`
-      : null,
-  );
+  const amount = $derived.by(() => {
+    if (quantity === null || chosen === null) return null;
+    return `${formatQty(quantity)}${chosen.unit === 'count' ? '' : chosen.unit}`;
+  });
 
   // `parsed.item` is not reliably plural-agreed with `quantity` — staging stores
   // `item: "garlic clove"` against `quantity: 4`. That never showed while count lines
@@ -257,7 +253,7 @@
         class="text-xs text-muted-foreground">{preparation}</span
       >{/if}{:else}{rawText}{/if}{#if notes}<span class="ml-1 text-xs text-muted-foreground"
       >({notes})</span
-    >{/if}{/if}{#if showDisplay && parsed && amount && displayNote}<span
+    >{/if}{/if}{#if showDisplay && amount && displayNote}<span
     class="text-xs text-muted-foreground"
     class:ml-1={part === 'all'}
     class:block={part === 'display'}>({displayNote})</span

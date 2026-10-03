@@ -141,3 +141,24 @@ describe('IngredientText — a counted line reads count-first (issue #1643)', ()
     expect(container.textContent).toBe('150g red onion, finely sliced(about 1 medium)');
   });
 });
+
+describe('IngredientText — the lookup never invents an amount', () => {
+  it('renders an unparsed line as its raw text', () => {
+    const unparsed: Ingredient = { ...ONION_LINE, rawText: 'A jug of gravy', parsed: null };
+    expect(textOf(unparsed)).toBe('A jug of gravy');
+  });
+
+  it('renders a parsed line with no amount as its raw text', () => {
+    const noAmount = line('A crack of black pepper', null, { item: 'black pepper' });
+    expect(textOf(noAmount)).toBe('A crack of black pepper');
+  });
+
+  it('writes no bracket for a metric line with nothing else to say', () => {
+    const plain = line('300g red lentils', LENTILS.id, {
+      quantity: { type: 'single', value: 300 },
+      unit: 'g',
+      item: 'red lentils',
+    });
+    expect(textOf(plain)).toBe('300g red lentils');
+  });
+});

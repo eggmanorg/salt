@@ -330,4 +330,14 @@ describe('combined aisle row — the count sentinel is never a word (issue #1643
     expect(row.textContent).toContain('×1 + 1500 g');
     expect(row.textContent).not.toMatch(/\bcount\b/);
   });
+
+  it('writes plain counts from two recipes as one bare number', async () => {
+    mockItems._set([
+      item({ id: 'i1', amount: 2, sources: fromRecipe('Stew', 'r1') }),
+      item({ id: 'i2', amount: 3, sources: fromRecipe('Soup', 'r2') }),
+    ]);
+    const view = render(ShoppingListPage, props);
+    const row = await combinedRow(view);
+    expect(row.textContent).toContain('(5)');
+  });
 });
