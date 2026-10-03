@@ -379,10 +379,10 @@ describe('parseRecipeIngredients — displayText threading', () => {
           name: null,
           items: [
             simpleIngredient({
-              rawText: '3 egg whites',
-              quantity: { type: 'single', value: 99 },
+              rawText: '3 eggs',
+              quantity: { type: 'single', value: 150 },
               unit: 'g',
-              item: 'egg whites',
+              item: 'eggs',
               displayText: 'about 3',
               statedCount: { type: 'single', value: 3 },
             }),
@@ -400,13 +400,13 @@ describe('parseRecipeIngredients — displayText threading', () => {
     });
 
     const result = await (parseRecipeIngredientsFlow as Function)({
-      rawText: '3 egg whites\n½ small red onion',
+      rawText: '3 eggs\n½ small red onion',
     });
 
-    const [eggWhites, onion] = result[0].items;
-    expect(eggWhites.parsed.quantity).toEqual({ type: 'single', value: 99 });
-    expect(eggWhites.parsed.unit).toBe('g');
-    expect(eggWhites.parsed.statedCount).toEqual({ type: 'single', value: 3 });
+    const [eggs, onion] = result[0].items;
+    expect(eggs.parsed.quantity).toEqual({ type: 'single', value: 150 });
+    expect(eggs.parsed.unit).toBe('g');
+    expect(eggs.parsed.statedCount).toEqual({ type: 'single', value: 3 });
     expect(onion.parsed.quantity).toEqual({ type: 'single', value: 75 });
     expect(onion.parsed.statedCount).toEqual({
       type: 'mixed',
@@ -801,6 +801,25 @@ describe('parseRecipeIngredients — prompt construction', () => {
     expect(system).toContain('- statedCount: the NUMBER of whole things the line states');
     expect(system).toContain('You never choose between the two');
     expect(system).toContain('"2 eggs, soft-boiled" → 2');
+    // A count of PIECES or PACKS is not a count of the item (review on #1644):
+    // "2 sticks celery" read as a count against canon Celery (bought by the
+    // count) would shop two heads. Only the whole item, or a piece the NAMING
+    // rule names in item (a garlic clove), carries a count.
+    expect(system).toContain('A NUMBER THAT COUNTS PIECES OR PACKS IS NOT A COUNT OF THE ITEM');
+    for (const line of [
+      '"2 sticks celery" → null',
+      '"4 lettuce leaves" → null',
+      '"1 tin chopped`',
+      '"3 egg whites" → null',
+    ]) {
+      expect(system).toContain(line.replace(/`$/, ''));
+    }
+    expect(system).toContain('tomatoes" → null');
+    expect(system).toContain('"4 lettuce leaves" → item "lettuce"');
+    expect(system).toContain('The ONE exception is a piece the NAMING rule below puts into item');
+    // …and the conversion table no longer routes every count/pack line there.
+    expect(system).not.toContain('statedCount to the count, and displayText');
+    expect(system).toContain('"2 sticks celery" → quantity 80, unit "g", statedCount null');
     // A component line counts its PARENT, so it states no count of its own.
     expect(system).toContain('NULL too on a COMPONENT');
   });

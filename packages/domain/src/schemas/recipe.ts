@@ -63,10 +63,16 @@ export const ParsedIngredientSchema = z.object({
   // The number of whole things the line STATES ("1 red onion" → 1, "3 large
   // cloves of garlic" → 3, "½ small onion" → ½), held alongside the metric
   // estimate rather than instead of it (issue #1643). It counts the thing named
-  // in `item` — a clove, a slice, a carcass — never a parent it would convert
-  // through, so a citrus-component line ("juice of 2 limes", item "lime juice")
-  // carries none. null when the line counts nothing (already metric, a spoon
-  // measure, an unquantifiable seasoning).
+  // in `item` as it is bought whole — an onion, a carcass, or a garlic clove
+  // (the one piece the parse prompt's NAMING rule puts in `item`). It is NOT set
+  // for a count of pieces or packs ("2 sticks celery", "4 lettuce leaves",
+  // "1 tin chopped tomatoes"): the chooser reads it as whole items, and two
+  // sticks are not two heads. Nor for a parent it would convert through, so a
+  // citrus-component line ("juice of 2 limes", item "lime juice") carries none.
+  // null when the line counts nothing (already metric, a spoon measure, an
+  // unquantifiable seasoning). These are prompt instructions, pinned in
+  // `apps/cloud-functions/tests/flows/parseRecipeIngredients.test.ts`; a model
+  // can still disobey them, which nothing downstream re-checks.
   //
   // OPTIONAL on read: every recipe written before #1643 lacks the key, and an
   // absent key means "not recorded", read exactly as null. Not defaulted, so
