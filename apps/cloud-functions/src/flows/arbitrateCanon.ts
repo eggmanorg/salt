@@ -76,6 +76,11 @@ export const arbitrateCanonFlow = ai.defineFlow(
         ? { largeQuantityThreshold: output.largeQuantityThreshold }
         : {}),
       ...(output.unit != null ? { unit: output.unit } : {}),
+      // A weight of one only means something for an item bought by the count,
+      // and a non-positive one is no weight at all (issue #1643).
+      ...(output.unit === 'count' && output.gramsPerItem != null && output.gramsPerItem > 0
+        ? { gramsPerItem: output.gramsPerItem }
+        : {}),
       reasoning: output.reasoning,
     };
 
@@ -159,6 +164,9 @@ function buildPrompt(req: z.infer<typeof ArbitrationRequestSchema>): string {
     ``,
     `## Rule 4 — largeQuantityThreshold`,
     `If the item is sold in a standard UK pack, set largeQuantityThreshold to 60% of the pack size and unit to "g", "ml", or "count". For example: plain flour → 600 g; eggs → 8 count. If there is no clear standard UK pack, set both to null.`,
+    ``,
+    `## Rule 5 — gramsPerItem`,
+    `When unit is "count", set gramsPerItem to the typical weight in grams of ONE of the item as a UK shopper buys it (one medium onion → 150; one egg → 50; one whole chicken → 1500). Otherwise set gramsPerItem to null.`,
     ``,
   ].join('\n');
 }

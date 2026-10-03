@@ -30,6 +30,7 @@ export const ArbitrationResultSchema = z.discriminatedUnion('kind', [
     shoppingBehavior: z.enum(SHOPPING_BEHAVIORS),
     largeQuantityThreshold: z.number().optional(),
     unit: z.enum(CANON_ITEM_UNITS).optional(),
+    gramsPerItem: z.number().positive().optional(),
     reasoning: z.string().optional(),
     prompt: z.string().optional(),
     rawResponse: z.string().optional(),
@@ -41,6 +42,8 @@ export const ArbitrationResultSchema = z.discriminatedUnion('kind', [
     shoppingBehavior: z.enum(SHOPPING_BEHAVIORS),
     largeQuantityThreshold: z.number().optional(),
     unit: z.enum(CANON_ITEM_UNITS).optional(),
+    // The weight of one item, set alongside a `count` unit (issue #1643).
+    gramsPerItem: z.number().positive().optional(),
     reasoning: z.string().optional(),
     prompt: z.string().optional(),
     rawResponse: z.string().optional(),
@@ -64,5 +67,9 @@ export const CanonArbitrationAIOutputSchema = z.object({
   shoppingBehavior: z.enum(SHOPPING_BEHAVIORS),
   largeQuantityThreshold: z.number().nullable(),
   unit: z.enum(CANON_ITEM_UNITS).nullable(),
+  // Grams in ONE item when `unit` is "count" (issue #1643). Optional so a stubbed
+  // model answer written before the field (the e2e `_e2e_ai_stubs`) still
+  // validates; the flow drops a missing, null or non-positive value.
+  gramsPerItem: z.number().nullable().optional(),
   reasoning: z.string(),
 });

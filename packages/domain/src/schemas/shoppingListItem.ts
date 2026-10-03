@@ -55,8 +55,8 @@ export type FormDemandDoc = z.infer<typeof FormDemandSchema>;
 // but it is not a claim that no row ever lacked a field. Re-run the audit before
 // making a twelfth field required.
 //
-// The FOUR ADDITIVE FIELDS below (`traceContext`, `formDemand`, `originalText`,
-// `measureNote`) plus `amount`/`unit` stay `.optional()` and are untouched:
+// The ADDITIVE FIELDS below (`traceContext`, `formDemand`, `originalText`,
+// `measureNote`, `weightGrams`) plus `amount`/`unit` stay `.optional()`:
 // their absence is the contract, not a defect, and each carries its own reason.
 export const ShoppingListItemSchema = z.object({
   id: z.string(),
@@ -133,6 +133,16 @@ export const ShoppingListItemSchema = z.object({
   // before this field, manual adds, and every scaled add lack it and stay valid on
   // read (back-compat; no migration).
   measureNote: z.string().optional(),
+  // The weight a COUNTED recipe row stands for, in grams, at the servings it was
+  // added at (issue #1643) — the parser's estimate behind "3 large onions", so a
+  // combined counted row can write ONE bracketed weight ("Red onion ×6 (900g)")
+  // without re-reading any recipe. Absent on a metric row (its `amount` is its
+  // weight), on a product-form parent row (its weight is the parent's), on manual
+  // adds, and on every item written before the field.
+  //
+  // DISPLAY ONLY — no logic may branch on it. Optional and additive: back-compat
+  // on read, no migration; items already on a list keep what they were added with.
+  weightGrams: z.number().optional(),
 });
 
 export type ShoppingListItemDoc = z.infer<typeof ShoppingListItemSchema>;

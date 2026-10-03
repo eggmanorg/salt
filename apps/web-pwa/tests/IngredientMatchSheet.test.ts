@@ -279,4 +279,72 @@ describe('IngredientMatchSheet', () => {
 
     expect(await screen.findByTestId('ingredient-match-rematch')).toBeDisabled();
   });
+
+  it('says a counted form fed only grams has no count, and how to fix it (issue #1643)', async () => {
+    const chicken: CanonItem = { ...LIME, id: 'canon-chicken', name: 'chicken' };
+    const carcass: ProductForm = {
+      ...LIME_JUICE_FORM,
+      id: 'form-carcass',
+      parentCanonId: 'canon-chicken',
+      label: 'Chicken carcass',
+      matchers: ['roast chicken carcass'],
+      yield: { formUnit: 'count', amountPerParent: 1 },
+    };
+    mockCanonItems._set([chicken]);
+    mockProductForms._set([carcass]);
+    const stored = ingredient({
+      rawText: '1 roast chicken carcass',
+      canonId: 'canon-chicken',
+      parsed: {
+        quantity: { type: 'single', value: 1500 },
+        unit: 'g',
+        item: 'roast chicken carcass',
+        preparation: [],
+        notes: null,
+        displayText: null,
+      },
+    });
+
+    render(IngredientMatchSheet, {
+      props: { ingredient: stored, open: true, onRematch: () => {} },
+    });
+
+    const hint = await screen.findByTestId('ingredient-match-missing-count');
+    expect(hint).toHaveTextContent('whole Chicken');
+    expect(hint).toHaveTextContent('Match again');
+    // The form that resolved is still named — the line found its bridge.
+    expect(screen.getByTestId('ingredient-match-form')).toHaveTextContent('Chicken carcass');
+  });
+
+  it('shows no count warning once the line states its count', async () => {
+    const chicken: CanonItem = { ...LIME, id: 'canon-chicken', name: 'chicken' };
+    mockCanonItems._set([chicken]);
+    mockProductForms._set([
+      {
+        ...LIME_JUICE_FORM,
+        id: 'form-carcass',
+        parentCanonId: 'canon-chicken',
+        label: 'Chicken carcass',
+        matchers: ['roast chicken carcass'],
+        yield: { formUnit: 'count', amountPerParent: 1 },
+      },
+    ]);
+    const reRead = ingredient({
+      canonId: 'canon-chicken',
+      parsed: {
+        quantity: { type: 'single', value: 500 },
+        unit: 'g',
+        statedCount: { type: 'single', value: 1 },
+        item: 'roast chicken carcass',
+        preparation: [],
+        notes: null,
+        displayText: null,
+      },
+    });
+    render(IngredientMatchSheet, {
+      props: { ingredient: reRead, open: true, onRematch: () => {} },
+    });
+    await screen.findByTestId('ingredient-match-form');
+    expect(screen.queryByTestId('ingredient-match-missing-count')).not.toBeInTheDocument();
+  });
 });

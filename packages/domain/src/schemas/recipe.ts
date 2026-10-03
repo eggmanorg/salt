@@ -37,15 +37,21 @@ export const QuantitySchema = z.discriminatedUnion('type', [
 
 export const ParsedIngredientSchema = z.object({
   quantity: QuantitySchema.nullable(),
-  // Metric unit only. `null` means the amount is a COUNT, not a measure — and the
-  // parse prompt decides which, so read it there rather than inferring from the
-  // name of a thing. Most count/pack ingredients (onions, rashers, tins, bunches)
-  // are deliberately FLATTENED to grams; `null` is reserved for the narrow set
-  // where the shopper's own unit is the count: bought-whole discrete proteins
-  // (eggs, poultry joints, whole fish), garlic cloves, and equipment-prep lines
-  // that carry no dish amount at all. A stale version of this comment said the
-  // opposite for cloves and cost an investigation — keep it in step with
-  // `apps/cloud-functions/src/flows/parseRecipeIngredients.ts`.
+  // `quantity` + `unit` are the line's METRIC amount — the parser's estimate in
+  // g or ml whenever it can make one, whatever the line counted in. They are not
+  // where the count-or-weight decision lives (issue #1643): the parser records
+  // both amounts it can read (this one, and `statedCount` below) and never
+  // chooses; `chooseIngredientAmount` (recipe/queries/ingredientAmount.ts) picks
+  // which one a line is read in, from the matched canon item and product form.
+  //
+  // `null` here is a LEGACY shape or a no-amount line; the parse prompt no
+  // longer asks for a count in this field (it can still be handed one, and the
+  // chooser reads it the legacy way):
+  //   • quantity non-null, unit null — written before #1643 by a prompt that
+  //     kept a narrow list of names as a count (eggs, poultry joints, garlic
+  //     cloves). Read as a count with no weight until the line is re-read.
+  //   • quantity and unit both null — an equipment-prep line ("oil, for
+  //     greasing") or an unquantifiable seasoning; it buys nothing.
   unit: z.enum(['g', 'ml']).nullable(),
   item: z.string(),
   preparation: z.array(z.string()),
@@ -54,6 +60,24 @@ export const ParsedIngredientSchema = z.object({
   // or "1 cup". null when the source was already in g/ml or has no unit.
   // .default(null) so documents written before this field was added still parse.
   displayText: z.string().nullable().default(null),
+  // The number of whole things the line STATES ("1 red onion" → 1, "3 large
+  // cloves of garlic" → 3, "½ small onion" → ½), held alongside the metric
+  // estimate rather than instead of it (issue #1643). It counts the thing named
+  // in `item` as it is bought whole — an onion, a carcass, or a garlic clove
+  // (the one piece the parse prompt's NAMING rule puts in `item`). It is NOT set
+  // for a count of pieces or packs ("2 sticks celery", "4 lettuce leaves",
+  // "1 tin chopped tomatoes"): the chooser reads it as whole items, and two
+  // sticks are not two heads. Nor for a parent it would convert through, so a
+  // citrus-component line ("juice of 2 limes", item "lime juice") carries none.
+  // null when the line counts nothing (already metric, a spoon measure, an
+  // unquantifiable seasoning). These are prompt instructions, pinned in
+  // `apps/cloud-functions/tests/flows/parseRecipeIngredients.test.ts`; a model
+  // can still disobey them, which nothing downstream re-checks.
+  //
+  // OPTIONAL on read: every recipe written before #1643 lacks the key, and an
+  // absent key means "not recorded", read exactly as null. Not defaulted, so
+  // code building a parsed line by hand is not forced to restate it.
+  statedCount: QuantitySchema.nullable().optional(),
 });
 
 export const IngredientSchema = z.object({

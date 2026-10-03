@@ -354,3 +354,21 @@ describe('ShoppingListPage — product-form rows are untouched', () => {
     expect(label).toMatch(/^Lime Juice/);
   });
 });
+
+describe('a counted recipe row carries its weight (issue #1643)', () => {
+  it('reads "1 Red Onion (150g)" — the weight in the note’s place', async () => {
+    mockCanonItems._set([canonItem({ id: 'c-onion', name: 'red onion' })]);
+    mockItems._set([
+      item({
+        id: 'i1',
+        rawText: 'red onion',
+        canonId: 'c-onion',
+        amount: 1,
+        weightGrams: 150,
+        sources: fromRecipe('Salsa'),
+      }),
+    ]);
+    const { findByTestId } = render(ShoppingListPage, props);
+    expect(labelOf(await findByTestId('shopping-item-row'))).toBe('1 Red Onion(150g)');
+  });
+});

@@ -11,6 +11,7 @@ export interface CreateCanonItemInput {
   readonly shoppingBehavior?: ShoppingBehavior;
   readonly largeQuantityThreshold?: number;
   readonly unit?: CanonItemUnit;
+  readonly gramsPerItem?: number;
   readonly reasoning?: string;
   // The raw entry this item was minted from (issue #193). Recorded on the
   // seeded `created` pending change, and only when it differs from the name.
@@ -41,6 +42,7 @@ export function createCanonItem(
       ? { largeQuantityThreshold: input.largeQuantityThreshold }
       : {}),
     ...(input.unit !== undefined ? { unit: input.unit } : {}),
+    ...(input.gramsPerItem !== undefined ? { gramsPerItem: input.gramsPerItem } : {}),
     ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
     // Seed the `created` record ONLY when the item lands flagged (issue #193).
     // An item created already-approved (a deliberate hand-made entry, a

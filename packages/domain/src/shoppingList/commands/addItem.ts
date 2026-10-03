@@ -34,6 +34,11 @@ export interface AddItemInput {
    * where the frozen string would contradict the scaled amount.
    */
   readonly measureNote?: string;
+  /**
+   * The grams a counted recipe row stands for, scaled (issue #1643). Display only.
+   * Omitted for metric rows, product-form rows and manual adds.
+   */
+  readonly weightGrams?: number;
   /** Flag this item for verification on the list (recipe-add "check" rows). Defaults false. */
   readonly needsCheck?: boolean;
 }
@@ -67,6 +72,7 @@ export function addItem(
     ...(input.formDemand !== undefined ? { formDemand: [...input.formDemand] } : {}),
     ...(input.originalText !== undefined ? { originalText: [...input.originalText] } : {}),
     ...(input.measureNote !== undefined ? { measureNote: input.measureNote } : {}),
+    ...(input.weightGrams !== undefined ? { weightGrams: input.weightGrams } : {}),
   };
   return success([...items, newItem]);
 }

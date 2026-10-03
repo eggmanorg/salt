@@ -49,6 +49,7 @@
     PEEK_MAX_PX,
   } from '../../lib/cookDeck.js';
   import IngredientText from './IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import GuidedStepNotes from './GuidedStepNotes.svelte';
   import GuidedStepLookahead from './GuidedStepLookahead.svelte';
   import CookTimerSheet from './CookTimerSheet.svelte';
@@ -807,7 +808,11 @@
                                           ? 'text-muted-foreground line-through'
                                           : ''}"
                                       >
-                                        <IngredientText {ingredient} scale={servings.scale} />
+                                        <IngredientText
+                                          amounts={$ingredientAmounts}
+                                          {ingredient}
+                                          scale={servings.scale}
+                                        />
                                       </span>
                                     </button>
                                   </li>
@@ -877,7 +882,11 @@
                           ? 'text-muted-foreground line-through'
                           : ''}"
                       >
-                        <IngredientText {ingredient} scale={servings.scale} />
+                        <IngredientText
+                          amounts={$ingredientAmounts}
+                          {ingredient}
+                          scale={servings.scale}
+                        />
                       </span>
                     </button>
                   </li>

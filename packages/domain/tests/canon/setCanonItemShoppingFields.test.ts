@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemGramsPerItem,
 } from '../../src/canon/commands/setCanonItemShoppingFields.js';
 import type { CanonItem } from '../../src/canon/entities/CanonItem.js';
 
@@ -110,6 +111,35 @@ describe('setCanonItemThreshold', () => {
       expect(result.value.synonyms).toEqual(original.synonyms);
       expect(result.value.aisleId).toBe(original.aisleId);
       expect(result.value.shoppingBehavior).toBe('stocked');
+    }
+  });
+});
+
+describe('setCanonItemGramsPerItem (issue #1643)', () => {
+  const ITEM = {
+    id: 'c1',
+    schemaVersion: 5 as const,
+    name: 'Red Onion',
+    synonyms: [],
+    aisleId: null,
+    thumbnail: null,
+    embedding: null,
+    needs_approval: false,
+    shoppingBehavior: 'needed' as const,
+    unit: 'count' as const,
+    updatedAt: '',
+  };
+
+  it('sets, replaces and clears the weight of one', () => {
+    const set = setCanonItemGramsPerItem(ITEM, 150);
+    expect(set.kind === 'ok' && set.value.gramsPerItem).toBe(150);
+    const cleared = setCanonItemGramsPerItem({ ...ITEM, gramsPerItem: 150 }, undefined);
+    expect(cleared.kind === 'ok' && 'gramsPerItem' in cleared.value).toBe(false);
+  });
+
+  it('refuses a weight that is not a positive number', () => {
+    for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(setCanonItemGramsPerItem(ITEM, bad).kind).toBe('err');
     }
   });
 });

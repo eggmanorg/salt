@@ -49,6 +49,7 @@ export {
   setCanonItemSynonyms,
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemGramsPerItem,
   setCanonItemThumbnail,
   // The one description of an icon-regeneration write (issue #1054) — the admin
   // screens and the canon/product-form callables are different apps and cannot
@@ -259,6 +260,8 @@ export {
   servingsScale,
   ingredientMatchIssue,
   recipeMatchIssueCount,
+  chooseIngredientAmount,
+  preferredIngredientUnit,
   takesIngredients,
   isCookable,
   isPlannable,
@@ -314,6 +317,7 @@ export type {
   RecipeSearchText,
 } from './recipe/index.js';
 export type { RecipePhaseTotals } from './recipe/index.js';
+export type { IngredientAmount, PreferredIngredientUnit } from './recipe/index.js';
 export type { KitEquipmentGroup } from './recipe/index.js';
 export type { PlaceholderMood, PlaceholderCondition } from './recipe/index.js';
 export type { DiffPart } from './recipe/index.js';

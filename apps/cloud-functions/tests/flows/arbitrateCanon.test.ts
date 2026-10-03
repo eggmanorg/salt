@@ -36,6 +36,7 @@ function aiOutput(
     shoppingBehavior: 'stocked' | 'check' | 'needed';
     largeQuantityThreshold: number | null;
     unit: 'g' | 'ml' | 'count' | null;
+    gramsPerItem: number | null;
     reasoning: string;
   }> = {},
 ) {
@@ -185,6 +186,39 @@ describe('arbitrateCanon flow — result mapping', () => {
     expect(result.kind).toBe('new');
     expect(result.largeQuantityThreshold).toBe(1000);
     expect(result.unit).toBe('g');
+  });
+
+  it('passes the weight of one through for an item bought by the count (issue #1643)', async () => {
+    const output = aiOutput({ canonical_name: 'Red Onion', unit: 'count', gramsPerItem: 150 });
+    mockGenerate.mockResolvedValue({ output, text: JSON.stringify(output) });
+
+    const result = await (arbitrateCanonFlow as Function)(baseReq);
+
+    expect(result.gramsPerItem).toBe(150);
+  });
+
+  it('drops a weight of one that is absent, not positive, or for an item not counted', async () => {
+    for (const extra of [
+      { unit: 'count' as const },
+      { unit: 'count' as const, gramsPerItem: null },
+      { unit: 'count' as const, gramsPerItem: 0 },
+      { unit: 'g' as const, gramsPerItem: 150 },
+    ]) {
+      const output = aiOutput({ canonical_name: 'Red Onion', ...extra });
+      mockGenerate.mockResolvedValue({ output, text: JSON.stringify(output) });
+      const result = await (arbitrateCanonFlow as Function)(baseReq);
+      expect(result.gramsPerItem).toBeUndefined();
+    }
+  });
+
+  it('asks for the weight of one only alongside a count unit', async () => {
+    const output = aiOutput({ canonical_name: 'Red Onion' });
+    mockGenerate.mockResolvedValue({ output, text: JSON.stringify(output) });
+    await (arbitrateCanonFlow as Function)(baseReq);
+    const call = mockGenerate.mock.calls[0]![0] as { prompt?: string; system?: string };
+    const text = `${call.system ?? ''}\n${call.prompt ?? ''}`;
+    expect(text).toContain('## Rule 5 — gramsPerItem');
+    expect(text).toContain('When unit is "count"');
   });
 
   it('omits largeQuantityThreshold and unit when null', async () => {

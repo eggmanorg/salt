@@ -97,6 +97,7 @@ import {
   updateCanonItemShoppingBehavior,
   updateCanonItemSynonyms,
   updateCanonItemThreshold,
+  updateCanonItemGramsPerItem,
   __resetCanonServiceForTest,
 } from '../src/lib/canonService.js';
 import {
@@ -358,6 +359,11 @@ const rows: Row[] = [
     run: () => updateCanonItemThreshold(makeItem('c1', { name: 'Carrot' }), 500, 'g'),
   },
   {
+    name: 'canonService.updateCanonItemGramsPerItem',
+    writer: 'upsertCanonItem',
+    run: () => updateCanonItemGramsPerItem(makeItem('c1', { name: 'Onion', unit: 'count' }), 150),
+  },
+  {
     name: 'canonService.approveCanonItemWithOverrides',
     writer: 'upsertCanonItem',
     run: () =>
@@ -537,5 +543,16 @@ describe.each(rows)('$name', (row) => {
     // adapter's own categorised error rather than one invented on the way out.
     expect(result.kind).toBe('err');
     expect(result.kind === 'err' && result.error).toEqual(REFUSED);
+  });
+});
+
+// The one refusal that never reaches a writer: a weight of one that is not a
+// positive number is turned away by the domain command (issue #1643).
+describe('canonService.updateCanonItemGramsPerItem — a weight that is no weight', () => {
+  it('refuses it without writing', async () => {
+    wire();
+    const result = await updateCanonItemGramsPerItem(makeItem('c1', { name: 'Onion' }), 0);
+    expect(result.kind).toBe('err');
+    expect(WRITERS.upsertCanonItem()).not.toHaveBeenCalled();
   });
 });

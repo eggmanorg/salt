@@ -97,6 +97,10 @@
   });
 
   const missingForm = $derived(issue === 'missing_form');
+  // The form is counted and the line holds only a weight (issue #1643): grams
+  // cannot feed a counted form, so the line shops by weight until a re-match
+  // records the count it states.
+  const missingCount = $derived(issue === 'missing_count');
   const missingAmount = $derived(issue === 'missing_amount');
   const dangling = $derived(issue === 'dangling_canon');
 
@@ -173,6 +177,16 @@
               <p class="mt-1 text-xs text-muted-foreground">{yieldLine}</p>
             {/if}
           </div>
+          {#if missingCount}
+            <p
+              class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
+              data-testid="ingredient-match-missing-count"
+            >
+              This line has a weight but no count, so it is bought by weight rather than as whole {titleCase(
+                canon.name,
+              )}. Match again to read the count.
+            </p>
+          {/if}
         {:else if missingForm}
           <p
             class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"

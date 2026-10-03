@@ -265,6 +265,83 @@ describe('ingredientMatchIssue', () => {
   });
 });
 
+describe('ingredientMatchIssue — a counted form fed only grams (issue #1643)', () => {
+  const clove = (over: Partial<NonNullable<Ingredient['parsed']>>) =>
+    ing({
+      rawText: '3 cloves garlic',
+      canonId: 'canon-garlic',
+      parsed: {
+        quantity: { type: 'single', value: 9 },
+        unit: 'g',
+        item: 'garlic clove',
+        preparation: [],
+        notes: null,
+        displayText: null,
+        ...over,
+      },
+    });
+
+  it('flags a line that resolves to its counted form but holds no count', () => {
+    expect(ingredientMatchIssue(clove({}), byId([GARLIC_BULBS]), [GARLIC_CLOVE])).toBe(
+      'missing_count',
+    );
+  });
+
+  it('says nothing once the line states its count', () => {
+    const counted = clove({ statedCount: { type: 'single', value: 3 } });
+    expect(ingredientMatchIssue(counted, byId([GARLIC_BULBS]), [GARLIC_CLOVE])).toBeNull();
+  });
+
+  it('reads an explicit null count as no count', () => {
+    expect(
+      ingredientMatchIssue(clove({ statedCount: null }), byId([GARLIC_BULBS]), [GARLIC_CLOVE]),
+    ).toBe('missing_count');
+  });
+
+  it('says nothing about a legacy count line — it already is a count', () => {
+    const legacy = clove({ quantity: { type: 'single', value: 3 }, unit: null });
+    expect(ingredientMatchIssue(legacy, byId([GARLIC_BULBS]), [GARLIC_CLOVE])).toBeNull();
+  });
+
+  it('says nothing about a metric-yield form fed its own unit', () => {
+    // Lime juice in ml is exactly what its form converts — no count is needed.
+    expect(ingredientMatchIssue(ing(), byId([LIME]), [LIME_JUICE])).toBeNull();
+  });
+
+  it('flags a counted form even under a canon sold by weight — the form decides first', () => {
+    const byWeight = { ...GARLIC_BULBS, unit: 'g' as const };
+    expect(ingredientMatchIssue(clove({}), byId([byWeight]), [GARLIC_CLOVE])).toBe('missing_count');
+  });
+
+  it('stays quiet about a weighed line under a canon sold by weight, even one with forms', () => {
+    // The form check now runs before the canon-unit check, so the canon-unit
+    // check must still silence `missing_form` for a canon bought by weight: a
+    // line of it that names none of its forms is that thing, weighed.
+    const byWeight = { ...GARLIC_BULBS, unit: 'g' as const };
+    const minced = clove({ item: 'minced garlic' });
+    expect(ingredientMatchIssue(minced, byId([byWeight]), [GARLIC_CLOVE])).toBeNull();
+  });
+
+  it('never converts through the parent to excuse a form line', () => {
+    // 400 g of breasts is not a breast count, whatever one chicken weighs.
+    const breasts = ing({
+      rawText: '400g chicken breast',
+      canonId: 'canon-chicken',
+      parsed: {
+        quantity: { type: 'single', value: 400 },
+        unit: 'g',
+        item: 'chicken breast',
+        preparation: [],
+        notes: null,
+        displayText: null,
+      },
+    });
+    expect(ingredientMatchIssue(breasts, byId([WHOLE_CHICKEN]), [CHICKEN_BREAST])).toBe(
+      'missing_count',
+    );
+  });
+});
+
 describe('ingredientMatchIssue — a line with no amount (issue #949)', () => {
   it('flags a matched line holding no parsed data', () => {
     // What a batch-authored line looked like when its parse result could not be

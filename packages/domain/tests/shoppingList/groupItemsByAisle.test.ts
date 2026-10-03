@@ -759,3 +759,175 @@ describe('groupItemsByAisle — checked bucket', () => {
     expect(result.checked.contributors).toHaveLength(0);
   });
 });
+
+// ─── Counted rows: one count, one weight (issue #1643) ───────────────────────
+describe('groupItemsByAisle — a counted item reads as one count and one weight', () => {
+  const recipe = (id: string) => [
+    { kind: 'recipe' as const, recipeId: id, servings: 2, label: id },
+  ];
+  const ONION: CanonInfo = {
+    id: 'c-onion',
+    name: 'Red Onion',
+    aisleId: 'aisle-1',
+    unit: 'count',
+    gramsPerItem: 150,
+  };
+  const onions = (over: Partial<ShoppingListItem>[]) =>
+    over.map((o, i) =>
+      makeItem(`i${i}`, {
+        canonId: 'c-onion',
+        matchState: 'matched',
+        sources: recipe(`r${i}`),
+        ...o,
+      }),
+    );
+
+  function rowFor(items: ShoppingListItem[], canon: CanonInfo) {
+    return groupItemsByAisle(items, makeCanonMap([canon]), AISLES).aisles[0]!.rows[0]!;
+  }
+
+  it('adds counts, converts the weight-only line once, and writes one weight', () => {
+    // "2 onions" (300 g est.), "3 large onions" (540 g est.), "200 g onion".
+    const row = rowFor(
+      onions([
+        { amount: 2, weightGrams: 300 },
+        { amount: 3, weightGrams: 540 },
+        { amount: 200, unit: 'g' },
+      ]),
+      ONION,
+    );
+    // 2 + 3 + ceil(200 / 150) = 7, and the weight is each contribution's own.
+    expect(row.subtotals).toEqual([{ unit: null, amount: 7, weightGrams: 1040 }]);
+  });
+
+  it('converts the weight-only lines as one total, not one by one', () => {
+    // 3 × 50 g = 150 g is ONE onion; rounding each line up first would buy three.
+    const row = rowFor(
+      onions([
+        { amount: 50, unit: 'g' },
+        { amount: 50, unit: 'g' },
+        { amount: 50, unit: 'g' },
+      ]),
+      ONION,
+    );
+    expect(row.subtotals).toEqual([{ unit: null, amount: 1, weightGrams: 150 }]);
+  });
+
+  it('weighs a count with no recorded weight at the weight of one', () => {
+    const row = rowFor(onions([{ amount: 2 }, { amount: 1, weightGrams: 120 }]), ONION);
+    expect(row.subtotals).toEqual([{ unit: null, amount: 3, weightGrams: 420 }]);
+  });
+
+  it('keeps a unit it cannot count from as its own subtotal', () => {
+    const row = rowFor(
+      onions([
+        { amount: 1, weightGrams: 150 },
+        { amount: 50, unit: 'ml' },
+      ]),
+      ONION,
+    );
+    expect(row.subtotals).toEqual([
+      { unit: null, amount: 1, weightGrams: 150 },
+      { unit: 'ml', amount: 50 },
+    ]);
+  });
+
+  it('keeps today’s per-unit subtotals when the item has no weight of one', () => {
+    const { gramsPerItem: _g, ...noWeight } = ONION;
+    const row = rowFor(
+      onions([
+        { amount: 2, weightGrams: 300 },
+        { amount: 200, unit: 'g' },
+      ]),
+      noWeight,
+    );
+    expect(row.subtotals).toEqual([
+      { unit: null, amount: 2 },
+      { unit: 'g', amount: 200 },
+    ]);
+  });
+
+  it('keeps today’s per-unit subtotals for an item bought by weight', () => {
+    const row = rowFor(onions([{ amount: 2 }, { amount: 200, unit: 'g' }]), {
+      ...ONION,
+      unit: 'g',
+    });
+    expect(row.subtotals.every((s) => s.weightGrams === undefined)).toBe(true);
+    expect(row.subtotals).toHaveLength(2);
+  });
+
+  it('weighs a product-form parent row as its count of whole items, never the parts', () => {
+    // The stock's carcass and the salad's two breasts: one bird.
+    const CHICKEN: CanonInfo = {
+      id: 'c-chicken',
+      name: 'Chicken',
+      aisleId: 'aisle-1',
+      unit: 'count',
+      gramsPerItem: 1500,
+    };
+    const items = [
+      makeItem('carcass', {
+        canonId: 'c-chicken',
+        matchState: 'matched',
+        sources: recipe('stock'),
+        amount: 1,
+        unit: 'count',
+        formDemand: [{ formId: 'form-carcass', parentCount: 1 }],
+      }),
+      makeItem('breasts', {
+        canonId: 'c-chicken',
+        matchState: 'matched',
+        sources: recipe('salad'),
+        amount: 1,
+        unit: 'count',
+        formDemand: [{ formId: 'form-breast', parentCount: 1 }],
+      }),
+    ];
+    expect(rowFor(items, CHICKEN).subtotals).toEqual([
+      { unit: 'count', amount: 1, weightGrams: 1500 },
+    ]);
+  });
+
+  it('never converts a form row’s grams through the parent’s weight', () => {
+    const CHICKEN: CanonInfo = {
+      id: 'c-chicken',
+      name: 'Chicken',
+      aisleId: 'aisle-1',
+      unit: 'count',
+      gramsPerItem: 1500,
+    };
+    const items = [
+      makeItem('breasts', {
+        canonId: 'c-chicken',
+        matchState: 'matched',
+        sources: recipe('salad'),
+        amount: 1,
+        unit: 'count',
+        formDemand: [{ formId: 'form-breast', parentCount: 1 }],
+      }),
+      makeItem('thighs', {
+        canonId: 'c-chicken',
+        matchState: 'matched',
+        sources: recipe('curry'),
+        amount: 400,
+        unit: 'g',
+      }),
+    ];
+    expect(rowFor(items, CHICKEN).subtotals).toEqual([
+      { unit: 'count', amount: 1, weightGrams: 1500 },
+      { unit: 'g', amount: 400 },
+    ]);
+  });
+
+  it('cannot write a weight per contributor — only one subtotal ever carries it', () => {
+    const row = rowFor(
+      onions([
+        { amount: 4, weightGrams: 400 },
+        { amount: 2, weightGrams: 500 },
+      ]),
+      ONION,
+    );
+    expect(row.subtotals.filter((s) => s.weightGrams !== undefined)).toHaveLength(1);
+    expect(row.subtotals[0]).toEqual({ unit: null, amount: 6, weightGrams: 900 });
+  });
+});

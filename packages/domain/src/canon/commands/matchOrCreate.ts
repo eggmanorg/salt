@@ -509,6 +509,7 @@ interface ArbitrationExtras {
   readonly shoppingBehavior?: ShoppingBehavior;
   readonly largeQuantityThreshold?: number;
   readonly unit?: CanonItemUnit;
+  readonly gramsPerItem?: number;
   readonly reasoning?: string;
 }
 
@@ -524,6 +525,7 @@ function extrasFromNew(arb: ArbitrationNew): ArbitrationExtras {
       ? { largeQuantityThreshold: arb.largeQuantityThreshold }
       : {}),
     ...(arb.unit !== undefined ? { unit: arb.unit } : {}),
+    ...(arb.gramsPerItem !== undefined ? { gramsPerItem: arb.gramsPerItem } : {}),
     ...(arb.reasoning !== undefined ? { reasoning: arb.reasoning } : {}),
   };
 }
@@ -702,6 +704,7 @@ async function persistNew(
         ? { largeQuantityThreshold: extras.largeQuantityThreshold }
         : {}),
       ...(extras?.unit !== undefined ? { unit: extras.unit } : {}),
+      ...(extras?.gramsPerItem !== undefined ? { gramsPerItem: extras.gramsPerItem } : {}),
       ...(extras?.reasoning !== undefined ? { reasoning: extras.reasoning } : {}),
     },
     ids,

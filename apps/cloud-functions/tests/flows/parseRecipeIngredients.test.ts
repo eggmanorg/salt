@@ -48,6 +48,7 @@ type AiIngredient = {
   notes: string | null;
   isOptional: boolean;
   displayText: string | null;
+  statedCount?: unknown;
 };
 
 function aiOutput(groups: Array<{ name: string | null; items: AiIngredient[] }>) {
@@ -367,35 +368,31 @@ describe('parseRecipeIngredients — displayText threading', () => {
     expect(result[0].items[0].parsed.displayText).toBe('2 cloves');
   });
 
-  it('keeps the count with unit null for bought-whole discrete proteins (egg parts, poultry joints, whole fish)', async () => {
-    // Egg parts, poultry joints, and whole fish are bought and used as whole discrete pieces:
-    // the shopper's COUNT is kept as quantity, unit is null, and the gram estimate rides in
-    // displayText. The flow threads whatever the model returns for these.
+  it('threads the stated count ALONGSIDE the metric estimate (issue #1643)', async () => {
+    // The parse records both amounts a line states and never chooses: eggs,
+    // poultry joints and fish used to be a named exception kept as a bare count
+    // with unit null. Now every counted line carries its grams AND its count, and
+    // the domain chooser decides later which one the line is read in.
     mockGenerate.mockResolvedValue({
       output: aiOutput([
         {
           name: null,
           items: [
             simpleIngredient({
-              rawText: '3 egg whites',
-              quantity: { type: 'single', value: 3 },
-              unit: null,
-              item: 'egg whites',
-              displayText: 'about 105g',
+              rawText: '3 eggs',
+              quantity: { type: 'single', value: 150 },
+              unit: 'g',
+              item: 'eggs',
+              displayText: 'about 3',
+              statedCount: { type: 'single', value: 3 },
             }),
             simpleIngredient({
-              rawText: '6 chicken thighs',
-              quantity: { type: 'single', value: 6 },
-              unit: null,
-              item: 'chicken thighs',
-              displayText: 'about 720g',
-            }),
-            simpleIngredient({
-              rawText: '2 whole sea bass',
-              quantity: { type: 'single', value: 2 },
-              unit: null,
-              item: 'sea bass',
-              displayText: 'about 400g',
+              rawText: '½ small red onion',
+              quantity: { type: 'single', value: 75 },
+              unit: 'g',
+              item: 'red onion',
+              displayText: '½ small onion',
+              statedCount: { type: 'mixed', whole: 0, numerator: 1, denominator: 2 },
             }),
           ],
         },
@@ -403,27 +400,49 @@ describe('parseRecipeIngredients — displayText threading', () => {
     });
 
     const result = await (parseRecipeIngredientsFlow as Function)({
-      rawText: '3 egg whites\n6 chicken thighs\n2 whole sea bass',
+      rawText: '3 eggs\n½ small red onion',
     });
 
-    const [eggWhites, thighs, fish] = result[0].items;
+    const [eggs, onion] = result[0].items;
+    expect(eggs.parsed.quantity).toEqual({ type: 'single', value: 150 });
+    expect(eggs.parsed.unit).toBe('g');
+    expect(eggs.parsed.statedCount).toEqual({ type: 'single', value: 3 });
+    expect(onion.parsed.quantity).toEqual({ type: 'single', value: 75 });
+    expect(onion.parsed.statedCount).toEqual({
+      type: 'mixed',
+      whole: 0,
+      numerator: 1,
+      denominator: 2,
+    });
+  });
 
-    expect(eggWhites.parsed.quantity).toEqual({ type: 'single', value: 3 });
-    expect(eggWhites.parsed.unit).toBeNull();
-    expect(eggWhites.parsed.displayText).toBe('about 105g');
+  it('writes an absent stated count as null, never undefined', async () => {
+    // A stubbed or older model answer may omit the field. Firestore rejects an
+    // `undefined` value, so the flow normalises it rather than passing it on.
+    mockGenerate.mockResolvedValue({
+      output: aiOutput([
+        {
+          name: null,
+          items: [
+            simpleIngredient({
+              rawText: '300g cauliflower',
+              quantity: { type: 'single', value: 300 },
+              unit: 'g',
+              item: 'cauliflower',
+            }),
+          ],
+        },
+      ]),
+    });
 
-    expect(thighs.parsed.quantity).toEqual({ type: 'single', value: 6 });
-    expect(thighs.parsed.unit).toBeNull();
-    expect(thighs.parsed.displayText).toBe('about 720g');
+    const result = await (parseRecipeIngredientsFlow as Function)({ rawText: '300g cauliflower' });
 
-    expect(fish.parsed.quantity).toEqual({ type: 'single', value: 2 });
-    expect(fish.parsed.unit).toBeNull();
-    expect(fish.parsed.displayText).toBe('about 400g');
+    expect(result[0].items[0].parsed.statedCount).toBeNull();
   });
 
   it('still flattens ordinary count/pack ingredients (onions, rashers) to metric grams', async () => {
-    // The keep-as-count exception is narrow: everything outside bought-whole discrete proteins
-    // continues to flatten to grams with the count in displayText.
+    // Every counted line keeps a metric estimate in quantity/unit (issue #1643);
+    // the count it states rides separately and never replaces the grams.
     mockGenerate.mockResolvedValue({
       output: aiOutput([
         {
@@ -662,7 +681,8 @@ describe('parseRecipeIngredients — prompt construction', () => {
     const { system } = mockGenerate.mock.calls[0]![0];
     // Ordinary count/pack ingredients (cloves, rashers, tins, etc.) still flatten to metric.
     expect(system).toContain('Convert count/item-based and pack-based ingredients to metric');
-    // The clove estimate survives, but only as displayText — see the garlic test below.
+    // The clove's metric estimate, which is now its quantity (issue #1643) — the
+    // count rides in statedCount, see the garlic tests below.
     expect(system).toContain('1 clove garlic ≈ 3g');
     // unquantifiable items stay quantity+unit null.
     expect(system).toContain('genuinely unquantifiable');
@@ -710,29 +730,27 @@ describe('parseRecipeIngredients — prompt construction', () => {
     expect(system).toContain('"2 limes, halved" is 130g of limes');
   });
 
-  it('keeps a garlic clove as a counted component of the bulb', async () => {
+  it('names a garlic clove as the clove, and records the clove count', async () => {
     mockGenerate.mockResolvedValue({ output: aiOutput([{ name: null, items: [] }]) });
 
     await (parseRecipeIngredientsFlow as Function)({ rawText: '2 cloves garlic, crushed' });
 
     const { system } = mockGenerate.mock.calls[0]![0];
-    // BOTH halves are load-bearing and neither works alone. The NAME, because
-    // product-form resolution is handed `item` and nothing else, and containment
-    // is one-directional — a form phrased "garlic clove" can never be found
-    // inside an item of "garlic". The UNIT, because `formParentCount` returns
-    // null on a unit mismatch, so a count-yield form fed grams is rejected even
-    // once the name is right.
-    expect(system).toContain('a garlic clove is a COUNTED COMPONENT of the bulb');
-    expect(system).toContain('"1 clove garlic" → quantity 1, item "garlic clove"');
-    expect(system).toContain('"2 cloves of garlic, crushed" → quantity 2, item "garlic clove"');
+    // The NAME is load-bearing on its own: product-form resolution is handed
+    // `item` and nothing else, and containment is one-directional — a form
+    // phrased "garlic clove" can never be found inside an item of "garlic".
+    // That rule decides the item, not the unit, and it stays (issue #1643).
     expect(system).toContain('never reduce item to "garlic"');
-    expect(system).toContain('quantity 2, unit null, item "garlic clove"');
-    // The bulb-per-clove division belongs to the product form, not the parse.
-    expect(system).toContain("the product form's job, not this one's");
-    // A whole bulb is still a bulb.
     expect(system).toContain('"1 bulb garlic, roasted" → item "garlic"');
-    // ...and cloves are no longer named among the things that flatten to grams.
-    expect(system).not.toContain('garlic cloves, onions, rashers');
+    // The COUNT now rides in statedCount beside the grams, rather than replacing
+    // them with unit null — `chooseIngredientAmount` hands the clove form the
+    // count, so the form still gets the number it converts.
+    expect(system).toContain(
+      '"2 cloves of garlic, crushed" → statedCount 2, quantity 6, unit "g", item "garlic clove"',
+    );
+    expect(system).toContain('it counts the CLOVES, so it survives verbatim as statedCount');
+    // The bulb-per-clove division belongs to the product form, not the parse.
+    expect(system).toContain("product form's job, not this one's");
   });
 
   it('keeps the clove COUNT on the "N cloves of garlic" wording', async () => {
@@ -743,43 +761,67 @@ describe('parseRecipeIngredients — prompt construction', () => {
     });
 
     const { system } = mockGenerate.mock.calls[0]![0];
-    // The regression this guards: "3 large cloves of garlic" parsed to quantity
-    // NULL while "6 cloves garlic" parsed to 6, because #857 taught the clove
-    // case by hanging it off the juice/zest NAMING rule — and there the number
-    // after "of" counts the PARENT ("juice of 2 limes" → 60ml), not the thing
-    // being named. The model read "3 ... of garlic" as a parent count it had no
-    // yield for and emitted nothing. A null quantity then fails `formCountFor`'s
-    // first guard, so the line never becomes a product-form row: no count, no
-    // formDemand, no originalText — a shopping row reading "Garlic Clove" with
-    // nothing to buy. So the prompt must say, in BOTH places that discuss
-    // cloves, that the number is the clove count in every wording.
-    expect(system).toContain('The number a clove line states is ALWAYS the count of CLOVES');
-    expect(system).toContain('it counts the CLOVES, so it survives verbatim as quantity');
-    // The exact failing wording, in the unit rule and in the NAMING rule.
+    // The #857 regression, carried into the new field: "3 large cloves of garlic"
+    // once parsed to no amount because the model read the number after "of" as
+    // a PARENT count (as it is in "juice of 2 limes"). The number is the clove
+    // count in every wording, and a size word changes nothing.
     expect(system).toContain(
-      '"3 large cloves of garlic" → quantity 3, unit null, item "garlic clove"',
+      '"3 large cloves of garlic, sliced" → statedCount 3, quantity 9, unit "g", item "garlic clove"',
     );
     expect(system).toContain(
-      '"3 large cloves of garlic, sliced" → quantity 3, item "garlic clove"',
+      '"3 large cloves of garlic" → 3 (the CLOVES — a size word changes nothing)',
     );
-    // A size word must not be read as a reason to give up on the count.
-    expect(system).toContain('a size word ("large", "small", "fat") changes nothing');
     // An unnumbered clove line still states one.
-    expect(system).toContain('"a clove of garlic" → quantity 1, unit null, item "garlic clove"');
+    expect(system).toContain('"a clove of');
+    expect(system).toContain('garlic" → 1');
   });
 
-  it('carves out bought-whole discrete proteins as count with unit null in the system prompt', async () => {
+  it('records the stated count beside the metric amount, and keeps no list of counted names (issue #1643)', async () => {
     mockGenerate.mockResolvedValue({ output: aiOutput([{ name: null, items: [] }]) });
 
-    await (parseRecipeIngredientsFlow as Function)({ rawText: '3 egg whites' });
+    await (parseRecipeIngredientsFlow as Function)({ rawText: '1 roast chicken carcass' });
 
     const { system } = mockGenerate.mock.calls[0]![0];
-    // The narrow keep-as-count exception must be present in the prompt.
-    expect(system).toContain('bought-whole discrete proteins');
-    expect(system).toContain('set unit to');
-    // Poultry joints and egg parts are named as in-scope for the exception.
-    expect(system).toContain('thighs');
-    expect(system).toContain('whites');
+    // The two count EXCEPTION blocks are gone. Each grew one name at a time
+    // (#513→#515 for eggs and poultry, #857 for garlic cloves), missed the
+    // next one ("carcass", "slice of lemon"), and was not reliably followed
+    // even for the names it held. Whether a line is counted is decided by the
+    // canon item's and product form's data, never by this prompt.
+    expect(system).not.toContain('bought-whole discrete proteins');
+    expect(system).not.toContain('a garlic clove is a COUNTED COMPONENT of the bulb');
+    expect(system).not.toContain("keep the shopper's COUNT");
+    // No example keeps a number with a null unit any more — the old count shape.
+    expect(system).not.toMatch(/quantity \d[^,]*, unit null/);
+    // The ONLY remaining null-unit instruction is the equipment-prep exception,
+    // which is not a count rule: it records that the line buys nothing.
+    expect(system).toContain('EXCEPTION — applied to the EQUIPMENT, not part of the dish');
+    // One declared exception; the other mention is its displayText bullet citing it.
+    expect(system.match(/^\s*EXCEPTION —/gm)).toHaveLength(1);
+    // Both amounts, every time, and never a choice between them.
+    expect(system).toContain('- statedCount: the NUMBER of whole things the line states');
+    expect(system).toContain('You never choose between the two');
+    expect(system).toContain('"2 eggs, soft-boiled" → 2');
+    // A count of PIECES or PACKS is not a count of the item (review on #1644):
+    // "2 sticks celery" read as a count against canon Celery (bought by the
+    // count) would shop two heads. Only the whole item, or a piece the NAMING
+    // rule names in item (a garlic clove), carries a count.
+    expect(system).toContain('A NUMBER THAT COUNTS PIECES OR PACKS IS NOT A COUNT OF THE ITEM');
+    for (const line of [
+      '"2 sticks celery" → null',
+      '"4 lettuce leaves" → null',
+      '"1 tin chopped`',
+      '"3 egg whites" → null',
+    ]) {
+      expect(system).toContain(line.replace(/`$/, ''));
+    }
+    expect(system).toContain('tomatoes" → null');
+    expect(system).toContain('"4 lettuce leaves" → item "lettuce"');
+    expect(system).toContain('The ONE exception is a piece the NAMING rule below puts into item');
+    // …and the conversion table no longer routes every count/pack line there.
+    expect(system).not.toContain('statedCount to the count, and displayText');
+    expect(system).toContain('"2 sticks celery" → quantity 80, unit "g", statedCount null');
+    // A component line counts its PARENT, so it states no count of its own.
+    expect(system).toContain('NULL too on a COMPONENT');
   });
 });
 

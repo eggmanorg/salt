@@ -148,6 +148,10 @@
           id: ci.id,
           name: ci.name,
           aisleId: ci.aisleId,
+          // How it is bought and the weight of one (issue #1643), so a combined
+          // row of a counted item reads as one count and one weight.
+          ...(ci.unit !== undefined ? { unit: ci.unit } : {}),
+          ...(ci.gramsPerItem !== undefined ? { gramsPerItem: ci.gramsPerItem } : {}),
           thumbnail: ci.thumbnail,
           iconRequestedAt: ci.iconRequestedAt,
           updatedAt: ci.updatedAt,
@@ -691,9 +695,16 @@
     return first ? displayLabel(first) : '';
   }
 
+  // The `'count'` unit is the product-form parent-count sentinel, never a word to
+  // show: a row mixing it with a measure read "1 count + 1500 g" (issue #1643).
+  // It is written the way every other count on the list is, as "×N".
   function formatSubtotals(subtotals: readonly AmountSubtotal[]): string | null {
     if (subtotals.length === 0) return null;
-    return subtotals.map((s) => (s.unit ? `${s.amount} ${s.unit}` : `${s.amount}`)).join(' + ');
+    return subtotals
+      .map((s) =>
+        s.unit === 'count' ? `×${s.amount}` : s.unit ? `${s.amount} ${s.unit}` : `${s.amount}`,
+      )
+      .join(' + ');
   }
 
   // The single merged product-form parent count for a combined row, or null when
@@ -703,6 +714,21 @@
   function countSubtotal(row: AisleRow): AmountSubtotal | null {
     const [only] = row.subtotals;
     return row.subtotals.length === 1 && only && only.unit === 'count' ? only : null;
+  }
+
+  // A plain counted row (issue #1643): a canon item bought by the count that
+  // knows its weight of one, so the domain folded every contribution into ONE
+  // count and ONE weight. It reads "Red Onion ×6 (900g)" — the weight once for
+  // the row, never per recipe. null for every other row, which keeps its
+  // per-unit subtotals.
+  function countedSubtotal(row: AisleRow): AmountSubtotal | null {
+    const [only] = row.subtotals;
+    return row.subtotals.length === 1 &&
+      only &&
+      only.unit === null &&
+      only.weightGrams !== undefined
+      ? only
+      : null;
   }
 
   // Distinct original wordings across a combined row's contributors, surfaced
@@ -1050,6 +1076,7 @@
                 {#if row.combined}
                   {@const expanded = expandedRows.has(row.key)}
                   {@const count = countSubtotal(row)}
+                  {@const counted = countedSubtotal(row)}
                   <!-- A combined row celebrates as ONE unit — which is how it
                          already behaves — so the whole aggregate is exiting once
                          any contributor is held. Same shell and same button as
@@ -1091,13 +1118,28 @@
                             <span class="block truncate">
                               {rowLabel(row)}{' '}<span class="text-muted-foreground"
                                 >×{count.amount}</span
-                              >
+                              >{#if count.weightGrams !== undefined}<span
+                                  class="ml-1 text-xs text-muted-foreground"
+                                  >({count.weightGrams}g)</span
+                                >{/if}
                             </span>
                             <span
                               class="flex items-center gap-1 text-xs text-muted-foreground/70 truncate"
                             >
                               <DisclosureChevron {expanded} size={12} />
                               {formWordings(row)}
+                            </span>
+                          {:else if counted}
+                            <span class="block truncate">
+                              {rowLabel(row)}{' '}<span class="text-muted-foreground"
+                                >×{counted.amount}</span
+                              ><span class="ml-1 text-xs text-muted-foreground"
+                                >({counted.weightGrams}g)</span
+                              >
+                            </span>
+                            <span class="flex items-center gap-1 text-xs text-muted-foreground/70">
+                              <DisclosureChevron {expanded} size={12} />
+                              {row.contributors.length} recipes
                             </span>
                           {:else}
                             <span class="block truncate">

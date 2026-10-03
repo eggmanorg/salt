@@ -360,10 +360,16 @@
            what a person typed onto the list is what they should read back. The
            test is the domain's `isRecipeSourced`, the same one that decides which
            rows may combine, so a row can never be a recipe's for one purpose and
-           a person's for the other. -->
+           a person's for the other.
+
+           A COUNTED row (issue #1643) carries its weight as `weightGrams`
+           instead, scaled with the count, so "1 Red Onion (150g)" never pairs a
+           scaled count with an unscaled weight. -->
       <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">
         {recipeQuantity}{' '}{displayLabel(item)}{#if item.measureNote}<span
             class="ml-1 text-xs text-muted-foreground">({item.measureNote})</span
+          >{:else if item.weightGrams !== undefined}<span class="ml-1 text-xs text-muted-foreground"
+            >({item.weightGrams}g)</span
           >{/if}
       </span>
     {:else}

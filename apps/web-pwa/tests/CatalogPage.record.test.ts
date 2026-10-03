@@ -68,6 +68,7 @@ vi.mock('../src/lib/canonService.js', () => ({
   updateCanonItemSynonyms: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   updateCanonItemShoppingBehavior: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   updateCanonItemThreshold: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  updateCanonItemGramsPerItem: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   approveCanonItemWithOverrides: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteCanonItem: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   splitMostRecentSynonym: vi.fn(),
@@ -96,6 +97,7 @@ import {
   updateCanonItemSynonyms,
   updateCanonItemShoppingBehavior,
   updateCanonItemThreshold,
+  updateCanonItemGramsPerItem,
   approveCanonItemWithOverrides,
   deleteCanonItem,
 } from '../src/lib/canonService.js';
@@ -319,6 +321,63 @@ describe('the catalog record editor', () => {
       expect(input).toHaveValue('200');
       await fireEvent.blur(input);
       expect(vi.mocked(updateCanonItemThreshold)).not.toHaveBeenCalled();
+    });
+  });
+
+  // The weight of one (issue #1643): offered only for an item bought by the count.
+  describe('weight of one', () => {
+    it('is not offered for an item bought by weight', () => {
+      setupWithItem(canonItem({ id: ITEM_ID, name: 'Olive Oil', unit: 'ml' }));
+      expect(screen.queryByTestId('canon-detail-grams-input')).toBeNull();
+    });
+
+    it('saves the weight of one on blur', async () => {
+      const item = canonItem({ id: ITEM_ID, name: 'Red Onion', unit: 'count' });
+      setupWithItem(item);
+      const input = screen.getByTestId('canon-detail-grams-input');
+      await fireEvent.input(input, { target: { value: '150' } });
+      await fireEvent.blur(input);
+      await waitFor(() => {
+        expect(vi.mocked(updateCanonItemGramsPerItem)).toHaveBeenCalledWith(item, 150);
+      });
+    });
+
+    it('clears it when emptied, and saves nothing for text that is not a weight', async () => {
+      const item = canonItem({ id: ITEM_ID, name: 'Red Onion', unit: 'count', gramsPerItem: 150 });
+      setupWithItem(item);
+      const input = screen.getByTestId('canon-detail-grams-input');
+      await fireEvent.input(input, { target: { value: 'lots' } });
+      await fireEvent.blur(input);
+      expect(vi.mocked(updateCanonItemGramsPerItem)).not.toHaveBeenCalled();
+      await fireEvent.input(input, { target: { value: '150' } });
+      await fireEvent.blur(input);
+      expect(vi.mocked(updateCanonItemGramsPerItem)).not.toHaveBeenCalled();
+      await fireEvent.input(input, { target: { value: '' } });
+      await fireEvent.blur(input);
+      await waitFor(() => {
+        expect(vi.mocked(updateCanonItemGramsPerItem)).toHaveBeenCalledWith(item, undefined);
+      });
+    });
+
+    it('reverts on Escape and writes nothing', async () => {
+      setupWithItem(
+        canonItem({ id: ITEM_ID, name: 'Red Onion', unit: 'count', gramsPerItem: 150 }),
+      );
+      const input = screen.getByTestId('canon-detail-grams-input');
+      await fireEvent.input(input, { target: { value: '99' } });
+      await fireEvent.keyDown(input, { key: 'Escape' });
+      expect(input).toHaveValue('150');
+    });
+
+    it('saves on Enter', async () => {
+      const item = canonItem({ id: ITEM_ID, name: 'Red Onion', unit: 'count' });
+      setupWithItem(item);
+      const input = screen.getByTestId('canon-detail-grams-input');
+      await fireEvent.input(input, { target: { value: '160' } });
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      await waitFor(() => {
+        expect(vi.mocked(updateCanonItemGramsPerItem)).toHaveBeenCalledWith(item, 160);
+      });
     });
   });
 

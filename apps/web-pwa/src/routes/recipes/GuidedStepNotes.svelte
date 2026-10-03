@@ -6,6 +6,7 @@
   import { ingredientIcons, ingredientLabel } from '../../lib/cookIngredientIcons.js';
   import { kitIcons } from '../../lib/kitIcons.js';
   import IngredientText from './IngredientText.svelte';
+  import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import GuidedPlanLine from './GuidedPlanLine.svelte';
   import GuidedPlanProblem from './GuidedPlanProblem.svelte';
   import { halfwayThroughTimer } from './guidedHalfway.js';
@@ -237,7 +238,7 @@
                   size={32}
                 />
                 <span class="min-w-0 flex-1 text-base">
-                  <IngredientText {ingredient} {scale} />
+                  <IngredientText amounts={$ingredientAmounts} {ingredient} {scale} />
                 </span>
               </li>
             {/each}
@@ -264,7 +265,7 @@
           size={32}
         />
         <span class="min-w-0 flex-1 text-base">
-          <IngredientText {ingredient} {scale} />
+          <IngredientText amounts={$ingredientAmounts} {ingredient} {scale} />
         </span>
       </li>
     {/each}
