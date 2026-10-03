@@ -104,6 +104,15 @@
     return matchIssuesKnown ? recipeMatchIssueCount(recipe, canonById, $productForms) : 0;
   }
 
+  // The pip's words after its numeral (issue #1647). It counts four kinds of fault
+  // — a deleted match, no amount, a missing form, a missing count — so it names
+  // none of them, and points at the line's own mark, whose message says what
+  // clears it. The visible numeral comes first, so the screen-reader text is
+  // these words alone and the hover title prefixes the count.
+  function matchPipWords(n: number): string {
+    return `${n === 1 ? 'line needs' : 'lines need'} attention — open the recipe and tap a marked line to see what clears it`;
+  }
+
   // The hero rule itself is `recipeHeroUrl` in `@salt/domain` (issue #933). What
   // is local and worth keeping: `imageHidden` is retired (inert, kept for
   // back-compat) and no longer read, mirroring the detail page — a hero shows
@@ -821,13 +830,11 @@
                 {#if issues > 0}
                   <span
                     class="absolute right-2 top-2 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-text px-1.5 text-xs font-semibold text-white shadow"
-                    title={`${issues} ${issues === 1 ? 'ingredient is' : 'ingredients are'} matched to the wrong thing`}
+                    title={`${issues} ${matchPipWords(issues)}`}
                     data-testid="recipe-match-issue-pip"
                   >
                     {issues}
-                    <span class="sr-only">
-                      {issues === 1 ? 'ingredient needs' : 'ingredients need'} re-matching
-                    </span>
+                    <span class="sr-only">{matchPipWords(issues)}</span>
                   </span>
                 {/if}
                 {#if url}

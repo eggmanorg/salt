@@ -117,7 +117,7 @@
     flattenIngredients,
     hasComponents,
     hasLiveCanonMatch,
-    ingredientMatchIssue,
+    ingredientLineMark,
     isAuthorable,
     isCookable,
     isPlannable,
@@ -133,6 +133,7 @@
     type Step,
   } from '@salt/domain';
   import { KIND_COPY, kindOf } from './recipeKind.js';
+  import { lineMarkContext, rowMark, type RowMark } from './lineMarkCopy.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
   import { SPLIT_QUERY, createMediaQuery } from '../../lib/mediaQuery.svelte.js';
   import { recipeChatPanePrefs } from '../../lib/recipeChatPanePrefs.svelte.js';
@@ -586,12 +587,19 @@
   // re-match the known remedy?" — ✗ and ? run it, ⚠ opens the sheet, because a
   // missing product form may not be re-matchable at all and saying otherwise
   // trains the marker out of you.
-  function rowMarker(ing: Ingredient): 'unmatched' | 'no-amount' | 'mismatched' | null {
-    if (!matchMarkersKnown) return null;
-    if (!hasLiveCanonMatch(ing, liveCanonIds)) return 'unmatched';
-    const issue = ingredientMatchIssue(ing, canonById, $productForms);
-    if (issue === null) return null;
-    return issue === 'missing_amount' ? 'no-amount' : 'mismatched';
+  //
+  // Which mark, and what its label says, both come from `ingredientLineMark` —
+  // the query the match sheet reads — so the mark and the sheet's message cannot
+  // disagree (issue #1647). The glyph per issue and the words are `lineMarkCopy`'s.
+  function lineMark(ing: Ingredient): ReturnType<typeof ingredientLineMark> {
+    return matchMarkersKnown ? ingredientLineMark(ing, canonById, $productForms) : null;
+  }
+
+  function rowMarker(ing: Ingredient): RowMark | null {
+    const mark = lineMark(ing);
+    return mark === null
+      ? null
+      : rowMark(mark, lineMarkContext(ing, canonById, $productForms, $canonItems));
   }
 
   // ─── Ingredient pictograms (issue #878) ──────────────────────────────────────
@@ -702,7 +710,29 @@
     const group = inspectingGroup;
     const ing = inspecting;
     if (!group || !ing) return;
-    if (await handleRematch(group, ing)) addToast('Ingredient re-matched.', 'success');
+    if ((await handleRematch(group, ing)).ok) addToast('Ingredient re-matched.', 'success');
+  }
+
+  // The ✗ and ? taps: the same re-match, and if the line it WROTE still carries a
+  // mark, the sheet opens on it with the message (issue #1647) — a tap that did
+  // not clear its mark explains itself instead of leaving the mark sitting there.
+  // A tap that clears the mark opens nothing, as before.
+  //
+  // `dangling_canon` is not followed through, and on purpose: a re-match just
+  // returned that canonId, so a line reading as dangling straight afterwards is
+  // this page's canon snapshot not yet holding the item the match created, not a
+  // deleted one. The same lag on a product form that very match minted is NOT
+  // filtered — nothing tells it apart from a form that was never made — so in that
+  // case the sheet can open on `missing_form` and then re-derive to clean as the
+  // forms snapshot lands. The sheet re-derives from the live stores, so what it
+  // shows is never stale; only the decision to open it reads the moment the write
+  // returned.
+  async function rematchFromMarker(group: IngredientGroup, ing: Ingredient): Promise<void> {
+    const outcome = await handleRematch(group, ing);
+    if (!outcome.ok || outcome.line === null) return;
+    const mark = lineMark(outcome.line);
+    if (mark === null || mark.issue === 'dangling_canon') return;
+    inspectMatch(outcome.line);
   }
 
   // ─── Per-row rematch ─────────────────────────────────────────────────────────
@@ -751,17 +781,22 @@
   // storage, and neither survives an OS suspending the process anyway.
   let matchingIds = $state<Record<string, boolean>>({});
 
-  async function handleRematch(group: IngredientGroup, ing: Ingredient): Promise<boolean> {
-    if (!recipe || matchingIds[ing.id]) return false;
+  // `line` is the row as this write left it — the match result, or whatever a
+  // concurrent edit put there instead (the `rawText` guard below) — and null if
+  // the row is gone. Only `ok` means the write landed.
+  type RematchOutcome = { ok: false } | { ok: true; line: Ingredient | null };
+
+  async function handleRematch(group: IngredientGroup, ing: Ingredient): Promise<RematchOutcome> {
+    if (!recipe || matchingIds[ing.id]) return { ok: false };
     matchingIds = { ...matchingIds, [ing.id]: true };
     const result = await matchIngredient(ing);
     matchingIds = { ...matchingIds, [ing.id]: false };
     if (result.kind !== 'ok') {
       addToast('Failed to match ingredient.', 'destructive');
-      return false;
+      return { ok: false };
     }
     const current = $recipes.find((r) => r.id === recipe.id);
-    if (!current) return false;
+    if (!current) return { ok: false };
     const updatedGroups = current.ingredients.map((g) =>
       g.id !== group.id
         ? g
@@ -775,9 +810,10 @@
     const persisted = await persistRecipe({ ...current, ingredients: updatedGroups });
     if (persisted.kind !== 'ok') {
       addToast('Failed to save match.', 'destructive');
-      return false;
+      return { ok: false };
     }
-    return true;
+    const line = updatedGroups.flatMap((g) => g.items).find((i) => i.id === ing.id) ?? null;
+    return { ok: true, line };
   }
 
   // ─── Review state (issue #616) ────────────────────────────────────────────
@@ -2879,7 +2915,7 @@
                 {rowMarker}
                 {liveCanonIds}
                 {matchingIds}
-                handleRematch={(group, ing) => void handleRematch(group, ing)}
+                handleRematch={(group, ing) => void rematchFromMarker(group, ing)}
                 {inspectMatch}
                 {hasParsedPending}
                 {canonalising}

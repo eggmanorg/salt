@@ -622,10 +622,10 @@ export const coverageThresholds = {
   // run (35525912005, job 106117899010), not retyped and not re-measured on
   // this machine, per the note above.
   'apps/web-pwa/src/routes/**': {
-    lines: 86.22,
-    branches: 76.14,
-    uncoveredLines: 1672,
-    uncoveredBranches: 1735,
+    lines: 86.93,
+    branches: 77.2,
+    uncoveredLines: 1628,
+    uncoveredBranches: 1715,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

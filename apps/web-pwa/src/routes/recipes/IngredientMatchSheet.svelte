@@ -49,7 +49,7 @@
   import { aisles } from '../../lib/aisleService.js';
   import { currentMember } from '../../lib/membersService.js';
   import { titleCase } from '../../lib/titleCase.js';
-  import { LINE_REMEDY, lineIssueProblem } from './lineMarkCopy.js';
+  import { LINE_REMEDY, lineIssueProblem, lineMarkContext } from './lineMarkCopy.js';
 
   interface Props {
     /** The tapped ingredient. Null between openings. */
@@ -101,15 +101,15 @@
     return `1 ${titleCase(canon.name)} → ${measure} ${form.label.toLowerCase()}`;
   });
 
-  // The problem and its remedy, worded. Null for a clean line.
+  // The problem and its remedy, worded. Null for a clean line. The names come
+  // from `lineMarkContext`, the function the row marks' labels read too.
   const problem = $derived(
     mark === null || ingredient === null
       ? null
-      : lineIssueProblem(mark.issue, {
-          canonName: canon ? titleCase(canon.name) : null,
-          formLabel: form?.label ?? null,
-          unit: ingredient.parsed?.unit ?? null,
-        }),
+      : lineIssueProblem(
+          mark.issue,
+          lineMarkContext(ingredient, canonById, $productForms, $canonItems),
+        ),
   );
   const remedy = $derived(mark === null ? null : LINE_REMEDY[mark.remedy]);
 

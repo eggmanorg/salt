@@ -28,6 +28,7 @@
   import IngredientText from './IngredientText.svelte';
   import { ingredientAmounts } from '../../lib/ingredientAmounts.js';
   import ReorderControl from './ReorderControl.svelte';
+  import type { RowMark } from './lineMarkCopy.js';
 
   /**
    * The ingredients panel, read and written in the same place (issue #878 for the
@@ -206,7 +207,8 @@
     iconVersionFor: (ing: Ingredient) => string | number | undefined;
     /** The tile's label. One helper, on the page — the method rail's first-use row uses it too. */
     ingredientLabel: (ing: Ingredient) => string;
-    rowMarker: (ing: Ingredient) => 'unmatched' | 'no-amount' | 'mismatched' | null;
+    /** The line's mark and its label, or null for a clean line (`lineMarkCopy.ts`). */
+    rowMarker: (ing: Ingredient) => RowMark | null;
     liveCanonIds: ReadonlySet<string>;
     matchingIds: Record<string, boolean>;
     handleRematch: (group: IngredientGroup, ing: Ingredient) => void;
@@ -702,43 +704,46 @@
                   size={40}
                 />
                 {#if !editing}
-                  {#if marker === 'unmatched'}
+                  {#if marker?.glyph === 'unmatched'}
                     <button
                       type="button"
                       class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs leading-none text-destructive-foreground ring-2 ring-card disabled:opacity-50"
-                      title="Not matched — tap to match"
-                      aria-label="Not matched — tap to match"
+                      title={marker.label}
+                      aria-label={marker.label}
                       onclick={() => handleRematch(group, ingredient)}
                       disabled={rowBusy(ingredient)}
                       data-testid="match-state-unmatched">{rowBusy(ingredient) ? '…' : '✗'}</button
                     >
-                  {:else if marker === 'no-amount'}
+                  {:else if marker?.glyph === 'no-amount'}
                     <!-- Terracotta, like the ⚠ — this line looks finished too. The
                          glyph and the action are the ✗'s, because the remedy is the
                          ✗'s: matchIngredient re-parses the line before it matches it,
                          which is precisely the repair that populated these rows by
                          hand (issue #949). Nothing to explain first, so nothing
-                         opens. -->
+                         opens — unless the tap leaves the line still marked, when
+                         the page opens the sheet on it (`rematchFromMarker`, #1647). -->
                     <button
                       type="button"
                       class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card disabled:opacity-50"
-                      title="No amount — tap to read the line again"
-                      aria-label="No amount — tap to read the line again"
+                      title={marker.label}
+                      aria-label={marker.label}
                       onclick={() => handleRematch(group, ingredient)}
                       disabled={rowBusy(ingredient)}
                       data-testid="match-state-no-amount">{rowBusy(ingredient) ? '…' : '?'}</button
                     >
-                  {:else if marker === 'mismatched'}
+                  {:else if marker?.glyph === 'mismatched'}
                     <!-- Terracotta, the palette's warning accent (design.md), and
                          never the ✗'s red: the two say different things and want
                          different actions. This one opens the sheet the row already
-                         opens, because the sheet explains BOTH causes and offers the
-                         re-match — no new copy. -->
+                         opens, because the sheet says what is wrong and what clears
+                         it, and offers the re-match. Every mark's label carries the
+                         sheet's problem and remedy sentences (`rowMark` in
+                         `lineMarkCopy.ts`). -->
                     <button
                       type="button"
                       class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary-variant text-xs leading-none text-tertiary-foreground ring-2 ring-card"
-                      title="Matched, but buys the wrong thing — tap to see why"
-                      aria-label="Matched, but buys the wrong thing — tap to see why"
+                      title={marker.label}
+                      aria-label={marker.label}
                       onclick={() => inspectMatch(ingredient)}
                       data-testid="match-state-mismatched">⚠</button
                     >
