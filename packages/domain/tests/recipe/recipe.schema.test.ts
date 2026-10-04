@@ -422,6 +422,7 @@ describe('RecipeSchema', () => {
       'cocktail',
       'placeholder',
       'cure',
+      'bread',
     ]);
   });
 
@@ -484,7 +485,7 @@ describe('RecipeSchema', () => {
 
   it('type-level: Recipe kind is the closed union', () => {
     expectTypeOf<Recipe['kind']>().toEqualTypeOf<
-      'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'
+      'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'
     >();
   });
 

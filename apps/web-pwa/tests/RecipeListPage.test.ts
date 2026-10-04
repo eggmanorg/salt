@@ -699,8 +699,10 @@ describe('RecipeListPage — sections', () => {
     expect(queryKindChip('special')).toBeUndefined();
     expect(queryKindChip('placeholder')).toBeUndefined();
     expect(queryKindChip('cure')).toBeUndefined();
+    // Bread (issue #1646) sits beside it, folded by decision.
+    expect(queryKindChip('bread')).toBeUndefined();
     expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(3);
-    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+3 more');
+    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+4 more');
   });
 
   it('reveals every section behind the "+N more" chip, and folds them back', async () => {
@@ -710,17 +712,18 @@ describe('RecipeListPage — sections', () => {
 
     await user.click(screen.getByTestId('recipe-kind-show-all'));
 
-    // All six sections, and only six — a chip row you STAND in, so a seventh
+    // All seven sections, and only seven — a chip row you STAND in, so an eighth
     // would be a section that shipped without anyone deciding to. The fourth
     // (issue #652) was decided: you need somewhere to open Regenerate from, and
     // that is the view page you reach from this grid. The fifth is Meals (#752),
     // which is a section and NOT a kind — you cannot create one. The sixth is
     // Cured meats (#1404), which is a kind and the first one with a field of its
-    // own.
-    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(6);
+    // own. The seventh is Bread (#1646), a label that offers a first formula.
+    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(7);
     expect(kindChip('special')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('placeholder')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('cure')).toHaveAttribute('aria-pressed', 'false');
+    expect(kindChip('bread')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByTestId('recipe-kind-show-all')).toBeNull();
 
     await user.click(screen.getByTestId('recipe-kind-show-less'));
@@ -753,6 +756,29 @@ describe('RecipeListPage — sections', () => {
     expect(kindChip('special')).toHaveAttribute('aria-pressed', 'true');
     expect(kindChip('recipe')).toHaveAttribute('aria-pressed', 'false');
     expect(normalized(screen.getByTestId('recipe-result-count'))).toContain("2 chef's specials");
+  });
+
+  it('shelves a bread under Bread, in place of Recipes (#1646)', async () => {
+    const user = userEvent.setup();
+    const LOAF = makeRecipe({
+      id: 'loaf',
+      kind: 'bread',
+      title: 'Sandwich Loaf',
+      tags: [],
+      servings: 1,
+      ingredientCount: 4,
+      image: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    seed([APPLE, LOAF]);
+    render(RecipeListPage);
+
+    expect(cardTitles()).toEqual(['Apple Pie']);
+
+    await pickKind(user, 'bread');
+
+    expect(cardTitles()).toEqual(['Sandwich Loaf']);
+    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('1 bread');
   });
 
   it('offers an empty section rather than hiding it', async () => {

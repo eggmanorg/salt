@@ -40,6 +40,7 @@
     basisYield,
     cureSaltFitness,
     deriveFormula,
+    firstFormulaYield,
     flattenIngredients,
     gramsFromParsed,
     guessBasisIngredientIds,
@@ -499,7 +500,14 @@
     // A BASIS YIELD IS NOT A PRESENTATION CHOICE (issue #1402). It comes back as the
     // one answer that can express it, into the one box that holds it — which is why
     // a weighed formula reopens saying the weight it was saved at.
-    const seeded = seedDoughAnswer(stored?.referenceYield ?? null);
+    //
+    // With nothing stored, the kind says which end a FIRST formula starts from
+    // (issue #1646) — a cure on the weight going in, a bread on the dough coming
+    // out. Asked of the domain's capability table, never compared here.
+    const seeded = seedDoughAnswer(
+      stored?.referenceYield ?? null,
+      recipe === null ? null : firstFormulaYield(kindOf(recipe)),
+    );
     answerMode = seeded.mode;
     answer = seeded.fields;
     // A re-seed is a fresh reading of the document, so the count box is untouched

@@ -268,10 +268,28 @@ export const RecipeImageSchema = z.object({
 // carries a library section, an icon, wording and a picker badge throughout the
 // app, and five of those for cured meat alone would swamp everything else.
 //
+// A `bread` (issue #1646) is a dough baked as bread — a loaf, rolls, focaccia, a
+// flatbread, soda bread, pizza dough. It is a recipe in every way that matters
+// (planned, cooked, shopped for), and is a kind of its own for two reasons only:
+// it gets its own shelf in the library, and the LABEL — not a guess at the
+// ingredients — is what offers a first formula (`firstFormulaYield` in
+// `capabilities.ts`). Cakes, biscuits, pastry and a finished topped pizza stay
+// `recipe`.
+//
 // Adding a member here is back-compatible on read by construction: `kind` carries
 // `.default('recipe')` below, so every document already in production parses
-// unchanged (salt-architecture.md §1.1 — no migration).
-export const RecipeKindSchema = z.enum(['recipe', 'special', 'cocktail', 'placeholder', 'cure']);
+// unchanged (salt-architecture.md §1.1 — no migration). The converse is not free:
+// an installed app or a deployed Cloud Function that predates a member fails to
+// parse a document carrying it, so no document is labelled with a new member until
+// both are on production.
+export const RecipeKindSchema = z.enum([
+  'recipe',
+  'special',
+  'cocktail',
+  'placeholder',
+  'cure',
+  'bread',
+]);
 
 // Which kind of cure a `cure` is (issue #1404). Five values, ONE axis, and the
 // vocabulary the whole app uses for cured meat. They are split by the SAFETY

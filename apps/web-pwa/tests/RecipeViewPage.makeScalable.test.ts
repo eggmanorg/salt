@@ -2,17 +2,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
 import type { Recipe } from '@salt/domain';
 
-// An entry point for a recipe's FIRST formula (issue #823, phase 01.5 of #778).
+// An entry point for a recipe's FIRST formula (issue #823, re-gated by #1646).
 //
 // Three menu states, and they are mutually exclusive by construction:
-//   no formula + looks like it has a basis → "Make it scalable"
-//   no formula + an ordinary dinner        → nothing (the menu as it was)
-//   a formula                              → "Bake a batch" + "Formula" (#812)
+//   no formula + a Bread or Cured meat label → "Make it scalable"
+//   no formula + any other label             → nothing (the menu as it was)
+//   a formula, whatever the label            → "Bake a batch" + "Formula" (#812)
 //
-// What is being pinned is the GATE, not the guess — the guess is the domain's own
-// `looksScalable` and has its own unit tests. What this page owns is asking it
-// with the right entries (canon name leading, the raw line behind it) and letting
-// the answer decide whether the trip is offered at all.
+// What is being pinned is the GATE, not the table — which kinds are offered a
+// formula is the domain's `offersFormula` and has its own unit tests. What this
+// page owns is asking it of the recipe's label, and letting presence win.
 
 const {
   mockRecipes,
@@ -206,20 +205,31 @@ function withIngredients(items: ReturnType<typeof ing>[], overrides: Partial<Rec
   } as Partial<Recipe>);
 }
 
-// The loaf as it reads before canon has resolved anything: the line itself says
-// "flour", which is why the item is there on first paint in practice.
-const LOAF = withIngredients([
+const LOAF_ITEMS = [
   ing({ id: 'ing-flour', rawText: '500 g strong white bread flour' }),
   ing({ id: 'ing-water', rawText: '350 g water' }),
   ing({ id: 'ing-salt', rawText: '10 g salt' }),
-]);
+];
 
-// A loaf whose flour reads as flour ONLY through canon — the case the derivation
-// warns can appear a beat late.
-const CANON_ONLY_LOAF = withIngredients([
-  ing({ id: 'ing-flour', rawText: '500 g type 55', canonId: 'canon-flour' }),
-  ing({ id: 'ing-water', rawText: '350 g water', canonId: 'canon-water' }),
-]);
+const LOAF = withIngredients(LOAF_ITEMS, { kind: 'bread' });
+
+const COPPA = withIngredients(
+  [
+    ing({ id: 'ing-neck', rawText: '2.4 kg pork neck' }),
+    ing({ id: 'ing-salt', rawText: '60 g salt' }),
+  ],
+  { kind: 'cure', title: 'Coppa' },
+);
+
+// Says "flour" on every line it can — exactly what the retired keyword guess
+// offered the door to. A plain recipe label now keeps it off.
+const WAFFLES = withIngredients(
+  [
+    ing({ id: 'ing-flour', rawText: '250 g plain flour' }),
+    ing({ id: 'ing-milk', rawText: '400 ml milk' }),
+  ],
+  { title: 'Waffles' },
+);
 
 const CURRY = withIngredients([
   ing({ id: 'ing-chicken', rawText: '600 g chicken thighs' }),
@@ -250,7 +260,7 @@ async function openOverflow(id = RECIPE_ID): Promise<void> {
 }
 
 describe('RecipeViewPage — an entry point for the first formula', () => {
-  it('offers "Make it scalable" on a loaf that has no formula', async () => {
+  it('offers "Make it scalable" on a bread that has no formula', async () => {
     await openOverflow();
 
     expect(await screen.findByTestId('recipe-make-scalable-menu-item')).toHaveTextContent(
@@ -258,18 +268,24 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
     );
   });
 
+  it('offers it on a cured meat that has no formula', async () => {
+    // The case the flour guess could never reach: nothing in a coppa says flour.
+    mockRecipes._set([COPPA]);
+    await openOverflow();
+
+    expect(await screen.findByTestId('recipe-make-scalable-menu-item')).toBeInTheDocument();
+  });
+
   it('lands on that recipe’s formula screen', async () => {
-    // The screen #806 already shipped, unchanged: it makes its own basis guess on
-    // arrival, which is the same one that put this item on the menu.
     await openOverflow();
     await fireEvent.click(await screen.findByTestId('recipe-make-scalable-menu-item'));
 
     expect(push).toHaveBeenCalledWith(`/recipes/${RECIPE_ID}/formula`);
   });
 
-  it('offers nothing extra on an ordinary dinner', async () => {
-    // The whole point of gating: baker's percentages stay off the weeknight curry.
-    mockRecipes._set([CURRY]);
+  it('offers nothing extra on a plain recipe, even one that says flour', async () => {
+    // The noise #1646 removed: waffles, cakes and gravy no longer see the door.
+    mockRecipes._set([WAFFLES]);
     await openOverflow();
 
     expect(screen.queryByTestId('recipe-make-scalable-menu-item')).toBeNull();
@@ -277,17 +293,11 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
     expect(screen.queryByTestId('recipe-bake-batch-menu-item')).toBeNull();
   });
 
-  it('reads the canon name, not just the line', async () => {
-    // Canon LEADS in the guess, so a line that says nothing about flour still
-    // offers the trip once its canon item has landed.
-    mockRecipes._set([CANON_ONLY_LOAF]);
-    mockCanonItems._set([
-      { id: 'canon-flour', name: 'strong white flour' },
-      { id: 'canon-water', name: 'water' },
-    ]);
+  it('offers nothing extra on an ordinary dinner', async () => {
+    mockRecipes._set([CURRY]);
     await openOverflow();
 
-    expect(await screen.findByTestId('recipe-make-scalable-menu-item')).toBeInTheDocument();
+    expect(screen.queryByTestId('recipe-make-scalable-menu-item')).toBeNull();
   });
 
   it('gives way to "Bake a batch" and "Formula" once a formula exists', async () => {
@@ -299,6 +309,17 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
     expect(await screen.findByTestId('recipe-bake-batch-menu-item')).toBeInTheDocument();
     expect(screen.getByTestId('recipe-formula-menu-item')).toBeInTheDocument();
     expect(screen.queryByTestId('recipe-make-scalable-menu-item')).toBeNull();
+  });
+
+  it('keeps "Bake a batch" and "Formula" on a plain recipe that has a formula', async () => {
+    // Presence wins over the label: a loaf relabelled plain Recipe, or one nobody
+    // has labelled yet (East Midlands Crusty Cobs in production), keeps its doors.
+    mockRecipes._set([withIngredients(LOAF_ITEMS, { kind: 'recipe' })]);
+    mockFormula._set({ recipeId: RECIPE_ID, components: [] });
+    await openOverflow();
+
+    expect(await screen.findByTestId('recipe-bake-batch-menu-item')).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-formula-menu-item')).toBeInTheDocument();
   });
 
   it('offers none of the three when bread is gated, and reads no formula at all', async () => {
@@ -316,9 +337,7 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
     expect(initFormulaSync).not.toHaveBeenCalled();
   });
 
-  it('never offers it on an entry with no ingredients', async () => {
-    // A special has none by definition, so the guess is empty and the gate is shut
-    // without anything here asking what `kind` it is.
+  it('never offers it on a special', async () => {
     mockRecipes._set([makeEntry({ kind: 'special', title: 'Chippy', steps: [] })]);
     await openOverflow();
 

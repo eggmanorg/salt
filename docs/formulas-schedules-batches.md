@@ -13,12 +13,15 @@ at `/batches`, and **the entry point the feature had been missing** — "Bake a
 batch" and a formula link on the recipe page, both gated on `formula != null`.
 
 A formula screen for a recipe that has never had one was reachable by URL only
-through #812; #823 gave it a menu entry point too — "Make it scalable", gated on
-the domain's basis guess (`looksScalable`, `formula/guessBasis.ts`) so it only
-offers itself on a recipe that looks like it has one. The gate, not the entry
-point, is what stops an "add a formula" item putting baker's percentages in
-front of every weeknight curry to serve the three loaves. The typed URL remains
-the escape hatch for a loaf the guess misses.
+through #812; #823 gave it a menu entry point too — "Make it scalable". It was
+first gated on a keyword guess at the ingredients ("is there a flour?"), which
+offered it to waffles, cakes and gravy and never to a coppa. **#1646 replaced the
+guess with the label**: the entry is offered on a `bread` or a `cure` with no
+formula yet (`offersFormula`, the `firstFormulaYield` column of
+`recipe/queries/capabilities.ts`) and on nothing else. A recipe that already has a
+formula keeps its "Bake a batch" / "Formula" items whatever it is labelled. The
+typed URL remains reachable on any recipe. The guess itself survives in one job:
+`guessBasisIngredientIds` pre-selects the flours once you are on the screen.
 
 **Additions are built** (#1405, phase 04), and not as a field on the stage: a
 formula component carries `stageId`, the id of the stage it is added at, and `null`
@@ -459,10 +462,11 @@ reference yield**.
 
 ## Kind versus presence
 
-Do **not** add `bread` as a kind, or hang behaviour off a kind at all. `kind` keeps
-doing exactly what it does today (see CLAUDE.md and `recipe/queries/capabilities.ts`):
+`kind` does what it does everywhere (see CLAUDE.md and `recipe/queries/capabilities.ts`):
 identity, copy, icons, library section, which prompt authors it, whether the planner
-offers it. What a document can _do_ comes from what it _has_.
+offers it — and, since #1646, **whether a first formula is offered and which end its
+yield question starts from**. What a document can _do_ once it has a formula comes
+from what it _has_.
 
 > **Updated by issue #1404.** This section was written when `ferment` and `cure` were
 > assumed to arrive together as two bare kinds with nothing beside them. `cure` has
@@ -472,12 +476,18 @@ offers it. What a document can _do_ comes from what it _has_.
 > to it. The category is identity and grouping only; the rule at the foot of this
 > section — capabilities answer questions about the kind, presence answers questions
 > about the document — is what keeps it out of `capabilities.ts`.
+>
+> **Updated by issue #1646.** This section used to say "do **not** add `bread` as a
+> kind". It was reversed (Daniel, 2026-10-03) because a label, not a flour guess,
+> should decide which recipes are offered a formula: the guess offered the door to
+> cakes and gravy and never to a coppa. `bread` is a full recipe in every other
+> respect — every capability cell matches `recipe` — so nothing about a loaf forks.
 
 | Entry            | `kind`     | formula | process | batches | culture |
 | ---------------- | ---------- | :-----: | :-----: | :-----: | :-----: |
 | Weeknight curry  | `recipe`   |    —    |    —    |    —    |    —    |
-| Tin loaf         | `recipe`   |    ●    |    ●    |    ●    |    —    |
-| Thin pizza bases | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Tin loaf         | `bread`    |    ●    |    ●    |    ●    |    —    |
+| Thin pizza bases | `bread`    |    ●    |    ●    |    ●    |    —    |
 | Fresh sausage    | `recipe`   |    ●    |    —    |    —    |    —    |
 | Sauerkraut       | `recipe`   |    ●    |    ●    |    ●    |    —    |
 | Kimchi           | `recipe`   |    ●    |    ●    |    ●    |    —    |
@@ -488,17 +498,19 @@ offers it. What a document can _do_ comes from what it _has_.
 | Negroni          | `cocktail` |  free   |    —    |    —    |    —    |
 | Friday takeaway  | `special`  |    —    |    —    |    —    |    —    |
 
-A loaf **is** a recipe: cooked, plannable, wants a hero image, ingredients on the
-shopping list. A `bread` kind would fork all of that for nothing. `cure` earns a kind
-the way `cocktail` did — a different section of the library, not dinner — and that is
-the whole of what its kind buys: a shelf, an icon, its own words, its own art
-direction, and `isPlannable: false`. Sauerkraut and kimchi are shown above as
-`recipe` because that is what they are today: `ferment` is not built, and vegetables
-are not cured meat. Sausages fall out without a decision: a fresh banger is a `recipe`
-with a formula and no process, a salami is a `cure` in the `fermented_dry_cured`
-category with nearly the same formula and a cure's process. Bacon is an ordinary cure
-in `cooked_whole_muscle` that simply carries no drying target — nothing special-cases
-it. A cocktail could gain a 1:1:1 formula with no code change at all.
+A loaf is still a recipe in everything but its label: cooked, plannable, wants a hero
+image, ingredients on the shopping list — its capability row is `recipe`'s, cell for
+cell. What the `bread` label buys is a shelf, an icon, its own words, its own art
+direction and the "Make it scalable" door. `cure` earns a kind the way `cocktail`
+did — a different section of the library, not dinner — and `isPlannable: false`, plus
+the same door. Sauerkraut and kimchi are shown above as `recipe` because that is what
+they are today: `ferment` is not built, and vegetables are not cured meat, so they —
+and a fresh sausage — are offered no first formula until they are labelled; one they
+already have keeps its doors. A salami is a `cure` in the `fermented_dry_cured`
+category with nearly the same formula as a fresh sausage and a cure's process. Bacon
+is an ordinary cure in `cooked_whole_muscle` that simply carries no drying target —
+nothing special-cases it. A cocktail could gain a 1:1:1 formula with no code change
+at all.
 
 **Which kind of cure**, and why it is a field rather than five kinds or a tag:
 `cureCategory` is one of `dry_cured_whole_muscle`, `cooked_whole_muscle`,
@@ -507,19 +519,23 @@ for the **safety mechanism** that makes the thing edible, which is what makes th
 closed and finite. Five kinds would answer the same five capability questions
 identically five times and put five chips on the library for one ingredient; a tag
 would let a typo silently drop an entry out of its group, which a value frozen onto a
-run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds five
+run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds six
 kinds_.
 
 **The rule that stops the capability table rotting:** capabilities answer
 questions about the **kind**; presence answers questions about the **document**.
-"Is this offered in the planner?" is a capability. "Does this have a formula?" is
-`formula != null`. Keep that line sharp and `capabilities.ts` stays as wide as
-the questions it answers about a kind — five columns today (`takesIngredients`,
-`isCookable`, `isPlannable`, `isAuthorable`, `takesComponents`) — instead of
-growing a boolean per feature. `cureCategory` is bound by the same rule from the
-other side: it is neither kind nor presence but **identity**, so it picks words,
-pictures and groupings and answers no capability question. There is no sixth column
-for it, and adding one would be the rot this rule exists to prevent.
+"Is this offered in the planner?" is a capability. "Is a first formula offered, and
+from which end does it start?" is a capability too (#1646). "Does this have a
+formula?" is `formula != null`. Keep that line sharp and `capabilities.ts` stays as
+wide as the questions it answers about a kind — six columns today
+(`takesIngredients`, `isCookable`, `isPlannable`, `isAuthorable`, `takesComponents`,
+`firstFormulaYield`) — instead of growing a boolean per feature. `firstFormulaYield`
+is one nullable column rather than a boolean plus a direction, so a kind can never
+carry a starting direction for a door it is never offered; a future `ferment` is one
+more row (`'basis'`). `cureCategory` is bound by the same rule from the other side: it
+is neither kind nor presence but **identity**, so it picks words, pictures and
+groupings and answers no capability question. There is no column for it, and adding
+one would be the rot this rule exists to prevent.
 
 ## Placement
 

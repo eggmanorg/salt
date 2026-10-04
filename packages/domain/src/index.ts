@@ -237,6 +237,7 @@ export type {
   RecipePhase,
   RecipePhaseStrip,
   AuthorableRecipeKind,
+  FirstFormulaYield,
   ServingsScale,
 } from './recipe/index.js';
 export {
@@ -269,6 +270,10 @@ export {
   isPlannable,
   isAuthorable,
   takesComponents,
+  // Whether a first formula is offered on a kind, and which end its yield
+  // question starts from (issue #1646) — the label, not an ingredient guess.
+  offersFormula,
+  firstFormulaYield,
   // The kinds the librarian may write (issue #765) — read off the capability
   // table, and what bounds the `kind` the AI authoring schemas accept.
   AUTHORABLE_RECIPE_KINDS,
@@ -504,7 +509,6 @@ export {
   gramsFromParsed,
   deriveFormula,
   guessBasisIngredientIds,
-  looksScalable,
   solveFormula,
   doughAmountGrams,
   targetYield,

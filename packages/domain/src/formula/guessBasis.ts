@@ -57,25 +57,3 @@ export function guessBasisIngredientIds(entries: readonly BasisGuessEntry[]): st
     })
     .map((entry) => entry.ingredientId);
 }
-
-/**
- * Does this recipe LOOK like it has a basis? (issue #823.)
- *
- * The same decision as `guessBasisIngredientIds`, asked one screen earlier and as
- * a yes/no: not "which of these is the flour?" but "is there a flour here at all?"
- * — so a caller can decide whether to OFFER the mapping screen, rather than what
- * to preselect once you are on it. Implemented in terms of the guess for the
- * reason a second keyword list would be a bug waiting to happen: the offer must
- * never lead somewhere the screen then disagrees with.
- *
- * The empty case means something different here, and that is the whole cost of
- * this function. To the mapping screen an empty guess means "you pick"; to a gate
- * it means "not offered", which leans on the deliberately short keyword list
- * harder than the guess itself does. Accepted knowingly: a miss costs a menu
- * item, never access. `/recipes/:id/formula` is still typed-URL reachable, and
- * the screen still makes its own guess on arrival — the item stops being the only
- * way in without becoming the only way in.
- */
-export function looksScalable(entries: readonly BasisGuessEntry[]): boolean {
-  return guessBasisIngredientIds(entries).length > 0;
-}

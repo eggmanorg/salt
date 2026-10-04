@@ -52,6 +52,11 @@ describe.each(SHAPES)('%s — the authored kind', (_name, schema, base) => {
     expect(parsed.success && parsed.data.kind).toBe('cocktail');
   });
 
+  it('accepts an explicit bread (#1646)', () => {
+    const parsed = schema.safeParse({ ...base, kind: 'bread' });
+    expect(parsed.success && parsed.data.kind).toBe('bread');
+  });
+
   it('accepts an explicit recipe', () => {
     const parsed = schema.safeParse({ ...base, kind: 'recipe' });
     expect(parsed.success && parsed.data.kind).toBe('recipe');

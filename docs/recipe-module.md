@@ -53,7 +53,7 @@ Recipe {
                                    // deep for display only, and nothing is ever aggregated
   cureCategory: CureCategory | null // .default(null); which of five kinds of cure, for a `cure` only
                                    // (#1404) — see "Schema extensions (kind discriminator)" and
-                                   // docs/data-model.md → "`recipes` holds five kinds"
+                                   // docs/data-model.md → "`recipes` holds six kinds"
   needs_approval?: boolean         // .optional(); AI-authored, not yet read by a human (#616).
                                    // Used-but-flagged: live and never filtered out. Absent = reviewed
   kit: RecipeKitEntry[]            // .default([]); the kit this dish needs a cook to get out (#882) —
@@ -448,10 +448,10 @@ and both have since been filled in — `image` by the Tier-2 hero pipeline,
   auto-generation trigger skips a user upload rather than clobbering it.
   Reuses the canon **Tier-2** Storage conventions (see `docs/canon-icons.md`).
 
-### Schema extensions (kind discriminator, issues #637, #652, #1404)
+### Schema extensions (kind discriminator, issues #637, #652, #1404, #1646)
 
 The `recipes` collection holds more than recipes. One additive field,
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'`, says which:
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'`, says which:
 
 - a **`special`** (UI label **"Chef's Specials"**) is a meal that needs no recipe
   card — either because nobody cooked (a takeaway, a picnic, a meal out, a
@@ -469,7 +469,10 @@ The `recipes` collection holds more than recipes. One additive field,
   full entry in every way a recipe is except that `isPlannable` is `false`. It
   carries the one per-kind field on this document, `cureCategory`: full
   definition, the five closed values and why it is a field rather than a fifth
-  kind is in [docs/data-model.md](data-model.md) → "`recipes` holds five kinds".
+  kind is in [docs/data-model.md](data-model.md) → "`recipes` holds six kinds";
+- a **`bread`** (#1646) is a dough baked as bread. Its capability row is
+  `recipe`'s, cell for cell; the label buys its own shelf and offers a first
+  formula ("Make it scalable"), as the `cure` label does.
 
 **`.default('recipe')` is mandatory, not stylistic.** The realtime subscription
 skips documents that fail validation, so a _required_ `kind` would make every
@@ -484,20 +487,22 @@ narrowing site for no gain: the emptiness is already representable.
 
 **Behaviour comes from capability predicates, never from the kind.** Nothing
 outside `packages/domain` branches on the value; `takesIngredients`,
-`isCookable` and `isPlannable` (`domain/src/recipe/queries/capabilities.ts`)
+`isCookable`, `isPlannable`, `takesComponents`, `isAuthorable` and
+`offersFormula` / `firstFormulaYield` (`domain/src/recipe/queries/capabilities.ts`)
 answer for it, backed by a `Record<RecipeKind, …>` table so a new kind fails
-to compile until it has answered all three questions. The direct comparisons that
+to compile until it has answered every column. The direct comparisons that
 remain are _identity and copy_, never behaviour: which section of the recipe list
 you are looking at, whether a planner picker row wears a badge, and which
 art-direction prompt the hero pipeline reaches for.
 
-| kind          | `takesIngredients` | `isCookable` | `isPlannable` | `takesComponents` | `isAuthorable` |
-| ------------- | ------------------ | ------------ | ------------- | ----------------- | -------------- |
-| `recipe`      | ✓                  | ✓            | ✓             | ✓                 | ✓              |
-| `special`     | ✗                  | ✗            | ✓             | ✗                 | ✗              |
-| `cocktail`    | ✓                  | ✓            | ✗             | ✓                 | ✓              |
-| `placeholder` | ✗                  | ✗            | ✗             | ✗                 | ✗              |
-| `cure`        | ✓                  | ✓            | ✗             | ✗                 | ✓              |
+| kind          | `takesIngredients` | `isCookable` | `isPlannable` | `takesComponents` | `isAuthorable` | `firstFormulaYield` |
+| ------------- | ------------------ | ------------ | ------------- | ----------------- | -------------- | ------------------- |
+| `recipe`      | ✓                  | ✓            | ✓             | ✓                 | ✓              | —                   |
+| `special`     | ✗                  | ✗            | ✓             | ✗                 | ✗              | —                   |
+| `cocktail`    | ✓                  | ✓            | ✗             | ✓                 | ✓              | —                   |
+| `placeholder` | ✗                  | ✗            | ✗             | ✗                 | ✗              | —                   |
+| `cure`        | ✓                  | ✓            | ✗             | ✗                 | ✓              | `basis`             |
+| `bread`       | ✓                  | ✓            | ✓             | ✓                 | ✓              | `target`            |
 
 (`takesComponents` arrived with meals — see below. `isAuthorable` — "can the
 librarian WRITE this kind?" — gained its `cocktail` row in #765 and its `cure`

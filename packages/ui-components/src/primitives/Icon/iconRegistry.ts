@@ -96,6 +96,7 @@ import Undo2 from '@lucide/svelte/icons/undo-2';
 import Upload from '@lucide/svelte/icons/upload';
 import Users from '@lucide/svelte/icons/users';
 import Wand from '@lucide/svelte/icons/wand';
+import Wheat from '@lucide/svelte/icons/wheat';
 import X from '@lucide/svelte/icons/x';
 
 export const iconRegistry = {
@@ -179,6 +180,7 @@ export const iconRegistry = {
   Upload,
   Users,
   Wand,
+  Wheat,
   X,
 };
 

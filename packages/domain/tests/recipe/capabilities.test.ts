@@ -5,8 +5,11 @@ import {
   isPlannable,
   isAuthorable,
   takesComponents,
+  offersFormula,
+  firstFormulaYield,
   AUTHORABLE_RECIPE_KINDS,
 } from '@salt/domain';
+import type { FirstFormulaYield } from '@salt/domain';
 import type { RecipeKind } from '@salt/domain';
 import { RecipeKindSchema } from '@salt/domain/schemas';
 
@@ -21,6 +24,7 @@ describe('recipe kind capabilities', () => {
     isPlannable: boolean;
     isAuthorable: boolean;
     takesComponents: boolean;
+    firstFormulaYield: FirstFormulaYield;
   }> = [
     {
       kind: 'recipe',
@@ -29,6 +33,7 @@ describe('recipe kind capabilities', () => {
       isPlannable: true,
       isAuthorable: true,
       takesComponents: true,
+      firstFormulaYield: null,
     },
     {
       kind: 'special',
@@ -37,6 +42,7 @@ describe('recipe kind capabilities', () => {
       isPlannable: true,
       isAuthorable: false,
       takesComponents: false,
+      firstFormulaYield: null,
     },
     {
       kind: 'cocktail',
@@ -45,6 +51,7 @@ describe('recipe kind capabilities', () => {
       isPlannable: false,
       isAuthorable: true,
       takesComponents: true,
+      firstFormulaYield: null,
     },
     {
       kind: 'placeholder',
@@ -53,6 +60,7 @@ describe('recipe kind capabilities', () => {
       isPlannable: false,
       isAuthorable: false,
       takesComponents: false,
+      firstFormulaYield: null,
     },
     {
       kind: 'cure',
@@ -61,16 +69,32 @@ describe('recipe kind capabilities', () => {
       isPlannable: false,
       isAuthorable: true,
       takesComponents: false,
+      firstFormulaYield: 'basis',
+    },
+    {
+      kind: 'bread',
+      takesIngredients: true,
+      isCookable: true,
+      isPlannable: true,
+      isAuthorable: true,
+      takesComponents: true,
+      firstFormulaYield: 'target',
     },
   ];
 
+  it('the table walks every kind in the enum', () => {
+    expect(table.map((row) => row.kind).sort()).toEqual([...RecipeKindSchema.options].sort());
+  });
+
   for (const row of table) {
-    it(`${row.kind}: ingredients ${row.takesIngredients}, cookable ${row.isCookable}, plannable ${row.isPlannable}, authorable ${row.isAuthorable}, components ${row.takesComponents}`, () => {
+    it(`${row.kind}: ingredients ${row.takesIngredients}, cookable ${row.isCookable}, plannable ${row.isPlannable}, authorable ${row.isAuthorable}, components ${row.takesComponents}, first formula ${row.firstFormulaYield}`, () => {
       expect(takesIngredients(row.kind)).toBe(row.takesIngredients);
       expect(isCookable(row.kind)).toBe(row.isCookable);
       expect(isPlannable(row.kind)).toBe(row.isPlannable);
       expect(isAuthorable(row.kind)).toBe(row.isAuthorable);
       expect(takesComponents(row.kind)).toBe(row.takesComponents);
+      expect(firstFormulaYield(row.kind)).toBe(row.firstFormulaYield);
+      expect(offersFormula(row.kind)).toBe(row.firstFormulaYield !== null);
     });
   }
 
@@ -82,7 +106,7 @@ describe('recipe kind capabilities', () => {
     expect(isCookable('special')).toBe(false);
   });
 
-  it('the librarian can author a recipe, a cocktail and a cure, and nothing else (#765, #1404)', () => {
+  it('the librarian can author a recipe, a cocktail, a cure and a bread, and nothing else (#765, #1404, #1646)', () => {
     // Named separately because these two `false`s are the ones that MEAN
     // something. The cocktail row was `false` only while `assembleRecipeDraft`
     // hardcoded `kind: 'recipe'` — "not yet", not "by design" — and #765 removed
@@ -95,6 +119,8 @@ describe('recipe kind capabilities', () => {
     // existence — and the last three are bounded by this column. A `false` here
     // would have shipped a library section nothing could ever put anything on.
     expect(isAuthorable('cure')).toBe(true);
+    // #1646's for the same reason: imports and the chef are how a loaf arrives.
+    expect(isAuthorable('bread')).toBe(true);
     // These two are false on their own merits and stay false: a special is a
     // hand-written night off with nothing to author, a placeholder is a
     // photograph and a title.
@@ -153,6 +179,7 @@ describe('recipe kind capabilities', () => {
       // And the one it MUST contain (#1404), for the reason the row states: a
       // cure the model cannot be asked to write is a shelf with no way onto it.
       expect(members).toContain('cure');
+      expect(members).toContain('bread');
       expect(takesIngredients('special')).toBe(false);
       expect(takesIngredients('placeholder')).toBe(false);
     });
@@ -187,19 +214,41 @@ describe('recipe kind capabilities', () => {
     expect(takesComponents('placeholder')).toBe(false);
   });
 
-  it('the two kinds you can build a meal out of are exactly the two you can make (issue #752)', () => {
+  it('every kind you can build a meal out of is one you can make (issue #752)', () => {
     // Named separately because the list page leans on it: every entry in the Meals
-    // section is a `recipe` or a `cocktail`, and both of those take ingredients —
-    // which is what makes `sectionTakesIngredients(MEAL_SECTION)` unconditionally
-    // true rather than a guess. A meal's ingredients are its OWN; nothing is
-    // aggregated from its components.
+    // section takes ingredients — which is what makes
+    // `sectionTakesIngredients(MEAL_SECTION)` unconditionally true rather than a
+    // guess. A meal's ingredients are its OWN; nothing is aggregated from its
+    // components. Walks the enum, so a new kind that takes components without
+    // taking ingredients turns this red.
     expect(takesComponents('recipe')).toBe(true);
     expect(takesComponents('cocktail')).toBe(true);
+    expect(takesComponents('bread')).toBe(true);
     expect(takesComponents('special')).toBe(false);
     expect(takesComponents('placeholder')).toBe(false);
-    for (const kind of ['recipe', 'cocktail'] as const) {
-      expect(takesIngredients(kind)).toBe(true);
+    for (const kind of RecipeKindSchema.options) {
+      if (takesComponents(kind)) expect(takesIngredients(kind)).toBe(true);
     }
+  });
+
+  it('a bread is a recipe that is offered a formula from the dough end (#1646)', () => {
+    // The row read back as the sentence it is: a loaf is planned, cooked, shopped
+    // for and written by the chef, exactly like a recipe — and what the label adds
+    // is the "Make it scalable" door, starting from the dough coming out.
+    for (const ask of [takesIngredients, isCookable, isPlannable, isAuthorable, takesComponents]) {
+      expect(ask('bread')).toBe(ask('recipe'));
+    }
+    expect(offersFormula('bread')).toBe(true);
+    expect(firstFormulaYield('bread')).toBe('target');
+  });
+
+  it('only bread and cure are offered a first formula — a plain recipe never is (#1646)', () => {
+    // The label replaced a flour guess that offered the door to waffles and gravy
+    // and never to a coppa. A plain recipe that already HAS a formula keeps its
+    // doors through presence, which this question does not answer.
+    const offered = RecipeKindSchema.options.filter((kind) => offersFormula(kind));
+    expect([...offered].sort()).toEqual(['bread', 'cure']);
+    expect(firstFormulaYield('cure')).toBe('basis');
   });
 
   it('a cocktail takes components — it can point at its own syrup recipe', () => {

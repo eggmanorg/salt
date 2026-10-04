@@ -177,9 +177,9 @@ three are pinned by tests — see the header of
 No `firestore.rules` clause covers the server write and none should: an Admin SDK
 write bypasses rules entirely.
 
-## `recipes` holds five kinds
+## `recipes` holds six kinds
 
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'` (issues #637, #652, #1404).
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'` (issues #637, #652, #1404, #1646).
 
 - a **special** (UI label "Chef's Specials") is a meal that needs no recipe card — a
   takeaway, a night off, or the roast the cook knows by heart — with no ingredients
@@ -195,6 +195,13 @@ write bypasses rules entirely.
   canon, method, hero image) except that it is never offered in the planner picker.
   It carries the one per-kind field on this document: `cureCategory`, one of five
   closed values or `null`.
+- a **bread** (issue #1646) is a dough baked as bread — a loaf, rolls, focaccia, a
+  flatbread, soda bread, pizza dough. Every capability is a recipe's; the label buys
+  its own library shelf and is what offers "Make it scalable" (a first formula),
+  as it is on a cure. **Deploy order:** an installed app or a Cloud Function that
+  predates the member fails to parse a `kind: 'bread'` document and skips it, so
+  nothing is labelled `bread` until both are on production — the same holds for
+  `cure` since #1404.
 
 Schema constraints, each load-bearing:
 

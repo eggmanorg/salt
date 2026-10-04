@@ -123,7 +123,7 @@
     isPlannable,
     kitByStep as groupKitByStep,
     groupKitByEquipment,
-    looksScalable,
+    offersFormula,
     resolveComponents,
     servingsScale,
     takesIngredients,
@@ -386,13 +386,11 @@
 
   // ─── Does this recipe have a formula? (issue #812, phase 1 of epic #778) ─────
   //
-  // PRESENCE, NOT KIND, and the distinction is the rule that keeps
-  // `capabilities.ts` four columns wide: capabilities answer questions about the
-  // KIND ("is this offered in the planner?"), presence answers questions about the
-  // DOCUMENT ("does this have a formula?"). A loaf is an ordinary `recipe` — there
-  // is no `bread` kind and there will not be one
-  // (docs/formulas-schedules-batches.md) — so nothing here consults `kindOf`, and
-  // nothing was added to the capability table for it.
+  // PRESENCE, NOT KIND. Capabilities answer questions about the KIND ("is a
+  // first formula offered on this?"), presence answers questions about the
+  // DOCUMENT ("does this have a formula?"). So nothing here consults `kindOf`: a
+  // formula on any entry — including a loaf later relabelled plain Recipe — keeps
+  // its "Bake a batch" / "Formula" doors.
   //
   // Subscribed here for the same reason the guided plan is: there is no all-formulas
   // subscription anywhere in the app, a formula is read one recipe at a time, and
@@ -413,39 +411,17 @@
   });
   const hasFormula = $derived(breadEnabled && $formula !== null && $formula !== undefined);
 
-  // ─── Could this recipe HAVE one? (issue #823) ────────────────────────────────
+  // ─── Is a FIRST formula offered? (issue #823, re-gated by #1646) ─────────────
   //
-  // Presence-and-shape again, one notch softer than `hasFormula`: not "does this
-  // have a formula" but "does this look like something that could". The answer is
-  // the domain's own basis guess asked as a yes/no — the same decision the formula
-  // screen makes when it opens, so the offer can never lead somewhere the screen
-  // then disagrees with. Still nothing about `kind` anywhere near it: a loaf is an
-  // ordinary `recipe`, and there is no `bread` kind.
-  //
-  // An empty guess means "not offered" here, where the mapping screen reads it as
-  // "you pick". That is the whole cost of the gate and it is bounded: a loaf whose
-  // only flour line the keyword list has never heard of loses a menu item, not
-  // access — `/recipes/:id/formula` is still typed-URL reachable.
-  //
-  // Canon LEADS and lands after first paint, so this is asked again as it arrives.
-  // Every loaf in the library says "flour" in its own line too, so in practice the
-  // item is there immediately; a recipe that reads as flour ONLY through its canon
-  // name would see it appear a beat late, which is the accepted price of adding no
-  // read here (the formula subscription above is the only one this costs).
-  const canonNameById = $derived(new Map($canonItems.map((c) => [c.id, c.name])));
-  const couldHaveFormula = $derived(
-    recipe !== null &&
-      looksScalable(
-        flattenIngredients(recipe).map((ing) => ({
-          ingredientId: ing.id,
-          canonName: (ing.canonId ? canonNameById.get(ing.canonId) : null) ?? null,
-          rawText: ing.rawText,
-        })),
-      ),
+  // The label decides: `offersFormula` is a question about the kind, answered in
+  // the capability table (Bread and Cured meat). It replaced a keyword guess at
+  // the ingredients, which offered the door to waffles and gravy and never to a
+  // coppa. Mutually exclusive with the pair above by construction: the moment a
+  // formula is saved `hasFormula` goes true and "Bake a batch" / "Formula" take
+  // the slot. `/recipes/:id/formula` stays typed-URL reachable on any recipe.
+  const showMakeScalable = $derived(
+    breadEnabled && !hasFormula && recipe !== null && offersFormula(kindOf(recipe)),
   );
-  // Mutually exclusive with the pair above by construction: the moment a formula
-  // is saved this goes false and "Bake a batch" / "Formula" take the slot.
-  const showMakeScalable = $derived(breadEnabled && !hasFormula && couldHaveFormula);
 
   // ─── Which half of the Cook control is the primary one (issue #776) ─────────
   //
@@ -2432,15 +2408,11 @@
                    Refresh above.
 
                    A recipe with NO formula offers neither — there is no batch to
-                   start and nothing to open — and until #823 that left the screen
-                   with no entry point at all for a recipe that had never had one.
-                   What #812 actually objected to was an "add a formula" item on all
-                   ~46 recipes, putting baker's percentages in front of every
-                   weeknight curry to serve the three loaves; the item below answers
-                   that by gating on the basis guess instead of offering it
-                   unconditionally. The typed URL stays as the escape hatch for a loaf
-                   the guess misses — it stopped being the ONLY way in, not a way
-                   in. -->
+                   start and nothing to open. What #812 objected to was an "add a
+                   formula" item on every recipe, putting baker's percentages in
+                   front of every weeknight curry; the item below answers that by
+                   offering a first formula only on the kinds whose label asks for
+                   one (#1646). -->
               <PopoverMenuItem
                 icon="Hourglass"
                 onclick={() => {
@@ -2470,9 +2442,8 @@
                    Nothing else on the page changes — it leads to the screen #806
                    already shipped, which has always handled the no-formula-yet case.
 
-                   Gated on the domain's basis guess, never on `kind` — the
-                   `couldHaveFormula` derivation above says why, and what an empty
-                   guess costs. Group one for the same reason as the pair it replaces:
+                   Gated on `offersFormula` — the kind's label, answered in the
+                   domain's capability table, never a kind comparison here. Group one for the same reason as the pair it replaces:
                    it works on THIS dish, and mapping a formula is desk work rather
                    than one of the hands-full verbs the inline row is for. "Guided
                    plan" is again the precedent, and this is the once-in-a-recipe's-
