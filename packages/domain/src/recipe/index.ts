@@ -60,6 +60,15 @@ export type { ServingsScale } from './queries/servings.js';
 // the two can never disagree about what counts as wrong.
 export { ingredientMatchIssue, recipeMatchIssueCount } from './queries/matchIssues.js';
 export type { IngredientMatchIssue } from './queries/matchIssues.js';
+// What a marked line's problem is and what clears it (issue #1647) — the recipe
+// page's row marks and the match sheet both read this, so the mark and its
+// message cannot disagree. Composed over `hasLiveCanonMatch` + the query above.
+export { ingredientLineMark } from './queries/ingredientLineMark.js';
+export type {
+  IngredientLineIssue,
+  IngredientLineMark,
+  IngredientLineRemedy,
+} from './queries/ingredientLineMark.js';
 // Count or weight (issue #1643): which of the two amounts a parsed line holds it
 // is read in, decided from its canon item and product form at read time. The
 // recipe page, cook screens and the add-to-list plan all ask this one function.

@@ -621,11 +621,19 @@ export const coverageThresholds = {
   // than a denominator that shrank. Pasted verbatim from CI's ubuntu-latest
   // run (35525912005, job 106117899010), not retyped and not re-measured on
   // this machine, per the note above.
+  //
+  // RE-PINNED 86.22/76.14 → 86.93/77.2 for PR #1650 (#1647's line-mark
+  // query). The first bank wrote 1715 uncovered branches, one fewer than CI
+  // measures, and tripped its own gate; corrected to CI's figure. Merge base
+  // main 3b348ef7 measured 86.88/76.97 (1632/1723) on ubuntu-latest (run
+  // 37145371497, job 111268086270); this branch measures 86.94/77.21
+  // (1628/1716) on ubuntu-latest (run 37188647761, job 111395961846). Both
+  // uncovered counts fell against the merge base, so the gain is earned.
   'apps/web-pwa/src/routes/**': {
-    lines: 86.22,
-    branches: 76.14,
-    uncoveredLines: 1672,
-    uncoveredBranches: 1735,
+    lines: 86.93,
+    branches: 77.2,
+    uncoveredLines: 1628,
+    uncoveredBranches: 1716,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

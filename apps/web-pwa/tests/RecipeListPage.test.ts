@@ -1611,6 +1611,14 @@ describe('RecipeListPage — silent match problems', () => {
 
     const pip = await screen.findByTestId('recipe-match-issue-pip');
     expect(pip).toHaveTextContent('1');
+    // Issue #1647: the number counts several kinds of fault, so its words name
+    // none of them and point at the marked line instead — and no longer claim
+    // every counted line is "matched to the wrong thing".
+    const words =
+      'line needs attention — open the recipe and tap a marked line to see what clears it';
+    expect(pip).toHaveAttribute('title', `1 ${words}`);
+    expect(pip.querySelector('.sr-only')).toHaveTextContent(words);
+    expect(pip.getAttribute('title')).not.toContain('wrong thing');
   });
 
   it('drops the pip once a product form bridges the line', async () => {

@@ -20,9 +20,10 @@
   PRODUCT FORM and nothing dangles at all, because the ingredient's canonId
   points at the form's parent canon, which is still alive. The line goes on
   looking perfectly matched while quietly buying millilitres of a countable
-  thing. Re-running finds no form, falls through to product-form arbitration
-  (`canonicaliseRecipeIngredients` proposes BEFORE it matches), and writes a
-  fresh one — which is how a form deleted for being wrong gets regenerated.
+  thing. Re-running finds no form and falls through to product-form arbitration
+  (`canonicaliseRecipeIngredients` proposes BEFORE it matches). Whether that
+  mints a fresh form is the model's call — `ingredientLineMark` states what
+  clears each mark, with its boundary, and this sheet only words its answer.
 
   Everything else here is read-only. A wrong match is fixed in canon /
   product-form admin, which the two links jump to for admins (those pages are
@@ -40,7 +41,7 @@
     SheetTitle,
   } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
-  import { ingredientMatchIssue, isResolvedMatchState, resolveProductForm } from '@salt/domain';
+  import { ingredientLineMark, resolveProductForm } from '@salt/domain';
   import type { Ingredient } from '@salt/domain';
   import { canonItems } from '../../lib/canonService.js';
   import { canonIndex } from '../../lib/canonIndex.js';
@@ -48,6 +49,7 @@
   import { aisles } from '../../lib/aisleService.js';
   import { currentMember } from '../../lib/membersService.js';
   import { titleCase } from '../../lib/titleCase.js';
+  import { LINE_REMEDY, lineIssueProblem, lineMarkContext } from './lineMarkCopy.js';
 
   interface Props {
     /** The tapped ingredient. Null between openings. */
@@ -64,12 +66,15 @@
 
   const canon = $derived(canonId ? ($canonItems.find((c) => c.id === canonId) ?? null) : null);
 
-  // The recipe list's pip and this sheet must never disagree about what is
-  // wrong, so both ask the same pure query rather than re-deriving it.
+  // The recipe list's pip, the row marks and this sheet must never disagree
+  // about what is wrong, so all ask the same pure queries rather than
+  // re-deriving them — `ingredientLineMark` composes `ingredientMatchIssue`, the
+  // card's source, and adds what clears the mark (issue #1647).
   const canonById = $derived(canonIndex($canonItems));
-  const issue = $derived(
-    ingredient === null ? null : ingredientMatchIssue(ingredient, canonById, $productForms),
+  const mark = $derived(
+    ingredient === null ? null : ingredientLineMark(ingredient, canonById, $productForms),
   );
+  const issue = $derived(mark?.issue ?? null);
 
   // The form is claimed only when it resolves to THIS ingredient's own canon —
   // the same guard both existing call sites apply. Without it a form since
@@ -96,13 +101,45 @@
     return `1 ${titleCase(canon.name)} → ${measure} ${form.label.toLowerCase()}`;
   });
 
-  const missingForm = $derived(issue === 'missing_form');
-  // The form is counted and the line holds only a weight (issue #1643): grams
-  // cannot feed a counted form, so the line shops by weight until a re-match
-  // records the count it states.
-  const missingCount = $derived(issue === 'missing_count');
-  const missingAmount = $derived(issue === 'missing_amount');
-  const dangling = $derived(issue === 'dangling_canon');
+  // The problem and its remedy, worded. Null for a clean line. The names come
+  // from `lineMarkContext`, the function the row marks' labels read too.
+  const problem = $derived(
+    mark === null || ingredient === null
+      ? null
+      : lineIssueProblem(
+          mark.issue,
+          lineMarkContext(ingredient, canonById, $productForms, $canonItems),
+        ),
+  );
+  const remedy = $derived(mark === null ? null : LINE_REMEDY[mark.remedy]);
+
+  // The testid each issue has always rendered under, so the tests anchored on
+  // them still find it. A not-matched line that was never parsed keeps its own.
+  const issueTestId = $derived.by(() => {
+    switch (issue) {
+      case null:
+        return null;
+      case 'not_matched':
+        return ingredient?.parsed === null
+          ? 'ingredient-match-unparsed'
+          : 'ingredient-match-unmatched';
+      case 'unreadable':
+        return 'ingredient-match-unreadable';
+      case 'dangling_canon':
+        return 'ingredient-match-dangling';
+      case 'missing_amount':
+        return 'ingredient-match-missing-amount';
+      case 'missing_form':
+        return 'ingredient-match-missing-form';
+      case 'missing_count':
+        return 'ingredient-match-missing-count';
+    }
+  });
+  // Amber for a line that LOOKS finished and is not; muted for one that plainly
+  // isn't — the same split the row marks' colours make.
+  const looksFinished = $derived(
+    issue === 'missing_amount' || issue === 'missing_form' || issue === 'missing_count',
+  );
 
   const isAdmin = $derived($currentMember?.admin === true);
 
@@ -177,62 +214,36 @@
               <p class="mt-1 text-xs text-muted-foreground">{yieldLine}</p>
             {/if}
           </div>
-          {#if missingCount}
-            <p
-              class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
-              data-testid="ingredient-match-missing-count"
-            >
-              This line has a weight but no count, so it is bought by weight rather than as whole {titleCase(
-                canon.name,
-              )}. Match again to read the count.
-            </p>
-          {/if}
-        {:else if missingForm}
+        {/if}
+      {/if}
+
+      {#if ingredient}
+        {#if problem !== null && remedy !== null && issueTestId !== null}
+          <!-- What is wrong, then what clears it — both from the domain's one
+               answer, so this and the row's mark cannot disagree. Until #949 a
+               no-amount line read "Matched straight to the canon item", which
+               was true and useless; until #1647 the not-matched states named no
+               remedy, and two warnings named one that does not always work. -->
           <p
-            class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
-            data-testid="ingredient-match-missing-form"
+            class={looksFinished
+              ? 'rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text'
+              : 'text-muted-foreground'}
+            data-testid={issueTestId}
           >
-            No product form covers this line, so it shops as
-            {ingredient.parsed?.unit} of {titleCase(canon.name)} rather than whole ones. Match again to
-            have one worked out.
+            {problem}
+            <span data-testid="ingredient-match-remedy">{remedy}</span>
           </p>
-        {:else if missingAmount}
-          <!-- Matched, and holding nothing to match ON. Until #949 this line read
-               "Matched straight to the canon item", which was true and useless:
-               the row still had no amount, scaled with nothing, and added nothing
-               to the shopping list. -->
-          <p
-            class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text"
-            data-testid="ingredient-match-missing-amount"
-          >
-            No amount was read off this line, so it cannot scale with the servings and adds nothing
-            to the shopping list. Match again to read it properly.
-          </p>
-        {:else}
+        {:else if canon && !form}
           <p class="text-muted-foreground" data-testid="ingredient-match-direct">
             Matched straight to the canon item — no product form involved.
           </p>
         {/if}
 
         {#if matchedOn}
-          <p class="text-xs text-muted-foreground">Matched on “{matchedOn}”.</p>
+          <p class="text-xs text-muted-foreground">
+            {issue === 'not_matched' ? 'It would match on' : 'Matched on'} “{matchedOn}”.
+          </p>
         {/if}
-      {:else if dangling}
-        <p class="text-muted-foreground" data-testid="ingredient-match-dangling">
-          Matched to a canon item that no longer exists — deleted or merged away. Nothing will be
-          bought for this line until it is matched again.
-        </p>
-      {:else if ingredient.parsed === null}
-        <p class="text-muted-foreground" data-testid="ingredient-match-unparsed">
-          Not parsed yet, so nothing has been matched.
-        </p>
-      {:else}
-        <p class="text-muted-foreground" data-testid="ingredient-match-unmatched">
-          {isResolvedMatchState(ingredient.matchState)
-            ? 'No canon item recorded for this line.'
-            : 'Not matched yet.'}{#if matchedOn}
-            It would match on “{matchedOn}”.{/if}
-        </p>
       {/if}
 
       <!-- One action row for every state. Re-matching is offered even on a line
@@ -268,7 +279,7 @@
         </div>
         <p class="text-xs text-muted-foreground">
           Matching again re-runs the whole pipeline on this line — parse, product form, canon match.
-          It is how a product form deleted for being wrong gets worked out again.
+          It is how a product form deleted for being wrong can be worked out again.
         </p>
       {/if}
     </div>

@@ -5,6 +5,7 @@ import { emptyRecipe, newIngredient } from '@salt/domain';
 import type { Ingredient, IngredientGroup, Recipe } from '@salt/domain';
 
 import RecipeIngredientsPanel from '../src/routes/recipes/RecipeIngredientsPanel.svelte';
+import type { RowMark } from '../src/routes/recipes/lineMarkCopy.js';
 
 // The ingredients panel, read and written in the same place (issue #1319, Phase 5).
 //
@@ -62,7 +63,15 @@ let inspectMatch: ReturnType<typeof vi.fn>;
 let handleCanonicalise: ReturnType<typeof vi.fn>;
 let setServings: ReturnType<typeof vi.fn>;
 
-type Marker = 'unmatched' | 'no-amount' | 'mismatched' | null;
+type Marker = RowMark | null;
+
+// A mark as the page hands it over: the glyph, and the label it words it with.
+const mark =
+  (glyph: RowMark['glyph'], label = `label for ${glyph}`): (() => RowMark) =>
+  () => ({
+    glyph,
+    label,
+  });
 
 interface Extras {
   editing?: boolean;
@@ -211,14 +220,14 @@ describe('RecipeIngredientsPanel — read mode is exactly what it always was', (
 
   it('runs the unmatched ✗ and the no-amount ? through the page’s re-match', async () => {
     show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), false, {
-      marker: () => 'unmatched',
+      marker: mark('unmatched'),
     });
     await fireEvent.click(screen.getByTestId('match-state-unmatched'));
     expect(handleRematch).toHaveBeenCalledTimes(1);
 
     cleanup();
     show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), false, {
-      marker: () => 'no-amount',
+      marker: mark('no-amount'),
     });
     await fireEvent.click(screen.getByTestId('match-state-no-amount'));
     expect(handleRematch).toHaveBeenCalledTimes(1);
@@ -226,7 +235,7 @@ describe('RecipeIngredientsPanel — read mode is exactly what it always was', (
 
   it('opens the sheet from the mis-bought ⚠ rather than re-matching', async () => {
     show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), false, {
-      marker: () => 'mismatched',
+      marker: mark('mismatched'),
     });
 
     await fireEvent.click(screen.getByTestId('match-state-mismatched'));
@@ -235,9 +244,27 @@ describe('RecipeIngredientsPanel — read mode is exactly what it always was', (
     expect(handleRematch).not.toHaveBeenCalled();
   });
 
+  // Issue #1647: the words are the page's (from the domain query, via
+  // `lineMarkCopy`); the panel's job is to put them where hover and a screen
+  // reader find them, on every one of the three marks.
+  it.each([
+    ['unmatched', 'match-state-unmatched'],
+    ['no-amount', 'match-state-no-amount'],
+    ['mismatched', 'match-state-mismatched'],
+  ] as const)('labels the %s mark with the words the page gives it', (glyph, testId) => {
+    const words = `Problem for ${glyph}. What clears it.`;
+    show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), false, {
+      marker: mark(glyph, words),
+    });
+
+    const marker = screen.getByTestId(testId);
+    expect(marker.getAttribute('aria-label')).toBe(words);
+    expect(marker.getAttribute('title')).toBe(words);
+  });
+
   it('shows a match in flight as an inert ellipsis', () => {
     show(recipeWith([group('g1', null, [matched('i1', 'flour')])]), false, {
-      marker: () => 'unmatched',
+      marker: mark('unmatched'),
       matchingIds: { i1: true },
     });
 
@@ -318,7 +345,7 @@ describe('RecipeIngredientsPanel — edit mode takes the line’s tap away', () 
 
   it('takes the match markers with it, so no empty line can be sent to the matcher', () => {
     show(recipeWith([group('g1', null, [newIngredient('i1', '')])]), true, {
-      marker: () => 'unmatched',
+      marker: mark('unmatched'),
     });
 
     expect(screen.queryByTestId('match-state-unmatched')).toBeNull();
