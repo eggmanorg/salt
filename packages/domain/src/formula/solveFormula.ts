@@ -1,4 +1,4 @@
-import type { Formula, FormulaComponent, ReferenceYield } from '../schemas/formula.js';
+import type { Formula, FormulaComponent, ReferenceYield, SaltProduct } from '../schemas/formula.js';
 import type { BoundViolation, FormulaFailure } from './failure.js';
 import { roundGrams } from './rounding.js';
 import { doughAmountGrams } from './doughAmount.js';
@@ -35,6 +35,15 @@ export type SolvedComponent = {
   // THE SOLVE DOES NOT READ IT. It is copied through untouched: a stage says when an
   // ingredient goes in, and the arithmetic above is unchanged by it.
   stageId: string | null;
+  // WHICH SALT-BEARING PRODUCT THIS IS, or `null` where the component names none
+  // (issue #1645). Copied through beside `stageId` for the same reason: `freezeBatch`
+  // freezes it onto the run's quantity line and would otherwise need that second
+  // lookup back against the formula. The formula's optional field becomes `null`
+  // here, once, so everything downstream has one spelling of "no product".
+  //
+  // THE SOLVE DOES NOT READ THIS EITHER. A product's nitrite window reaches the solve
+  // as the component's own `minPercent`/`maxPercent`, never through this field.
+  saltProduct: SaltProduct | null;
   // What you weigh, through the one rounding authority.
   grams: number;
   // The same figure unrounded, for anything that needs to compute rather than
@@ -179,6 +188,7 @@ export function solveFormula(
           ingredientId: component.ingredientId,
           percent: component.percent,
           stageId: component.stageId,
+          saltProduct: component.saltProduct ?? null,
           grams: roundGrams(exactGrams),
           exactGrams,
         };

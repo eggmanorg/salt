@@ -1,5 +1,5 @@
 // One-off operator script: find the recipe ingredient lines that should be
-// pushed back through the parse + canon-match pipeline (issues #855, #857).
+// pushed back through the parse + canon-match pipeline (issues #855, #857, #1643).
 //
 // WHY THIS EXISTS — two prompt fixes landed after the library was already full.
 // #855 taught the parser that a juice/zest line buys the FRUIT, and #857 that a
@@ -14,8 +14,8 @@
 // canon items and product forms as a side effect of arbitration. Separating the
 // two means the work list can be reviewed before anything is created.
 //
-// WHAT COUNTS AS A CANDIDATE — the union of two nets, because each sees lines the
-// other structurally cannot:
+// WHAT COUNTS AS A CANDIDATE — the union of three nets. The first two (#855/#857)
+// each see lines the other structurally cannot:
 //
 //   • `ingredientMatchIssue` (@salt/domain, issue #858) — the COMPUTED signal,
 //     the same one behind the recipe-list pip. It reports `missing_form` for a
@@ -34,9 +34,19 @@
 // The report prints the cross-tab so the two nets can be judged against each
 // other rather than taken on faith.
 //
+//   • the COUNTED-LINE net (#1643) — a line the data now reads as a count that
+//     has never been through the parse that records one, plus `missing_count`.
+//     Its own module, scripts/lib/countedLineNet.ts, says what it catches and the
+//     absent-versus-null distinction it rests on. It answers a different question
+//     from the first two, so it is tallied on its own, and `--net counted`
+//     restricts the work list to it: the #855/#857 nets are over-inclusive by
+//     design and their run is done, so a #1643 re-read should not re-pay for them.
+//
 // USAGE (from apps/cloud-functions) — no secrets needed, no AI key needed:
 //   GOOGLE_CLOUD_PROJECT=s2-stage-ccb22 pnpm exec tsx scripts/scan-rematch-candidates.ts
 //   GOOGLE_CLOUD_PROJECT=s2-stage-ccb22 pnpm exec tsx scripts/scan-rematch-candidates.ts --json out.json
+//   … only the #1643 counted-line net:
+//   GOOGLE_CLOUD_PROJECT=s2-prod-e46bd pnpm exec tsx scripts/scan-rematch-candidates.ts --net counted --json out.json
 //
 // Against the emulator: FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GOOGLE_CLOUD_PROJECT=demo-salt …
 
@@ -46,6 +56,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { ingredientMatchIssue, resolveProductForm } from '@salt/domain';
 import type { CanonItem, ProductForm } from '@salt/domain';
 import { CanonItemSchema, ProductFormSchema, RecipeSchema } from '@salt/domain/schemas';
+import { countedLineReason } from './lib/countedLineNet.js';
+import type { CountedLineReason } from './lib/countedLineNet.js';
 
 const projectId = process.env['GOOGLE_CLOUD_PROJECT'] ?? process.env['GCLOUD_PROJECT'];
 if (!projectId) {
@@ -55,6 +67,13 @@ if (!projectId) {
 
 const jsonFlagIndex = process.argv.indexOf('--json');
 const jsonPath = jsonFlagIndex === -1 ? null : process.argv[jsonFlagIndex + 1];
+
+const netFlagIndex = process.argv.indexOf('--net');
+const net = netFlagIndex === -1 ? null : process.argv[netFlagIndex + 1];
+if (net !== null && net !== 'counted') {
+  console.error(`--net takes one value, "counted" (got "${String(net)}").`);
+  process.exit(1);
+}
 
 const useEmulator = Boolean(process.env['FIRESTORE_EMULATOR_HOST']);
 initializeApp(useEmulator ? { projectId } : { projectId, credential: applicationDefault() });
@@ -144,6 +163,9 @@ interface Candidate {
   readonly formLabel: string | null;
   readonly subject: string | null;
   readonly issue: string | null;
+  readonly counted: CountedLineReason | null;
+  /** Rendered like `quantity`; `absent` is a line never parsed since #1643. */
+  readonly statedCount: string;
 }
 
 const candidates: Candidate[] = [];
@@ -155,7 +177,13 @@ for (const recipe of recipes) {
       lineCount += 1;
       const subject = subjectOf(`${ing.rawText} ${ing.parsed?.item ?? ''}`);
       const issue = ingredientMatchIssue(ing, canonById, forms);
-      if (subject === null && issue === null) continue;
+      const counted = countedLineReason(ing, canonById, forms);
+      if (
+        net === 'counted'
+          ? counted === null
+          : subject === null && issue === null && counted === null
+      )
+        continue;
 
       const canon = ing.canonId === null ? undefined : canonById.get(ing.canonId);
       // The same parent guard every other product-form read applies: a form
@@ -179,6 +207,11 @@ for (const recipe of recipes) {
         formLabel: bridging?.label ?? null,
         subject,
         issue,
+        counted,
+        statedCount:
+          ing.parsed?.statedCount === undefined
+            ? 'absent'
+            : describeQuantity(ing.parsed.statedCount),
       });
     }
   }
@@ -217,6 +250,7 @@ const unreferenced = missingUnit.length - derivable.length - judgement.length;
 
 // ─── Report ──────────────────────────────────────────────────────────────────
 
+const countedNet = candidates.filter((c) => c.counted !== null);
 const bySubjectOnly = candidates.filter((c) => c.subject !== null && c.issue === null);
 const byIssueOnly = candidates.filter((c) => c.subject === null && c.issue !== null);
 const byBoth = candidates.filter((c) => c.subject !== null && c.issue !== null);
@@ -243,7 +277,15 @@ for (const c of judgement) {
   console.log(`      ${String(referenceCount.get(c.id) ?? 0).padStart(2)}×  ${c.name}`);
 }
 
-console.log(`\n── work list ${'─'.repeat(60)}`);
+console.log(`\n── counted-line net (#1643) ${'─'.repeat(46)}`);
+console.log(
+  `unread                 ${String(countedNet.filter((c) => c.counted === 'unread').length).padStart(4)}   (read as a count, never parsed for one)`,
+);
+console.log(
+  `missing_count          ${String(countedNet.filter((c) => c.counted === 'missing_count').length).padStart(4)}   (counted form, grams only, already re-read)`,
+);
+
+console.log(`\n── work list${net === null ? '' : ` (--net ${net})`} ${'─'.repeat(60)}`);
 console.log(
   `subject keyword only   ${String(bySubjectOnly.length).padStart(4)}   (computed signal is silent)`,
 );
@@ -257,7 +299,7 @@ console.log(
 
 const tally = new Map<string, number>();
 for (const c of candidates) {
-  const key = `${c.subject ?? '(no keyword)'} × ${c.issue ?? 'no computed issue'}`;
+  const key = `${c.subject ?? '(no keyword)'} × ${c.issue ?? 'no computed issue'}${c.counted === null ? '' : ` · counted ${c.counted}`}`;
   tally.set(key, (tally.get(key) ?? 0) + 1);
 }
 console.log(`\n── subject × issue ${'─'.repeat(54)}`);
@@ -267,7 +309,7 @@ for (const [key, n] of [...tally].sort((a, b) => b[1] - a[1])) {
 
 console.log(`\n── lines ${'─'.repeat(64)}`);
 console.log(
-  `${'subject'.padEnd(10)}${'issue'.padEnd(14)}${'raw text'.padEnd(42)}${'parsed'.padEnd(30)}${'→ canon'.padEnd(24)}form`,
+  `${'subject'.padEnd(10)}${'issue'.padEnd(14)}${'counted'.padEnd(14)}${'raw text'.padEnd(42)}${'parsed'.padEnd(30)}${'×count'.padEnd(8)}${'→ canon'.padEnd(24)}form`,
 );
 const sorted = [...candidates].sort(
   (a, b) => a.recipeTitle.localeCompare(b.recipeTitle) || a.rawText.localeCompare(b.rawText),
@@ -281,7 +323,7 @@ for (const c of sorted) {
   const parsed = `${c.quantity} ${c.unit ?? '·'} ${c.item ?? '·'}`;
   const canon = `${c.canonName} (${c.canonUnit})`;
   console.log(
-    `${(c.subject ?? '·').padEnd(10)}${(c.issue ?? '·').padEnd(14)}${truncate(c.rawText, 42)}${truncate(parsed, 30)}${truncate(canon, 24)}${c.formLabel ?? '·'}`,
+    `${(c.subject ?? '·').padEnd(10)}${(c.issue ?? '·').padEnd(14)}${(c.counted ?? '·').padEnd(14)}${truncate(c.rawText, 42)}${truncate(parsed, 30)}${truncate(c.statedCount, 8)}${truncate(canon, 24)}${c.formLabel ?? '·'}`,
   );
 }
 

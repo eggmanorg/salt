@@ -204,8 +204,16 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         percent: 100,
         grams: 597,
         stageId: null,
+        saltProduct: null,
       },
-      { ingredientId: 'ing-water', label: '320 g water', percent: 64, grams: 382, stageId: null },
+      {
+        ingredientId: 'ing-water',
+        label: '320 g water',
+        percent: 64,
+        grams: 382,
+        stageId: null,
+        saltProduct: null,
+      },
     ],
     totals: { basisGrams: 597, totalGrams: 979, usableGrams: 979, units: null },
     stages: [
@@ -798,7 +806,16 @@ describe('the weigh-out, when the recipe has moved on', () => {
     // recipe. A blank reads as "we no longer know what this was", which is true.
     mockBatch._set(
       makeBatch({
-        quantities: [{ ingredientId: 'ing-gone', label: '', percent: 2, grams: 12, stageId: null }],
+        quantities: [
+          {
+            ingredientId: 'ing-gone',
+            label: '',
+            percent: 2,
+            grams: 12,
+            stageId: null,
+            saltProduct: null,
+          },
+        ],
       }),
     );
     renderPage();
@@ -1473,6 +1490,7 @@ const CURE_QUANTITIES = [
     percent: 100,
     grams: 597,
     stageId: null,
+    saltProduct: null,
   },
   {
     ingredientId: 'ing-water',
@@ -1480,6 +1498,7 @@ const CURE_QUANTITIES = [
     percent: 64,
     grams: 382,
     stageId: 'stage-cool',
+    saltProduct: null,
   },
 ];
 
@@ -1518,6 +1537,7 @@ describe('when an ingredient goes on at a stage', () => {
             percent: 100,
             grams: 597,
             stageId: 'stage-that-is-gone',
+            saltProduct: null,
           },
         ],
       }),

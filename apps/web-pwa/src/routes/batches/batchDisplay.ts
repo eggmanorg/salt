@@ -1,6 +1,6 @@
-import { CURE_SALT_PRODUCTS, currentStage, stageStatus } from '@salt/domain';
+import { CURE_SALT_PRODUCTS, cureSaltFitness, currentStage, stageStatus } from '@salt/domain';
 import type { CureCategory, PhProgress, TargetStance, WeightLossProgress } from '@salt/domain';
-import type { BatchDoc, BatchStageDoc, BatchTotalsDoc } from '@salt/domain/schemas';
+import type { BatchDoc, BatchStageDoc, BatchTotalsDoc, SaltProduct } from '@salt/domain/schemas';
 import { CureCategorySchema } from '@salt/domain/schemas';
 import { KIND_COPY } from '../recipes/recipeKind.js';
 import { formatInstant } from '../../lib/dateFormat.js';
@@ -112,12 +112,53 @@ export function yieldSummary(totals: BatchTotalsDoc): string {
  * substitute's own label and weight; what this adds is what was REPLACED, which no
  * weight can say.
  *
- * It says nothing about whether either product suited the cure. Salt does not ask.
+ * It says nothing about whether either product suited the cure. That is a separate
+ * sentence, `cureSaltRecord` below, read off the frozen quantity lines rather than
+ * off this swap.
  */
 export function substitutionSummary(batch: BatchDoc): string | null {
   const swap = batch.cureSaltSubstitution;
   if (swap === undefined) return null;
   return `${CURE_SALT_PRODUCTS[swap.to].label}, instead of ${CURE_SALT_PRODUCTS[swap.from].label}`;
+}
+
+/**
+ * WHAT SORT OF CURING SALT THIS RUN USED, when it was nitrite only on a cure whose
+ * safety comes from drying (issue #1645) — the formula screen's and the start
+ * sheet's note (#1473), said again of a run that has already happened.
+ *
+ * A RECORD, NOT ADVICE. The meat is already cured, so the sentence is past tense and
+ * proposes nothing: no "change the jar", no "are you sure". It shows in every run
+ * state, abandoned included, because it stays true of a run however it ended.
+ *
+ * `cureSaltFitness` DOES THE DECIDING, over the run's OWN frozen `saltProduct` lines
+ * and frozen `cureCategory` — never the formula, which this page does not load, and
+ * never a category literal here (`cureKindComparisonGuard.test.ts`). So a run whose
+ * formula was edited or whose recipe was deleted still says it. Its limits are the
+ * predicate's, stated at its declaration: a run written before #1645 froze no
+ * product and reads `null` here, as does an uncategorised cure.
+ *
+ * The FIRST line that draws a note is the one it speaks about, the rule
+ * `FormulaPage`'s twin uses for a formula naming two curing salts.
+ *
+ * THE WORDS COME OUT WITH THE FACT, in one object or null, for the coverage reason
+ * `FormulaPage`'s `cureSaltNote` states at length.
+ */
+export function cureSaltRecord(
+  batch: BatchDoc,
+): { nitrateBearing: SaltProduct; text: string } | null {
+  for (const quantity of batch.quantities) {
+    const fitness = cureSaltFitness({
+      product: quantity.saltProduct,
+      category: batch.cureCategory,
+    });
+    if (fitness.kind === 'nitriteOnlyForLongDry')
+      return {
+        nitrateBearing: fitness.nitrateBearing,
+        text: `This run used ${CURE_SALT_PRODUCTS[fitness.product].label}, which is nitrite only. ${CURE_SALT_PRODUCTS[fitness.nitrateBearing].label} is the same strength and carries nitrate for a long dry.`,
+      };
+  }
+  return null;
 }
 
 // ─── The next action ────────────────────────────────────────────────────────────

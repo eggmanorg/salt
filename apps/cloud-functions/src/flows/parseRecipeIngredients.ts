@@ -178,6 +178,11 @@ const SYSTEM_INSTRUCTIONS = [
   `  "2 eggs, soft-boiled" → 2; "½ small red onion" → {type:"mixed",whole:0,numerator:1,denominator:2};`,
   `  "2-3 carrots" → {type:"range",min:2,max:3}; "1 whole chicken (approx. 1.5 kg)" → 1;`,
   `  "1 roast chicken carcass" → 1.`,
+  `  A COUNT NEVER STANDS ALONE. Whenever statedCount is set, quantity and unit are set too:`,
+  `  quantity is statedCount × the per-unit weight from the conversion table (or your own`,
+  `  estimate). "1 red onion" → statedCount 1, quantity 150, unit "g" — never statedCount 1 with`,
+  `  a null quantity. A null quantity beside a count puts nothing on the scales and loses the`,
+  `  weight the shopping list totals.`,
   `  A NUMBER THAT COUNTS PIECES OR PACKS IS NOT A COUNT OF THE ITEM, so statedCount is NULL:`,
   `  pieces cut or taken from what you buy (sticks, stalks, leaves, slices, rashers, sprigs,`,
   `  sheets, fillets, segments, egg whites and yolks) and the packs it comes in (tins, cans,`,
@@ -320,4 +325,6 @@ const SYSTEM_INSTRUCTIONS = [
   `2. item must not be empty; if stripping leaves nothing, use the full rawText as item.`,
   `3. Preserve original casing in all string fields.`,
   `4. Do not merge multiple ingredients on one line into a single item.`,
+  `5. Before answering, check every item: if statedCount is not null, quantity and unit must not be`,
+  `   null. Fill in the metric estimate if you left it out.`,
 ].join('\n');

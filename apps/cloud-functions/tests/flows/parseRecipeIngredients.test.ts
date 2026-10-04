@@ -823,6 +823,25 @@ describe('parseRecipeIngredients — prompt construction', () => {
     // A component line counts its PARENT, so it states no count of its own.
     expect(system).toContain('NULL too on a COMPONENT');
   });
+
+  // #1643 Phase 4: a parse-only re-read of 87 prod lines came back with the
+  // count and NO metric amount on 28 of them. Two changes together took a 45-parse
+  // probe from 13–14 losses to 0, and neither alone did (the rule alone: 7 of 45).
+  // Both are pinned, because either one quietly removed brings the loss back.
+  it('asks for the metric amount beside every count, and declares the count first', async () => {
+    mockGenerate.mockResolvedValue({ output: aiOutput([{ name: null, items: [] }]) });
+
+    await (parseRecipeIngredientsFlow as Function)({ rawText: '1 red onion' });
+
+    const { system, output } = mockGenerate.mock.calls[0]![0];
+    expect(system).toContain('A COUNT NEVER STANDS ALONE');
+    expect(system).toContain('"1 red onion" → statedCount 1, quantity 150, unit "g"');
+    expect(system).toMatch(/if statedCount is not null, quantity and unit must not be\s+null/);
+    // The model writes fields in schema order; the count has to come first.
+    const itemKeys = Object.keys(output.schema.shape.groups.element.shape.items.element.shape);
+    expect(itemKeys.indexOf('statedCount')).toBeGreaterThanOrEqual(0);
+    expect(itemKeys.indexOf('statedCount')).toBeLessThan(itemKeys.indexOf('quantity'));
+  });
 });
 
 // ─── The pin for "this flow persists nothing" (issue #1435, epic #1417) ───────

@@ -99,6 +99,23 @@ export const BatchQuantitySchema = z.object({
   // start. `schemaVersion` stays at 1;
   // `tests/batch/legacyBatchDocument.test.ts` pins it.
   stageId: z.string().nullable().default(null),
+  // WHICH SALT-BEARING PRODUCT THIS LINE WAS, frozen from the formula component
+  // (issue #1645) — `FormulaComponent.saltProduct`, or `null` for a line that named
+  // none, which is every flour, every water and most meat. It is what lets the run's
+  // own page say "this run used Cure #1" a year later without loading the formula.
+  //
+  // THE JAR THAT WENT ON, NOT THE ONE THE RECIPE ASKED FOR. `startBatch` hands
+  // `freezeBatch` the formula already substituted, and `withCureSaltSubstituted`
+  // re-stamps the swapped line's product — so on that path this agrees with
+  // `cureSaltSubstitution.to` (`tests/batch/freezeBatch.test.ts` pins it), and
+  // `cureSaltSubstitution.from` is where the replaced product is recorded.
+  //
+  // NULLABLE WITH A READ DEFAULT, where the formula's own field is optional, so a
+  // parsed quantity has ONE spelling of "no product": `freezeBatch` writes `null`
+  // explicitly, and a run written before this field existed reads back `null` too —
+  // which is honest, since nothing recorded the product then. `schemaVersion` stays
+  // at 1; `tests/batch/legacyBatchDocument.test.ts` pins it.
+  saltProduct: SaltProductSchema.nullable().default(null),
 });
 
 // What the dough divides into, echoed from the solve so a batch can still say
