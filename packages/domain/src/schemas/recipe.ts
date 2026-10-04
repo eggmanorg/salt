@@ -475,9 +475,10 @@ export const RecipeSchema = z.object({
   // `undefined`. docs/data-model.md names exactly this route — "if they ever need
   // their own fields, add optional nullable fields to the recipe document first".
   //
-  // UNLIKE `kind`, it is editable: the authoring pass sets it and it is corrected
-  // in place on the recipe page. A misclassification with no route back would be a
-  // permanent wrong answer, and there is no reason for this one to be immutable.
+  // Editable: the authoring pass sets it and it is corrected in place on the
+  // recipe page. A misclassification with no route back would be a permanent
+  // wrong answer. Cleared when an entry is relabelled away from `cure`
+  // (`withKind`, #1646), so it never outlives the kind it describes.
   cureCategory: CureCategorySchema.nullable().default(null),
   // The kit this dish needs — the pans, bowls, boards and hand tools a cook gets
   // OUT before starting (issue #882). Inferred server-side from the WHOLE recipe

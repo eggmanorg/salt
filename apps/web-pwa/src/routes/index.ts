@@ -75,8 +75,7 @@ export const routes: RouteDefinition = new Map<
   // written in the same place — `/recipes/:id` turns editable in place — and the
   // three things that cannot be imported (a special, a meal, a placeholder) are
   // minted by `RecipeNewSheet`, which writes the document and lands on its page.
-  // The `kind` is still set once and immutable; the sheet sets it where the route
-  // segment used to. A stale bookmark to any of the three now falls through to
+  // The sheet sets the `kind` where the route segment used to. A stale bookmark to any of the three now falls through to
   // the app's not-found handling, which is the correct answer for a page that no
   // longer exists.
   ['/recipes', lazy(() => import('./recipes/RecipeListPage.svelte'))],

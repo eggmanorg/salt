@@ -518,16 +518,19 @@ list. #652 weighed a fourth predicate for this and rejected it: see below.
 
 Decisions worth not relitigating:
 
-- **`kind` is immutable.** It is set at create — by which New-sheet entry was
-  opened for a special, a meal or a placeholder (issue #1319 Phase 6,
-  `RecipeNewSheet` calls `emptyRecipe` directly), and by the import or the chef
-  for a recipe or a cocktail, neither of which can be started by hand at all
-  since Phase 8 — and there is no selector anywhere that changes it afterwards.
-  The `/recipes/new/:kind` route that used to carry it died with the editor.
-  Flipping a 20-ingredient recipe to `special` would
-  hide its ingredients behind a render branch — still on the document, invisible
-  and unreachable, with no undo. Immutability is also what lets `diffRecipe` stay
-  untouched (pinned by a test).
+- **`kind` changes only among the full kinds, and only by hand** (#1646, which
+  reversed "`kind` is immutable"). It is set at create — by which New-sheet entry
+  was opened for a special, a meal or a placeholder (issue #1319 Phase 6), and by
+  the import or the chef for the authorable kinds. Afterwards the recipe page's
+  label control switches it among recipe, cocktail, cure and bread
+  (`relabelChoices`), and nothing else does: AI paths never change a kind. The
+  old hazard was flipping a 20-ingredient recipe to `special`, hiding its
+  ingredients and method behind a render branch with no undo; restricting both
+  ends to kinds with `takesIngredients && isCookable`, and a meal to kinds that
+  `takesComponents`, removes it. Once a label decided behaviour (which recipes
+  are offered a formula), a misfiled loaf or coppa needed a route back that was
+  not "delete and import again". `diffRecipe` still ignores `kind`, because it
+  narrates AI edits and AI never changes one (pinned by a test).
 - **Reuse this collection; do not add a `specials` one.** The whole point is that
   a special occupies a planner slot _in place of_ a recipe. A second collection
   makes `day.recipeIds` a polymorphic reference, forcing every consumer that

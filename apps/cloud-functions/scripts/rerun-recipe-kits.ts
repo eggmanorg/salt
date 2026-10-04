@@ -430,8 +430,8 @@ function renderReport(
           `for as long as their shape stands, so they are read for this report but never ` +
           `targeted. A zero step count is missing method text — add steps in place and ` +
           `re-run. A non-cookable kind (\`special\` or \`placeholder\`) is not something an ` +
-          `edit can fix: \`kind\` is immutable and no surface in the app changes it once a ` +
-          `recipe exists (packages/domain/src/recipe/queries/capabilities.ts), so these stay ` +
+          `edit can fix: neither kind can be relabelled (\`relabelChoices\`, ` +
+          `packages/domain/src/recipe/queries/relabel.ts), so these stay ` +
           `on this list for as long as their kit does:`,
       );
       for (const entry of declinedByGuards) {

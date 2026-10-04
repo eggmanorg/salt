@@ -184,10 +184,10 @@ cure at all.`;
 //
 // The tie-break is stated as loudly as the question, because the mistakes are NOT
 // symmetrical. A cocktail — or a cure — filed under Recipes is merely in the wrong
-// chip and works in every other way. A dinner filed under either can never be put
-// on the meal plan (`isPlannable` is false for both) and `kind` is immutable, so
-// that one is a permanent loss of function with no route back but deleting the
-// entry. Everything doubtful therefore goes to `recipe`, and #1404 inherited that
+// chip and works in every other way. A dinner filed under either drops out of the
+// meal plan (`isPlannable` is false for both) until someone notices and relabels
+// it on the recipe page — a tap since #1646, but only once the loss is noticed.
+// Everything doubtful therefore goes to `recipe`, and #1404 inherited that
 // argument unchanged rather than restating it: the shelf a cure sits on is worth
 // far less than the planner slot a misfiled dinner loses. The schema enforces the
 // same floor independently (`AuthoredRecipeKindSchema`); this states the

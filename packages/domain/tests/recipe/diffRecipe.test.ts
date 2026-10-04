@@ -346,10 +346,10 @@ describe('diffRecipe', () => {
     expect(diff.hasChanges).toBe(false);
   });
 
-  // `kind` is immutable: a special never becomes a recipe, it is deleted and
-  // re-created. Nothing can change it, so the diff — which exists to narrate an
-  // AI edit back to the cook — has nothing to say about it (issue #637).
-  it('ignores kind: it is fixed at creation, so it is never a change to report', () => {
+  // The diff exists to narrate an AI edit back to the cook, and AI never changes
+  // a kind — only the recipe page's label control does (#1646), which is not an
+  // edit anyone needs narrated. So it has nothing to say about `kind`.
+  it('ignores kind: an AI edit never changes it, so it is never a change to report', () => {
     const before = recipe({ title: 'Soup' });
     const diff = diffRecipe(before, { ...before, kind: 'special' });
     expect(diff.hasChanges).toBe(false);

@@ -24,6 +24,8 @@ export {
   emptyIngredientGroup,
   newIngredient,
   newStep,
+  // The write shape of a relabel (issue #1646): leaving `cure` clears its type.
+  withKind,
 } from './commands/builders.js';
 export { clearIngredientMatch } from './commands/clearIngredientMatch.js';
 // The one attribution stamp (issue #1431) — the browser stamps an in-place edit
@@ -88,6 +90,8 @@ export {
   AUTHORABLE_RECIPE_KINDS,
 } from './queries/capabilities.js';
 export type { AuthorableRecipeKind, FirstFormulaYield } from './queries/capabilities.js';
+// Which labels an entry may be switched between (issue #1646).
+export { relabelChoices } from './queries/relabel.js';
 export { recipePhaseTotals, phaseElapsedMinutes } from './queries/recipePhaseTotals.js';
 export type { RecipePhaseTotals } from './queries/recipePhaseTotals.js';
 // Meals — a recipe built from several other recipes (issue #752). One level deep,

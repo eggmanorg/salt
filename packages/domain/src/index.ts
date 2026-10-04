@@ -274,6 +274,10 @@ export {
   // question starts from (issue #1646) — the label, not an ingredient guess.
   offersFormula,
   firstFormulaYield,
+  // Which labels an entry may be switched between, and the write that does it
+  // (issue #1646) — the recipe page's relabel control asks nothing else.
+  relabelChoices,
+  withKind,
   // The kinds the librarian may write (issue #765) — read off the capability
   // table, and what bounds the `kind` the AI authoring schemas accept.
   AUTHORABLE_RECIPE_KINDS,

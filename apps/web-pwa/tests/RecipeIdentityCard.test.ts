@@ -833,6 +833,78 @@ describe('RecipeIdentityCard — the Serves pill', () => {
   });
 });
 
+// ─── Label (issue #1646) ─────────────────────────────────────────────────────
+//
+// Which labels are offered is the domain's `relabelChoices`; what this card owns
+// is rendering them in edit mode only, and writing through `withKind`.
+describe('RecipeIdentityCard — label', () => {
+  async function openPicker(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await fireEvent.click(screen.getByTestId('recipe-edit-kind'));
+    await user.click(screen.getByTestId('recipe-kind-select'));
+  }
+
+  it('offers Recipe, Cocktail, Cured meat and Bread in edit mode', async () => {
+    const user = userEvent.setup();
+    show(entry(), true);
+    expect(screen.getByTestId('recipe-kind-chip').textContent).toContain('Recipe');
+
+    await openPicker(user);
+
+    expect(offeredOptions()).toEqual(['Recipe', 'Cocktail', 'Cured meat', 'Bread']);
+  });
+
+  it('shows no label control outside edit mode', () => {
+    show(entry(), false);
+    expect(screen.queryByTestId('recipe-edit-kind')).toBeNull();
+    expect(screen.queryByTestId('recipe-kind-chip')).toBeNull();
+  });
+
+  it.each([{ kind: 'special' as const }, { kind: 'placeholder' as const }])(
+    'shows no label control on a $kind',
+    ({ kind }) => {
+      show(entry({ kind }), true);
+      expect(screen.queryByTestId('recipe-edit-kind')).toBeNull();
+    },
+  );
+
+  it('does not offer Cured meat to a meal', async () => {
+    const user = userEvent.setup();
+    show(entry({ componentRecipeIds: ['gravy'] }), true);
+
+    await openPicker(user);
+
+    expect(offeredOptions()).toEqual(['Recipe', 'Cocktail', 'Bread']);
+  });
+
+  it('relabels in a tap, with no confirmation step', async () => {
+    const user = userEvent.setup();
+    show(entry(), true);
+
+    await openPicker(user);
+    await user.click(screen.getByRole('option', { name: 'Bread' }));
+
+    expect(lastEdit().kind).toBe('bread');
+    expect(lastEdit().title).toBe('Carbonara');
+  });
+
+  it('drops the cure type when a cured meat becomes bread', async () => {
+    const user = userEvent.setup();
+    show(entry({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }), true);
+
+    await openPicker(user);
+    await user.click(screen.getByRole('option', { name: 'Bread' }));
+
+    expect(lastEdit().kind).toBe('bread');
+    expect(lastEdit().cureCategory).toBeNull();
+  });
+
+  it('switched back to Cured meat, the cure type starts unset', () => {
+    show(entry({ kind: 'cure', cureCategory: null }), true);
+    expect(screen.getByTestId('recipe-kind-chip').textContent).toContain('Cured meat');
+    expect(screen.getByTestId('recipe-edit-cure-category').textContent).toContain('Cure type');
+  });
+});
+
 // ─── Cure type (issue #1404) ─────────────────────────────────────────────────
 //
 // The first per-kind FIELD on a recipe document, and the reason the guard test
@@ -867,8 +939,8 @@ describe('RecipeIdentityCard — cure type', () => {
   });
 
   it('corrects a wrong category in a tap, with no confirmation step', async () => {
-    // The whole reason the field is editable while `kind` is not: a
-    // misclassification the authoring pass made has to have a route back, and
+    // The whole reason the field is editable: a misclassification the authoring
+    // pass made has to have a route back, and
     // Salt records rather than polices — there is no gate between the tap and
     // the write.
     const user = userEvent.setup();

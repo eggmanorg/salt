@@ -38,7 +38,7 @@ interface Capabilities {
   // `cocktail` became `true` in #765, when the librarian learned to say which
   // kind it had written and `assembleRecipeDraft` stopped hardcoding `'recipe'`.
   // That was the whole of the constraint: before it, a cocktail authored from a
-  // chat landed in the dinner list permanently, because `kind` is immutable.
+  // chat landed in the dinner list.
   //
   // `cure` became `true` in #1404 for the same reason it had to: with the editor
   // retired (#1319) the New sheet, the two imports and the chef are the ONLY ways
@@ -141,9 +141,9 @@ const CAPABILITIES = {
   //                     the shelving, and the shelving is what a user sees.
   //
   // The asymmetry `isPlannable: false` creates is the one `cocktail` already has
-  // and `recipeFieldRules.ts` already documents: `kind` is immutable, so a DINNER
-  // misfiled as a cure can never be planned again. That is why the authoring
-  // prompt's tie-break sends everything doubtful to `recipe`.
+  // and `recipeFieldRules.ts` already documents: a DINNER misfiled as a cure drops
+  // out of the planner until someone relabels it on the recipe page (#1646). That
+  // is why the authoring prompt's tie-break sends everything doubtful to `recipe`.
   //
   //   firstFormulaYield 'basis' (#1646): a cure's first formula starts from the
   //                     weight of what goes in, because you weigh the shoulder.

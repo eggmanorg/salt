@@ -57,8 +57,8 @@ export function emptyRecipe(id: string, now: string, kind: RecipeKind = 'recipe'
 // reads no clock: the caller passes `newId` (`crypto.randomUUID()`) and `now`.
 //
 // Carried verbatim, value-cloned so the copy never aliases the original's nested
-// objects: `kind` (immutable — you cannot turn a takeaway into a recipe by
-// copying it), `description`, the whole ingredient tree, the steps, `metadata`,
+// objects: `kind` (a copy is the same kind of entry as its source),
+// `description`, the whole ingredient tree, the steps, `metadata`,
 // `source`, `notes`, and `needs_approval` — that flag means "AI-authored, not yet
 // read by a human", and copying something is not reading it.
 //
@@ -185,4 +185,19 @@ export function newIngredient(id: string, rawText: string, isOptional = false): 
 // A fresh step with no timer and no note.
 export function newStep(id: string, text: string): Step {
   return { id, text, timer: null, note: null };
+}
+
+// The entry under a new label (issue #1646) — the write shape of the recipe
+// page's relabel control, whose choices come from `relabelChoices`.
+//
+// Leaving `cure` clears `cureCategory`: a cure type exists only on a cure, which
+// is what `startBatch` relies on when it freezes the category onto a run. Moving
+// back to `cure` therefore starts uncategorised, and the type is picked again.
+// Everything else carries unchanged — the label is identity, not content.
+export function withKind(recipe: Recipe, next: RecipeKind): Recipe {
+  return {
+    ...recipe,
+    kind: next,
+    cureCategory: next === 'cure' ? recipe.cureCategory : null,
+  };
 }

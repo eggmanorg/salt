@@ -79,7 +79,7 @@ export interface RecipeAmendment {
  * ingredients and steps are what the conversation was about, and an empty one of
  * those is a real edit. `kind`, `producesCanonId` and `createdBy` need no
  * handling here — the CF already carries them across from the base recipe in
- * edit mode (`assembleRecipeDraft`), and `kind` is immutable anyway.
+ * edit mode (`assembleRecipeDraft`).
  * `lastEditedBy` is deliberately NOT stamped here either: this function is pure
  * and knows no user, and the amender is stamped at `applyRecipeAmendment` so the
  * name lands on the write rather than on a proposal that may be discarded.

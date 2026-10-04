@@ -64,6 +64,7 @@ vi.stubGlobal('crypto', { randomUUID: mockUUID });
 const { authorRecipeFlow } = await import('../../src/flows/authorRecipe.js');
 const { STEP_RULES, FIRST_USE_ORDINAL_RULE } = await import('../../src/flows/stepRules.js');
 const { recipeFieldRules } = await import('../../src/flows/recipeFieldRules.js');
+const { RecipeKindSchema } = await import('@salt/domain/schemas');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -418,8 +419,9 @@ describe('authorRecipe — variation-mode grounding', () => {
 // The chat path's half of "every route that can make a recipe can make a
 // cocktail". The librarian classifies, `assembleRecipeDraft` carries it, and an
 // amend never re-types the entry it is editing — that last one is a safety
-// property (`kind` is immutable), so it is asserted for every kind rather than
-// for the two the librarian can write.
+// property (AI paths never change a kind; only the recipe page's label control
+// does, #1646), so it is asserted for every kind rather than for the ones the
+// librarian can write.
 describe('authorRecipe — the kind it writes', () => {
   beforeEach(() => {
     mockParseFlow.mockResolvedValue([]);
@@ -469,11 +471,11 @@ describe('authorRecipe — the kind it writes', () => {
     expect(draft.kind).toBe('recipe');
   });
 
-  // AMENDING NEVER RE-TYPES. All four kinds, with the model deliberately
+  // AMENDING NEVER RE-TYPES. Every kind in the enum, with the model deliberately
   // disagreeing each time — a special or a placeholder is not reachable from the
-  // chat amend UI today, and is asserted anyway because `kind` being immutable is
-  // a property of the document, not of which buttons currently exist.
-  it.each(['recipe', 'special', 'cocktail', 'placeholder'] as const)(
+  // chat amend UI today, and is asserted anyway because "AI never re-types" is a
+  // property of the flow, not of which buttons currently exist.
+  it.each(RecipeKindSchema.options)(
     'leaves an existing %s exactly that kind when the chat amends it',
     async (kind) => {
       mockGet.mockResolvedValue({ exists: true, data: () => ({ ...baseRecipeDoc(), kind }) });

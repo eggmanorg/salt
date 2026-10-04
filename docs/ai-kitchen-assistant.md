@@ -438,7 +438,8 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   `assembleRecipeDraft`, whose precedence is `baseRecipe?.kind ?? kindHint ??
 raw.kind`:
   - an **edit-mode base wins unconditionally**, so an amend can never silently
-    re-type the entry it is editing (`kind` is immutable by design);
+    re-type the entry it is editing (AI never changes a kind; only the recipe
+    page's label control does, #1646);
   - `kindHint` is **variation mode** — a variation on a cocktail is a cocktail, a
     deterministic answer that beats inferring one from the transcript;
   - otherwise the model's own classification, asked for by the `kind` bullet in

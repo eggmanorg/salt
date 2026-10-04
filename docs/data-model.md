@@ -209,11 +209,13 @@ Schema constraints, each load-bearing:
   that fail validation, so a required field would hide every production recipe.
 - `ingredients` / `steps` stay required arrays (`[]` when empty) — never a
   discriminated union.
-- `kind` is **immutable**: set at create — by the New sheet for a special, a meal
-  or a placeholder, by the import or the chef for a recipe or a cocktail — and
-  never editable. There is no route or control that changes it (the
-  `/recipes/new/:kind` segment that used to set it went with the editor, #1319
-  Phase 8).
+- `kind` is set at create — by the New sheet for a special, a meal or a
+  placeholder, by the import or the chef for the authorable kinds — and changed
+  afterwards by exactly one route: the recipe page's label control (#1646), which
+  switches only among the kinds that show ingredients and a method (recipe,
+  cocktail, cure, bread; `relabelChoices`) and never gives a meal a kind that
+  drops its dishes. Specials and placeholders are fixed. AI paths never change a
+  kind. Leaving `cure` clears `cureCategory` (`withKind`).
 
 Specials and placeholders are **not** separate collections — they occupy a planner
 slot in place of a recipe. If they ever need their own fields, add optional nullable
@@ -225,9 +227,9 @@ required-on-a-cure because the no-discriminated-union rule above means the schem
 _cannot_ express "required iff `kind === 'cure'`" — and because an uncategorised cure
 is a normal state, not an error. It is a **closed enum**, not a tag: it is frozen onto
 a batch and filtered on, so it cannot carry the typo-drops-it-out cost the `placeholder`
-mood accepts. Unlike `kind` it is **editable**, in place on the recipe page, because a
+mood accepts. It is **editable**, in place on the recipe page, because a
 misclassification with no route back is a permanent wrong answer. It is identity and
-grouping only — no capability predicate reads it, and the table gains no sixth column.
+grouping only — no capability predicate reads it, and the table has no column for it.
 
 Note what `isPlannable` actually gates: whether a kind is **offered in the planner
 picker**, not whether it may sit in a day. A placeholder is `isPlannable: false` and

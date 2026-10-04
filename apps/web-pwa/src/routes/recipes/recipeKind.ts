@@ -23,7 +23,7 @@ import {
   PLACEHOLDER_CONDITION_TAGS,
   PLACEHOLDER_MOODS,
 } from '@salt/domain';
-import { CureCategorySchema } from '@salt/domain/schemas';
+import { CureCategorySchema, RecipeKindSchema } from '@salt/domain/schemas';
 import type { CureCategory, Recipe, RecipeKind } from '@salt/domain';
 import type { IconProps } from '@salt/ui-components';
 
@@ -146,6 +146,24 @@ export function categoryOptions(
 export function toCureCategory(value: string): CureCategory | null {
   const parsed = CureCategorySchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+// What one entry is CALLED, as a choice in the recipe page's label picker
+// (issue #1646): the count noun with a capital — "Recipe", "Bread", "Cured meat".
+// Read off `one` rather than a field of its own, so the picker and the result
+// line cannot disagree about a kind's name.
+export function kindName(kind: RecipeKind): string {
+  const one = KIND_COPY[kind].one;
+  return one.charAt(0).toUpperCase() + one.slice(1);
+}
+
+// Narrow a picker's string back to a kind (`Select` hands back a bare `string`).
+// A trust-boundary parse rather than a cast; the options are built from
+// `relabelChoices`, so anything else is a bug, and the answer to one is to keep
+// the label the entry already wears rather than to write a guess.
+export function toRecipeKind(value: string, current: RecipeKind): RecipeKind {
+  const parsed = RecipeKindSchema.safeParse(value);
+  return parsed.success ? parsed.data : current;
 }
 
 export const KIND_COPY: Record<RecipeKind, KindCopy> = {
