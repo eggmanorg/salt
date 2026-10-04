@@ -97,6 +97,7 @@ import {
   updateCanonItemShoppingBehavior,
   updateCanonItemSynonyms,
   updateCanonItemThreshold,
+  updateCanonItemUnit,
   updateCanonItemGramsPerItem,
   __resetCanonServiceForTest,
 } from '../src/lib/canonService.js';
@@ -356,7 +357,12 @@ const rows: Row[] = [
   {
     name: 'canonService.updateCanonItemThreshold',
     writer: 'upsertCanonItem',
-    run: () => updateCanonItemThreshold(makeItem('c1', { name: 'Carrot' }), 500, 'g'),
+    run: () => updateCanonItemThreshold(makeItem('c1', { name: 'Carrot' }), 500),
+  },
+  {
+    name: 'canonService.updateCanonItemUnit',
+    writer: 'upsertCanonItem',
+    run: () => updateCanonItemUnit(makeItem('c1', { name: 'Onion' }), 'count'),
   },
   {
     name: 'canonService.updateCanonItemGramsPerItem',

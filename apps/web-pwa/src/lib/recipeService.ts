@@ -1295,10 +1295,16 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
           : {};
       const weightGrams = !fc && chosen ? scaledWeightGrams(chosen, scale) : undefined;
 
+      // The need in the unit the line is READ in, which the stocked threshold is
+      // compared against (issue #1651): a form row is a count of its parent — the
+      // line's own canon — and a chosen amount carries its own unit.
       const dflt = recipeItemAddDefault(
-        canon?.shoppingBehavior ?? null,
-        amount ?? null,
-        canon?.largeQuantityThreshold,
+        canon,
+        fc
+          ? { amount: fc.count, unit: 'count' }
+          : chosen && amount !== undefined
+            ? { amount, unit: chosen.unit }
+            : null,
       );
 
       // Prefer the parser's clean item name over the raw line so the shopping row
@@ -1420,11 +1426,7 @@ export function buildRecipeAddPlan(recipe: Recipe, servings: number): RecipeAddR
         // `stocked` parent's largeQuantityThreshold must see what the recipe
         // really needs, not the under-stated per-row count.
         const canon = row.canonId ? (canonById.get(row.canonId) ?? null) : null;
-        const dflt = recipeItemAddDefault(
-          canon?.shoppingBehavior ?? null,
-          amount,
-          canon?.largeQuantityThreshold,
-        );
+        const dflt = recipeItemAddDefault(canon, { amount, unit: 'count' });
         return {
           ...row,
           amount,

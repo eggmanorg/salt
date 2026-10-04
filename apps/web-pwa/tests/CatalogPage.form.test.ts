@@ -61,6 +61,7 @@ vi.mock('../src/lib/canonService.js', () => ({
   updateCanonItemSynonyms: vi.fn(),
   updateCanonItemShoppingBehavior: vi.fn(),
   updateCanonItemThreshold: vi.fn(),
+  updateCanonItemUnit: vi.fn(),
   approveCanonItemWithOverrides: vi.fn(),
   approveCanonItems: vi.fn().mockResolvedValue({ kind: 'ok' as const, value: undefined }),
   deleteCanonItem: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),

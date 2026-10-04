@@ -25,6 +25,7 @@ import {
   setCanonItemSynonyms,
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemUnit,
   setCanonItemGramsPerItem,
   setCanonItemThumbnail,
   CANON_ICON_HIDDEN,
@@ -346,9 +347,19 @@ export async function updateCanonItemShoppingBehavior(
 export async function updateCanonItemThreshold(
   item: CanonItem,
   largeQuantityThreshold: number | undefined,
+): Promise<Result<CanonItem, DomainError>> {
+  const result = setCanonItemThreshold(item, largeQuantityThreshold);
+  if (result.kind !== 'ok') return result;
+  const written = await commitCanonItemUpdate(result.value);
+  return written.kind === 'err' ? written : result;
+}
+
+// The unit the item is bought in (issue #1651). `undefined` clears it.
+export async function updateCanonItemUnit(
+  item: CanonItem,
   unit: CanonItemUnit | undefined,
 ): Promise<Result<CanonItem, DomainError>> {
-  const result = setCanonItemThreshold(item, largeQuantityThreshold, unit);
+  const result = setCanonItemUnit(item, unit);
   if (result.kind !== 'ok') return result;
   const written = await commitCanonItemUpdate(result.value);
   return written.kind === 'err' ? written : result;

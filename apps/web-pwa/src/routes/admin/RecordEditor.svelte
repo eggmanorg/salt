@@ -46,6 +46,7 @@
     saveCanonAisle,
     saveCanonShoppingBehavior,
     saveCanonThreshold,
+    saveCanonUnit,
     saveCanonGramsPerItem,
   } from './canonDecisions.js';
   import { aisles } from '../../lib/aisleService.js';
@@ -151,6 +152,7 @@
   let synonymsBusy = $state(false);
   let synonymsError = $state('');
   let thresholdBusy = $state(false);
+  let unitBusy = $state(false);
   let behaviorBusy = $state(false);
 
   // The three decisions commit through `canonDecisions` — the same module the
@@ -199,6 +201,14 @@
     const result = await saveCanonGramsPerItem(item, editingGramsPerItem, {
       onBusy: (b) => (gramsBusy = b),
     });
+    if (result === 'saved') saved.flash();
+  }
+
+  async function saveUnit(unit: CanonItemUnit): Promise<void> {
+    const item = canon;
+    if (!item) return;
+    editingUnit = unit;
+    const result = await saveCanonUnit(item, unit, { onBusy: (b) => (unitBusy = b) });
     if (result === 'saved') saved.flash();
   }
 
@@ -624,39 +634,22 @@
       </div>
     </section>
 
-    <section class="flex flex-col gap-2" data-testid="canon-detail-threshold-section">
-      <h2 class="text-sm font-medium text-foreground">Quantity threshold</h2>
-      <div class="flex gap-2 items-end">
-        <div class="flex-1">
-          <TextField
-            label=""
-            inputmode="numeric"
-            value={editingThreshold}
-            onValueChange={(v) => (editingThreshold = v)}
-            placeholder="e.g. 500"
-            data-testid="canon-detail-threshold-input"
-            disabled={thresholdBusy}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                saveThreshold();
-              } else if (e.key === 'Escape') {
-                editingThreshold = item.largeQuantityThreshold?.toString() ?? '';
-              }
-            }}
-            onblur={saveThreshold}
-          />
-        </div>
+    <!-- How the household buys the item (issue #1651) — its own decision, not
+         part of the threshold: `count` makes its recipe lines read and shop as a
+         count. The threshold below is read in this unit, but setting or clearing
+         the threshold never changes it. -->
+    <section class="flex flex-col gap-2" data-testid="canon-detail-unit-section">
+      <h2 class="text-sm font-medium text-foreground">Bought by</h2>
+      <div class="flex items-center gap-2">
         <div class="w-28">
           <Select
             value={editingUnit}
-            onValueChange={(v) => {
-              editingUnit = v as CanonItemUnit;
-              saveThreshold();
-            }}
-            disabled={thresholdBusy}
+            onValueChange={(v) => saveUnit(v as CanonItemUnit)}
+            disabled={unitBusy}
           >
-            <SelectTrigger data-testid="canon-detail-unit-select">{editingUnit}</SelectTrigger>
+            <SelectTrigger data-testid="canon-detail-unit-select" aria-label="Bought by"
+              >{editingUnit}</SelectTrigger
+            >
             <SelectContent>
               <SelectItem value="g">g</SelectItem>
               <SelectItem value="ml">ml</SelectItem>
@@ -664,6 +657,9 @@
             </SelectContent>
           </Select>
         </div>
+        {#if unitBusy}
+          <Spinner size={16} />
+        {/if}
       </div>
     </section>
 
@@ -693,6 +689,33 @@
         />
       </section>
     {/if}
+
+    <section class="flex flex-col gap-2" data-testid="canon-detail-threshold-section">
+      <h2 class="text-sm font-medium text-foreground">Quantity threshold</h2>
+      <div class="flex gap-2 items-center">
+        <div class="flex-1">
+          <TextField
+            label=""
+            inputmode="numeric"
+            value={editingThreshold}
+            onValueChange={(v) => (editingThreshold = v)}
+            placeholder="e.g. 500"
+            data-testid="canon-detail-threshold-input"
+            disabled={thresholdBusy}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                saveThreshold();
+              } else if (e.key === 'Escape') {
+                editingThreshold = item.largeQuantityThreshold?.toString() ?? '';
+              }
+            }}
+            onblur={saveThreshold}
+          />
+        </div>
+        <Text as="span" muted>{editingUnit}</Text>
+      </div>
+    </section>
 
     <!-- The item's product forms. Rendered even when empty: the add affordance
          is the point, and hiding it behind "has at least one" is how forms end

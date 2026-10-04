@@ -62,6 +62,7 @@ export { setCanonItemSynonyms } from './commands/setCanonItemSynonyms.js';
 export {
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemUnit,
   setCanonItemGramsPerItem,
 } from './commands/setCanonItemShoppingFields.js';
 export { setCanonItemThumbnail } from './commands/setCanonItemThumbnail.js';

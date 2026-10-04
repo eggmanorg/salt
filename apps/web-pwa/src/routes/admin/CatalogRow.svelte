@@ -29,6 +29,7 @@
     saveCanonAisle,
     saveCanonShoppingBehavior,
     saveCanonThreshold,
+    saveCanonUnit,
   } from './canonDecisions.js';
   import { reasoningSentence } from './reasoningSentence.js';
 
@@ -37,11 +38,11 @@
    *
    * The row displays; the editor edits — with ONE exception, which is the whole
    * point of the "Needs review" filter. A row awaiting review opens onto the
-   * three decisions the pipeline made, and those are editable in place as value
+   * decisions the pipeline made, and those are editable in place as value
    * chips (ui-spec-v09 §8.27), because a reviewer correcting an aisle should not
    * have to leave the list of things still to review to do it.
    *
-   * The exception is narrow and stays narrow: it is only the three decisions,
+   * The exception is narrow and stays narrow: it is only those decisions,
    * only inside the review strip, and it writes through the same
    * `canonDecisions` module the editor uses. Everything else about the item —
    * name, synonyms, icon, forms — is still the editor's, beside the list on a
@@ -107,7 +108,7 @@
   // The words the review was raised over — what the user actually typed.
   const sourceTexts = $derived(changes.map((c) => c.rawInput).filter((t): t is string => !!t));
 
-  // What the pipeline decided — the three things a reviewer checks before
+  // What the pipeline decided — the things a reviewer checks before
   // approving, EDITABLE where they are read (issue #872). They are value chips
   // (ui-spec-v09 §8.27): the pill is a surface worn by the control that owns the
   // interaction, so each one keeps its own popover, focus and ARIA and none of
@@ -122,8 +123,8 @@
     needed: 'Needed',
   };
 
-  // The typed decision needs a draft; the two picked ones read straight off the
-  // item. Seeded per item and NOT re-seeded on the store's echo of our own
+  // The threshold and its unit need drafts (the threshold save reads the unit
+  // shown); aisle and behaviour read straight off the item. Seeded per item and NOT re-seeded on the store's echo of our own
   // write, which would yank a half-typed second edit out from under the cursor.
   let thresholdDraft = $state('');
   let unitDraft = $state<CanonItemUnit>(DEFAULT_THRESHOLD_UNIT);
@@ -275,8 +276,8 @@
             </Select>
           </div>
 
-          <!-- The third decision is typed, not picked — which is why the value
-               chip is a class and not a component (§8.27.5). -->
+          <!-- The threshold is typed, not picked — which is why the value chip
+               is a class and not a component (§8.27.5). -->
           <TextField
             class="w-20"
             frameClass={valueChipVariants()}
@@ -297,17 +298,20 @@
             onblur={() => saveCanonThreshold(item, thresholdDraft, unitDraft)}
           />
 
+          <!-- The unit the item is bought in (issue #1651): its own decision,
+               read by the threshold beside it but saved on its own, so it can
+               be set with no threshold and clearing the threshold leaves it. -->
           <div class="w-24">
             <Select
               value={unitDraft}
               onValueChange={(v) => {
                 unitDraft = v as CanonItemUnit;
-                saveCanonThreshold(item, thresholdDraft, unitDraft);
+                saveCanonUnit(item, unitDraft);
               }}
             >
               <SelectTrigger
                 class={valueChipVariants()}
-                aria-label="Threshold unit for {titleCase(item.name)}"
+                aria-label="Bought by, for {titleCase(item.name)}"
                 data-testid="catalog-row-threshold-unit"
               >
                 {unitDraft}

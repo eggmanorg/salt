@@ -49,6 +49,7 @@ export {
   setCanonItemSynonyms,
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemUnit,
   setCanonItemGramsPerItem,
   setCanonItemThumbnail,
   // The one description of an icon-regeneration write (issue #1054) — the admin

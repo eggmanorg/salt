@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   setCanonItemShoppingBehavior,
   setCanonItemThreshold,
+  setCanonItemUnit,
   setCanonItemGramsPerItem,
 } from '../../src/canon/commands/setCanonItemShoppingFields.js';
 import type { CanonItem } from '../../src/canon/entities/CanonItem.js';
@@ -48,9 +49,12 @@ describe('setCanonItemShoppingBehavior', () => {
   });
 });
 
+// The threshold and the unit are separate decisions (issue #1651). These used to
+// be one command that dropped `unit` whenever it was handed `undefined`, so
+// clearing a counted item's threshold silently turned it back into a weighed one.
 describe('setCanonItemThreshold', () => {
-  it('sets both threshold and unit when both provided', () => {
-    const result = setCanonItemThreshold(item(), 5, 'ml');
+  it('sets a threshold, leaving the unit as it was', () => {
+    const result = setCanonItemThreshold(item({ unit: 'ml' }), 5);
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
       expect(result.value.largeQuantityThreshold).toBe(5);
@@ -58,59 +62,70 @@ describe('setCanonItemThreshold', () => {
     }
   });
 
-  it('updates an existing threshold and unit', () => {
-    const result = setCanonItemThreshold(item({ largeQuantityThreshold: 5, unit: 'ml' }), 10, 'g');
+  it('updates an existing threshold', () => {
+    const result = setCanonItemThreshold(item({ largeQuantityThreshold: 5, unit: 'ml' }), 10);
     if (result.kind === 'ok') {
       expect(result.value.largeQuantityThreshold).toBe(10);
-      expect(result.value.unit).toBe('g');
+      expect(result.value.unit).toBe('ml');
     }
   });
 
-  it('removes both fields when both args are undefined (key absence, not undefined value)', () => {
-    const original = item({ largeQuantityThreshold: 5, unit: 'ml' });
-    const result = setCanonItemThreshold(original, undefined, undefined);
+  it('clearing the threshold of a counted item keeps it counted, and its weight of one', () => {
+    const original = item({ largeQuantityThreshold: 3, unit: 'count', gramsPerItem: 150 });
+    const result = setCanonItemThreshold(original, undefined);
+    expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
       expect('largeQuantityThreshold' in result.value).toBe(false);
-      expect('unit' in result.value).toBe(false);
+      expect(result.value.unit).toBe('count');
+      expect(result.value.gramsPerItem).toBe(150);
     }
   });
 
-  it('removes only unit when threshold is provided and unit is undefined', () => {
-    const original = item({ largeQuantityThreshold: 5, unit: 'ml' });
-    const result = setCanonItemThreshold(original, 10, undefined);
+  it('never adds a unit to an item that has none', () => {
+    const result = setCanonItemThreshold(item(), 500);
     if (result.kind === 'ok') {
-      expect(result.value.largeQuantityThreshold).toBe(10);
-      expect('unit' in result.value).toBe(false);
-    }
-  });
-
-  it('removes only threshold when unit is provided and threshold is undefined', () => {
-    const original = item({ largeQuantityThreshold: 5, unit: 'ml' });
-    const result = setCanonItemThreshold(original, undefined, 'g');
-    if (result.kind === 'ok') {
-      expect('largeQuantityThreshold' in result.value).toBe(false);
-      expect(result.value.unit).toBe('g');
-    }
-  });
-
-  it('leaves an item without threshold or unit unchanged when both args are undefined', () => {
-    const original = item();
-    const result = setCanonItemThreshold(original, undefined, undefined);
-    if (result.kind === 'ok') {
-      expect('largeQuantityThreshold' in result.value).toBe(false);
+      expect(result.value.largeQuantityThreshold).toBe(500);
       expect('unit' in result.value).toBe(false);
     }
   });
 
   it('preserves all other fields', () => {
     const original = item({ synonyms: ['EVOO'], shoppingBehavior: 'stocked' });
-    const result = setCanonItemThreshold(original, 5, 'ml');
+    const result = setCanonItemThreshold(original, 5);
     if (result.kind === 'ok') {
       expect(result.value.id).toBe(original.id);
       expect(result.value.name).toBe(original.name);
       expect(result.value.synonyms).toEqual(original.synonyms);
       expect(result.value.aisleId).toBe(original.aisleId);
       expect(result.value.shoppingBehavior).toBe('stocked');
+    }
+  });
+});
+
+describe('setCanonItemUnit (issue #1651)', () => {
+  it('sets the unit on an item with no threshold', () => {
+    const result = setCanonItemUnit(item(), 'count');
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.value.unit).toBe('count');
+      expect('largeQuantityThreshold' in result.value).toBe(false);
+    }
+  });
+
+  it('changes the unit and leaves the threshold alone', () => {
+    const result = setCanonItemUnit(item({ largeQuantityThreshold: 5, unit: 'ml' }), 'g');
+    if (result.kind === 'ok') {
+      expect(result.value.unit).toBe('g');
+      expect(result.value.largeQuantityThreshold).toBe(5);
+    }
+  });
+
+  it('clears the unit (key absence) and keeps a weight of one it no longer reads', () => {
+    const original = item({ unit: 'count', gramsPerItem: 150 });
+    const result = setCanonItemUnit(original, undefined);
+    if (result.kind === 'ok') {
+      expect('unit' in result.value).toBe(false);
+      expect(result.value.gramsPerItem).toBe(150);
     }
   });
 });

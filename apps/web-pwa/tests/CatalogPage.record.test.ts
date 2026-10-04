@@ -68,6 +68,7 @@ vi.mock('../src/lib/canonService.js', () => ({
   updateCanonItemSynonyms: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   updateCanonItemShoppingBehavior: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   updateCanonItemThreshold: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+  updateCanonItemUnit: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   updateCanonItemGramsPerItem: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   approveCanonItemWithOverrides: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   deleteCanonItem: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
@@ -97,6 +98,7 @@ import {
   updateCanonItemSynonyms,
   updateCanonItemShoppingBehavior,
   updateCanonItemThreshold,
+  updateCanonItemUnit,
   updateCanonItemGramsPerItem,
   approveCanonItemWithOverrides,
   deleteCanonItem,
@@ -298,7 +300,7 @@ describe('the catalog record editor', () => {
       expect(screen.queryByTestId('canon-detail-threshold-save')).toBeNull();
     });
 
-    it('saves the threshold on blur', async () => {
+    it('saves the threshold on blur, storing the unit it was shown in on an item with none', async () => {
       const item = canonItem({ id: ITEM_ID, name: 'Olive Oil' });
       setupWithItem(item);
 
@@ -307,8 +309,44 @@ describe('the catalog record editor', () => {
       await fireEvent.blur(input);
 
       await waitFor(() => {
-        expect(vi.mocked(updateCanonItemThreshold)).toHaveBeenCalledWith(item, 500, 'g');
+        expect(vi.mocked(updateCanonItemThreshold)).toHaveBeenCalledWith(
+          { ...item, unit: 'g' },
+          500,
+        );
       });
+      expect(vi.mocked(updateCanonItemUnit)).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when tabbing through an untouched field', async () => {
+      // No threshold and no stored unit: the field is blank and the unit shows
+      // the default, and neither reads as a change.
+      setupWithItem(canonItem({ id: ITEM_ID, name: 'Salt' }));
+      await fireEvent.blur(screen.getByTestId('canon-detail-threshold-input'));
+      expect(vi.mocked(updateCanonItemThreshold)).not.toHaveBeenCalled();
+      expect(vi.mocked(updateCanonItemUnit)).not.toHaveBeenCalled();
+    });
+
+    // Issue #1651: clearing the threshold used to delete the unit with it, so a
+    // counted item silently went back to being weighed.
+    it("clearing a counted item's threshold leaves it counted", async () => {
+      const item = canonItem({
+        id: ITEM_ID,
+        name: 'Red Onion',
+        largeQuantityThreshold: 3,
+        unit: 'count',
+        gramsPerItem: 150,
+      });
+      setupWithItem(item);
+
+      const input = screen.getByTestId('canon-detail-threshold-input');
+      await fireEvent.input(input, { target: { value: '' } });
+      await fireEvent.blur(input);
+
+      await waitFor(() => {
+        expect(vi.mocked(updateCanonItemThreshold)).toHaveBeenCalledWith(item, undefined);
+      });
+      expect(vi.mocked(updateCanonItemUnit)).not.toHaveBeenCalled();
+      expect(screen.getByTestId('canon-detail-grams-input')).toBeInTheDocument();
     });
 
     it('reverts the threshold on Escape and writes nothing', async () => {
@@ -320,6 +358,23 @@ describe('the catalog record editor', () => {
 
       expect(input).toHaveValue('200');
       await fireEvent.blur(input);
+      expect(vi.mocked(updateCanonItemThreshold)).not.toHaveBeenCalled();
+    });
+  });
+
+  // Issue #1651: the unit is its own decision, saved on its own.
+  describe('bought by', () => {
+    it('marks an item with no threshold as counted', async () => {
+      const item = canonItem({ id: ITEM_ID, name: 'Red Onion' });
+      setupWithItem(item);
+
+      await userEvent.click(screen.getByTestId('canon-detail-unit-select'));
+      await waitFor(() => screen.getByRole('option', { name: 'count' }));
+      await userEvent.click(screen.getByRole('option', { name: 'count' }));
+
+      await waitFor(() => {
+        expect(vi.mocked(updateCanonItemUnit)).toHaveBeenCalledWith(item, 'count');
+      });
       expect(vi.mocked(updateCanonItemThreshold)).not.toHaveBeenCalled();
     });
   });
