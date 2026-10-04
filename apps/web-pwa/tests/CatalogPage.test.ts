@@ -85,6 +85,7 @@ vi.mock('../src/lib/canonService.js', () => ({
   updateCanonItemSynonyms: vi.fn(),
   updateCanonItemShoppingBehavior: vi.fn(),
   updateCanonItemThreshold: vi.fn(),
+  updateCanonItemUnit: vi.fn(),
   approveCanonItemWithOverrides: vi.fn(),
   splitMostRecentSynonym: vi.fn(),
   hideCanonIcon: vi.fn(),
@@ -100,7 +101,12 @@ vi.mock('../src/lib/productFormService.js', () => ({
 
 import CatalogPage from '../src/routes/admin/CatalogPage.svelte';
 import { push } from 'svelte-spa-router';
-import { approveCanonItems, deleteCanonItem } from '../src/lib/canonService.js';
+import {
+  approveCanonItems,
+  deleteCanonItem,
+  updateCanonItemThreshold,
+  updateCanonItemUnit,
+} from '../src/lib/canonService.js';
 import { confirmProductForm, deleteProductForm } from '../src/lib/productFormService.js';
 
 const ADMIN: Member = {
@@ -254,6 +260,23 @@ describe('CatalogPage — the filter chips', () => {
       expect(screen.getByTestId(id)).not.toHaveAttribute('aria-pressed');
     }
     expect(screen.getAllByTestId('catalog-form-row-wide')).toHaveLength(2);
+  });
+
+  // Issue #1651: the unit chip is its own decision. Lemon has no threshold, and
+  // picking a unit used to be swallowed as "unchanged" for exactly that reason.
+  it('saves the bought-by unit on its own, on an item with no threshold', async () => {
+    vi.mocked(updateCanonItemUnit).mockResolvedValue({ kind: 'ok', value: LEMON });
+    renderCatalog();
+    await fireEvent.click(await screen.findByTestId('catalog-filter-needs-review'));
+
+    await userEvent.click(screen.getByTestId('catalog-row-threshold-unit'));
+    await waitFor(() => screen.getByRole('option', { name: 'count' }));
+    await userEvent.click(screen.getByRole('option', { name: 'count' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateCanonItemUnit)).toHaveBeenCalledWith(LEMON, 'count');
+    });
+    expect(vi.mocked(updateCanonItemThreshold)).not.toHaveBeenCalled();
   });
 
   it('narrows to items that have forms, and to items with no threshold', async () => {

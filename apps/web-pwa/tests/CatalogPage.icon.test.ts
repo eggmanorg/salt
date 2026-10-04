@@ -53,6 +53,7 @@ vi.mock('../src/lib/canonService.js', () => ({
   updateCanonItemSynonyms: vi.fn(),
   updateCanonItemShoppingBehavior: vi.fn(),
   updateCanonItemThreshold: vi.fn(),
+  updateCanonItemUnit: vi.fn(),
   approveCanonItemWithOverrides: vi.fn(),
   deleteCanonItem: vi.fn(),
   splitMostRecentSynonym: vi.fn(),

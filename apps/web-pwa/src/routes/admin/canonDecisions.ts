@@ -4,13 +4,14 @@ import {
   updateCanonItemAisle,
   updateCanonItemShoppingBehavior,
   updateCanonItemThreshold,
+  updateCanonItemUnit,
   updateCanonItemGramsPerItem,
 } from '../../lib/canonService.js';
 
 /**
- * The three decisions the matching pipeline makes about a canon item — which
- * aisle it belongs to, how it is shopped, and the quantity that counts as a lot
- * — and the ONE place they are written from (issue #872).
+ * The decisions the matching pipeline makes about a canon item — which aisle it
+ * belongs to, how it is shopped, the unit it is bought in, and the quantity that
+ * counts as a lot — and the ONE place they are written from (issue #872).
  *
  * Two surfaces edit them: the record editor's full field stack, and the
  * catalog's review row, where they are inline value chips (ui-spec-v09 §8.27).
@@ -74,29 +75,45 @@ export function saveCanonShoppingBehavior(
 
 /**
  * `rawAmount` is whatever is in the number field — empty, or unparseable, means
- * "no threshold", which also clears the unit.
+ * "no threshold". Only the threshold is written: the unit is its own decision
+ * (`saveCanonUnit`, issue #1651), and clearing a threshold leaves it alone.
  *
- * The guard is the subtle one. Blur fires on every exit from the field, so a
- * no-op edit must not write. `item.unit ?? DEFAULT_THRESHOLD_UNIT` is what the
- * unit control actually SHOWS for a document that never stored one — comparing
- * against the bare `item.unit` would read that default as a change and write on
- * every single blur.
+ * Blur fires on every exit from the field, so a no-op edit must not write.
+ *
+ * `shownUnit` is what the unit control displays beside the number. For an item
+ * that never stored a unit that is `DEFAULT_THRESHOLD_UNIT`, and a threshold typed
+ * against it stores that unit in the same write — the number was entered as
+ * grams, and the threshold is read in the item's unit. An item that has a unit
+ * keeps it, whatever is passed here.
  */
 export function saveCanonThreshold(
   item: CanonItem,
   rawAmount: string,
-  unit: CanonItemUnit,
+  shownUnit: CanonItemUnit,
   options?: DecisionSaveOptions,
 ): Promise<DecisionSave> {
   const raw = rawAmount.trim();
   const parsed = raw ? parseFloat(raw) : NaN;
   const value = Number.isNaN(parsed) ? undefined : parsed;
-  const nextUnit = value !== undefined ? unit : undefined;
-  const storedUnit = item.unit ?? DEFAULT_THRESHOLD_UNIT;
-  if (value === item.largeQuantityThreshold && (value === undefined || nextUnit === storedUnit)) {
-    return Promise.resolve('unchanged');
-  }
-  return commit(() => updateCanonItemThreshold(item, value, nextUnit), options);
+  if (value === item.largeQuantityThreshold) return Promise.resolve('unchanged');
+  const target =
+    value !== undefined && item.unit === undefined ? { ...item, unit: shownUnit } : item;
+  return commit(() => updateCanonItemThreshold(target, value), options);
+}
+
+/**
+ * The unit the item is bought in (issue #1651) — `count` makes its recipe lines
+ * read and shop as a count. Independent of the threshold: it can be set on an
+ * item with none. `item.unit ?? DEFAULT_THRESHOLD_UNIT` is what the control SHOWS
+ * for an item that never stored one, so choosing that is no change.
+ */
+export function saveCanonUnit(
+  item: CanonItem,
+  unit: CanonItemUnit,
+  options?: DecisionSaveOptions,
+): Promise<DecisionSave> {
+  if (unit === (item.unit ?? DEFAULT_THRESHOLD_UNIT)) return Promise.resolve('unchanged');
+  return commit(() => updateCanonItemUnit(item, unit), options);
 }
 
 /**
