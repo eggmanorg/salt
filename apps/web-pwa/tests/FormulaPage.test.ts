@@ -754,6 +754,39 @@ describe('FormulaPage — what are you filling?', () => {
     expect(getByTestId('formula-dough-total').textContent).not.toContain('867');
   });
 
+  // The kind's first-formula default (issue #1646): with nothing stored, a cure
+  // starts on "A weight of what goes in" — you weigh the shoulder — and a bread on
+  // the dough answers.
+  it("starts a cured meat's first formula on the weight going in", async () => {
+    mockRecipes._set([makeRecipe(LOAF, { kind: 'cure', title: 'Coppa' })]);
+    const { getByTestId } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    expect(getByTestId('formula-basis-grams')).toBeTruthy();
+  });
+
+  it("starts a bread's first formula on the dough answers", async () => {
+    mockRecipes._set([makeRecipe(LOAF, { kind: 'bread' })]);
+    const { getByTestId, queryByTestId } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    expect(queryByTestId('formula-basis-grams')).toBeNull();
+  });
+
+  it('re-seeds from the kind when the recipe lands after the formula read', async () => {
+    // The formula answer (none stored) can arrive before the recipe does; the seed
+    // then runs with no kind to ask, and runs again when the recipe lands.
+    mockRecipes._set([]);
+    const { getByTestId } = renderPage();
+    mockFormula._set(null);
+    mockRecipes._set([makeRecipe(LOAF, { kind: 'cure', title: 'Coppa' })]);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    expect(getByTestId('formula-basis-grams')).toBeTruthy();
+  });
+
   it('mentions no bake loss, no baked weight and no named shape, on any answer', async () => {
     const { getByTestId, container, queryByTestId } = renderPage();
     mockFormula._set(null);
