@@ -43,7 +43,7 @@
     "@types/istanbul-lib-report": "^3.0.3",
     "@types/istanbul-reports": "^3.0.4",
     "@types/leaflet": "^1.9.22",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.4",
     "@types/pluralize": "^0.0.33",
     "@types/turndown": "5.0.6",
     "istanbul-lib-coverage": "^3.2.2",
