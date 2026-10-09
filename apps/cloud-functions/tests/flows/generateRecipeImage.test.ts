@@ -31,6 +31,8 @@ const {
   PLACEHOLDER_SCENE_FALLBACK,
   CURE_IMAGE_STYLE_ANCHORS,
   CURE_SCENE_FALLBACK,
+  BREAD_IMAGE_STYLE_ANCHORS,
+  BREAD_SCENE_FALLBACK,
   GENERATE_RECIPE_IMAGE_KINDS,
 } = await import('../../src/flows/generateRecipeImage.js');
 
@@ -885,6 +887,34 @@ describe('generateRecipeImage flow — entry kinds', () => {
     expect(CURE_SCENE_FALLBACK).not.toContain('no hands, no people');
   });
 
+  // ─── The BREAD arm (issue #1646) ───────────────────────────────────────────
+  // A loaf on the recipe default arm is "lovingly plated on rustic ceramic" — a
+  // picture of a sandwich. Same three assertions as the cure arm.
+  it('paints a bread with its own opener, fallback and anchors', async () => {
+    const prompt = await promptFor({
+      title: 'Sandwich Loaf',
+      description: 'A soft white tin loaf.',
+      kind: 'bread',
+    });
+
+    expect(prompt).toContain('the bread "Sandwich Loaf"');
+    expect(prompt).toContain(BREAD_SCENE_FALLBACK);
+    expect(prompt).toContain(BREAD_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
+  });
+
+  it("a bread's anchors make the bake the subject and refuse to plate it as dinner", () => {
+    expect(BREAD_IMAGE_STYLE_ANCHORS).toContain('always the star of the shot');
+    expect(BREAD_IMAGE_STYLE_ANCHORS).toContain('do NOT plate it on crockery as a dinner');
+    expect(BREAD_IMAGE_STYLE_ANCHORS).toContain('photorealistic photograph');
+    expect(BREAD_IMAGE_STYLE_ANCHORS).toContain('shallow depth of field');
+    expect(BREAD_IMAGE_STYLE_ANCHORS).toContain(
+      'Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people.',
+    );
+    expect(BREAD_SCENE_FALLBACK).not.toContain('no hands, no people');
+  });
+
   it('gives each kind its own anchors — no two share a set', () => {
     const sets = [
       RECIPE_IMAGE_STYLE_ANCHORS,
@@ -892,6 +922,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
       COCKTAIL_IMAGE_STYLE_ANCHORS,
       PLACEHOLDER_IMAGE_STYLE_ANCHORS,
       CURE_IMAGE_STYLE_ANCHORS,
+      BREAD_IMAGE_STYLE_ANCHORS,
     ];
     expect(new Set(sets).size).toBe(GENERATE_RECIPE_IMAGE_KINDS.length);
   });

@@ -201,6 +201,28 @@ describe('seedDoughAnswer', () => {
     expect(referenceYieldFrom(seeded.mode, seeded.fields)).toBeNull();
   });
 
+  it("starts a cured meat's first formula on the weight going in (#1646)", () => {
+    // Nothing stored yet, and the kind's answer is `'basis'`: you weigh the
+    // shoulder. The box opens empty — there is no figure to suggest.
+    const seeded = seedDoughAnswer(null, 'basis');
+    expect(seeded.mode).toBe('basis');
+    expect(seeded.fields.basisGramsText).toBe('');
+    expect(referenceYieldFrom(seeded.mode, seeded.fields)).toBeNull();
+  });
+
+  it("starts a bread's first formula, or an unlabelled one, on the dough answers (#1646)", () => {
+    expect(seedDoughAnswer(null, 'target').mode).toBe('tin');
+    expect(seedDoughAnswer(null, null).mode).toBe('tin');
+  });
+
+  it("lets a stored yield win over the kind's first-formula default (#1646)", () => {
+    // A cure saved as dough, or a loaf saved as a weight, reopens as it was saved.
+    expect(seedDoughAnswer(targetYield({ count: 1, unitDoughGrams: 900 }), 'basis').mode).toBe(
+      'tin',
+    );
+    expect(seedDoughAnswer(basisYield(2430), 'target').mode).toBe('basis');
+  });
+
   it('round-trips every seeded answer back to the yield it came from', () => {
     for (const declared of [
       targetYield({ count: 1, unitDoughGrams: 900 }),

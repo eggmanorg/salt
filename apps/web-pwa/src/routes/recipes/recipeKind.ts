@@ -23,7 +23,7 @@ import {
   PLACEHOLDER_CONDITION_TAGS,
   PLACEHOLDER_MOODS,
 } from '@salt/domain';
-import { CureCategorySchema } from '@salt/domain/schemas';
+import { CureCategorySchema, RecipeKindSchema } from '@salt/domain/schemas';
 import type { CureCategory, Recipe, RecipeKind } from '@salt/domain';
 import type { IconProps } from '@salt/ui-components';
 
@@ -148,6 +148,24 @@ export function toCureCategory(value: string): CureCategory | null {
   return parsed.success ? parsed.data : null;
 }
 
+// What one entry is CALLED, as a choice in the recipe page's label picker
+// (issue #1646): the count noun with a capital — "Recipe", "Bread", "Cured meat".
+// Read off `one` rather than a field of its own, so the picker and the result
+// line cannot disagree about a kind's name.
+export function kindName(kind: RecipeKind): string {
+  const one = KIND_COPY[kind].one;
+  return one.charAt(0).toUpperCase() + one.slice(1);
+}
+
+// Narrow a picker's string back to a kind (`Select` hands back a bare `string`).
+// A trust-boundary parse rather than a cast; the options are built from
+// `relabelChoices`, so anything else is a bug, and the answer to one is to keep
+// the label the entry already wears rather than to write a guess.
+export function toRecipeKind(value: string, current: RecipeKind): RecipeKind {
+  const parsed = RecipeKindSchema.safeParse(value);
+  return parsed.success ? parsed.data : current;
+}
+
 export const KIND_COPY: Record<RecipeKind, KindCopy> = {
   recipe: {
     label: 'Recipes',
@@ -234,6 +252,20 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
       },
     },
   },
+  // Issue #1646. A loaf, rolls, focaccia, flatbread, soda bread, pizza dough —
+  // a dough baked as bread. Its own shelf, in place of Recipes; the label is
+  // also what offers it a first formula (the domain's `offersFormula`).
+  bread: {
+    label: 'Bread',
+    one: 'bread',
+    many: 'breads',
+    createdToast: 'Bread created',
+    emptyText: 'No bread yet — import or ask for a loaf, some rolls or a focaccia.',
+    noMatchText: 'No bread matches your filters.',
+    thumbIcon: 'Wheat',
+    menuIcon: 'Wheat',
+    startBatchLabel: 'Bake a batch',
+  },
 };
 
 // ─── Meals: a section that is not a kind (issue #752) ────────────────────────
@@ -286,13 +318,14 @@ export function sectionOf(recipe: Recipe): ListSection {
 // kinds only, could never have carried.
 //
 // This is deliberately NOT the list page's sections either (see LIST_SECTIONS
-// below), which add Meals as a fifth shelf.
+// below), which add Meals as a shelf that is not a kind.
 export const KIND_SECTIONS: readonly RecipeKind[] = [
   'recipe',
   'special',
   'cocktail',
   'placeholder',
   'cure',
+  'bread',
 ];
 
 // The creatable kinds whose chips are shown before you ask for the rest. Kept as
@@ -386,26 +419,29 @@ export const LIST_SECTIONS: readonly ListSection[] = [
   'cocktail',
   'placeholder',
   'cure',
+  'bread',
 ];
 
 // The sections whose chips are shown before you ask for the rest. Everything in
 // LIST_SECTIONS still exists and is still one tap away — the chip row just leads
 // with the sections you actually browse (you cook dinner, you build a roast, you
 // make a drink) and folds the rest behind a "+N more" chip, exactly as the tag row
-// does. The three it hides are all places you WRITE to more than you read from:
-// Chef's Specials is a handful of standing answers, a placeholder is picked for
-// you by the planner rather than browsed, and Cured meats (issue #1404) is empty
-// until somebody writes a cure — a chip nobody in the household needs yet, on a
-// row everybody sees. Membership here is a presentation choice, so it lives beside
+// does. The ones it hides are places you WRITE to more than you read from, or
+// shelves too narrow for the front row: Chef's Specials is a handful of standing
+// answers, a placeholder is picked for you by the planner rather than browsed,
+// Cured meats (issue #1404) is empty until somebody writes a cure, and Bread
+// (issue #1646) is a handful of loaves beside it — chips nobody in the household
+// needs up front, on a row everybody sees. Membership here is a presentation choice, so it lives beside
 // the copy; it never decides whether a section exists, and Cured meats is still
-// one tap away behind "+N more" from the day the first coppa is imported.
+// one tap away behind "+N more" from the day the first coppa is imported, as is
+// Bread from its first loaf.
 export const PRIMARY_LIST_SECTIONS: readonly ListSection[] = ['recipe', MEAL_SECTION, 'cocktail'];
 
 // Does this section's grid show an ingredient count on its cards? For a section
 // that IS a kind it is the domain's answer, unchanged. For Meals it is unconditionally
-// true, and provably so rather than by assertion: every entry in the Meals section
-// carries components, only `recipe` and `cocktail` have `takesComponents: true`,
-// and both of those have `takesIngredients: true`. A meal's ingredients are its
+// true: every entry in the Meals section carries components, and every kind with
+// `takesComponents: true` also has `takesIngredients: true` — pinned by
+// `capabilities.test.ts`, which walks the enum. A meal's ingredients are its
 // OWN — nothing aggregates from its components (issue #752) — so the count on the
 // card means what it means everywhere else.
 export function sectionTakesIngredients(section: ListSection): boolean {

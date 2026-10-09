@@ -6,6 +6,7 @@ import {
   roundGrams,
   targetYield,
 } from '@salt/domain';
+import type { FirstFormulaYield } from '@salt/domain';
 import type { DoughAmount, ReferenceYield } from '@salt/domain/schemas';
 import { parseUnitCount } from './unitCount.js';
 
@@ -341,12 +342,24 @@ export function vesselFrom(mode: DoughAnswerMode, fields: DoughAnswerFields): st
  * not: it stores one figure, that figure means one thing, and it comes back into
  * the one box that holds it. The guesswork above is the price of a `DoughAmount`
  * having been three questions' answer, and none of it applies here.
+ *
+ * NOTHING STORED YET is the first formula (issue #1646), and which end it starts
+ * from is the recipe's kind's answer — `firstFormulaYield` in the domain's
+ * capability table, passed in so this file never asks what the kind is. `'basis'`
+ * (a cure: you weigh the shoulder) opens on "A weight of what goes in" with the box
+ * empty; `'target'` and `null` open on the dough answers, as they always have. A
+ * stored yield always wins over it — the document says which end it was saved at.
  */
-export function seedDoughAnswer(declared: ReferenceYield | null): {
+export function seedDoughAnswer(
+  declared: ReferenceYield | null,
+  firstYield: FirstFormulaYield = null,
+): {
   mode: DoughAnswerMode;
   fields: DoughAnswerFields;
 } {
-  if (declared === null) return { mode: 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
+  if (declared === null) {
+    return { mode: firstYield === 'basis' ? 'basis' : 'tin', fields: { ...EMPTY_DOUGH_ANSWER } };
+  }
   if (declared.kind === 'basis') {
     // ROUNDED for the same reason the dough figure below is: this lands verbatim in
     // an editable box and, from there, into what a run is frozen at.

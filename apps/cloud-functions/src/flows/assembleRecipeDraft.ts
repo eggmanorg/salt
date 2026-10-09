@@ -331,9 +331,10 @@ export async function assembleRecipeDraft(
 
   // WHAT KIND OF ENTRY this is, in strict precedence (issue #765).
   //
-  // 1. `baseRecipe.kind` — FIRST and UNCONDITIONAL. `kind` is immutable, so an
+  // 1. `baseRecipe.kind` — FIRST and UNCONDITIONAL. AI paths never change a
+  //    kind: the only route is the recipe page's label control (#1646), so an
   //    edit-mode amend must never re-type the entry it is editing, whatever the
-  //    model said and whichever of the four kinds it is. Edit mode wins over
+  //    model said and whichever kind it is. Edit mode wins over
   //    inference, always; that is why this operand is not guarded by anything.
   // 2. `kindHint` — variation mode, where the base is deliberately not passed
   //    as `baseRecipe` but its kind is still a known fact rather than a guess.

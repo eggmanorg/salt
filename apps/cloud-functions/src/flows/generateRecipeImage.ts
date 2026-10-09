@@ -283,6 +283,29 @@ export const CURE_IMAGE_STYLE_ANCHORS =
 export const CURE_SCENE_FALLBACK =
   'First read what kind of cure this is and how it is met: a whole muscle dried for months and eaten raw — a coppa, a bresaola, a prosciutto — calls for a cool, dim curing room, a hook or a rack, a dusty white bloom on the rind, and either the whole piece hanging or a deep-red cut face against it; a cured piece that is then cooked or smoked — a bacon, a gammon, a pastrami — calls for a kitchen or a smokehouse rather than a chamber, a board and a knife, a burnished or peppered crust, warmer and brighter light; a fermented, dried sausage — a saucisson, a chorizo, a fuet — calls for a string of them hung together or a few coins cut on a board, the mosaic of lean and fat legible in the slice; a semi-dry or snack sausage calls for something plainer and more everyday, on paper or a bench; a cooked, emulsified one — a mortadella, a bologna — calls for the smooth pale face of a big round, sliced thin and draped rather than stacked. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each cure feels like it lives in its own room.';
 
+// ─── The BREAD anchors + fallback (issue #1646) ──────────────────────────────
+//
+// A loaf painted with the recipe anchors gets "lovingly plated on rustic ceramic",
+// which is a picture of a sandwich, not of bread. What a bread IS is the bake —
+// the crust, the ear, the crumb where it has been cut — and the way you meet it
+// is on a board or a cooling rack. Same contract as the other pairs: LOCKED IN
+// CODE, appended LAST on every prompt, carrying the same prohibitions, and like
+// the cure pair it holds style rather than naming one shape, because a tin loaf,
+// a tray of rolls, a focaccia and a pizza base are four different photographs.
+//
+// THE SAME BOUNDARY AS THE CURE PAIR (#1442's note above): `describeRecipeScene`
+// has no `bread` arm either, so a bread's stored brief is written by the ordinary
+// recipe prompt and these anchors win against it only by being appended last.
+// Whether that flow learns either kind is the same spec call, not settled here.
+export const BREAD_IMAGE_STYLE_ANCHORS =
+  'But the BREAD is always the star of the shot: fill the frame with it, composing tight and close so the bake is unmistakably the subject and takes up most of the image. The board, the rack, the bench and the room behind are only supporting context glimpsed around and behind it — never the main event; avoid wide or pulled-back shots where the surroundings occupy more of the frame than the bread itself. Show it as the direction above describes — whole, torn or cut — and let the bake do the work: a deep, blistered or burnished crust, an open or even crumb where it has been cut, a dusting of flour, the sheen of oil on a focaccia, a little char on a flatbread. This is something somebody baked at home, so the setting is a working one — a wooden board, a wire cooling rack, a floured bench, a linen cloth, a bread knife — real and a little lived-in. Do NOT stage it as a bakery shop window or a magazine spread, and do NOT plate it on crockery as a dinner. Vary the shape, the surface and the angle to suit each bread; do NOT default to the same board, cloth or camera position every time. Within that, hold a recognisable house style: a photorealistic photograph with the warm, unfussy, appetising feel of a modern British home-cookbook, shot with real affection. Always keep these anchors — the bread filling most of the frame as the clear subject; soft natural window light; a shallow depth of field with the bread in crisp focus and the setting falling softly out of focus. Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people. A single, appetising hero shot of one bake, framed large and close so it fills the frame and makes you want to tear into it.';
+
+// The bread counterpart to RECIPE_IMAGE_DISH_READING_FALLBACK, used only when no
+// scene brief is available. What it asks the model to read is the KIND OF BREAD,
+// because the shape, the surface and the light all follow from it.
+export const BREAD_SCENE_FALLBACK =
+  'First read what kind of bread this is and how it is met: a tin loaf or a sandwich loaf calls for the whole loaf on a rack or a board, perhaps with a slice or two cut to show an even, close crumb; a crusty cob, a boule or a sourdough calls for a deep, blistered crust and an ear, torn or cut open to an airy crumb; rolls, buns and baps call for a batch of them pulled apart on a tray or a cloth; a focaccia calls for a dimpled, oil-glossed slab in its tin or cut into squares; a flatbread, a naan or a pitta calls for a warm, blistered stack; a pizza dough or base calls for the stretched dough on a floured peel or bench, before any topping. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each bread feels like it came out of its own oven.';
+
 // The kinds this flow knows how to paint. Declared LOCALLY as genkit-`z` literals
 // rather than imported from `RecipeKindSchema`: genkit re-exports its own bundled
 // zod instance, and a schema built from plain `zod` is not interchangeable with it.
@@ -294,6 +317,7 @@ export const GENERATE_RECIPE_IMAGE_KINDS = [
   'cocktail',
   'placeholder',
   'cure',
+  'bread',
 ] as const;
 
 type ImageKind = (typeof GENERATE_RECIPE_IMAGE_KINDS)[number];
@@ -311,6 +335,8 @@ function anchorsFor(kind: ImageKind | undefined): string {
       return PLACEHOLDER_IMAGE_STYLE_ANCHORS;
     case 'cure':
       return CURE_IMAGE_STYLE_ANCHORS;
+    case 'bread':
+      return BREAD_IMAGE_STYLE_ANCHORS;
     default:
       return RECIPE_IMAGE_STYLE_ANCHORS;
   }
@@ -326,6 +352,8 @@ function fallbackFor(kind: ImageKind | undefined): string {
       return PLACEHOLDER_SCENE_FALLBACK;
     case 'cure':
       return CURE_SCENE_FALLBACK;
+    case 'bread':
+      return BREAD_SCENE_FALLBACK;
     default:
       return RECIPE_IMAGE_DISH_READING_FALLBACK;
   }
@@ -357,6 +385,10 @@ function openerFor(
       // to the brief, which has read the method and knows which one this is.
       case 'cure':
         return `A beautiful, appetising photograph of the cured meat "${title}" — the finished cure, shown as the direction below describes it.`;
+      // A bread is a bake, not a plated dish; whether it is shown whole, torn or
+      // cut is the brief's call, exactly as a cure's stage is.
+      case 'bread':
+        return `A beautiful, appetising photograph of the bread "${title}" — fresh from the oven, shown as the direction below describes it.`;
       default:
         return `A beautiful, appetising photograph of the finished dish "${title}".`;
     }

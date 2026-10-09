@@ -26,7 +26,7 @@ export { GRAM_DECIMAL_THRESHOLD, PERCENT_DECIMALS, roundGrams, roundPercent } fr
 // disagree about what "2–3 tbsp" means.
 export { gramsFromParsed } from './gramsFromParsed.js';
 export { deriveFormula } from './deriveFormula.js';
-export { BASIS_KEYWORDS, guessBasisIngredientIds, looksScalable } from './guessBasis.js';
+export { BASIS_KEYWORDS, guessBasisIngredientIds } from './guessBasis.js';
 export type { BasisGuessEntry } from './guessBasis.js';
 export type {
   DeriveFormulaInput,

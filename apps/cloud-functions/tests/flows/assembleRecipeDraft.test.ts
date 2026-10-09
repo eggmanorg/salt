@@ -912,8 +912,9 @@ describe('assembleRecipeDraft — the step id a citation asks for', () => {
 // produce anything but a dinner.
 //
 // The precedence is what these tests exist to pin, in order:
-//   1. an edit-mode base wins UNCONDITIONALLY — `kind` is immutable, so an amend
-//      must never re-type the entry it is editing, whatever the model said;
+//   1. an edit-mode base wins UNCONDITIONALLY — AI paths never change a kind
+//      (only the recipe page's label control does, #1646), so an amend must
+//      never re-type the entry it is editing, whatever the model said;
 //   2. a variation's `kindHint` — the base's kind is a known fact, not a guess;
 //   3. the model's own classification.
 describe('assembleRecipeDraft — what kind of entry it is', () => {
@@ -1015,8 +1016,8 @@ describe('assembleRecipeDraft — the cure category', () => {
   });
 
   it('drops the category when an edit-mode base overrides the model into a non-cure kind', async () => {
-    // The base is a cocktail (immutable, wins unconditionally per the kind
-    // precedence above) while the model — reading an amended, unrelated
+    // The base is a cocktail (wins unconditionally per the kind precedence
+    // above) while the model — reading an amended, unrelated
     // conversation — answers as though this were a cure. Correlated against
     // the RESOLVED kind, not the model's, so the stray answer is dropped.
     const doc = await assembleRecipeDraft(

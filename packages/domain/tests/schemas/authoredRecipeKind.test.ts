@@ -19,7 +19,7 @@ import { AUTHORABLE_RECIPE_KINDS, isAuthorable } from '@salt/domain';
 //     here is a failed import, and on the librarian path (which has no retry)
 //     it throws away the user's whole conversation. It is also the asymmetry the
 //     issue argues — a cocktail filed under Recipes still works, a dinner filed
-//     under Cocktails can never be planned and `kind` is immutable.
+//     under Cocktails drops out of the planner until someone relabels it.
 //
 // Both are asserted on ALL THREE shapes, because the third inherits the field via
 // `.extend()` and an inheritance that quietly stopped working would look exactly
@@ -50,6 +50,11 @@ describe.each(SHAPES)('%s — the authored kind', (_name, schema, base) => {
     const parsed = schema.safeParse({ ...base, kind: 'cocktail' });
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.kind).toBe('cocktail');
+  });
+
+  it('accepts an explicit bread (#1646)', () => {
+    const parsed = schema.safeParse({ ...base, kind: 'bread' });
+    expect(parsed.success && parsed.data.kind).toBe('bread');
   });
 
   it('accepts an explicit recipe', () => {

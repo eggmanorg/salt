@@ -26,12 +26,21 @@
     memberFirstName,
     normaliseTags,
     recipePhaseTotals,
+    relabelChoices,
+    withKind,
     type Recipe,
   } from '@salt/domain';
   import { canonItems } from '../../lib/canonService.js';
   import { people } from '../../lib/membersService.js';
   import { recipes } from '../../lib/recipeService.js';
-  import { categoryOptions, KIND_COPY, kindOf, toCureCategory } from './recipeKind.js';
+  import {
+    categoryOptions,
+    KIND_COPY,
+    kindName,
+    kindOf,
+    toCureCategory,
+    toRecipeKind,
+  } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
   import RecipePhaseEditor from './RecipePhaseEditor.svelte';
 
@@ -177,6 +186,13 @@
     recipe.metadata.servings === null ? '' : String(recipe.metadata.servings),
   );
   const hasServings = $derived(showCooking && storedServesText !== '');
+
+  // ─── Label (issue #1646) ────────────────────────────────────────────────────
+  // Which labels this entry may switch between is the domain's answer
+  // (`relabelChoices`) — never a kind compared here. A single choice is "nothing
+  // to offer", which is what a special or a placeholder gets, so no zone renders.
+  const kind = $derived(kindOf(recipe));
+  const labelChoices = $derived(relabelChoices(recipe));
 
   // ─── Cure type (issue #1404) ────────────────────────────────────────────────
   // Read off the kind's COPY, never off the kind: `KIND_COPY` declares a category
@@ -546,13 +562,62 @@
             <Chip variant="fact" tone="secondary" icon="Users">{storedServesLabel}</Chip>
           {/if}
 
+          <!-- ── Label (issue #1646) ──────────────────────────────────────────
+               Edit mode only: in read mode the shelf the entry sits on already
+               says what it is. Switched in a tap, like the cure type beside it —
+               the label decides which shelf it stands on and whether it is
+               offered a formula, and a misfiled loaf or coppa needs a route back.
+               The write is the domain's `withKind`, which drops a cure type when
+               leaving Cured meat. Words from `kindName`, pictures from the
+               shelf's own `thumbIcon`; no kind is compared here. -->
+          {#if editing && labelChoices.length > 1}
+            <EditableZone
+              {editing}
+              filled={true}
+              label="Edit label"
+              slotLabel="Label"
+              testId="recipe-edit-kind"
+            >
+              {#snippet view()}
+                <Chip
+                  variant="fact"
+                  tone="secondary"
+                  icon={KIND_COPY[kind].thumbIcon}
+                  data-testid="recipe-kind-chip"
+                >
+                  {kindName(kind)}
+                </Chip>
+              {/snippet}
+              {#snippet edit(close)}
+                <div class="flex w-full items-center gap-2">
+                  <Select
+                    value={kind}
+                    onValueChange={(v) => onEdit(withKind(recipe, toRecipeKind(v, kind)))}
+                  >
+                    <!-- Label rendered here rather than left to the trigger's
+                         default, for the reason the cure-type picker below gives. -->
+                    <SelectTrigger aria-label="Label" data-testid="recipe-kind-select">
+                      <span class="text-foreground">{kindName(kind)}</span>
+                      <Icon name="ChevronDown" size={16} class="text-muted-foreground" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {#each labelChoices as choice (choice)}
+                        <SelectItem value={choice}>{kindName(choice)}</SelectItem>
+                      {/each}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" onclick={close}>Done</Button>
+                </div>
+              {/snippet}
+            </EditableZone>
+          {/if}
+
           <!-- ── Cure type (issue #1404) ──────────────────────────────────────
                A fact about the dish, so it sits in the fact row beside Makes and
                Serves rather than in a section of its own, and it is corrected in
                a tap: no confirmation, no gate. The category is a fact about the
-               food, never permission to do anything, and — unlike `kind` — a
-               wrong one has to have a route back, or a misclassification is a
-               permanent wrong answer.
+               food, never permission to do anything, and a wrong one has to have
+               a route back, or a misclassification is a permanent wrong answer.
 
                Rendered off `categoryCopy`, which exactly one kind declares. The
                kind is never compared here; a kind with no category vocabulary

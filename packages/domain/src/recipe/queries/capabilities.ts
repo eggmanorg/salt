@@ -1,3 +1,4 @@
+import type { ReferenceYield } from '../../schemas/formula.js';
 import type { RecipeKind } from '../entities/Recipe.js';
 
 // What a kind of entry can do (issue #637). These predicates are the ONLY
@@ -37,7 +38,7 @@ interface Capabilities {
   // `cocktail` became `true` in #765, when the librarian learned to say which
   // kind it had written and `assembleRecipeDraft` stopped hardcoding `'recipe'`.
   // That was the whole of the constraint: before it, a cocktail authored from a
-  // chat landed in the dinner list permanently, because `kind` is immutable.
+  // chat landed in the dinner list.
   //
   // `cure` became `true` in #1404 for the same reason it had to: with the editor
   // retired (#1319) the New sheet, the two imports and the chef are the ONLY ways
@@ -63,7 +64,24 @@ interface Capabilities {
   // it can point at its own syrup recipe; a special has no written dish to hang
   // anything off, and a placeholder is a photograph and a title.
   readonly takesComponents: boolean;
+  // Whether a FIRST formula is offered on this kind, and which end its yield
+  // question starts from (issue #1646). One column rather than a boolean plus a
+  // direction, so a kind can never carry a default direction for a door it is
+  // never offered:
+  //
+  //   null      no first formula is offered — "Make it scalable" is absent.
+  //   'target'  bread: you know the dough coming OUT ("12 × 120 g").
+  //   'basis'   cure: you weigh what goes IN (the shoulder, 2.4 kg).
+  //
+  // A question about the KIND, not the document. "Does this recipe have a
+  // formula?" is `recipe.formula != null` and is answered by presence, so a
+  // formula on a kind whose cell is `null` keeps every door it already has.
+  // The two values are `ReferenceYield`'s own discriminant, so the vocabulary
+  // cannot drift from the formula schema.
+  readonly firstFormulaYield: FirstFormulaYield;
 }
+
+export type FirstFormulaYield = ReferenceYield['kind'] | null;
 
 const CAPABILITIES = {
   recipe: {
@@ -72,6 +90,7 @@ const CAPABILITIES = {
     isPlannable: true,
     isAuthorable: true,
     takesComponents: true,
+    firstFormulaYield: null,
   },
   special: {
     takesIngredients: false,
@@ -79,6 +98,7 @@ const CAPABILITIES = {
     isPlannable: true,
     isAuthorable: false,
     takesComponents: false,
+    firstFormulaYield: null,
   },
   cocktail: {
     takesIngredients: true,
@@ -86,6 +106,7 @@ const CAPABILITIES = {
     isPlannable: false,
     isAuthorable: true,
     takesComponents: true,
+    firstFormulaYield: null,
   },
   // A placeholder is a photograph and a title, nothing else: nothing to buy,
   // nothing to cook, never offered in the picker, nothing for the librarian
@@ -97,6 +118,7 @@ const CAPABILITIES = {
     isPlannable: false,
     isAuthorable: false,
     takesComponents: false,
+    firstFormulaYield: null,
   },
   // Cured meat (issue #1404), and every cell has a reason:
   //
@@ -119,20 +141,39 @@ const CAPABILITIES = {
   //                     the shelving, and the shelving is what a user sees.
   //
   // The asymmetry `isPlannable: false` creates is the one `cocktail` already has
-  // and `recipeFieldRules.ts` already documents: `kind` is immutable, so a DINNER
-  // misfiled as a cure can never be planned again. That is why the authoring
-  // prompt's tie-break sends everything doubtful to `recipe`.
+  // and `recipeFieldRules.ts` already documents: a DINNER misfiled as a cure drops
+  // out of the planner until someone relabels it on the recipe page (#1646). That
+  // is why the authoring prompt's tie-break sends everything doubtful to `recipe`.
+  //
+  //   firstFormulaYield 'basis' (#1646): a cure's first formula starts from the
+  //                     weight of what goes in, because you weigh the shoulder.
   cure: {
     takesIngredients: true,
     isCookable: true,
     isPlannable: false,
     isAuthorable: true,
     takesComponents: false,
+    firstFormulaYield: 'basis',
+  },
+  // Bread (issue #1646): a dough baked as bread. Every capability is a recipe's —
+  // a loaf is planned, cooked, shopped for and written by the chef — and
+  // `takesComponents` matches `recipe` too, because a loaf can point at its own
+  // starter or poolish. (`sectionOf` then shelves it under Meals, exactly as it
+  // does a recipe with components.) What the kind adds is a shelf and the
+  // formula door: `'target'`, because a loaf's first formula starts from the
+  // dough coming out.
+  bread: {
+    takesIngredients: true,
+    isCookable: true,
+    isPlannable: true,
+    isAuthorable: true,
+    takesComponents: true,
+    firstFormulaYield: 'target',
   },
   // `satisfies` rather than an annotation, so the literal `true`/`false` of each
   // cell survives for `AuthorableRecipeKind` below to read. It keeps the whole
   // point of the `Record<RecipeKind, …>`: a new member of the enum still fails to
-  // compile here until it has answered all five questions.
+  // compile here until it has answered all six questions.
 } as const satisfies Record<RecipeKind, Capabilities>;
 
 export function takesIngredients(kind: RecipeKind): boolean {
@@ -168,6 +209,7 @@ export const AUTHORABLE_RECIPE_KINDS = [
   'recipe',
   'cocktail',
   'cure',
+  'bread',
 ] as const satisfies readonly AuthorableRecipeKind[];
 
 // A type predicate, not a plain boolean, so `AUTHORABLE_RECIPE_KINDS` is
@@ -180,4 +222,19 @@ export function isAuthorable(kind: RecipeKind): kind is AuthorableRecipeKind {
 
 export function takesComponents(kind: RecipeKind): boolean {
   return CAPABILITIES[kind].takesComponents;
+}
+
+// Is "Make it scalable" offered on this kind? (issue #1646.) The LABEL decides,
+// where a keyword guess at the ingredients used to: the guess offered the door
+// to waffles and gravy and never to a coppa. A recipe that already HAS a formula
+// keeps its doors through presence (`formula != null`), whatever this says.
+export function offersFormula(kind: RecipeKind): boolean {
+  return CAPABILITIES[kind].firstFormulaYield !== null;
+}
+
+// Which end a first formula's yield question starts from on this kind — or
+// `null` when the kind is offered no first formula, which a caller that reaches
+// the formula page anyway (a typed URL) treats as the dough answers.
+export function firstFormulaYield(kind: RecipeKind): FirstFormulaYield {
+  return CAPABILITIES[kind].firstFormulaYield;
 }
