@@ -69,6 +69,11 @@ describe('missingFigures — a multiset, compared as written', () => {
       [],
     );
   });
+
+  it('finds no figures in text without numbers, and misses one the layout dropped', () => {
+    expect(figuresIn('Season to taste.')).toEqual([]);
+    expect(missingFigures('Rest for 10 minutes', 'Rest until relaxed')).toEqual(['10']);
+  });
 });
 
 describe('checkComposedPage', () => {

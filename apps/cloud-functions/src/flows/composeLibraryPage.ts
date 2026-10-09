@@ -160,7 +160,7 @@ export const composeLibraryPageFlow = ai.defineFlow(
         }),
       COMPOSE_LIBRARY_PAGE_TIMEOUT,
     );
-    return { body: unwrapWholeBodyFence(result.text ?? '') };
+    return { body: unwrapWholeBodyFence(result.text) };
   },
 );
 
@@ -173,7 +173,8 @@ export const composeLibraryPageFlow = ai.defineFlow(
 export function unwrapWholeBodyFence(text: string): string {
   const trimmed = text.trim();
   const m = /^```(?:markdown|md)?[ \t]*\n([\s\S]*)\n```$/i.exec(trimmed);
-  return m ? (m[1] ?? '') : trimmed;
+  // The capture group always participates in a match.
+  return m ? m[1]! : trimmed;
 }
 
 export type ComposedLibraryPage =

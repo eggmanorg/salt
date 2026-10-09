@@ -31,14 +31,17 @@ export function findLibraryBlocks(body: string): FoundLibraryBlock[] {
   const lines = body.replace(/\r\n?/g, '\n').split('\n');
   const found: FoundLibraryBlock[] = [];
   let i = 0;
+  // Each `!` below is total: `lines[i]` is read only inside `i < lines.length`,
+  // both FENCE_OPEN groups always participate in a match, and `split` never
+  // returns an empty array.
   while (i < lines.length) {
-    const open = FENCE_OPEN.exec(lines[i] ?? '');
+    const open = FENCE_OPEN.exec(lines[i]!);
     if (!open) {
       i++;
       continue;
     }
-    const fence = open[1] ?? '';
-    const info = (open[2] ?? '').trim();
+    const fence = open[1]!;
+    const info = open[2]!.trim();
     // A backtick fence's info string may not itself contain a backtick.
     if (fence.startsWith('`') && info.includes('`')) {
       i++;
@@ -47,12 +50,12 @@ export function findLibraryBlocks(body: string): FoundLibraryBlock[] {
     const closing = new RegExp(`^ {0,3}${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`);
     const content: string[] = [];
     i++;
-    while (i < lines.length && !closing.test(lines[i] ?? '')) {
-      content.push(lines[i] ?? '');
+    while (i < lines.length && !closing.test(lines[i]!)) {
+      content.push(lines[i]!);
       i++;
     }
     i++; // past the closing fence (or past the end)
-    const word = info.split(/\s+/)[0] ?? '';
+    const word = info.split(/\s+/)[0]!;
     if (word.startsWith(LIBRARY_BLOCK_FENCE_PREFIX)) {
       found.push({
         kind: word.slice(LIBRARY_BLOCK_FENCE_PREFIX.length),

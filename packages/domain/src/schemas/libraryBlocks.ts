@@ -155,14 +155,15 @@ export function parseLibraryBlock(kind: string, source: string): LibraryBlockPar
   try {
     raw = parseYaml(source, { schema: 'failsafe' });
   } catch (err) {
-    const first = err instanceof Error ? (err.message.split('\n')[0] ?? '') : '';
+    // `split` never returns an empty array.
+    const first = err instanceof Error ? err.message.split('\n')[0]! : '';
     return { ok: false, problem: `its lines could not be read (${first})` };
   }
 
   const parsed = SCHEMAS[kind].safeParse(raw);
   if (!parsed.success) {
-    const first = parsed.error.issues[0];
-    return { ok: false, problem: first ? describeIssue(first) : 'its shape is wrong' };
+    // Zod reports a failed parse with at least one issue.
+    return { ok: false, problem: describeIssue(parsed.error.issues[0]!) };
   }
   // The cast is the narrowing `SCHEMAS[kind]` loses: TypeScript cannot carry the
   // correlation between `kind` and the schema it indexed through a union key.

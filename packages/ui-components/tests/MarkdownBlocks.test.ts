@@ -15,6 +15,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import Markdown from '../src/primitives/Markdown/Markdown.svelte';
+import { rehypeSaltBlocks, SALT_BLOCK_TAG } from '../src/primitives/Markdown/saltBlocks';
 import SaltBlockProbe from './fixtures/SaltBlockProbe.svelte';
 
 afterEach(() => cleanup());
@@ -58,6 +59,14 @@ describe.each([
     expect(container.querySelector('[data-testid="salt-block"]')).toBeNull();
   });
 
+  it('leaves a fence with no language alone', () => {
+    const { container } = render(Markdown, {
+      props: { text: '```\nplain text\n```', sanitizedHtml, blocks: SaltBlockProbe },
+    });
+    expect(container.querySelector('pre > code')?.textContent).toContain('plain text');
+    expect(container.querySelector('[data-testid="salt-block"]')).toBeNull();
+  });
+
   it('draws every block, each with its own kind', () => {
     const { container } = render(Markdown, {
       props: {
@@ -94,5 +103,38 @@ describe('Markdown blocks — no raw-HTML route', () => {
       },
     });
     expect(container.querySelector('[data-testid="salt-block"]')).toBeNull();
+  });
+});
+
+describe('rehypeSaltBlocks — the tree walk itself', () => {
+  const run = (tree: unknown) => {
+    rehypeSaltBlocks()(tree);
+    return tree as { children: { tagName?: string; properties?: Record<string, unknown> }[] };
+  };
+  const saltCode = (children: unknown[]) => ({
+    type: 'element',
+    tagName: 'pre',
+    children: [
+      {
+        type: 'element',
+        tagName: 'code',
+        properties: { className: ['language-salt-stats'] },
+        children,
+      },
+    ],
+  });
+
+  it('leaves a pre that does not hold a code element alone', () => {
+    const pre = { type: 'element', tagName: 'pre', children: [{ type: 'text', value: 'x' }] };
+    expect(run({ type: 'root', children: [pre] }).children[0]).toBe(pre);
+  });
+
+  it('reads a text node without a value, or an element without children, as empty', () => {
+    const tree = run({
+      type: 'root',
+      children: [saltCode([{ type: 'text' }, { type: 'element', tagName: 'span' }])],
+    });
+    expect(tree.children[0]?.tagName).toBe(SALT_BLOCK_TAG);
+    expect(tree.children[0]?.properties).toEqual({ kind: 'stats', source: '' });
   });
 });

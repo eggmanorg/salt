@@ -74,6 +74,15 @@ describe('DocCards', () => {
     expect(cards[0]!.textContent).toContain('then');
     expect(cards[1]!.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0);
   });
+
+  it('draws a group without a heading, and a card without chips', () => {
+    const { container, queryByRole } = render(DocCards, {
+      props: { groups: [{ cards: [{ title: 'Rice', arrows: false, chips: [], lines: [] }] }] },
+    });
+    expect(queryByRole('heading')).toBeNull();
+    expect(container.textContent).toContain('Rice');
+    expect(container.querySelector('[data-tone]')).toBeNull();
+  });
 });
 
 describe('DocCallout', () => {
@@ -102,5 +111,11 @@ describe('DocStats', () => {
     expect(row?.children).toHaveLength(3);
     expect(row?.textContent).toContain('6.3 L');
     expect(row?.textContent).toContain('jars owned');
+  });
+
+  it('falls back to two columns for a count outside two to four', () => {
+    const items = [{ value: '1', label: 'only', tone: 'muted' as const }];
+    const { container } = render(DocStats, { props: { items } });
+    expect(container.querySelector('.salt-doc-stats')).toHaveClass('grid-cols-2');
   });
 });

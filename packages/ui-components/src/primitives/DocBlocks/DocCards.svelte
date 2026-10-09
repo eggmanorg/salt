@@ -44,7 +44,7 @@
           {#each card.lines as line, l (l)}
             <div class="grid grid-cols-[auto_1fr] items-baseline gap-2">
               <span
-                class="text-[0.6875rem] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
+                class="text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
                 >{line.label ?? ''}</span
               >
               <span class="text-foreground">{line.text}</span>

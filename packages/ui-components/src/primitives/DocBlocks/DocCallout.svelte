@@ -16,7 +16,7 @@
   data-tone={tone}
 >
   {#if label}
-    <span class="text-[0.6875rem] font-semibold tracking-wider uppercase">{label}</span>
+    <span class="text-xs font-semibold tracking-wider uppercase">{label}</span>
   {/if}
   <div>{@render children?.()}</div>
 </aside>
