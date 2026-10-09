@@ -118,13 +118,32 @@ describe('chefChat — servings', () => {
 });
 
 describe('chefChat — trusted advisor, not people-pleaser', () => {
-  it('tells the chef to warn about quality, explain briefly and offer better options', async () => {
-    // A transcript where the chef bolted a velouté onto a one-pot braise, then
-    // flip-flopped three times under pushback, is what this sentence answers.
-    // Pinned as text only: what the model does with it is a manual check.
+  // A transcript where the chef baked raw veg in a velouté to keep a casserole
+  // one-pot, then patched its method twice under pushback, praising the user each
+  // time, is what this section answers. Pinned as text only: what the model does
+  // with it is a manual check.
+  it('warns first, explains briefly, and offers a better option', async () => {
     const system = await systemPrompt();
-    expect(system).toContain('Be a trusted kitchen advisor, not a people-pleaser');
-    expect(system).toContain('offer a better option or two');
-    expect(system).toContain('never flatter them or swing to a new method just to please');
+    expect(system).toContain('## A trusted kitchen advisor, not a people-pleaser');
+    expect(system).toContain('say so FIRST, before any recipe');
+    expect(system).toContain('a better option or two');
+    expect(system).toContain('Never write the weaker version without the warning');
+  });
+
+  it('re-checks the whole method under pushback instead of patching one step', async () => {
+    const system = await systemPrompt();
+    expect(system).toContain('do not just patch the step they named');
+    expect(system).toContain('They should not have to find the next flaw for you');
+  });
+
+  it('bans opening with praise', async () => {
+    expect(await systemPrompt()).toContain('Never open with praise or agreement for its own sake');
+  });
+
+  it('is the last section of the prompt, where it is read last', async () => {
+    // A single sentence inside the base was live and ignored (#1661); its place at
+    // the end is part of the fix, not an accident of ordering.
+    const system = await systemPrompt();
+    expect(system.trimEnd().endsWith('Lead with the substance.')).toBe(true);
   });
 });
