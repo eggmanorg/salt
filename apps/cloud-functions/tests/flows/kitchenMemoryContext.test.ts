@@ -161,6 +161,9 @@ describe('kitchenMemorySectionForChef', () => {
     expect(section).toContain('exactly what they asked for');
     expect(section).toContain('do not quietly substitute an ingredient');
     expect(section).toContain('never present a note as a reason you cannot do something');
+    // ...and the rule is scoped to taste. Unscoped, the chef read it as "never
+    // question any request" and stopped warning about methods that hurt the dish.
+    expect(section).toContain('It never stops you warning that a METHOD will');
     // The one permitted mention, and its two limits: someone else's note, once.
     expect(section).toContain('someone OTHER than the person you are talking to');
     expect(section).toContain('only once');

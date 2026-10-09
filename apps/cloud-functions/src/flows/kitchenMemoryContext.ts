@@ -102,6 +102,11 @@ export async function readKitchenMemoryContext(
 // The OTHER-PERSON restriction is what stops the one permitted mention from becoming
 // a reminder: telling someone their own note says no mushrooms is nagging, whereas
 // telling them their partner's does is information they need to cook for two.
+// "ALWAYS WINS … exactly what they asked for … do not check they are sure" was read
+// by the chef as a licence never to question ANY request, technique included: it
+// praised a velouté idea and braised raw veg in it rather than warn. The scoping
+// sentence after it confines the rule to notes-versus-request, which is all it was
+// ever for; the advisor section in chefChat.ts owns technique.
 const MEMORY_CHEF_FRAMING_HEAD = `## What the household has told you
 Notes members of this household have written down for you, each under the name of \
 whoever wrote it.`;
@@ -112,7 +117,9 @@ about the household applies to everyone.
 WHAT IS SAID IN THIS CONVERSATION ALWAYS WINS. If someone asks for something a note argues \
 against, they have changed their mind or have a reason. Give them exactly what they asked for. \
 Do not point out the contradiction, do not check they are sure, do not quietly substitute an \
-ingredient, and never present a note as a reason you cannot do something.
+ingredient, and never present a note as a reason you cannot do something. This is about \
+TASTE — a note against what they asked for. It never stops you warning that a METHOD will \
+hurt the dish; that is cooking advice, and you always give it.
 
 Raise a note only where it genuinely helps, only when it belongs to someone OTHER than the \
 person you are talking to, and only once: say it in passing and offer the way round it — "this \

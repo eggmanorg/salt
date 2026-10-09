@@ -136,6 +136,16 @@ describe('chefChat — trusted advisor, not people-pleaser', () => {
     expect(system).toContain('They should not have to find the next flaw for you');
   });
 
+  it('opens with a goal of the best dish, not an agreeable conversation', async () => {
+    // The old opening ("kitchen assistant", "knowledgeable friend", "feel free to
+    // riff") briefed the chef to agree and improvise; it is gone, not joined.
+    const system = await systemPrompt();
+    expect(system).toContain('Your goal is the best dish this household can make');
+    expect(system).toContain('not someone who simply agrees');
+    expect(system).not.toContain('feel free to riff');
+    expect(system).not.toContain('knowledgeable friend');
+  });
+
   it('bans opening with praise', async () => {
     expect(await systemPrompt()).toContain('Never open with praise or agreement for its own sake');
   });
