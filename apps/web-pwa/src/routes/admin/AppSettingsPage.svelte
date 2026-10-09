@@ -140,6 +140,7 @@
     arbitrateProductForm: 'Product-form arbitration',
     authorRecipe: 'Recipe author (librarian)',
     chefChat: 'Chef Chat',
+    composeLibraryPage: 'Library page layout (chef-written pages)',
     describeEquipmentSubject: 'Equipment description (pictogram art direction)',
     describeRecipeScene: 'Recipe scene brief (hero art direction)',
     embedText: 'Embed text',

@@ -12,6 +12,7 @@
   } from '@salt/ui-components';
   import { LIBRARY_PAGE_BODY_MAX } from '@salt/domain/schemas';
   import { appendedBody, htmlToMarkdown } from '../../lib/libraryImport.js';
+  import LibraryBlock from './LibraryBlock.svelte';
 
   /**
    * Getting a sous vide table out of a website and into the library (issue #1375).
@@ -119,7 +120,7 @@
         <!-- Exactly what saving will produce: the same renderer and the same
              document scale the page body uses. -->
         <div class="rounded border border-border p-3" data-testid="library-import-preview">
-          <Markdown text={markdown} sanitizedHtml scale="doc" />
+          <Markdown text={markdown} sanitizedHtml scale="doc" blocks={LibraryBlock} />
         </div>
       {/if}
     </div>

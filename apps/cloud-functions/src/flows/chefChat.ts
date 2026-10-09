@@ -88,6 +88,7 @@ import {
   equipmentSectionForChef,
 } from './equipmentContext.js';
 import { readKitchenMemoryContext, kitchenMemorySectionForChef } from './kitchenMemoryContext.js';
+import { composeLibraryPageForChef, type ComposedLibraryPage } from './composeLibraryPage.js';
 import { readComponentContext, componentSectionForChef } from './componentContext.js';
 import { formatRecipeForPrompt, withComponents } from './recipeText.js';
 
@@ -770,6 +771,7 @@ const refused = (problem: string): WriteKitchenNoteOutput => ({
   id: null,
   created: false,
   problem,
+  laidOut: false,
 });
 
 /**
@@ -807,10 +809,22 @@ const refused = (problem: string): WriteKitchenNoteOutput => ({
  * It also never THROWS (Rule 10): a refusal comes back as `saved: false` with a
  * sentence the chef can say out loud, which is what a model can actually act on
  * inside its own tool loop.
+ *
+ * THE BODY IS A DRAFT (issue #1663). Before anything is saved, `compose` — the
+ * page writer, `composeLibraryPage.ts` — lays it out in the Library's house
+ * style. What is saved is its layout when that passed every check, and the
+ * chef's draft EXACTLY as sent otherwise; `laidOut` says which. Every guarantee
+ * above holds for both, because everything after the compose step is the same
+ * code acting on whichever body won. `compose` is a parameter so the suite can
+ * stand in for the model; production always takes the default.
  */
 export async function writeKitchenNoteForChef(
   db: ReturnType<typeof getFirestore>,
   input: WriteKitchenNoteInput,
+  compose: (
+    title: string,
+    draft: string,
+  ) => Promise<ComposedLibraryPage> = composeLibraryPageForChef,
 ): Promise<WriteKitchenNoteOutput> {
   const title = input.title.trim();
   if (title === '') return refused('a page needs a title, and that one was blank');
@@ -843,6 +857,15 @@ export async function writeKitchenNoteForChef(
     );
   }
 
+  // Laid out BEFORE the page is read, not after. The write below is a full-
+  // document `set` built on what that read returned, so anything between the read
+  // and the write is a window in which a person's edit can be overwritten — and
+  // the page writer is seconds of model time. Composing first keeps the window
+  // what it was before it existed. The cost is a layout spent on an id that turns
+  // out not to exist, which is a refusal the chef was already going to get.
+  const composed = await compose(title, input.body);
+  const body = composed.laidOut ? composed.body : input.body;
+
   try {
     const now = new Date().toISOString();
     const pages = db.collection(LIBRARY_PAGE_COLLECTION);
@@ -853,7 +876,7 @@ export async function writeKitchenNoteForChef(
         schemaVersion: 1,
         kind: 'note',
         title,
-        body: input.body,
+        body,
         // Untagged. Filing is the household's call and a tag the chef invented
         // would sit in the library's filter list for ever.
         tags: [],
@@ -864,7 +887,7 @@ export async function writeKitchenNoteForChef(
         revisions: [],
       };
       await pages.doc(page.id).set(page);
-      return { saved: true, id: page.id, created: true, problem: null };
+      return { saved: true, id: page.id, created: true, problem: null, laidOut: composed.laidOut };
     }
 
     // A replacement is only ever built on a note that was READ back first. An id
@@ -909,7 +932,7 @@ export async function writeKitchenNoteForChef(
     const page: LibraryPageDoc = {
       ...current,
       title,
-      body: input.body,
+      body,
       updatedAt: now,
       lastEditedBy: CHEF_AUTHOR_NAME,
       // `savedBy` is whoever REPLACED the version being filed, matching the
@@ -924,14 +947,15 @@ export async function writeKitchenNoteForChef(
           }),
     };
     await ref.set(page);
-    return { saved: true, id: page.id, created: false, problem: null };
+    return { saved: true, id: page.id, created: false, problem: null, laidOut: composed.laidOut };
   } catch (err) {
     logger.warn('chefChat: writeKitchenNote failed', { id: input.id, err });
     return refused('that could not be saved just now');
   }
 }
 
-const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a page into the household's Library, or replace one that is already there. Use it to put \
+// Exported for the prompt-size pin in `chefChat.kitchenNotes.test.ts` (#1663).
+export const WRITE_KITCHEN_NOTE_DESCRIPTION = `Write a page into the household's Library, or replace one that is already there. Use it to put \
 something down where they will find it again: a table you worked out together, the settings for a piece of kit, a \
 list of what they own.
 
@@ -951,7 +975,10 @@ You cannot delete a page and you cannot empty one. If they ask you to, say plain
 on the page itself.
 
 Check saved before you say anything. When it is false, problem says why in plain words: repeat it and do not \
-claim the page was written.`;
+claim the page was written.
+
+Write the facts plainly and Salt lays the page out itself; if laidOut comes back false, the page was saved \
+exactly as you wrote it, so say the layout didn't take.`;
 
 export const writeKitchenNoteTool = ai.defineTool(
   {
@@ -1099,7 +1126,8 @@ export function turnRequestedRecipeSave(response: unknown): boolean {
 // shape: the tool descriptions govern when to call, this governs what to do with
 // the answer. Its own section rather than a paragraph bolted onto LIBRARY_FRAMING
 // precisely because the two must not blur — see the heading's last rule.
-const KITCHEN_NOTES_FRAMING = `## Their Library
+// Exported for the prompt-size pin in `chefChat.kitchenNotes.test.ts` (#1663).
+export const KITCHEN_NOTES_FRAMING = `## Their Library
 This household writes things down — the kitchen facts that are not recipes. Their Library is where those pages \
 live; findKitchenNotes searches it and readKitchenNote opens one page in full. They are what this kitchen has \
 actually proven, so where a page answers the question it beats anything you would say from general knowledge.

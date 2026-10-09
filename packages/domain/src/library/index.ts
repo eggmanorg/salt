@@ -18,3 +18,5 @@ export {
   LIBRARY_PAGE_SEARCH_CEILING,
 } from './searchLibraryPages.js';
 export type { LibraryPageCandidate, LibraryPageSearchFilters } from './searchLibraryPages.js';
+export { checkComposedPage, findLibraryBlocks, figuresIn, missingFigures } from './composedPage.js';
+export type { ComposedPageCheck, FoundLibraryBlock } from './composedPage.js';

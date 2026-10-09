@@ -155,6 +155,61 @@ describe('LibraryPageView — what it shows', () => {
     expect(body.querySelectorAll('td')[1]?.textContent).toBe('580 g');
   });
 
+  // ─── Library blocks (#1663) ─────────────────────────────────────────────
+  //
+  // A `salt-<kind>` fence in a body is drawn by `LibraryBlock` from its YAML. A
+  // block that does not parse shows what was written and says so — never blank,
+  // so a hand edit that broke it is visible and fixable.
+  it('draws a salt-cards block as cards with toned chips', async () => {
+    const cards = [
+      '```salt-cards',
+      'groups:',
+      '  - heading: Meat and fish',
+      '    cards:',
+      '      - title: Duck breast',
+      '        arrows: true',
+      '        chips:',
+      '          - label: 130°',
+      '            tone: sage',
+      '          - label: 175°',
+      '            tone: terracotta',
+      '```',
+    ].join('\n');
+    mount(page({ body: `## Tasks\n\n${cards}\n\nAfter.` }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('h3')?.textContent).toBe('Meat and fish');
+    expect(body.textContent).toContain('Duck breast');
+    expect(body.querySelector('[data-tone="terracotta"]')?.textContent).toBe('175°');
+    expect(body.querySelector('pre')).toBeNull();
+    expect(body.textContent).toContain('After.');
+  });
+
+  it('draws a callout and a stats row', async () => {
+    const callout =
+      '```salt-callout\ntone: warning\nlabel: Probe Control\nbody: Read the **water**.\n```';
+    const stats =
+      '```salt-stats\nitems:\n  - value: "16"\n    label: jars owned\n  - value: 6.3 L\n    label: capacity\n```';
+    mount(page({ body: `${stats}\n\n${callout}` }));
+    const body = await screen.findByTestId('library-body');
+    const aside = body.querySelector('aside');
+    expect(aside).toHaveAttribute('data-tone', 'warning');
+    expect(aside?.textContent).toContain('Probe Control');
+    // The callout body is Markdown.
+    expect(aside?.querySelector('strong')?.textContent).toBe('water');
+    expect(body.textContent).toContain('6.3 L');
+    expect(body.textContent).toContain('jars owned');
+  });
+
+  it('shows a broken block as the text that was written, with a notice — never blank', async () => {
+    const broken = '```salt-callout\ntone: "#ff0000"\nbody: Hot pan.\n```';
+    mount(page({ body: `## Tips\n\n${broken}` }));
+    const body = await screen.findByTestId('library-body');
+    const fallback = body.querySelector('[data-testid="library-block-broken"]');
+    expect(fallback?.querySelector('pre')?.textContent).toContain('body: Hot pan.');
+    expect(fallback?.textContent).toMatch(/couldn't be read/);
+    expect(body.querySelector('aside')).toBeNull();
+  });
+
   // ─── Diagrams (#1376) ───────────────────────────────────────────────────
   //
   // This page passes `sanitizedHtml`, so raw HTML in a body is no longer inert

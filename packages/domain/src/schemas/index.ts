@@ -176,6 +176,28 @@ export {
   pushRevision,
 } from './libraryPage.js';
 export type { LibraryPageDoc, LibraryPageRevisionDoc } from './libraryPage.js';
+// The laid-out parts of a library page (issue #1663): `salt-<kind>` fenced YAML
+// inside `body`, so the page document itself is unchanged. Colour is a tone,
+// never a value.
+export {
+  LIBRARY_BLOCK_FENCE_PREFIX,
+  LIBRARY_BLOCK_KINDS,
+  LIBRARY_TONES,
+  LibraryCalloutBlockSchema,
+  LibraryCardsBlockSchema,
+  LibraryStatsBlockSchema,
+  LibraryToneSchema,
+  parseLibraryBlock,
+} from './libraryBlocks.js';
+export type {
+  LibraryBlock,
+  LibraryBlockKind,
+  LibraryBlockParse,
+  LibraryCalloutBlock,
+  LibraryCardsBlock,
+  LibraryStatsBlock,
+  LibraryTone,
+} from './libraryBlocks.js';
 
 // Generic kitchen tools (issue #882) — the curated pictogram vocabulary that a
 // recipe's or a plan's WORDS are resolved against at display time. Nothing stores

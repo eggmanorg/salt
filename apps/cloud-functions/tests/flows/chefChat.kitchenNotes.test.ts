@@ -88,6 +88,8 @@ const {
   readEquipmentDetailTool,
   verifiedCaller,
   chefChatFlow,
+  KITCHEN_NOTES_FRAMING,
+  WRITE_KITCHEN_NOTE_DESCRIPTION,
 } = await import('../../src/flows/chefChat.js');
 
 beforeEach(() => {
@@ -509,5 +511,36 @@ describe('chefChat — whose chat gets the notes tools', () => {
     const options = mockGenerateStream.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(options['tools']).toEqual([findRecipesTool, readRecipeTool, readEquipmentDetailTool]);
     expect(mockFlagEnabled).not.toHaveBeenCalled();
+  });
+});
+
+// ─── The page writer's style guide stays out of the chat (issue #1663) ────────
+//
+// Laying a page out needs a long style guide, and it lives in its own model call
+// (`composeLibraryPage.ts`), paid only when a page is saved. What every chat turn
+// pays — the Library framing in the system prompt and the write tool's
+// description — was allowed to grow by ONE sentence, and no more. The baseline
+// is those two texts as they stood on main before #1663 (b8e642cc), measured
+// the same way as below.
+describe('the chat prompt is not where pages are laid out', () => {
+  const BASELINE = { chars: 1789 + 1288, sentences: 20 + 14 };
+  const ONE_SENTENCE_CHARS = 200;
+  const sentenceEnds = (text: string): number => (text.match(/[.!?](?=\s|$)/g) ?? []).length;
+  const chatPaid = `${KITCHEN_NOTES_FRAMING}${WRITE_KITCHEN_NOTE_DESCRIPTION}`;
+
+  it('grew by at most one sentence', () => {
+    expect(sentenceEnds(chatPaid)).toBeLessThanOrEqual(BASELINE.sentences + 1);
+    expect(chatPaid.length).toBeLessThanOrEqual(BASELINE.chars + ONE_SENTENCE_CHARS);
+  });
+
+  it('carries none of the style guide', () => {
+    for (const text of [KITCHEN_NOTES_FRAMING, WRITE_KITCHEN_NOTE_DESCRIPTION]) {
+      expect(text).not.toMatch(/salt-|YAML|\btone\b|callout/i);
+    }
+  });
+
+  it('is the text the model is actually shown', () => {
+    const write = defineToolCalls.find((c) => c.name === 'writeKitchenNote');
+    expect(write?.description).toBe(WRITE_KITCHEN_NOTE_DESCRIPTION);
   });
 });

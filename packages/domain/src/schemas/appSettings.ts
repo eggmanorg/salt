@@ -80,6 +80,14 @@ export const AI_FLOW_ROLES = {
   // carrying pre-rules tag soup, and the repair then is to re-author or hand-edit
   // that recipe — the librarian applies the same tag rules this flow did.
   chefChat: 'pro',
+  // The page writer (issue #1663): lays a chef's draft out in the Library's house
+  // style, inside the chef's own `writeKitchenNote` tool call. `fast` for the
+  // TIME budget, not the money: it runs as silence inside a chat stream's 55 s
+  // idle window, so it has to finish in seconds. The work is reformatting with
+  // every figure kept, which a fast model does well, and a bad answer costs
+  // nothing — the draft is saved instead. Freehand drawing (the issue's last
+  // phase) is where `pro` is reconsidered.
+  composeLibraryPage: 'fast',
   // The cheap text half of the equipment pictogram pair (issue #877): turns a
   // make and model into a brand-free visual brief. `fast` for the same reason
   // describeRecipeScene is — it is the step in front of an image call, and its

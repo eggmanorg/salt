@@ -27,6 +27,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { logger } from 'firebase-functions';
+import type { ComposedLibraryPage } from '../../src/flows/composeLibraryPage.js';
 import {
   LIBRARY_PAGE_BODY_MAX,
   LIBRARY_PAGE_REVISION_CAP,
@@ -59,11 +60,24 @@ vi.mock('../../src/adapters/withAiTimeout.js', () => ({
 const mockGetFirestore = vi.fn();
 vi.mock('firebase-admin/firestore', () => ({ getFirestore: () => mockGetFirestore() }));
 
+// The page writer (issue #1663), stood in for: its own model call and checks are
+// pinned in `composeLibraryPage.test.ts`. By default it declines, so every test
+// below that is not about layout sees the draft saved exactly as sent — which is
+// the behaviour those tests were written against.
+const mockCompose = vi.fn(async (_title: string, _draft: string): Promise<ComposedLibraryPage> => ({
+  laidOut: false,
+}));
+vi.mock('../../src/flows/composeLibraryPage.js', () => ({
+  composeLibraryPageForChef: (title: string, draft: string) => mockCompose(title, draft),
+}));
+
 const { writeKitchenNoteForChef, writeKitchenNoteTool } =
   await import('../../src/flows/chefChat.js');
 
 beforeEach(() => {
   mockWarn.mockClear();
+  mockCompose.mockReset();
+  mockCompose.mockImplementation(async () => ({ laidOut: false as const }));
 });
 
 // ─── A Firestore that records writes and cannot delete ───────────────────────
@@ -136,7 +150,13 @@ describe('writeKitchenNote — a new note', () => {
       body: '| Jar | Capacity |\n| --- | --- |\n| Tapered | 1 L |',
     });
 
-    expect(result).toEqual({ saved: true, id: expect.any(String), created: true, problem: null });
+    expect(result).toEqual({
+      saved: true,
+      id: expect.any(String),
+      created: true,
+      problem: null,
+      laidOut: false,
+    });
     expect(writes).toHaveLength(1);
     const written = writes[0]!;
     expect(written.id).toBe(result.id);
@@ -164,6 +184,93 @@ describe('writeKitchenNote — a new note', () => {
     await writeKitchenNoteForChef(db, { title: 'Two', body: 'b' });
 
     expect(writes[0]!.id).not.toBe(writes[1]!.id);
+  });
+});
+
+// ─── The page writer (issue #1663) ────────────────────────────────────────────
+//
+// The body the chef sends is a draft. What is saved is the page writer's layout
+// when it passed its checks, and the draft exactly as sent when it did not —
+// and `laidOut` tells the chef which.
+
+describe('writeKitchenNote — the body is laid out before it is saved', () => {
+  const LAID_OUT = '```salt-callout\nbody: 580 ml\n```';
+
+  it('saves the layout, and says so, when the page writer accepts', async () => {
+    mockCompose.mockImplementation(async () => ({ laidOut: true as const, body: LAID_OUT }));
+    const { db, writes } = dbWith({});
+
+    const result = await writeKitchenNoteForChef(db, { title: 'Jars', body: 'A 580 ml jar.' });
+
+    expect(mockCompose).toHaveBeenCalledWith('Jars', 'A 580 ml jar.');
+    expect(result).toMatchObject({ saved: true, created: true, laidOut: true });
+    expect(writes[0]!.doc['body']).toBe(LAID_OUT);
+  });
+
+  it('saves the draft exactly as sent, and says so, when the page writer declines', async () => {
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() });
+
+    const result = await writeKitchenNoteForChef(db, {
+      id: 'p-jars',
+      title: 'The Weck jars',
+      body: 'A 580 ml tulip.',
+    });
+
+    expect(result).toMatchObject({ saved: true, created: false, laidOut: false });
+    expect(writes[0]!.doc['body']).toBe('A 580 ml tulip.');
+  });
+
+  it('files the replaced version under the laid-out write too', async () => {
+    mockCompose.mockImplementation(async () => ({ laidOut: true as const, body: LAID_OUT }));
+    const { db, writes } = dbWith({ 'p-jars': pageDoc() });
+
+    await writeKitchenNoteForChef(db, { id: 'p-jars', title: 'The Weck jars', body: '580 ml' });
+
+    expect(writes[0]!.doc).toMatchObject({
+      body: LAID_OUT,
+      revisions: [{ body: 'A tapered 1 L jar.', savedBy: 'The chef' }],
+    });
+  });
+
+  it('lays out BEFORE reading the page, so the read-to-write window does not grow', async () => {
+    const order: string[] = [];
+    mockCompose.mockImplementation(async () => {
+      order.push('compose');
+      return { laidOut: false as const };
+    });
+    const { db } = dbWith({ 'p-jars': pageDoc() });
+    const real = db as unknown as {
+      collection: (n: string) => { doc: (id: string) => { get: () => Promise<unknown> } };
+    };
+    const collection = real.collection.bind(real);
+    real.collection = (name: string) => {
+      const c = collection(name);
+      return {
+        ...c,
+        doc: (id: string) => {
+          const d = c.doc(id);
+          return {
+            ...d,
+            get: () => {
+              order.push('read');
+              return d.get();
+            },
+          };
+        },
+      };
+    };
+
+    await writeKitchenNoteForChef(db, { id: 'p-jars', title: 'The Weck jars', body: 'x' });
+
+    expect(order).toEqual(['compose', 'read']);
+  });
+
+  it('never asks the page writer about a write it is about to refuse', async () => {
+    const { db } = dbWith({});
+    await writeKitchenNoteForChef(db, { title: '', body: 'x' });
+    await writeKitchenNoteForChef(db, { title: 'T', body: '   ' });
+    await writeKitchenNoteForChef(db, { title: 'T', body: 'x'.repeat(LIBRARY_PAGE_BODY_MAX + 1) });
+    expect(mockCompose).not.toHaveBeenCalled();
   });
 });
 
