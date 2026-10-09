@@ -116,3 +116,15 @@ describe('chefChat — servings', () => {
     expect(system).toContain('choose a sensible number yourself rather than asking');
   });
 });
+
+describe('chefChat — trusted advisor, not people-pleaser', () => {
+  it('tells the chef to warn about quality, explain briefly and offer better options', async () => {
+    // A transcript where the chef bolted a velouté onto a one-pot braise, then
+    // flip-flopped three times under pushback, is what this sentence answers.
+    // Pinned as text only: what the model does with it is a manual check.
+    const system = await systemPrompt();
+    expect(system).toContain('Be a trusted kitchen advisor, not a people-pleaser');
+    expect(system).toContain('offer a better option or two');
+    expect(system).toContain('never flatter them or swing to a new method just to please');
+  });
+});
