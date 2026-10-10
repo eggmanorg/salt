@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DocCallout, DocCards, DocStats, Markdown } from '@salt/ui-components';
+  import { DocCallout, DocCards, DocRangeMap, DocStats, Markdown } from '@salt/ui-components';
   import type { SaltBlockProps } from '@salt/ui-components';
   import { parseLibraryBlock } from '@salt/domain/schemas';
 
@@ -27,8 +27,10 @@
     <DocCallout tone={block.data.tone} label={block.data.label}>
       <Markdown text={block.data.body} />
     </DocCallout>
-  {:else}
+  {:else if block.kind === 'stats'}
     <DocStats items={block.data.items} />
+  {:else}
+    <DocRangeMap {...block.data} />
   {/if}
 {:else}
   <div class="my-3" data-testid="library-block-broken">

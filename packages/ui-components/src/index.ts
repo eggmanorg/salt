@@ -53,6 +53,7 @@ export { default as Markdown } from './primitives/Markdown/Markdown.svelte';
 export { default as DocCallout } from './primitives/DocBlocks/DocCallout.svelte';
 export { default as DocCards } from './primitives/DocBlocks/DocCards.svelte';
 export { default as DocStats } from './primitives/DocBlocks/DocStats.svelte';
+export { default as DocRangeMap } from './primitives/DocBlocks/DocRangeMap.svelte';
 // A drawn object, named (ui-spec-v12 §8.30). NOT a `Chip`: a 40px pictogram
 // does not fit a 26px text pill in either direction, and the name says so.
 export { default as PictogramPill } from './primitives/PictogramPill/PictogramPill.svelte';
@@ -154,6 +155,13 @@ export type {
   DocCardLine,
   DocCardsProps,
   DocChip,
+  DocFigure,
+  DocRangeBand,
+  DocRangeGroup,
+  DocRangeLine,
+  DocRangeMapProps,
+  DocRangeRow,
+  DocRangeStage,
   DocStat,
   DocStatsProps,
   DocTone,

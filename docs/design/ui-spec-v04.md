@@ -962,11 +962,12 @@ with a one-line notice — never blank.
 
 **The primitives** take typed props only:
 
-| Component    | Props                                                                                            |
-| ------------ | ------------------------------------------------------------------------------------------------ |
-| `DocCards`   | `groups: { heading?, cards: { title, chips: { label, tone }[], arrows, lines, footnote? }[] }[]` |
-| `DocCallout` | `tone`, `label?`, `children` (the body — web-pwa renders it with `Markdown` at note scale)       |
-| `DocStats`   | `items: { value, label, tone }[]` — 2–4 tiles in one row                                         |
+| Component     | Props                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DocCards`    | `groups: { heading?, cards: { title, chips: { label, tone }[], arrows, lines, footnote? }[] }[]`                                           |
+| `DocCallout`  | `tone`, `label?`, `children` (the body — web-pwa renders it with `Markdown` at note scale)                                                 |
+| `DocStats`    | `items: { value, label, tone }[]` — 2–4 tiles in one row                                                                                   |
+| `DocRangeMap` | `unit?`, `min?`, `max?`, `bands`, `lines`, `groups: { heading?, rows: { label, stages: { label?, from, to?, tone? }[] }[] }[]`, `caption?` |
 
 **Colour is a `DocTone`** — `primary`, `sage`, `terracotta`, `warning`, `muted` —
 mapped to token classes in `docTone.ts` (`DOC_TONE_TINT` for grounds,
@@ -977,6 +978,16 @@ the other is what keeps the lists in step.
 Elements inside the primitives are `div`/`span` apart from the cards' group
 heading, because they render inside a `salt-md` body whose `:global(p)`, `ul`
 and `li` rules would otherwise restyle them.
+
+**Drawings (Phase 2).** `DocRangeMap` takes a `DocFigure` — `{ text, value }`,
+the figure as typed and the number it means — wherever a value is drawn: marks
+are placed by `value`, labels show `text`. It is HTML positioned by percentage
+(`docScale.ts`), not a fixed-size SVG, so labels are real text on the type scale
+and wrap. Marks use `DOC_TONE_SOLID`, shaded bands `DOC_TONE_BAND`, reference
+lines `DOC_TONE_RULE`. A range stage with no tone takes the tone of the first
+band holding its top value. Its body is the internal `DocAxisRows`, a label |
+plot grid whose rows each draw their own slice of the bands and gridlines, so a
+wrapped label only makes its own row taller; later axis drawings reuse it.
 
 ---
 

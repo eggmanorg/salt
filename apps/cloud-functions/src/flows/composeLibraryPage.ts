@@ -81,8 +81,9 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly three \
-kinds; never invent another.
+any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly four \
+kinds — three for laying text out (cards, callout, stats) and one DRAWING that Salt draws to scale from figures \
+(range); never invent another.
 
 Colour is a TONE, one of: ${TONE_LIST}. Nothing else — never a colour name, a hex code or a class. Use tones to \
 mean something consistent within a page: sage for gentle, low or owned; primary for steady or the main thing; \
@@ -137,6 +138,51 @@ items:
     label: models
   - value: 6.3 L
     label: total capacity
+\`\`\`
+
+## Drawings
+A drawing earns its place only when SEEING the figures together says something a table cannot: how far apart, \
+how they overlap, what share of a whole, what comes when. If the reader will look up one value at a time, a table \
+is better. A drawing never replaces the facts: keep the table or cards beside it, so every figure is still written \
+out. At most two drawings on a page.
+
+In a drawing, a value is a plain number exactly as the draft writes it — \`130\`, \`6.3\`, \`1,062\`, \`-18\` — \
+with no unit inside it; the unit goes in \`unit\`. A range "130–140 °C" is \`from: 130\` and \`to: 140\`.
+
+### salt-range — many items on one scale
+Right when items each have a value or a range on the SAME scale and the point is to see them side by side: every \
+task's temperature, every jar's capacity. Rows are grouped under optional headings (up to 40 rows in all). A row \
+has 1 to 4 stages, in order, each \`at\` a value or \`from\`–\`to\` a range, with an optional short label. \
+\`bands\` shade stretches of the scale (\`to\` only for "up to", \`from\` only for "over"); a stage with no tone \
+takes the tone of the band its top value falls in. \`lines\` mark one value across every row, such as a \
+threshold. The scale fits the figures; set \`min\`/\`max\` only to show a wider scale.
+
+\`\`\`salt-range
+unit: °
+bands:
+  - to: 120
+    label: Gentle
+    tone: sage
+  - from: 120
+    to: 170
+    label: Steady
+    tone: primary
+  - from: 170
+    label: Fierce
+    tone: terracotta
+lines:
+  - at: 130
+    label: Butter browns
+groups:
+  - heading: Meat and fish
+    rows:
+      - label: Duck breast
+        stages:
+          - label: Rendering
+            from: 130
+            to: 140
+          - label: Crisping
+            at: 175
 \`\`\`
 
 ## Choosing

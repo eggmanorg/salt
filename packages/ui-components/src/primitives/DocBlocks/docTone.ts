@@ -26,3 +26,33 @@ export const DOC_TONE_INK: Record<DocTone, string> = {
   warning: 'text-warning-text',
   muted: 'text-foreground',
 };
+
+/**
+ * Solid marks in a drawing — a dot, a stretch, a legend swatch — with a legible
+ * ink for a number drawn on one. The tone's full-strength token.
+ */
+export const DOC_TONE_SOLID: Record<DocTone, string> = {
+  primary: 'bg-primary text-primary-foreground',
+  sage: 'bg-secondary text-secondary-foreground',
+  terracotta: 'bg-tertiary-variant text-tertiary-foreground',
+  warning: 'bg-warning text-primary-foreground',
+  muted: 'bg-placeholder text-primary-foreground',
+};
+
+/** A band shaded behind a drawing's marks: the tint, faded so marks read over it. */
+export const DOC_TONE_BAND: Record<DocTone, string> = {
+  primary: 'bg-primary-tint/60',
+  sage: 'bg-secondary-tint/60',
+  terracotta: 'bg-tertiary-tint/60',
+  warning: 'bg-warning/10',
+  muted: 'bg-muted',
+};
+
+/** A reference line: the solid token as a border colour. */
+export const DOC_TONE_RULE: Record<DocTone, string> = {
+  primary: 'border-primary',
+  sage: 'border-secondary',
+  terracotta: 'border-tertiary-variant',
+  warning: 'border-warning',
+  muted: 'border-placeholder',
+};
