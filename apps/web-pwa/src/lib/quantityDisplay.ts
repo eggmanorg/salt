@@ -73,3 +73,23 @@ export function formatDoughAmount(amount: { count: number; unitDoughGrams: numbe
   if (amount.count === 1) return `${total} of dough`;
   return `${amount.count} × ${formatGrams(roundGrams(amount.unitDoughGrams))} — ${total} of dough`;
 }
+
+/**
+ * A formula percentage as a screen prints it: stored at four decimals
+ * (`roundPercent`), shown at one, with a trailing `.0` dropped — yeast reads "1.4%"
+ * and flour "100%", not "100.0%". Moved here from `FormulaPage.svelte` when the bake
+ * sheet came to print one too (issue #1657).
+ */
+export function formatPercent(percent: number): string {
+  const text = percent.toFixed(1);
+  return `${text.endsWith('.0') ? text.slice(0, -2) : text}%`;
+}
+
+/**
+ * A strength stated against one line rather than the whole basis (issue #1657):
+ * "3% of the Water". The label is the recipe line's own words, the same join every
+ * other row on these screens makes, so the sentence names the row beside it.
+ */
+export function formatStatedPercent(percent: number, label: string): string {
+  return `${formatPercent(percent)} of the ${label}`;
+}

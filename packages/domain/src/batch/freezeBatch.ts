@@ -14,7 +14,7 @@ import type {
   SaltProduct,
 } from '../schemas/index.js';
 import type { FormulaFailure } from '../formula/index.js';
-import { solveFormula } from '../formula/index.js';
+import { solveFormula, statedStrength } from '../formula/index.js';
 import type { ScheduleAnchor, ScheduleFailure } from '../process/index.js';
 import { resolveSchedule } from '../process/index.js';
 
@@ -179,6 +179,23 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
   if (!scheduled.ok)
     return { ok: false, reason: { kind: 'unschedulable', reason: scheduled.reason } };
 
+  // WHAT EACH LINE'S STRENGTH WAS STATED AGAINST (issue #1657), off the formula this
+  // run is solved from — after any re-split and any cure-salt swap, because the caller
+  // hands those in already applied. So it is the strength that actually went on, not
+  // the recipe's: copying the stored formula's figure would be false after a swap.
+  //
+  // THE RUN'S OWN EXACT GRAMS, READ THE SHORT WAY: every solved `exactGrams` is the
+  // basis × its line's percentage, so the ratio of two lines' exact grams is the ratio
+  // of their percentages — the same four-decimal figure, short of float noise landing
+  // exactly on a rounding boundary. Reading it here rather than re-dividing the grams
+  // is one division fewer, not a different answer. Whether a line is stated at all is `statedStrength`'s question alone.
+  const statedOfById = new Map(
+    formula.components.map((component) => [
+      component.ingredientId,
+      statedStrength(component, formula.components),
+    ]),
+  );
+
   const quantities: BatchQuantityDoc[] = solved.solution.components.map((component) => ({
     ingredientId: component.ingredientId,
     // An ingredient that has already left the recipe gets an empty label rather
@@ -206,6 +223,9 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     // a swap the line already names the jar that went on, because the caller hands in
     // the substituted formula (`withCureSaltSubstituted` re-stamps the product).
     saltProduct: component.saltProduct,
+    // WHAT ITS STRENGTH WAS STATED AGAINST (issue #1657), written explicitly — `null`
+    // included — for `saltProduct`'s reason above. See `statedOfById`.
+    statedOf: statedOfById.get(component.ingredientId) ?? null,
   }));
 
   const totals: BatchTotalsDoc = {

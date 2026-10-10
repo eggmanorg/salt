@@ -26,6 +26,12 @@ export { GRAM_DECIMAL_THRESHOLD, PERCENT_DECIMALS, roundGrams, roundPercent } fr
 // disagree about what "2–3 tbsp" means.
 export { gramsFromParsed } from './gramsFromParsed.js';
 export { deriveFormula } from './deriveFormula.js';
+// A salt read against one basis member — "3% of the water" (issue #1657). A view over
+// the stored percent-of-basis, never a second stored figure; the solve does not read it.
+// `withBasisWeighed` is the basis re-split the contract doc's scale verb names: a
+// formula rewrite upstream of the solve, never a new yield kind.
+export { statedStrength, gramsAtStrength, withBasisWeighed } from './brine.js';
+export type { StatedStrength, BasisWeighed } from './brine.js';
 export { BASIS_KEYWORDS, guessBasisIngredientIds } from './guessBasis.js';
 export type { BasisGuessEntry } from './guessBasis.js';
 export type {

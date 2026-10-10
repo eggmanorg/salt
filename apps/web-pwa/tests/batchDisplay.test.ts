@@ -289,7 +289,15 @@ describe('substitutionSummary', () => {
 
 describe('cureSaltRecord (issue #1645)', () => {
   function line(ingredientId: string, saltProduct: SaltProduct | null): BatchQuantityDoc {
-    return { ingredientId, label: ingredientId, percent: 1, grams: 10, stageId: null, saltProduct };
+    return {
+      ingredientId,
+      label: ingredientId,
+      percent: 1,
+      grams: 10,
+      stageId: null,
+      saltProduct,
+      statedOf: null,
+    };
   }
 
   // A coppa: meat, plain salt, and whichever curing salt the run froze.

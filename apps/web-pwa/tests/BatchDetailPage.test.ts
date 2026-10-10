@@ -134,6 +134,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 816,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
       {
         ingredientId: 'ing-water',
@@ -142,6 +143,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 571,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
       {
         ingredientId: 'ing-salt',
@@ -150,6 +152,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 16,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
       {
         ingredientId: 'ing-yeast',
@@ -158,6 +161,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 11,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
       {
         ingredientId: 'ing-oil',
@@ -166,6 +170,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 24,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
     ],
     totals: {
@@ -353,6 +358,7 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
             grams: 17,
             stageId: null,
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),
@@ -377,6 +383,70 @@ describe('BatchDetailPage — the scaled ingredient list', () => {
 
     await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
     expect(gramsColumn()).toEqual(['816 g', '571 g', '16 g', '11 g', '24 g']);
+  });
+});
+
+// ─── The strength a salt was stated at (issue #1657, phase 2) ──────────────────
+//
+// A run whose salt was stated against the water says so a year later, from what it
+// froze — joined to its own water line's label, never to the formula.
+describe('BatchDetailPage — a salt stated against the water', () => {
+  function pickleRun(statedOf: BatchDoc['quantities'][number]['statedOf']): BatchDoc {
+    const quantity = (
+      ingredientId: string,
+      label: string,
+      percent: number,
+      grams: number,
+      saltProduct: 'plain' | null = null,
+      stated: typeof statedOf = null,
+    ) => ({ ingredientId, label, percent, grams, stageId: null, saltProduct, statedOf: stated });
+    return makeBatch({
+      quantities: [
+        quantity('ing-cucumber', 'Cucumbers', 44.4444, 1200),
+        quantity('ing-water', 'Water', 55.5556, 1500),
+        quantity('ing-salt', 'Salt', 1.6667, 45, 'plain', statedOf),
+      ],
+    });
+  }
+
+  function percentColumn(): string[] {
+    return screen
+      .getAllByTestId('batch-quantity-percent')
+      .map((el) => el.textContent?.trim() ?? '');
+  }
+
+  it('reads "3% of the Water" beside the salt, and a percentage of the basis everywhere else', async () => {
+    renderPage();
+    mockBatch._set(pickleRun({ ingredientId: 'ing-water', percent: 3.0001 }));
+    await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
+    expect(percentColumn()).toEqual(['44.4444%', '55.5556%', '3% of the Water']);
+  });
+
+  it('reads a salt stated against the whole basis — and every older run — exactly as before', async () => {
+    renderPage();
+    mockBatch._set(pickleRun(null));
+    await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
+    expect(percentColumn()).toEqual(['44.4444%', '55.5556%', '1.6667%']);
+  });
+
+  it('falls back to the basis when the member line it names carries no label', async () => {
+    renderPage();
+    const run = pickleRun({ ingredientId: 'ing-water', percent: 3 });
+    mockBatch._set({
+      ...run,
+      quantities: run.quantities.map((q) =>
+        q.ingredientId === 'ing-water' ? { ...q, label: '' } : q,
+      ),
+    });
+    await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
+    expect(percentColumn()[2]).toBe('1.6667%');
+  });
+
+  it('falls back to the basis when the member it names is not a line on this run', async () => {
+    renderPage();
+    mockBatch._set(pickleRun({ ingredientId: 'ing-gone', percent: 3 }));
+    await waitFor(() => expect(screen.getByTestId('batch-quantities')).toBeInTheDocument());
+    expect(percentColumn()[2]).toBe('1.6667%');
   });
 });
 
@@ -1777,6 +1847,7 @@ describe('BatchDetailPage — the curing salt this run used (issue #1645)', () =
           grams: 1000,
           stageId: null,
           saltProduct: null,
+          statedOf: null,
         },
         {
           ingredientId: 'ing-cure',
@@ -1785,6 +1856,7 @@ describe('BatchDetailPage — the curing salt this run used (issue #1645)', () =
           grams: 2.5,
           stageId: null,
           saltProduct: cure,
+          statedOf: null,
         },
       ],
       ...over,
@@ -2010,6 +2082,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 1800,
             stageId: null,
             saltProduct: null,
+            statedOf: null,
           },
           {
             ingredientId: 'ing-wine',
@@ -2018,6 +2091,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 40,
             stageId: 'stage-2',
             saltProduct: null,
+            statedOf: null,
           },
           {
             ingredientId: 'ing-bung',
@@ -2026,6 +2100,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 9,
             stageId: 'stage-2',
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),
@@ -2055,6 +2130,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 40,
             stageId: 'stage-2',
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),
@@ -2074,6 +2150,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 40,
             stageId: 'stage-that-is-gone',
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),
@@ -2097,6 +2174,7 @@ describe('BatchDetailPage — what goes on at each stage', () => {
             grams: 17,
             stageId: 'stage-2',
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),

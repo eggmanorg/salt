@@ -13,10 +13,10 @@ import type { Formula } from '../../src/schemas/index.js';
 const LOAF: Formula = {
   recipeId: 'recipe-1',
   components: [
-    { ingredientId: 'flour', percent: 100, inBasis: true, stageId: null },
-    { ingredientId: 'water', percent: 70, inBasis: false, stageId: null },
-    { ingredientId: 'salt', percent: 2, inBasis: false, stageId: null },
-    { ingredientId: 'yeast', percent: 1.2, inBasis: false, stageId: null },
+    { ingredientId: 'flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+    { ingredientId: 'water', percent: 70, inBasis: false, stageId: null, statedOf: null },
+    { ingredientId: 'salt', percent: 2, inBasis: false, stageId: null, statedOf: null },
+    { ingredientId: 'yeast', percent: 1.2, inBasis: false, stageId: null, statedOf: null },
   ],
   referenceYield: { kind: 'basis', grams: 500 },
   target: null,
@@ -105,6 +105,7 @@ describe('withComponentPercentScaled', () => {
       inBasis: false,
       maxPercent: 4,
       stageId: null,
+      statedOf: null,
     });
     expect(next.components.find((c) => c.ingredientId === 'yeast')).toEqual(
       LOAF.components.find((c) => c.ingredientId === 'yeast'),

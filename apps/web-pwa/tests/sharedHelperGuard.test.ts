@@ -77,7 +77,7 @@ const srcDir = join(dirname(fileURLToPath(import.meta.url)), '../src');
  */
 const OWNERS: readonly { readonly path: string; readonly rule: string }[] = [
   { path: 'lib/durationDisplay.ts', rule: 'how a length of time reads' },
-  { path: 'lib/quantityDisplay.ts', rule: 'how a gram figure reads' },
+  { path: 'lib/quantityDisplay.ts', rule: 'how a gram figure or a percentage reads' },
   { path: 'lib/today.ts', rule: 'what day it is here' },
   { path: 'lib/shoppingSource.ts', rule: 'where a shopping item came from' },
   { path: 'lib/mediaQuery.svelte.ts', rule: 'a live media query, read safely' },

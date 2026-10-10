@@ -139,8 +139,8 @@ const SHAPE = {
 const STORED: Formula = {
   recipeId: RECIPE_ID,
   components: [
-    { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-    { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
+    { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+    { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null, statedOf: null },
   ],
   referenceYield: SHAPE,
   target: null,
@@ -584,8 +584,14 @@ describe('FormulaPage — when an ingredient goes in', () => {
     // moved. Break the "it changes when, never how much" claim — by restating on a
     // stage change, or by letting a stage acquire a basis — and this goes red.
     expect(savedComponents()).toEqual([
-      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: 'stage-bake' },
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+      {
+        ingredientId: 'ing-water',
+        percent: 70,
+        inBasis: false,
+        stageId: 'stage-bake',
+        statedOf: null,
+      },
     ]);
   });
 
@@ -691,8 +697,14 @@ describe('FormulaPage — when an ingredient goes in', () => {
     await fireEvent.click(getByTestId('formula-save-button'));
     await waitFor(() => expect(saveFormula).toHaveBeenCalledTimes(1));
     expect(savedComponents()).toEqual([
-      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: 'stage-that-was-deleted' },
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+      {
+        ingredientId: 'ing-water',
+        percent: 70,
+        inBasis: false,
+        stageId: 'stage-that-was-deleted',
+        statedOf: null,
+      },
     ]);
   });
 });

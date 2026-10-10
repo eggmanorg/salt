@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  basisYield,
   deriveFormula,
   freezeBatch,
   targetYield,
+  withBasisWeighed,
   withCureSaltSubstituted,
 } from '../../src/index.js';
 import { BatchSchema } from '../../src/schemas/index.js';
@@ -136,6 +138,7 @@ describe('freezeBatch — the quantities', () => {
       stageId: null,
       // Flour names no salt product (issue #1645), and the freeze says so explicitly.
       saltProduct: null,
+      statedOf: null,
     });
   });
 
@@ -402,8 +405,8 @@ describe('freezeBatch — what it refuses', () => {
       // Two basis members at 100% each: there is no single 100% to be a percentage
       // of, so no gram figure can be produced.
       components: [
-        { ingredientId: FLOUR, percent: 100, inBasis: true, stageId: null },
-        { ingredientId: WATER, percent: 100, inBasis: true, stageId: null },
+        { ingredientId: FLOUR, percent: 100, inBasis: true, stageId: null, statedOf: null },
+        { ingredientId: WATER, percent: 100, inBasis: true, stageId: null, statedOf: null },
       ],
     };
     const result = freezeBatch({
@@ -824,5 +827,133 @@ describe('freezeBatch — which salt product each line was (issue #1645)', () =>
     // A nonsense note beside an unswapped formula changes no line's product.
     const withNote = freezeCoppa(coppa(), { from: 'cure2', to: 'salvianda' });
     expect(productById(withNote)).toEqual(productById(freezeCoppa(coppa())));
+  });
+});
+
+describe('freezeBatch — the strength a salt was stated at (issue #1657)', () => {
+  const CUCUMBER = 'ing-cucumber';
+  const BRINE_WATER = 'ing-brine-water';
+  const BRINE_SALT = 'ing-brine-salt';
+
+  function pickle(statedOf: string | null = BRINE_WATER): Formula {
+    const result = deriveFormula({
+      recipeId: 'pickle',
+      components: [
+        { ingredientId: CUCUMBER, grams: 1000, inBasis: true },
+        { ingredientId: BRINE_WATER, grams: 1000, inBasis: true },
+        { ingredientId: BRINE_SALT, grams: 30, inBasis: false, saltProduct: 'plain', statedOf },
+      ],
+    });
+    if (!result.ok) throw new Error(`fixture failed to derive: ${result.reason.kind}`);
+    return {
+      ...result.formula,
+      referenceYield: { kind: 'basis', grams: 2000 },
+      process: [stage('ferment', 'Ferment', 'wait', null)],
+    };
+  }
+
+  function freezePickle(formula: Formula, atYield?: ReturnType<typeof basisYield>) {
+    const result = freezeBatch({
+      id: 'batch-pickle',
+      formula,
+      ...(atYield === undefined ? {} : { atYield }),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Dill pickles',
+      recipeKind: 'ferment',
+      cureCategory: null,
+      fermentCategory: null,
+      startedBy: null,
+      labels: { [CUCUMBER]: 'Cucumbers', [BRINE_WATER]: 'Water', [BRINE_SALT]: 'Salt' },
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+    return result.batch;
+  }
+
+  const statedById = (batch: ReturnType<typeof freezePickle>) =>
+    Object.fromEntries(batch.quantities.map((q) => [q.ingredientId, q.statedOf]));
+
+  it('freezes "3% of the water" onto the salt, and null on every other line', () => {
+    const batch = freezePickle(pickle());
+    expect(statedById(batch)).toEqual({
+      [CUCUMBER]: null,
+      [BRINE_WATER]: null,
+      [BRINE_SALT]: { ingredientId: BRINE_WATER, percent: 3 },
+    });
+    // Written explicitly, not left to the read default: the key is ON the document.
+    for (const quantity of batch.quantities) expect(Object.keys(quantity)).toContain('statedOf');
+    expect(statedById(BatchSchema.parse(batch))).toEqual(statedById(batch));
+  });
+
+  it('freezes the strength of what was weighed: 1.2 kg cucumbers and 1.5 kg water is 45 g, 3% of the water', () => {
+    const weighed = withBasisWeighed(
+      pickle(),
+      new Map([
+        [CUCUMBER, 1200],
+        [BRINE_WATER, 1500],
+      ]),
+    );
+    if (weighed === null) throw new Error('nothing weighed');
+    const batch = freezePickle(weighed.formula, basisYield(weighed.basisGrams));
+    const salt = batch.quantities.find((q) => q.ingredientId === BRINE_SALT);
+    expect(salt?.grams).toBe(45);
+    expect(salt?.statedOf?.ingredientId).toBe(BRINE_WATER);
+    // THE STATED BOUNDARY: within a ten-thousandth of a point of 45 ÷ 1500, not
+    // exactly it. The run's exact grams are solved from the re-split's four-decimal
+    // percentages (1.6667 and 55.5556), so they carry that rounding — 3.0001 here,
+    // which no screen prints ("3%") and no scale weighs.
+    expect(salt?.statedOf?.percent).toBeCloseTo(3, 3);
+  });
+
+  it('after a cure-salt swap moves the plain salt, freezes the strength that went on — not the recipe’s', () => {
+    // A brined bacon: pork and water as the basis, plain salt 8% of the water, Cure #1.
+    // Swapping to nitrited curing salt hands most of the salt's work to the cure jar,
+    // so the plain salt drops — and the run must say what the plain salt now is.
+    const PORK = 'ing-pork';
+    const CURE = 'ing-cure';
+    const bacon = deriveFormula({
+      recipeId: 'bacon',
+      components: [
+        { ingredientId: PORK, grams: 1000, inBasis: true },
+        { ingredientId: BRINE_WATER, grams: 1000, inBasis: true },
+        {
+          ingredientId: BRINE_SALT,
+          grams: 80,
+          inBasis: false,
+          saltProduct: 'plain',
+          statedOf: BRINE_WATER,
+        },
+        { ingredientId: CURE, grams: 5, inBasis: false, saltProduct: 'cure1' },
+      ],
+    });
+    if (!bacon.ok) throw new Error(bacon.reason.kind);
+    const swapped = withCureSaltSubstituted(
+      { ...bacon.formula, process: [stage('cure', 'Cure', 'wait', null)] },
+      { to: 'nitritedCuringSalt' },
+    );
+    if (!swapped.ok) throw new Error(`expected a substitution: ${swapped.reason.kind}`);
+    const batch = freezePickle(swapped.formula);
+    const salt = batch.quantities.find((q) => q.ingredientId === BRINE_SALT);
+    const water = batch.quantities.find((q) => q.ingredientId === BRINE_WATER);
+    if (salt === undefined || water === undefined) throw new Error('missing lines');
+    expect(salt.statedOf?.ingredientId).toBe(BRINE_WATER);
+    // Well below the recipe's 8%, and agreeing with the grams on the run.
+    expect(salt.statedOf?.percent).toBeLessThan(8);
+    expect(salt.statedOf?.percent).toBeCloseTo((salt.grams / water.grams) * 100, 1);
+  });
+
+  it('freezes null for a salt stated against the whole basis', () => {
+    expect(statedById(freezePickle(pickle(null)))[BRINE_SALT]).toBeNull();
+  });
+
+  it('freezes null for a curing salt, whatever the formula carries — a cure is never stated against one member', () => {
+    // A hand-edited document: `deriveFormula` would never write this.
+    const edited: Formula = {
+      ...pickle(),
+      components: pickle().components.map((c) =>
+        c.ingredientId === BRINE_SALT ? { ...c, saltProduct: 'cure1' as const } : c,
+      ),
+    };
+    expect(statedById(freezePickle(edited))[BRINE_SALT]).toBeNull();
   });
 });

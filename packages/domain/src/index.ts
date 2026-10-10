@@ -531,6 +531,9 @@ export {
   roundPercent,
   gramsFromParsed,
   deriveFormula,
+  statedStrength,
+  gramsAtStrength,
+  withBasisWeighed,
   guessBasisIngredientIds,
   solveFormula,
   doughAmountGrams,
@@ -562,6 +565,8 @@ export type {
   CureSaltSubstitutionResult,
   FormulaFailure,
   SaltProductGuessEntry,
+  StatedStrength,
+  BasisWeighed,
 } from './formula/index.js';
 
 // Process module (issues #806, #812) — ordering, total duration, the bidirectional

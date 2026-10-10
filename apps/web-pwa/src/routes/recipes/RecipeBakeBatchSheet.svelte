@@ -20,6 +20,7 @@
   import {
     CURE_SALT_PRODUCTS,
     LEAVENING_PERCENT_BOUNDS,
+    basisYield,
     cureSaltFitness,
     diffProcess,
     flattenIngredients,
@@ -28,6 +29,8 @@
     placeReachesTemperature,
     solveFormula,
     stageTemperatureText,
+    statedStrength,
+    withBasisWeighed,
     withComponentPercentScaled,
     withCureSaltSubstituted,
     type CureSaltSubstitutionFailure,
@@ -46,6 +49,7 @@
   import {
     EMPTY_DOUGH_ANSWER,
     LOAF_TIN_CHIP_GRAMS,
+    parseGrams,
     referenceYieldFrom,
     seedDoughAnswer,
     suggestedTrayGrams,
@@ -57,7 +61,11 @@
   import { KIND_COPY, kindOf } from './recipeKind.js';
   import { describeBoundViolation } from '../../lib/boundViolation.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
+  import {
+    formatDoughAmount,
+    formatGrams,
+    formatStatedPercent,
+  } from '../../lib/quantityDisplay.js';
 
   // "Bake a batch" (issue #812, phases 1 and 2 of epic #778) — the scale sheet.
   //
@@ -323,6 +331,7 @@
     const seeded = seedDoughAnswer(formula.referenceYield);
     answerMode = seeded.mode;
     answer = seeded.fields;
+    memberGramsText = {};
     answered = false;
     // Back to the product the recipe names. A sheet reopened next month must not
     // still be swapping to last month's jar.
@@ -395,9 +404,69 @@
   // What we would propose for an un-named vessel. A PROPOSAL: it reaches the grams
   // box only when the button is pressed, and can be typed straight over.
   const suggestedGrams = $derived(suggestedTrayGrams(answer));
+  // ─── Weighing each part of the basis (issue #1657, phase 2) ───────────────────
+  //
+  // A run declared by weight in, on a basis of more than one member — the cucumbers
+  // AND the water it took to cover them — asks for each member in place of the one
+  // total. The jar decides the water, so the recipe's ratio is a suggestion here and
+  // the scale is the answer.
+  //
+  // PLACEHOLDERS, NEVER VALUES. Each box opens empty, showing the figure it would
+  // follow: the recipe's own at first, then, once anything is typed, the typed
+  // members' ratio carried across (`withBasisWeighed`). An empty box is that figure;
+  // nothing is written into it for the person to type over.
+  //
+  // PRESENCE, NOT KIND: the boxes are about the basis having more than one member,
+  // and a salami whose basis is pork and back fat gets them exactly as a pickle does.
+  // A single-member basis — a coppa — keeps its one box, unchanged.
+  const basisMembers = $derived(formula.components.filter((component) => component.inBasis));
+  const weighsEachMember = $derived(answerMode === 'basis' && basisMembers.length > 1);
+  let memberGramsText = $state<Record<string, string>>({});
+
+  function setMemberGrams(ingredientId: string, text: string): void {
+    memberGramsText = { ...memberGramsText, [ingredientId]: text };
+    answered = true;
+  }
+
+  /** The boxes as weighed: a member with no readable figure is simply absent. */
+  const typedMemberGrams = $derived.by(() => {
+    const typed = new Map<string, number>();
+    for (const [ingredientId, text] of Object.entries(memberGramsText)) {
+      const grams = parseGrams(text);
+      if (grams !== null) typed.set(ingredientId, grams);
+    }
+    return typed;
+  });
+
+  // The re-split formula, or null while nothing is weighed — then the run is the
+  // recipe as written, exactly as an untouched single box would leave it.
+  const weighed = $derived(weighsEachMember ? withBasisWeighed(formula, typedMemberGrams) : null);
+
+  /**
+   * What each empty box shows: the grams that member goes in at, off a solve of the
+   * same re-split formula at the same yield the preview below starts from — the
+   * recipe's own figures until anything is typed — so a box's suggestion and the
+   * weight it stands for cannot disagree. A formula that will not solve suggests
+   * nothing; the preview already says why.
+   */
+  const memberPlaceholders = $derived.by(() => {
+    const placed = solveFormula(weighedFormula, solvedYield);
+    return new Map(
+      placed.ok ? placed.solution.components.map((c) => [c.ingredientId, String(c.grams)]) : [],
+    );
+  });
+
   // Omitted, never invented: no answer means the formula's own reference yield,
-  // which is precisely what `startBatch` does with an absent `atYield`.
-  const atYield = $derived(referenceYieldFrom(answerMode, answer));
+  // which is precisely what `startBatch` does with an absent `atYield`. Weighed by
+  // member, the total is what `withBasisWeighed` added up — never the single box,
+  // which this answer does not show.
+  const atYield = $derived(
+    weighsEachMember
+      ? weighed === null
+        ? null
+        : basisYield(weighed.basisGrams)
+      : referenceYieldFrom(answerMode, answer),
+  );
   // The vessel this run is recorded against — the tin and tray answers only, and
   // only once the question has actually been answered. It is a note on the
   // finished record and nothing reads it back: see `BatchSchema.vessel`. A weighed
@@ -439,8 +508,14 @@
   // Null means "what the recipe says", which is the state every sheet opens in.
   let substituteTo = $state<SaltProduct | null>(null);
 
+  // THE FIRST REWRITE IN THE CHAIN is the basis re-split above, so a swap rebalances
+  // the salts of the run actually being weighed: re-split → substitution → leavening
+  // → solve. The re-split moves no cure salt's percentage, so which product the
+  // recipe names, and what it pairs with, read the same off either formula.
+  const weighedFormula = $derived(weighed?.formula ?? formula);
+
   const substitution = $derived.by(() =>
-    substituteTo === null ? null : withCureSaltSubstituted(formula, { to: substituteTo }),
+    substituteTo === null ? null : withCureSaltSubstituted(weighedFormula, { to: substituteTo }),
   );
 
   /**
@@ -527,7 +602,7 @@
   // own. A refused substitution leaves this as the recipe's while Start is disabled,
   // which is why the preview is replaced by the refusal rather than left on screen.
   const chosenFormula = $derived(
-    substitution !== null && substitution.ok ? substitution.formula : formula,
+    substitution !== null && substitution.ok ? substitution.formula : weighedFormula,
   );
 
   // ─── The leavening opinion, priced by the domain ──────────────────────────────
@@ -582,6 +657,30 @@
   const labelById = $derived(
     new Map(flattenIngredients(recipe).map((ingredient) => [ingredient.id, ingredient.rawText])),
   );
+
+  /**
+   * "3% of the Water" for a line stated against one basis member, keyed by the line
+   * (issue #1657). DISPLAY ONLY: the solve does not read `statedOf`, and nothing here
+   * moves a gram.
+   *
+   * OFF `effectiveFormula`, the formula every gram below is solved from — so after a
+   * cure-salt swap moves the plain salt, the strength printed is the one being
+   * weighed out, not the recipe's.
+   *
+   * A MEMBER THAT HAS LEFT THE RECIPE PRINTS NOTHING here, rather than "3% of the "
+   * with no name: there is no line on this sheet for the words to point at.
+   */
+  const statedTextById = $derived.by(() => {
+    const texts = new Map<string, string>();
+    for (const component of effectiveFormula.components) {
+      const strength = statedStrength(component, effectiveFormula.components);
+      if (strength === null) continue;
+      for (const [ingredientId, label] of labelById)
+        if (ingredientId === strength.ingredientId)
+          texts.set(component.ingredientId, formatStatedPercent(strength.percent, label));
+    }
+    return texts;
+  });
 
   const unsolvable = $derived.by(() => {
     if (solved.ok) return null;
@@ -974,22 +1073,51 @@
                beside a usable one — you weigh the meat you hang, after trimming.
                Batch nine's drying curve is only comparable with batch ten's if the
                number at the top of each means the same thing. -->
-          <div class="flex flex-col gap-2" data-testid="bake-batch-basis">
-            <div class="flex flex-wrap items-end gap-3">
-              <TextField
-                label="What does it weigh? (g)"
-                inputmode="numeric"
-                class="w-36"
-                value={answer.basisGramsText}
-                onValueChange={(v) => setAnswer({ basisGramsText: v })}
-                data-autofocus
-                data-testid="bake-batch-basis-grams"
-              />
+          {#if weighsEachMember}
+            <!-- ONE BOX PER BASIS MEMBER (issue #1657): the cucumbers, and the water
+                 it took to cover them. Empty boxes follow the typed ones at the
+                 recipe's ratio, and the placeholder shows the figure they follow. -->
+            <div class="flex flex-col gap-2" data-testid="bake-batch-basis-members">
+              <p class="text-sm font-medium">What does each part weigh? (g)</p>
+              <div class="flex flex-wrap items-end gap-3">
+                {#each basisMembers as member, index (member.ingredientId)}
+                  <TextField
+                    label={labelById.get(member.ingredientId) || 'Ingredient'}
+                    inputmode="numeric"
+                    class="w-36"
+                    value={memberGramsText[member.ingredientId] ?? ''}
+                    placeholder={memberPlaceholders.get(member.ingredientId) ?? ''}
+                    onValueChange={(v) => setMemberGrams(member.ingredientId, v)}
+                    data-autofocus={index === 0 ? true : undefined}
+                    data-testid="bake-batch-basis-member-grams"
+                    data-ingredient-id={member.ingredientId}
+                  />
+                {/each}
+              </div>
+              <p class="text-xs text-muted-foreground" data-testid="bake-batch-basis-note">
+                What actually went in. Leave a box empty and it follows the others at the recipe's
+                ratio. Everything below follows from these.
+              </p>
             </div>
-            <p class="text-xs text-muted-foreground" data-testid="bake-batch-basis-note">
-              On the scale now, trimmed and ready to go in. Everything below is a percentage of it.
-            </p>
-          </div>
+          {:else}
+            <div class="flex flex-col gap-2" data-testid="bake-batch-basis">
+              <div class="flex flex-wrap items-end gap-3">
+                <TextField
+                  label="What does it weigh? (g)"
+                  inputmode="numeric"
+                  class="w-36"
+                  value={answer.basisGramsText}
+                  onValueChange={(v) => setAnswer({ basisGramsText: v })}
+                  data-autofocus
+                  data-testid="bake-batch-basis-grams"
+                />
+              </div>
+              <p class="text-xs text-muted-foreground" data-testid="bake-batch-basis-note">
+                On the scale now, trimmed and ready to go in. Everything below is a percentage of
+                it.
+              </p>
+            </div>
+          {/if}
         {:else}
           <div class="flex flex-wrap items-end gap-3" data-testid="bake-batch-weight">
             <TextField
@@ -1060,6 +1188,7 @@
       {:else if solved.ok}
         <ul class="flex flex-col gap-1" data-testid="bake-batch-preview">
           {#each solved.solution.components as component (component.ingredientId)}
+            {@const statedText = statedTextById.get(component.ingredientId)}
             <li
               class="flex items-baseline justify-between gap-3 text-sm"
               data-testid="bake-batch-preview-row"
@@ -1074,6 +1203,14 @@
               >
                 {formatGrams(component.grams)}
               </span>
+              {#if statedText !== undefined}
+                <span
+                  class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                  data-testid="bake-batch-preview-stated"
+                >
+                  {statedText}
+                </span>
+              {/if}
             </li>
           {/each}
         </ul>

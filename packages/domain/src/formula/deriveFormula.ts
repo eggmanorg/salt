@@ -41,6 +41,10 @@ export type FormulaComponentInput = {
   // (issue #1402). The screen has to be able to hand this back on a re-save, which
   // is what makes the choice survive a reload.
   saltProduct?: SaltProduct;
+  // WHAT THIS LINE'S STRENGTH IS STATED AGAINST (issue #1657) — one basis member's
+  // `ingredientId`, or omitted / `null` for the whole basis. The caller's WISH:
+  // `statedOfOn` below decides whether it survives onto the component.
+  statedOf?: string | null;
   // Bounds a caller wants declared on this component, when it has an opinion of its
   // own. A NAMED PRODUCT OUTRANKS THEM: see `boundsOn` below for why there is a
   // precedence rule here at all rather than a merge.
@@ -120,6 +124,36 @@ function boundsOn(component: FormulaComponentInput): {
   return boundsPatch({ minPercent: component.minPercent, maxPercent: component.maxPercent });
 }
 
+/**
+ * Whether a line's "stated against" survives onto the component — the ONE place
+ * that is decided (issue #1657).
+ *
+ * THREE CONDITIONS, AND EACH IS PINNED in `tests/formula/deriveFormula.test.ts`:
+ *
+ * - **Only a plain salt.** A curing salt is a percentage of the basis, never stated against one member: its
+ *   window (`boundsOn`) is read against the basis, and a cure stated "of the water"
+ *   would be a second reading of the one number Salt refuses on. So anything not
+ *   named `plain` — a curing salt, or a line naming no product — is written `null`.
+ * - **Only another basis member.** The strength is `salt% ÷ member% × 100`, which
+ *   means nothing against a line outside the basis, and nothing useful against the
+ *   line itself.
+ * - **Only on a basis of two or more.** With one member, "of the cabbage" and "of
+ *   the basis" are the same figure, and two spellings of one answer is a state the
+ *   screen could not tell apart.
+ *
+ * A wish that fails any of them is dropped, never refused: the line simply reads as
+ * a percentage of the basis, which is what it is.
+ */
+function statedOfOn(
+  component: FormulaComponentInput,
+  basisIds: ReadonlySet<string>,
+): string | null {
+  const named = component.statedOf ?? null;
+  if (named === null || component.saltProduct !== 'plain') return null;
+  if (named === component.ingredientId || basisIds.size < 2) return null;
+  return basisIds.has(named) ? named : null;
+}
+
 /** One component, measured against the basis before any reconciliation. */
 type Measured = {
   component: FormulaComponentInput;
@@ -127,12 +161,21 @@ type Measured = {
   percent: number;
 };
 
-type Counted = { measured: Measured; units: number; remainder: number };
+type Counted<T> = { measured: T; units: number; remainder: number };
 
-/** The basis members' percentages, reconciled to 100. Keyed by identity. */
-function reconciledBasisPercents(basis: readonly Measured[]): Map<Measured, number> {
+/**
+ * The basis members' percentages, reconciled to 100. Keyed by identity.
+ *
+ * EXPORTED TO THE MODULE, NOT PAST IT: `withBasisWeighed` (`brine.ts`) re-measures a
+ * basis from weighed grams and reconciles it here rather than in a copy, so a
+ * re-split basis and a derived one land on the same four-decimal units by the same
+ * rule. Generic over the entry so each caller keys the result by its own object.
+ */
+export function reconciledBasisPercents<T extends { exactPercent: number }>(
+  basis: readonly T[],
+): Map<T, number> {
   const scale = 10 ** PERCENT_DECIMALS;
-  const counted: Counted[] = basis.map((measured) => {
+  const counted: Counted<T>[] = basis.map((measured) => {
     const scaled = measured.exactPercent * scale;
     const units = Math.floor(scaled);
     return { measured, units, remainder: scaled - units };
@@ -149,7 +192,7 @@ function reconciledBasisPercents(basis: readonly Measured[]): Map<Measured, numb
   // Largest remainder first: the members that lost most of a unit to the floor get
   // one back. `sort` is stable, so an exact tie — three equal flours — hands it to
   // the earliest member rather than to an arbitrary one.
-  const rounded = new Set<Counted>();
+  const rounded = new Set<Counted<T>>();
   for (const entry of [...counted].sort((a, b) => b.remainder - a.remainder)) {
     if (residual <= 0) break;
     rounded.add(entry);
@@ -171,6 +214,7 @@ function componentsAgainst(
     return { component, exactPercent, percent: roundPercent(exactPercent) };
   });
   const reconciled = reconciledBasisPercents(measured.filter((m) => m.component.inBasis));
+  const basisIds = new Set(components.filter((c) => c.inBasis).map((c) => c.ingredientId));
 
   return measured.map((entry) => {
     const { component } = entry;
@@ -187,6 +231,8 @@ function componentsAgainst(
       stageId: component.stageId ?? null,
       ...(component.density !== undefined ? { density: component.density } : {}),
       ...(component.saltProduct !== undefined ? { saltProduct: component.saltProduct } : {}),
+      // Explicit for `stageId`'s reason: a construction, not a stored read.
+      statedOf: statedOfOn(component, basisIds),
       ...boundsOn(component),
     };
   });
