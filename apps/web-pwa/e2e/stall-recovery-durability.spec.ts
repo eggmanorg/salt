@@ -41,8 +41,13 @@ async function queueOfflineAdd(page: Page, url: string, listId: string, text: st
   await gotoAndSignIn(page, uniqueEmail(test.info().testId), url);
   await expect(page.getByTestId('shopping-list-page')).toBeVisible({ timeout: SYNC_TIMEOUT });
 
+  // The add field renders once the list's items have loaded; take Firestore
+  // offline only after that, or the first server snapshot never arrives.
+  const input = page.getByTestId('shopping-item-input');
+  await expect(input).toBeVisible({ timeout: SYNC_TIMEOUT });
+
   await page.evaluate(() => window.__e2e!.setFirestoreOffline(true));
-  await page.getByTestId('shopping-item-input').fill(text);
+  await input.fill(text);
   await page.getByTestId('shopping-item-add-btn').click();
 
   let itemId = '';
@@ -107,6 +112,7 @@ test.describe('stuck-write recovery — durability across the reload', () => {
 
     // Bounded negative (NF-A2): the page is back and online (asserted above),
     // so a surviving write would land well inside this hold.
+    // eslint-disable-next-line playwright/no-wait-for-timeout -- NF-A2: bounded negative hold (a lost write never lands)
     await page.waitForTimeout(LOST_WRITE_HOLD_MS);
     expect(await serverHasDoc(path)).toBe(false);
   });
