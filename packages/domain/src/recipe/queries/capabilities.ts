@@ -71,7 +71,8 @@ interface Capabilities {
   //
   //   null      no first formula is offered — "Make it scalable" is absent.
   //   'target'  bread: you know the dough coming OUT ("12 × 120 g").
-  //   'basis'   cure: you weigh what goes IN (the shoulder, 2.4 kg).
+  //   'basis'   cure and ferment: you weigh what goes IN (the shoulder, the
+  //             cabbage).
   //
   // A question about the KIND, not the document. "Does this recipe have a
   // formula?" is `recipe.formula != null` and is answered by presence, so a
@@ -170,6 +171,23 @@ const CAPABILITIES = {
     takesComponents: true,
     firstFormulaYield: 'target',
   },
+  // Ferment (issue #1656): vegetables or fruit fermented in salt. Cure's row cell
+  // for cell, for cure's reasons: it buys and has a method; a kraut is not a
+  // Tuesday, so it is never offered in the planner; the imports and the chef are
+  // the only ways one comes into existence, so it is authorable; and
+  // `takesComponents` is false because `sectionOf` would shelve a kraut that
+  // pointed at another dish under Meals, off its own shelf.
+  //
+  //   firstFormulaYield 'basis': you weigh the cabbage, so a ferment's first
+  //                     formula starts from the weight of what goes in.
+  ferment: {
+    takesIngredients: true,
+    isCookable: true,
+    isPlannable: false,
+    isAuthorable: true,
+    takesComponents: false,
+    firstFormulaYield: 'basis',
+  },
   // `satisfies` rather than an annotation, so the literal `true`/`false` of each
   // cell survives for `AuthorableRecipeKind` below to read. It keeps the whole
   // point of the `Record<RecipeKind, …>`: a new member of the enum still fails to
@@ -210,6 +228,7 @@ export const AUTHORABLE_RECIPE_KINDS = [
   'cocktail',
   'cure',
   'bread',
+  'ferment',
 ] as const satisfies readonly AuthorableRecipeKind[];
 
 // A type predicate, not a plain boolean, so `AUTHORABLE_RECIPE_KINDS` is

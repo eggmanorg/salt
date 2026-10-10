@@ -73,6 +73,7 @@ beforeEach(() => {
     // a new kind is counted the day it is added and this fixture has to say so.
     'recipes.kind=cure': 4,
     'recipes.kind=bread': 6,
+    'recipes.kind=ferment': 1,
     canonItems: 150,
     'canonItems.needs_approval=true': 4,
     productForms: 60,
@@ -92,9 +93,11 @@ describe('snapshotVolumetrics', () => {
       recipes_placeholder: 21,
       recipes_cure: 4,
       recipes_bread: 6,
-      // 40 − 3 − 2 − 21 − 4 − 6: pre-#637 docs carry no `kind` field, so this can
-      // only ever be arithmetic — a where('kind','==','recipe') query must not exist.
-      recipes_recipe: 4,
+      recipes_ferment: 1,
+      // 40 − 3 − 2 − 21 − 4 − 6 − 1: pre-#637 docs carry no `kind` field, so this
+      // can only ever be arithmetic — a where('kind','==','recipe') query must not
+      // exist.
+      recipes_recipe: 3,
       canon_items_total: 150,
       canon_items_needs_approval: 4,
       product_forms_total: 60,

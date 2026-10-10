@@ -71,6 +71,7 @@ import RecipeAddToPlannerSheet from '../src/routes/recipes/RecipeAddToPlannerShe
 
 const RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   producesCanonId: null,
   componentRecipeIds: [],
   kit: [],

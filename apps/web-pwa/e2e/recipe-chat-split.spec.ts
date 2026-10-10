@@ -148,6 +148,7 @@ function buildRecipe(id: string, title: string, kind: 'recipe' | 'special'): Rec
   const long = kind === 'recipe';
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind,

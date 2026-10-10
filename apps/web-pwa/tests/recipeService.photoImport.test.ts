@@ -82,6 +82,7 @@ const fs = firebaseSync as Mocked<typeof firebaseSync>;
 
 const DRAFT: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: 'imported-1',
   schemaVersion: 1,
   kind: 'recipe',

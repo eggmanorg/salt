@@ -26,6 +26,7 @@ function makeRecipe(over: {
 }): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id: over.id,
     schemaVersion: 1,
     kind: 'recipe',

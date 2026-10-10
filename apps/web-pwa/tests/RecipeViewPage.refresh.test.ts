@@ -176,6 +176,7 @@ const REFRESHED_TITLE = 'Chorizo & Red Pepper Pilaf, re-written';
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],
@@ -207,6 +208,7 @@ function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
 function librarianDraft(): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     producesCanonId: null,
     kit: [],
     createdBy: '',

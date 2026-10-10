@@ -52,6 +52,7 @@ beforeEach(() => {
 function existingRecipe(): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: '',
@@ -80,6 +81,7 @@ function existingRecipe(): Recipe {
 function draftWithoutMetadata(overrides: Partial<RecipeDoc['metadata']> = {}): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: '',

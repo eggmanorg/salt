@@ -423,6 +423,7 @@ describe('RecipeSchema', () => {
       'placeholder',
       'cure',
       'bread',
+      'ferment',
     ]);
   });
 
@@ -478,6 +479,31 @@ describe('RecipeSchema', () => {
     ).toBe(true);
   });
 
+  // --- Ferments (issue #1656) ---
+  //
+  // The same back-compat property as the cure category above: no recipe in
+  // production carries this key, so a required field would empty the library.
+  it('parses a document carrying no fermentCategory, defaulting it to null (#1656)', () => {
+    const { fermentCategory: _f, ...legacy } = messyRecipe();
+    expect('fermentCategory' in legacy).toBe(false);
+    const result = RecipeSchema.safeParse(legacy);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.fermentCategory).toBeNull();
+  });
+
+  it('round-trips a ferment carrying a type, and rejects a type it does not know', () => {
+    const stored = { ...messyRecipe(), kind: 'ferment', fermentCategory: 'kimchi' };
+    const result = RecipeSchema.safeParse(stored);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe('ferment');
+      expect(result.data.fermentCategory).toBe('kimchi');
+    }
+    expect(RecipeSchema.safeParse({ ...stored, fermentCategory: 'Kimchi' }).success).toBe(false);
+    // The cure vocabulary is not the ferment vocabulary.
+    expect(RecipeSchema.safeParse({ ...stored, fermentCategory: 'semi_dry' }).success).toBe(false);
+  });
+
   it('emptyRecipe builds a recipe by default and the asked-for kind otherwise', () => {
     expect(emptyRecipe('r1', '2026-06-11T00:00:00.000Z').kind).toBe('recipe');
     expect(emptyRecipe('r2', '2026-06-11T00:00:00.000Z', 'special').kind).toBe('special');
@@ -485,7 +511,7 @@ describe('RecipeSchema', () => {
 
   it('type-level: Recipe kind is the closed union', () => {
     expectTypeOf<Recipe['kind']>().toEqualTypeOf<
-      'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'
+      'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread' | 'ferment'
     >();
   });
 

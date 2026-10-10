@@ -63,6 +63,7 @@ const DISH_ID = 'hand-edited-loaf';
 // this test genuinely created rather than one it inherited.
 const DISH_FIXTURE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',

@@ -78,6 +78,7 @@ function ingredient(id: string, rawText: string, grams: number, canonId: string)
 function makeRecipe(): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     producesCanonId: null,
     componentRecipeIds: [],
     kit: [],

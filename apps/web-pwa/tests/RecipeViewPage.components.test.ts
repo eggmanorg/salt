@@ -137,6 +137,7 @@ const RECIPE_ID = 'entry-1';
 function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     id: RECIPE_ID,

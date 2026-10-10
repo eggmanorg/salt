@@ -49,6 +49,7 @@ function recipe(
     id,
     schemaVersion: 1 as const,
     cureCategory: null,
+    fermentCategory: null,
     title,
     description: opts.description ?? null,
     ingredients:

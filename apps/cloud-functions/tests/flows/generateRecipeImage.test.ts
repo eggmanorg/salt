@@ -33,6 +33,8 @@ const {
   CURE_SCENE_FALLBACK,
   BREAD_IMAGE_STYLE_ANCHORS,
   BREAD_SCENE_FALLBACK,
+  FERMENT_IMAGE_STYLE_ANCHORS,
+  FERMENT_SCENE_FALLBACK,
   GENERATE_RECIPE_IMAGE_KINDS,
 } = await import('../../src/flows/generateRecipeImage.js');
 
@@ -915,6 +917,34 @@ describe('generateRecipeImage flow — entry kinds', () => {
     expect(BREAD_SCENE_FALLBACK).not.toContain('no hands, no people');
   });
 
+  // ─── The FERMENT arm (issue #1656) ─────────────────────────────────────────
+  // A kraut on the recipe default arm is a plated side dish. Same three
+  // assertions as the cure and bread arms.
+  it('paints a ferment with its own opener, fallback and anchors', async () => {
+    const prompt = await promptFor({
+      title: 'Sauerkraut',
+      description: 'Shredded white cabbage fermented in salt.',
+      kind: 'ferment',
+    });
+
+    expect(prompt).toContain('the ferment "Sauerkraut"');
+    expect(prompt).toContain(FERMENT_SCENE_FALLBACK);
+    expect(prompt).toContain(FERMENT_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(RECIPE_IMAGE_STYLE_ANCHORS);
+    expect(prompt).not.toContain(RECIPE_IMAGE_DISH_READING_FALLBACK);
+  });
+
+  it("a ferment's anchors make the jar the subject and refuse to plate it as a side", () => {
+    expect(FERMENT_IMAGE_STYLE_ANCHORS).toContain('always the star of the shot');
+    expect(FERMENT_IMAGE_STYLE_ANCHORS).toContain('do NOT plate it as a side dish');
+    expect(FERMENT_IMAGE_STYLE_ANCHORS).toContain('photorealistic photograph');
+    expect(FERMENT_IMAGE_STYLE_ANCHORS).toContain('shallow depth of field');
+    expect(FERMENT_IMAGE_STYLE_ANCHORS).toContain(
+      'Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people.',
+    );
+    expect(FERMENT_SCENE_FALLBACK).not.toContain('no hands, no people');
+  });
+
   it('gives each kind its own anchors — no two share a set', () => {
     const sets = [
       RECIPE_IMAGE_STYLE_ANCHORS,
@@ -923,6 +953,7 @@ describe('generateRecipeImage flow — entry kinds', () => {
       PLACEHOLDER_IMAGE_STYLE_ANCHORS,
       CURE_IMAGE_STYLE_ANCHORS,
       BREAD_IMAGE_STYLE_ANCHORS,
+      FERMENT_IMAGE_STYLE_ANCHORS,
     ];
     expect(new Set(sets).size).toBe(GENERATE_RECIPE_IMAGE_KINDS.length);
   });

@@ -178,6 +178,16 @@ describe('FormulaPage — the target card', () => {
     expect(inputIn(container, 'formula-target-ph').value).toBe('');
   });
 
+  it('describes cures and ferments both, in one sentence for every kind (#1656)', async () => {
+    // It used to read "A cure is finished when…" on every formula, loaves included.
+    const { getByTestId } = await openWith(stored());
+    const copy = getByTestId('formula-target').textContent ?? '';
+
+    expect(copy).toContain('A cure or a ferment is finished when');
+    expect(copy).toContain('a kraut usually wants a pH');
+    expect(copy).not.toMatch(/^\s*A cure is finished/);
+  });
+
   it('writes null when both boxes are empty — never an object of two nulls', async () => {
     // THE PIN. An object of two nulls is a valid `FormulaTarget`, so nothing but
     // this stops a second spelling of "no target" reaching the collection.

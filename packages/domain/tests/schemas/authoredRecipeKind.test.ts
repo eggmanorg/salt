@@ -57,6 +57,11 @@ describe.each(SHAPES)('%s — the authored kind', (_name, schema, base) => {
     expect(parsed.success && parsed.data.kind).toBe('bread');
   });
 
+  it('accepts an explicit ferment (#1656)', () => {
+    const parsed = schema.safeParse({ ...base, kind: 'ferment' });
+    expect(parsed.success && parsed.data.kind).toBe('ferment');
+  });
+
   it('accepts an explicit recipe', () => {
     const parsed = schema.safeParse({ ...base, kind: 'recipe' });
     expect(parsed.success && parsed.data.kind).toBe('recipe');
@@ -87,5 +92,28 @@ describe.each(SHAPES)('%s — the authored kind', (_name, schema, base) => {
       expect(parsed.success && parsed.data.kind).toBe(kind);
       expect(isAuthorable(kind)).toBe(true);
     }
+  });
+});
+
+// The ferment type the AI authoring paths may emit (issue #1656) — the cure
+// category's bargain: a known type parses, and anything else reads as
+// uncategorised (`null`, or absent when the model omitted the field — the
+// assembler reads both as `null`) rather than failing the import.
+describe.each(SHAPES)('%s — the authored ferment type', (_name, schema, base) => {
+  it('accepts a known type', () => {
+    const parsed = schema.safeParse({ ...base, kind: 'ferment', fermentCategory: 'kraut' });
+    expect(parsed.success && parsed.data.fermentCategory).toBe('kraut');
+  });
+
+  it.each([
+    ['the field is missing entirely', {}],
+    ['the field is null', { fermentCategory: null }],
+    ['the model answered a cure category', { fermentCategory: 'semi_dry' }],
+    ['the model answered something invented', { fermentCategory: 'kombucha' }],
+    ['the model answered the wrong type', { fermentCategory: 3 }],
+  ])('degrades to uncategorised, without failing, when %s', (_why, patch) => {
+    const parsed = schema.safeParse({ ...base, kind: 'ferment', ...patch });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && (parsed.data.fermentCategory ?? null)).toBeNull();
   });
 });

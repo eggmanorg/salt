@@ -16,6 +16,7 @@
 // Icons imported by name elsewhere in this package (DialogClose, SelectTrigger, …)
 // are NOT registered here — a direct named import already tree-shakes.
 
+import Amphora from '@lucide/svelte/icons/amphora';
 import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 import ArrowRight from '@lucide/svelte/icons/arrow-right';
 import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
@@ -100,6 +101,7 @@ import Wheat from '@lucide/svelte/icons/wheat';
 import X from '@lucide/svelte/icons/x';
 
 export const iconRegistry = {
+  Amphora,
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,

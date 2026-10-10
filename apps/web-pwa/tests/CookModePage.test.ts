@@ -169,6 +169,7 @@ function makeIngredient(over: Partial<IngredientDoc> = {}): IngredientDoc {
 function makeRecipe(over: Partial<RecipeDoc> = {}): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

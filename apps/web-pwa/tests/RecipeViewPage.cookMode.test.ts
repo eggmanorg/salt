@@ -146,6 +146,7 @@ const RECIPE_ID = 'recipe-1';
 function makeRecipe(): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     producesCanonId: null,
     kit: [],
     createdBy: '',

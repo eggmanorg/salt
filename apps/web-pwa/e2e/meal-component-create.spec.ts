@@ -47,6 +47,7 @@ const NEW_DISH = 'Onion gravy';
 function recipe(id: string, title: string, componentRecipeIds: string[] = []): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

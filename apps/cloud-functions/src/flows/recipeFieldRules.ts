@@ -173,8 +173,27 @@ cold or hot. Mortadella, frankfurters, bologna, saucisson de Lyon cuit, liver sa
   Choose the closest of the five rather than refusing; answer null only when the entry is not a \
 cure at all.`;
 
+// The five kinds of ferment (issue #1656), nested inside KIND_RULES for the reason
+// CURE_CATEGORY_RULES is. Grouped by WHAT IS IN THE JAR, in the household's own
+// words, never by method — and, like the cure category, a wrong answer is fixed in
+// a tap, so the model is asked to choose rather than to hedge.
+const FERMENT_CATEGORY_RULES = `- fermentCategory: which of FIVE kinds of ferment, and null for anything whose kind \
+is not "ferment". Sort by what is in the jar:
+  "kraut" — shredded cabbage or other vegetables, salted and packed down to ferment in their own \
+juice. Sauerkraut, curtido, a red cabbage kraut, a fermented slaw.
+  "kimchi" — kimchi of any kind: napa cabbage, radish (kkakdugi), cucumber, spring onion.
+  "brined_pickle" — whole or cut vegetables fermented under a salt brine. Sour cucumbers, \
+fermented carrots, garlic, green beans, a mixed giardiniera.
+  "hot_sauce" — chillies fermented as a mash or a sauce. Fermented hot sauce, chilli mash, a \
+fermented sriracha.
+  "fruit_condiment" — fruit, honey and condiments fermented in salt. Preserved lemons, garlic \
+honey, fermented ketchup, a fermented fruit chutney.
+  Choose the closest of the five rather than refusing; answer null only when the entry is not a \
+ferment at all.`;
+
 // WHICH SECTION OF THE LIBRARY does an AI-created entry land in — a drink you
-// mix, cured meat, bread, or something you eat (issues #765, #1404, #1646).
+// mix, cured meat, bread, a ferment, or something you eat (issues #765, #1404,
+// #1646, #1656).
 //
 // UNCONDITIONAL, and it lives here rather than in each of the four prompts that
 // interpolate this module (the URL import's two, the photo import's, the
@@ -183,9 +202,10 @@ cure at all.`;
 // which is exactly what #785 pulled apart.
 //
 // The tie-break is stated as loudly as the question, because the mistakes are NOT
-// symmetrical. A cocktail — or a cure — filed under Recipes is merely in the wrong
-// chip and works in every other way. A dinner filed under either drops out of the
-// meal plan (`isPlannable` is false for both) until someone notices and relabels
+// symmetrical. A cocktail, a cure or a ferment filed under Recipes is merely in the
+// wrong chip and works in every other way. A dinner filed under any of them drops
+// out of the meal plan (`isPlannable` is false for all three) until someone notices
+// and relabels
 // it on the recipe page — a tap since #1646, but only once the loss is noticed.
 // Everything doubtful therefore goes to `recipe`, and #1404 inherited that
 // argument unchanged rather than restating it: the shelf a cure sits on is worth
@@ -200,12 +220,20 @@ cure at all.`;
 // Daniel's: a dough baked as bread, including pizza dough and focaccia — where
 // formulas are actually wanted — and never a finished topped pizza.
 //
+// A ferment (#1656) carries the cure's tie-break exactly, because it carries the
+// cure's `isPlannable: false`. The boundary is Daniel's too: vegetables and fruit
+// fermented in salt. Drinks, dairy and miso need a culture kept alive and none of
+// the salt arithmetic, so they stay recipes, and so does any dish that merely
+// uses a ferment — the near-miss in production is a beetroot salad.
+//
 // The CATEGORY is the opposite case and is treated as such (#1404): it is
 // editable on the recipe page in a tap, so a wrong one costs nothing and
-// `CURE_CATEGORY_RULES` asks the model to choose rather than to hedge.
+// `CURE_CATEGORY_RULES` and `FERMENT_CATEGORY_RULES` ask the model to choose rather
+// than to hedge.
 const KIND_RULES = `- kind: "cocktail" ONLY for a drink that is MIXED and served in a glass — a \
 Negroni, a margarita, a highball, a punch. "cure" ONLY for CURED MEAT. "bread" ONLY for a DOUGH \
-BAKED AS BREAD. "recipe" for everything else, including everything you merely have doubts about.
+BAKED AS BREAD. "ferment" ONLY for VEGETABLES OR FRUIT FERMENTED IN SALT. "recipe" for everything \
+else, including everything you merely have doubts about.
   Anything you eat is a recipe, however boozy: a tiramisu, a rum baba, a beer-braised shoulder. So \
 is anything you brew, infuse, bottle or keep — a cordial, a syrup, a stock, a hot chocolate, a \
 smoothie, a pot of tea — and so is a mocktail. When it is not clearly a mixed drink in a glass, \
@@ -215,15 +243,23 @@ and sliced rather than served as a meal the day it is made — a prosciutto, a b
 bacon, a gammon, a pastrami, a saucisson, a chorizo, a summer sausage, a mortadella. A dish that \
 merely CONTAINS cured meat is a recipe: a carbonara, a charcuterie board, a bacon sandwich. A \
 fresh sausage you fry the same day is a recipe. Fish, vegetables and dairy are never "cure", \
-however they are preserved — gravlax, sauerkraut, kimchi and cheese are all recipes. When it is \
-not clearly cured meat, answer "recipe".
+however they are preserved — a gravlax and a cheese are recipes, and a sauerkraut is a ferment. \
+When it is not clearly cured meat, answer "recipe".
   "bread" means a dough that is baked as bread — a loaf, rolls, buns, a baguette, a focaccia, a \
 flatbread, a naan, a pitta, a soda bread, a bagel, and a pizza dough or pizza base on its own. A \
 cake, a biscuit, a cookie, a scone, a pastry, a pie, a pancake, a waffle, a batter and a finished \
 pizza with its toppings are all recipes, and so is a dish that merely uses bread — a bread and \
 butter pudding, a sandwich, a panzanella. When it is not clearly a dough baked as bread, answer \
 "recipe".
-${CURE_CATEGORY_RULES}`;
+  "ferment" means vegetables or fruit fermented in salt and KEPT in a jar — a sauerkraut, a \
+kimchi, brined sour pickles, fermented carrots or garlic, a fermented hot sauce or chilli mash, \
+preserved lemons, garlic honey, a fermented ketchup. A fermented DRINK is a recipe (a kombucha, a \
+kvass, a water kefir), and so are fermented DAIRY (a yoghurt, a kefir) and miso. Salami and other \
+fermented meat are "cure". A dish that merely USES a ferment is a recipe: a fermented beetroot \
+salad, a kimchi fried rice, a Reuben. A quick vinegar pickle is a recipe. When it is not clearly a \
+salted vegetable or fruit ferment made to keep, answer "recipe".
+${CURE_CATEGORY_RULES}
+${FERMENT_CATEGORY_RULES}`;
 
 // Every recipe says how many it serves. It used to be "or null if not stated",
 // which on the librarian path meant a recipe the chef wrote without saying

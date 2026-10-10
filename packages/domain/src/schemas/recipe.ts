@@ -276,6 +276,15 @@ export const RecipeImageSchema = z.object({
 // `capabilities.ts`). Cakes, biscuits, pastry and a finished topped pizza stay
 // `recipe`.
 //
+// A `ferment` (issue #1656) is vegetables or fruit fermented in salt — a
+// sauerkraut, a kimchi, brined pickles, a fermented hot sauce or chilli mash, a
+// preserved lemon. Like a cure it buys, has a method and gets a hero image, and
+// like a cure it is not dinner, so it is never offered in the planner picker.
+// WHICH KIND of ferment it is lives in `fermentCategory` below, for the reason
+// `cureCategory` is not five kinds. Drinks (kombucha, kvass, water kefir), dairy
+// (yoghurt, kefir) and miso are not ferments here and stay `recipe`, and so does
+// a dish that merely uses one.
+//
 // Adding a member here is back-compatible on read by construction: `kind` carries
 // `.default('recipe')` below, so every document already in production parses
 // unchanged (salt-architecture.md §1.1 — no migration). The converse is not free:
@@ -289,6 +298,7 @@ export const RecipeKindSchema = z.enum([
   'placeholder',
   'cure',
   'bread',
+  'ferment',
 ]);
 
 // Which kind of cure a `cure` is (issue #1404). Five values, ONE axis, and the
@@ -325,6 +335,38 @@ export const CureCategorySchema = z.enum([
   'fermented_dry_cured',
   'semi_dry',
   'cooked_emulsified',
+]);
+
+// Which kind of ferment a `ferment` is (issue #1656). Five values, grouped by
+// WHAT IS IN THE JAR, in the household's own words — so "the last three
+// kimchis" stays answerable:
+//
+//   kraut            Sauerkraut and other shredded, dry-salted krauts.
+//   kimchi           Kimchi, in any of its forms.
+//   brined_pickle    Whole or cut vegetables under a brine — cucumbers, carrots,
+//                    garlic, beans.
+//   hot_sauce        Fermented hot sauce and chilli mash.
+//   fruit_condiment  Fruit and condiments — preserved lemons, garlic honey,
+//                    fermented ketchup.
+//
+// Deliberately NOT grouped by method (dry-salted, brined, paste, mash): that is
+// the same split as the two ways of stating a ferment's salt, and a category that
+// mirrored it would invite driving the one from the other.
+//
+// Everything `CureCategorySchema`'s header says about being a closed enum and not
+// a tag holds here unchanged, and so does the rule that matters most: it is
+// IDENTITY AND GROUPING, never capability. Nothing branches on it to decide what
+// exists or is allowed — no salt range, no stage default, no reminder wording.
+//
+// No value is shared with `CureCategorySchema`, so the two can be read as one
+// vocabulary (`RecipeCategory` in `recipe/queries/category.ts`) without asking
+// which kind a value came from.
+export const FermentCategorySchema = z.enum([
+  'kraut',
+  'kimchi',
+  'brined_pickle',
+  'hot_sauce',
+  'fruit_condiment',
 ]);
 
 // Which of the household's OWN things a kit entry means (issue #1465).
@@ -480,6 +522,16 @@ export const RecipeSchema = z.object({
   // wrong answer. Cleared when an entry is relabelled away from `cure`
   // (`withKind`, #1646), so it never outlives the kind it describes.
   cureCategory: CureCategorySchema.nullable().default(null),
+  // Which of the five kinds of ferment this is (issue #1656), or `null` — the
+  // sibling of `cureCategory` above, nullable and defaulted for every reason that
+  // field gives, so every recipe already in production reads back unchanged.
+  //
+  // A sibling field rather than a generalised `cureCategory`: that one is stored,
+  // and it carries behaviour (`cureSaltFitness`), so renaming it would be a
+  // migration for nothing anyone sees. Which field a kind owns is answered in one
+  // place, `categoryOf` in `recipe/queries/category.ts`. Cleared when an entry is
+  // relabelled away from `ferment` (`withKind`).
+  fermentCategory: FermentCategorySchema.nullable().default(null),
   // The kit this dish needs — the pans, bowls, boards and hand tools a cook gets
   // OUT before starting (issue #882). Inferred server-side from the WHOLE recipe
   // by the identifyRecipeKit flow, because the answer is usually not written down:
@@ -623,6 +675,7 @@ export type RecipeSourceDoc = z.infer<typeof RecipeSourceSchema>;
 export type RecipeImageDoc = z.infer<typeof RecipeImageSchema>;
 export type RecipeKindDoc = z.infer<typeof RecipeKindSchema>;
 export type CureCategoryDoc = z.infer<typeof CureCategorySchema>;
+export type FermentCategoryDoc = z.infer<typeof FermentCategorySchema>;
 export type RecipeKitEquipmentLinkDoc = z.infer<typeof RecipeKitEquipmentLinkSchema>;
 export type RecipeKitEntryDoc = z.infer<typeof RecipeKitEntrySchema>;
 export type RecipeDoc = z.infer<typeof RecipeSchema>;

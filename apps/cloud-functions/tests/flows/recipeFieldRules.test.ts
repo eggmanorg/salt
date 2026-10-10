@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { FermentCategorySchema } from '@salt/domain/schemas';
 import { recipeFieldRules } from '../../src/flows/recipeFieldRules.js';
 import { CATEGORY_TAG_RULES } from '../../src/flows/categoryTags.js';
 import { INGREDIENT_SUBSTITUTION_RULES } from '../../src/flows/ingredientConversions.js';
@@ -240,6 +241,36 @@ describe('recipeFieldRules — is it a drink you mix, or something you eat (#765
     for (const rules of [PRESERVE, METRICATE]) {
       expect(rules).not.toContain('special');
       expect(rules).not.toContain('placeholder');
+    }
+  });
+});
+
+describe('recipeFieldRules — a ferment is vegetables or fruit fermented in salt (#1656)', () => {
+  it('asks every path for the ferment kind, and sends the near-misses to recipe or cure', () => {
+    for (const rules of [PRESERVE, METRICATE]) {
+      expect(rules).toContain('"ferment" ONLY for VEGETABLES OR FRUIT FERMENTED IN SALT');
+      // Daniel's boundary, each exclusion named: drinks, dairy, miso, a dish
+      // that uses a ferment (the production near-miss), and salami.
+      expect(rules).toContain('A fermented DRINK is a recipe (a kombucha');
+      expect(rules).toContain('fermented DAIRY (a yoghurt, a kefir) and miso');
+      expect(rules).toContain('a fermented beetroot');
+      expect(rules).toContain('Salami and other fermented meat are "cure"');
+      expect(rules).toContain(
+        'When it is not clearly a salted vegetable or fruit ferment made to keep, answer "recipe"',
+      );
+    }
+  });
+
+  it('no longer tells the model a sauerkraut or a kimchi is a recipe', () => {
+    for (const rules of [PRESERVE, METRICATE]) {
+      expect(rules).not.toContain('sauerkraut, kimchi and cheese are all recipes');
+    }
+  });
+
+  it('asks for one of the five ferment types, by name', () => {
+    for (const rules of [PRESERVE, METRICATE]) {
+      expect(rules).toContain('- fermentCategory:');
+      for (const value of FermentCategorySchema.options) expect(rules).toContain(`"${value}"`);
     }
   });
 });

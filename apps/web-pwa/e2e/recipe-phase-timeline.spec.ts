@@ -41,6 +41,7 @@ const LOAF_PHASES: RecipePhase[] = [
 function recipe(id: string, title: string, phases?: RecipePhase[]): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

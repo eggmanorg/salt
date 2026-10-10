@@ -35,6 +35,7 @@ const MEAL_TITLE = 'Sunday roast';
 function dish(id: string, title: string, handsOffMinutes: number): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

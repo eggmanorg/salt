@@ -11,6 +11,7 @@ function fullRecipe(overrides: Partial<Recipe> = {}): Recipe {
     schemaVersion: 1,
     kind: 'recipe',
     cureCategory: null,
+    fermentCategory: null,
     title: 'Lasagne',
     description: 'The good one.',
     ingredients: [
@@ -184,6 +185,15 @@ describe('duplicateRecipe', () => {
       const source = { ...fullRecipe(), kind: 'cure' as const, cureCategory: 'semi_dry' as const };
       expect(duplicateRecipe(source, 'new-id', NOW).cureCategory).toBe('semi_dry');
       expect(duplicateRecipe(source, 'new-id', NOW).kind).toBe('cure');
+    });
+
+    it('carries the ferment type — a copy of a kimchi is still a kimchi (#1656)', () => {
+      const source = {
+        ...fullRecipe(),
+        kind: 'ferment' as const,
+        fermentCategory: 'kimchi' as const,
+      };
+      expect(duplicateRecipe(source, 'new-id', NOW).fermentCategory).toBe('kimchi');
     });
 
     it('leaves an uncategorised entry uncategorised rather than guessing one', () => {

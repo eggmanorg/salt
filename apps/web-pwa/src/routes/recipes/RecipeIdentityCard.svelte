@@ -22,11 +22,13 @@
     type ComboboxItemType,
   } from '@salt/ui-components';
   import {
+    categoryOf,
     isCookable,
     memberFirstName,
     normaliseTags,
     recipePhaseTotals,
     relabelChoices,
+    withCategory,
     withKind,
     type Recipe,
   } from '@salt/domain';
@@ -38,7 +40,7 @@
     KIND_COPY,
     kindName,
     kindOf,
-    toCureCategory,
+    toCategory,
     toRecipeKind,
   } from './recipeKind.js';
   import EditableZone from './EditableZone.svelte';
@@ -194,13 +196,16 @@
   const kind = $derived(kindOf(recipe));
   const labelChoices = $derived(relabelChoices(recipe));
 
-  // ─── Cure type (issue #1404) ────────────────────────────────────────────────
+  // ─── Cure type / ferment type (issues #1404, #1656) ─────────────────────────
   // Read off the kind's COPY, never off the kind: `KIND_COPY` declares a category
-  // vocabulary on exactly one kind, so four kinds get `null` here and render
-  // nothing — byte for byte how `tagsHint` reaches the tag zone below, and why no
-  // `.svelte` file in this app compares against `'cure'`.
-  const categoryCopy = $derived(KIND_COPY[kindOf(recipe)].categoryCopy ?? null);
-  const hasCategory = $derived(categoryCopy !== null && recipe.cureCategory !== null);
+  // vocabulary on the two kinds that carry one, so every other kind gets `null`
+  // here and renders nothing — byte for byte how `tagsHint` reaches the tag zone
+  // below, and why no `.svelte` file in this app compares against `'cure'` or
+  // `'ferment'`. Which stored field holds the value is the domain's
+  // (`categoryOf`, `withCategory`); this file never names one.
+  const categoryCopy = $derived(KIND_COPY[kind].categoryCopy ?? null);
+  const category = $derived(categoryOf(kind, recipe));
+  const hasCategory = $derived(categoryCopy !== null && category !== null);
   // Resolved to a string HERE rather than interpolated from a nullable inside a
   // snippet, for the reason the two labels below give: an inline `{maybeNull}`
   // compiles to a fallback no test could reach. The uncategorised wording is the
@@ -208,9 +213,9 @@
   const categoryLabel = $derived(
     categoryCopy === null
       ? ''
-      : recipe.cureCategory === null
+      : category === null
         ? categoryCopy.unsetLabel
-        : categoryCopy.options[recipe.cureCategory],
+        : categoryCopy.options[category],
   );
 
   const hasFacts = $derived(
@@ -568,7 +573,7 @@
                the label decides which shelf it stands on and whether it is
                offered a formula, and a misfiled loaf or coppa needs a route back.
                The write is the domain's `withKind`, which drops a cure type when
-               leaving Cured meat. Words from `kindName`, pictures from the
+               leaving Cured meat and a ferment type when leaving Ferment. Words from `kindName`, pictures from the
                shelf's own `thumbIcon`; no kind is compared here. -->
           {#if editing && labelChoices.length > 1}
             <EditableZone
@@ -612,34 +617,40 @@
             </EditableZone>
           {/if}
 
-          <!-- ── Cure type (issue #1404) ──────────────────────────────────────
+          <!-- ── Cure type / ferment type (issues #1404, #1656) ───────────────
                A fact about the dish, so it sits in the fact row beside Makes and
                Serves rather than in a section of its own, and it is corrected in
                a tap: no confirmation, no gate. The category is a fact about the
                food, never permission to do anything, and a wrong one has to have
                a route back, or a misclassification is a permanent wrong answer.
 
-               Rendered off `categoryCopy`, which exactly one kind declares. The
-               kind is never compared here; a kind with no category vocabulary
-               simply has no zone, including its dashed empty slot. -->
+               Rendered off `categoryCopy`, which only the kinds with a category
+               declare. The kind is never compared here; a kind with no category
+               vocabulary simply has no zone, including its dashed empty slot. The
+               chip wears the shelf's own picture. -->
           {#if categoryCopy}
             <EditableZone
               {editing}
-              filled={recipe.cureCategory !== null}
+              filled={category !== null}
               label={categoryCopy.label}
               slotLabel={categoryCopy.label}
-              testId="recipe-edit-cure-category"
+              testId="recipe-edit-category"
             >
               {#snippet view()}
-                <Chip variant="fact" tone="secondary" icon="Ham" data-testid="recipe-cure-category">
+                <Chip
+                  variant="fact"
+                  tone="secondary"
+                  icon={KIND_COPY[kind].thumbIcon}
+                  data-testid="recipe-category"
+                >
                   {categoryLabel}
                 </Chip>
               {/snippet}
               {#snippet edit(close)}
                 <div class="flex w-full items-center gap-2">
                   <Select
-                    value={recipe.cureCategory ?? ''}
-                    onValueChange={(v) => onEdit({ ...recipe, cureCategory: toCureCategory(v) })}
+                    value={category ?? ''}
+                    onValueChange={(v) => onEdit(withCategory(recipe, toCategory(kind, v)))}
                   >
                     <!-- The label is rendered here rather than left to the
                          trigger's default, for the reason the Added-by picker
@@ -648,17 +659,15 @@
                          resolve `displayLabel` from. -->
                     <SelectTrigger
                       aria-label={categoryCopy.label}
-                      data-testid="recipe-cure-category-select"
+                      data-testid="recipe-category-select"
                     >
-                      <span
-                        class={recipe.cureCategory ? 'text-foreground' : 'text-placeholder italic'}
-                      >
+                      <span class={category ? 'text-foreground' : 'text-placeholder italic'}>
                         {categoryLabel}
                       </span>
                       <Icon name="ChevronDown" size={16} class="text-muted-foreground" />
                     </SelectTrigger>
                     <SelectContent>
-                      {#each categoryOptions(categoryCopy) as option (option.value)}
+                      {#each categoryOptions(kind) as option (option.value)}
                         <SelectItem value={option.value}>{option.label}</SelectItem>
                       {/each}
                     </SelectContent>

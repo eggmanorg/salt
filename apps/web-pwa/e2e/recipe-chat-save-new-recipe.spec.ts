@@ -48,6 +48,7 @@ const DISH_ID = 'accompaniment-lamb-shoulder';
 // this one, to prove saving the salad left its host untouched.
 const DISH_FIXTURE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',

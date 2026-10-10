@@ -231,6 +231,9 @@ export type {
   IngredientGroup,
   Step,
   CureCategory,
+  FermentCategory,
+  RecipeCategory,
+  CategoryFields,
   Recipe,
   RecipeKind,
   RecipeMetadata,
@@ -278,6 +281,11 @@ export {
   // (issue #1646) — the recipe page's relabel control asks nothing else.
   relabelChoices,
   withKind,
+  // Which stored field holds an entry's category, read and written (issue
+  // #1656) — so no screen picks `cureCategory` or `fermentCategory` by kind.
+  categoryOf,
+  categoryValues,
+  withCategory,
   // The kinds the librarian may write (issue #765) — read off the capability
   // table, and what bounds the `kind` the AI authoring schemas accept.
   AUTHORABLE_RECIPE_KINDS,

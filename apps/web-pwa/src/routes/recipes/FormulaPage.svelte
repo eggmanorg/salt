@@ -2087,7 +2087,11 @@
 
              DELIBERATELY NO ESTIMATE of when a run will reach either figure, here
              or anywhere. It is done on feel, and a projected date would be a
-             confident number that is usually wrong. -->
+             confident number that is usually wrong.
+
+             ONE SENTENCE FOR EVERY KIND (issue #1656), true of a cure, a ferment and
+             a loaf alike, rather than words looked up per kind: the card shows on
+             every formula, so its copy must not describe only one of them. -->
           <Card>
             <CardHeader>
               <CardTitle>What a run of this is aiming at</CardTitle>
@@ -2095,9 +2099,10 @@
             <CardContent>
               <div class="flex flex-col gap-3" data-testid="formula-target">
                 <p class="text-sm text-muted-foreground">
-                  A cure is finished when it has lost enough weight, or when it has dropped to a low
-                  enough pH. Fill in whichever applies — a dry-cured coppa wants the first, a
-                  fermented salami wants both, and most things want neither.
+                  A cure or a ferment is finished when it has lost enough weight, or when it has
+                  dropped to a low enough pH. Fill in whichever applies — a dry-cured coppa wants
+                  the first, a fermented salami wants both, a kraut usually wants a pH, and most
+                  things want neither.
                 </p>
 
                 <div class="flex flex-wrap items-start gap-3">

@@ -23,6 +23,7 @@ function makeRecipe(
 ): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',
