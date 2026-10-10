@@ -555,12 +555,17 @@ export {
   withCureSaltSubstituted,
   LONG_DRY_CURE_CATEGORIES,
   cureSaltFitness,
+  FERMENT_SALT_RANGES,
+  hasFermentSaltRange,
+  fermentSaltNote,
 } from './formula/index.js';
 export type {
   BoundViolation,
   ComponentPercentBounds,
   CureSaltFitness,
   CureSaltProductInfo,
+  FermentSaltNote,
+  FermentSaltRange,
   CureSaltSubstitutionFailure,
   CureSaltSubstitutionResult,
   FormulaFailure,

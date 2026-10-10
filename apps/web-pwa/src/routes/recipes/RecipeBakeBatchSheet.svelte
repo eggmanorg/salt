@@ -23,6 +23,7 @@
     basisYield,
     cureSaltFitness,
     diffProcess,
+    fermentSaltNote,
     flattenIngredients,
     isCuringSalt,
     pairOf,
@@ -64,6 +65,7 @@
   import {
     formatDoughAmount,
     formatGrams,
+    formatPercent,
     formatStatedPercent,
   } from '../../lib/quantityDisplay.js';
 
@@ -680,6 +682,41 @@
           texts.set(component.ingredientId, formatStatedPercent(strength.percent, label));
     }
     return texts;
+  });
+
+  /**
+   * Is a ferment's plain salt inside its usual range (issue #1657, phase 3)?
+   *
+   * OFF `effectiveFormula`, the formula every gram below is solved from — after the
+   * re-split, the swap and the leavening — so the figure judged is the one being
+   * weighed out. (Weighing the members does not move it: the re-split holds a
+   * stated strength and every other line's percentage. A cure-salt swap can, by
+   * rebalancing the plain salt.)
+   *
+   * IT IS NOT ON `canStart` AND MUST NEVER JOIN IT, exactly as `cureSaltNote` above
+   * is not: `fermentSaltNote` returns facts and never a `Failure`, and whether it
+   * applies at all is the domain's `hasFermentSaltRange`, never a kind comparison
+   * here.
+   *
+   * THE FIGURE IS WORDED AS THE PREVIEW WORDS IT: `statedTextById` for a line stated
+   * against a member, "of the basis" for one that is not. A stated line whose member
+   * has left the recipe has no words in `statedTextById` (see there), and then the
+   * bare figure is printed rather than calling a percentage of the water one of the
+   * basis.
+   */
+  const fermentNote = $derived.by(() => {
+    const note = fermentSaltNote({ kind: kindOf(recipe), components: effectiveFormula.components });
+    if (note.kind === 'ok') return null;
+    const percent = formatPercent(note.percent);
+    const figure =
+      note.statedOf === null
+        ? `${percent} of the basis`
+        : (statedTextById.get(note.ingredientId) ?? percent);
+    const range = `${formatPercent(note.range.minPercent).slice(0, -1)}–${formatPercent(note.range.maxPercent)}`;
+    return {
+      side: note.kind,
+      text: `Salt at ${figure} is ${note.kind} the usual ${range} for a ferment. Start is not blocked — go ahead if this is what you mean.`,
+    };
   });
 
   const unsolvable = $derived.by(() => {
@@ -1439,6 +1476,19 @@
           data-nitrate-bearing={cureSaltNote.nitrateBearing}
         >
           {cureSaltNote.text}
+        </p>
+      {/if}
+
+      {#if fermentNote !== null}
+        <!-- A FERMENT'S SALT OUTSIDE ITS USUAL RANGE (issue #1657): the same muted
+             note the cure-salt note uses, for the same reason — a fact, no control,
+             and Start enabled underneath it in every state. -->
+        <p
+          class="text-xs text-muted-foreground"
+          data-testid="bake-batch-ferment-salt-note"
+          data-side={fermentNote.side}
+        >
+          {fermentNote.text}
         </p>
       {/if}
 

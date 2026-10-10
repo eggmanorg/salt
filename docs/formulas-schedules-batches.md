@@ -1,7 +1,8 @@
 # Formulas, schedules and batches
 
 **Status: phases 00 and 01 are built, and phase 02 is landing; cures are a kind
-(#1404) and ferments a label (#1656); cultures are still contract.** Epic #778. Built so far: the pure `formula`
+(#1404) and ferments a label (#1656), with a brine's salt arithmetic and a
+salt-range note (#1657); cultures are still contract.** Epic #778. Built so far: the pure `formula`
 module (#782); on top of it, `formulas/{recipeId}` with its rules, adapter,
 service and mapping screen at `/recipes/:id/formula` (#806 phase 1); the process
 half of that screen — `schemas/process.ts`, the pure `process` module, the
@@ -127,6 +128,23 @@ the run's quantities are frozen from the re-split formula, which is never writte
 back to the stored one.
 The boxes are about presence, not kind: a salami whose basis is pork and back fat
 gets them as a pickle does, and a one-member basis keeps its one box.
+
+**A ferment's salt outside its usual range gets a note, never a stop** (issue
+#1657). On a recipe labelled `ferment`, the first line named Plain salt is compared
+with one starting range per way of stating it — 1.5–3% of the basis (dry-salted, or
+everything in a brined jar), 2–5% of one member (the water) — held in one table,
+`FERMENT_SALT_RANGES` (`formula/fermentSalt.ts`), to be tuned by eye. `fermentSaltNote`
+returns facts (`ok`, or below/above with the figure, the range and what it is
+against) and never a `Failure`; the formula screen and the start sheet word it, live,
+and neither puts it on Save or Start. It is **not** `minPercent`/`maxPercent`: that
+seam refuses (`solveFormula` refuses any line outside its declared bounds), so a
+range stamped there would stop a 4% kraut saving. Whether it applies is asked of the
+named predicate `hasFermentSaltRange`, never a kind comparison in the PWA. Its
+limits: nothing guesses which line is the salt, so an unnamed salt draws no note; the
+figure is compared as the screen prints it, to one decimal; and a kimchi soaking
+brine (around 10%, rinsed off before packing) draws a note that is wrong for it. No
+note on the run's page. No time, no temperature, no prediction — it is not a
+fermentation model (_What not to build_).
 
 **A derived basis is reconciled to 100, not merely rounded** (issue #1364). Three
 equal flours round to 33.3333% apiece and sum to 99.9999, so everything measured
@@ -690,7 +708,7 @@ cannot be debugged on a four-month feedback loop.
 | **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **03** | Ferments. A label (#1656) with a five-value type beside it, one long stage, the basis-driven solve — you weigh the cabbage, not the output. **There is no `authorFerment` flow**: the shared kind rules in `recipeFieldRules.ts` cover both imports and the chef, as they do for cures. **There is no vessel headspace maths**: jars are parked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **03** | Ferments. A label (#1656) with a five-value type beside it, one long stage, the basis-driven solve — you weigh the cabbage, not the output. A brine's strength stated against the water, basis re-splits weighed member by member on the start sheet, and a note when a ferment's salt sits outside its usual range (#1657).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **04** | Cures. New kind, the observation log worked hard, a target a run is stamped with, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **This row used to promise a TRIM-LOSS ALLOWANCE, and issue #1402 cut it** — the weight you type is the trimmed meat you actually hang, so there is exactly one figure and nothing is subtracted from it. **It also used to promise a weight-loss COMPLETION CRITERION and REVISED PROJECTIONS, and issue #1407 cut both.** A run carries a target and every weighing says how far along it is; that figure decides nothing — no `finished` state, no gate, no verdict — and Salt makes no claim about _when_ a run will reach it, because a cure is done on feel and a projected date would be a confident number that is usually wrong. |
 | **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
@@ -701,9 +719,9 @@ collection, snapshot and state machine; the in-flight surface; reminders on the
 Tasks path; diff review and the two model tiers; canon, shopping, images, search.
 
 Still to build at 03–04: nothing on the original list. The ferment label shipped in
-#1656 without an `authorFerment` flow — the shared kind rules cover both imports and
-the chef — and vessel headspace is parked with jars, not built. The cure-salt bounds
-shipped in #1402.
+#1656, and #1657 added what a brine needs — a salt stated against the water, the
+basis re-split weighed member by member, and a note when the salt sits outside its
+usual range. The cure-salt bounds shipped in #1402.
 
 Off that list since: **reminders beyond the Tasks scheduling horizon** — shipped in
 #1406 as one weekly sweep, `remindBatchReadings`, asking whoever started a long run to
@@ -741,7 +759,8 @@ them.
   and `solveFormula`'s existing refusal is what refuses. **No second check anywhere**
   — not a validator on the save path, not the adapter, not a Cloud Function. Names
   only ever **propose** a product; the bound is read from the product recorded on the
-  component. This is the one place Salt says no.
+  component. This is the one place Salt says no. The ferment salt range (_Formula_,
+  above, issue #1657) is not a second rail: it notes and never refuses.
 
   **Its limits, which are narrower than "Salt prevents an unsafe cure":** no product
   named means no bound; celery-powder "natural" cures are **absent by design**

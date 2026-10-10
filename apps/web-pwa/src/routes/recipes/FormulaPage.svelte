@@ -40,6 +40,7 @@
     basisYield,
     cureSaltFitness,
     deriveFormula,
+    fermentSaltNote,
     firstFormulaYield,
     flattenIngredients,
     gramsAtStrength,
@@ -58,7 +59,7 @@
     withStageRemoved,
     withStageUpdated,
   } from '@salt/domain';
-  import type { Ingredient } from '@salt/domain';
+  import type { Ingredient, Recipe } from '@salt/domain';
   import type {
     Formula,
     FormulaComponent,
@@ -1232,6 +1233,40 @@
     return null;
   });
 
+  /**
+   * Is a ferment's plain salt inside its usual range (issue #1657, phase 3)?
+   *
+   * A NOTE, AND IT IS NOT ON `canSave`'S PATH AND MUST NEVER JOIN IT — the twin of
+   * `cureSaltNote` above, and for the same reason: `fermentSaltNote` returns facts,
+   * this words them, and the one refusal on this screen stays `solveFormula`'s bound
+   * violation. A 1% kraut saves exactly as a 2% one does.
+   *
+   * THE DOMAIN DECIDES WHETHER IT APPLIES, through `hasFermentSaltRange` inside
+   * `fermentSaltNote` — never a kind comparison here (`cureKindComparisonGuard`).
+   *
+   * OFF `derivedComponents`, what Save would write, so it moves live with every typed
+   * gram, the product picker and the "percentage of" picker, and a left-out row is
+   * not in it. The figure is worded through `statedTextById` — the same words the
+   * percent column prints — so the note and the row cannot name the figure
+   * differently.
+   *
+   * A FUNCTION OF THE RECIPE rather than a `$derived` reading a nullable one: the
+   * template calls it only where the recipe is known, so there is no null arm here
+   * for coverage to miss. The words come out with the fact, one object or null, for
+   * the reason `cureSaltNote` gives.
+   */
+  function fermentNoteOf(of: Recipe): { side: 'below' | 'above'; text: string } | null {
+    const note = fermentSaltNote({ kind: kindOf(of), components: derivedComponents });
+    if (note.kind === 'ok') return null;
+    const figure =
+      statedTextById.get(note.ingredientId) ?? `${formatPercent(note.percent)} of the basis`;
+    const range = `${formatPercent(note.range.minPercent).slice(0, -1)}–${formatPercent(note.range.maxPercent)}`;
+    return {
+      side: note.kind,
+      text: `Salt at ${figure} is ${note.kind} the usual ${range} for a ferment.`,
+    };
+  }
+
   // ─── The stages, as they would be saved ───────────────────────────────────────
 
   const stages = $derived(stageRows.map(stageFrom));
@@ -1408,6 +1443,7 @@
       />
     </div>
   {:else}
+    {@const fermentNote = fermentNoteOf(recipe)}
     <DetailPage
       title="Formula"
       subtitle={recipe.title}
@@ -1652,6 +1688,23 @@
               <p class="text-sm text-warning-text">
                 Nothing here is blocked. Change the product on the row above if you want to, or save
                 this as it stands.
+              </p>
+            </div>
+          {/if}
+
+          {#if fermentNote !== null}
+            <!-- A FERMENT'S SALT OUTSIDE ITS USUAL RANGE (issue #1657): a note in the
+               cure-salt note's tint, for the same reason — a fact stated where it can
+               still be changed, with no control of its own. Save is untouched. -->
+            <div
+              class="flex flex-col gap-1 rounded border border-warning/40 bg-warning/10 px-3 py-3"
+              data-testid="formula-ferment-salt-note"
+              data-side={fermentNote.side}
+            >
+              <p class="text-sm text-warning-text">{fermentNote.text}</p>
+              <p class="text-sm text-warning-text">
+                Nothing here is blocked. Change the salt above if you want to, or save this as it
+                stands.
               </p>
             </div>
           {/if}
