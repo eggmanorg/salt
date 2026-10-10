@@ -137,7 +137,12 @@ export const EMPTY_DOUGH_ANSWER: DoughAnswerFields = {
 /** UK tins are sold as 1 lb and 2 lb. Quick fills beside the box, never instead of it. */
 export const LOAF_TIN_CHIP_GRAMS: readonly number[] = [450, 900];
 
-function parseGrams(text: string): number | null {
+/**
+ * A box's grams: trimmed, finite and strictly positive, or nothing. Exported for the
+ * bake sheet's one-box-per-basis-member answer (issue #1657), which reads its boxes
+ * by the same rule as this file's own rather than a second copy of it.
+ */
+export function parseGrams(text: string): number | null {
   const trimmed = text.trim();
   if (trimmed === '') return null;
   const value = Number(trimmed);

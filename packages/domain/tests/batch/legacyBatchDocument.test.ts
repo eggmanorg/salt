@@ -256,3 +256,42 @@ describe('a batch document written before #1645', () => {
     expect(parsed.quantities.map((q) => q.saltProduct)).toEqual([null, 'cure1']);
   });
 });
+
+// Issue #1657 added `statedOf` to each frozen quantity: a read default, no migration.
+// For a run written before it, `null` — a percentage of the basis — is not a guess:
+// nothing could state a salt any other way then, so "not recorded" and "of the
+// basis" are the same fact.
+describe('a batch document written before #1657', () => {
+  it('reads every line as stated against the whole basis', () => {
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.quantities.map((q) => q.statedOf)).toEqual([null]);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('leaves the frozen figures exactly where they were', () => {
+    const parsed = BatchSchema.parse(LEGACY_BATCH);
+    expect(parsed.quantities[0]).toMatchObject(LEGACY_BATCH.quantities[0]!);
+  });
+
+  it('carries a frozen strength through the parse when a run has one', () => {
+    const parsed = BatchSchema.parse({
+      ...LEGACY_BATCH,
+      quantities: [
+        { ...LEGACY_BATCH.quantities[0], ingredientId: 'ing-water', label: 'Water' },
+        {
+          ingredientId: 'ing-salt',
+          label: 'Salt',
+          percent: 1.5,
+          grams: 30,
+          stageId: null,
+          saltProduct: 'plain',
+          statedOf: { ingredientId: 'ing-water', percent: 3 },
+        },
+      ],
+    });
+    expect(parsed.quantities.map((q) => q.statedOf)).toEqual([
+      null,
+      { ingredientId: 'ing-water', percent: 3 },
+    ]);
+  });
+});

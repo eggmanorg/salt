@@ -206,6 +206,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 597,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
       {
         ingredientId: 'ing-water',
@@ -214,6 +215,7 @@ function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
         grams: 382,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
     ],
     totals: { basisGrams: 597, totalGrams: 979, usableGrams: 979, units: null },
@@ -815,6 +817,7 @@ describe('the weigh-out, when the recipe has moved on', () => {
             grams: 12,
             stageId: null,
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),
@@ -1492,6 +1495,7 @@ const CURE_QUANTITIES = [
     grams: 597,
     stageId: null,
     saltProduct: null,
+    statedOf: null,
   },
   {
     ingredientId: 'ing-water',
@@ -1500,6 +1504,7 @@ const CURE_QUANTITIES = [
     grams: 382,
     stageId: 'stage-cool',
     saltProduct: null,
+    statedOf: null,
   },
 ];
 
@@ -1539,6 +1544,7 @@ describe('when an ingredient goes on at a stage', () => {
             grams: 597,
             stageId: 'stage-that-is-gone',
             saltProduct: null,
+            statedOf: null,
           },
         ],
       }),

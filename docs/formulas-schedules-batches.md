@@ -108,6 +108,25 @@ declared total, because the restate scales every line by one factor. The screen
 always says which a line is stated against; the bake sheet prints the same words
 beside the grams and moves nothing.
 
+**A basis re-split is a formula rewrite, not a yield kind** (issue #1657). A run
+declared by weight in, on a basis of more than one member, is weighed member by
+member on the start sheet — the cucumbers, and the water it took to cover them —
+and that ratio is not the stored one. `withBasisWeighed` (`formula/brine.ts`)
+turns the weighed grams into a new local formula **upstream of** `solveFormula`,
+the shape `withCureSaltSubstituted` and `withComponentPercentScaled` already have:
+the basis members are re-measured and reconciled to 100 by `deriveFormula`'s own
+largest-remainder rule, every other line keeps its percentage (so a curing salt
+stays a percentage of the meat), a plain salt stated against a member is held at
+that strength against the member's new grams, and the basis total comes back to be
+solved at as an ordinary `basis` yield. `solveFormula` and `ReferenceYield` are
+unchanged. A box left empty follows the typed ones at the recipe's ratio, and shows
+that figure as a placeholder, never as a value. The start sheet composes the
+rewrites in one order — re-split, cure-salt substitution, leavening, solve — and
+the run's quantities are frozen from the re-split formula, which is never written
+back to the stored one.
+The boxes are about presence, not kind: a salami whose basis is pork and back fat
+gets them as a pickle does, and a one-member basis keeps its one box.
+
 **A derived basis is reconciled to 100, not merely rounded** (issue #1364). Three
 equal flours round to 33.3333% apiece and sum to 99.9999, so everything measured
 against that basis is measured against slightly less than the 100% it is meant to
@@ -378,6 +397,16 @@ wrong lifetime, wrong sharing. It:
   target changes **appearance** — a colour, never a word — and the threshold is
   one constant (`NEARING_FRACTION`) stated as the domestic starting point it is,
   not as a fact about curing;
+- **freezes the strength a salt was stated at** (issue #1657). A quantity line whose
+  formula component is a plain salt stated against one basis member carries
+  `statedOf: { ingredientId, percent }` — "3% of the Water" a year later, whatever
+  the formula says since. `percent` is read at freeze off the formula the run is
+  solved from — after any re-split and any cure-salt swap — so it is the strength
+  that went on, and the ratio of the run's own exact grams at four decimals; `ingredientId`
+  joins to the run's own water line for its label.
+  `null` is the whole basis, and is the read default — which is true, not merely
+  parseable, for every run written before the field: nothing could state a salt
+  any other way then;
 - carries an **observation log** — weight, pH, temperature, humidity, a photo, a note;
 - records **when it was stopped**, not merely that it was (`abandonedAt`, issue
   #1280). A run given up on at ten past eight on the Sunday is a different story

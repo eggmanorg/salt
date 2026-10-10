@@ -24,6 +24,7 @@
   } from '@salt/ui-components';
   import { push } from 'svelte-spa-router';
   import type { DomainError } from '@salt/shared-types';
+  import type { BatchQuantityDoc } from '@salt/domain/schemas';
   import { goBack } from '../../lib/nav.js';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
   import {
@@ -54,6 +55,7 @@
     weightLossText,
     yieldSummary,
   } from './batchDisplay.js';
+  import { formatStatedPercent } from '../../lib/quantityDisplay.js';
 
   // One run (issue #812, phases 1, 3 and 4 of epic #778) — `/batches/:id`.
   //
@@ -192,6 +194,28 @@
   // Three states, and they are all different sentences: `undefined` is still
   // loading, `null` is a link to a run that is not there, a document is the run.
   const run = $derived($batch);
+
+  /**
+   * "3% of the Water" for a line whose strength the run froze against another of its
+   * own lines (issue #1657), or null to print its percentage of the basis.
+   *
+   * THE LABEL IS THE JOIN to that line's frozen `label` on this same run — the words
+   * the weigh-out row beside it prints, never a copy taken from the formula — and the
+   * figure is the one frozen at start. A run written before the field and a salt
+   * stated against the whole basis read null, and their rows print exactly what they
+   * always have. So does a member that names no labelled line on this run (it had
+   * left the recipe at freeze, or a hand edit named nothing): "3% of the " names
+   * nothing.
+   */
+  function statedTextOf(
+    quantity: BatchQuantityDoc,
+    quantities: readonly BatchQuantityDoc[],
+  ): string | null {
+    const stated = quantity.statedOf;
+    if (stated === null) return null;
+    const label = quantities.find((other) => other.ingredientId === stated.ingredientId)?.label;
+    return label ? formatStatedPercent(stated.percent, label) : null;
+  }
 
   // What the schedule was anchored to. The first stage's planned start IS the start
   // that was chosen — phase 1 anchors `{ kind: 'startAt' }` — so there is nothing to
@@ -559,8 +583,11 @@
                     <span class="block font-medium tabular-nums" data-testid="batch-quantity-grams">
                       {formatGrams(quantity.grams)}
                     </span>
-                    <span class="block text-xs tabular-nums text-muted-foreground">
-                      {quantity.percent}%
+                    <span
+                      class="block text-xs tabular-nums text-muted-foreground"
+                      data-testid="batch-quantity-percent"
+                    >
+                      {statedTextOf(quantity, run.quantities) ?? `${quantity.percent}%`}
                     </span>
                   </span>
                 </li>

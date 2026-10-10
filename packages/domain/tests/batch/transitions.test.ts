@@ -62,6 +62,7 @@ function runningLoaf(): BatchDoc {
         grams: 816,
         stageId: null,
         saltProduct: null,
+        statedOf: null,
       },
     ],
     totals: {

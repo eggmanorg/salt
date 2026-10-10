@@ -161,12 +161,21 @@ type Measured = {
   percent: number;
 };
 
-type Counted = { measured: Measured; units: number; remainder: number };
+type Counted<T> = { measured: T; units: number; remainder: number };
 
-/** The basis members' percentages, reconciled to 100. Keyed by identity. */
-function reconciledBasisPercents(basis: readonly Measured[]): Map<Measured, number> {
+/**
+ * The basis members' percentages, reconciled to 100. Keyed by identity.
+ *
+ * EXPORTED TO THE MODULE, NOT PAST IT: `withBasisWeighed` (`brine.ts`) re-measures a
+ * basis from weighed grams and reconciles it here rather than in a copy, so a
+ * re-split basis and a derived one land on the same four-decimal units by the same
+ * rule. Generic over the entry so each caller keys the result by its own object.
+ */
+export function reconciledBasisPercents<T extends { exactPercent: number }>(
+  basis: readonly T[],
+): Map<T, number> {
   const scale = 10 ** PERCENT_DECIMALS;
-  const counted: Counted[] = basis.map((measured) => {
+  const counted: Counted<T>[] = basis.map((measured) => {
     const scaled = measured.exactPercent * scale;
     const units = Math.floor(scaled);
     return { measured, units, remainder: scaled - units };
@@ -183,7 +192,7 @@ function reconciledBasisPercents(basis: readonly Measured[]): Map<Measured, numb
   // Largest remainder first: the members that lost most of a unit to the floor get
   // one back. `sort` is stable, so an exact tie — three equal flours — hands it to
   // the earliest member rather than to an arbitrary one.
-  const rounded = new Set<Counted>();
+  const rounded = new Set<Counted<T>>();
   for (const entry of [...counted].sort((a, b) => b.remainder - a.remainder)) {
     if (residual <= 0) break;
     rounded.add(entry);

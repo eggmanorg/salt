@@ -116,6 +116,27 @@ export const BatchQuantitySchema = z.object({
   // which is honest, since nothing recorded the product then. `schemaVersion` stays
   // at 1; `tests/batch/legacyBatchDocument.test.ts` pins it.
   saltProduct: SaltProductSchema.nullable().default(null),
+  // WHAT THIS LINE'S STRENGTH WAS STATED AGAINST, and at what figure (issue #1657) —
+  // "3% of the Water" a year later, whatever has happened to the formula since.
+  // `ingredientId` names ANOTHER quantity on this same document: the label is the
+  // join to that line's own frozen `label`, never a copied string, for `stageId`'s
+  // reason above.
+  //
+  // `percent` IS READ AT FREEZE OFF THE FORMULA THE RUN IS SOLVED FROM (`freezeBatch`)
+  // — after any basis re-split and any cure-salt swap — and not off the recipe's own,
+  // so after a swap has moved the plain salt it is the strength that was actually
+  // weighed out — the ratio of the two lines' exact grams, at four decimals. The
+  // `percent` beside it is still the line's percentage of the basis; this is the
+  // same line read another way.
+  //
+  // `null` is the whole basis. A READ DEFAULT, and for a run written before this
+  // field the default is the truth rather than a guess: nothing could state a salt
+  // any other way then. `schemaVersion` stays at 1;
+  // `tests/batch/legacyBatchDocument.test.ts` pins it.
+  statedOf: z
+    .object({ ingredientId: z.string(), percent: z.number().nonnegative() })
+    .nullable()
+    .default(null),
 });
 
 // What the dough divides into, echoed from the solve so a batch can still say
