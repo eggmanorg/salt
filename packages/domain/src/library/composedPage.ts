@@ -89,7 +89,8 @@ export function figuresIn(text: string): string[] {
  * Its boundary: it checks that every number token is still SOMEWHERE on the
  * page, not that it is still attached to the same item, sign or unit. A figure
  * moved to a different item (duck 175 / steak 200 swapped), a dropped minus
- * sign ("-18 °C" → "18 °C") and a changed unit all pass.
+ * sign ("-18 °C" → "18 °C") and a changed unit all pass. So does a figure
+ * stood in for by a coordinate: a freehand `<svg>`'s `x="130"` is a 130 here.
  */
 export function missingFigures(draft: string, composed: string): string[] {
   const have = new Map<string, number>();

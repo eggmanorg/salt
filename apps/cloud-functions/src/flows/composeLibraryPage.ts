@@ -73,7 +73,7 @@ draft is saved instead, so when in doubt, keep the draft's wording.
 - Do not open with the title as a heading: the page already shows its title. Start with one short plain sentence \
 saying what the page is for, if the draft has one.
 - Use ## headings to group, sparingly.
-- No raw HTML, no SVG, no images, no colour words used as styling.
+- No raw HTML and no images — the one exception is a freehand drawing (below). No colour words used as styling.
 
 ## Tables
 A table is right when rows are alike and meant to be compared across (a list of jars with capacity and how many \
@@ -314,6 +314,37 @@ shelves:
         height: 165
         caption: 1,062 ml
 \`\`\`
+
+## Freehand drawing — only when no kind above can show it
+Right only for HOW something physically sits, fits or moves that words struggle with and none of the nine kinds \
+draws: how a clip sits on a lid, a ring on a jar's rim, how a dough is folded. Never for figures — amounts, \
+temperatures, times and sizes go in a table or a block, which Salt draws exactly; a freehand drawing is not to \
+scale and must not look as if it is. At most one on a page, and none if a sentence says it as well.
+
+Write it as one inline \`<svg>\`, with a blank line before and after it and NO blank line inside it:
+- \`viewBox\` only, about \`0 0 320 200\` (wider than tall) — no \`width\` or \`height\`; it is shown across a phone.
+- Draw with \`path\`, \`line\`, \`polyline\`, \`polygon\`, \`rect\`, \`circle\`, \`ellipse\`, \`g\` and \`text\`. \
+Nothing else survives: no \`style\`, \`class\`, gradients, markers, filters, images or links. An arrowhead is a \
+small \`polygon\`.
+- Colour: \`fill\` and \`stroke\` take a tone (${TONE_LIST}) or \`none\`, and nothing else — any other value is \
+drawn muted. Draw outlines in muted, \`fill="none"\`, \`stroke-width="2"\`, round caps and joins. Pick out the one \
+part the drawing is about in one tone; a soft fill is that tone with \`fill-opacity="0.2"\`.
+- Labels: a few short \`text\` labels, \`font-size="13"\`, clear of the lines. No figures in a label.
+- Few lines, simple shapes: a diagram in a good manual, not a picture.
+- Follow it with one line in italics saying what it shows.
+
+<svg viewBox="0 0 320 170">
+  <path d="M50 84 L50 140 Q50 150 60 150 L240 150 Q250 150 250 140 L250 84" fill="none" stroke="muted" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="250" y1="100" x2="300" y2="100" stroke="muted" stroke-width="4" stroke-linecap="round"/>
+  <line x1="44" y1="62" x2="256" y2="82" stroke="primary" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="150" cy="66" r="5" fill="primary"/>
+  <path d="M40 54 Q30 42 40 30 Q50 18 40 6" fill="none" stroke="terracotta" stroke-width="2" stroke-linecap="round"/>
+  <text x="150" y="50" font-size="13" text-anchor="middle" fill="primary">lid, ajar</text>
+  <text x="58" y="26" font-size="13" fill="terracotta">steam</text>
+  <text x="150" y="124" font-size="13" text-anchor="middle" fill="muted">pan</text>
+</svg>
+
+*The lid rests on one side of the rim, leaving a gap for the steam.*
 
 ## Choosing
 Prefer the plainest layout that reads well on a phone. A short page may need no block at all — then return it \

@@ -883,6 +883,7 @@ All styles are applied via `:global()` selectors scoped under `.salt-md` so they
 | `table`         | `border-collapse: collapse; margin: 0.5rem 0`                                                                                                                         |
 | `th`, `td`      | `border: 1px solid currentColor; padding: 0.25rem 0.5rem`                                                                                                             |
 | `svg`           | `max-width: 100%; height: auto` — a drawing only exists under `sanitizedHtml` and arrives with whatever `width` its author typed; the `viewBox` keeps the proportions |
+| `[fill=tone]`   | Also `[stroke=tone]`: the tone's ink token, as `DOC_TONE_INK` — a sanitised drawing keeps no other paint (`SVG_PAINTS` in `svgSanitizeSchema.ts`, #1663)              |
 
 ### 12.4.1 `salt-md-doc` — the document-scale overrides
 

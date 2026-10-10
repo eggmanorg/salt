@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from 'firebase-functions';
 import { findLibraryBlocks } from '@salt/domain';
-import { LIBRARY_BLOCK_KINDS, parseLibraryBlock } from '@salt/domain/schemas';
+import { LIBRARY_BLOCK_KINDS, LIBRARY_TONES, parseLibraryBlock } from '@salt/domain/schemas';
 
 vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 vi.spyOn(logger, 'info').mockImplementation(() => undefined);
@@ -164,6 +164,19 @@ describe('the style guide', () => {
       expect(parsed.ok ? 'ok' : parsed.problem).toBe('ok');
     },
   );
+
+  // The freehand example is copied too. The library's sanitiser draws any paint
+  // that is not a tone as muted (`svgSanitizeSchema.ts` in ui-components, which
+  // this app cannot import), so an example painting in hex would teach the model
+  // a colour it never gets — and the drawing would come out grey.
+  it('paints its one freehand example in tones and none only', () => {
+    const drawings = COMPOSE_LIBRARY_PAGE_SYSTEM.match(/^<svg [\s\S]*?^<\/svg>$/gm) ?? [];
+    expect(drawings).toHaveLength(1);
+    const paints = [...drawings[0]!.matchAll(/\b(?:fill|stroke)="([^"]*)"/g)].map((m) => m[1]);
+    expect(paints.length).toBeGreaterThan(0);
+    expect(paints.filter((p) => !['none', ...LIBRARY_TONES].includes(p!))).toEqual([]);
+    expect(drawings[0]).not.toMatch(/\n\s*\n/);
+  });
 });
 
 describe('unwrapWholeBodyFence', () => {
