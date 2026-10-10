@@ -83,6 +83,11 @@ export {
   LONG_DRY_CURE_CATEGORIES,
   cureSaltFitness,
 } from './cureSalt.js';
+// A ferment's salt against its usual range (issue #1657, phase 3) — a NOTE in
+// `cureSaltFitness`'s species, never a bound: facts out, no `Failure`, nothing on the
+// way to Save or Start. `solveFormula`'s bound violation stays the one refusal.
+export { FERMENT_SALT_RANGES, hasFermentSaltRange, fermentSaltNote } from './fermentSalt.js';
+export type { FermentSaltNote, FermentSaltRange } from './fermentSalt.js';
 export type {
   CureSaltProductInfo,
   SaltProductGuessEntry,
