@@ -27,7 +27,9 @@ import { reportServerError } from '../observability/reportServerError.js';
 // IT NEVER COSTS A WRITE. `composeLibraryPageForChef` below never throws, and
 // returns `laidOut: false` whenever the layout is not safe to save — a timeout,
 // a model error, a blank or over-long answer, a `salt-*` block that does not
-// parse, or a figure from the draft that is missing or changed. The handler then
+// parse or is nested where it cannot be checked, or a number token from the
+// draft that is missing from the layout (a figure moved to another item, a lost
+// sign or a changed unit all still pass — `missingFigures`). The handler then
 // saves the chef's draft exactly as written. The checks are `checkComposedPage`
 // in `@salt/domain`, pure and pinned there; that the handler honours them is
 // pinned in `chefChat.writeKitchenNote.test.ts`.

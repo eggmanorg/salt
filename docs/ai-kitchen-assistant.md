@@ -394,7 +394,9 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   flow carrying the Library's whole style guide (`salt-*` blocks, tones, when a
   table beats a card) — and saves its layout only if `checkComposedPage`
   (`@salt/domain`) accepts it: non-blank, within the length bound, every `salt-*`
-  block parses, every number in the draft still present as written. Anything
+  block at the top level (one nested in a list or quote is refused) and parsing,
+  every number token in the draft still somewhere on the page as written — not
+  necessarily on the same item, with the same sign or unit. Anything
   else — an error, its 25 s deadline, a refused layout — saves the draft exactly
   as sent and answers `laidOut: false`, which the tool description tells the
   chef to pass on. The style guide is paid only on a save: the chat prompt
