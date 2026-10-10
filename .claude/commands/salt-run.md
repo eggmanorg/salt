@@ -363,7 +363,7 @@ Three outcomes:
 - **Over the ceiling with nothing left to build → ship it as one PR** — there is no phase left to move into a second one. Note the count in the PR body and conclude normally below.
 - **Under the ceiling → carry on.**
 
-The check measures only what is built, never a forecast. A **single phase that alone exceeds the ceiling** is a pause condition, not a split — there is no boundary inside it to cut at ([why](../../docs/campaign-rationale.md#the-ceiling-looks-backward)).
+The check measures only what is built, never a forecast, and it never stops a phase. A **single phase that alone exceeds the ceiling** is not a pause: it was built in one go, so it is finished, gated and pushed whole, and the outcomes above apply at its boundary as at any other ([why](../../docs/campaign-rationale.md#the-ceiling-looks-backward)).
 
 More phases and under the ceiling → into N+1, at step 2 if step 1 overlapped the CI wait.
 
@@ -402,7 +402,6 @@ Final phase done, CI green and the heavy suites confirmed run:
 - Deliverables missing or must-not-touch violated (step 3)
 - A UX deviation (step 4) — always, before the commit and the next phase
 - The phase can only be built by breaking a CLAUDE.md rule, or only by a bodge
-- A **single phase** cannot be built under `--max-diff` on its own (step 9); crossing it _across_ phases splits and never pauses
 - Phase scope is ambiguous in a way that changes what gets built
 - The issue's phase blocks are missing the fields this loop consumes (Setup)
 - A rebase conflict against `origin/main` in code this run didn't author (step 6)

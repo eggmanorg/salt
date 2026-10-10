@@ -1,4 +1,4 @@
-// `/salt-campaign` spawns eight helper roles, and each role's model used to be
+// `/salt-campaign` spawns seven helper roles, and each role's model used to be
 // a row in a table the coordinator had to remember to apply at every `Agent`
 // call — enforced by nothing. #1586 moved each role into a project subagent
 // under `.claude/agents/`, where the model is frontmatter the harness applies.
@@ -29,7 +29,6 @@ const ROLES = {
   'campaign-worker': 'opus',
   // Shared with /salt-review since #1590, hence not `campaign-`-prefixed.
   'pr-reviewer': 'opus',
-  'campaign-divider': 'opus',
   'campaign-fixer': 'sonnet',
   'campaign-sweeper': 'sonnet',
   'campaign-resolver': 'sonnet',

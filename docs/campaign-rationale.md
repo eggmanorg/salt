@@ -242,6 +242,8 @@ The distinction is load-bearing. `board-status.yml` derives the issue→PR link 
 
 The step 9 check is backward-looking on purpose: it measures what is built, never a forecast of what a phase will be.
 
+**And it never stops a phase.** Until 2026-10-10 a single phase over the ceiling on its own was a pause: the worker returned `BLOCKED: oversized`, a `campaign-divider` agent rewrote the phase as several, and a fresh worker rebuilt them as separate PRs. Daniel removed that rule and the divider with it. If an agent can write a change in one go, an agent can review it in one go. Splitting it after it is written costs a spec rewrite, a rebuild, an extra PR, an extra review and an extra CI wait, and buys nothing. The 2000 figure itself was set when the campaign was written (#1358) with nothing measured behind it, and final-phase overages had always shipped whole. The safety measure is upstream: `/salt-spec`'s rules for sizing a phase. A spec author estimates before the code exists, so some phases will overflow, and an overflow ships. The ceiling still decides where an issue is cut **between** phases. Rejected: a tolerance band (pass up to ~15% over). It keeps the waste for every phase just past the band, and it rests on the same unmeasured number.
+
 ### The conditional production build
 
 `pnpm --filter @salt/web-pwa build` catches the class of failure `tsc` structurally cannot see — a bare specifier inside a CSS `url()`, a dynamic import that doesn't resolve — which is why CI's `boot-payload` job blocks on it. It is the one conditional gate because, unlike the rest, it is slow.
@@ -264,4 +266,4 @@ Trimmed from the command by #1589 Phase 2, each beside the rule it explains.
 - **Handoff comment.** A contract written for a phase N+1 that does not exist is filler.
 - **Step 8.** A skipped required check passes deliberately — that is how a docs-only PR merges. `cancelled` is PR runs cancelling in progress, not a defect. The full log runs to tens of thousands of lines nobody needs.
 - **Step 9.** A final phase carrying the branch to 2400 lines is not split for the sake of a number: cutting one would produce a PR containing nothing. A continuation PR's base already contains the earlier phases, and a reviewer who doesn't know that reads them as missing work. The per-phase handoff comments hold the detail, so restating it only lengthens the thread. On a green, mergeable, out-of-draft PR the only thing left to observe is Daniel clicking merge.
-- **Pause conditions.** A single oversized phase was specced too big, and no PR boundary fixes it. Resolving someone else's concurrent change is not a run's scope.
+- **Pause conditions.** Resolving someone else's concurrent change is not a run's scope.

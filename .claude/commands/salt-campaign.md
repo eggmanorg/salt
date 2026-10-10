@@ -23,7 +23,7 @@ Success is a clean tree when Daniel comes back: every issue merged to main, or p
 
 ## Standing rules
 
-- **Context hygiene is a hard rule.** Never read source files, diffs, CI logs or test output; a Read under `packages/`, `apps/` or `docs/` is a delegation. You read structured agent returns, the reviewer's summary, and `gh`/`git` status output — not even issue bodies, which are extracted for you (Setup 2). File names are not diffs: `git diff --name-only`, `gh pr view --json files` and `git status` are yours. **Hardest for a retry, a divide and the sweep**: hand over a one-line reason and the ledger row, take back the structured return, and never read what went wrong — the agent does.
+- **Context hygiene is a hard rule.** Never read source files, diffs, CI logs or test output; a Read under `packages/`, `apps/` or `docs/` is a delegation. You read structured agent returns, the reviewer's summary, and `gh`/`git` status output — not even issue bodies, which are extracted for you (Setup 2). File names are not diffs: `git diff --name-only`, `gh pr view --json files` and `git status` are yours. **Hardest for a retry and the sweep**: hand over a one-line reason and the ledger row, take back the structured return, and never read what went wrong — the agent does.
 - **Unattended by default.** A question (AskUserQuestion included) blocks the fleet for hours. Decide inside the envelope below; outside it, park the branch and keep the queue moving.
 - **CLAUDE.md is binding**, for you and every agent you spawn.
 - **The git guard is real.** `scripts/git-guard.mjs` refuses `git push …main`, `git push --no-verify`, and bare `git stash` / `stash pop` / `stash clear`. Land things with `gh pr merge`; set work aside with a WIP commit, never a stash.
@@ -243,7 +243,7 @@ Dispatch as `Agent(subagent_type: "campaign-worker", prompt: …, run_in_backgro
 
 Never refill a slot whose occupant is not confirmed dead. Unconfirmable → run one narrower for the campaign's rest, and log it.
 
-**BLOCKED non-empty** → sort by the one-line reason. Needs Daniel (the park list in **Decision envelope**) → park, log, start the next startable issue. `oversized` → **divide**. Anything else — unresolved CI, a rebase conflict in code it did not author, a timeout, heavy suites that would not go green → **retry**.
+**BLOCKED non-empty** → sort by the one-line reason. Needs Daniel (the park list in **Decision envelope**) → park, log, start the next startable issue. Anything else — unresolved CI, a rebase conflict in code it did not author, a timeout, heavy suites that would not go green → **retry**.
 
 **Retry: once per issue, with a fresh worker, then park.** Whatever the reason — note `retried: <reason>` in the ledger row at dispatch; a resumed session reads it as spent. Never a second.
 
@@ -251,8 +251,6 @@ Never refill a slot whose occupant is not confirmed dead. Unconfirmable → run 
 2. Worktree gone? Fetch and `git worktree add .claude/worktrees/<slug>-N <branch>`. Dirty (`git -C <worktree> status --porcelain`)? A WIP commit.
 3. Dispatch a fresh `campaign-worker` with the standard parameters plus the previous stop reason, verbatim, and a fresh budget. A second-red retry passes that phase's `failed` line, not the prior green, or resume reads it as landed.
 4. Anything short of success parks, with both reasons on the PR.
-
-**Divide: a single phase too big to build under the ceiling** — spec work, not a decision, if what gets built stays the same. Spawn one `campaign-divider` with issue `#N`, phase `<k>`, `--max-diff <n>` and the stopped branch. `DIVIDED: phase <k> → phases <k>…<m>` → re-dispatch on the same branch as after a `SPLIT: YES`, the new phases as `PHASES_UNBUILT`; the retry is not spent. `NEEDS_DECISION: <line>` → park, with that line as the reason.
 
 **`SPLIT: YES`** → the one return that puts an issue back into the schedule. Its PR is out of draft and, once its CI wait clears, review-eligible, and lands normally. Then:
 
@@ -275,7 +273,7 @@ A PR is review-eligible once its final phase's CI wait (**Dispatch** → _One ph
 
 One `Agent(subagent_type: "pr-reviewer")` per PR, spawned fresh, **read-only** — no branch checked out, nothing fixed. Its prompt: PR `#X`, its head SHA, issue `#N`, any Must-not-touch question from Setup 2 verbatim, and a line on whether the heavy suites ran; round 2 adds `verify: <round-1 blocking list>`. **Parameters, not material** — it fetches its own; never paste a diff into your context. It posts the review `scripts/lib/prEligibility.mjs` parses and returns one line per finding, severity and `[fold-in]` / `[sweep]` / `[decide]` mark (or an unmarked line's reason word) included — or `STALE` if the head moved: re-confirm CI, respawn.
 
-**Confirm the ceiling, don't carve** — phase-boundary splits are sanctioned; **you never split a diff that is in front of you.** `gh pr view <pr> --json additions,deletions,changedFiles` gives counts. An overage the lockfile explains (`--json files`; the worker's count excludes `pnpm-lock.yaml`) or the worker _declared_ (a final phase, nothing left to move) is no breach. An undeclared overage with `SPLIT: NO` and phases unbuilt means the worker's check did not run: do not review — close the PR unmerged and **retry** from its branch, telling the worker the ceiling check did not run.
+**Confirm the ceiling, don't carve** — phase-boundary splits are sanctioned; **you never split a diff that is in front of you.** `gh pr view <pr> --json additions,deletions,changedFiles` gives counts. An overage the lockfile explains (`--json files`; the worker's count excludes `pnpm-lock.yaml`) or the worker _declared_ (a final phase, nothing left to move, or a single phase over the ceiling on its own) is no breach. An undeclared overage with `SPLIT: NO` and phases unbuilt means the worker's check did not run: do not review — close the PR unmerged and **retry** from its branch, telling the worker the ceiling check did not run.
 
 ### Fixing findings
 
@@ -283,7 +281,7 @@ A `campaign-fixer`, never /salt-run (it no-ops on a finished branch), its prompt
 
 **A should-fix finding that needs none of Daniel's calls is fixed by this campaign, not filed — scope, not size.** The reviewer's mark says how; **in the footprint** means the file is already in this PR's (`gh pr view <pr> --json files`), or is the test file for one that is, leaving the conflict model untouched:
 
-- **`[fold-in]`**, in the footprint → the round-1 fixer. The only ceiling is `--max-diff`: the fixer rejects a fix that would breach it, or any on a PR already over by a declared overage.
+- **`[fold-in]`**, in the footprint → the round-1 fixer. The only ceiling is `--max-diff`: the fixer rejects a fix that would breach it. On a PR already over by a declared overage the ceiling no longer applies — the fix is judged on its own, and one needing phased work is a `phases` reject.
 - **`[decide]`** → **adopt the reviewer's recommended choice** (**Decision envelope**) and record it in a ledger comment. In the footprint → the round-1 fixer, the choice on its line; outside it → a `## Sweep` line carrying `decided: <the choice>`.
 - **`[sweep]`**, a `[fold-in]` outside the footprint, or a fixer's `ceiling` reject → a `## Sweep` line in the ledger as it arrives (PR number, file or symbol, a `[decide]`'s choice), never the round-1 fixer, whose footprint it would widen.
 - A fixer's `choice` or `phases` reject → **Adopting work**.
@@ -368,14 +366,12 @@ Unattended, salt-run.md's pause conditions deadlock. Resolve these yourself, rec
 - a queue ejection, whoever's change it collided with, and gates red on the queue's rebuild;
 - heavy suites that will not run green.
 
-A single phase too big to build is divided (**Dispatch** → _Divide_), and parks only if the divider says that needs a decision.
-
 **Park the branch — not the campaign — for:**
 
 - a UX deviation (salt-run.md step 4) — always a human call;
 - a CLAUDE.md rule collision, or a phase buildable only as a bodge;
 - scope ambiguous in a way that changes what gets built, deliverables missing or Must-not-touch violated, phase blocks missing their fields, or a handoff comment and a commit disagreeing about what landed;
-- anything else a worker or the divider says needs a decision, a falsified premise included;
+- anything else a worker says needs a decision, a falsified premise included;
 - blocking findings outstanding after round 2, unless you adjudicate them shippable;
 - heavy suites that cannot be confirmed to have run — the check is blind, and a retry cannot fix that;
 - anything on the retry list, a second time.
