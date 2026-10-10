@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { BatchDoc, BatchStageDoc, ProcessStage } from '../../src/schemas/index.js';
-import type { RecipeKind } from '../../src/index.js';
+import { RecipeKindSchema } from '../../src/schemas/index.js';
 import {
   LONG_WAIT_DAYS,
   isLongRunKind,
+  longRunAsk,
   longRunNudge,
   longRunsWantingReading,
   resolveSchedule,
@@ -44,10 +45,11 @@ import {
 // #1449 ROUND 2 REGRESSION, FROM FIX 1 — PINNED BELOW. Fix 1's elapsed-time branch
 // cannot tell a cure's observational dry from bread's observational cool-down; they
 // are the identical shape on the document. Daniel's decision was to gate on the
-// run's frozen kind — "cures and ferments" — via `isLongRunKind`. See "an
+// run's frozen kind — "cures and ferments" — via the `LONG_RUN_ASK` table. See "an
 // observational wait on a non-cure kind" below, built from production's own
-// "Cool the cobs" stage through `resolveSchedule`, and the direct `isLongRunKind`
-// mapping test after it.
+// "Cool the cobs" stage through `resolveSchedule`, and the table test after it,
+// which walks every `RecipeKind`. Ferments joined as their own kind in #1656 — see
+// "a ferment" below.
 
 const MS_PER_DAY = 86_400_000;
 const ANCHOR = '2026-01-02T10:00:00.000Z';
@@ -189,7 +191,13 @@ describe('longRunsWantingReading — what qualifies', () => {
     const runs = longRunsWantingReading([batch({ id: 'batch-coppa' })], iso(11.5), 'UTC');
     expect([...runs.keys()]).toEqual(['uid-daniel']);
     expect(runs.get('uid-daniel')).toEqual([
-      { batchId: 'batch-coppa', recipeTitle: 'Coppa', dayNumber: 12, startedBy: 'uid-daniel' },
+      {
+        batchId: 'batch-coppa',
+        recipeTitle: 'Coppa',
+        dayNumber: 12,
+        startedBy: 'uid-daniel',
+        recipeKind: 'cure',
+      },
     ]);
   });
 
@@ -392,17 +400,86 @@ describe('longRunsWantingReading — an observational wait on a non-cure kind (#
   });
 });
 
-describe('isLongRunKind — the mapping onto real RecipeKind members (#1449 round 2)', () => {
-  it('answers "cures and ferments" as recipeKind === "cure" today, and nothing else', () => {
-    const kinds: readonly RecipeKind[] = ['recipe', 'special', 'cocktail', 'placeholder', 'cure'];
-    const results = Object.fromEntries(kinds.map((kind) => [kind, isLongRunKind(kind)]));
-    expect(results).toEqual({
-      recipe: false, // bread, and — until `ferment` exists — sauerkraut and kimchi too
-      special: false,
-      cocktail: false,
-      placeholder: false,
-      cure: true, // every `cureCategory` value lives under this one kind
+describe('longRunAsk — the table over every RecipeKind (#1449 round 2, #1656)', () => {
+  it('answers "cures and ferments" as the cure and ferment rows, and nothing else', () => {
+    // Walks the enum itself, so a kind added later shows up here as a diff rather
+    // than slipping past a hand-written list.
+    const kinds = RecipeKindSchema.options;
+    expect(Object.fromEntries(kinds.map((kind) => [kind, longRunAsk(kind)]))).toEqual({
+      recipe: null,
+      special: null,
+      cocktail: null,
+      placeholder: null,
+      cure: 'weigh', // every `cureCategory` value lives under this one kind
+      bread: null, // its observational cool-down is the shape this row keeps out
+      ferment: 'check',
     });
+  });
+
+  it('isLongRunKind is exactly "the table has an ask"', () => {
+    for (const kind of RecipeKindSchema.options) {
+      expect(isLongRunKind(kind)).toBe(longRunAsk(kind) !== null);
+    }
+  });
+});
+
+describe('longRunsWantingReading — a ferment (#1656)', () => {
+  // A kraut as a run of the `ferment` kind actually freezes: pack the jar, a
+  // three-week ferment, then an observational "keep in the fridge" with no end of
+  // its own. No target — a ferment without a pH target is nudged all the same.
+  function krautProcess(): ProcessStage[] {
+    return [
+      content({
+        id: 'pack',
+        label: 'Salt and pack the jar',
+        kind: 'active',
+        duration: { kind: 'fixed', minutes: 40 },
+      }),
+      content({
+        id: 'ferment',
+        label: 'Ferment',
+        duration: { kind: 'fixed', minutes: 21 * 24 * 60 },
+      }),
+      content({ id: 'fridge', label: 'Keep in the fridge', until: 'eaten' }),
+    ];
+  }
+
+  function kraut(overrides: Partial<BatchDoc> = {}): BatchDoc {
+    return batch({
+      id: 'batch-kraut',
+      recipeId: 'sauerkraut',
+      recipeTitle: 'Sauerkraut',
+      recipeKind: 'ferment',
+      cureCategory: null,
+      fermentCategory: 'kraut',
+      target: null,
+      stages: freezeStages(krautProcess(), ANCHOR),
+      createdAt: ANCHOR,
+      ...overrides,
+    });
+  }
+
+  it('qualifies in a wait of a week or more, with no target', () => {
+    const runs = longRunsWantingReading([kraut()], iso(8.5), 'UTC');
+    expect(runs.get('uid-daniel')).toEqual([
+      {
+        batchId: 'batch-kraut',
+        recipeTitle: 'Sauerkraut',
+        dayNumber: 9,
+        startedBy: 'uid-daniel',
+        recipeKind: 'ferment',
+      },
+    ]);
+  });
+
+  it('keeps qualifying in a final fridge stage until it is marked done — the stated limit', () => {
+    // The ferment wait is ticked done on day 22; the fridge stage nobody ends is
+    // then the first open wait, observational, and open a week by day 30.
+    const fermented = withStageAdvanced(kraut(), 'ferment', iso(22));
+    expect(longRunsWantingReading([fermented], iso(30), 'UTC').size).toBe(1);
+    expect(longRunsWantingReading([fermented], iso(200), 'UTC').size).toBe(1);
+    const eaten = withStageAdvanced(fermented, 'fridge', iso(60));
+    expect(longRunsWantingReading([eaten], iso(200), 'UTC').size).toBe(0);
   });
 });
 
@@ -558,6 +635,82 @@ describe('longRunNudge', () => {
       title: '2 runs under way',
       body: 'Weigh them and add a note.',
     });
+  });
+
+  it('asks to CHECK ON one ferment, naming it and its day', () => {
+    const runs = longRunsWantingReading(
+      [
+        batch({
+          id: 'batch-kraut',
+          recipeTitle: 'Sauerkraut',
+          recipeKind: 'ferment',
+          cureCategory: null,
+        }),
+      ],
+      iso(8.5),
+      'UTC',
+    );
+    expect(longRunNudge(runs.get('uid-daniel')!)).toEqual({
+      title: 'Sauerkraut — day 9',
+      body: 'Check on it and add a note.',
+    });
+  });
+
+  it('asks to check on several ferments, in one sentence', () => {
+    const runs = longRunsWantingReading(
+      [
+        batch({
+          id: 'batch-1',
+          recipeTitle: 'Sauerkraut',
+          recipeKind: 'ferment',
+          cureCategory: null,
+        }),
+        batch({ id: 'batch-2', recipeTitle: 'Kimchi', recipeKind: 'ferment', cureCategory: null }),
+      ],
+      iso(11.5),
+      'UTC',
+    );
+    expect(longRunNudge(runs.get('uid-daniel')!)).toEqual({
+      title: '2 runs under way',
+      body: 'Check on them and add a note.',
+    });
+  });
+
+  it('asks to check on a cure and a ferment together — a mix cannot be weighed as one', () => {
+    const runs = longRunsWantingReading(
+      [
+        batch({ id: 'batch-1', recipeTitle: 'Coppa' }),
+        batch({ id: 'batch-2', recipeTitle: 'Kimchi', recipeKind: 'ferment', cureCategory: null }),
+      ],
+      iso(11.5),
+      'UTC',
+    );
+    expect(longRunNudge(runs.get('uid-daniel')!)).toEqual({
+      title: '2 runs under way',
+      body: 'Check on them and add a note.',
+    });
+  });
+
+  it('words a ferment by its kind, never its type', () => {
+    // The ferment type picks words and groupings on /batches and nothing here.
+    const one = (fermentCategory: BatchDoc['fermentCategory']) =>
+      longRunNudge(
+        longRunsWantingReading(
+          [
+            batch({
+              id: 'batch-1',
+              recipeTitle: 'Jar',
+              recipeKind: 'ferment',
+              cureCategory: null,
+              fermentCategory,
+            }),
+          ],
+          iso(11.5),
+          'UTC',
+        ).get('uid-daniel')!,
+      );
+    expect(one('kimchi')).toEqual(one('hot_sauce'));
+    expect(one('kimchi')).toEqual(one(null));
   });
 
   it('never names a run whose title it was not given', () => {

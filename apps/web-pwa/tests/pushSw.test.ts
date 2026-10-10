@@ -196,7 +196,7 @@ describe('push-sw — push', () => {
     expect(showNotification.mock.calls[0]![0]).toBe('A batch stage is due');
   });
 
-  it('shows the weekly drying nudge while a window is focused, and never re-buzzes', async () => {
+  it('shows the weekly under-way nudge while a window is focused, and never re-buzzes', async () => {
     // #1406: an ambient question about a whole week, with no in-app equivalent — so
     // suppressing it on focus alone would lose it, and `renotify: false` plus the
     // week-keyed tag is what lets a duplicate delivery replace it silently.
@@ -214,17 +214,18 @@ describe('push-sw — push', () => {
     expect(opts!.data.url).toBe('/#/batches');
   });
 
-  it('falls back to DRYING copy, not batch-stage or cook-timer copy, with no title', async () => {
+  it('falls back to UNDER-WAY copy, not batch-stage or cook-timer copy, with no title', async () => {
     // The whole reason #1406 added a fifth kind rather than reusing 'batch-stage': a
     // weekly nudge that lost its payload must not announce itself as "A batch stage is
-    // due", because nothing is due.
+    // due", because nothing is due. Neutral since #1656: it may be a ferment, which is
+    // checked on, not weighed.
     const { listeners, showNotification } = loadSw([]);
     const { event, settle } = pushEvent({ type: 'batch-readings', url: '/#/batches' });
     listeners.get('push')!(event);
     await settle();
     const [title, opts] = showNotification.mock.calls[0]! as [string, ShownOptions];
-    expect(title).toBe('Something is drying');
-    expect(opts.body).toBe('Weigh it and add a note.');
+    expect(title).toBe('Something is under way');
+    expect(opts.body).toBe('Check on it and add a note.');
   });
 
   it('falls back to SHOPPING copy, not cook-timer copy, for a shop push with no title', async () => {

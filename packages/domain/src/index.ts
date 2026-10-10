@@ -608,6 +608,7 @@ export {
   longRunsWantingReading,
   LONG_WAIT_DAYS,
   isLongRunKind,
+  longRunAsk,
   longRunNudge,
 } from './batch/index.js';
 export type {
@@ -619,6 +620,7 @@ export type {
   PhProgress,
   TargetStance,
   LongRunDescriptor,
+  LongRunAsk,
   LongRunNudgeCopy,
 } from './batch/index.js';
 

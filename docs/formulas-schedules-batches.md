@@ -651,7 +651,8 @@ shipped in #1402.
 
 Off that list since: **reminders beyond the Tasks scheduling horizon** — shipped in
 #1406 as one weekly sweep, `remindBatchReadings`, asking whoever started a long run to
-weigh it. See the answered open question below for what it does and does not do.
+weigh it (a cure) or check on it (a ferment, since #1656). See the answered open
+question below for what it does and does not do.
 **Stages carrying additions** — shipped in #1405 as `stageId`
 on the formula component, frozen onto a run beside the grams. **The basis-driven
 solve direction** — shipped in #1402, where
@@ -779,7 +780,7 @@ them.
 
   **What covers the stretch past it — ANSWERED: one weekly scheduled sweep** (issue
   #1406). `apps/cloud-functions/src/maintenance/remindBatchReadings.ts` runs Friday
-  10:00 `Europe/London` and asks _what is drying_: one notification per person, for
+  10:00 `Europe/London` and asks _what is under way_: one notification per person, for
   the runs they started that are sitting in a `wait` of seven days or more. The
   re-enqueue chain this row also offered was **rejected** — a per-stage state machine
   whose failure mode is silence three months from now, which is the one failure
@@ -792,13 +793,16 @@ them.
     30 days; the sweep answers readings _during_ a long stage. Different questions.
   - **Selection is gated on the run's frozen kind, then by presence** (see _Kind
     versus presence_ — this is that rule's "capabilities answer questions about the
-    kind" half, via the named predicate `isLongRunKind`, not an exception to it). A
-    bread batch and a cure can both carry an observational wait (`duration: null`,
-    an `until` condition, no planned span to measure) — the identical shape on the
-    document — so presence alone cannot tell them apart; only the run's kind can.
-    `isLongRunKind` answers **cures and ferments** (today, `recipeKind === 'cure'`;
-    a vegetable ferment has no kind of its own yet and is a stated gap, not a
-    silent one — see that predicate). A run that passes the kind gate still needs a
+    kind" half, via the table `LONG_RUN_ASK` in `batch/longRuns.ts`, not an
+    exception to it). A bread batch and a cure can both carry an observational wait
+    (`duration: null`, an `until` condition, no planned span to measure) — the
+    identical shape on the document — so presence alone cannot tell them apart; only
+    the run's kind can. The table answers **cures and ferments** as two rows: `cure`
+    asks to be weighed, `ferment` (#1656) to be checked on, and every other kind,
+    bread included, is never nudged. The row chooses the verb — "Weigh it / them",
+    "Check on it / them", and "Check on them" for a mix — and the run's category
+    chooses nothing. A ferment with no pH target is nudged like any other, because a
+    target decides nothing (#1407). A run that passes the kind gate still needs a
     `wait` of seven days or more, which bread's overnight retard can never be — so
     the sweep is silent to every batch in production today.
   - **It is addressed to the run's starter**, via `batches.startedBy` — an
@@ -810,6 +814,11 @@ them.
   It is a prompt, not a chase: it does not check whether a reading was already
   entered, and it never appears twice in a week. A 90-day cure gets thirteen nudges
   over its planned life, not ninety.
+
+  The accepted limit: selection never asks what a wait is _for_. A ferment whose last
+  stage is a long "keep in the fridge" wait is nudged every Friday until that stage is
+  marked done, exactly as a cure's long hang is. Jars, and "a run stays open while you
+  eat it", are parked for their own conversation rather than special-cased here.
 
 - **Does a culture reuse `process`.** A maintenance rhythm is a repeating single
   stage, so it either reuses the model or is a simpler thing of its own. Decide
