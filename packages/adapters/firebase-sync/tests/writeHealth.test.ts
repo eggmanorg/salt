@@ -66,6 +66,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('checkWriteHealth', () => {
@@ -185,11 +186,67 @@ describe('checkWriteHealth', () => {
     expect(result).toMatchObject({ kind: 'err', probes: null });
   });
 
+  it('returns a Failure for a rejection that carries no error code', async () => {
+    mockWaitForPendingWrites.mockRejectedValue(new Error('no code'));
+
+    expect(await run()).toMatchObject({ kind: 'err', probes: null });
+  });
+
   it('treats a user-change cancellation as not evaluated, not a fault', async () => {
     mockWaitForPendingWrites.mockRejectedValue(
       Object.assign(new Error('user changed'), { code: 'cancelled' }),
     );
 
     expect(await run()).toEqual({ kind: 'ok', value: 'not-evaluated' });
+  });
+
+  it('reports App Check settled when getToken throws synchronously', async () => {
+    mockWaitForPendingWrites.mockReturnValue(never());
+    mockGetToken.mockImplementation(() => {
+      throw new Error('app-check/use-before-activation');
+    });
+
+    expect(await run()).toMatchObject({ probes: { appCheck: 'settled', auth: 'settled' } });
+  });
+});
+
+// The default environment reads the real page state. Node has no `document`
+// and its `navigator` has no `onLine`, so each side is stubbed explicitly.
+describe('checkWriteHealth — default browser environment', () => {
+  const runDefault = async () => {
+    const pending = checkWriteHealth();
+    await vi.advanceTimersByTimeAsync(WRITE_STALL_THRESHOLD_MS + TOKEN_PROBE_TIMEOUT_MS);
+    return pending;
+  };
+
+  it('evaluates a visible, online page', async () => {
+    vi.stubGlobal('document', { visibilityState: 'visible' });
+    vi.stubGlobal('navigator', { onLine: true });
+    mockWaitForPendingWrites.mockResolvedValue(undefined);
+
+    expect(await runDefault()).toEqual({ kind: 'ok', value: 'confirmed' });
+  });
+
+  it('does not evaluate a hidden page', async () => {
+    vi.stubGlobal('document', { visibilityState: 'hidden' });
+    vi.stubGlobal('navigator', { onLine: true });
+
+    expect(await runDefault()).toEqual({ kind: 'ok', value: 'not-evaluated' });
+    expect(mockWaitForPendingWrites).not.toHaveBeenCalled();
+  });
+
+  it('does not evaluate when the browser says offline', async () => {
+    vi.stubGlobal('document', { visibilityState: 'visible' });
+    vi.stubGlobal('navigator', { onLine: false });
+
+    expect(await runDefault()).toEqual({ kind: 'ok', value: 'not-evaluated' });
+  });
+
+  it('treats a runtime with no document or navigator as visible and online', async () => {
+    vi.stubGlobal('document', undefined);
+    vi.stubGlobal('navigator', undefined);
+    mockWaitForPendingWrites.mockResolvedValue(undefined);
+
+    expect(await runDefault()).toEqual({ kind: 'ok', value: 'confirmed' });
   });
 });

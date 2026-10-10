@@ -10,7 +10,13 @@ import type { WriteHealth } from '@salt/firebase-sync';
 vi.mock('@salt/firebase-sync', () => ({ checkWriteHealth: vi.fn() }));
 vi.mock('../src/lib/errorReporter.js', () => ({ getErrorReporter: vi.fn() }));
 
-import { startSyncHealthMonitor, SYNC_HEALTH_INTERVAL_MS } from '../src/lib/syncHealth.js';
+import { checkWriteHealth } from '@salt/firebase-sync';
+import { getErrorReporter } from '../src/lib/errorReporter.js';
+import {
+  startSyncHealthMonitor,
+  syncHealthReport,
+  SYNC_HEALTH_INTERVAL_MS,
+} from '../src/lib/syncHealth.js';
 
 const STALL: WriteHealth = {
   kind: 'err',
@@ -132,5 +138,55 @@ describe('startSyncHealthMonitor', () => {
 
     expect(check).toHaveBeenCalledTimes(1);
     expect(report).not.toHaveBeenCalled();
+  });
+
+  it('reports nothing for a check that finishes after it was stopped', async () => {
+    let release!: (r: WriteHealth) => void;
+    check.mockImplementation(() => new Promise((r) => (release = r)));
+    stop = startSyncHealthMonitor({ check, reporter: { report } });
+    stop();
+    release(STALL);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it('does not check when the page goes hidden', async () => {
+    script(CONFIRMED);
+    await start();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    visibility.mockRestore();
+
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to the real detector and the shared reporter', async () => {
+    vi.mocked(checkWriteHealth).mockResolvedValue(STALL);
+    vi.mocked(getErrorReporter).mockReturnValue({ report } as never);
+    stop = startSyncHealthMonitor();
+    await vi.advanceTimersByTimeAsync(SYNC_HEALTH_INTERVAL_MS);
+
+    expect(checkWriteHealth).toHaveBeenCalledTimes(2);
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('syncHealthReport', () => {
+  it('names a rejected check, with its classified kind and reason', () => {
+    const err = syncHealthReport({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'unavailable' },
+      probes: null,
+    });
+    expect(err.message).toBe(
+      'Firestore writes pending-writes check rejected [StorageError/unavailable]',
+    );
+  });
+
+  it('omits the reason for a kind that has none', () => {
+    const err = syncHealthReport({ kind: 'err', error: { kind: 'ConflictError' }, probes: null });
+    expect(err.message).toBe('Firestore writes pending-writes check rejected [ConflictError]');
   });
 });
