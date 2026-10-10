@@ -473,14 +473,25 @@ This module must remain extremely small and stable.
 
 ### Commit gateway
 
-Every commit must:
+The gateway has two layers, and only the second is authoritative.
 
-- Pass linting
-- Pass type checks
-- Pass Svelte template checks (`pnpm check` — `svelte-check` across `@salt/ui-components` and `@salt/web-pwa`)
-- Pass dependency graph checks
-- Pass unit tests
-- Pass formatting
+**Pre-commit hook** (`.husky/pre-commit`) — fast, local, bypassable with `--no-verify`:
+
+- `lint-staged`: Prettier and ESLint on **staged files only**
+- `pnpm typecheck`
+- `pnpm depcruise`
+
+**CI** (`.github/workflows/ci.yml`) — every PR must pass all of these before merge:
+
+- Formatting (`pnpm format:check`)
+- Linting across the whole tree (`pnpm lint`)
+- Type checks (`pnpm typecheck`)
+- Svelte template checks (`pnpm check` — `svelte-check` across `@salt/ui-components` and `@salt/web-pwa`); **not** run by the hook
+- Dependency graph checks (`pnpm depcruise`)
+- Unit tests (`pnpm test:coverage`); **not** run by the hook
+
+Between them, these checks:
+
 - Reject any Firebase SDK import in `domain` / `observability` / `ui-components` (browser SDK lives in `firebase-sync`; `firebase-admin` is allowed in `cloud-functions`)
 - Reject any IndexedDB import in `domain` and the adapter/UI packages (`firebase-sync`, `observability`, `ui-components`)
 - Reject any PostHog SDK import (`posthog-js` / `posthog-node`) outside `observability`
