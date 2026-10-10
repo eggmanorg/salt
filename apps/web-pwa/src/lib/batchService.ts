@@ -488,6 +488,7 @@ export async function startBatch(
     // no recipe, so the join lives here.
     recipeKind: input.recipe.kind,
     cureCategory: input.recipe.cureCategory,
+    fermentCategory: input.recipe.fermentCategory,
     // WHO TAPPED START (issue #1406) — read here for the reason every other live fact
     // is: the freeze is pure and holds no session. `?? null` rather than `?? ''`,
     // unlike `shoppingDayService`'s `setBy`, because "nobody recorded a starter" is a

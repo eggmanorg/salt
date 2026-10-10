@@ -97,6 +97,7 @@ function freezeTwelveRolls(
     recipeTitle: 'Overnight white tin',
     recipeKind: 'recipe',
     cureCategory: null,
+    fermentCategory: null,
     startedBy: null,
     labels: LABELS,
     now: NOW,
@@ -149,6 +150,7 @@ describe('freezeBatch — the quantities', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: withoutOil,
       now: NOW,
@@ -188,6 +190,7 @@ describe('freezeBatch — the quantities', () => {
       recipeTitle: 'Coppa',
       recipeKind: 'cure',
       cureCategory: 'dry_cured_whole_muscle',
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -198,7 +201,29 @@ describe('freezeBatch — the quantities', () => {
     expect(result.batch.cureCategory).toBe('dry_cured_whole_muscle');
   });
 
-  it('writes both EXPLICITLY, so a new run never inherits a schema read default', () => {
+  it('freezes a ferment’s type onto the run, beside its kind (#1656)', () => {
+    // "The last three kimchis" is the same question "the last three bresaola" is,
+    // so a ferment's type freezes for the same reason a cure's category does.
+    const result = freezeBatch({
+      id: 'batch-kimchi-1',
+      formula: overnightWhiteTin(),
+      anchor: { kind: 'startAt', at: NOW },
+      recipeTitle: 'Napa cabbage kimchi',
+      recipeKind: 'ferment',
+      cureCategory: null,
+      fermentCategory: 'kimchi',
+      startedBy: null,
+      labels: LABELS,
+      now: NOW,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.reason));
+
+    expect(result.batch.recipeKind).toBe('ferment');
+    expect(result.batch.fermentCategory).toBe('kimchi');
+    expect(result.batch.cureCategory).toBeNull();
+  });
+
+  it('writes the kind and both categories EXPLICITLY, so a new run never inherits a schema read default', () => {
     // The distinction `checkedIngredientIds` already draws: a `.default()` on
     // `BatchSchema` is what a document written BEFORE the field existed reads back
     // as, and must never be what a document written today is born with. Asserted by
@@ -207,9 +232,11 @@ describe('freezeBatch — the quantities', () => {
     const batch = freezeTwelveRolls();
     expect(Object.keys(batch)).toContain('recipeKind');
     expect(Object.keys(batch)).toContain('cureCategory');
+    expect(Object.keys(batch)).toContain('fermentCategory');
     // And a plain bread run says so rather than saying nothing.
     expect(batch.recipeKind).toBe('recipe');
     expect(batch.cureCategory).toBeNull();
+    expect(batch.fermentCategory).toBeNull();
   });
 
   // ─── Who tapped Start (issue #1406) ─────────────────────────────────────────
@@ -224,6 +251,7 @@ describe('freezeBatch — the quantities', () => {
       recipeTitle: 'Coppa',
       recipeKind: 'cure',
       cureCategory: 'dry_cured_whole_muscle',
+      fermentCategory: null,
       startedBy: 'uid-daniel',
       labels: LABELS,
       now: NOW,
@@ -340,6 +368,7 @@ describe('freezeBatch — the document', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -359,6 +388,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Fresh sausage',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -383,6 +413,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -402,6 +433,7 @@ describe('freezeBatch — what it refuses', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -439,6 +471,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       places: [null, CURING, null, PROOFER],
@@ -467,6 +500,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       places: [null, PROOFER],
@@ -487,6 +521,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -505,6 +540,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       ambientCelsius: 26,
@@ -517,6 +553,7 @@ describe('freezeBatch — where each stage happened', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       ambientCelsius: 14,
@@ -547,6 +584,7 @@ describe('freezeBatch — what the run is aiming at (issue #1407)', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -596,6 +634,7 @@ describe('freezeBatch — the cure-salt substitution', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -650,6 +689,7 @@ describe('freezeBatch — when each thing goes on (issue #1405)', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -696,6 +736,7 @@ describe('freezeBatch — when each thing goes on (issue #1405)', () => {
       recipeTitle: 'Overnight white tin',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       startedBy: null,
       labels: LABELS,
       now: NOW,
@@ -747,6 +788,7 @@ describe('freezeBatch — which salt product each line was (issue #1645)', () =>
       recipeTitle: 'Coppa',
       recipeKind: 'cure',
       cureCategory: 'dry_cured_whole_muscle',
+      fermentCategory: null,
       startedBy: null,
       labels: { [MEAT]: 'Pork collar', [CURE_SALT]: 'Salt', [CURE]: 'Prague powder #1' },
       now: NOW,

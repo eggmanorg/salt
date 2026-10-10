@@ -96,6 +96,7 @@ function batch(overrides: Partial<BatchDoc> & Pick<BatchDoc, 'id'>): BatchDoc {
     recipeTitle: 'Coppa',
     recipeKind: 'cure',
     cureCategory: 'dry_cured_whole_muscle',
+    fermentCategory: null,
     target: null,
     state: 'running',
     abandonedAt: null,
@@ -121,6 +122,7 @@ function breadBatch(): BatchDoc {
     recipeTitle: 'Overnight white tin',
     recipeKind: 'recipe',
     cureCategory: null,
+    fermentCategory: null,
     stages: [
       stage({
         id: 'mix',
@@ -371,6 +373,7 @@ describe('longRunsWantingReading — an observational wait on a non-cure kind (#
       recipeTitle: 'East Midlands Crusty Cobs',
       recipeKind: 'recipe',
       cureCategory: null,
+      fermentCategory: null,
       stages,
       createdAt: ANCHOR,
     });

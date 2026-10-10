@@ -147,6 +147,7 @@ function runningBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
     recipeTitle: 'Coppa',
     recipeKind: 'cure',
     cureCategory: 'dry_cured_whole_muscle',
+    fermentCategory: null,
     target: null,
     state: 'running',
     abandonedAt: null,
@@ -172,6 +173,7 @@ function breadBatch(): BatchDoc {
     recipeTitle: 'Overnight white tin',
     recipeKind: 'recipe',
     cureCategory: null,
+    fermentCategory: null,
     stages: [
       waitStage({
         id: 'retard',

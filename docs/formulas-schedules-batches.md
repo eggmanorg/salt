@@ -332,12 +332,16 @@ wrong lifetime, wrong sharing. It:
 - **freezes the resolved quantities and the resolved schedule at start**, because
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
-- **freezes what the dish WAS** — its title, its `recipeKind` and, for a cure, its
-  `cureCategory` (issue #1404). The title was always in the freeze; the other two
-  joined it because "show me all my dry-cured whole muscle" and "the last three
-  bresaola" have to stay answerable in a year, over runs whose recipes have since
-  been renamed, re-mapped or deleted. Both carry read defaults (`'recipe'`, `null`),
-  which are not merely parseable but true of every batch in production today;
+- **freezes what the dish WAS** — its title, its `recipeKind`, for a cure its
+  `cureCategory` (issue #1404) and for a ferment its `fermentCategory` (issue
+  #1656). The title was always in the freeze; the rest joined it because "show me
+  all my dry-cured whole muscle" and "the last three kimchis" have to stay
+  answerable in a year, over runs whose recipes have since been renamed, re-mapped
+  or deleted. Both category fields are frozen as the recipe held them, and which one
+  a run's kind owns is the domain's `categoryOf` — so `/batches` keeps one filter
+  row over both vocabularies, which share no value. All three carry read defaults
+  (`'recipe'`, `null`, `null`), which are not merely parseable but true of every
+  batch written before the field existed;
 - **freezes what the run is AIMING AT** — `target`, a weight-loss percentage, a pH,
   both or neither, copied off the formula at start (issue #1407). Edit the formula
   next month and batch nine still says what batch nine was aiming at. The figure it

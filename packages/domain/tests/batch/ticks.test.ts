@@ -36,6 +36,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 function running(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: 'batch-1',

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { roundGrams } from '@salt/domain';
-import { BatchSchema } from '@salt/domain/schemas';
+import { categoryValues, roundGrams } from '@salt/domain';
+import { BatchSchema, RecipeKindSchema } from '@salt/domain/schemas';
 import type { BatchDoc, BatchQuantityDoc, BatchStageDoc, SaltProduct } from '@salt/domain/schemas';
 import {
   categoriesPresent,
@@ -18,12 +18,14 @@ import {
   formatTimeOfDay,
   groupLogByDay,
   phTargetText,
+  runCategory,
   stageLabelById,
   targetStanceClass,
   weightLossText,
   substitutionSummary,
   yieldSummary,
 } from '../src/routes/batches/batchDisplay.js';
+import { KIND_COPY } from '../src/routes/recipes/recipeKind.js';
 
 // The words and formats the two batch screens share (issue #812, phase 1 of epic
 // #778). Pure, and the clock is injected, so every case here is a fixed string.
@@ -60,6 +62,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 function batch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: 'batch-1',
@@ -614,11 +617,11 @@ describe('categoryLabel', () => {
     expect(categoryLabel(batch({ recipeKind: 'cure', cureCategory: null }))).toBeNull();
   });
 
-  it('is null on a kind whose copy declares no category vocabulary at all', () => {
-    // The property that keeps a kind literal out of this module: what is asked is
-    // whether the KIND'S COPY has a vocabulary, never which kind it is. A
-    // `cureCategory` somehow stored on a plain recipe reads as nothing rather than
-    // as a label the library has no word for.
+  it('is null on a kind with no category vocabulary at all', () => {
+    // The property that keeps a kind literal out of this module: which field a
+    // kind owns is asked of the domain's `categoryOf`, never decided here by
+    // naming a kind. A `cureCategory` somehow stored on a plain recipe reads as
+    // nothing rather than as a label the library has no word for.
     expect(categoryLabel(batch({ cureCategory: 'semi_dry' }))).toBeNull();
   });
 });
@@ -657,6 +660,64 @@ describe('categoriesPresent / categoryChips', () => {
     const strayBacon = batch({ recipeKind: 'recipe', cureCategory: 'cooked_whole_muscle' });
     expect(categoriesPresent([strayBacon, coppa])).toEqual(['dry_cured_whole_muscle']);
     expect(categoryChips([strayBacon])).toEqual([]);
+  });
+});
+
+// ─── Cure types and ferment types on one screen (issue #1656) ───────────────
+//
+// A ferment's type is read off `fermentCategory`, a cure's off `cureCategory`,
+// and which field a run's kind owns is the domain's `categoryOf` — so a value
+// left on the OTHER field is never read, and the label, the chips and the
+// filter's `runCategory` agree run for run.
+describe('runCategory / categoryLabel / categoryChips over cures and ferments', () => {
+  const coppa = batch({ recipeKind: 'cure', cureCategory: 'dry_cured_whole_muscle' });
+  const kimchi = batch({ recipeKind: 'ferment', fermentCategory: 'kimchi' });
+  const kraut = batch({ recipeKind: 'ferment', fermentCategory: 'kraut' });
+
+  it('says which kind of ferment, in the library’s words', () => {
+    expect(runCategory(kimchi)).toBe('kimchi');
+    expect(categoryLabel(kimchi)).toBe('Kimchi');
+    expect(categoryLabel(batch({ recipeKind: 'ferment', fermentCategory: null }))).toBeNull();
+  });
+
+  it('reads a run’s category only from the field its own kind owns', () => {
+    // A cure word stranded on a ferment run, a ferment word on a cure run and a
+    // ferment word on a plain recipe each read as nothing — and so earn no chip.
+    const strays = [
+      batch({ recipeKind: 'ferment', cureCategory: 'semi_dry' }),
+      batch({ recipeKind: 'cure', fermentCategory: 'kimchi' }),
+      batch({ recipeKind: 'recipe', fermentCategory: 'kraut' }),
+    ];
+    for (const stray of strays) {
+      expect(runCategory(stray)).toBeNull();
+      expect(categoryLabel(stray)).toBeNull();
+    }
+    expect(categoriesPresent(strays)).toEqual([]);
+    expect(categoryChips(strays)).toEqual([]);
+  });
+
+  it('lists cure types and ferment types in one row, cures first, each in its enum’s order', () => {
+    // Fixed order, not first-seen: the kimchi and the kraut arrive before the
+    // coppa and still come after it, and kraut leads kimchi as its enum does.
+    expect(categoriesPresent([kimchi, kraut, coppa, batch()])).toEqual([
+      'dry_cured_whole_muscle',
+      'kraut',
+      'kimchi',
+    ]);
+    expect(categoryChips([kimchi, coppa])).toEqual([
+      { value: 'dry_cured_whole_muscle', label: 'Dry-cured whole muscle' },
+      { value: 'kimchi', label: 'Kimchi' },
+    ]);
+  });
+
+  it('gives words to every kind the domain gives a vocabulary, and to no other', () => {
+    // What makes `categoryLabel`'s fallback to the stored word unreachable: the
+    // copy table and the domain agree about which kinds carry a category.
+    for (const kind of RecipeKindSchema.options) {
+      const copy = KIND_COPY[kind].categoryCopy;
+      expect(copy !== undefined, kind).toBe(categoryValues(kind).length > 0);
+      for (const value of categoryValues(kind)) expect(copy?.options[value], value).toBeTruthy();
+    }
   });
 });
 

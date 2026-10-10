@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ProcessStageSchema, StageTemperatureSchema } from './process.js';
 import { FormulaTargetSchema, PhSchema, SaltProductSchema } from './formula.js';
-import { CureCategorySchema, RecipeKindSchema } from './recipe.js';
+import { CureCategorySchema, FermentCategorySchema, RecipeKindSchema } from './recipe.js';
 
 // Batch document schema (issue #812, phase 1 of epic #778) — ONE RUN of a formula
 // at `batches/{batchId}`. Family-shared (no `ownerUid`), a random UUID id minted by
@@ -262,7 +262,10 @@ export const BatchSchema = z.object({
   // The recipe's title, frozen. The log survives the dish being renamed or deleted.
   recipeTitle: z.string(),
   // WHAT THIS RUN WAS, frozen (issue #1404) — the recipe's kind and, for a cure,
-  // which of the five kinds of cure.
+  // which of the five kinds of cure; for a ferment, which of the five kinds of
+  // ferment (issue #1656). The two category fields are siblings, as they are on
+  // `RecipeSchema`, and which one a run's kind owns is `categoryOf`'s answer, never
+  // a reader's: a value on a field the kind does not own is never read.
   //
   // They join the freeze for exactly the reason `recipeTitle` above is in it, and
   // the question is the one the whole feature is for: **"show me all my dry-cured
@@ -275,10 +278,13 @@ export const BatchSchema = z.object({
   // fields existed parses unchanged and there is no migration (CLAUDE.md,
   // production data back-compat) — the same shape `skipped`, `place`,
   // `abandonedAt` and `checkedIngredientIds` all have. The defaults here are not
-  // merely parseable but TRUE: every batch in production today is bread, and bread
-  // is a `recipe` with no cure category.
+  // merely parseable but TRUE of every run written before the field it defaults:
+  // the batches that predate `recipeKind` are bread, a `recipe` with no category,
+  // and no run written before `fermentCategory` existed can be a ferment, because
+  // the `ferment` kind and this field ship in the same change (issue #1656).
   recipeKind: RecipeKindSchema.default('recipe'),
   cureCategory: CureCategorySchema.nullable().default(null),
+  fermentCategory: FermentCategorySchema.nullable().default(null),
   // WHAT THIS RUN IS AIMING AT, frozen (issue #1407) — the formula's own
   // `FormulaTargetSchema`, copied by `freezeBatch` exactly as the quantities and
   // the schedule are, and `null` for the ordinary run that aims at nothing.

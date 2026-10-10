@@ -403,6 +403,7 @@ const BATCH = {
   recipeTitle: 'Sourdough',
   recipeKind: 'recipe' as const,
   cureCategory: null,
+  fermentCategory: null,
   target: null,
   state: 'running' as const,
   abandonedAt: null,

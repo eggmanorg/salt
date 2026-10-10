@@ -80,6 +80,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: 'batch-1',
@@ -427,6 +428,42 @@ describe('BatchListPage — cure type', () => {
     );
 
     await waitFor(() => expect(categoryChips()).toHaveLength(3));
+  });
+
+  // ─── A ferment's type in the same row (issue #1656) ────────────────────────
+  it('offers cure types and ferment types in one row, and narrows to each', async () => {
+    const kimchi = makeBatch({
+      id: 'b-kimchi',
+      recipeTitle: 'Napa cabbage kimchi',
+      recipeKind: 'ferment',
+      fermentCategory: 'kimchi',
+    });
+    mockBatches._set([kimchi, coppa, loaf]);
+    render(BatchListPage);
+
+    // One row, named for neither vocabulary, since it carries both.
+    expect(screen.getByTestId('batch-category-filters')).toHaveAttribute('aria-label', 'Type');
+    expect(categoryChips().map((el) => el.getAttribute('data-category'))).toEqual([
+      '',
+      'dry_cured_whole_muscle',
+      'kimchi',
+    ]);
+    expect(
+      screen.queryAllByTestId('batch-card-category').map((el) => el.textContent?.trim()),
+    ).toEqual(expect.arrayContaining(['Kimchi', 'Dry-cured whole muscle']));
+
+    await fireEvent.click(
+      categoryChips().find((el) => el.getAttribute('data-category') === 'kimchi')!,
+    );
+    await waitFor(() => expect(titles()).toEqual(['Napa cabbage kimchi']));
+
+    await fireEvent.click(
+      categoryChips().find((el) => el.getAttribute('data-category') === 'dry_cured_whole_muscle')!,
+    );
+    await waitFor(() => expect(titles()).toEqual(['Coppa']));
+
+    await fireEvent.click(categoryChips()[0]!);
+    await waitFor(() => expect(titles()).toHaveLength(3));
   });
 });
 
