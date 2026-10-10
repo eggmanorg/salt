@@ -40,6 +40,7 @@ import {
   flushAllCoalescedWrites,
   WRITE_DEBOUNCE_MS,
   type WriteCoalescer,
+  hasPendingCoalescedWrites,
 } from '../src/lib/writeCoalescer.js';
 
 const OK: ReadResult<void, DomainError> = { kind: 'ok', value: undefined };
@@ -548,5 +549,24 @@ describe('flushAll waits for writes already on the wire, not only queued ones', 
     void writes.queue('recipe-1', 'the next edit');
     await expect(writes.flushAll()).resolves.toBeUndefined();
     expect(write).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('hasPendingCoalescedWrites (issue #1667)', () => {
+  // Read by the stuck-write recovery: true only while an edit is still waiting
+  // out its debounce, i.e. not yet handed to the SDK's durable queue.
+  it('is true while an edit waits out its debounce, and false once issued', async () => {
+    let release!: (r: ReadResult<void, DomainError>) => void;
+    const writes = coalescer(() => new Promise((r) => (release = r)));
+    expect(hasPendingCoalescedWrites()).toBe(false);
+
+    void writes.queue('week-1', 'Spag');
+    expect(writes.hasPending()).toBe(true);
+    expect(hasPendingCoalescedWrites()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(WRITE_DEBOUNCE_MS);
+    // On the wire, not acked: no longer this module's to lose.
+    expect(hasPendingCoalescedWrites()).toBe(false);
+    release(OK);
   });
 });

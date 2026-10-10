@@ -19,6 +19,8 @@
 // it), so we explicitly poll registration.update() on an interval and on
 // refocus — without this a release never reaches an already-open client.
 
+import { isPageReloading, reloadPage } from './pageReload.js';
+
 const SW_URL = '/sw.js';
 
 // ~20 min sits inside the 15–30 min window from #141: frequent enough that an
@@ -105,30 +107,27 @@ export function setupPreloadErrorReload(): void {
   if (import.meta.env.DEV) return;
   if (typeof window === 'undefined') return;
 
-  // In-memory re-entrancy latch, mirroring setupUpdateFlow's `reloading`: once
-  // we've asked for a reload, ignore further preloadError events fired before
-  // the navigation actually happens.
-  let reloading = false;
-
   window.addEventListener('vite:preloadError', () => {
-    if (reloading) return;
+    // In-memory re-entrancy latch, shared with every other programmatic reload
+    // (pageReload.ts): once any reload has been asked for, ignore further
+    // preloadError events fired before the navigation actually happens.
+    if (isPageReloading()) return;
     // Already reloaded once this session and STILL failing — stop here; a later
     // phase surfaces the stuck state.
     if (hasPreloadReloadGuard()) return;
     setPreloadReloadGuard();
-    reloading = true;
-    window.location.reload();
+    reloadPage();
   });
 }
 
 function setupUpdateFlow(registration: ServiceWorkerRegistration): void {
   let updatePending = false;
-  let reloading = false;
 
+  // The latch is pageReload.ts's, shared with the stale-chunk and stuck-write
+  // reloads, so none of them can double-fire alongside another.
   const reloadIfSafe = (): void => {
-    if (!updatePending || reloading) return;
-    reloading = true;
-    window.location.reload();
+    if (!updatePending) return;
+    reloadPage();
   };
 
   // A new SW has installed and (because skipWaiting + clientsClaim) taken

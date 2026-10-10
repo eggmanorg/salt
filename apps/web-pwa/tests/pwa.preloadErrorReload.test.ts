@@ -107,4 +107,19 @@ describe('setupPreloadErrorReload (silent stale-chunk recovery, one-shot)', () =
     clearPreloadReloadGuard();
     expect(window.sessionStorage.getItem(SESSION_KEY)).toBeNull();
   });
+
+  it('stands down when another reload is already on its way (shared latch, #1667)', async () => {
+    const { setupPreloadErrorReload } = await loadSetup();
+    // Same module instance as pwa.ts after loadSetup's resetModules.
+    const { reloadPage } = await import('../src/lib/pageReload.js');
+    setupPreloadErrorReload();
+
+    // The stuck-write recovery (or the update flow) reloads first.
+    reloadPage();
+    firePreloadError();
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    // Its one-shot guard is not spent on a reload it did not take.
+    expect(window.sessionStorage.getItem(SESSION_KEY)).toBeNull();
+  });
 });

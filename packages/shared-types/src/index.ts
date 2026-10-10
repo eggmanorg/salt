@@ -86,7 +86,16 @@ export type DomainError =
     }
   | {
       readonly kind: 'SyncError';
-      readonly reason: 'push-failed' | 'pull-failed' | 'invalid-revision' | 'manifest-mismatch';
+      readonly reason:
+        | 'push-failed'
+        | 'pull-failed'
+        | 'invalid-revision'
+        | 'manifest-mismatch'
+        // Writes the server never confirmed while the page was visible and the
+        // browser said it was online (issue #1667) — see firebase-sync's
+        // writeHealth.ts. Distinct from 'push-failed': nothing failed, nothing
+        // finished.
+        | 'write-stalled';
     }
   | { readonly kind: 'ConflictError' }
   | { readonly kind: 'ValidationError'; readonly code: ErrorCode; readonly message?: string };

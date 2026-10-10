@@ -416,10 +416,10 @@ export const coverageThresholds = {
   // left the measured set, and every line it took with it was uncovered by
   // construction. Ratios untouched — see the note beside `coverageExclude`.
   'packages/adapters/firebase-sync/src/**': {
-    lines: 91.98,
-    branches: 85.65,
-    uncoveredLines: 53,
-    uncoveredBranches: 34,
+    lines: 93.02,
+    branches: 88.36,
+    uncoveredLines: 51,
+    uncoveredBranches: 32,
   },
   // Banked by #840: the chef's two tools arrived with the two suites that pin
   // their claims — `chefChat.findRecipes.test.ts` (the projected read, the

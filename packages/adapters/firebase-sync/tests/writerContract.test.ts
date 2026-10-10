@@ -1065,6 +1065,8 @@ const NON_WRITERS: Record<string, 'subscription' | 'read' | 'callable' | 'infras
   loadRecipe: 'read',
   loadShoppingListsConfig: 'read',
   probeFirestoreCache: 'read',
+  // Waits on the SDK's pending-write queue and two token probes; writes nothing.
+  checkWriteHealth: 'read',
 
   // Cloud Function callables. Some of them do cause a document to change, but
   // server-side and through `classifyCallableError` — a different port with a
@@ -1141,7 +1143,7 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(121);
+    expect(exported).toHaveLength(122);
     expect(writerCases).toHaveLength(45);
   });
 

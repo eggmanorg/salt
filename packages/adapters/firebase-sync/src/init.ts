@@ -18,6 +18,7 @@ import {
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import type { AppCheck } from 'firebase/app-check';
 import { connectAuthEmulatorOnce } from './auth.js';
 import { FUNCTIONS_REGION } from './functionsRegion.js';
 
@@ -29,6 +30,19 @@ import { FUNCTIONS_REGION } from './functionsRegion.js';
 // flag. Still idempotent per app: connectFirestoreEmulator throws if called
 // twice on the same Firestore instance, and a live app is only ever wired once.
 const emulatorConnectedApps = new WeakSet<FirebaseApp>();
+
+// The App Check instance `initializeAppCheck` returned, per app (issue #1667).
+// Retained only so writeHealth.ts can ask the public `getToken` whether a token
+// exchange is stuck — it joins App Check's one shared in-flight promise, so it
+// is a faithful probe of what Firestore's stream start is waiting on. No entry
+// means App Check was never initialised for that app (emulators, or no site
+// key). Read through `retainedAppCheck`, which is deliberately NOT re-exported
+// from the package barrel: the SDK type stays inside this package (Rule 2).
+const appCheckByApp = new WeakMap<FirebaseApp, AppCheck>();
+
+export function retainedAppCheck(app: FirebaseApp): AppCheck | undefined {
+  return appCheckByApp.get(app);
+}
 
 export interface AppCheckConfig {
   /** reCAPTCHA Enterprise site key. Public — it ships in the client bundle. */
@@ -109,10 +123,13 @@ export function initFirebase(
       (globalThis as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
         appCheck.debugToken;
     }
-    initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(appCheck.siteKey),
-      isTokenAutoRefreshEnabled: true,
-    });
+    appCheckByApp.set(
+      app,
+      initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(appCheck.siteKey),
+        isTokenAutoRefreshEnabled: true,
+      }),
+    );
   }
 
   if (isNew && usePersistentCache) {
