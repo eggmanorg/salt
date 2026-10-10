@@ -83,11 +83,13 @@ export function figuresIn(text: string): string[] {
  * "under <5 minutes" and "a < b" are prose and stay. A linear scan rather than
  * a pattern, so there is no backtracking to get wrong and nothing for a
  * sanitiser rule to mistake for HTML sanitising: this only decides which numbers
- * to COUNT, and the page is still sanitised on render. An unclosed `<tag` runs to
- * the end of the text, which errs towards counting fewer figures in `composed`
- * and so towards keeping the draft.
+ * to COUNT, and the page is still sanitised on render. An unclosed `<tag` is
+ * handled by `unclosed`: `'drop'` (the composed side) runs it to the end of the
+ * text, counting fewer figures there and so erring towards keeping the draft;
+ * `'prose'` (the draft side) treats the `<` as plain text, so a stray `<` never
+ * shrinks the set of figures that must survive.
  */
-export function withoutMarkupTags(text: string): string {
+export function withoutMarkupTags(text: string, unclosed: 'drop' | 'prose' = 'drop'): string {
   let out = '';
   let i = 0;
   while (i < text.length) {
@@ -96,8 +98,13 @@ export function withoutMarkupTags(text: string): string {
     out += text.slice(i, open);
     if (/[A-Za-z/!]/.test(text.charAt(open + 1))) {
       const close = text.indexOf('>', open + 1);
-      if (close === -1) return out;
-      i = close + 1;
+      if (close === -1) {
+        if (unclosed === 'drop') return out;
+        out += '<';
+        i = open + 1;
+      } else {
+        i = close + 1;
+      }
     } else {
       out += '<';
       i = open + 1;
@@ -120,7 +127,10 @@ export function withoutMarkupTags(text: string): string {
  * moved to a different item (duck 175 / steak 200 swapped), a dropped minus
  * sign ("-18 °C" → "18 °C") and a changed unit all pass. Numbers inside markup
  * tags — a freehand `<svg>`'s `x="130"`, `viewBox`, `points` — are NOT counted
- * on the composed side, so a coordinate cannot stand in for a dropped figure.
+ * on either side: a coordinate in the composed page cannot stand in for a dropped
+ * figure, and a coordinate in the draft (a page that already holds a drawing) is
+ * not demanded back. An unclosed `<tag` in the draft is prose and its figures are
+ * still demanded; in the composed body it runs to the end and hides what follows.
  * What is still counted is text BETWEEN tags: a figure written into a drawing's
  * `<text>` label is a number on the page, so it can stand in for a dropped one
  * (the style guide forbids figures in a label; nothing enforces it).
@@ -129,7 +139,7 @@ export function missingFigures(draft: string, composed: string): string[] {
   const have = new Map<string, number>();
   for (const f of figuresIn(withoutMarkupTags(composed))) have.set(f, (have.get(f) ?? 0) + 1);
   const missing: string[] = [];
-  for (const f of figuresIn(draft)) {
+  for (const f of figuresIn(withoutMarkupTags(draft, 'prose'))) {
     const n = have.get(f) ?? 0;
     if (n === 0) missing.push(f);
     else have.set(f, n - 1);
@@ -170,7 +180,7 @@ export function checkComposedPage(
   const blocks = findLibraryBlocks(composed);
   const opened = composed.replace(/\r\n?/g, '\n').match(LOOSE_SALT_FENCE_OPEN)?.length ?? 0;
   if (opened > blocks.length) return { ok: false, reason: 'salt- block not at top level' };
-  const drafted = new Set(figuresIn(draft));
+  const drafted = new Set(figuresIn(withoutMarkupTags(draft, 'prose')));
   for (const block of blocks) {
     const parsed = parseLibraryBlock(block.kind, block.source);
     if (!parsed.ok) return { ok: false, reason: `salt-${block.kind}: ${parsed.problem}` };

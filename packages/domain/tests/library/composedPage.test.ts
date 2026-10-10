@@ -137,6 +137,16 @@ describe('checkComposedPage', () => {
     expect(missingFigures('Render at 130.', 'Render later <svg x="130"')).toEqual(['130']);
   });
 
+  it('passes an unchanged body that already holds a drawing', () => {
+    const body = 'Render at 130.\n\n<svg viewBox="0 0 200 100"><rect x="130" y="10"/></svg>';
+    expect(missingFigures(body, body)).toEqual([]);
+    expect(checkComposedPage(body, body, 10_000).ok).toBe(true);
+  });
+
+  it('treats an unclosed tag in the draft as prose, so its figures are still demanded', () => {
+    expect(missingFigures('Keep <5 and 9 <svg 7', 'Keep <5 and 9')).toEqual(['7']);
+  });
+
   it('passes a figure moved to another item — the boundary missingFigures states', () => {
     expect(
       checkComposedPage(

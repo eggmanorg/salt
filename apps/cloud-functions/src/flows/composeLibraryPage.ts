@@ -42,8 +42,9 @@ import { reportServerError } from '../observability/reportServerError.js';
  * It runs inside a chef chat turn's tool loop, and a tool run is SILENCE to the
  * stream's 55 s idle timer — the timer covers the model's last chunk before the
  * tool call, the tool run itself, and the chunk after it (`chefChat.ts`, the
- * drain). 25 s leaves the other two more than half the budget, and is still
- * several times a healthy `pro`-tier rewrite of a page-sized body. No retry:
+ * drain). 25 s leaves the other two more than half the budget. Measured: a
+ * `pro` rewrite without a drawing took 18 s, and pages with a drawing took
+ * 45–63 s on both tiers, so those fall back to the draft. No retry:
  * a retry would double the silence, and the fallback — saving the draft — is a
  * good outcome, not a failure the household sees.
  */

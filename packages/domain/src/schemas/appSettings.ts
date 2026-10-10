@@ -82,9 +82,9 @@ export const AI_FLOW_ROLES = {
   chefChat: 'pro',
   // The page writer (issue #1663): lays a chef's draft out in the Library's house
   // style, inside the chef's own `writeKitchenNote` tool call. `pro`, on
-  // measurement: a page with a freehand drawing took 45–63 s on `fast` against
-  // the writer's 25 s deadline, and a page without one 48 s on `fast` against
-  // 18 s on `pro`. It runs as silence inside a chat stream's 55 s idle window,
+  // measurement: pages with a freehand drawing took 45–63 s on both `fast` and
+  // `pro`, against the writer's 25 s deadline; a page without one took 48 s on
+  // `fast` and 18 s on `pro` (the only `pro` timing without a drawing). It runs as silence inside a chat stream's 55 s idle window,
   // so the deadline is unchanged; a bad or late answer costs nothing — the draft
   // is saved instead.
   composeLibraryPage: 'pro',
