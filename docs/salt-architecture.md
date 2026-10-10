@@ -155,7 +155,7 @@ This model is intentionally narrow. Multi‑workspace, sharing, or per‑documen
 
 - Implements realtime subscriptions and direct writes using Firestore `onSnapshot` and `setDoc`.
 - Implements `AuthProvider` using Firebase Auth.
-- Initialises Firestore with `persistentLocalCache()` in production (disabled in emulator tests to avoid stale cache).
+- Initialises Firestore with `persistentLocalCache()` in production (disabled in emulator tests to avoid stale cache, except the one durability e2e that opts in with `?e2ePersistentCache` for that page load; a real backend ignores it).
 - Initialises Firebase App Check (reCAPTCHA Enterprise, `isTokenAutoRefreshEnabled: true`) when an optional `AppCheckConfig` is provided and emulators are not in use. Must initialise before any other Firebase service so tokens are attached to requests. The exported `AppCheckConfig` interface carries a public `siteKey` and an optional `debugToken` for unattested environments (local dev / CI hitting a real backend); the debug token must never be baked into a deployed bundle.
 - Exposes the following as its primary data API:
   - Canon: `subscribeCanonItems`, `subscribeAisles`, `upsertCanonItem`, `deleteCanonItem`, `saveAisles`
@@ -294,7 +294,7 @@ All error reporting is mediated through `ErrorReportingPort` — adapters never 
 **Report** to the error-tracking backend (PostHog) via `ErrorReportingPort`:
 
 - `StorageError` — corruption, quota exceeded, storage unavailable.
-- `SyncError` — a write the user attempted that failed unexpectedly.
+- `SyncError` — a write the user attempted that failed unexpectedly, or that the server never confirmed (`write-stalled`, from `checkWriteHealth()`; `web-pwa` reports one per stuck episode and may reload the page to recover — queued writes survive the reload).
 - `AuthError` — **except** the sign-out / token-refresh race, where in-flight realtime listeners receive `permission-denied` as auth tears down. That specific case is a known false positive and is suppressed.
 - Any error that maps to **no** known operational category (unknown / unexpected). These are the highest-signal reports.
 - **Server-side:** unhandled Cloud Function exceptions and AI/Genkit flow failures (timeouts, model errors).
