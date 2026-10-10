@@ -1733,9 +1733,10 @@ export const chefChatFlow = ai.defineFlow(
         // it, so the reply still arrives in fragments; the gaps while tools run are
         // silence, which is what the idle timer below bounds. A turn may search,
         // read a dish, look a piece of kit up, read a note AND write one, so that
-        // is up to six round-trips inside one stream — each is a Firestore read
-        // (or, for writeKitchenNote, a single write) measured in milliseconds,
-        // nowhere near the 55 s idle budget.
+        // is up to six round-trips inside one stream. The reads are Firestore
+        // reads measured in milliseconds; writeKitchenNote is not — it runs the
+        // page writer first, silent for up to 25 s (COMPOSE_LIBRARY_PAGE_TIMEOUT),
+        // bounded by `composeLibraryPage.test.ts` → "the page writer’s budget".
         //
         // Note what is still absent: no `output` option, and none is coming. Half
         // of design principle #1 survives intact — the chef returns prose, and

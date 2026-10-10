@@ -104,6 +104,34 @@ describe('checkComposedPage', () => {
     expect(checkComposedPage(draft, bad, 10_000).ok).toBe(false);
   });
 
+  it('refuses a broken block nested where the top-level scan cannot check it', () => {
+    // An unquoted colon in YAML — the renderer would draw "couldn't be read".
+    const broken = 'body: Rest: 10 min';
+    const inList = `90–95\n\n- ${fence('salt-callout', broken).replace(/\n/g, '\n  ')}`;
+    const inQuote = `90–95\n\n> ${fence('salt-callout', broken).replace(/\n/g, '\n> ')}`;
+    for (const bad of [inList, inQuote]) {
+      expect(checkComposedPage(draft, bad, 10_000)).toEqual({
+        ok: false,
+        reason: 'salt- block not at top level',
+      });
+    }
+  });
+
+  it('refuses a salt- fence quoted inside an ordinary code block — it errs towards the draft', () => {
+    const quoted = `90–95\n\n${fence('markdown', fence('salt-callout', 'body: x'), '````')}`;
+    expect(checkComposedPage(draft, quoted, 10_000).ok).toBe(false);
+  });
+
+  it('passes a figure moved to another item — the boundary missingFigures states', () => {
+    expect(
+      checkComposedPage(
+        'Duck 175, steak 200, freeze at -18.',
+        'Duck 200, steak 175, freeze at 18.',
+        10_000,
+      ),
+    ).toEqual({ ok: true });
+  });
+
   it('refuses a layout that lost a figure', () => {
     expect(checkComposedPage(draft, 'Poached eggs at 90 °C.', 10_000)).toEqual({
       ok: false,

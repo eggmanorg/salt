@@ -84,8 +84,12 @@ export function figuresIn(text: string): string[] {
  * Compared as WRITTEN: "6.3" and "6.30" are different figures here, and so are
  * "1,062" and "1062" (the first is two figures, 1 and 062). That errs towards
  * keeping the chef's draft, which is the safe direction. Figures the composed
- * body ADDS — a total in a stats block — are allowed: this checks that nothing
- * was lost or changed, not that nothing was derived.
+ * body ADDS — a total in a stats block — are allowed.
+ *
+ * Its boundary: it checks that every number token is still SOMEWHERE on the
+ * page, not that it is still attached to the same item, sign or unit. A figure
+ * moved to a different item (duck 175 / steak 200 swapped), a dropped minus
+ * sign ("-18 °C" → "18 °C") and a changed unit all pass.
  */
 export function missingFigures(draft: string, composed: string): string[] {
   const have = new Map<string, number>();
@@ -102,12 +106,21 @@ export function missingFigures(draft: string, composed: string): string[] {
 export type ComposedPageCheck =
   { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
+// Any line that opens a `salt-` fence, at any indentation and under any run of
+// list markers or `>` quote markers — deliberately looser than
+// `findLibraryBlocks`, which sees top-level fences only while the renderer draws
+// one nested in a list item or block quote too.
+const LOOSE_SALT_FENCE_OPEN = /^[ \t>*+\-\d.)]*(?:`{3,}|~{3,})[ \t]*salt-/gm;
+
 /**
  * Whether `composed` may be saved in place of `draft`.
  *
- * Refused when it is blank, longer than `maxLength`, carries a `salt-*` block
- * that does not parse, or has lost or changed any figure the draft held. The
- * `reason` is for the log, not for the household.
+ * Refused when it is blank, longer than `maxLength`, carries a `salt-*` fence
+ * the top-level scan cannot see (nested in a list or quote, or quoted inside
+ * another code block — so it cannot be checked), carries a `salt-*` block that
+ * does not parse, or is missing a number token the draft held (`missingFigures`
+ * states what that does not catch). The `reason` is for the log, not for the
+ * household.
  */
 export function checkComposedPage(
   draft: string,
@@ -116,7 +129,10 @@ export function checkComposedPage(
 ): ComposedPageCheck {
   if (composed.trim() === '') return { ok: false, reason: 'blank' };
   if (composed.length > maxLength) return { ok: false, reason: 'too long' };
-  for (const block of findLibraryBlocks(composed)) {
+  const blocks = findLibraryBlocks(composed);
+  const opened = composed.replace(/\r\n?/g, '\n').match(LOOSE_SALT_FENCE_OPEN)?.length ?? 0;
+  if (opened > blocks.length) return { ok: false, reason: 'salt- block not at top level' };
+  for (const block of blocks) {
     const parsed = parseLibraryBlock(block.kind, block.source);
     if (!parsed.ok) return { ok: false, reason: `salt-${block.kind}: ${parsed.problem}` };
   }
