@@ -36,6 +36,7 @@ const SEEDED_SPECIAL_ID = 'alternatives-planned-special';
 function entry(id: string, title: string, kind: RecipeKind): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind,

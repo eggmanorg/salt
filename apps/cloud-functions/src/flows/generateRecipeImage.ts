@@ -306,6 +306,31 @@ export const BREAD_IMAGE_STYLE_ANCHORS =
 export const BREAD_SCENE_FALLBACK =
   'First read what kind of bread this is and how it is met: a tin loaf or a sandwich loaf calls for the whole loaf on a rack or a board, perhaps with a slice or two cut to show an even, close crumb; a crusty cob, a boule or a sourdough calls for a deep, blistered crust and an ear, torn or cut open to an airy crumb; rolls, buns and baps call for a batch of them pulled apart on a tray or a cloth; a focaccia calls for a dimpled, oil-glossed slab in its tin or cut into squares; a flatbread, a naan or a pitta calls for a warm, blistered stack; a pizza dough or base calls for the stretched dough on a floured peel or bench, before any topping. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each bread feels like it came out of its own oven.';
 
+// ─── The FERMENT anchors + fallback (issue #1656) ────────────────────────────
+//
+// A kraut painted with the recipe anchors gets a plated side dish, and a jar of
+// hot sauce gets a dinner it was never part of. What a ferment IS is the jar —
+// the packed vegetables under their brine, the colour through the glass, the
+// weight or the airlock on top — and the way you meet it is a jar opened on the
+// bench, or a forkful lifted out. Same contract as the other pairs: LOCKED IN
+// CODE, appended LAST on every prompt, carrying the same prohibitions, and, like
+// the cure and bread pairs, holding style rather than naming one vessel, because
+// a crock of kraut, a jar of kimchi and a bottle of hot sauce are three different
+// photographs.
+//
+// THE SAME BOUNDARY AS THE CURE AND BREAD PAIRS (#1442's note above):
+// `describeRecipeScene` has no `ferment` arm either, so a ferment's stored brief
+// is written by the ordinary recipe prompt and these anchors win against it only
+// by being appended last.
+export const FERMENT_IMAGE_STYLE_ANCHORS =
+  'But the FERMENT is always the star of the shot: fill the frame with it, composing tight and close so the jar and what is packed inside it are unmistakably the subject and take up most of the image. The bench, the shelf and the room behind are only supporting context glimpsed around and behind it — never the main event; avoid wide or pulled-back shots where the surroundings occupy more of the frame than the ferment itself. Show it as the direction above describes — sealed and bubbling, opened on the bench, or a little lifted out into a bowl — and let the ferment do the work: the colour reading through the glass, the vegetables packed down under their brine, the tiny bubbles of a live ferment, the glisten of a chilli mash, a weight or a cabbage leaf pressed on top. This is something somebody made and is keeping, so the setting is a working one — a jar or a crock, a wooden board, a cloth, a fork, a kitchen counter — real and a little lived-in, with the jar left unlabelled. Do NOT stage it as a deli counter or a magazine spread, and do NOT plate it as a side dish beside a dinner. Vary the vessel, the surface and the angle to suit each ferment; do NOT default to the same jar, board or camera position every time. Within that, hold a recognisable house style: a photorealistic photograph with the warm, unfussy, appetising feel of a well-stocked larder shelf, shot with real affection. Always keep these anchors — the ferment filling most of the frame as the clear subject; soft natural window light; a shallow depth of field with the ferment in crisp focus and the setting falling softly out of focus. Absolutely no text, no captions, no watermark, no logos, no branding, no hands, no people. A single, appetising hero shot of one ferment, framed large and close so it fills the frame and makes you want to open the jar.';
+
+// The ferment counterpart to RECIPE_IMAGE_DISH_READING_FALLBACK, used only when no
+// scene brief is available. What it asks the model to read is the KIND OF
+// FERMENT, because the vessel, the colour and the light all follow from it.
+export const FERMENT_SCENE_FALLBACK =
+  'First read what kind of ferment this is and how it is met: a sauerkraut or another kraut calls for pale, fine-shredded cabbage packed tight in a crock or a tall jar under its own brine, perhaps a forkful lifted out; a kimchi calls for the deep red of chilli-coated cabbage or radish pressed into a jar, glossy and a little wild; brined pickles call for whole cucumbers, carrots, beans or garlic cloves standing upright under a cloudy brine with dill and spices floating among them; a fermented hot sauce or chilli mash calls for a vivid red or orange mash in a jar or a sauce in a small bottle, with a few fresh chillies beside it; preserved lemons, garlic honey or a fermented condiment call for a jar of sun-coloured fruit or amber honey on a bright counter. Make this shift clearly legible at a glance — a deliberate, confident step, never a faint tint — so each ferment feels like it came off its own shelf.';
+
 // The kinds this flow knows how to paint. Declared LOCALLY as genkit-`z` literals
 // rather than imported from `RecipeKindSchema`: genkit re-exports its own bundled
 // zod instance, and a schema built from plain `zod` is not interchangeable with it.
@@ -318,6 +343,7 @@ export const GENERATE_RECIPE_IMAGE_KINDS = [
   'placeholder',
   'cure',
   'bread',
+  'ferment',
 ] as const;
 
 type ImageKind = (typeof GENERATE_RECIPE_IMAGE_KINDS)[number];
@@ -337,6 +363,8 @@ function anchorsFor(kind: ImageKind | undefined): string {
       return CURE_IMAGE_STYLE_ANCHORS;
     case 'bread':
       return BREAD_IMAGE_STYLE_ANCHORS;
+    case 'ferment':
+      return FERMENT_IMAGE_STYLE_ANCHORS;
     default:
       return RECIPE_IMAGE_STYLE_ANCHORS;
   }
@@ -354,6 +382,8 @@ function fallbackFor(kind: ImageKind | undefined): string {
       return CURE_SCENE_FALLBACK;
     case 'bread':
       return BREAD_SCENE_FALLBACK;
+    case 'ferment':
+      return FERMENT_SCENE_FALLBACK;
     default:
       return RECIPE_IMAGE_DISH_READING_FALLBACK;
   }
@@ -389,6 +419,10 @@ function openerFor(
       // cut is the brief's call, exactly as a cure's stage is.
       case 'bread':
         return `A beautiful, appetising photograph of the bread "${title}" — fresh from the oven, shown as the direction below describes it.`;
+      // A ferment is a jar, not a plated dish; sealed, opened or lifted out is the
+      // brief's call, exactly as a cure's stage is.
+      case 'ferment':
+        return `A beautiful, appetising photograph of the ferment "${title}" — vegetables or fruit fermenting in salt, shown as the direction below describes it.`;
       default:
         return `A beautiful, appetising photograph of the finished dish "${title}".`;
     }

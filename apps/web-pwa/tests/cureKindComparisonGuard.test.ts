@@ -1,6 +1,6 @@
 /**
- * Source guard: no `.svelte` file decides anything from `'cure'` or a cure
- * category (issue #1404).
+ * Source guard: no `.svelte` file decides anything from `'cure'`, `'ferment'` or
+ * either kind's category (issues #1404, #1656).
  *
  * CLAUDE.md is explicit that nothing outside `packages/domain` branches on
  * `recipes.kind` for behaviour: capability comes from the pure predicates, and a
@@ -15,25 +15,26 @@
  * other gate, reads as sensible, and is the exact thing the rule forbids — so the
  * rule needed a mechanism rather than a sentence (CLAUDE.md rule 12).
  *
- * What the app does instead: `KIND_COPY` declares a `categoryCopy` on exactly one
- * kind, and `RecipeIdentityCard` renders the editor when the kind's copy declares
- * one. That is byte for byte the `tagsHint` pattern, whose own header argues the
- * case — a vocabulary that is simply undefined for four kinds is copy, not a
- * branch on behaviour.
+ * What the app does instead: `KIND_COPY` declares a `categoryCopy` on the kinds
+ * that carry a category, and `RecipeIdentityCard` renders the editor when the
+ * kind's copy declares one, reading and writing the value through the domain's
+ * `categoryOf` / `withCategory`. That is the `tagsHint` pattern, whose own header
+ * argues the case — a vocabulary that is simply undefined for the other kinds is
+ * copy, not a branch on behaviour.
  *
  * ── Why the SUBJECT is narrow and the SURFACE is not ─────────────────────────
  *
- * It forbids the five category values and `'cure'`, not every kind, and that is
- * deliberate rather than timid: `'recipe'`, `'special'`, `'cocktail'` and
- * `'placeholder'` are also the names of unrelated things a Svelte file legitimately
+ * It forbids the category values and the two kinds that own them, not every
+ * kind, and that is deliberate rather than timid: `'recipe'`, `'special'`,
+ * `'cocktail'` and `'placeholder'` are also the names of unrelated things a Svelte file legitimately
  * compares against — `source.kind === 'recipe'` on a shopping-list source, a
  * `sortMode === 'recipe'` chip — so a guard over all of them would fire on code
- * that has nothing to do with a recipe's kind. The five category values and
- * `'cure'` are words nothing else in this app uses.
+ * that has nothing to do with a recipe's kind. The category values, `'cure'` and
+ * `'ferment'` are words nothing else in this app uses.
  *
  * ── How it avoids going vacuously green (docs/unit-test-spec.md §E) ──────────
  *
- *  - The forbidden values are read out of `CureCategorySchema` itself, so a sixth
+ *  - The forbidden values are read out of the two category schemas, so a sixth
  *    category is covered on the day it is added, with no list to maintain (UT-E1).
  *  - The scan surface is every `.svelte` file under `src`, walked — not a list of
  *    pages — so a second surface that wants a category is covered the day it is
@@ -59,7 +60,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
-import { CureCategorySchema } from '@salt/domain/schemas';
+import { CureCategorySchema, FermentCategorySchema } from '@salt/domain/schemas';
 
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '../src');
 
@@ -102,11 +103,18 @@ function stripComments(src: string): string {
 }
 
 /**
- * The words no `.svelte` file may compare against: the stored kind, and every
- * category the schema knows. Read off `CureCategorySchema` rather than retyped,
- * so a sixth category joins the guard on the day it is added.
+ * The words no `.svelte` file may compare against: the two stored kinds that
+ * carry a category, and every category either schema knows. Read off the schemas
+ * rather than retyped, so a sixth category joins the guard on the day it is added.
+ * `'ferment'` and its five types joined in #1656 — like `'cure'`, words nothing
+ * else in this app uses.
  */
-const FORBIDDEN: readonly string[] = ['cure', ...CureCategorySchema.options];
+const FORBIDDEN: readonly string[] = [
+  'cure',
+  ...CureCategorySchema.options,
+  'ferment',
+  ...FermentCategorySchema.options,
+];
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -130,14 +138,16 @@ function comparisons(code: string): string[] {
 
 const files = walkSvelte(srcDir);
 
-describe('no .svelte file branches on a cure kind or category (issue #1404)', () => {
+describe('no .svelte file branches on a cure or ferment kind or category (issues #1404, #1656)', () => {
   it('sees a real tree of components', () => {
     // UT-E2: the walk finding nothing would make every assertion below vacuous.
     expect(files.length).toBeGreaterThan(50);
     expect(files.some((f) => f.endsWith('RecipeIdentityCard.svelte'))).toBe(true);
-    // And the subject is derived, not stated: six words, one kind plus five
-    // categories, read off the schema.
-    expect(FORBIDDEN).toHaveLength(1 + CureCategorySchema.options.length);
+    // And the subject is derived, not stated: two kinds plus every category,
+    // read off the schemas.
+    expect(FORBIDDEN).toHaveLength(
+      2 + CureCategorySchema.options.length + FermentCategorySchema.options.length,
+    );
   });
 
   it('catches the violation it exists for, and clears the shapes that are fine', () => {
@@ -147,12 +157,15 @@ describe('no .svelte file branches on a cure kind or category (issue #1404)', ()
     expect(comparisons(`{#if kindOf(r) !== "cure"}`)).toEqual(['cure']);
     expect(comparisons("case 'dry_cured_whole_muscle':")).toEqual(['dry_cured_whole_muscle']);
     expect(comparisons(`{#if recipe.cureCategory === 'semi_dry'}`)).toEqual(['semi_dry']);
+    expect(comparisons(`{#if recipe.kind === 'ferment'}`)).toEqual(['ferment']);
+    expect(comparisons(`{#if recipe.fermentCategory !== "kimchi"}`)).toEqual(['kimchi']);
 
     // The sanctioned shapes, which must stay clear: reading words out of the copy
     // table, rendering the vocabulary a kind declares, and writing a value back.
     expect(comparisons('KIND_COPY[kindOf(recipe)].categoryCopy')).toEqual([]);
     expect(comparisons('{#if categoryCopy}')).toEqual([]);
-    expect(comparisons('onEdit({ ...recipe, cureCategory: toCureCategory(v) })')).toEqual([]);
+    expect(comparisons('onEdit(withCategory(recipe, toCategory(kind, v)))')).toEqual([]);
+    expect(comparisons('categoryOf(kind, recipe)')).toEqual([]);
     // A capability question, which is the whole point of the predicates.
     expect(comparisons('isPlannable(kindOf(recipe))')).toEqual([]);
   });

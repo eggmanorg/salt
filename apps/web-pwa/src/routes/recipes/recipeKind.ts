@@ -18,13 +18,20 @@
 // the same issue, because the word was also the name of a domain concept and the
 // selector for an AI prompt. Copy still moves freely; the enum does not.
 import {
+  categoryValues,
   hasComponents,
   takesIngredients,
   PLACEHOLDER_CONDITION_TAGS,
   PLACEHOLDER_MOODS,
 } from '@salt/domain';
-import { CureCategorySchema, RecipeKindSchema } from '@salt/domain/schemas';
-import type { CureCategory, Recipe, RecipeKind } from '@salt/domain';
+import { RecipeKindSchema } from '@salt/domain/schemas';
+import type {
+  CureCategory,
+  FermentCategory,
+  Recipe,
+  RecipeCategory,
+  RecipeKind,
+} from '@salt/domain';
 import type { IconProps } from '@salt/ui-components';
 
 // Read a kind off a recipe-shaped object, defaulting exactly as the schema does.
@@ -95,25 +102,25 @@ interface KindCopy extends SectionCopy {
   // optional, because the two call sites (the recipe page's overflow item and the
   // sheet's own title) must always have something to say and a `??` fallback at
   // each of them is a second place the default can drift from. Every kind but
-  // `cure` states the string the app has always shown, byte for byte.
+  // `cure` and `ferment` states the string the app has always shown, byte for
+  // byte.
   readonly startBatchLabel: string;
-  // The per-kind CATEGORY vocabulary (issue #1404): the words the recipe page's
-  // category editor wears, and the display label for each stored value.
+  // The per-kind CATEGORY vocabulary (issues #1404, #1656): the words the recipe
+  // page's category editor wears.
   //
-  // OPTIONAL, and present on exactly one kind — byte for byte the `tagsHint`
-  // pattern above, and for the same reason its header gives. This is COPY: a
-  // vocabulary that is simply undefined for four kinds is not a branch on
-  // behaviour, and no control, validation or write-path change hangs off it.
-  // `RecipeIdentityCard` renders the editor when the kind's copy declares one,
-  // which is what keeps `kind === 'cure'` out of every Svelte file in the app.
-  //
-  // `options` is a Record over the closed enum, so a sixth category fails to
-  // compile until it has been given words.
+  // OPTIONAL, and present on the two kinds that carry a category — the
+  // `tagsHint` pattern above, and for the same reason its header gives. This is
+  // COPY: a vocabulary that is simply undefined for the other kinds is not a
+  // branch on behaviour, and no control, validation or write-path change hangs
+  // off it. `RecipeIdentityCard` renders the editor when the kind's copy declares
+  // one, which is what keeps `kind === 'cure'` and `kind === 'ferment'` out of
+  // every Svelte file in the app. WHICH values a kind offers, and which stored
+  // field holds them, is the domain's (`categoryValues`, `categoryOf`).
   readonly categoryCopy?: CategoryCopy;
 }
 
-// A kind's category vocabulary. Named rather than inlined so `categoryOptions`
-// below can take it, and so the identity card can hold one in a `$derived`.
+// A kind's category vocabulary. Named rather than inlined so the identity card can
+// hold one in a `$derived`.
 interface CategoryCopy {
   // The zone's label, its dashed empty slot, and the Select's accessible name.
   readonly label: string;
@@ -121,31 +128,57 @@ interface CategoryCopy {
   // error: a cure nobody has categorised is uncategorised, and Salt records
   // rather than polices.
   readonly unsetLabel: string;
-  // A RECORD over the closed enum, so a sixth category fails to compile until it
-  // has been given words. The ORDER it renders in is the enum's, not this
-  // object's — see `categoryOptions`.
-  readonly options: Readonly<Record<CureCategory, string>>;
+  // The words for a stored value — `CATEGORY_WORDS`, keyed over BOTH vocabularies.
+  // A value's words do not depend on which kind is asking (the two enums share no
+  // value), so a reader holding only a value can say it without asking the kind.
+  readonly options: Readonly<Record<RecipeCategory, string>>;
 }
 
-// The category options, ready to render, in the stored enum's own order.
-//
-// Ordered from `CureCategorySchema.options` rather than `Object.entries`, which
-// widens the key back to `string` and would push a cast into the markup. This way
-// the value is typed by the domain and the Svelte file never names one.
+// The words for every category value. Each vocabulary is typed over its OWN enum
+// (`satisfies`), so a sixth cure category or ferment type fails to compile until
+// it has been given words, and a word cannot be filed under the wrong one.
+const CURE_CATEGORY_WORDS = {
+  // The five words the app uses for cured meat, everywhere. Short enough for a
+  // chip and a filter row; what each one MEANS — the safety mechanism it is named
+  // for — is stated once, at `CureCategorySchema`.
+  dry_cured_whole_muscle: 'Dry-cured whole muscle',
+  cooked_whole_muscle: 'Cured whole muscle (cooked)',
+  fermented_dry_cured: 'Fermented & dry-cured (salami)',
+  semi_dry: 'Semi-dry / snack meats',
+  cooked_emulsified: 'Cooked & emulsified',
+} as const satisfies Record<CureCategory, string>;
+
+const FERMENT_CATEGORY_WORDS = {
+  // The household's own words for what is in the jar (#1656).
+  kraut: 'Sauerkraut & krauts',
+  kimchi: 'Kimchi',
+  brined_pickle: 'Brined pickles',
+  hot_sauce: 'Hot sauce & chilli mash',
+  fruit_condiment: 'Fruit & condiments',
+} as const satisfies Record<FermentCategory, string>;
+
+const CATEGORY_WORDS: Readonly<Record<RecipeCategory, string>> = {
+  ...CURE_CATEGORY_WORDS,
+  ...FERMENT_CATEGORY_WORDS,
+};
+
+// The category options a kind offers, ready to render, in the stored enum's own
+// order — the domain's `categoryValues`, given words. Empty for a kind with no
+// category. The value is typed by the domain and the Svelte file never names one.
 export function categoryOptions(
-  copy: CategoryCopy,
-): readonly { value: CureCategory; label: string }[] {
-  return CureCategorySchema.options.map((value) => ({ value, label: copy.options[value] }));
+  kind: RecipeKind,
+): readonly { value: RecipeCategory; label: string }[] {
+  return categoryValues(kind).map((value) => ({ value, label: CATEGORY_WORDS[value] }));
 }
 
-// Narrow a picker's string back to a stored category (`Select` hands back a bare
-// `string`). A trust-boundary parse rather than a cast: the options are built from
-// the schema, so the only way this sees anything else is a bug — and for a field
-// whose whole job is to be corrected, `null` (uncategorised) is a truthful answer
-// to one, where a throw would take the page down over a word.
-export function toCureCategory(value: string): CureCategory | null {
-  const parsed = CureCategorySchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+// Narrow a picker's string back to one of this kind's categories (`Select` hands
+// back a bare `string`). A trust-boundary check rather than a cast: the options are
+// built from the same vocabulary, so the only way this sees anything else is a
+// bug — and for a field whose whole job is to be corrected, `null`
+// (uncategorised) is a truthful answer to one, where a throw would take the page
+// down over a word. Which stored field the value lands on is `withCategory`'s.
+export function toCategory(kind: RecipeKind, value: string): RecipeCategory | null {
+  return categoryValues(kind).find((category) => category === value) ?? null;
 }
 
 // What one entry is CALLED, as a choice in the recipe page's label picker
@@ -234,22 +267,13 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     noMatchText: 'No cured meats match your filters.',
     thumbIcon: 'Ham',
     menuIcon: 'Ham',
-    // Nothing is baked here: a coppa is hung, a bacon is cured then cooked. The
-    // one kind whose run is not a bake.
+    // Nothing is baked here: a coppa is hung, a bacon is cured then cooked. With
+    // `ferment`, one of the two kinds whose run is not a bake.
     startBatchLabel: 'Start a batch',
     categoryCopy: {
       label: 'Cure type',
       unsetLabel: 'Cure type not set',
-      // The five words the app uses for cured meat, everywhere. Short enough for
-      // a chip and a filter row; what each one MEANS — the safety mechanism it is
-      // named for — is stated once, at `CureCategorySchema`.
-      options: {
-        dry_cured_whole_muscle: 'Dry-cured whole muscle',
-        cooked_whole_muscle: 'Cured whole muscle (cooked)',
-        fermented_dry_cured: 'Fermented & dry-cured (salami)',
-        semi_dry: 'Semi-dry / snack meats',
-        cooked_emulsified: 'Cooked & emulsified',
-      },
+      options: CATEGORY_WORDS,
     },
   },
   // Issue #1646. A loaf, rolls, focaccia, flatbread, soda bread, pizza dough —
@@ -265,6 +289,26 @@ export const KIND_COPY: Record<RecipeKind, KindCopy> = {
     thumbIcon: 'Wheat',
     menuIcon: 'Wheat',
     startBatchLabel: 'Bake a batch',
+  },
+  // Issue #1656. Vegetables and fruit fermented in salt — a kraut, a kimchi, a jar
+  // of sour pickles, a chilli mash. Its own shelf, because a kraut is not dinner;
+  // the icon is a crock. The words are the proposal and move freely.
+  ferment: {
+    label: 'Ferments',
+    one: 'ferment',
+    many: 'ferments',
+    createdToast: 'Ferment created',
+    emptyText: 'No ferments yet — import or ask for a sauerkraut, a kimchi or some pickles.',
+    noMatchText: 'No ferments match your filters.',
+    thumbIcon: 'Amphora',
+    menuIcon: 'Amphora',
+    // Nothing is baked: a kraut is packed and left.
+    startBatchLabel: 'Start a batch',
+    categoryCopy: {
+      label: 'Ferment type',
+      unsetLabel: 'Ferment type not set',
+      options: CATEGORY_WORDS,
+    },
   },
 };
 
@@ -326,6 +370,7 @@ export const KIND_SECTIONS: readonly RecipeKind[] = [
   'placeholder',
   'cure',
   'bread',
+  'ferment',
 ];
 
 // The creatable kinds whose chips are shown before you ask for the rest. Kept as
@@ -420,6 +465,7 @@ export const LIST_SECTIONS: readonly ListSection[] = [
   'placeholder',
   'cure',
   'bread',
+  'ferment',
 ];
 
 // The sections whose chips are shown before you ask for the rest. Everything in
@@ -429,12 +475,13 @@ export const LIST_SECTIONS: readonly ListSection[] = [
 // does. The ones it hides are places you WRITE to more than you read from, or
 // shelves too narrow for the front row: Chef's Specials is a handful of standing
 // answers, a placeholder is picked for you by the planner rather than browsed,
-// Cured meats (issue #1404) is empty until somebody writes a cure, and Bread
-// (issue #1646) is a handful of loaves beside it — chips nobody in the household
-// needs up front, on a row everybody sees. Membership here is a presentation choice, so it lives beside
-// the copy; it never decides whether a section exists, and Cured meats is still
-// one tap away behind "+N more" from the day the first coppa is imported, as is
-// Bread from its first loaf.
+// Cured meats (issue #1404) is empty until somebody writes a cure, Bread (issue
+// #1646) is a handful of loaves beside it, and Ferments (issue #1656) a few jars —
+// chips nobody in the household needs up front, on a row everybody sees.
+// Membership here is a presentation choice, so it lives beside the copy; it never
+// decides whether a section exists, and Cured meats is still one tap away behind
+// "+N more" from the day the first coppa is imported, as are Bread from its first
+// loaf and Ferments from its first kraut.
 export const PRIMARY_LIST_SECTIONS: readonly ListSection[] = ['recipe', MEAL_SECTION, 'cocktail'];
 
 // Does this section's grid show an ingredient count on its cards? For a section

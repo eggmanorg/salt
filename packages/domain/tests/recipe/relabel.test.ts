@@ -22,9 +22,9 @@ function entry(kind: RecipeKind, componentRecipeIds: string[] = []) {
 }
 
 describe('relabelChoices', () => {
-  it('offers recipe, cocktail, cure and bread to a plain recipe', () => {
+  it('offers recipe, cocktail, cure, bread and ferment to a plain recipe', () => {
     expect([...relabelChoices(entry('recipe'))].sort()).toEqual(
-      ['bread', 'cocktail', 'cure', 'recipe'].sort(),
+      ['bread', 'cocktail', 'cure', 'ferment', 'recipe'].sort(),
     );
   });
 
@@ -33,9 +33,10 @@ describe('relabelChoices', () => {
     expect(relabelChoices(entry('placeholder'))).toEqual(['placeholder']);
   });
 
-  it('never offers Cured meat to a meal, so its dishes never drop from view', () => {
+  it('never offers Cured meat or Ferment to a meal, so its dishes never drop from view', () => {
     const choices = relabelChoices(entry('recipe', ['gravy']));
     expect(choices).not.toContain('cure');
+    expect(choices).not.toContain('ferment');
     expect([...choices].sort()).toEqual(['bread', 'cocktail', 'recipe']);
   });
 
@@ -78,6 +79,26 @@ describe('withKind', () => {
   it('keeps the cure type when the label stays Cured meat', () => {
     const cure = { ...entry('cure'), cureCategory: 'semi_dry' as const };
     expect(withKind(cure, 'cure').cureCategory).toBe('semi_dry');
+  });
+
+  it('clears the ferment type when leaving Ferment, and keeps it when staying (#1656)', () => {
+    const ferment = { ...entry('ferment'), fermentCategory: 'kimchi' as const };
+    expect(withKind(ferment, 'recipe').fermentCategory).toBeNull();
+    expect(withKind(ferment, 'cure').fermentCategory).toBeNull();
+    expect(withKind(ferment, 'ferment').fermentCategory).toBe('kimchi');
+  });
+
+  it('clears both types at once, whichever it was, on a move to a third label', () => {
+    // A document carrying both (built by hand — the schema cannot forbid it)
+    // still leaves with neither when it moves to a kind that owns neither.
+    const both = {
+      ...entry('cure'),
+      cureCategory: 'semi_dry' as const,
+      fermentCategory: 'kraut' as const,
+    };
+    const recipe = withKind(both, 'recipe');
+    expect(recipe.cureCategory).toBeNull();
+    expect(recipe.fermentCategory).toBeNull();
   });
 
   it('changes nothing but the label (and a stale cure type)', () => {

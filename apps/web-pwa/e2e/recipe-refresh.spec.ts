@@ -130,6 +130,7 @@ const DISH_ID = 'refresh-pilaf';
 
 const DISH_FIXTURE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: DISH_ID,
   schemaVersion: 1,
   kind: 'recipe',

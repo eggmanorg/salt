@@ -125,6 +125,7 @@ const loafStages = (): BatchStageDoc[] => LOAF.map(([id, kind, off]) => stage(id
 function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: BATCH_ID,

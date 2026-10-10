@@ -114,6 +114,7 @@ function stage(over: Partial<BatchStageDoc> = {}): BatchStageDoc {
 function makeBatch(over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: BATCH_ID,
@@ -1713,6 +1714,20 @@ describe('BatchDetailPage — cure type', () => {
     expect(screen.getByTestId('batch-detail-category')).toHaveTextContent(
       'Fermented & dry-cured (salami)',
     );
+  });
+
+  it('says which kind of ferment the run was, the same way (#1656)', async () => {
+    renderPage();
+    mockBatch._set(
+      makeBatch({
+        recipeTitle: 'Napa cabbage kimchi',
+        recipeKind: 'ferment',
+        fermentCategory: 'kimchi',
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId('batch-detail-category')).toBeInTheDocument());
+    expect(screen.getByTestId('batch-detail-category')).toHaveTextContent('Kimchi');
   });
 
   it('still says it when the recipe has been renamed, re-mapped or deleted', async () => {

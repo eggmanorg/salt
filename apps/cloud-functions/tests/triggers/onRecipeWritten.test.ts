@@ -96,6 +96,7 @@ const { onRecipeWritten } = await import('../../src/triggers/onRecipeWritten.js'
 function makeRecipe(id: string, overrides: Partial<RecipeDoc> = {}): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

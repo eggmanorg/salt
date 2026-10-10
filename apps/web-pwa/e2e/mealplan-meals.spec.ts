@@ -79,6 +79,7 @@ function recipe(
 ): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

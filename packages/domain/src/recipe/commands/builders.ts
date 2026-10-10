@@ -33,9 +33,10 @@ export function emptyRecipe(id: string, now: string, kind: RecipeKind = 'recipe'
     notes: null,
     producesCanonId: null,
     componentRecipeIds: [],
-    // Uncategorised (issue #1404): nothing has said which kind of cure this is,
-    // and for the four kinds that are not cures there is nothing to say.
+    // Uncategorised (issues #1404, #1656): nothing has said which kind of cure or
+    // ferment this is, and for every other kind there is nothing to say.
     cureCategory: null,
+    fermentCategory: null,
     // No kit yet, and no `kitInferredAt` either (issue #882): a blank recipe has
     // no method to read, so the onRecipeWritten kit branch simply finds nothing to
     // work from and asks again on the save that gives it steps.
@@ -105,6 +106,8 @@ export function duplicateRecipe(source: Recipe, newId: string, now: string): Rec
     // Carried, unlike the image fields below and unlike attribution: the category
     // is a fact about the FOOD, and a copy of a coppa is still a coppa (#1404).
     cureCategory: source.cureCategory,
+    // And a copy of a kimchi is still a kimchi (#1656).
+    fermentCategory: source.fermentCategory,
     title: `${source.title} (copy)`,
     description: source.description,
     ingredients: source.ingredients.map((group) => ({
@@ -190,14 +193,16 @@ export function newStep(id: string, text: string): Step {
 // The entry under a new label (issue #1646) — the write shape of the recipe
 // page's relabel control, whose choices come from `relabelChoices`.
 //
-// Leaving `cure` clears `cureCategory`: a cure type exists only on a cure, which
-// is what `startBatch` relies on when it freezes the category onto a run. Moving
-// back to `cure` therefore starts uncategorised, and the type is picked again.
+// Leaving `cure` clears `cureCategory`, and leaving `ferment` clears
+// `fermentCategory` (#1656): a category exists only on the kind it describes,
+// which is what `startBatch` relies on when it freezes the category onto a run.
+// Moving back therefore starts uncategorised, and the type is picked again.
 // Everything else carries unchanged — the label is identity, not content.
 export function withKind(recipe: Recipe, next: RecipeKind): Recipe {
   return {
     ...recipe,
     kind: next,
     cureCategory: next === 'cure' ? recipe.cureCategory : null,
+    fermentCategory: next === 'ferment' ? recipe.fermentCategory : null,
   };
 }

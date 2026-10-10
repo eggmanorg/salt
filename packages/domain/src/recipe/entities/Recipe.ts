@@ -1,5 +1,6 @@
 import type {
   CureCategoryDoc,
+  FermentCategoryDoc,
   RecipeDoc,
   RecipeKindDoc,
   RecipeMetadataDoc,
@@ -32,6 +33,11 @@ export type RecipeKind = RecipeKindDoc;
 // needs the type to name the value it writes. Like the kind, it is never switched
 // on to decide what something can DO — it picks words and groupings.
 export type CureCategory = CureCategoryDoc;
+
+// Which of the five kinds of ferment a `ferment` entry is (issue #1656) — aliased
+// for the reason `CureCategory` is, and with the same rule: words and groupings,
+// never a decision.
+export type FermentCategory = FermentCategoryDoc;
 
 // One Firestore document at `recipes/{id}`. Whole-document last-write-wins on
 // `updatedAt` (Firestore-as-master; no tombstones, no revision counter).

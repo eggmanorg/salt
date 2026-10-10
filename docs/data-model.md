@@ -177,9 +177,9 @@ three are pinned by tests — see the header of
 No `firestore.rules` clause covers the server write and none should: an Admin SDK
 write bypasses rules entirely.
 
-## `recipes` holds six kinds
+## `recipes` holds seven kinds
 
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'` (issues #637, #652, #1404, #1646).
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread' | 'ferment'` (issues #637, #652, #1404, #1646, #1656).
 
 - a **special** (UI label "Chef's Specials") is a meal that needs no recipe card — a
   takeaway, a night off, or the roast the cook knows by heart — with no ingredients
@@ -193,15 +193,22 @@ write bypasses rules entirely.
 - a **cure** (issue #1404) is cured meat — a coppa, a bacon, a saucisson, a
   mortadella. A full entry in every way a recipe is (ingredients, shopping list,
   canon, method, hero image) except that it is never offered in the planner picker.
-  It carries the one per-kind field on this document: `cureCategory`, one of five
-  closed values or `null`.
+  It carries one of the two per-kind fields on this document: `cureCategory`, one
+  of five closed values or `null`.
 - a **bread** (issue #1646) is a dough baked as bread — a loaf, rolls, focaccia, a
   flatbread, soda bread, pizza dough. Every capability is a recipe's; the label buys
   its own library shelf and is what offers "Make it scalable" (a first formula),
   as it is on a cure. **Deploy order:** an installed app or a Cloud Function that
   predates the member fails to parse a `kind: 'bread'` document and skips it, so
   nothing is labelled `bread` until both are on production — the same holds for
-  `cure` since #1404.
+  `cure` since #1404 and `ferment` since #1656.
+- a **ferment** (issue #1656) is vegetables or fruit fermented in salt — a
+  sauerkraut, a kimchi, brined pickles, a fermented hot sauce, preserved lemons.
+  Cure's capability row, cell for cell: a full entry, never offered in the planner
+  picker, offered a first formula from the basis. It carries the other per-kind
+  field, `fermentCategory`, one of five closed values (`kraut`, `kimchi`,
+  `brined_pickle`, `hot_sauce`, `fruit_condiment`) or `null`. Drinks, dairy and miso
+  stay `recipe`.
 
 Schema constraints, each load-bearing:
 
@@ -213,9 +220,10 @@ Schema constraints, each load-bearing:
   placeholder, by the import or the chef for the authorable kinds — and changed
   afterwards by exactly one route: the recipe page's label control (#1646), which
   switches only among the kinds that show ingredients and a method (recipe,
-  cocktail, cure, bread; `relabelChoices`) and never gives a meal a kind that
-  drops its dishes. Specials and placeholders are fixed. AI paths never change a
-  kind. Leaving `cure` clears `cureCategory` (`withKind`).
+  cocktail, cure, bread, ferment; `relabelChoices`) and never gives a meal a kind
+  that drops its dishes. Specials and placeholders are fixed. AI paths never change
+  a kind. Leaving `cure` clears `cureCategory`, and leaving `ferment` clears
+  `fermentCategory` (`withKind`).
 
 Specials and placeholders are **not** separate collections — they occupy a planner
 slot in place of a recipe. If they ever need their own fields, add optional nullable
@@ -230,6 +238,12 @@ a batch and filtered on, so it cannot carry the typo-drops-it-out cost the `plac
 mood accepts. It is **editable**, in place on the recipe page, because a
 misclassification with no route back is a permanent wrong answer. It is identity and
 grouping only — no capability predicate reads it, and the table has no column for it.
+
+`fermentCategory` (issue #1656) is its **sibling**, on identical terms, rather than a
+generalisation of it: `cureCategory` is stored and carries behaviour
+(`cureSaltFitness`), so renaming it would be a migration. The two enums share no value.
+Which field a kind owns is answered in one place — `categoryOf` / `withCategory` in
+`domain/src/recipe/queries/category.ts` — so no screen picks a field by kind.
 
 Note what `isPlannable` actually gates: whether a kind is **offered in the planner
 picker**, not whether it may sit in a day. A placeholder is `isPlannable: false` and

@@ -173,6 +173,7 @@ function ing(over: { id: string; rawText: string; canonId?: string | null }) {
 function makeEntry(overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],
@@ -219,6 +220,14 @@ const COPPA = withIngredients(
     ing({ id: 'ing-salt', rawText: '60 g salt' }),
   ],
   { kind: 'cure', title: 'Coppa' },
+);
+
+const KRAUT = withIngredients(
+  [
+    ing({ id: 'ing-cabbage', rawText: '1 kg white cabbage' }),
+    ing({ id: 'ing-salt', rawText: '20 g salt' }),
+  ],
+  { kind: 'ferment', title: 'Sauerkraut' },
 );
 
 // Says "flour" on every line it can — exactly what the retired keyword guess
@@ -271,6 +280,14 @@ describe('RecipeViewPage — an entry point for the first formula', () => {
   it('offers it on a cured meat that has no formula', async () => {
     // The case the flour guess could never reach: nothing in a coppa says flour.
     mockRecipes._set([COPPA]);
+    await openOverflow();
+
+    expect(await screen.findByTestId('recipe-make-scalable-menu-item')).toBeInTheDocument();
+  });
+
+  it('offers it on a ferment that has no formula (#1656)', async () => {
+    // The label decides: you weigh the cabbage, so the door opens from the basis.
+    mockRecipes._set([KRAUT]);
     await openOverflow();
 
     expect(await screen.findByTestId('recipe-make-scalable-menu-item')).toBeInTheDocument();

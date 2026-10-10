@@ -187,6 +187,7 @@ function subDoc(sub: PushSubscriptionDoc) {
 function makeRecipe(overrides: Partial<RecipeDoc> = {}): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id: 'recipe-1',
     schemaVersion: 1,
     kind: 'recipe',

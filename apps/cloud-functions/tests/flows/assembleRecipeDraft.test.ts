@@ -477,6 +477,7 @@ describe('assembleRecipeDraft — canon keying', () => {
 function baseRecipe(): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'cocktail',
@@ -1068,5 +1069,67 @@ describe('assembleRecipeDraft — the cure category', () => {
     );
 
     expect(doc.cureCategory).toBe('fermented_dry_cured');
+  });
+});
+
+// ─── the ferment type (issue #1656) ──────────────────────────────────────────
+//
+// The cure category's two claims, held for the ferment's own field: correlated
+// with the RESOLVED kind, and base-wins within a ferment.
+describe('assembleRecipeDraft — the ferment type', () => {
+  it('stores the model’s type on a freshly authored ferment, and no cure type', async () => {
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'ferment', fermentCategory: 'kraut', cureCategory: 'semi_dry' }),
+      { source: MANUAL },
+    );
+
+    expect(doc.kind).toBe('ferment');
+    expect(doc.fermentCategory).toBe('kraut');
+    expect(doc.cureCategory).toBeNull();
+  });
+
+  it('never stores a ferment type on a kind that is not ferment', async () => {
+    for (const kind of ['recipe', 'cure'] as const) {
+      const doc = await assembleRecipeDraft(rawOutput({ kind, fermentCategory: 'kimchi' }), {
+        source: MANUAL,
+      });
+
+      expect(doc.kind).toBe(kind);
+      expect(doc.fermentCategory).toBeNull();
+    }
+  });
+
+  it('drops the type when an edit-mode base overrides the model into a non-ferment kind', async () => {
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'ferment', fermentCategory: 'hot_sauce' }),
+      { source: MANUAL, baseRecipe: { ...baseRecipe(), kind: 'recipe' } },
+    );
+
+    expect(doc.kind).toBe('recipe');
+    expect(doc.fermentCategory).toBeNull();
+  });
+
+  it('keeps a hand-corrected type through an amend that returns a different fresh guess', async () => {
+    const base = {
+      ...baseRecipe(),
+      kind: 'ferment' as const,
+      fermentCategory: 'brined_pickle' as const,
+    };
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'ferment', fermentCategory: 'kraut' }),
+      { source: MANUAL, baseRecipe: base },
+    );
+
+    expect(doc.fermentCategory).toBe('brined_pickle');
+  });
+
+  it('types an edit-mode ferment the base has not typed yet', async () => {
+    const base = { ...baseRecipe(), kind: 'ferment' as const, fermentCategory: null };
+    const doc = await assembleRecipeDraft(
+      rawOutput({ kind: 'ferment', fermentCategory: 'fruit_condiment' }),
+      { source: MANUAL, baseRecipe: base },
+    );
+
+    expect(doc.fermentCategory).toBe('fruit_condiment');
   });
 });

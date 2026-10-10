@@ -77,6 +77,7 @@ function firstDayPutting(today: string, index: number) {
 function recipeWithPhoto(id: string, title: string): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind: 'recipe',

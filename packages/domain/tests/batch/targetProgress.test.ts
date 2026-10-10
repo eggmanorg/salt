@@ -20,6 +20,7 @@ function batch(target: FormulaTarget | null, basisGrams = GREEN_GRAMS): BatchDoc
     recipeTitle: 'Coppa',
     recipeKind: 'cure',
     cureCategory: 'dry_cured_whole_muscle',
+    fermentCategory: null,
     target,
     state: 'running',
     abandonedAt: null,

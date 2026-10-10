@@ -51,6 +51,7 @@ import { trackUsageEvent } from '@salt/observability';
 function written(): RecipeDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     componentRecipeIds: [],
     kit: [],
     createdBy: 'Daniel',

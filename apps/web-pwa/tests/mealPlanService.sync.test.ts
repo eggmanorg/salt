@@ -104,6 +104,7 @@ function weekWithNote(start: string, note: string, updatedAt: string): MealPlanW
 function recipe(id: string, componentRecipeIds: string[] = []): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     kit: [],
     createdBy: '',
     lastEditedBy: '',

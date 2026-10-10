@@ -346,9 +346,9 @@ export async function assembleRecipeDraft(
   //    the model omits it or invents one — there is no unbounded value here to
   //    guard against.
   //
-  // Pulled out to a local so `cureCategory` below can be correlated against the
-  // SAME resolved kind, rather than recomputing (and risking disagreeing with)
-  // it (#1425 review, blocking 2).
+  // Pulled out to a local so `cureCategory` and `fermentCategory` below can be
+  // correlated against the SAME resolved kind, rather than recomputing (and
+  // risking disagreeing with) it (#1425 review, blocking 2).
   const kind = baseRecipe?.kind ?? kindHint ?? raw.kind;
 
   const draft: RecipeDoc = {
@@ -360,8 +360,8 @@ export async function assembleRecipeDraft(
     // `'cure'`. Without this gate, an amend of a non-cure the model misreads as
     // cured meat, or a `.catch('recipe')` degradation that still answered the
     // category question, would store `{ kind: 'recipe', cureCategory: … }` — a
-    // value `RecipeIdentityCard` cannot show or correct (its editor renders off
-    // `KIND_COPY[kind].categoryCopy`, which only `cure` declares), that
+    // value `RecipeIdentityCard` cannot show or correct (its editor reads only
+    // the field the entry's own kind owns, through `categoryOf`), that
     // `startBatch` would freeze onto a run regardless of what it baked, and
     // that would grow a phantom filter chip on `/batches` for a household that
     // has never cured anything.
@@ -388,6 +388,12 @@ export async function assembleRecipeDraft(
     // excuse: an unconditional base-wins floor was already sitting one field
     // up, so the fix is to use the same shape, not to describe the gap again.
     cureCategory: kind === 'cure' ? (baseRecipe?.cureCategory ?? raw.cureCategory ?? null) : null,
+    // WHICH KIND OF FERMENT (issue #1656) — the cure category's correlation and
+    // its base-wins floor, unchanged, for every reason given above: stored only
+    // where the resolved `kind` is `'ferment'`, and a type corrected on the recipe
+    // page survives an amend about something else.
+    fermentCategory:
+      kind === 'ferment' ? (baseRecipe?.fermentCategory ?? raw.fermentCategory ?? null) : null,
     title: raw.title,
     description: raw.description,
     ingredients: ingredientGroups,

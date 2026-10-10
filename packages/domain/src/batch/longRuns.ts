@@ -3,8 +3,8 @@ import type { RecipeKind } from '../recipe/index.js';
 import { stageStatus } from './transitions.js';
 import { dateInZone, daysBetween } from '../shoppingDay/index.js';
 
-// Which runs want weighing (issue #1406) — the selection rule behind the weekly
-// "what is drying" nudge.
+// Which runs want a reading (issue #1406) — the selection rule behind the weekly
+// "what is under way" nudge. Cures since #1406; ferments since #1656.
 //
 // THE PROBLEM IT SOLVES. A cure runs for months and a kraut for weeks, and the
 // existing stage reminders fire at a stage's START. A ninety-day dry has exactly one
@@ -20,7 +20,7 @@ import { dateInZone, daysBetween } from '../shoppingDay/index.js';
 // production as "Cool the cobs") are the IDENTICAL SHAPE on the document — presence
 // alone cannot tell them apart, because neither has a planned span to measure. Only
 // the run's frozen kind can. Daniel's decision (#1449 park comment) was to branch on
-// it: **cures and ferments**, via `isLongRunKind` below.
+// it: **cures and ferments**, via the `LONG_RUN_ASK` table below.
 //
 // THIS IS NOT A VIOLATION of CLAUDE.md's never-branch-on-`recipeKind` invariant — it
 // is that rule's own sanctioned exit: a single named capability predicate living in
@@ -67,33 +67,62 @@ export const LONG_WAIT_DAYS = 7;
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Whether a run's frozen kind is the sort of long, unattended process the weekly
- * nudge exists for — Daniel's words, **"cures and ferments"** (#1449 round 2 park
- * comment), landed on the two real fields a batch carries.
- *
- * THE MAPPING, STATED, BECAUSE IT IS NOT TWO BRANCHES. `recipeKind` has exactly one
- * member in this domain — `'cure'` — and it already covers all five `cureCategory`
- * values (`dry_cured_whole_muscle`, `cooked_whole_muscle`, `fermented_dry_cured`,
- * `semi_dry`, `cooked_emulsified`; see `CureCategorySchema`). Two of those five ARE
- * ferments by their own schema comment — `fermented_dry_cured` is lactic
- * acidification, `semi_dry` is rapid acidification — so "cures and ferments" is not
- * two conditions to write, it is one: `recipeKind === 'cure'` already spans both
- * halves of the phrase within the cured-meat domain, and `cureCategory` adds no
- * further narrowing once that holds — every category under `cure` is a run worth a
- * weekly weighing.
- *
- * THE BOUNDARY, STATED (CLAUDE.md rule 12). A VEGETABLE ferment — sauerkraut,
- * kimchi, "a kraut's single three-week ferment" from this feature's own pitch — is
- * NOT reachable by this predicate today, because it has no `recipeKind` of its own
- * to check: `docs/formulas-schedules-batches.md` → *Kind versus presence* is
- * explicit that `ferment` "is not built", and its own table freezes Sauerkraut and
- * Kimchi as plain `recipeKind: 'recipe'` — byte-for-byte the same kind bread
- * carries. A kraut run through today's app with an observational wait is therefore
- * excluded exactly as bread is: an ACCEPTED gap, stated rather than discovered, and
- * this is the one place to widen when `ferment` (or an equivalent field) exists.
+ * What the weekly nudge asks of a run of a given kind: weigh it, or check on it.
+ * The verb is the only thing the two answers differ in — both put the run in the
+ * nudge, and `longRunNudge` turns them into words.
  */
+export type LongRunAsk = 'weigh' | 'check';
+
+/**
+ * Which frozen kinds are the sort of long, unattended process the weekly nudge exists
+ * for — Daniel's words, **"cures and ferments"** (#1449 round 2 park comment) — and
+ * what the nudge asks of each. `null` means the kind is never nudged, however long a
+ * wait it carries.
+ *
+ *   • `cure` → `'weigh'`. Every `cureCategory` value lives under this one kind, and
+ *     the category adds no narrowing: every cure is a run worth a weekly weighing,
+ *     because weight loss is how a cure is followed.
+ *   • `ferment` → `'check'` (issue #1656). A salted vegetable or fruit ferment is
+ *     followed by tasting, the brine and perhaps a pH reading, so the nudge asks with
+ *     one neutral verb rather than guessing which. A ferment with no pH target is
+ *     nudged exactly as one with a target is: a target decides nothing (#1407).
+ *   • everything else → `null`. Bread is the case that matters: its observational
+ *     cool-down is the identical shape on the document to a cure's observational dry
+ *     (see the module header), and this row is what keeps it out.
+ *
+ * THE CATEGORY NEVER ANSWERS. The table is keyed on the run's frozen `recipeKind`
+ * alone; neither `cureCategory` nor `fermentCategory` is read anywhere in this module
+ * or in `longRunNudge`, so a kimchi and a kraut are asked the same thing. The type
+ * picks words and groupings on `/batches`, never what the nudge says.
+ *
+ * A TABLE HERE RATHER THAN A COLUMN ON `capabilities.ts`: it answers one subsystem's
+ * question and carries that subsystem's wording key. It is EXHAUSTIVE by type — a
+ * `Record<RecipeKind, …>` — so a new kind fails to compile until it answers here.
+ *
+ * THE ACCEPTED LIMIT (CLAUDE.md rule 12). Selection never asks what a wait is FOR. A
+ * ferment whose last stage is a long "keep in the fridge" wait keeps being nudged
+ * every Friday until that stage is marked done, exactly as a cure's long hang does.
+ * Jars, and "a run stays open while you eat it", are parked rather than special-cased
+ * here.
+ */
+const LONG_RUN_ASK: Readonly<Record<RecipeKind, LongRunAsk | null>> = {
+  recipe: null,
+  special: null,
+  cocktail: null,
+  placeholder: null,
+  cure: 'weigh',
+  bread: null,
+  ferment: 'check',
+};
+
+/** What the weekly nudge asks of a run of this kind, or `null` if it is never nudged. See `LONG_RUN_ASK`. */
+export function longRunAsk(recipeKind: RecipeKind): LongRunAsk | null {
+  return LONG_RUN_ASK[recipeKind];
+}
+
+/** Whether a run of this kind can be nudged at all — a thin read of `LONG_RUN_ASK`. */
 export function isLongRunKind(recipeKind: RecipeKind): boolean {
-  return recipeKind === 'cure';
+  return longRunAsk(recipeKind) !== null;
 }
 
 /** One qualifying run, as the nudge needs to word it. */
@@ -110,6 +139,11 @@ export interface LongRunDescriptor {
   readonly dayNumber: number;
   /** Who started it. Never null here — a run with no starter has nobody to ask, and is dropped. */
   readonly startedBy: string;
+  /**
+   * The run's frozen `recipeKind` — what `longRunNudge` reads, through `longRunAsk`,
+   * to choose between "weigh" and "check on". Never its category.
+   */
+  readonly recipeKind: RecipeKind;
 }
 
 /**
@@ -117,11 +151,10 @@ export interface LongRunDescriptor {
  *
  * A run qualifies when all of these hold:
  *
- *   • its frozen kind passes `isLongRunKind` — cures and ferments, in Daniel's
- *     words, which today means `recipeKind === 'cure'` (see that predicate for the
- *     mapping and its stated boundary). This is checked FIRST and is what stops
- *     bread's own observational cool-down from ever reaching the branch below
- *     (#1449 round 2);
+ *   • its frozen kind has an ask in `LONG_RUN_ASK` — cures and ferments, in
+ *     Daniel's words, which is the `cure` and `ferment` rows (see that table for the
+ *     mapping and its stated limit). This is checked FIRST and is what stops bread's
+ *     own observational cool-down from ever reaching the branch below (#1449 round 2);
  *   • it is still running — an abandoned run is dropped outright;
  *   • among its frozen stages there is a `wait`, not yet marked done or skipped,
  *     THAT IS NOT `currentStage` NECESSARILY (see below) — nobody needs telling to
@@ -246,6 +279,7 @@ export function longRunsWantingReading(
       // as zero or a negative.
       dayNumber: Math.max(1, daysBetween(createdDate, nowDate) + 1),
       startedBy,
+      recipeKind: batch.recipeKind,
     };
 
     const existing = grouped.get(startedBy);

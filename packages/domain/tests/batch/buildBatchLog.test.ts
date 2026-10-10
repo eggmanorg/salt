@@ -68,6 +68,7 @@ function observation(
 function loaf(stages: BatchStageDoc[], over: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: 'batch-1',

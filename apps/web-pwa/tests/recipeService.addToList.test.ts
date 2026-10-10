@@ -65,6 +65,7 @@ function makeGroup(items: IngredientGroup['items']): IngredientGroup {
 function makeRecipe(groups: IngredientGroup[], servings: number | null = 2): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     image: null,
     createdBy: '',
     lastEditedBy: '',

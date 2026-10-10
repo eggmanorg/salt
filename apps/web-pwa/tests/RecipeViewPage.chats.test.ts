@@ -144,6 +144,7 @@ const RECIPE_ID = 'recipe-1';
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     producesCanonId: null,

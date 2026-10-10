@@ -190,6 +190,7 @@ function line(over: Partial<Ingredient> & { id: string }): Ingredient {
 function makeRecipe(items: Ingredient[]): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     kind: 'recipe',
     producesCanonId: null,
     kit: [],

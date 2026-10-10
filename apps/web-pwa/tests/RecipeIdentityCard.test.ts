@@ -843,14 +843,14 @@ describe('RecipeIdentityCard — label', () => {
     await user.click(screen.getByTestId('recipe-kind-select'));
   }
 
-  it('offers Recipe, Cocktail, Cured meat and Bread in edit mode', async () => {
+  it('offers Recipe, Cocktail, Cured meat, Bread and Ferment in edit mode', async () => {
     const user = userEvent.setup();
     show(entry(), true);
     expect(screen.getByTestId('recipe-kind-chip').textContent).toContain('Recipe');
 
     await openPicker(user);
 
-    expect(offeredOptions()).toEqual(['Recipe', 'Cocktail', 'Cured meat', 'Bread']);
+    expect(offeredOptions()).toEqual(['Recipe', 'Cocktail', 'Cured meat', 'Bread', 'Ferment']);
   });
 
   it('shows no label control outside edit mode', () => {
@@ -867,7 +867,7 @@ describe('RecipeIdentityCard — label', () => {
     },
   );
 
-  it('does not offer Cured meat to a meal', async () => {
+  it('does not offer Cured meat or Ferment to a meal', async () => {
     const user = userEvent.setup();
     show(entry({ componentRecipeIds: ['gravy'] }), true);
 
@@ -898,10 +898,21 @@ describe('RecipeIdentityCard — label', () => {
     expect(lastEdit().cureCategory).toBeNull();
   });
 
+  it('drops the ferment type when a ferment becomes a recipe (#1656)', async () => {
+    const user = userEvent.setup();
+    show(entry({ kind: 'ferment', fermentCategory: 'kimchi' }), true);
+
+    await openPicker(user);
+    await user.click(screen.getByRole('option', { name: 'Recipe' }));
+
+    expect(lastEdit().kind).toBe('recipe');
+    expect(lastEdit().fermentCategory).toBeNull();
+  });
+
   it('switched back to Cured meat, the cure type starts unset', () => {
     show(entry({ kind: 'cure', cureCategory: null }), true);
     expect(screen.getByTestId('recipe-kind-chip').textContent).toContain('Cured meat');
-    expect(screen.getByTestId('recipe-edit-cure-category').textContent).toContain('Cure type');
+    expect(screen.getByTestId('recipe-edit-category').textContent).toContain('Cure type');
   });
 });
 
@@ -918,11 +929,9 @@ describe('RecipeIdentityCard — cure type', () => {
   it('states the category as a fact, in the words the copy table gives it', () => {
     show(entry({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }), false);
 
-    expect(screen.getByTestId('recipe-cure-category').textContent).toContain(
-      'Dry-cured whole muscle',
-    );
+    expect(screen.getByTestId('recipe-category').textContent).toContain('Dry-cured whole muscle');
     // Read mode stays read mode: no pencil beside it, nothing to tap.
-    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-category')).toBeNull();
   });
 
   it('says nothing at all on a cure nobody has categorised, until you edit', () => {
@@ -930,12 +939,12 @@ describe('RecipeIdentityCard — cure type', () => {
     // sitting on the page telling the reader off. It only becomes visible as the
     // dashed slot every unfilled field wears while editing.
     show(entry({ kind: 'cure' }), false);
-    expect(screen.queryByTestId('recipe-cure-category')).toBeNull();
-    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-category')).toBeNull();
 
     cleanup();
     show(entry({ kind: 'cure' }), true);
-    expect(screen.getByTestId('recipe-edit-cure-category').textContent).toContain('Cure type');
+    expect(screen.getByTestId('recipe-edit-category').textContent).toContain('Cure type');
   });
 
   it('corrects a wrong category in a tap, with no confirmation step', async () => {
@@ -946,8 +955,8 @@ describe('RecipeIdentityCard — cure type', () => {
     const user = userEvent.setup();
     show(entry({ kind: 'cure', cureCategory: 'dry_cured_whole_muscle' }), true);
 
-    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
-    await user.click(screen.getByTestId('recipe-cure-category-select'));
+    await fireEvent.click(screen.getByTestId('recipe-edit-category'));
+    await user.click(screen.getByTestId('recipe-category-select'));
     await user.click(screen.getByRole('option', { name: 'Semi-dry / snack meats' }));
 
     expect(lastEdit().cureCategory).toBe('semi_dry');
@@ -958,8 +967,8 @@ describe('RecipeIdentityCard — cure type', () => {
     const user = userEvent.setup();
     show(entry({ kind: 'cure' }), true);
 
-    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
-    await user.click(screen.getByTestId('recipe-cure-category-select'));
+    await fireEvent.click(screen.getByTestId('recipe-edit-category'));
+    await user.click(screen.getByTestId('recipe-category-select'));
 
     expect(offeredOptions()).toEqual([
       'Dry-cured whole muscle',
@@ -981,25 +990,82 @@ describe('RecipeIdentityCard — cure type', () => {
     // declares no vocabulary gets no chip AND no dashed slot, so the card it
     // renders is the card it rendered before this field existed.
     show(entry({ kind }), false);
-    expect(screen.queryByTestId('recipe-cure-category')).toBeNull();
-    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-category')).toBeNull();
 
     cleanup();
     show(entry({ kind }), true);
-    expect(screen.queryByTestId('recipe-edit-cure-category')).toBeNull();
-    expect(screen.queryByTestId('recipe-cure-category-select')).toBeNull();
+    expect(screen.queryByTestId('recipe-edit-category')).toBeNull();
+    expect(screen.queryByTestId('recipe-category-select')).toBeNull();
   });
 
   it('closes the picker when Done is pressed', async () => {
     const user = userEvent.setup();
     show(entry({ kind: 'cure', cureCategory: 'cooked_emulsified' }), true);
 
-    await fireEvent.click(screen.getByTestId('recipe-edit-cure-category'));
-    expect(screen.getByTestId('recipe-cure-category-select')).toBeTruthy();
+    await fireEvent.click(screen.getByTestId('recipe-edit-category'));
+    expect(screen.getByTestId('recipe-category-select')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Done' }));
 
-    expect(screen.queryByTestId('recipe-cure-category-select')).toBeNull();
-    expect(screen.getByTestId('recipe-cure-category').textContent).toContain('Cooked & emulsified');
+    expect(screen.queryByTestId('recipe-category-select')).toBeNull();
+    expect(screen.getByTestId('recipe-category').textContent).toContain('Cooked & emulsified');
+  });
+});
+
+// ─── Ferment type (issue #1656) ──────────────────────────────────────────────
+//
+// The same zone as the cure type, reached the same way — through the kind's
+// copy and the domain's `categoryOf` / `withCategory` — on the other field.
+describe('RecipeIdentityCard — ferment type', () => {
+  it('states the type as a fact, in the household’s own words', () => {
+    show(entry({ kind: 'ferment', fermentCategory: 'kraut' }), false);
+
+    expect(screen.getByTestId('recipe-category').textContent).toContain('Sauerkraut & krauts');
+    expect(screen.queryByTestId('recipe-edit-category')).toBeNull();
+  });
+
+  it('wears the “Ferment type not set” slot until a type is chosen', () => {
+    show(entry({ kind: 'ferment' }), false);
+    expect(screen.queryByTestId('recipe-category')).toBeNull();
+
+    cleanup();
+    show(entry({ kind: 'ferment' }), true);
+    expect(screen.getByTestId('recipe-edit-category').textContent).toContain('Ferment type');
+  });
+
+  it('offers the five ferment types, in the stored order, and changes the type in a tap', async () => {
+    const user = userEvent.setup();
+    show(entry({ kind: 'ferment', fermentCategory: 'kraut' }), true);
+
+    await fireEvent.click(screen.getByTestId('recipe-edit-category'));
+    await user.click(screen.getByTestId('recipe-category-select'));
+
+    expect(offeredOptions()).toEqual([
+      'Sauerkraut & krauts',
+      'Kimchi',
+      'Brined pickles',
+      'Hot sauce & chilli mash',
+      'Fruit & condiments',
+    ]);
+
+    await user.click(screen.getByRole('option', { name: 'Kimchi' }));
+
+    expect(lastEdit().fermentCategory).toBe('kimchi');
+    expect(lastEdit().cureCategory).toBeNull();
+    expect(lastEdit().kind).toBe('ferment');
+  });
+
+  it('never reads a cure type left on a ferment as its ferment type', () => {
+    // A document carrying both fields (the schema cannot forbid it): the card
+    // answers from the field the ferment owns, and says it is unset.
+    show(entry({ kind: 'ferment', cureCategory: 'semi_dry' }), false);
+    expect(screen.queryByTestId('recipe-category')).toBeNull();
+
+    cleanup();
+    show(entry({ kind: 'ferment', cureCategory: 'semi_dry' }), true);
+    const zone = screen.getByTestId('recipe-edit-category').textContent ?? '';
+    expect(zone).toContain('Ferment type');
+    expect(zone).not.toContain('Semi-dry');
   });
 });

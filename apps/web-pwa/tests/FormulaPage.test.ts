@@ -119,6 +119,7 @@ const LOAF: IngredientSpec[] = [
 function makeRecipe(specs: IngredientSpec[] = LOAF, overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],
@@ -759,6 +760,16 @@ describe('FormulaPage — what are you filling?', () => {
   // the dough answers.
   it("starts a cured meat's first formula on the weight going in", async () => {
     mockRecipes._set([makeRecipe(LOAF, { kind: 'cure', title: 'Coppa' })]);
+    const { getByTestId } = renderPage();
+    mockFormula._set(null);
+    await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());
+
+    expect(getByTestId('formula-basis-grams')).toBeTruthy();
+  });
+
+  it("starts a ferment's first formula on the weight going in (#1656)", async () => {
+    // You weigh the cabbage.
+    mockRecipes._set([makeRecipe(LOAF, { kind: 'ferment', title: 'Sauerkraut' })]);
     const { getByTestId } = renderPage();
     mockFormula._set(null);
     await waitFor(() => expect(getByTestId('formula-editor')).toBeTruthy());

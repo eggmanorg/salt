@@ -37,6 +37,7 @@ const ORIGINAL_ID = 'duplicate-source-stew';
 // still pass. Bridge-seeded (NF-C4) — issue #1319 Phase 8 deleted the editor.
 const ORIGINAL_RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: ORIGINAL_ID,
   schemaVersion: 1,
   kind: 'recipe',

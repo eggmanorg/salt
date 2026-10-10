@@ -110,6 +110,14 @@ describe('a batch document written before #1274', () => {
     expect(parsed.cureCategory).toBeNull();
   });
 
+  it('reads as a run with no ferment type (#1656)', () => {
+    // `fermentCategory` is additive with a read default, like `cureCategory`. The
+    // default is true of every run written before the field: none of them can be a
+    // ferment, because the `ferment` kind and this field ship in the same change.
+    expect('fermentCategory' in LEGACY_BATCH).toBe(false);
+    expect(BatchSchema.parse(LEGACY_BATCH).fermentCategory).toBeNull();
+  });
+
   it('reads as a run that used the product its recipe named (#1402)', () => {
     // `cureSaltSubstitution` is optional rather than defaulted, exactly as `vessel`
     // above is, so a document written before it is ABSENT rather than an empty

@@ -9,7 +9,7 @@
 //   - 'shopping-reminder' (#629) — deep-links via `url`, has none
 //   - 'batch-stage'       (#812) — deep-links via `url`, has none
 //   - 'kitchen-timer'     (#842) — deep-links via `url`, has an in-app equivalent
-//   - 'batch-readings'    (#1406) — the weekly "what is drying" nudge; deep-links via `url` to the batches LIST, has none
+//   - 'batch-readings'    (#1406) — the weekly "what is under way" nudge; deep-links via `url` to the batches LIST, has none
 // Everything that differs between them is payload-driven; nothing here is
 // hard-coded per feature except the foreground rule below and the fallback copy
 // each kind uses when a payload arrives without any.
@@ -45,11 +45,12 @@ var SALT_FALLBACK_COPY = {
   },
   // A FIFTH KIND rather than a reuse of 'batch-stage' (#1406). A weekly nudge whose
   // payload failed to parse would otherwise announce itself as "A batch stage is due",
-  // which is a lie: nothing is due, something wants weighing. The fallback cannot know
-  // WHAT is drying, so it says the one thing that is true either way.
+  // which is a lie: nothing is due, something is under way. The fallback cannot know
+  // WHAT is under way — a cure to weigh or a ferment to check on (#1656) — so it says
+  // the one thing that is true of both, with the neutral verb.
   'batch-readings': {
-    title: 'Something is drying',
-    body: 'Weigh it and add a note.',
+    title: 'Something is under way',
+    body: 'Check on it and add a note.',
     tag: 'batch-readings',
   },
 };

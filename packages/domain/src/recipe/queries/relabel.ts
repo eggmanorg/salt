@@ -7,7 +7,7 @@ import { hasComponents } from './components.js';
 //
 // A switch must never hide what the entry holds. So both ends must be a kind that
 // shows ingredients AND a method (`takesIngredients && isCookable`) — today
-// recipe, cocktail, cure and bread — and a meal (an entry with components) may
+// recipe, cocktail, cure, bread and ferment — and a meal (an entry with components) may
 // move only to a kind that `takesComponents`, or its dishes would drop out of
 // view. Specials and placeholders have neither ingredients nor a method, so
 // nothing switches into them and they switch into nothing.

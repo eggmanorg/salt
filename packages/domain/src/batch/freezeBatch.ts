@@ -7,6 +7,7 @@ import type {
 } from '../schemas/index.js';
 import type {
   CureCategoryDoc,
+  FermentCategoryDoc,
   Formula,
   ReferenceYield,
   RecipeKindDoc,
@@ -83,19 +84,21 @@ export interface FreezeBatchInput {
   // the labels — the recipe's own `rawText`, keyed by ingredient id — so the
   // quantities read as "Strong white flour 841 g" rather than as ids and numbers.
   recipeTitle: string;
-  // WHAT THE DISH WAS, frozen beside its title (issue #1404). Two more SCALARS,
-  // for the same reason `recipeTitle` is one rather than a `Recipe`: this function
-  // is pure and knows nothing about the `recipes` collection, so the caller reads
-  // them off the recipe it is already holding. `cureCategory` is null for anything
-  // that is not a cure, and for a cure nobody has categorised yet.
+  // WHAT THE DISH WAS, frozen beside its title (issue #1404). More SCALARS, for
+  // the same reason `recipeTitle` is one rather than a `Recipe`: this function is
+  // pure and knows nothing about the `recipes` collection, so the caller reads
+  // them off the recipe it is already holding. Both category fields are copied as
+  // the recipe holds them; which one a run's kind owns is `categoryOf`'s question,
+  // asked by whoever reads the run, never answered here (issue #1656).
   //
-  // Both REQUIRED here while their schema fields carry read defaults, and that is
+  // All REQUIRED here while their schema fields carry read defaults, and that is
   // the deliberate asymmetry `checkedIngredientIds` already has: a default is what
   // a document written before the field existed reads back as, never what a new
   // document is born with. This is the one place a batch is constructed, so the
   // compiler names every caller rather than letting one quietly freeze a default.
   recipeKind: RecipeKindDoc;
   cureCategory: CureCategoryDoc | null;
+  fermentCategory: FermentCategoryDoc | null;
   // WHO TAPPED START (issue #1406) — the uid, so the weekly "what is drying" nudge
   // has somewhere to arrive. `null` when nobody is signed in, which is the honest
   // answer and means no nudge. An AUDIT-STYLE UID and never scoping: the full
@@ -156,6 +159,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
     recipeTitle,
     recipeKind,
     cureCategory,
+    fermentCategory,
     startedBy,
     labels,
     rationale,
@@ -241,6 +245,7 @@ export function freezeBatch(input: FreezeBatchInput): FreezeBatchResult {
       // as `checkedIngredientIds` below is and for the same reason (issue #1404).
       recipeKind,
       cureCategory,
+      fermentCategory,
       // WHAT THIS RUN IS AIMING AT, off the formula (issue #1407) — and off the
       // formula rather than off `input`, unlike `recipeKind` above, because the
       // target IS a field of the document this function already holds. There is no

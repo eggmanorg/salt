@@ -1,7 +1,7 @@
 # Formulas, schedules and batches
 
-**Status: phases 00 and 01 are built, and phase 02 is landing; ferments, cures
-and cultures are still contract.** Epic #778. Built so far: the pure `formula`
+**Status: phases 00 and 01 are built, and phase 02 is landing; cures are a kind
+(#1404) and ferments a label (#1656); cultures are still contract.** Epic #778. Built so far: the pure `formula`
 module (#782); on top of it, `formulas/{recipeId}` with its rules, adapter,
 service and mapping screen at `/recipes/:id/formula` (#806 phase 1); the process
 half of that screen — `schemas/process.ts`, the pure `process` module, the
@@ -16,8 +16,8 @@ A formula screen for a recipe that has never had one was reachable by URL only
 through #812; #823 gave it a menu entry point too — "Make it scalable". It was
 first gated on a keyword guess at the ingredients ("is there a flour?"), which
 offered it to waffles, cakes and gravy and never to a coppa. **#1646 replaced the
-guess with the label**: the entry is offered on a `bread` or a `cure` with no
-formula yet (`offersFormula`, the `firstFormulaYield` column of
+guess with the label**: the entry is offered on a `bread`, a `cure` or (since
+#1656) a `ferment` with no formula yet (`offersFormula`, the `firstFormulaYield` column of
 `recipe/queries/capabilities.ts`) and on nothing else. A recipe that already has a
 formula keeps its "Bake a batch" / "Formula" items whatever it is labelled. The
 typed URL remains reachable on any recipe. The guess itself survives in one job:
@@ -48,9 +48,10 @@ neither timestamps nor grams), the pure `diffProcess` behind the review, and
 opinion into a percentage through the bounds rail `solveFormula` has enforced
 since #782.
 
-Everything below about cultures, ferments and cures is still the contract the
-remaining phases are built against, not a description of code that exists. Read it
-before designing any part of ferments or cures.
+Everything below about cultures is still the contract the remaining phases are
+built against, not a description of code that exists; where it describes ferments
+and cures, the sections that have since been built say so. Read it before
+designing any part of ferments or cures.
 
 Three hobbies — bread, fermented vegetables, cured meats — look like three
 features and are one. All three express quantities as a **percentage of a
@@ -331,12 +332,16 @@ wrong lifetime, wrong sharing. It:
 - **freezes the resolved quantities and the resolved schedule at start**, because
   the formula may be edited afterwards and a batch has to record what was
   actually done or its log is worthless;
-- **freezes what the dish WAS** — its title, its `recipeKind` and, for a cure, its
-  `cureCategory` (issue #1404). The title was always in the freeze; the other two
-  joined it because "show me all my dry-cured whole muscle" and "the last three
-  bresaola" have to stay answerable in a year, over runs whose recipes have since
-  been renamed, re-mapped or deleted. Both carry read defaults (`'recipe'`, `null`),
-  which are not merely parseable but true of every batch in production today;
+- **freezes what the dish WAS** — its title, its `recipeKind`, for a cure its
+  `cureCategory` (issue #1404) and for a ferment its `fermentCategory` (issue
+  #1656). The title was always in the freeze; the rest joined it because "show me
+  all my dry-cured whole muscle" and "the last three kimchis" have to stay
+  answerable in a year, over runs whose recipes have since been renamed, re-mapped
+  or deleted. Both category fields are frozen as the recipe held them, and which one
+  a run's kind owns is the domain's `categoryOf` — so `/batches` keeps one filter
+  row over both vocabularies, which share no value. All three carry read defaults
+  (`'recipe'`, `null`, `null`), which are not merely parseable but true of every
+  batch written before the field existed;
 - **freezes what the run is AIMING AT** — `target`, a weight-loss percentage, a pH,
   both or neither, copied off the formula at start (issue #1407). Edit the formula
   next month and batch nine still says what batch nine was aiming at. The figure it
@@ -472,8 +477,7 @@ from what it _has_.
 > assumed to arrive together as two bare kinds with nothing beside them. `cure` has
 > now shipped, as **one kind with a five-value `cureCategory` field beside it** — five
 > kinds for cured meat alone would swamp the library, and the five are one axis of one
-> thing. `ferment` is **not** built and is not implied by this: nothing below commits
-> to it. The category is identity and grouping only; the rule at the foot of this
+> thing. The category is identity and grouping only; the rule at the foot of this
 > section — capabilities answer questions about the kind, presence answers questions
 > about the document — is what keeps it out of `capabilities.ts`.
 >
@@ -482,6 +486,12 @@ from what it _has_.
 > should decide which recipes are offered a formula: the guess offered the door to
 > cakes and gravy and never to a coppa. `bread` is a full recipe in every other
 > respect — every capability cell matches `recipe` — so nothing about a loaf forks.
+>
+> **Updated by issue #1656.** `ferment` has now shipped too, on cure's pattern: one
+> label with a five-value `fermentCategory` beside it, a capability row matching
+> cure's cell for cell (`firstFormulaYield: 'basis'` — you weigh the cabbage). Its
+> boundary is vegetables and fruit fermented in salt; drinks, dairy and miso stay
+> `recipe`.
 
 | Entry            | `kind`     | formula | process | batches | culture |
 | ---------------- | ---------- | :-----: | :-----: | :-----: | :-----: |
@@ -489,8 +499,8 @@ from what it _has_.
 | Tin loaf         | `bread`    |    ●    |    ●    |    ●    |    —    |
 | Thin pizza bases | `bread`    |    ●    |    ●    |    ●    |    —    |
 | Fresh sausage    | `recipe`   |    ●    |    —    |    —    |    —    |
-| Sauerkraut       | `recipe`   |    ●    |    ●    |    ●    |    —    |
-| Kimchi           | `recipe`   |    ●    |    ●    |    ●    |    —    |
+| Sauerkraut       | `ferment`  |    ●    |    ●    |    ●    |    —    |
+| Kimchi           | `ferment`  |    ●    |    ●    |    ●    |    —    |
 | Milk kefir       | `recipe`   |    ●    |    ●    |    ●    |    ●    |
 | Coppa            | `cure`     |    ●    |    ●    |    ●    |    —    |
 | Bacon            | `cure`     |    ●    |    ●    |    ●    |    —    |
@@ -503,9 +513,9 @@ image, ingredients on the shopping list — its capability row is `recipe`'s, ce
 cell. What the `bread` label buys is a shelf, an icon, its own words, its own art
 direction and the "Make it scalable" door. `cure` earns a kind the way `cocktail`
 did — a different section of the library, not dinner — and `isPlannable: false`, plus
-the same door. Sauerkraut and kimchi are shown above as `recipe` because that is what
-they are today: `ferment` is not built, and vegetables are not cured meat, so they —
-and a fresh sausage — are offered no first formula until they are labelled; one they
+the same door. `ferment` earns its kind for the cure's reasons — its own shelf, never
+dinner, the same `'basis'` door — and a sauerkraut or a kimchi wears it. A milk kefir
+and a fresh sausage stay `recipe`, so they are offered no first formula; one they
 already have keeps its doors. A salami is a `cure` in the `fermented_dry_cured`
 category with nearly the same formula as a fresh sausage and a cure's process. Bacon
 is an ordinary cure in `cooked_whole_muscle` that simply carries no drying target —
@@ -519,8 +529,20 @@ for the **safety mechanism** that makes the thing edible, which is what makes th
 closed and finite. Five kinds would answer the same five capability questions
 identically five times and put five chips on the library for one ingredient; a tag
 would let a typo silently drop an entry out of its group, which a value frozen onto a
-run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds six
+run and filtered on cannot afford. See `docs/data-model.md` → _`recipes` holds seven
 kinds_.
+
+**Which kind of ferment** (#1656), on the same terms: `fermentCategory` is one of
+`kraut`, `kimchi`, `brined_pickle`, `hot_sauce`, `fruit_condiment`, or `null`. They
+group by **what is in the jar**, in the household's own words, so "the last three
+kimchis" stays answerable — and deliberately not by method (dry-salted, brined,
+paste, mash), which is the split a ferment's salt is stated in and would invite
+driving the one from the other. It is a **sibling field**, not a generalised
+`cureCategory`: that one is stored and carries behaviour (`cureSaltFitness`), so
+renaming it would be a migration for nothing anyone sees. The two enums share no
+value, and which field a kind owns is answered in one place, `categoryOf` in
+`recipe/queries/category.ts`. A type decides nothing — no salt range, no stage
+default, no reminder wording.
 
 **The rule that stops the capability table rotting:** capabilities answer
 questions about the **kind**; presence answers questions about the **document**.
@@ -531,8 +553,8 @@ wide as the questions it answers about a kind — six columns today
 (`takesIngredients`, `isCookable`, `isPlannable`, `isAuthorable`, `takesComponents`,
 `firstFormulaYield`) — instead of growing a boolean per feature. `firstFormulaYield`
 is one nullable column rather than a boolean plus a direction, so a kind can never
-carry a starting direction for a door it is never offered; a future `ferment` is one
-more row (`'basis'`). `cureCategory` is bound by the same rule from the other side: it
+carry a starting direction for a door it is never offered; `ferment` (#1656) was one
+more row (`'basis'`). `cureCategory` and `fermentCategory` are bound by the same rule from the other side: it
 is neither kind nor presence but **identity**, so it picks words, pictures and
 groupings and answers no capability question. There is no column for it, and adding
 one would be the rot this rule exists to prevent.
@@ -556,7 +578,6 @@ apps/cloud-functions/
   reuse  onCookTimerWrite → onCookTimerDispatch     stage reminders, longer horizon
   new    extractProcessStages   (cheap tier)
   new    proposeSchedule        (better tier)
-  new    authorFerment          (phase 03)
 
 apps/web-pwa/
   reuse  recipe surface + a scale affordance
@@ -613,7 +634,7 @@ cannot be debugged on a four-month feedback loop.
 | **00** | Formula in `domain`, headless. Basis, bidirectional solve, dough amounts. Fully tested before anything renders it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **01** | Basis mapping on an existing recipe; `extractProcessStages`; "12 × 120 g". **Ship with 02, not before** — scaling by hand already works, so alone this only replaces arithmetic nobody minds doing. It is the substrate the schedule needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **02** | `proposeSchedule`, the `batches` collection, the in-flight surface, reminders on the existing Tasks path. The half with no manual workaround, and the half that justifies the whole thing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **03** | Ferments. New kind, `authorFerment`, vessel headspace, one long stage. The basis-driven solve earns its keep — you weigh the cabbage, not the output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **03** | Ferments. A label (#1656) with a five-value type beside it, one long stage, the basis-driven solve — you weigh the cabbage, not the output. **There is no `authorFerment` flow**: the shared kind rules in `recipeFieldRules.ts` cover both imports and the chef, as they do for cures. **There is no vessel headspace maths**: jars are parked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **04** | Cures. New kind, the observation log worked hard, a target a run is stamped with, reminders past the Tasks horizon. Cure-salt bounds are a prerequisite, not a feature. **This row used to promise a TRIM-LOSS ALLOWANCE, and issue #1402 cut it** — the weight you type is the trimmed meat you actually hang, so there is exactly one figure and nothing is subtracted from it. **It also used to promise a weight-loss COMPLETION CRITERION and REVISED PROJECTIONS, and issue #1407 cut both.** A run carries a target and every weighing says how far along it is; that figure decides nothing — no `finished` state, no gate, no verdict — and Salt makes no claim about _when_ a run will reach it, because a cure is done on feel and a projected date would be a confident number that is usually wrong. |
 | **05** | Cultures. Only if kefir happens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
@@ -623,12 +644,15 @@ Carries over whole: the formula model and its two-tier basis; the batch
 collection, snapshot and state machine; the in-flight surface; reminders on the
 Tasks path; diff review and the two model tiers; canon, shopping, images, search.
 
-Still to build at 03–04: `authorFerment` and a ferment kind; vessel headspace and
-the cure-salt bounds.
+Still to build at 03–04: nothing on the original list. The ferment label shipped in
+#1656 without an `authorFerment` flow — the shared kind rules cover both imports and
+the chef — and vessel headspace is parked with jars, not built. The cure-salt bounds
+shipped in #1402.
 
 Off that list since: **reminders beyond the Tasks scheduling horizon** — shipped in
 #1406 as one weekly sweep, `remindBatchReadings`, asking whoever started a long run to
-weigh it. See the answered open question below for what it does and does not do.
+weigh it (a cure) or check on it (a ferment, since #1656). See the answered open
+question below for what it does and does not do.
 **Stages carrying additions** — shipped in #1405 as `stageId`
 on the formula component, frozen onto a run beside the grams. **The basis-driven
 solve direction** — shipped in #1402, where
@@ -756,7 +780,7 @@ them.
 
   **What covers the stretch past it — ANSWERED: one weekly scheduled sweep** (issue
   #1406). `apps/cloud-functions/src/maintenance/remindBatchReadings.ts` runs Friday
-  10:00 `Europe/London` and asks _what is drying_: one notification per person, for
+  10:00 `Europe/London` and asks _what is under way_: one notification per person, for
   the runs they started that are sitting in a `wait` of seven days or more. The
   re-enqueue chain this row also offered was **rejected** — a per-stage state machine
   whose failure mode is silence three months from now, which is the one failure
@@ -769,13 +793,16 @@ them.
     30 days; the sweep answers readings _during_ a long stage. Different questions.
   - **Selection is gated on the run's frozen kind, then by presence** (see _Kind
     versus presence_ — this is that rule's "capabilities answer questions about the
-    kind" half, via the named predicate `isLongRunKind`, not an exception to it). A
-    bread batch and a cure can both carry an observational wait (`duration: null`,
-    an `until` condition, no planned span to measure) — the identical shape on the
-    document — so presence alone cannot tell them apart; only the run's kind can.
-    `isLongRunKind` answers **cures and ferments** (today, `recipeKind === 'cure'`;
-    a vegetable ferment has no kind of its own yet and is a stated gap, not a
-    silent one — see that predicate). A run that passes the kind gate still needs a
+    kind" half, via the table `LONG_RUN_ASK` in `batch/longRuns.ts`, not an
+    exception to it). A bread batch and a cure can both carry an observational wait
+    (`duration: null`, an `until` condition, no planned span to measure) — the
+    identical shape on the document — so presence alone cannot tell them apart; only
+    the run's kind can. The table answers **cures and ferments** as two rows: `cure`
+    asks to be weighed, `ferment` (#1656) to be checked on, and every other kind,
+    bread included, is never nudged. The row chooses the verb — "Weigh it / them",
+    "Check on it / them", and "Check on them" for a mix — and the run's category
+    chooses nothing. A ferment with no pH target is nudged like any other, because a
+    target decides nothing (#1407). A run that passes the kind gate still needs a
     `wait` of seven days or more, which bread's overnight retard can never be — so
     the sweep is silent to every batch in production today.
   - **It is addressed to the run's starter**, via `batches.startedBy` — an
@@ -787,6 +814,11 @@ them.
   It is a prompt, not a chase: it does not check whether a reading was already
   entered, and it never appears twice in a week. A 90-day cure gets thirteen nudges
   over its planned life, not ninety.
+
+  The accepted limit: selection never asks what a wait is _for_. A ferment whose last
+  stage is a long "keep in the fridge" wait is nudged every Friday until that stage is
+  marked done, exactly as a cure's long hang is. Jars, and "a run stays open while you
+  eat it", are parked for their own conversation rather than special-cased here.
 
 - **Does a culture reuse `process`.** A maintenance rhythm is a repeating single
   stage, so it either reuses the model or is a simpler thing of its own. Decide

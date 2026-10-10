@@ -4,6 +4,7 @@ import { AuthoredRecipePhasesSchema, AuthoredTimingSummarySchema } from './recip
 import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
 import {
   AuthoredCureCategorySchema,
+  AuthoredFermentCategorySchema,
   AuthoredRecipeKindSchema,
   ExtractedIngredientGroupSchema,
   ExtractedStepSchema,
@@ -113,6 +114,8 @@ export const LibrarianOutputSchema = z.object({
   // whichever shape it was handed. Degrades to `null` rather than throwing; see
   // `AuthoredCureCategorySchema`.
   cureCategory: AuthoredCureCategorySchema,
+  // And its ferment sibling (issue #1656), on the same terms.
+  fermentCategory: AuthoredFermentCategorySchema,
   description: z.string().nullable(),
   // The extractor's constraint, for the extractor's reason (issue #739): a recipe
   // that serves nobody is a model glitch, not an answer. It is also the one of

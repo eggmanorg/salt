@@ -44,6 +44,7 @@ const ORIGINAL_ID = 'chorizo-variation-pilaf';
 // for field against what it was before the variation was talked through.
 const ORIGINAL_RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: ORIGINAL_ID,
   schemaVersion: 1,
   kind: 'recipe',

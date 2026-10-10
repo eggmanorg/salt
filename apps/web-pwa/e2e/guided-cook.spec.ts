@@ -83,6 +83,7 @@ function ingredient(id: string, rawText: string, firstUsedInStepId: string) {
 function guidedRecipe(): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id: RECIPE_ID,
     schemaVersion: 1,
     kind: 'recipe',

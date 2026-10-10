@@ -40,6 +40,7 @@ const RECIPE_ID = 'drawer-test-dahl';
 // asserted against a rendered ingredient row. Nothing else on the dish matters here.
 const RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',

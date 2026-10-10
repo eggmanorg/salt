@@ -466,6 +466,7 @@ export type { UrlImportFailure, PhotoImportFailure } from './importFailure.js';
 
 export {
   CureCategorySchema,
+  FermentCategorySchema,
   RecipeKindSchema,
   RecipePhaseSchema,
   RecipeSchema,
@@ -484,6 +485,7 @@ export {
 } from './recipe.js';
 export type {
   CureCategoryDoc,
+  FermentCategoryDoc,
   RecipeKindDoc,
   QuantityDoc,
   IngredientDoc,

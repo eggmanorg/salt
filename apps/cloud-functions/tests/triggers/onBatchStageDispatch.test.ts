@@ -126,6 +126,7 @@ function stage(overrides: Partial<BatchStageDoc> = {}): BatchStageDoc {
 function makeBatch(overrides: Partial<BatchDoc> = {}): BatchDoc {
   return {
     cureCategory: null,
+    fermentCategory: null,
     recipeKind: 'recipe',
     target: null,
     id: BATCH_ID,

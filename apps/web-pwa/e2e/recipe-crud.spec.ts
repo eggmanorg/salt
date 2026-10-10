@@ -36,6 +36,7 @@ const GHEE = '2 tbsp ghee';
 // assertions below read back, and it is the same shape either way.
 const RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',

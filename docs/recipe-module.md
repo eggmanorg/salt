@@ -39,7 +39,7 @@ newest local edit).
 Recipe {
   id: string
   schemaVersion: 1
-  kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure'  // .default('recipe') — see "Schema extensions (kind discriminator)"
+  kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread' | 'ferment'  // .default('recipe') — see "Schema extensions (kind discriminator)"
   title: string
   description: string | null
   ingredients: IngredientGroup[]   // required array; [] for a special (NOT a discriminated union)
@@ -53,7 +53,9 @@ Recipe {
                                    // deep for display only, and nothing is ever aggregated
   cureCategory: CureCategory | null // .default(null); which of five kinds of cure, for a `cure` only
                                    // (#1404) — see "Schema extensions (kind discriminator)" and
-                                   // docs/data-model.md → "`recipes` holds six kinds"
+                                   // docs/data-model.md → "`recipes` holds seven kinds"
+  fermentCategory: FermentCategory | null // .default(null); which of five kinds of ferment, for a
+                                   // `ferment` only (#1656) — the sibling of cureCategory
   needs_approval?: boolean         // .optional(); AI-authored, not yet read by a human (#616).
                                    // Used-but-flagged: live and never filtered out. Absent = reviewed
   kit: RecipeKitEntry[]            // .default([]); the kit this dish needs a cook to get out (#882) —
@@ -448,10 +450,10 @@ and both have since been filled in — `image` by the Tier-2 hero pipeline,
   auto-generation trigger skips a user upload rather than clobbering it.
   Reuses the canon **Tier-2** Storage conventions (see `docs/canon-icons.md`).
 
-### Schema extensions (kind discriminator, issues #637, #652, #1404, #1646)
+### Schema extensions (kind discriminator, issues #637, #652, #1404, #1646, #1656)
 
 The `recipes` collection holds more than recipes. One additive field,
-`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread'`, says which:
+`kind: 'recipe' | 'special' | 'cocktail' | 'placeholder' | 'cure' | 'bread' | 'ferment'`, says which:
 
 - a **`special`** (UI label **"Chef's Specials"**) is a meal that needs no recipe
   card — either because nobody cooked (a takeaway, a picnic, a meal out, a
@@ -467,12 +469,17 @@ The `recipes` collection holds more than recipes. One additive field,
   reused across many evenings;
 - a **`cure`** is cured meat — a coppa, a bacon, a saucisson, a mortadella — a
   full entry in every way a recipe is except that `isPlannable` is `false`. It
-  carries the one per-kind field on this document, `cureCategory`: full
+  carries one of the two per-kind fields on this document, `cureCategory`: full
   definition, the five closed values and why it is a field rather than a fifth
-  kind is in [docs/data-model.md](data-model.md) → "`recipes` holds six kinds";
+  kind is in [docs/data-model.md](data-model.md) → "`recipes` holds seven kinds";
 - a **`bread`** (#1646) is a dough baked as bread. Its capability row is
   `recipe`'s, cell for cell; the label buys its own shelf and offers a first
-  formula ("Make it scalable"), as the `cure` label does.
+  formula ("Make it scalable"), as the `cure` label does;
+- a **`ferment`** (#1656) is vegetables or fruit fermented in salt. Its capability
+  row is `cure`'s, cell for cell, and it carries the other per-kind field,
+  `fermentCategory` (five closed values, the same data-model section). The recipe
+  page reads and writes either field through `categoryOf` / `withCategory`, never
+  by naming one.
 
 **`.default('recipe')` is mandatory, not stylistic.** The realtime subscription
 skips documents that fail validation, so a _required_ `kind` would make every
@@ -503,6 +510,7 @@ art-direction prompt the hero pipeline reaches for.
 | `placeholder` | ✗                  | ✗            | ✗             | ✗                 | ✗              | —                   |
 | `cure`        | ✓                  | ✓            | ✗             | ✗                 | ✓              | `basis`             |
 | `bread`       | ✓                  | ✓            | ✓             | ✓                 | ✓              | `target`            |
+| `ferment`     | ✓                  | ✓            | ✗             | ✗                 | ✓              | `basis`             |
 
 (`takesComponents` arrived with meals — see below. `isAuthorable` — "can the
 librarian WRITE this kind?" — gained its `cocktail` row in #765 and its `cure`
@@ -522,7 +530,7 @@ Decisions worth not relitigating:
   reversed "`kind` is immutable"). It is set at create — by which New-sheet entry
   was opened for a special, a meal or a placeholder (issue #1319 Phase 6), and by
   the import or the chef for the authorable kinds. Afterwards the recipe page's
-  label control switches it among recipe, cocktail, cure and bread
+  label control switches it among recipe, cocktail, cure, bread and ferment
   (`relabelChoices`), and nothing else does: AI paths never change a kind. The
   old hazard was flipping a 20-ingredient recipe to `special`, hiding its
   ingredients and method behind a render branch with no undo; restricting both

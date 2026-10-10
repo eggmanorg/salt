@@ -25,6 +25,7 @@ function recipe(
 ): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id: 'r1',
     schemaVersion: 1,
     kind: 'recipe',

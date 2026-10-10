@@ -3,6 +3,7 @@ import {
   AuthoredRecipePhasesSchema,
   AuthoredTimingSummarySchema,
   CureCategorySchema,
+  FermentCategorySchema,
 } from './recipe.js';
 import { AUTHORABLE_RECIPE_KINDS } from '../recipe/queries/capabilities.js';
 import { AuthoredRecipeOutputSchema, ReportPersistenceSchema } from './authoredRecipeEnvelope.js';
@@ -134,6 +135,11 @@ export const AuthoredRecipeKindSchema = z.enum(AUTHORABLE_RECIPE_KINDS).catch('r
 // anybody has said, and the recipe page offers the correction either way.
 export const AuthoredCureCategorySchema = CureCategorySchema.nullish().catch(null);
 
+// Which of the five kinds of ferment the model says this is (issue #1656), on the
+// same three paths and on the same bargain as `AuthoredCureCategorySchema` just
+// above: absent or unrecognised reads as `null`, never as a failed import.
+export const AuthoredFermentCategorySchema = FermentCategorySchema.nullish().catch(null);
+
 // The plain object, exported so the photo import can `.extend` it — a refined
 // schema cannot be extended. Never parse against this one: it lacks the
 // servings refinement below. Parse against `ExtractRecipeAIOutputSchema`.
@@ -149,10 +155,13 @@ export const ExtractRecipeAIOutputObjectSchema = z.object({
   // The THIRD classification (issue #1404), and only meaningful when `kind` came
   // back `'cure'`: which of the five kinds of cure it is. Asked on every entry
   // rather than gated on the kind, because the prompt is one block of rules and a
-  // conditional field is a second place the two can disagree; the assembler
-  // stores whatever comes back, and a non-cure carries `null` because the rules
-  // tell the model to answer null for one.
+  // conditional field is a second place the two can disagree. The rules tell the
+  // model to answer null for a non-cure, and the assembler stores the value only
+  // when the resolved kind is `'cure'` (`assembleRecipeDraft`).
   cureCategory: AuthoredCureCategorySchema,
+  // Its ferment sibling (issue #1656), asked the same way for the same reason,
+  // and stored only when the resolved kind is `'ferment'`.
+  fermentCategory: AuthoredFermentCategorySchema,
   title: z.string(),
   description: z.string().nullable(),
   // A positive integer, or null ONLY on an isRecipe=false answer — a page with

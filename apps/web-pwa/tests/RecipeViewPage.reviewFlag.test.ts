@@ -158,6 +158,7 @@ const WITH_A_STEP = { steps: [{ id: 'step-1', text: 'Mix the dough', note: null,
 function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     lastEditedBy: '',
     createdBy: '',
     kit: [],

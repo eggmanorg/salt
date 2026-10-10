@@ -123,6 +123,7 @@ function makeRecipe(over: {
 }): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     kit: [],
     id: over.id,
     schemaVersion: 1,
@@ -699,10 +700,12 @@ describe('RecipeListPage — sections', () => {
     expect(queryKindChip('special')).toBeUndefined();
     expect(queryKindChip('placeholder')).toBeUndefined();
     expect(queryKindChip('cure')).toBeUndefined();
-    // Bread (issue #1646) sits beside it, folded by decision.
+    // Bread (issue #1646) sits beside it, folded by decision, and so do
+    // Ferments (issue #1656).
     expect(queryKindChip('bread')).toBeUndefined();
+    expect(queryKindChip('ferment')).toBeUndefined();
     expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(3);
-    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+4 more');
+    expect(normalized(screen.getByTestId('recipe-kind-show-all'))).toBe('+5 more');
   });
 
   it('reveals every section behind the "+N more" chip, and folds them back', async () => {
@@ -712,18 +715,20 @@ describe('RecipeListPage — sections', () => {
 
     await user.click(screen.getByTestId('recipe-kind-show-all'));
 
-    // All seven sections, and only seven — a chip row you STAND in, so an eighth
+    // All eight sections, and only eight — a chip row you STAND in, so a ninth
     // would be a section that shipped without anyone deciding to. The fourth
     // (issue #652) was decided: you need somewhere to open Regenerate from, and
     // that is the view page you reach from this grid. The fifth is Meals (#752),
     // which is a section and NOT a kind — you cannot create one. The sixth is
     // Cured meats (#1404), which is a kind and the first one with a field of its
-    // own. The seventh is Bread (#1646), a label that offers a first formula.
-    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(7);
+    // own. The seventh is Bread (#1646), a label that offers a first formula, and
+    // the eighth is Ferments (#1656), the second kind with a type of its own.
+    expect(screen.getAllByTestId('recipe-kind-filter')).toHaveLength(8);
     expect(kindChip('special')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('placeholder')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('cure')).toHaveAttribute('aria-pressed', 'false');
     expect(kindChip('bread')).toHaveAttribute('aria-pressed', 'false');
+    expect(kindChip('ferment')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByTestId('recipe-kind-show-all')).toBeNull();
 
     await user.click(screen.getByTestId('recipe-kind-show-less'));
@@ -779,6 +784,30 @@ describe('RecipeListPage — sections', () => {
 
     expect(cardTitles()).toEqual(['Sandwich Loaf']);
     expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('1 bread');
+  });
+
+  it('shelves a ferment under Ferments, behind "+N more", in place of Recipes (#1656)', async () => {
+    const user = userEvent.setup();
+    const KRAUT = makeRecipe({
+      id: 'kraut',
+      kind: 'ferment',
+      title: 'Sauerkraut',
+      tags: [],
+      servings: 1,
+      ingredientCount: 2,
+      image: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    seed([APPLE, KRAUT]);
+    render(RecipeListPage);
+
+    expect(cardTitles()).toEqual(['Apple Pie']);
+    expect(queryKindChip('ferment')).toBeUndefined();
+
+    await pickKind(user, 'ferment');
+
+    expect(cardTitles()).toEqual(['Sauerkraut']);
+    expect(normalized(screen.getByTestId('recipe-result-count'))).toContain('1 ferment');
   });
 
   it('offers an empty section rather than hiding it', async () => {

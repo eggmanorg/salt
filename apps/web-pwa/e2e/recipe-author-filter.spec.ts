@@ -35,6 +35,7 @@ const SEED_TIME = '2026-01-01T00:00:00.000Z'; // persistRecipe re-stamps updated
 function buildRecipe(id: string, title: string, kind: RecipeKind = 'recipe'): Recipe {
   return {
     cureCategory: null,
+    fermentCategory: null,
     id,
     schemaVersion: 1,
     kind,

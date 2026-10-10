@@ -46,6 +46,7 @@ const RECIPE_ID = 'notes-formatting-test';
 // and authoring one was never what this spec was about.
 const RECIPE: Recipe = {
   cureCategory: null,
+  fermentCategory: null,
   id: RECIPE_ID,
   schemaVersion: 1,
   kind: 'recipe',
