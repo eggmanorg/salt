@@ -58,3 +58,92 @@ export interface DocStatsProps {
   items: readonly DocStat[];
   class?: string;
 }
+
+// ─── Drawings (§12.7, #1663 Phase 2) ─────────────────────────────────────────
+
+/** A figure as the author typed it, and the number it means — drawn by `value`, shown as `text`. */
+export interface DocFigure {
+  text: string;
+  value: number;
+}
+
+export type DocChartType = 'bar' | 'column' | 'pie';
+
+export interface DocChartItem {
+  label: string;
+  value: DocFigure;
+  /** Unset: one tone for every bar; a different tone per slice. */
+  tone?: DocTone | undefined;
+}
+
+export interface DocChartProps {
+  type: DocChartType;
+  /** Written after every value. */
+  unit?: string | undefined;
+  items: readonly DocChartItem[];
+  caption?: string | undefined;
+  class?: string;
+}
+
+/** One stage of a row: a value (`to` unset) or a range. */
+export interface DocRangeStage {
+  label?: string | undefined;
+  from: DocFigure;
+  to?: DocFigure | undefined;
+  /** Unset: the tone of the band holding the stage's top value. */
+  tone?: DocTone | undefined;
+}
+
+export interface DocRangeRow {
+  label: string;
+  stages: readonly DocRangeStage[];
+}
+
+export interface DocRangeGroup {
+  heading?: string | undefined;
+  rows: readonly DocRangeRow[];
+}
+
+/** A shaded stretch of the axis, open-ended at a missing edge. */
+export interface DocRangeBand {
+  from?: DocFigure | undefined;
+  to?: DocFigure | undefined;
+  label: string;
+  tone: DocTone;
+}
+
+/** A marked value drawn across every row. */
+export interface DocRangeLine {
+  at: DocFigure;
+  label: string;
+  tone: DocTone;
+}
+
+export interface DocRangeMapProps {
+  unit?: string | undefined;
+  /** The axis ends. Unset: the lowest and highest figure the drawing holds. */
+  min?: DocFigure | undefined;
+  max?: DocFigure | undefined;
+  bands: readonly DocRangeBand[];
+  lines: readonly DocRangeLine[];
+  groups: readonly DocRangeGroup[];
+  caption?: string | undefined;
+  class?: string;
+}
+
+/** Elapsed time in one of these, or `dates` — where a figure's `value` is days since 1970-01-01 (UTC). */
+export type DocTimelineUnit = 'minutes' | 'hours' | 'days' | 'weeks' | 'dates';
+
+export interface DocTimelineItem {
+  label: string;
+  from: DocFigure;
+  to?: DocFigure | undefined;
+  tone?: DocTone | undefined;
+}
+
+export interface DocTimelineProps {
+  unit: DocTimelineUnit;
+  items: readonly DocTimelineItem[];
+  caption?: string | undefined;
+  class?: string;
+}

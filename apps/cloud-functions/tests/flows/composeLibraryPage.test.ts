@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from 'firebase-functions';
+import { findLibraryBlocks } from '@salt/domain';
+import { LIBRARY_BLOCK_KINDS, parseLibraryBlock } from '@salt/domain/schemas';
 
 vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 vi.spyOn(logger, 'info').mockImplementation(() => undefined);
@@ -142,6 +144,26 @@ describe('the page writer’s budget', () => {
     expect(COMPOSE_LIBRARY_PAGE_TIMEOUT.timeoutMs).toBeLessThanOrEqual(55_000 / 2);
     expect(COMPOSE_LIBRARY_PAGE_TIMEOUT.retries).toBe(0);
   });
+});
+
+describe('the style guide', () => {
+  // The model copies the guide's examples. An example the schema refuses would
+  // teach it to write layouts the figure-and-block check then throws away.
+  const examples = findLibraryBlocks(COMPOSE_LIBRARY_PAGE_SYSTEM);
+
+  it('shows an example of every kind there is, and no other', () => {
+    expect([...new Set(examples.map((b) => b.kind))].sort()).toEqual(
+      [...LIBRARY_BLOCK_KINDS].sort(),
+    );
+  });
+
+  it.each(examples.map((b) => [b.kind, b.source] as const))(
+    'its salt-%s example parses',
+    (kind, source) => {
+      const parsed = parseLibraryBlock(kind, source);
+      expect(parsed.ok ? 'ok' : parsed.problem).toBe('ok');
+    },
+  );
 });
 
 describe('unwrapWholeBodyFence', () => {

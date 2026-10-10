@@ -200,6 +200,83 @@ describe('LibraryPageView — what it shows', () => {
     expect(body.textContent).toContain('jars owned');
   });
 
+  it('draws a temperature map from its figures', async () => {
+    const range = [
+      '```salt-range',
+      'unit: °',
+      'bands:',
+      '  - to: 120',
+      '    label: Gentle',
+      '    tone: sage',
+      '  - from: 120',
+      '    label: Fierce',
+      '    tone: terracotta',
+      'groups:',
+      '  - rows:',
+      '      - label: Duck breast',
+      '        stages:',
+      '          - from: 130',
+      '            to: 140',
+      '          - at: 175',
+      '      - label: Poached eggs',
+      '        stages:',
+      '          - from: 90',
+      '            to: 95',
+      '```',
+    ].join('\n');
+    mount(page({ body: range }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('pre')).toBeNull();
+    const duck = body.querySelector<HTMLElement>('[data-row="Duck breast"] [data-mark]');
+    // 130 on an axis from 90 to 175.
+    expect(parseFloat(duck!.style.left)).toBeCloseTo((40 / 85) * 100, 6);
+    expect(duck?.dataset.tone).toBe('terracotta');
+    expect(body.textContent).toContain('Gentle, up to 120°');
+  });
+
+  it('draws a chart and a timeline from their figures', async () => {
+    const chart = [
+      '```salt-chart',
+      'unit: ml',
+      'items:',
+      '  - label: "740"',
+      '    value: 290',
+      '  - label: "742"',
+      '    value: 580',
+      '```',
+    ].join('\n');
+    const timeline = [
+      '```salt-timeline',
+      'items:',
+      '  - label: Ferment',
+      '    from: 0',
+      '    to: 7',
+      '  - label: Taste',
+      '    at: 5',
+      '```',
+    ].join('\n');
+    mount(page({ body: `${chart}\n\n${timeline}` }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('pre')).toBeNull();
+    const bars = body.querySelectorAll<HTMLElement>('[data-chart="bar"] [data-mark]');
+    expect(Array.from(bars, (b) => parseFloat(b.style.width))).toEqual([50, 100]);
+    expect(body.querySelector('[data-chart="bar"]')?.textContent).toContain('580 ml');
+    const taste = body.querySelector<HTMLElement>('[data-row="Taste"] [data-mark]');
+    // Day 5 on an axis from day 0 to day 7.
+    expect(parseFloat(taste!.style.left)).toBeCloseTo((5 / 7) * 100, 6);
+    expect(body.textContent).toContain('days 0–7');
+  });
+
+  it('shows a drawing whose figure is not a number as the text that was written', async () => {
+    const broken =
+      '```salt-range\ngroups:\n  - rows:\n      - label: a\n        stages:\n          - at: lots\n```';
+    mount(page({ body: broken }));
+    const body = await screen.findByTestId('library-body');
+    const fallback = body.querySelector('[data-testid="library-block-broken"]');
+    expect(fallback?.querySelector('pre')?.textContent).toContain('at: lots');
+    expect(fallback?.textContent).toMatch(/plain number/);
+  });
+
   it('shows a broken block as the text that was written, with a notice — never blank', async () => {
     const broken = '```salt-callout\ntone: "#ff0000"\nbody: Hot pan.\n```';
     mount(page({ body: `## Tips\n\n${broken}` }));

@@ -81,8 +81,9 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly three \
-kinds; never invent another.
+any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly six \
+kinds — three for laying text out (cards, callout, stats) and three DRAWINGS that Salt draws to scale from figures \
+(chart, range, timeline); never invent another.
 
 Colour is a TONE, one of: ${TONE_LIST}. Nothing else — never a colour name, a hex code or a class. Use tones to \
 mean something consistent within a page: sage for gentle, low or owned; primary for steady or the main thing; \
@@ -137,6 +138,100 @@ items:
     label: models
   - value: 6.3 L
     label: total capacity
+\`\`\`
+
+## Drawings
+A drawing earns its place only when SEEING the figures together says something a table cannot: how far apart, \
+how they overlap, what share of a whole, what comes when. If the reader will look up one value at a time, a table \
+is better. A drawing never replaces the facts: keep the table or cards beside it, so every figure is still written \
+out. At most two drawings on a page.
+
+In a drawing, a value is a plain number exactly as the draft writes it — \`130\`, \`6.3\`, \`1,062\`, \`-18\` — \
+with no unit inside it; the unit goes in \`unit\`. A range "130–140 °C" is \`from: 130\` and \`to: 140\`.
+
+### salt-chart — compare amounts, or show shares of a whole
+\`type: bar\` (left to right; long labels; up to 12 items), \`column\` (bottom to top; short labels; up to 8) or \
+\`pie\` (parts of one whole that add up to it; up to 5 — more than five is a bar chart). Values are zero or more. \
+Leave tone out unless it means something; the chart picks. Right when the point is how the amounts compare; when \
+they are in different units, or each will be looked up on its own, a table is better.
+
+\`\`\`salt-chart
+type: bar
+unit: ml
+items:
+  - label: "740"
+    value: 290
+  - label: "742"
+    value: 580
+    tone: sage
+  - label: "745"
+    value: 1,062
+\`\`\`
+
+\`\`\`salt-chart
+type: pie
+unit: "%"
+items:
+  - label: Owned
+    value: 62
+  - label: Wanted
+    value: 38
+\`\`\`
+
+### salt-range — many items on one scale
+Right when items each have a value or a range on the SAME scale and the point is to see them side by side: every \
+task's temperature, every jar's capacity. Rows are grouped under optional headings (up to 40 rows in all). A row \
+has 1 to 4 stages, in order, each \`at\` a value or \`from\`–\`to\` a range, with an optional short label. \
+\`bands\` shade stretches of the scale (\`to\` only for "up to", \`from\` only for "over"); a stage with no tone \
+takes the tone of the band its top value falls in. \`lines\` mark one value across every row, such as a \
+threshold. The scale fits the figures; set \`min\`/\`max\` only to show a wider scale.
+
+\`\`\`salt-range
+unit: °
+bands:
+  - to: 120
+    label: Gentle
+    tone: sage
+  - from: 120
+    to: 170
+    label: Steady
+    tone: primary
+  - from: 170
+    label: Fierce
+    tone: terracotta
+lines:
+  - at: 130
+    label: Butter browns
+groups:
+  - heading: Meat and fish
+    rows:
+      - label: Duck breast
+        stages:
+          - label: Rendering
+            from: 130
+            to: 140
+          - label: Crisping
+            at: 175
+\`\`\`
+
+### salt-timeline — what happens when
+Right for a schedule: a ferment, a brine, a cure. Each item is one event (\`at\`) or one stretch (\`from\`–\`to\`), \
+up to 16, in order. \`unit\` is minutes, hours, days or weeks of elapsed time from the start (day 0) — or \
+\`dates\` with YYYY-MM-DD values, only when the draft gives full calendar dates. Never invent a date or a duration. \
+When only the order matters and not how long each part takes, numbered steps are better.
+
+\`\`\`salt-timeline
+unit: days
+items:
+  - label: Salt and pack
+    at: 0
+  - label: Ferment at room temperature
+    from: 0
+    to: 7
+    tone: sage
+  - label: Move to the fridge
+    from: 7
+    to: 28
 \`\`\`
 
 ## Choosing

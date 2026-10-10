@@ -15,7 +15,10 @@ import {
   LIBRARY_TONES,
   LibraryCalloutBlockSchema,
   LibraryCardsBlockSchema,
+  LibraryChartBlockSchema,
+  LibraryRangeBlockSchema,
   LibraryStatsBlockSchema,
+  LibraryTimelineBlockSchema,
   parseLibraryBlock,
 } from '@salt/domain/schemas';
 
@@ -136,7 +139,7 @@ describe('parseLibraryBlock — callout and stats', () => {
 
 describe('parseLibraryBlock — a broken block is a result, never a throw', () => {
   it.each([
-    ['an unknown kind', 'chart', 'items: []', /no "chart" drawing/],
+    ['an unknown kind', 'sketch', 'items: []', /no "sketch" drawing/],
     ['YAML that does not parse', 'callout', 'body: [unclosed', /could not be read/],
     ['a colour that is not a tone', 'callout', 'tone: "#ff0000"\nbody: x', /tone/],
     ['a field no schema has', 'callout', 'body: x\nstyle: "color: red"', /style|Unrecognized/],
@@ -173,6 +176,9 @@ describe('colour is a tone, never a value', () => {
     cards: LibraryCardsBlockSchema,
     callout: LibraryCalloutBlockSchema,
     stats: LibraryStatsBlockSchema,
+    chart: LibraryChartBlockSchema,
+    range: LibraryRangeBlockSchema,
+    timeline: LibraryTimelineBlockSchema,
   };
 
   it('covers every kind there is', () => {

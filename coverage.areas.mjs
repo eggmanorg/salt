@@ -358,9 +358,16 @@ export const coverageThresholds = {
   // (cards, callout, stats, tone map) and the table styling arrive fully
   // covered, so both percentages rose with the uncovered counts unmoved at
   // 190/216. The figures are the ratchet's paste block over CI's report.
+  // BANKED 89.93/76.82 → 90.59/78.74 in #1663 Phase 2: the temperature map's
+  // primitives (`DocRangeMap`, `DocAxisRows`, `docScale.ts`) arrive fully
+  // covered, uncovered counts unmoved at 190/216.
+  // BANKED 90.59/78.74 → 90.99/79.6 in #1663 Phase 3: charts and timelines
+  // (`DocChart`, `DocTimeline`, `barPercents`, `pieSlices`) arrive fully
+  // covered, uncovered counts unmoved at 190/216. The ratchet's figures over
+  // the committed tree.
   'packages/ui-components/src/**': {
-    lines: 89.93,
-    branches: 76.82,
+    lines: 90.99,
+    branches: 79.6,
     uncoveredLines: 190,
     uncoveredBranches: 216,
   },

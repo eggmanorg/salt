@@ -183,10 +183,18 @@ export {
   LIBRARY_BLOCK_FENCE_PREFIX,
   LIBRARY_BLOCK_KINDS,
   LIBRARY_TONES,
+  LIBRARY_CHART_ITEM_CAP,
+  LIBRARY_CHART_TYPES,
+  LIBRARY_RANGE_ROW_CAP,
+  LIBRARY_TIMELINE_UNITS,
   LibraryCalloutBlockSchema,
   LibraryCardsBlockSchema,
+  LibraryChartBlockSchema,
+  LibraryRangeBlockSchema,
   LibraryStatsBlockSchema,
+  LibraryTimelineBlockSchema,
   LibraryToneSchema,
+  libraryDayNumber,
   parseLibraryBlock,
 } from './libraryBlocks.js';
 export type {
@@ -195,7 +203,12 @@ export type {
   LibraryBlockParse,
   LibraryCalloutBlock,
   LibraryCardsBlock,
+  LibraryChartBlock,
+  LibraryFigure,
+  LibraryRangeBlock,
   LibraryStatsBlock,
+  LibraryTimelineBlock,
+  LibraryTimelineUnit,
   LibraryTone,
 } from './libraryBlocks.js';
 
