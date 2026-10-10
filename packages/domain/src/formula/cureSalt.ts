@@ -627,7 +627,7 @@ export function withCureSaltSubstituted(
 // convention `CureSaltSubstitutionFailure` already states above.
 //
 // AND IT BRANCHES ON `cureCategory`, WHICH IS THE SANCTIONED SHAPE rather than an
-// exception to it. `isLongRunKind` (`batch/longRuns.ts:95`) is the precedent: a
+// exception to it. `isLongRunKind` (`batch/longRuns.ts`) is the precedent: a
 // single named pure predicate in `packages/domain`, never an inline comparison at a
 // call site. `docs/formulas-schedules-batches.md` → *Kind versus presence* is the
 // rule both sit under — a category picks WORDS, PICTURES AND GROUPINGS and answers
