@@ -1,5 +1,6 @@
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
+import { layoutLibraryFlow } from './libraryFlowLayout.js';
 
 // Library blocks (issue #1663) — the laid-out parts of a library page.
 //
@@ -36,8 +37,10 @@ import { z } from 'zod';
 //
 // ─── DRAWINGS ARE DRAWN FROM FIGURES ────────────────────────────────────────
 //
-// `chart`, `range` and `timeline` are data-drawn: the block holds figures and
-// the renderer draws them to scale, so changing a figure redraws the drawing.
+// `chart`, `range`, `timeline`, `shapes` and the gauge on a `steps` step are
+// data-drawn: the block holds figures and the renderer draws them to scale, so
+// changing a figure redraws the drawing. `flow` is drawn from its boxes and
+// arrows by the layered layout in `libraryFlowLayout.ts`.
 // A figure is still kept as the text typed — `1,062` shows as `1,062` — beside
 // the number it means (`LibraryFigure`), which is what the drawing is scaled by.
 
@@ -53,6 +56,9 @@ export const LIBRARY_BLOCK_KINDS = [
   'chart',
   'range',
   'timeline',
+  'flow',
+  'steps',
+  'shapes',
 ] as const;
 export type LibraryBlockKind = (typeof LIBRARY_BLOCK_KINDS)[number];
 
@@ -427,12 +433,229 @@ export const LibraryTimelineBlockSchema = z
     return { unit: t.unit, items, caption: t.caption };
   });
 
+// ─── Flow charts, steps and shapes (Phase 4) ────────────────────────────────
+
+// ── salt-flow ──
+
+/** The most boxes one flow chart draws. */
+export const LIBRARY_FLOW_NODE_CAP = 12;
+/** The most boxes and passing arrows one row holds side by side on a 360px phone. */
+export const LIBRARY_FLOW_WIDTH_CAP = 3;
+
+const FlowNodeSchema = z
+  .object({
+    /** The name arrows use. Unset: the label. */
+    id: text(40).optional(),
+    label: text(60),
+    tone: LibraryToneSchema.optional(),
+  })
+  .strict();
+
+const FlowEdgeSchema = z
+  .object({
+    from: text(60),
+    to: text(60),
+    /** A word or two on the arrow: `yes`, `no`, `if firm`. */
+    label: text(12).optional(),
+  })
+  .strict();
+
+export const LibraryFlowBlockSchema = z
+  .object({
+    nodes: z.array(FlowNodeSchema).min(2).max(LIBRARY_FLOW_NODE_CAP),
+    edges: z
+      .array(FlowEdgeSchema)
+      .min(1)
+      .max(2 * LIBRARY_FLOW_NODE_CAP),
+    caption: text(LINE).optional(),
+  })
+  .strict()
+  .transform((f, ctx) => {
+    const laid = layoutLibraryFlow(
+      f.nodes.map((n) => ({ key: n.id ?? n.label, label: n.label, tone: n.tone })),
+      f.edges,
+      LIBRARY_FLOW_WIDTH_CAP,
+    );
+    if (!laid.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: laid.problem });
+      return z.NEVER;
+    }
+    return { rows: laid.rows, caption: f.caption };
+  });
+
+// ── salt-steps ──
+
+const ZERO: LibraryFigure = { text: '0', value: 0 };
+
+/** A small scale beside a step: one value or a range between `min` (default 0) and `max`. */
+const StepGaugeSchema = z
+  .object({
+    at: figure.optional(),
+    from: figure.optional(),
+    to: figure.optional(),
+    min: figure.optional(),
+    max: figure,
+    unit: text(UNIT).optional(),
+    tone: LibraryToneSchema.optional(),
+  })
+  .strict()
+  .superRefine((g, ctx) => {
+    const lo = g.min ?? ZERO;
+    if (g.max.value <= lo.value) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '`max` must be above `min`' });
+      return;
+    }
+    const off = [g.at, g.from, g.to].find(
+      (f) => f !== undefined && (f.value < lo.value || f.value > g.max.value),
+    );
+    if (off) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${off.text} is outside the gauge (${lo.text} to ${g.max.text})`,
+      });
+    }
+  })
+  .transform((g, ctx) => ({
+    min: g.min ?? ZERO,
+    max: g.max,
+    unit: g.unit,
+    tone: g.tone,
+    ...spanOf(g, ctx),
+  }));
+
+const StepSchema = z
+  .object({
+    /** A short name for the step: `Fold`, `Rest`. */
+    label: text(SHORT).optional(),
+    text: text(LINE),
+    gauge: StepGaugeSchema.optional(),
+  })
+  .strict();
+
+export const LIBRARY_STEPS_CAP = 12;
+
+export const LibraryStepsBlockSchema = z
+  .object({
+    steps: z.array(StepSchema).min(2).max(LIBRARY_STEPS_CAP),
+    caption: text(LINE).optional(),
+  })
+  .strict();
+
+// ── salt-shapes ──
+
+export const LIBRARY_SHAPE_PROFILES = ['straight', 'tapered', 'belly', 'rounded'] as const;
+export const LIBRARY_SHAPE_UNITS = ['mm', 'cm', 'in'] as const;
+/** The most shapes one drawing holds, across all its shelves. */
+export const LIBRARY_SHAPES_CAP = 24;
+
+// Which widths each profile is drawn from. A measurement the drawing would not
+// use is refused rather than ignored: a figure on the page that the drawing
+// silently leaves out is a drawing that is not to its measurements.
+const PROFILE_WIDTHS = {
+  // Sides straight down at `width` (unset: the mouth), a shoulder between.
+  straight: { width: 'optional', base: 'none' },
+  // Sides straight from the mouth to the base.
+  tapered: { width: 'none', base: 'required' },
+  // From the mouth out to `width` at half height, then in to the base (unset: the mouth).
+  belly: { width: 'required', base: 'optional' },
+  // As `straight`, with the bottom rounded.
+  rounded: { width: 'optional', base: 'none' },
+} as const satisfies Record<
+  (typeof LIBRARY_SHAPE_PROFILES)[number],
+  Record<'width' | 'base', 'none' | 'optional' | 'required'>
+>;
+
+const ShapeSchema = z
+  .object({
+    label: text(24),
+    profile: z.enum(LIBRARY_SHAPE_PROFILES),
+    /** Across the opening. */
+    mouth: figure,
+    height: figure,
+    width: figure.optional(),
+    base: figure.optional(),
+    caption: text(40).optional(),
+    /** How many there are — drawn as a badge. */
+    count: figure.optional(),
+    tone: LibraryToneSchema.optional(),
+  })
+  .strict()
+  .superRefine((s, ctx) => {
+    for (const key of ['mouth', 'height', 'width', 'base'] as const) {
+      const f = s[key];
+      if (f !== undefined && f.value <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'must be above zero' });
+      }
+    }
+    for (const key of ['width', 'base'] as const) {
+      const rule = PROFILE_WIDTHS[s.profile][key];
+      if (rule === 'none' && s[key] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `a ${s.profile} shape is not drawn from a \`${key}\``,
+        });
+      } else if (rule === 'required' && s[key] === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `a ${s.profile} shape needs its measured \`${key}\``,
+        });
+      }
+    }
+    if (s.profile === 'belly' && s.width) {
+      const narrower = [s.mouth, s.base].find((f) => f !== undefined && f.value > s.width!.value);
+      if (narrower) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['width'],
+          message: 'a belly is its widest point, so `width` cannot be below the mouth or base',
+        });
+      }
+    }
+    if (s.count && !(Number.isInteger(s.count.value) && s.count.value >= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['count'],
+        message: 'must be a whole number',
+      });
+    }
+  });
+
+const ShelfSchema = z
+  .object({
+    heading: text(SHORT).optional(),
+    items: z.array(ShapeSchema).min(1).max(LIBRARY_SHAPES_CAP),
+  })
+  .strict();
+
+export const LibraryShapesBlockSchema = z
+  .object({
+    /** Every measurement in the drawing is in this unit, so all share one scale. */
+    unit: z.enum(LIBRARY_SHAPE_UNITS).default('mm'),
+    shelves: z.array(ShelfSchema).min(1).max(8),
+    caption: text(LINE).optional(),
+  })
+  .strict()
+  .superRefine((b, ctx) => {
+    if (b.shelves.reduce((n, s) => n + s.items.length, 0) > LIBRARY_SHAPES_CAP) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['shelves'],
+        message: `a shape drawing holds at most ${LIBRARY_SHAPES_CAP} shapes`,
+      });
+    }
+  });
+
 export type LibraryCardsBlock = z.infer<typeof LibraryCardsBlockSchema>;
 export type LibraryCalloutBlock = z.infer<typeof LibraryCalloutBlockSchema>;
 export type LibraryStatsBlock = z.infer<typeof LibraryStatsBlockSchema>;
 export type LibraryChartBlock = z.infer<typeof LibraryChartBlockSchema>;
 export type LibraryRangeBlock = z.infer<typeof LibraryRangeBlockSchema>;
 export type LibraryTimelineBlock = z.infer<typeof LibraryTimelineBlockSchema>;
+export type LibraryFlowBlock = z.infer<typeof LibraryFlowBlockSchema>;
+export type LibraryStepsBlock = z.infer<typeof LibraryStepsBlockSchema>;
+export type LibraryShapesBlock = z.infer<typeof LibraryShapesBlockSchema>;
 
 export type LibraryBlock =
   | { readonly kind: 'cards'; readonly data: LibraryCardsBlock }
@@ -440,7 +663,10 @@ export type LibraryBlock =
   | { readonly kind: 'stats'; readonly data: LibraryStatsBlock }
   | { readonly kind: 'chart'; readonly data: LibraryChartBlock }
   | { readonly kind: 'range'; readonly data: LibraryRangeBlock }
-  | { readonly kind: 'timeline'; readonly data: LibraryTimelineBlock };
+  | { readonly kind: 'timeline'; readonly data: LibraryTimelineBlock }
+  | { readonly kind: 'flow'; readonly data: LibraryFlowBlock }
+  | { readonly kind: 'steps'; readonly data: LibraryStepsBlock }
+  | { readonly kind: 'shapes'; readonly data: LibraryShapesBlock };
 
 export type LibraryBlockParse =
   | { readonly ok: true; readonly block: LibraryBlock }
@@ -453,6 +679,9 @@ const SCHEMAS = {
   chart: LibraryChartBlockSchema,
   range: LibraryRangeBlockSchema,
   timeline: LibraryTimelineBlockSchema,
+  flow: LibraryFlowBlockSchema,
+  steps: LibraryStepsBlockSchema,
+  shapes: LibraryShapesBlockSchema,
 } as const satisfies Record<LibraryBlockKind, z.ZodTypeAny>;
 
 function isKind(kind: string): kind is LibraryBlockKind {

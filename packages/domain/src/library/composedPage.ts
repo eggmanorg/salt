@@ -119,8 +119,12 @@ const LOOSE_SALT_FENCE_OPEN = /^[ \t>*+\-\d.)]*(?:`{3,}|~{3,})[ \t]*salt-/gm;
  * the top-level scan cannot see (nested in a list or quote, or quoted inside
  * another code block — so it cannot be checked), carries a `salt-*` block that
  * does not parse, or is missing a number token the draft held (`missingFigures`
- * states what that does not catch). The `reason` is for the log, not for the
- * household.
+ * states what that does not catch). Also refused: a `salt-shapes` measurement
+ * that is not a figure in the draft — a shape is drawn to scale from its
+ * measurements, so a measurement the page writer made up draws a wrong picture
+ * that looks exact. Its boundary: the number must appear SOMEWHERE in the draft,
+ * so a made-up height that happens to equal a capacity elsewhere still passes.
+ * The `reason` is for the log, not for the household.
  */
 export function checkComposedPage(
   draft: string,
@@ -132,9 +136,20 @@ export function checkComposedPage(
   const blocks = findLibraryBlocks(composed);
   const opened = composed.replace(/\r\n?/g, '\n').match(LOOSE_SALT_FENCE_OPEN)?.length ?? 0;
   if (opened > blocks.length) return { ok: false, reason: 'salt- block not at top level' };
+  const drafted = new Set(figuresIn(draft));
   for (const block of blocks) {
     const parsed = parseLibraryBlock(block.kind, block.source);
     if (!parsed.ok) return { ok: false, reason: `salt-${block.kind}: ${parsed.problem}` };
+    if (parsed.block.kind === 'shapes') {
+      const guessed = parsed.block.data.shelves
+        .flatMap((shelf) => shelf.items)
+        .flatMap((s) => [s.mouth, s.height, s.width, s.base])
+        .flatMap((f) => (f ? figuresIn(f.text) : []))
+        .find((f) => !drafted.has(f));
+      if (guessed !== undefined) {
+        return { ok: false, reason: `salt-shapes: ${guessed} is not a measurement in the draft` };
+      }
+    }
   }
   const missing = missingFigures(draft, composed);
   if (missing.length > 0) return { ok: false, reason: `figures lost: ${missing.join(', ')}` };

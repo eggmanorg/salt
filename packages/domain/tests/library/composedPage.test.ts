@@ -138,4 +138,37 @@ describe('checkComposedPage', () => {
       reason: 'figures lost: 95',
     });
   });
+
+  describe('a shape is drawn only from measurements the draft gives', () => {
+    const jars = 'The 742 jar: mouth 100 mm, base 85 mm, 107 mm tall. The 905: 100 mm by 75 mm.';
+    const shapes = (base: string) =>
+      fence(
+        'salt-shapes',
+        [
+          'shelves:',
+          '  - items:',
+          '      - label: "742"',
+          '        profile: tapered',
+          '        mouth: 100',
+          `        base: ${base}`,
+          '        height: 107',
+          '      - label: "905"',
+          '        profile: straight',
+          '        mouth: 100',
+          '        height: 75',
+        ].join('\n'),
+      );
+
+    it('accepts shapes whose every measurement is in the draft', () => {
+      expect(checkComposedPage(jars, `${jars}\n\n${shapes('85')}`, 10_000)).toEqual({ ok: true });
+    });
+
+    it('refuses a measurement the page writer made up', () => {
+      // Every draft figure kept, so only the guessed base can refuse it.
+      expect(checkComposedPage(jars, `${jars}\n\n${shapes('88')}`, 10_000)).toEqual({
+        ok: false,
+        reason: 'salt-shapes: 88 is not a measurement in the draft',
+      });
+    });
+  });
 });

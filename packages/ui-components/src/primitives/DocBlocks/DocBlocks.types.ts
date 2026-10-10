@@ -147,3 +147,85 @@ export interface DocTimelineProps {
   caption?: string | undefined;
   class?: string;
 }
+
+// ─── Flow charts, steps and shapes (§12.7, #1663 Phase 4) ────────────────────
+
+export interface DocFlowNode {
+  label: string;
+  tone?: DocTone | undefined;
+}
+
+/** A row slot: a box, or `null` where an arrow passes down through the row. */
+export interface DocFlowSlot {
+  node: DocFlowNode | null;
+}
+
+/** A segment from slot `from` of a row to slot `to` of the next. */
+export interface DocFlowLink {
+  from: number;
+  to: number;
+  label?: string | undefined;
+}
+
+export interface DocFlowRow {
+  slots: readonly DocFlowSlot[];
+  /** Segments down to the next row. */
+  links: readonly DocFlowLink[];
+}
+
+export interface DocFlowChartProps {
+  /** Laid out already, top to bottom — `@salt/domain`'s `layoutLibraryFlow`. */
+  rows: readonly DocFlowRow[];
+  caption?: string | undefined;
+  class?: string;
+}
+
+/** A small scale beside a step, with one value (`to` unset) or a range marked on it. */
+export interface DocStepGauge {
+  min: DocFigure;
+  max: DocFigure;
+  from: DocFigure;
+  to?: DocFigure | undefined;
+  unit?: string | undefined;
+  tone?: DocTone | undefined;
+}
+
+export interface DocStep {
+  label?: string | undefined;
+  text: string;
+  gauge?: DocStepGauge | undefined;
+}
+
+export interface DocStepsProps {
+  steps: readonly DocStep[];
+  caption?: string | undefined;
+  class?: string;
+}
+
+export type DocShapeProfile = 'straight' | 'tapered' | 'belly' | 'rounded';
+
+export interface DocShape {
+  label: string;
+  profile: DocShapeProfile;
+  mouth: DocFigure;
+  height: DocFigure;
+  width?: DocFigure | undefined;
+  base?: DocFigure | undefined;
+  caption?: string | undefined;
+  count?: DocFigure | undefined;
+  /** Unset: drawn in outline. Set: drawn filled — the ones you own. */
+  tone?: DocTone | undefined;
+}
+
+export interface DocShapeShelf {
+  heading?: string | undefined;
+  items: readonly DocShape[];
+}
+
+export interface DocShapesProps {
+  /** The one unit every measurement is in. */
+  unit: string;
+  shelves: readonly DocShapeShelf[];
+  caption?: string | undefined;
+  class?: string;
+}

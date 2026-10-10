@@ -27,8 +27,9 @@ import { reportServerError } from '../observability/reportServerError.js';
 // IT NEVER COSTS A WRITE. `composeLibraryPageForChef` below never throws, and
 // returns `laidOut: false` whenever the layout is not safe to save — a timeout,
 // a model error, a blank or over-long answer, a `salt-*` block that does not
-// parse or is nested where it cannot be checked, or a number token from the
-// draft that is missing from the layout (a figure moved to another item, a lost
+// parse or is nested where it cannot be checked, a `salt-shapes` measurement
+// that is not a figure in the draft, or a number token from the draft that is
+// missing from the layout (a figure moved to another item, a lost
 // sign or a changed unit all still pass — `missingFigures`). The handler then
 // saves the chef's draft exactly as written. The checks are `checkComposedPage`
 // in `@salt/domain`, pure and pinned there; that the handler honours them is
@@ -81,9 +82,9 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly six \
-kinds — three for laying text out (cards, callout, stats) and three DRAWINGS that Salt draws to scale from figures \
-(chart, range, timeline); never invent another.
+any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly nine \
+kinds — three for laying text out (cards, callout, stats), numbered steps (steps), and five DRAWINGS that Salt \
+draws from what you write (chart, range, timeline, flow, shapes); never invent another.
 
 Colour is a TONE, one of: ${TONE_LIST}. Nothing else — never a colour name, a hex code or a class. Use tones to \
 mean something consistent within a page: sage for gentle, low or owned; primary for steady or the main thing; \
@@ -218,7 +219,7 @@ groups:
 Right for a schedule: a ferment, a brine, a cure. Each item is one event (\`at\`) or one stretch (\`from\`–\`to\`), \
 up to 16, in order. \`unit\` is minutes, hours, days or weeks of elapsed time from the start (day 0) — or \
 \`dates\` with YYYY-MM-DD values, only when the draft gives full calendar dates. Never invent a date or a duration. \
-When only the order matters and not how long each part takes, numbered steps are better.
+When only the order matters and not how long each part takes, salt-steps is better.
 
 \`\`\`salt-timeline
 unit: days
@@ -232,6 +233,86 @@ items:
   - label: Move to the fridge
     from: 7
     to: 28
+\`\`\`
+
+### salt-flow — a decision, or a process that branches
+Right when the reader has to choose a path ("is it set? yes → turn out; no → another 10 minutes"). Up to 12 \
+\`nodes\` (boxes), each with a short \`label\` and an optional \`id\` that arrows use instead of the label. \
+\`edges\` are arrows, \`from\` one box \`to\` another, with an optional one- or two-word \`label\` (yes, no). The \
+chart is drawn top to bottom: an arrow can never lead back up (no loops), and no row may need more than three boxes \
+side by side. When nothing branches, salt-steps is better.
+
+\`\`\`salt-flow
+nodes:
+  - id: set
+    label: Is the custard set?
+  - label: Turn out and chill
+    tone: sage
+  - label: Another 10 minutes
+edges:
+  - from: set
+    to: Turn out and chill
+    label: "yes"
+  - from: set
+    to: Another 10 minutes
+    label: "no"
+\`\`\`
+
+### salt-steps — a method in order
+Right for a method the reader follows one step at a time. 2 to 12 steps, each \`text\` (one or two sentences) \
+under an optional short \`label\`. A step may carry a \`gauge\`: one value (\`at\`) or a range (\`from\`–\`to\`) \
+marked on a small scale from \`min\` (default 0) to \`max\`, with a \`unit\` — only when the step has a figure \
+worth seeing against its scale, such as a temperature.
+
+\`\`\`salt-steps
+steps:
+  - label: Render
+    text: Start skin down in a cold pan and bring it up gently.
+    gauge:
+      from: 130
+      to: 140
+      max: 250
+      unit: °
+  - label: Crisp
+    text: Turn the heat up to crisp the skin.
+    gauge:
+      at: 175
+      max: 250
+      unit: °
+\`\`\`
+
+### salt-shapes — vessels drawn to scale
+Right when the page lists jars, tins, pans or crocks and their real sizes. Salt draws each one to scale from its \
+measurements, all in one \`unit\` (mm, cm or in), on \`shelves\` (optional \`heading\`, up to 24 shapes in all). \
+Each shape has a short \`label\`, a \`profile\` and measurements: \`mouth\` (across the opening) and \`height\` \
+always; \`straight\` and \`rounded\` (a rounded bottom) take an optional body \`width\`; \`tapered\` needs its \
+\`base\` width; \`belly\` needs its widest \`width\` and takes an optional \`base\`. Add a short \`caption\` (the \
+capacity), a \`count\` for how many there are, and a tone for the ones the household owns. ONLY use measurements \
+the draft gives: never estimate, look up or guess a size. If the draft does not give the measurements, do not use \
+this block — keep the table. Either way, a shape drawn in text characters (\`\\___/\`, \`( _ )\`) is replaced: by \
+this block, or by the profile in words (tapered, belly).
+
+\`\`\`salt-shapes
+unit: mm
+shelves:
+  - heading: Short
+    items:
+      - label: Small jar
+        profile: tapered
+        mouth: 100
+        base: 85
+        height: 107
+        caption: 580 ml
+        count: 4
+        tone: sage
+  - heading: Tall
+    items:
+      - label: Tall jar
+        profile: belly
+        mouth: 100
+        width: 112
+        height: 165
+        caption: 1,062 ml
 \`\`\`
 
 ## Choosing

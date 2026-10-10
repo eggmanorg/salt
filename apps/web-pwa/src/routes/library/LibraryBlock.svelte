@@ -3,8 +3,11 @@
     DocCallout,
     DocCards,
     DocChart,
+    DocFlowChart,
     DocRangeMap,
+    DocShapes,
     DocStats,
+    DocSteps,
     DocTimeline,
     Markdown,
   } from '@salt/ui-components';
@@ -41,8 +44,14 @@
     <DocChart {...block.data} />
   {:else if block.kind === 'range'}
     <DocRangeMap {...block.data} />
-  {:else}
+  {:else if block.kind === 'timeline'}
     <DocTimeline {...block.data} />
+  {:else if block.kind === 'flow'}
+    <DocFlowChart {...block.data} />
+  {:else if block.kind === 'steps'}
+    <DocSteps {...block.data} />
+  {:else}
+    <DocShapes {...block.data} />
   {/if}
 {:else}
   <div class="my-3" data-testid="library-block-broken">

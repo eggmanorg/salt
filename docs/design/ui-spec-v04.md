@@ -962,14 +962,17 @@ with a one-line notice — never blank.
 
 **The primitives** take typed props only:
 
-| Component     | Props                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DocCards`    | `groups: { heading?, cards: { title, chips: { label, tone }[], arrows, lines, footnote? }[] }[]`                                           |
-| `DocCallout`  | `tone`, `label?`, `children` (the body — web-pwa renders it with `Markdown` at note scale)                                                 |
-| `DocStats`    | `items: { value, label, tone }[]` — 2–4 tiles in one row                                                                                   |
-| `DocChart`    | `type` (`bar`, `column`, `pie`), `unit?`, `items: { label, value: DocFigure, tone? }[]`, `caption?`                                        |
-| `DocRangeMap` | `unit?`, `min?`, `max?`, `bands`, `lines`, `groups: { heading?, rows: { label, stages: { label?, from, to?, tone? }[] }[] }[]`, `caption?` |
-| `DocTimeline` | `unit` (`minutes`…`weeks`, or `dates` — values are day numbers), `items: { label, from, to?, tone? }[]`, `caption?`                        |
+| Component      | Props                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DocCards`     | `groups: { heading?, cards: { title, chips: { label, tone }[], arrows, lines, footnote? }[] }[]`                                           |
+| `DocCallout`   | `tone`, `label?`, `children` (the body — web-pwa renders it with `Markdown` at note scale)                                                 |
+| `DocStats`     | `items: { value, label, tone }[]` — 2–4 tiles in one row                                                                                   |
+| `DocChart`     | `type` (`bar`, `column`, `pie`), `unit?`, `items: { label, value: DocFigure, tone? }[]`, `caption?`                                        |
+| `DocRangeMap`  | `unit?`, `min?`, `max?`, `bands`, `lines`, `groups: { heading?, rows: { label, stages: { label?, from, to?, tone? }[] }[] }[]`, `caption?` |
+| `DocTimeline`  | `unit` (`minutes`…`weeks`, or `dates` — values are day numbers), `items: { label, from, to?, tone? }[]`, `caption?`                        |
+| `DocFlowChart` | `rows: { slots: { node: { label, tone? } \| null }[], links: { from, to, label? }[] }[]` — laid out already, `caption?`                    |
+| `DocSteps`     | `steps: { label?, text, gauge?: { min, max, from, to?, unit?, tone? } }[]`, `caption?`                                                     |
+| `DocShapes`    | `unit`, `shelves: { heading?, items: { label, profile, mouth, height, width?, base?, caption?, count?, tone? }[] }[]`, `caption?`          |
 
 **Colour is a `DocTone`** — `primary`, `sage`, `terracotta`, `warning`, `muted` —
 mapped to token classes in `docTone.ts` (`DOC_TONE_TINT` for grounds,
@@ -992,6 +995,19 @@ takes the tone of the first band holding its top value; a pie slice with none
 takes the next of five distinct tones. `DocRangeMap` and `DocTimeline` share the
 internal `DocAxisRows`, a label | plot grid whose rows each draw their own slice
 of the bands and gridlines, so a wrapped label only makes its own row taller.
+
+**Flow, steps and shapes (Phase 4).** `DocFlowChart` draws rows it is handed
+already laid out: each row is a grid of `2 × columns` half-columns with no gap,
+its slots centred (`docDiagram.ts` → `flowSlot`), and a strip between rows is an
+SVG stretched to the row's width that draws each segment between slot centres
+in the same percentages — so arrows meet boxes at any width. Boxes in a row
+stretch to one height; a `null` slot is an arrow passing down. `DocSteps` is a
+numbered list in role only, its gauge a small track with the value or range
+marked by `axisPercent`. `DocShapes` draws each shape as an SVG sized in px from
+ONE scale for the whole drawing (`shapeScale`: the tallest at
+`DOC_SHAPE_MAX_PX`, unless the widest would not fit a 360px phone), outline from
+`shapePath`, toned shapes filled with `DOC_TONE_SHAPE` and untoned ones in
+outline. Shelves wrap rather than shrink, so the scale holds on a phone.
 
 ---
 

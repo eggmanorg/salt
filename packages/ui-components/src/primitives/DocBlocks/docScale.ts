@@ -218,9 +218,14 @@ const COLUMN_GAP_PX = 8;
 /** The plot track's inset (`mx-2`), each side, so an end dot is not clipped. */
 const TRACK_INSET_PX = 8;
 
+/** The width inside a drawing's box, in px, on a screen `viewportPx` wide. */
+export function docFigureInnerPx(viewportPx: number): number {
+  return viewportPx - 2 * PAGE_GUTTER_PX - 2 * FIGURE_PADDING_PX;
+}
+
 /** The plot track's width, in px, on a screen `viewportPx` wide. */
 export function axisTrackPx(viewportPx: number): number {
-  const inner = viewportPx - 2 * PAGE_GUTTER_PX - 2 * FIGURE_PADDING_PX - COLUMN_GAP_PX;
+  const inner = docFigureInnerPx(viewportPx) - COLUMN_GAP_PX;
   const share = DOC_AXIS_COLUMNS.plot / (DOC_AXIS_COLUMNS.label + DOC_AXIS_COLUMNS.plot);
   return inner * share - 2 * TRACK_INSET_PX;
 }
