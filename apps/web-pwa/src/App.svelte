@@ -38,6 +38,7 @@
   import { initKitchenTimerSync } from './lib/kitchenTimerService.js';
   import { initEnrichmentFailureSync } from './lib/enrichmentFailureService.js';
   import { runPendingShareImport } from './lib/shareTarget.js';
+  import { startSyncHealthMonitor } from './lib/syncHealth.js';
   import { envBanner } from './lib/environment.js';
   import SessionOverlay from './lib/dev/SessionOverlay.svelte';
 
@@ -79,6 +80,10 @@
     // page already fills. It lives here rather than on the cook page so a timer
     // still alerts once the chef has navigated away (see cookTimerAlerts.ts).
     const unsubCookTimers = initCookTimerAlerts();
+    // Not a subscription either — the stuck-write detector (issue #1667). It
+    // reports when Firestore holds writes the server has not confirmed while the
+    // page is visible and online; see syncHealth.ts.
+    const stopSyncHealth = startSyncHealthMonitor();
     return () => {
       unsubCanon();
       unsubProductForms();
@@ -97,6 +102,7 @@
       unsubWeather();
       unsubEnrichmentFailures();
       unsubCookTimers();
+      stopSyncHealth();
     };
   });
 

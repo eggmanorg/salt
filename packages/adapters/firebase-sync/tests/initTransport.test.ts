@@ -47,13 +47,14 @@ vi.mock('firebase/functions', () => ({
 vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => 'mock-auth') }));
 
 vi.mock('firebase/app-check', () => ({
-  initializeAppCheck: vi.fn(),
+  initializeAppCheck: vi.fn(() => ({ marker: 'app-check-instance' })),
   ReCaptchaEnterpriseProvider: vi.fn(),
 }));
 
 vi.mock('../src/auth.js', () => ({ connectAuthEmulatorOnce: vi.fn() }));
 
-import { initFirebase, emulatorTransportSettings } from '../src/init.js';
+import { initializeApp } from 'firebase/app';
+import { initFirebase, emulatorTransportSettings, retainedAppCheck } from '../src/init.js';
 
 const arm = (value?: string) => ({ VITE_E2E_FIRESTORE_TRANSPORT: value });
 
@@ -114,5 +115,21 @@ describe('initFirebase transport wiring (#734)', () => {
     initFirebase({ projectId: 'demo-salt' }, true, false);
     const settings = mockInitializeFirestore.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(settings).toEqual({ experimentalForceLongPolling: true });
+  });
+});
+
+describe('initFirebase App Check retention (#1667)', () => {
+  // writeHealth.ts probes the instance initializeAppCheck returned; before #1667
+  // it was discarded, and a probe with no instance can only ever say `absent`.
+  it('retains the App Check instance for the app it was initialised on', () => {
+    initFirebase({ projectId: 'salt-prod' }, false, true, { siteKey: 'site-key' });
+    const app = vi.mocked(initializeApp).mock.results[0]?.value as object;
+    expect(retainedAppCheck(app as never)).toEqual({ marker: 'app-check-instance' });
+  });
+
+  it('retains nothing under emulators, where App Check is skipped', () => {
+    initFirebase({ projectId: 'demo-salt' }, true, false, { siteKey: 'site-key' });
+    const app = vi.mocked(initializeApp).mock.results[0]?.value as object;
+    expect(retainedAppCheck(app as never)).toBeUndefined();
   });
 });

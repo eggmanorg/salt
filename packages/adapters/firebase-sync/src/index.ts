@@ -203,3 +203,12 @@ export type {
   PopulateAccessory,
   PopulateEquipmentEntryResult,
 } from './equipmentCallables.js';
+// Stuck-write detector (issue #1667): are Firestore's pending writes confirmed
+// while the page is visible and online? web-pwa runs and reports it.
+export { checkWriteHealth } from './writeHealth.js';
+export type {
+  WriteHealth,
+  WriteHealthEnvironment,
+  WriteStallProbes,
+  TokenProbeState,
+} from './writeHealth.js';
