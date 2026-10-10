@@ -20,6 +20,7 @@ import {
   getItemsSnapshot,
 } from './shoppingListService.svelte.js';
 import { tagSession, getSessionURL } from './observability.js';
+import { applyStallRecovery } from './stallRecovery.js';
 import type { E2EBridge, SeedCanonItemInput } from './types/e2e.js';
 
 export function installE2EHooks(): void {
@@ -181,6 +182,12 @@ export function installE2EHooks(): void {
       const written = await setAiStub(flowName, response);
       if (written.kind === 'err')
         throw new Error(`stubAi(${flowName}): write refused (${written.error.kind})`);
+    },
+
+    reloadForStallRecovery() {
+      // The recovery's own apply step with a 'reload' decision, so the spec
+      // exercises the shared reload latch rather than a bare location.reload().
+      setTimeout(() => applyStallRecovery('reload'), 0);
     },
 
     async probeFirestoreCache(path) {

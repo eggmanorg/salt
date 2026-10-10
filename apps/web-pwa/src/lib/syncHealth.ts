@@ -1,6 +1,7 @@
 import type { ErrorReportingPort } from '@salt/domain';
 import { checkWriteHealth, type WriteHealth } from '@salt/firebase-sync';
 import { getErrorReporter } from './errorReporter.js';
+import { applyStallRecovery, decideStallRecovery, type StallRecovery } from './stallRecovery.js';
 
 // Runs firebase-sync's stuck-write detector and reports what it finds
 // (issue #1667, Phase 1).
@@ -23,8 +24,19 @@ import { getErrorReporter } from './errorReporter.js';
 // is silent. `not-evaluated` (hidden, offline) neither opens nor closes one, so
 // a wedged phone that is pocketed and taken out again does not report twice.
 //
-// The report carries state only — the error kind/reason and the two probe
-// states — never document contents or anything the user typed.
+// RECOVERY (Phase 2). Every `write-stalled` check — not only the first in an
+// episode — asks stallRecovery.ts whether to reload now, so a recovery deferred
+// for a draft or a hidden page is retried by the next stalled check rather than
+// by a timer of its own, and a page is only ever reloaded on a stall the
+// detector has just confirmed. A rejected check (`probes: null`) is reported
+// but never reloaded for: it is not the stall the recovery was built for.
+//
+// The report carries state only — the error kind/reason, the two probe states
+// and the recovery decision taken at that first check — never document
+// contents or anything the user typed. It is sent BEFORE the reload is asked
+// for. A recovery that was deferred at the first check and taken by a later
+// one is not reported a second time; the episode's one report names the
+// deferral.
 
 /**
  * Gap between periodic checks. A check that finds a stall itself takes
@@ -38,15 +50,20 @@ export interface SyncHealthMonitorDeps {
   check?: () => Promise<WriteHealth>;
   reporter?: ErrorReportingPort;
   intervalMs?: number;
+  decideRecovery?: () => StallRecovery;
+  applyRecovery?: (decision: StallRecovery) => void;
 }
 
 /** The Error a failed check is reported as. Exported for the test. */
-export function syncHealthReport(result: Extract<WriteHealth, { kind: 'err' }>): Error {
+export function syncHealthReport(
+  result: Extract<WriteHealth, { kind: 'err' }>,
+  recovery?: StallRecovery,
+): Error {
   const { error, probes } = result;
   const reason = 'reason' in error ? `/${error.reason}` : '';
   const detail = probes
     ? 'unconfirmed past the stall threshold while visible and online ' +
-      `(appCheck=${probes.appCheck}, auth=${probes.auth})`
+      `(appCheck=${probes.appCheck}, auth=${probes.auth}, recovery=${recovery ?? 'none'})`
     : 'pending-writes check rejected';
   const err = new Error(`Firestore writes ${detail} [${error.kind}${reason}]`);
   err.name = 'WriteStallError';
@@ -57,6 +74,8 @@ export function syncHealthReport(result: Extract<WriteHealth, { kind: 'err' }>):
 export function startSyncHealthMonitor(deps: SyncHealthMonitorDeps = {}): () => void {
   const check = deps.check ?? (() => checkWriteHealth());
   const reporter = deps.reporter ?? getErrorReporter();
+  const decideRecovery = deps.decideRecovery ?? (() => decideStallRecovery());
+  const applyRecovery = deps.applyRecovery ?? applyStallRecovery;
   let stopped = false;
   let checking = false;
   let inEpisode = false;
@@ -71,9 +90,12 @@ export function startSyncHealthMonitor(deps: SyncHealthMonitorDeps = {}): () => 
         if (result.value === 'confirmed') inEpisode = false;
         return;
       }
-      if (inEpisode) return;
-      inEpisode = true;
-      reporter.report(syncHealthReport(result), result.error.kind);
+      const recovery = result.probes ? decideRecovery() : undefined;
+      if (!inEpisode) {
+        inEpisode = true;
+        reporter.report(syncHealthReport(result, recovery), result.error.kind);
+      }
+      if (recovery) applyRecovery(recovery);
     } finally {
       checking = false;
     }

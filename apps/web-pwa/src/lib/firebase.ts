@@ -55,6 +55,18 @@ const appCheck: AppCheckConfig | undefined = appCheckSiteKey
 // than assuming production's durability — `window.__e2e.flushMealPlanWrites()` is
 // that seam for the planner. Assuming it is what made `mealplan-split.spec.ts` fail
 // on roughly half of every CI run.
-initFirebase(options, useEmulators, !useEmulators, appCheck);
+//
+// The ONE exception is opt-in, emulator-only and per page load (issue #1667): a
+// URL carrying `?e2ePersistentCache` gets production's persistent cache, so
+// `stall-recovery-durability.spec.ts` can prove that queued writes survive a
+// reload — the very thing the default arm above cannot have. A query parameter
+// rather than a `VITE_*` variable because the e2e Vite server is shared by every
+// spec, and every other spec must keep the default. Against a real backend the
+// parameter is ignored: `useEmulators` is false and the cache is persistent
+// already.
+const e2ePersistentCache =
+  useEmulators && new URLSearchParams(window.location.search).has('e2ePersistentCache');
+
+initFirebase(options, useEmulators, !useEmulators || e2ePersistentCache, appCheck);
 
 export const authProvider = createFirebaseAuth(createObservabilityErrorReportingAdapter());

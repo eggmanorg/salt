@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import type { ErrorReportingPort } from '@salt/domain';
 import type { WriteHealth } from '@salt/firebase-sync';
+import type { StallRecovery } from '../src/lib/stallRecovery.js';
 
 // The monitor around the stuck-write detector (issue #1667, Phase 1). The
 // detector itself is tested in firebase-sync; here it is a scripted stub, and
@@ -28,6 +29,8 @@ const NOT_EVALUATED: WriteHealth = { kind: 'ok', value: 'not-evaluated' };
 
 let report: Mock<ErrorReportingPort['report']>;
 let check: Mock<() => Promise<WriteHealth>>;
+let decideRecovery: Mock<() => StallRecovery>;
+let applyRecovery: Mock<(d: StallRecovery) => void>;
 let stop: (() => void) | undefined;
 
 // Scripts the detector's answers in order; the last one repeats.
@@ -37,7 +40,7 @@ function script(...results: WriteHealth[]) {
 }
 
 async function start() {
-  stop = startSyncHealthMonitor({ check, reporter: { report } });
+  stop = startSyncHealthMonitor({ check, reporter: { report }, decideRecovery, applyRecovery });
   await vi.advanceTimersByTimeAsync(0);
 }
 
@@ -47,11 +50,14 @@ beforeEach(() => {
   vi.useFakeTimers();
   report = vi.fn();
   check = vi.fn();
+  decideRecovery = vi.fn(() => 'skipped-young-page');
+  applyRecovery = vi.fn();
 });
 
 afterEach(() => {
   stop?.();
   stop = undefined;
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -105,7 +111,7 @@ describe('startSyncHealthMonitor', () => {
     expect(err.name).toBe('WriteStallError');
     expect(err.message).toBe(
       'Firestore writes unconfirmed past the stall threshold while visible and online ' +
-        '(appCheck=pending, auth=settled) [SyncError/write-stalled]',
+        '(appCheck=pending, auth=settled, recovery=skipped-young-page) [SyncError/write-stalled]',
     );
   });
 
@@ -163,6 +169,8 @@ describe('startSyncHealthMonitor', () => {
   });
 
   it('defaults to the real detector and the shared reporter', async () => {
+    // The default recovery reads the real page; a young page never reloads.
+    vi.spyOn(performance, 'now').mockReturnValue(0);
     vi.mocked(checkWriteHealth).mockResolvedValue(STALL);
     vi.mocked(getErrorReporter).mockReturnValue({ report } as never);
     stop = startSyncHealthMonitor();
@@ -170,6 +178,53 @@ describe('startSyncHealthMonitor', () => {
 
     expect(checkWriteHealth).toHaveBeenCalledTimes(2);
     expect(report).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('startSyncHealthMonitor — recovery (Phase 2)', () => {
+  it('reports the stall first, then applies the reload decision', async () => {
+    decideRecovery.mockReturnValue('reload');
+    const order: string[] = [];
+    report.mockImplementation(() => order.push('report'));
+    applyRecovery.mockImplementation((d) => order.push(`apply:${d}`));
+    script(STALL);
+    await start();
+
+    expect(order).toEqual(['report', 'apply:reload']);
+    expect((report.mock.calls[0]?.[0] as Error).message).toContain('recovery=reload');
+  });
+
+  it('asks again on every stalled check, so a deferred recovery is retried — reported once', async () => {
+    decideRecovery.mockReturnValueOnce('deferred-draft').mockReturnValue('reload');
+    script(STALL);
+    await start();
+    await nextInterval();
+
+    expect(applyRecovery.mock.calls.map(([d]) => d)).toEqual(['deferred-draft', 'reload']);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect((report.mock.calls[0]?.[0] as Error).message).toContain('recovery=deferred-draft');
+  });
+
+  it('never decides or reloads on a confirmed or not-evaluated check', async () => {
+    script(CONFIRMED, NOT_EVALUATED);
+    await start();
+    await nextInterval();
+
+    expect(decideRecovery).not.toHaveBeenCalled();
+    expect(applyRecovery).not.toHaveBeenCalled();
+  });
+
+  it('never reloads for a rejected check — it is not the stall the recovery is for', async () => {
+    script({
+      kind: 'err',
+      error: { kind: 'StorageError', reason: 'unavailable' },
+      probes: null,
+    });
+    await start();
+
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(decideRecovery).not.toHaveBeenCalled();
+    expect(applyRecovery).not.toHaveBeenCalled();
   });
 });
 

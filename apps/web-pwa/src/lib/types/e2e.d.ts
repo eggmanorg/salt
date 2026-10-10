@@ -112,6 +112,12 @@ export interface E2EBridge {
   // rather than throwing — including for the absent-from-cache case — and does
   // no network I/O, so it can never change a test's outcome. Emulator-only.
   probeFirestoreCache(path: string): Promise<E2EFirestoreCacheProbe>;
+  // The stuck-write recovery's reload (issue #1667), taken through the same
+  // shared reload path `stallRecovery.ts` uses. Fires on the next task so the
+  // `page.evaluate` that calls it returns before the navigation. Its guards
+  // (draft, coalescer, page age, visibility) are unit-tested; this is for
+  // proving what the reload itself preserves. Emulator-only.
+  reloadForStallRecovery(): void;
 }
 
 declare global {

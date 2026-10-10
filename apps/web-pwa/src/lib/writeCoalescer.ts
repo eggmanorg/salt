@@ -52,6 +52,12 @@ interface PendingWrite<T> {
 }
 
 export interface WriteCoalescer<T> {
+  /**
+   * Whether an edit is still waiting out its debounce — queued here but not
+   * yet handed to the SDK. A write already on the wire does not count: it is
+   * in the SDK's queue, which a reload preserves (issue #1667).
+   */
+  hasPending(): boolean;
   /** Queue `doc` for `key`, replacing anything already pending for that key. */
   queue(key: string, doc: T): Promise<WriteResult>;
   /**
@@ -243,6 +249,9 @@ export function createWriteCoalescer<T>(
   }
 
   const api: WriteCoalescer<T> = {
+    hasPending(): boolean {
+      return pending.size > 0;
+    },
     queue(key: string, doc: T): Promise<WriteResult> {
       const existing = pending.get(key);
       if (existing) {
@@ -305,6 +314,16 @@ export function createWriteCoalescer<T>(
 
   coalescers.add(api as unknown as WriteCoalescer<never>);
   return api;
+}
+
+/**
+ * Whether ANY coalescer holds an edit not yet handed to the SDK. Read-only —
+ * the stuck-write recovery (stallRecovery.ts) defers its reload while this is
+ * true rather than flushing, because a flush on a stuck page waits for a server
+ * ack that is not coming.
+ */
+export function hasPendingCoalescedWrites(): boolean {
+  return [...coalescers].some((c) => c.hasPending());
 }
 
 /** Write out every pending document of every coalescer. */
