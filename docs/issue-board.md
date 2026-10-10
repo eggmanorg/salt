@@ -487,10 +487,11 @@ one issue still moves through one lifecycle, and it sits at `In progress` the wh
 way because an intermediate PR carries `Refs #N` rather than a closing keyword.
 An `L` that turns out to need two PRs is a slightly wrong estimate, not a problem.
 
-The one thing the ceiling genuinely refuses is a **single phase** that cannot be
-built under 2000 lines on its own. There is no PR boundary inside a phase, so that
-is a spec to redo — and it is the only case `/salt-campaign` still parks as
-`BLOCKED: oversized`.
+The ceiling refuses nothing. A **single phase** that comes in over 2000 lines on its
+own is finished and shipped whole — there is no PR boundary inside a phase, and
+undoing a built phase to re-spec it costs more than reviewing it
+([why](campaign-rationale.md#the-ceiling-looks-backward)). Keeping phases a
+manageable size is the spec author's job, done before the code exists.
 
 **This field is not the retired `size: S|M|L` label.** Nothing applies that label
 and nothing should; see [Why fields and not labels](#why-fields-and-not-labels).
