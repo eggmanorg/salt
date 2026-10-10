@@ -48,6 +48,11 @@ export { iconNames } from './primitives/Icon/iconRegistry';
 export { default as ImageCropper } from './primitives/ImageCropper/ImageCropper.svelte';
 export { default as Inline } from './primitives/Inline/Inline.svelte';
 export { default as Markdown } from './primitives/Markdown/Markdown.svelte';
+// Document blocks (ui-spec-v04 §12.7) — the presentational halves of a library
+// page's `salt-*` blocks. They take typed props; parsing a block is web-pwa's.
+export { default as DocCallout } from './primitives/DocBlocks/DocCallout.svelte';
+export { default as DocCards } from './primitives/DocBlocks/DocCards.svelte';
+export { default as DocStats } from './primitives/DocBlocks/DocStats.svelte';
 // A drawn object, named (ui-spec-v12 §8.30). NOT a `Chip`: a 40px pictogram
 // does not fit a 26px text pill in either direction, and the name says so.
 export { default as PictogramPill } from './primitives/PictogramPill/PictogramPill.svelte';
@@ -142,6 +147,18 @@ export type {
 } from './primitives/Card/Card.types';
 export type { CheckboxProps, CheckedState } from './primitives/Checkbox/Checkbox.types';
 export type { ChipProps, ChipTone, ChipGroupProps } from './primitives/Chip/Chip.types';
+export type {
+  DocCalloutProps,
+  DocCard,
+  DocCardGroup,
+  DocCardLine,
+  DocCardsProps,
+  DocChip,
+  DocStat,
+  DocStatsProps,
+  DocTone,
+} from './primitives/DocBlocks/DocBlocks.types';
+export type { SaltBlockProps, SaltBlockRenderer } from './primitives/Markdown/saltBlocks';
 export type { CollapsibleSectionProps } from './primitives/CollapsibleSection/CollapsibleSection.types';
 export type { DialProps } from './primitives/Dial/Dial.types';
 export type {

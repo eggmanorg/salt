@@ -354,9 +354,13 @@ export const coverageThresholds = {
   // the staleness tolerance with the uncovered count unmoved at 216. Uncovered
   // lines fell 191 → 190. Nothing about the tests changed; the figures are the
   // ratchet's paste block over CI's report.
+  // BANKED 89.59/75.73 → 89.93/76.82 in #1663: the new doc-block primitives
+  // (cards, callout, stats, tone map) and the table styling arrive fully
+  // covered, so both percentages rose with the uncovered counts unmoved at
+  // 190/216. The figures are the ratchet's paste block over CI's report.
   'packages/ui-components/src/**': {
-    lines: 89.59,
-    branches: 75.73,
+    lines: 89.93,
+    branches: 76.82,
     uncoveredLines: 190,
     uncoveredBranches: 216,
   },

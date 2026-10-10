@@ -50,6 +50,9 @@ vi.mock('../../src/adapters/withAiTimeout.js', async (importActual) => ({
 }));
 vi.mock('../../src/observability/reportServerError.js', () => ({
   reportFlowError: vi.fn(async () => undefined),
+  // The page writer reports its own failure (#1663); here it always fails, since
+  // `ai.generate` is not stubbed, and the draft is saved.
+  reportServerError: vi.fn(),
 }));
 // The manifest the tool sees when it is called through its own declaration
 // rather than through the exported handler — the wiring test at the bottom is

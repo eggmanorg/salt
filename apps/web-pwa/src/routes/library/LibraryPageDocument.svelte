@@ -25,6 +25,7 @@
     queueLibraryEdit,
     restoreLibraryRevision,
   } from '../../lib/libraryService.js';
+  import LibraryBlock from './LibraryBlock.svelte';
   import LibraryHistorySheet from './LibraryHistorySheet.svelte';
   import LibraryImportSheet from './LibraryImportSheet.svelte';
   import { parseTagLine } from './libraryTags.js';
@@ -68,6 +69,11 @@
    * note or arriving in a chef's reply still renders as visible markup source, and
    * the chat is the reason: its text is written by a model, which is the one place
    * in this app markup should not be accepted from.
+   *
+   * `blocks={LibraryBlock}` is the library's second opt-in (#1663): a
+   * ` ```salt-<kind> ` fence is drawn as cards, a callout or a stats row from its
+   * YAML, and shown as its own text with a notice when it does not parse. The
+   * same three surfaces pass it; `libraryBlocksCallers.test.ts` says which.
    *
    * The body renders at `scale="doc"`. `Markdown`'s default sizes are tuned for a
    * two-line note inside a card (h1 at 1.125rem, `p` margin 0); a page is a
@@ -262,7 +268,7 @@
               Nothing written yet. Tap to start — markdown, including tables.
             </p>
           {:else}
-            <Markdown text={page.body} sanitizedHtml scale="doc" />
+            <Markdown text={page.body} sanitizedHtml scale="doc" blocks={LibraryBlock} />
           {/if}
         </div>
         <!-- The keyboard route in. The body region above is a mouse/touch

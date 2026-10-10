@@ -11,6 +11,7 @@
   } from '@salt/ui-components';
   import { LIBRARY_PAGE_REVISION_CAP, type LibraryPageRevisionDoc } from '@salt/domain/schemas';
   import { formatInstant } from '../../lib/dateFormat.js';
+  import LibraryBlock from './LibraryBlock.svelte';
 
   /**
    * A page's previous versions (issue #1375) — see one, read it, put it back.
@@ -158,7 +159,7 @@
         {#if chosen.revision.body.trim() === ''}
           <p class="text-sm text-muted-foreground">This version had nothing written in it.</p>
         {:else}
-          <Markdown text={chosen.revision.body} sanitizedHtml scale="doc" />
+          <Markdown text={chosen.revision.body} sanitizedHtml scale="doc" blocks={LibraryBlock} />
         {/if}
       </div>
       <SheetFooter>

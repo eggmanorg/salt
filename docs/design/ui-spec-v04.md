@@ -789,6 +789,7 @@ Primary use case: rendering AI-generated assistant responses in the chat UI (AI 
 | `breaks`        | `boolean`             | `false`  | Treat every single newline as a hard break (see §12.3.1)                                   |
 | `scale`         | `'note' \| 'doc'`     | `'note'` | Type scale: note proportions, or document proportions for a page body (see §12.3.2)        |
 | `sanitizedHtml` | `boolean`             | `false`  | Render raw HTML in the source as elements, through the allowlist in `svgSanitizeSchema.ts` |
+| `blocks`        | `SaltBlockRenderer`   | —        | Draw every ` ```salt-<kind> ` fence with this component instead of as code (see §12.7)     |
 | `class`         | `string \| undefined` | —        | Extra classes merged onto the `salt-md` wrapper `<div>`                                    |
 
 ## 12.3 Implementation
@@ -896,15 +897,20 @@ being zeroed by `:first-child`, and a list nested inside an `li` gets this
 table's `margin: 0.75rem 0` rather than `li > ul`/`li > ol`'s `0.125rem 0`. That
 is the behaviour both before and after #1394 — only the selector prefix moved.
 
-| Element    | Style applied                                                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `p`        | `margin: 0.75rem 0` (replaces the note scale's `margin: 0` plus `p + p` top margin)                                            |
-| `h1`       | `font-size: 1.5rem; margin: 1.25rem 0 0.5rem`                                                                                  |
-| `h2`       | `font-size: 1.25rem; margin: 1.25rem 0 0.5rem`                                                                                 |
-| `h3`       | `font-size: 1.0625rem; margin: 1rem 0 0.375rem`                                                                                |
-| `ul`, `ol` | `margin: 0.75rem 0`                                                                                                            |
-| `li`       | `margin: 0.25rem 0`                                                                                                            |
-| `table`    | `display: block; width: max-content; max-width: 100%; overflow-x: auto` — scrolls in its own box rather than widening the page |
+| Element                           | Style applied                                                                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `p`                               | `margin: 0.75rem 0` (replaces the note scale's `margin: 0` plus `p + p` top margin)                                                      |
+| `h1`                              | `font-size: 1.5rem; margin: 1.25rem 0 0.5rem`                                                                                            |
+| `h2`                              | `font-size: 1.25rem; margin: 1.25rem 0 0.5rem`                                                                                           |
+| `h3`                              | `font-size: 1.0625rem; margin: 1rem 0 0.375rem`                                                                                          |
+| `ul`, `ol`                        | `margin: 0.75rem 0`                                                                                                                      |
+| `li`                              | `margin: 0.25rem 0`                                                                                                                      |
+| `table`                           | `display: block; width: max-content; max-width: 100%; overflow-x: auto` — scrolls in its own box rather than widening the page           |
+| `table`                           | Salt's colours (#1663): `separate` borders, `1px` border and rounded corners from tokens, card ground, `0.875rem`, tabular figures       |
+| `th`, `td`                        | No grid; `0.5rem 0.625rem` padding, left-aligned, top-aligned                                                                            |
+| `th`                              | Solid teal heading row: `--salt-primary` ground, `--salt-primary-foreground` ink, `0.75rem` uppercase, `600`                             |
+| `tbody tr + tr td`                | A `--salt-muted` rule between rows                                                                                                       |
+| `[align=right]`, `[align=center]` | GFM column alignment (`---:`) restated as a rule, because the left-align above would beat the attribute; right-aligned cells do not wrap |
 
 ## 12.5 Usage example
 
@@ -928,6 +934,49 @@ is the behaviour both before and after #1394 — only the selector prefix moved.
 - `scale="doc"`: `salt-md-doc` lands on the `salt-md` wrapper itself — one element, not a second nested one — and `class` still merges alongside both.
 - `scale` is presentation only: the same source renders the same element tree at either scale.
 - **Not testable in the unit environment:** jsdom does not compute Svelte's scoped styles across a component boundary, so no assertion here can prove a rendered font size or margin. Visual parity for `scale="doc"` is covered by the `DocumentScale` Storybook story's Chromatic baseline, not by vitest.
+
+## 12.7 Library blocks — the `blocks` prop and the `Doc*` primitives
+
+Added by issue #1663. A library page body may carry fenced code blocks whose
+info string is `salt-<kind>`; their content is YAML, validated by
+`@salt/domain`'s `parseLibraryBlock`.
+
+**The hook.** `blocks` takes a component of `SaltBlockProps` (`{ kind, source }`
+— the kind after `salt-`, and the raw text between the fences). When it is set,
+`rehypeSaltBlocks` (`Markdown/saltBlocks.ts`) rewrites each
+`pre > code.language-salt-<kind>` into a `salt-block` element and the renderer
+map draws it with that component, in document order. When it is absent, such a
+fence is an ordinary code block — chat and recipe notes pass nothing.
+
+**Order is load-bearing.** The rewrite runs **after** `rehype-sanitize`. The
+default schema keeps a `code` element's `language-*` class, so the fence's kind
+survives; and `salt-block` is not on the allowlist, so one typed as raw HTML is
+stripped before the rewrite runs. The only `salt-block` the renderer meets is
+one made from a fence's text. `MarkdownBlocks.test.ts` pins both, and goes red
+if the rewrite is moved ahead of the sanitiser.
+
+**Parsing is the caller's.** This package imports nothing from `@salt/*`, so the
+block component lives in web-pwa (`LibraryBlock.svelte`): it parses, draws the
+primitive for the kind, and on a parse failure shows the source in a code box
+with a one-line notice — never blank.
+
+**The primitives** take typed props only:
+
+| Component    | Props                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `DocCards`   | `groups: { heading?, cards: { title, chips: { label, tone }[], arrows, lines, footnote? }[] }[]` |
+| `DocCallout` | `tone`, `label?`, `children` (the body — web-pwa renders it with `Markdown` at note scale)       |
+| `DocStats`   | `items: { value, label, tone }[]` — 2–4 tiles in one row                                         |
+
+**Colour is a `DocTone`** — `primary`, `sage`, `terracotta`, `warning`, `muted` —
+mapped to token classes in `docTone.ts` (`DOC_TONE_TINT` for grounds,
+`DOC_TONE_INK` for figures). No prop takes a colour, class for one, or style.
+The domain's `LibraryTone` is the same five words, and web-pwa passing one into
+the other is what keeps the lists in step.
+
+Elements inside the primitives are `div`/`span` apart from the cards' group
+heading, because they render inside a `salt-md` body whose `:global(p)`, `ul`
+and `li` rules would otherwise restyle them.
 
 ---
 

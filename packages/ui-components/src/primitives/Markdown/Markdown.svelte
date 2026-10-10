@@ -1,4 +1,4 @@
-<!-- spec: ai-kitchen-assistant.md §Surfaces v1.0 -->
+<!-- spec: ai-kitchen-assistant.md §Surfaces v1.0; ui-spec-v04.md §12.7 v0.4 -->
 <script lang="ts">
   import { Markdown as ExMarkdown, type Plugin } from 'svelte-exmarkdown';
   import { gfmPlugin } from 'svelte-exmarkdown/gfm';
@@ -6,18 +6,26 @@
   import rehypeSanitize from 'rehype-sanitize';
   import { cn } from '../../lib/cn';
   import { rehypeSvgAttributeCase, stripSvgAnchors, svgSanitizeSchema } from './svgSanitizeSchema';
+  import { rehypeSaltBlocks, SALT_BLOCK_TAG, type SaltBlockRenderer } from './saltBlocks';
 
   let {
     text,
     breaks = false,
     sanitizedHtml = false,
     scale = 'note',
+    blocks,
     class: className,
   }: {
     text: string;
     breaks?: boolean;
     sanitizedHtml?: boolean;
     scale?: 'note' | 'doc';
+    /**
+     * Draws every ` ```salt-<kind> ` fenced code block with this component
+     * instead of as code (§12.7). Absent, such a fence is an ordinary code block
+     * — which is what the chat and recipe notes get, by not passing it.
+     */
+    blocks?: SaltBlockRenderer;
     class?: string;
   } = $props();
 
@@ -37,8 +45,14 @@
   // `stripSvgAnchors` runs right after sanitising: it is the control that
   // keeps a URL-bearing `<a>` out of a drawing (`tagNames`/`attributes` can't,
   // being namespace-blind — see `svgSanitizeSchema.ts`). `rehypeSvgAttributeCase`
-  // runs last and is presentation only.
-  const plugins: Plugin[] = $derived(
+  // runs after both and is presentation only.
+  //
+  // `rehypeSaltBlocks` runs LAST, after the sanitiser, and only for a caller
+  // that passed `blocks`. Last is what keeps it from being a raw-HTML route: the
+  // `salt-block` element it makes is not on the allowlist, so one typed as raw
+  // HTML is stripped before this runs, and the only one the renderer ever meets
+  // is one made here from a fence's text (§12.7; `Markdown.test.ts`).
+  const parsing: Plugin[] = $derived(
     sanitizedHtml
       ? [
           gfmPlugin(),
@@ -48,6 +62,11 @@
           { rehypePlugin: rehypeSvgAttributeCase },
         ]
       : [gfmPlugin()],
+  );
+  const plugins: Plugin[] = $derived(
+    blocks
+      ? [...parsing, { rehypePlugin: rehypeSaltBlocks, renderer: { [SALT_BLOCK_TAG]: blocks } }]
+      : parsing,
   );
 
   // CommonMark folds a lone newline into a space, so line-per-thought prose
@@ -226,11 +245,55 @@
   }
   /* A jar table is the point of the library, and a phone is narrower than one.
      The table scrolls inside its own box rather than widening the page — the
-     one sanctioned horizontal scroller on a Salt surface. */
+     one sanctioned horizontal scroller on a Salt surface.
+
+     And it is drawn in Salt's own colours (§12.4.1, issue #1663): a solid teal
+     heading row, rules between rows rather than a grid, and figures that line
+     up. `separate` + zero spacing rather than `collapse`, because a collapsed
+     table cannot round its corners. Tokens, never hex: the `--salt-*`
+     primitives are what `salt.css` defines on `:root`. */
   .salt-md.salt-md-doc :global(table) {
     display: block;
     width: max-content;
     max-width: 100%;
     overflow-x: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid hsl(var(--salt-border));
+    border-radius: var(--salt-radius-default);
+    background: hsl(var(--salt-card));
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .salt-md.salt-md-doc :global(th),
+  .salt-md.salt-md-doc :global(td) {
+    border: none;
+    padding: 0.5rem 0.625rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .salt-md.salt-md-doc :global(th) {
+    background: hsl(var(--salt-primary));
+    color: hsl(var(--salt-primary-foreground));
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .salt-md.salt-md-doc :global(tbody tr + tr td) {
+    border-top: 1px solid hsl(var(--salt-muted));
+  }
+  /* A writer marks a figures column with GFM's `|---:|`, which arrives as an
+     `align` attribute. The `text-align: left` above would beat that attribute
+     (a presentational hint loses to any rule), so the alignment is restated as a
+     rule that outranks it. */
+  .salt-md.salt-md-doc :global(th[align='right']),
+  .salt-md.salt-md-doc :global(td[align='right']) {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .salt-md.salt-md-doc :global(th[align='center']),
+  .salt-md.salt-md-doc :global(td[align='center']) {
+    text-align: center;
   }
 </style>

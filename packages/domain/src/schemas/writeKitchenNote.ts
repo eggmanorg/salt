@@ -68,6 +68,16 @@ export const WriteKitchenNoteOutputSchema = z.object({
       'A plain sentence saying what stopped the write, or null. Say it out loud as your own — ' +
         'never claim a page was written when saved is false.',
     ),
+  // Issue #1663. The body the chef sends is a DRAFT that Salt's page writer lays
+  // out before it is saved; when that step fails or would have changed a figure,
+  // the draft is saved exactly as written and this is false. False on a refusal
+  // too, where nothing was laid out because nothing was saved.
+  laidOut: z
+    .boolean()
+    .describe(
+      'True when the page was saved laid out in Salt’s style. False when it was saved exactly ' +
+        'as you wrote it because the layout did not take — say so.',
+    ),
 });
 
 export type WriteKitchenNoteOutput = z.infer<typeof WriteKitchenNoteOutputSchema>;

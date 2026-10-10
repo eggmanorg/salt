@@ -498,8 +498,19 @@ export {
   searchLibraryPages,
   LIBRARY_PAGE_SEARCH_DEFAULT_MAX,
   LIBRARY_PAGE_SEARCH_CEILING,
+  // What makes a page the page writer laid out safe to save in place of the
+  // chef's draft (issue #1663): its blocks parse and no figure was lost.
+  checkComposedPage,
+  findLibraryBlocks,
+  figuresIn,
+  missingFigures,
 } from './library/index.js';
-export type { LibraryPageCandidate, LibraryPageSearchFilters } from './library/index.js';
+export type {
+  ComposedPageCheck,
+  FoundLibraryBlock,
+  LibraryPageCandidate,
+  LibraryPageSearchFilters,
+} from './library/index.js';
 // Chat module (issues #1270, #1430) — the one place a chat's read-only state is
 // decided, and the one place its retention is.
 export { isChatReadOnly, CHAT_READ_ONLY_AFTER_MS } from './chat/index.js';
