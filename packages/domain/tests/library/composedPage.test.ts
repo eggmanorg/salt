@@ -122,6 +122,21 @@ describe('checkComposedPage', () => {
     expect(checkComposedPage(draft, quoted, 10_000).ok).toBe(false);
   });
 
+  it('does not let a drawing coordinate stand in for a figure the layout dropped', () => {
+    const svg = '<svg viewBox="0 0 200 100"><rect x="130" y="10" width="40" height="20"/></svg>';
+    expect(missingFigures('Render at 130.', `Render later.\n\n${svg}`)).toEqual(['130']);
+    expect(checkComposedPage('Render at 130.', `Render later.\n\n${svg}`, 10_000).ok).toBe(false);
+  });
+
+  it('still counts a figure written as text between tags, and prose with a bare <', () => {
+    expect(missingFigures('Render at 130.', '<svg><text>130</text></svg>')).toEqual([]);
+    expect(missingFigures('Under <5 minutes, 9 < 10.', 'Under <5 minutes, 9 < 10.')).toEqual([]);
+  });
+
+  it('treats an unclosed tag as markup to the end, so it counts fewer figures, never more', () => {
+    expect(missingFigures('Render at 130.', 'Render later <svg x="130"')).toEqual(['130']);
+  });
+
   it('passes a figure moved to another item — the boundary missingFigures states', () => {
     expect(
       checkComposedPage(

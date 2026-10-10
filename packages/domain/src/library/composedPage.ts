@@ -78,6 +78,35 @@ export function figuresIn(text: string): string[] {
 }
 
 /**
+ * `text` with every markup tag removed, keeping the text between tags. A tag is
+ * a `<` straight followed by a letter, `/` or `!`, up to the next `>` — so
+ * "under <5 minutes" and "a < b" are prose and stay. A linear scan rather than
+ * a pattern, so there is no backtracking to get wrong and nothing for a
+ * sanitiser rule to mistake for HTML sanitising: this only decides which numbers
+ * to COUNT, and the page is still sanitised on render. An unclosed `<tag` runs to
+ * the end of the text, which errs towards counting fewer figures in `composed`
+ * and so towards keeping the draft.
+ */
+export function withoutMarkupTags(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf('<', i);
+    if (open === -1) break;
+    out += text.slice(i, open);
+    if (/[A-Za-z/!]/.test(text.charAt(open + 1))) {
+      const close = text.indexOf('>', open + 1);
+      if (close === -1) return out;
+      i = close + 1;
+    } else {
+      out += '<';
+      i = open + 1;
+    }
+  }
+  return out + text.slice(i);
+}
+
+/**
  * The figures in `draft` that `composed` does not carry — as a MULTISET, so a
  * draft saying 175 twice needs 175 twice. Empty means every figure survived.
  *
@@ -89,12 +118,16 @@ export function figuresIn(text: string): string[] {
  * Its boundary: it checks that every number token is still SOMEWHERE on the
  * page, not that it is still attached to the same item, sign or unit. A figure
  * moved to a different item (duck 175 / steak 200 swapped), a dropped minus
- * sign ("-18 °C" → "18 °C") and a changed unit all pass. So does a figure
- * stood in for by a coordinate: a freehand `<svg>`'s `x="130"` is a 130 here.
+ * sign ("-18 °C" → "18 °C") and a changed unit all pass. Numbers inside markup
+ * tags — a freehand `<svg>`'s `x="130"`, `viewBox`, `points` — are NOT counted
+ * on the composed side, so a coordinate cannot stand in for a dropped figure.
+ * What is still counted is text BETWEEN tags: a figure written into a drawing's
+ * `<text>` label is a number on the page, so it can stand in for a dropped one
+ * (the style guide forbids figures in a label; nothing enforces it).
  */
 export function missingFigures(draft: string, composed: string): string[] {
   const have = new Map<string, number>();
-  for (const f of figuresIn(composed)) have.set(f, (have.get(f) ?? 0) + 1);
+  for (const f of figuresIn(withoutMarkupTags(composed))) have.set(f, (have.get(f) ?? 0) + 1);
   const missing: string[] = [];
   for (const f of figuresIn(draft)) {
     const n = have.get(f) ?? 0;

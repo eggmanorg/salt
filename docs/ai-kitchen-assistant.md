@@ -390,7 +390,7 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   entirely rather than sent empty, so today's prompt is byte for byte unchanged for
   everyone else.
 - **The page writer (#1663).** `writeKitchenNote`'s body is the chef's _draft_.
-  Before saving, the handler runs `composeLibraryPage` — a second, `fast`-role
+  Before saving, the handler runs `composeLibraryPage` — a second, `pro`-role
   flow carrying the Library's whole style guide (`salt-*` blocks, tones, when a
   table beats a card, when a drawing earns its place, and — on trial — one
   freehand `<svg>` painted in tones only) — and saves its layout only if `checkComposedPage`

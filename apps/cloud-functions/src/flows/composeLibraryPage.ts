@@ -30,7 +30,8 @@ import { reportServerError } from '../observability/reportServerError.js';
 // parse or is nested where it cannot be checked, a `salt-shapes` measurement
 // that is not a figure in the draft, or a number token from the draft that is
 // missing from the layout (a figure moved to another item, a lost
-// sign or a changed unit all still pass — `missingFigures`). The handler then
+// sign or a changed unit all still pass; a number inside a drawing's tags does
+// not count, but one in its `<text>` label does — `missingFigures`). The handler then
 // saves the chef's draft exactly as written. The checks are `checkComposedPage`
 // in `@salt/domain`, pure and pinned there; that the handler honours them is
 // pinned in `chefChat.writeKitchenNote.test.ts`.
@@ -42,7 +43,7 @@ import { reportServerError } from '../observability/reportServerError.js';
  * stream's 55 s idle timer — the timer covers the model's last chunk before the
  * tool call, the tool run itself, and the chunk after it (`chefChat.ts`, the
  * drain). 25 s leaves the other two more than half the budget, and is still
- * several times a healthy `fast`-tier rewrite of a page-sized body. No retry:
+ * several times a healthy `pro`-tier rewrite of a page-sized body. No retry:
  * a retry would double the silence, and the fallback — saving the draft — is a
  * good outcome, not a failure the household sees.
  */
