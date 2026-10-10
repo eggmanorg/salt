@@ -47,6 +47,24 @@ async function queueOfflineAdd(page: Page, url: string, listId: string, text: st
   await expect(input).toBeVisible({ timeout: SYNC_TIMEOUT });
 
   await page.evaluate(() => window.__e2e!.setFirestoreOffline(true));
+  // Going offline re-delivers every listener from cache, and the page re-renders
+  // around it; wait for the field again rather than racing that.
+  try {
+    await expect(input).toBeVisible({ timeout: SYNC_TIMEOUT });
+  } catch (err) {
+    // Printed to the CI log, which — unlike the trace artifact — every reader
+    // of a failed run can reach.
+    const state = await page.evaluate(() => ({
+      url: location.href,
+      text: document.body.innerText.slice(0, 400),
+      lists: window.__e2e!.getShoppingLists().map((l) => l.id),
+      defaultListId: window.__e2e!.getDefaultListId() ?? null,
+    }));
+    console.log(
+      `[stall-recovery-durability] add field gone after going offline: ${JSON.stringify(state)}`,
+    );
+    throw err;
+  }
   await input.fill(text);
   await page.getByTestId('shopping-item-add-btn').click();
 
