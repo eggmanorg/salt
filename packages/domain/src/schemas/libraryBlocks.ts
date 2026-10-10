@@ -36,17 +36,24 @@ import { z } from 'zod';
 //
 // ─── DRAWINGS ARE DRAWN FROM FIGURES ────────────────────────────────────────
 //
-// `range` is data-drawn: the block holds figures and the renderer draws them to
-// scale, so changing a figure redraws the drawing. A figure is still kept as the
-// text typed — `1,062` shows as `1,062` — beside the number it means
-// (`LibraryFigure`), which is what the drawing is scaled by.
+// `chart`, `range` and `timeline` are data-drawn: the block holds figures and
+// the renderer draws them to scale, so changing a figure redraws the drawing.
+// A figure is still kept as the text typed — `1,062` shows as `1,062` — beside
+// the number it means (`LibraryFigure`), which is what the drawing is scaled by.
 
 export const LIBRARY_TONES = ['primary', 'sage', 'terracotta', 'warning', 'muted'] as const;
 export const LibraryToneSchema = z.enum(LIBRARY_TONES);
 export type LibraryTone = z.infer<typeof LibraryToneSchema>;
 
 /** The block kinds that exist. A `salt-` fence naming anything else is a broken block. */
-export const LIBRARY_BLOCK_KINDS = ['cards', 'callout', 'stats', 'range'] as const;
+export const LIBRARY_BLOCK_KINDS = [
+  'cards',
+  'callout',
+  'stats',
+  'chart',
+  'range',
+  'timeline',
+] as const;
 export type LibraryBlockKind = (typeof LIBRARY_BLOCK_KINDS)[number];
 
 /** The info-string prefix that marks a fenced code block as a library block. */
@@ -132,17 +139,87 @@ export interface LibraryFigure {
 // else — a unit, a range, a word — is not a figure, and says so.
 const FIGURE_TEXT = /^-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
 
+/** The figure `text` means, or `null` when it is not a plain number. Timeline items read through it too. */
+function readFigure(text: string): LibraryFigure | null {
+  return FIGURE_TEXT.test(text) ? { text, value: Number(text.replace(/,/g, '')) } : null;
+}
+
 const figure = z
   .string()
   .trim()
-  .refine((t) => FIGURE_TEXT.test(t), { message: 'must be a plain number, like 130, 6.3 or 1,062' })
-  .transform((t): LibraryFigure => ({ text: t, value: Number(t.replace(/,/g, '')) }));
+  .transform((t, ctx): LibraryFigure => {
+    const read = readFigure(t);
+    if (read === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'must be a plain number, like 130, 6.3 or 1,062',
+      });
+      return z.NEVER;
+    }
+    return read;
+  });
 
 const UNIT = 12;
 
+// ── salt-chart ──
+
+export const LIBRARY_CHART_TYPES = ['bar', 'column', 'pie'] as const;
+/** How many items each chart type draws legibly on a phone. */
+export const LIBRARY_CHART_ITEM_CAP = { bar: 12, column: 8, pie: 5 } as const;
+
+const ChartItemSchema = z
+  .object({
+    label: text(40),
+    value: figure,
+    /** Unset: the drawing picks — one tone for bars, a different one per slice. */
+    tone: LibraryToneSchema.optional(),
+  })
+  .strict();
+
+export const LibraryChartBlockSchema = z
+  .object({
+    /** `bar` runs left to right, `column` bottom to top, `pie` is shares of a whole. */
+    type: z.enum(LIBRARY_CHART_TYPES).default('bar'),
+    /** Written after every value: `ml`, `°`, `%`. */
+    unit: text(UNIT).optional(),
+    items: z.array(ChartItemSchema).min(2).max(LIBRARY_CHART_ITEM_CAP.bar),
+    caption: text(LINE).optional(),
+  })
+  .strict()
+  .superRefine((chart, ctx) => {
+    const cap = LIBRARY_CHART_ITEM_CAP[chart.type];
+    if (chart.items.length > cap) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: `a ${chart.type} chart draws at most ${cap} items`,
+      });
+    }
+    // Bars and slices are drawn from zero, so a value below it has nowhere to go.
+    chart.items.forEach((item, i) => {
+      if (item.value.value < 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['items', i, 'value'],
+          message: 'a chart is drawn from zero, so a value cannot be below it',
+        });
+      }
+    });
+    if (chart.type === 'pie' && chart.items.every((item) => item.value.value === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: 'a pie needs at least one value above zero',
+      });
+    }
+  });
+
 // ── salt-range ──
 
-/** A value (`at`) or a range (`from`–`to`). Read as `{ from, to? }`: `to` absent is a single value. */
+/**
+ * A value (`at`) or a range (`from`–`to`). Read as `{ from, to? }`: `to` absent
+ * is a single value. Shared by `range` stages and `timeline` items' elapsed form.
+ */
 function spanOf(
   s: {
     at?: LibraryFigure | undefined;
@@ -268,16 +345,102 @@ export const LibraryRangeBlockSchema = z
     }
   });
 
+// ── salt-timeline ──
+
+/** Elapsed time in one of these, or calendar dates (`YYYY-MM-DD`). */
+export const LIBRARY_TIMELINE_UNITS = ['minutes', 'hours', 'days', 'weeks', 'dates'] as const;
+export type LibraryTimelineUnit = (typeof LIBRARY_TIMELINE_UNITS)[number];
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * A calendar date as days since 1970-01-01, read in UTC so no time zone can move
+ * it a day. `null` for anything that is not a real `YYYY-MM-DD` date.
+ */
+export function libraryDayNumber(text: string): number | null {
+  const m = ISO_DATE.exec(text);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const ms = Date.UTC(y, mo - 1, d);
+  const back = new Date(ms);
+  // Date.UTC rolls 2026-02-30 over to 2 March; a real date survives the trip.
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) {
+    return null;
+  }
+  return ms / MS_PER_DAY;
+}
+
+const TimelineItemSchema = z
+  .object({
+    label: text(SHORT),
+    // Read once `unit` is known: a figure in elapsed units, a date for `dates`.
+    at: text(24).optional(),
+    from: text(24).optional(),
+    to: text(24).optional(),
+    tone: LibraryToneSchema.optional(),
+  })
+  .strict();
+
+export const LibraryTimelineBlockSchema = z
+  .object({
+    unit: z.enum(LIBRARY_TIMELINE_UNITS).default('days'),
+    items: z.array(TimelineItemSchema).min(1).max(16),
+    caption: text(LINE).optional(),
+  })
+  .strict()
+  .transform((t, ctx) => {
+    const read = (text: string | undefined, path: (string | number)[]) => {
+      if (text === undefined) return undefined;
+      if (t.unit === 'dates') {
+        const day = libraryDayNumber(text);
+        if (day === null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path,
+            message: 'must be a date, like 2026-10-12',
+          });
+          return undefined;
+        }
+        return { text, value: day };
+      }
+      const f = readFigure(text);
+      if (f === null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: `must be a number of ${t.unit}`,
+        });
+      }
+      return f ?? undefined;
+    };
+    const items = t.items.map((item, i) => {
+      const at = read(item.at, ['items', i, 'at']);
+      const from = read(item.from, ['items', i, 'from']);
+      const to = read(item.to, ['items', i, 'to']);
+      const itemCtx: z.RefinementCtx = {
+        addIssue: (issue) => ctx.addIssue({ ...issue, path: ['items', i, ...(issue.path ?? [])] }),
+        path: [...ctx.path, 'items', i],
+      };
+      return { label: item.label, tone: item.tone, ...spanOf({ at, from, to }, itemCtx) };
+    });
+    return { unit: t.unit, items, caption: t.caption };
+  });
+
 export type LibraryCardsBlock = z.infer<typeof LibraryCardsBlockSchema>;
 export type LibraryCalloutBlock = z.infer<typeof LibraryCalloutBlockSchema>;
 export type LibraryStatsBlock = z.infer<typeof LibraryStatsBlockSchema>;
+export type LibraryChartBlock = z.infer<typeof LibraryChartBlockSchema>;
 export type LibraryRangeBlock = z.infer<typeof LibraryRangeBlockSchema>;
+export type LibraryTimelineBlock = z.infer<typeof LibraryTimelineBlockSchema>;
 
 export type LibraryBlock =
   | { readonly kind: 'cards'; readonly data: LibraryCardsBlock }
   | { readonly kind: 'callout'; readonly data: LibraryCalloutBlock }
   | { readonly kind: 'stats'; readonly data: LibraryStatsBlock }
-  | { readonly kind: 'range'; readonly data: LibraryRangeBlock };
+  | { readonly kind: 'chart'; readonly data: LibraryChartBlock }
+  | { readonly kind: 'range'; readonly data: LibraryRangeBlock }
+  | { readonly kind: 'timeline'; readonly data: LibraryTimelineBlock };
 
 export type LibraryBlockParse =
   | { readonly ok: true; readonly block: LibraryBlock }
@@ -287,7 +450,9 @@ const SCHEMAS = {
   cards: LibraryCardsBlockSchema,
   callout: LibraryCalloutBlockSchema,
   stats: LibraryStatsBlockSchema,
+  chart: LibraryChartBlockSchema,
   range: LibraryRangeBlockSchema,
+  timeline: LibraryTimelineBlockSchema,
 } as const satisfies Record<LibraryBlockKind, z.ZodTypeAny>;
 
 function isKind(kind: string): kind is LibraryBlockKind {

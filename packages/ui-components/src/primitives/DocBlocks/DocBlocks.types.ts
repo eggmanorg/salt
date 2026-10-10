@@ -67,6 +67,24 @@ export interface DocFigure {
   value: number;
 }
 
+export type DocChartType = 'bar' | 'column' | 'pie';
+
+export interface DocChartItem {
+  label: string;
+  value: DocFigure;
+  /** Unset: one tone for every bar; a different tone per slice. */
+  tone?: DocTone | undefined;
+}
+
+export interface DocChartProps {
+  type: DocChartType;
+  /** Written after every value. */
+  unit?: string | undefined;
+  items: readonly DocChartItem[];
+  caption?: string | undefined;
+  class?: string;
+}
+
 /** One stage of a row: a value (`to` unset) or a range. */
 export interface DocRangeStage {
   label?: string | undefined;
@@ -109,6 +127,23 @@ export interface DocRangeMapProps {
   bands: readonly DocRangeBand[];
   lines: readonly DocRangeLine[];
   groups: readonly DocRangeGroup[];
+  caption?: string | undefined;
+  class?: string;
+}
+
+/** Elapsed time in one of these, or `dates` — where a figure's `value` is days since 1970-01-01 (UTC). */
+export type DocTimelineUnit = 'minutes' | 'hours' | 'days' | 'weeks' | 'dates';
+
+export interface DocTimelineItem {
+  label: string;
+  from: DocFigure;
+  to?: DocFigure | undefined;
+  tone?: DocTone | undefined;
+}
+
+export interface DocTimelineProps {
+  unit: DocTimelineUnit;
+  items: readonly DocTimelineItem[];
   caption?: string | undefined;
   class?: string;
 }

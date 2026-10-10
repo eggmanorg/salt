@@ -2,16 +2,21 @@
 //
 // The arithmetic the data-drawn library blocks (#1663 Phase 2) are drawn by.
 // "Drawn to one scale" is pinned here: a value maps to its own place on the
-// axis, and the ticks chosen fit a phone.
+// axis, bars and a pie's slices are in proportion, and the ticks chosen fit a
+// phone.
 import { describe, it, expect } from 'vitest';
 import {
   DOC_AXIS_MAX_TICKS,
   DOC_TICK_CHAR_PX,
+  DOC_TIME_STEPS,
   axisFor,
   axisPercent,
   axisTrackPx,
   bandToneAt,
+  barPercents,
+  formatDay,
   formatTick,
+  pieSlices,
   withUnit,
 } from '../src/primitives/DocBlocks/docScale';
 
@@ -35,6 +40,16 @@ describe('axisPercent — a value maps to its axis position', () => {
     expect(axisPercent(300, 90, 250)).toBe(100);
     expect(axisPercent(10, 90, 250)).toBe(0);
     expect(axisPercent(5, 5, 5)).toBe(0);
+  });
+});
+
+describe('barPercents', () => {
+  it('draws each bar in proportion to the longest', () => {
+    expect(barPercents([290, 580, 1160])).toEqual([25, 50, 100]);
+  });
+
+  it('draws nothing when every value is zero', () => {
+    expect(barPercents([0, 0])).toEqual([0, 0]);
   });
 });
 
@@ -78,6 +93,11 @@ describe('axisFor', () => {
     expect(axisFor([5.5, 14.5]).ticks).toEqual([5.5, 14.5]);
   });
 
+  it('ticks elapsed days in whole weeks', () => {
+    expect(axisFor([0, 21], { steps: DOC_TIME_STEPS.days }).ticks).toEqual([0, 7, 14, 21]);
+    expect(axisFor([0, 28], { steps: DOC_TIME_STEPS.days }).ticks).toEqual([0, 14, 28]);
+  });
+
   it('gives a single value room either side', () => {
     expect(axisFor([5])).toMatchObject({ min: 4, max: 6 });
   });
@@ -115,9 +135,28 @@ describe('labels', () => {
     expect(withUnit('290', undefined)).toBe('290');
   });
 
-  it('groups thousands on a tick', () => {
+  it('groups thousands on a tick and writes a day number as a date', () => {
     expect(formatTick(10000)).toBe('10,000');
     expect(formatTick(0.25)).toBe('0.25');
+    expect(formatDay(0)).toBe('1 Jan');
+    // 2026-10-12 is day 20,738.
+    expect(formatDay(20_738)).toBe('12 Oct');
+  });
+});
+
+describe('pieSlices', () => {
+  it('turns each slice through its share of the circle, clockwise from twelve', () => {
+    const [quarter, threeQuarters] = pieSlices([1, 3]);
+    // A quarter ends at three o'clock: (98, 50) on a radius-48 circle at (50, 50).
+    expect(quarter).toBe('M 50 50 L 50.000 2.000 A 48 48 0 0 1 98.000 50.000 Z');
+    // The larger slice takes the long way round.
+    expect(threeQuarters).toMatch(/A 48 48 0 1 1 50\.000 2\.000 Z$/);
+  });
+
+  it('draws no slice for zero, and a whole circle for the only value', () => {
+    const [none, whole] = pieSlices([0, 5]);
+    expect(none).toBeNull();
+    expect(whole).toMatch(/^M 50 2 A 48 48 0 1 1 50 98 A/);
   });
 });
 
@@ -126,7 +165,12 @@ describe('the axis at a phone’s width', () => {
   // browser measurement — jsdom lays nothing out. What it pins is that the
   // ticks `axisFor` chooses never put two labels on top of each other at the
   // household's phone widths.
-  const AXES: { name: string; values: number[]; label: (t: number) => string }[] = [
+  const AXES: {
+    name: string;
+    values: number[];
+    steps?: readonly number[] | undefined;
+    label: (t: number) => string;
+  }[] = [
     { name: 'the temperature map', values: [90, 250], label: (t) => withUnit(formatTick(t), '°') },
     {
       name: 'a freezer to a fryer',
@@ -134,13 +178,20 @@ describe('the axis at a phone’s width', () => {
       label: (t) => withUnit(formatTick(t), '°'),
     },
     { name: 'large figures', values: [0, 10_000], label: formatTick },
+    {
+      name: 'a month of dates',
+      values: [20_720, 20_751],
+      steps: DOC_TIME_STEPS.dates,
+      label: formatDay,
+    },
+    { name: 'a ferment in days', values: [0, 28], steps: DOC_TIME_STEPS.days, label: formatTick },
     { name: 'fractions', values: [0.1, 0.35], label: formatTick },
   ];
 
   it.each([360, 412])('leaves room between neighbouring tick labels at %ipx', (width) => {
     const track = axisTrackPx(width);
-    for (const { values, label } of AXES) {
-      const axis = axisFor(values, { label });
+    for (const { values, steps, label } of AXES) {
+      const axis = axisFor(values, { steps, label });
       const span = axis.max - axis.min;
       for (let i = 1; i < axis.ticks.length; i++) {
         const gap = ((axis.ticks[i]! - axis.ticks[i - 1]!) / span) * track;

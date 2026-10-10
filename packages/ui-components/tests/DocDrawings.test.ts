@@ -1,13 +1,20 @@
 // spec: ui-spec-v04.md §12.7
 //
-// The data-drawn document blocks (#1663 Phase 2): DocRangeMap. jsdom lays
-// nothing out, so what is asserted is the geometry each mark is GIVEN — its
-// percentage along the track — and the text it carries; the arithmetic itself
-// is pinned in `docScale.test.ts`.
+// The data-drawn document blocks (#1663 Phase 2): DocChart, DocRangeMap and
+// DocTimeline. jsdom lays nothing out, so what is asserted is the geometry each
+// mark is GIVEN — its percentage along the track — and the text it carries; the
+// arithmetic itself is pinned in `docScale.test.ts`.
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
+import DocChart from '../src/primitives/DocBlocks/DocChart.svelte';
 import DocRangeMap from '../src/primitives/DocBlocks/DocRangeMap.svelte';
-import { DOC_TONE_BAND, DOC_TONE_RULE, DOC_TONE_SOLID } from '../src/primitives/DocBlocks/docTone';
+import DocTimeline from '../src/primitives/DocBlocks/DocTimeline.svelte';
+import {
+  DOC_TONE_BAND,
+  DOC_TONE_FILL,
+  DOC_TONE_RULE,
+  DOC_TONE_SOLID,
+} from '../src/primitives/DocBlocks/docTone';
 import type { DocFigure, DocTone } from '../src/primitives/DocBlocks/DocBlocks.types';
 
 afterEach(() => cleanup());
@@ -17,7 +24,12 @@ const TONES: DocTone[] = ['primary', 'sage', 'terracotta', 'warning', 'muted'];
 
 describe('drawing tones map to tokens, never a raw colour', () => {
   it.each(TONES)('%s', (tone) => {
-    for (const classes of [DOC_TONE_SOLID[tone], DOC_TONE_BAND[tone], DOC_TONE_RULE[tone]]) {
+    for (const classes of [
+      DOC_TONE_SOLID[tone],
+      DOC_TONE_BAND[tone],
+      DOC_TONE_FILL[tone],
+      DOC_TONE_RULE[tone],
+    ]) {
       expect(classes).toMatch(/\S/);
       expect(classes).not.toMatch(/\[|#|-\d{2,3}\b/);
     }
@@ -26,6 +38,58 @@ describe('drawing tones map to tokens, never a raw colour', () => {
 
 const marks = (container: HTMLElement) =>
   Array.from(container.querySelectorAll<HTMLElement>('[data-mark]'));
+
+describe('DocChart', () => {
+  const items = [
+    { label: '740', value: fig(290) },
+    { label: '742', value: fig(580), tone: 'sage' as const },
+    { label: '745', value: fig(1062, '1,062') },
+  ];
+
+  it('draws bars in proportion to the longest, each value written as typed', () => {
+    const { container } = render(DocChart, { props: { type: 'bar', unit: 'ml', items } });
+    const bars = marks(container);
+    expect(bars.map((b) => parseFloat(b.style.width))).toEqual([
+      expect.closeTo((290 / 1062) * 100, 6),
+      expect.closeTo((580 / 1062) * 100, 6),
+      100,
+    ]);
+    expect(container.textContent).toContain('1,062 ml');
+    expect(container.textContent).toContain('290 ml');
+    // An unset tone is the chart's one tone; a set one is kept.
+    expect(bars.map((b) => b.dataset.tone)).toEqual(['primary', 'sage', 'primary']);
+  });
+
+  it('draws columns by height', () => {
+    const { container } = render(DocChart, { props: { type: 'column', items } });
+    expect(container.querySelector('[data-chart="column"]')).toBeTruthy();
+    expect(marks(container)[2]!.style.height).toBe('100%');
+    expect(container.textContent).toContain('745');
+  });
+
+  it('draws a pie with a different tone per slice and a legend of every value', () => {
+    const { container } = render(DocChart, {
+      props: {
+        type: 'pie',
+        unit: '%',
+        items: [
+          { label: 'Salt', value: fig(25) },
+          { label: 'Sugar', value: fig(0) },
+          { label: 'Water', value: fig(75) },
+        ],
+        caption: 'Brine by weight',
+      },
+    });
+    const slices = marks(container);
+    // A zero value has no slice, but keeps its place in the legend.
+    expect(slices).toHaveLength(2);
+    expect(slices.map((s) => s.dataset.tone)).toEqual(['primary', 'terracotta']);
+    expect(slices[0]!.getAttribute('class')).toContain(DOC_TONE_FILL.primary);
+    expect(container.textContent).toContain('Sugar');
+    expect(container.textContent).toContain('75%');
+    expect(container.textContent).toContain('Brine by weight');
+  });
+});
 
 describe('DocRangeMap', () => {
   const props = {
@@ -130,5 +194,46 @@ describe('DocRangeMap', () => {
     groups[0]!.rows[1]!.stages[0]!.from = fig(170);
     await rerender({ ...props, groups });
     expect(left()).toBe(50);
+  });
+});
+
+describe('DocTimeline', () => {
+  it('draws elapsed time in its unit, with the time in words under each label', () => {
+    const { container } = render(DocTimeline, {
+      props: {
+        unit: 'days',
+        items: [
+          { label: 'Salt and pack', from: fig(0) },
+          { label: 'Ferment', from: fig(0), to: fig(21), tone: 'sage' as const },
+          { label: 'Taste', from: fig(7) },
+        ],
+      },
+    });
+    expect(container.textContent).toContain('day 0');
+    expect(container.textContent).toContain('days 0–21');
+    const ferment = marks(container.querySelector<HTMLElement>('[data-row="Ferment"]')!)[0]!;
+    expect([parseFloat(ferment.style.left), parseFloat(ferment.style.width)]).toEqual([0, 100]);
+    expect(ferment.dataset.tone).toBe('sage');
+    const taste = marks(container.querySelector<HTMLElement>('[data-row="Taste"]')!)[0]!;
+    expect(parseFloat(taste.style.left)).toBeCloseTo(100 / 3, 6);
+    const ticks = Array.from(container.querySelectorAll('[data-tick]')).map((t) => t.textContent);
+    expect(ticks).toEqual(['0', '7', '14', '21']);
+  });
+
+  it('writes dates as dates', () => {
+    // 2026-10-12 is day 20,738.
+    const { container } = render(DocTimeline, {
+      props: {
+        unit: 'dates',
+        items: [
+          { label: 'Brine', from: fig(20_738, '2026-10-12'), to: fig(20_745, '2026-10-19') },
+          { label: 'Smoke', from: fig(20_746, '2026-10-20') },
+        ],
+        caption: 'Bacon',
+      },
+    });
+    expect(container.textContent).toContain('12 Oct – 19 Oct');
+    expect(container.textContent).toContain('20 Oct');
+    expect(container.textContent).toContain('Bacon');
   });
 });

@@ -15,8 +15,10 @@ import {
   LIBRARY_TONES,
   LibraryCalloutBlockSchema,
   LibraryCardsBlockSchema,
+  LibraryChartBlockSchema,
   LibraryRangeBlockSchema,
   LibraryStatsBlockSchema,
+  LibraryTimelineBlockSchema,
   parseLibraryBlock,
 } from '@salt/domain/schemas';
 
@@ -174,7 +176,9 @@ describe('colour is a tone, never a value', () => {
     cards: LibraryCardsBlockSchema,
     callout: LibraryCalloutBlockSchema,
     stats: LibraryStatsBlockSchema,
+    chart: LibraryChartBlockSchema,
     range: LibraryRangeBlockSchema,
+    timeline: LibraryTimelineBlockSchema,
   };
 
   it('covers every kind there is', () => {

@@ -234,6 +234,39 @@ describe('LibraryPageView — what it shows', () => {
     expect(body.textContent).toContain('Gentle, up to 120°');
   });
 
+  it('draws a chart and a timeline from their figures', async () => {
+    const chart = [
+      '```salt-chart',
+      'unit: ml',
+      'items:',
+      '  - label: "740"',
+      '    value: 290',
+      '  - label: "742"',
+      '    value: 580',
+      '```',
+    ].join('\n');
+    const timeline = [
+      '```salt-timeline',
+      'items:',
+      '  - label: Ferment',
+      '    from: 0',
+      '    to: 7',
+      '  - label: Taste',
+      '    at: 5',
+      '```',
+    ].join('\n');
+    mount(page({ body: `${chart}\n\n${timeline}` }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('pre')).toBeNull();
+    const bars = body.querySelectorAll<HTMLElement>('[data-chart="bar"] [data-mark]');
+    expect(Array.from(bars, (b) => parseFloat(b.style.width))).toEqual([50, 100]);
+    expect(body.querySelector('[data-chart="bar"]')?.textContent).toContain('580 ml');
+    const taste = body.querySelector<HTMLElement>('[data-row="Taste"] [data-mark]');
+    // Day 5 on an axis from day 0 to day 7.
+    expect(parseFloat(taste!.style.left)).toBeCloseTo((5 / 7) * 100, 6);
+    expect(body.textContent).toContain('days 0–7');
+  });
+
   it('shows a drawing whose figure is not a number as the text that was written', async () => {
     const broken =
       '```salt-range\ngroups:\n  - rows:\n      - label: a\n        stages:\n          - at: lots\n```';

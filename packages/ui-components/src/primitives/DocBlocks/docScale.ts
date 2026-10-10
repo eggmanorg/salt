@@ -2,9 +2,9 @@
 import type { DocTone } from './DocBlocks.types';
 
 // The arithmetic behind the data-drawn document blocks (#1663 Phase 2): where a
-// figure sits on an axis, and which ticks an axis gets. Pure, so "a value maps
-// to its axis position" is pinned in `docScale.test.ts` rather than read off a
-// rendered drawing.
+// figure sits on an axis, which ticks an axis gets, how a pie divides. Pure, so
+// "a value maps to its axis position" is pinned in `docScale.test.ts` rather
+// than read off a rendered drawing.
 //
 // Positions are PERCENTAGES of the plot track, never pixels. The drawings are
 // laid out by CSS from those percentages, so the same figures draw the same
@@ -16,15 +16,31 @@ export function axisPercent(value: number, min: number, max: number): number {
   return Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 }
 
+/** Each value as a percentage of the largest — a bar's length. All zero draws nothing. */
+export function barPercents(values: readonly number[]): number[] {
+  const top = Math.max(0, ...values);
+  return values.map((v) => (top > 0 ? (Math.max(0, v) / top) * 100 : 0));
+}
+
 /** The most ticks an axis draws, however much room there is. */
 export const DOC_AXIS_MAX_TICKS = 4;
 
-/** Every step worth trying over `span`, smallest first: 1, 2, 5 × 10ⁿ. */
-function candidateSteps(span: number): number[] {
-  const steps: number[] = [];
+/** Tick steps that read as whole periods, per elapsed unit; past the list, and for anything else, 1, 2, 5 × 10ⁿ. */
+export const DOC_TIME_STEPS: Record<string, readonly number[]> = {
+  minutes: [1, 2, 5, 10, 15, 30, 60, 120, 240],
+  hours: [1, 2, 3, 6, 12, 24, 48, 72],
+  days: [1, 2, 7, 14, 28, 56, 91, 182, 364],
+  weeks: [1, 2, 4, 8, 13, 26, 52],
+  dates: [1, 2, 7, 14, 28, 56, 91, 182, 364],
+};
+
+/** Every step worth trying over `span`, smallest first. */
+function candidateSteps(span: number, steps: readonly number[] = []): number[] {
+  const generic: number[] = [];
   const top = Math.ceil(Math.log10(span)) + 1;
-  for (let e = top - 4; e <= top; e++) for (const m of [1, 2, 5]) steps.push(m * 10 ** e);
-  return steps;
+  for (let e = top - 4; e <= top; e++) for (const m of [1, 2, 5]) generic.push(m * 10 ** e);
+  const last = steps.at(-1) ?? 0;
+  return [...steps, ...generic.filter((g) => g > last)];
 }
 
 /** Multiples of `step` inside [min, max], printed without float noise (0.3, not 0.30000000000000004). */
@@ -77,6 +93,7 @@ export function axisFor(
   opts: {
     min?: number | undefined;
     max?: number | undefined;
+    steps?: readonly number[] | undefined;
     label?: (tick: number) => string;
   } = {},
 ): DocAxis {
@@ -91,7 +108,7 @@ export function axisFor(
   const label = opts.label ?? formatTick;
   const track = axisTrackPx(DOC_NARROWEST_PHONE_PX);
   let fallback: number[] | undefined;
-  for (const step of candidateSteps(span)) {
+  for (const step of candidateSteps(span, opts.steps)) {
     const ticks = ticksAt(min, max, step);
     if (ticks.length > DOC_AXIS_MAX_TICKS) continue;
     if (ticks.length < 2) break;
@@ -136,6 +153,48 @@ const NUMBER = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 });
 /** A tick's number: grouped, at most three decimals. */
 export function formatTick(n: number): string {
   return NUMBER.format(n);
+}
+
+const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** A day number (days since 1970-01-01, UTC) as `12 Oct`. */
+export function formatDay(day: number): string {
+  return DAY.format(new Date(day * 86_400_000));
+}
+
+/** The tones a pie's slices take, in order, when the author set none: five, so no two slices match. */
+export const DOC_PIE_TONES: readonly DocTone[] = [
+  'primary',
+  'sage',
+  'terracotta',
+  'warning',
+  'muted',
+];
+
+/**
+ * One SVG path per value for a pie in a 100 × 100 box, clockwise from twelve
+ * o'clock, each slice's angle in proportion to its value. A zero value has no
+ * slice (`null`); one value holding the whole is a full circle.
+ */
+export function pieSlices(values: readonly number[]): (string | null)[] {
+  const total = values.reduce((a, v) => a + Math.max(0, v), 0);
+  const c = 50;
+  const r = 48;
+  const point = (turn: number) => {
+    const a = turn * 2 * Math.PI;
+    return `${(c + r * Math.sin(a)).toFixed(3)} ${(c - r * Math.cos(a)).toFixed(3)}`;
+  };
+  let start = 0;
+  return values.map((v) => {
+    if (total <= 0 || v <= 0) return null;
+    const share = v / total;
+    const from = start;
+    start += share;
+    if (share >= 1 - 1e-9) {
+      return `M ${c} ${c - r} A ${r} ${r} 0 1 1 ${c} ${c + r} A ${r} ${r} 0 1 1 ${c} ${c - r} Z`;
+    }
+    const large = share > 0.5 ? 1 : 0;
+    return `M ${c} ${c} L ${point(from)} A ${r} ${r} 0 ${large} 1 ${point(start)} Z`;
+  });
 }
 
 // ─── Width ───────────────────────────────────────────────────────────────────

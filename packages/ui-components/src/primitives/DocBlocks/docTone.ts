@@ -28,7 +28,7 @@ export const DOC_TONE_INK: Record<DocTone, string> = {
 };
 
 /**
- * Solid marks in a drawing — a dot, a stretch, a legend swatch — with a legible
+ * Solid marks in a drawing — a bar, a dot, a legend swatch — with a legible
  * ink for a number drawn on one. The tone's full-strength token.
  */
 export const DOC_TONE_SOLID: Record<DocTone, string> = {
@@ -46,6 +46,15 @@ export const DOC_TONE_BAND: Record<DocTone, string> = {
   terracotta: 'bg-tertiary-tint/60',
   warning: 'bg-warning/10',
   muted: 'bg-muted',
+};
+
+/** A pie slice: the solid token as an SVG fill. */
+export const DOC_TONE_FILL: Record<DocTone, string> = {
+  primary: 'fill-primary',
+  sage: 'fill-secondary',
+  terracotta: 'fill-tertiary-variant',
+  warning: 'fill-warning',
+  muted: 'fill-placeholder',
 };
 
 /** A reference line: the solid token as a border colour. */

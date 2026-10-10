@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { DocCallout, DocCards, DocRangeMap, DocStats, Markdown } from '@salt/ui-components';
+  import {
+    DocCallout,
+    DocCards,
+    DocChart,
+    DocRangeMap,
+    DocStats,
+    DocTimeline,
+    Markdown,
+  } from '@salt/ui-components';
   import type { SaltBlockProps } from '@salt/ui-components';
   import { parseLibraryBlock } from '@salt/domain/schemas';
 
@@ -29,8 +37,12 @@
     </DocCallout>
   {:else if block.kind === 'stats'}
     <DocStats items={block.data.items} />
-  {:else}
+  {:else if block.kind === 'chart'}
+    <DocChart {...block.data} />
+  {:else if block.kind === 'range'}
     <DocRangeMap {...block.data} />
+  {:else}
+    <DocTimeline {...block.data} />
   {/if}
 {:else}
   <div class="my-3" data-testid="library-block-broken">

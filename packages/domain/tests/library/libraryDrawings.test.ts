@@ -1,12 +1,18 @@
 /**
- * Library drawings (issue #1663, Phase 2) — `salt-range`. The block carries
- * figures and the renderer draws them, so what is pinned here is that a figure
- * is read as the number it means while keeping the text typed, and that the
- * kind's caps and shape rules refuse what a phone could not draw — as a result
- * with a sentence, never a throw.
+ * Library drawings (issue #1663, Phase 2) — `salt-chart`, `salt-range` and
+ * `salt-timeline`. The blocks carry figures and the renderer draws them, so what
+ * is pinned here is that a figure is read as the number it means while keeping
+ * the text typed, and that each kind's caps and shape rules refuse what a phone
+ * could not draw — as a result with a sentence, never a throw.
  */
 import { describe, it, expect } from 'vitest';
-import { LIBRARY_RANGE_ROW_CAP, parseLibraryBlock, type LibraryBlock } from '@salt/domain/schemas';
+import {
+  LIBRARY_CHART_ITEM_CAP,
+  LIBRARY_RANGE_ROW_CAP,
+  libraryDayNumber,
+  parseLibraryBlock,
+  type LibraryBlock,
+} from '@salt/domain/schemas';
 
 function parsed(kind: string, source: string): LibraryBlock {
   const result = parseLibraryBlock(kind, source);
@@ -19,6 +25,65 @@ function problem(kind: string, source: string): string {
   if (result.ok) throw new Error(`expected ${kind} to be refused`);
   return result.problem;
 }
+
+const items = (n: number) =>
+  Array.from({ length: n }, (_, i) => `  - label: item ${i}\n    value: ${i + 1}\n`).join('');
+
+describe('salt-chart', () => {
+  it('reads each value as the number it means, keeping the text typed', () => {
+    const block = parsed(
+      'chart',
+      'type: column\nunit: ml\nitems:\n  - label: "745"\n    value: 1,062\n  - label: "740"\n    value: 290\n    tone: sage\n',
+    );
+    if (block.kind !== 'chart') throw new Error('unreachable');
+    expect(block.data.type).toBe('column');
+    expect(block.data.unit).toBe('ml');
+    expect(block.data.items).toEqual([
+      { label: '745', value: { text: '1,062', value: 1062 }, tone: undefined },
+      { label: '740', value: { text: '290', value: 290 }, tone: 'sage' },
+    ]);
+  });
+
+  it('is a bar chart when no type is given', () => {
+    const block = parsed('chart', `items:\n${items(2)}`);
+    expect(block.kind === 'chart' && block.data.type).toBe('bar');
+  });
+
+  it.each(Object.entries(LIBRARY_CHART_ITEM_CAP))(
+    'a %s chart draws at most %s items',
+    (type, cap) => {
+      expect(parseLibraryBlock('chart', `type: ${type}\nitems:\n${items(cap)}`).ok).toBe(true);
+      expect(problem('chart', `type: ${type}\nitems:\n${items(cap + 1)}`)).toMatch(/at most/);
+    },
+  );
+
+  it.each([
+    ['one item', `items:\n${items(1)}`, /items/],
+    [
+      'a value that is not a number',
+      'items:\n  - label: a\n    value: lots\n  - label: b\n    value: 2',
+      /plain number/,
+    ],
+    [
+      'a value with its unit in it',
+      'items:\n  - label: a\n    value: 290 ml\n  - label: b\n    value: 2',
+      /plain number/,
+    ],
+    [
+      'a value below zero',
+      'items:\n  - label: a\n    value: -3\n  - label: b\n    value: 2',
+      /from zero/,
+    ],
+    [
+      'a pie of nothing',
+      'type: pie\nitems:\n  - label: a\n    value: 0\n  - label: b\n    value: 0',
+      /above zero/,
+    ],
+    ['a type that does not exist', `type: donut\nitems:\n${items(2)}`, /type/],
+  ])('refuses %s', (_name, source, message) => {
+    expect(problem('chart', source)).toMatch(message);
+  });
+});
 
 const CONTROL_FREAK_MAP = `unit: °
 bands:
@@ -153,5 +218,75 @@ describe('salt-range', () => {
     ],
   ])('refuses %s', (_name, source, message) => {
     expect(problem('range', source)).toMatch(message);
+  });
+});
+
+describe('salt-timeline', () => {
+  it('reads elapsed time as figures in its unit, days when none is given', () => {
+    const block = parsed(
+      'timeline',
+      'items:\n  - label: Salt and pack\n    at: 0\n  - label: Ferment\n    from: 0\n    to: 7\n    tone: sage\n',
+    );
+    if (block.kind !== 'timeline') throw new Error('unreachable');
+    expect(block.data.unit).toBe('days');
+    expect(block.data.items).toEqual([
+      { label: 'Salt and pack', tone: undefined, from: { text: '0', value: 0 } },
+      {
+        label: 'Ferment',
+        tone: 'sage',
+        from: { text: '0', value: 0 },
+        to: { text: '7', value: 7 },
+      },
+    ]);
+  });
+
+  it('reads calendar dates as day numbers, in UTC', () => {
+    const block = parsed(
+      'timeline',
+      'unit: dates\nitems:\n  - label: Brine\n    from: 2026-10-12\n    to: 2026-10-19\n',
+    );
+    if (block.kind !== 'timeline') throw new Error('unreachable');
+    const item = block.data.items[0]!;
+    expect(item.from).toEqual({ text: '2026-10-12', value: libraryDayNumber('2026-10-12') });
+    expect(item.to!.value - item.from.value).toBe(7);
+  });
+
+  it.each([
+    [
+      'a date that does not exist',
+      'unit: dates\nitems:\n  - label: a\n    at: 2026-02-30',
+      /must be a date/,
+    ],
+    [
+      'a number where a date belongs',
+      'unit: dates\nitems:\n  - label: a\n    at: 3',
+      /must be a date/,
+    ],
+    ['a date where days belong', 'items:\n  - label: a\n    at: 2026-10-12', /number of days/],
+    ['a span that runs backwards', 'items:\n  - label: a\n    from: 7\n    to: 1', /below `from`/],
+    ['an item with no time', 'items:\n  - label: a', /either `at`/],
+    ['a unit that does not exist', 'unit: fortnights\nitems:\n  - label: a\n    at: 1', /unit/],
+  ])('refuses %s', (_name, source, message) => {
+    expect(problem('timeline', source)).toMatch(message);
+  });
+
+  it('holds at most 16 items', () => {
+    const many = (n: number) =>
+      Array.from({ length: n }, (_, i) => `  - label: i${i}\n    at: ${i}\n`).join('');
+    expect(parseLibraryBlock('timeline', `items:\n${many(16)}`).ok).toBe(true);
+    expect(parseLibraryBlock('timeline', `items:\n${many(17)}`).ok).toBe(false);
+  });
+});
+
+describe('libraryDayNumber', () => {
+  it('counts days from 1970-01-01', () => {
+    expect(libraryDayNumber('1970-01-01')).toBe(0);
+    expect(libraryDayNumber('1970-01-02')).toBe(1);
+    expect(libraryDayNumber('2024-03-01')! - libraryDayNumber('2024-02-28')!).toBe(2);
+  });
+
+  it('refuses what is not a real date', () => {
+    expect(libraryDayNumber('2026-13-01')).toBeNull();
+    expect(libraryDayNumber('12 Oct')).toBeNull();
   });
 });

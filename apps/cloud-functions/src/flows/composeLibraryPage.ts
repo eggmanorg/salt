@@ -81,9 +81,9 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly four \
-kinds — three for laying text out (cards, callout, stats) and one DRAWING that Salt draws to scale from figures \
-(range); never invent another.
+any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly six \
+kinds — three for laying text out (cards, callout, stats) and three DRAWINGS that Salt draws to scale from figures \
+(chart, range, timeline); never invent another.
 
 Colour is a TONE, one of: ${TONE_LIST}. Nothing else — never a colour name, a hex code or a class. Use tones to \
 mean something consistent within a page: sage for gentle, low or owned; primary for steady or the main thing; \
@@ -149,6 +149,25 @@ out. At most two drawings on a page.
 In a drawing, a value is a plain number exactly as the draft writes it — \`130\`, \`6.3\`, \`1,062\`, \`-18\` — \
 with no unit inside it; the unit goes in \`unit\`. A range "130–140 °C" is \`from: 130\` and \`to: 140\`.
 
+### salt-chart — compare amounts, or show shares of a whole
+\`type: bar\` (left to right; long labels; up to 12 items), \`column\` (bottom to top; short labels; up to 8) or \
+\`pie\` (parts of one whole that add up to it; up to 5 — more than five is a bar chart). Values are zero or more. \
+Leave tone out unless it means something; the chart picks. Right when the point is how the amounts compare; when \
+they are in different units, or each will be looked up on its own, a table is better.
+
+\`\`\`salt-chart
+type: bar
+unit: ml
+items:
+  - label: "740"
+    value: 290
+  - label: "742"
+    value: 580
+    tone: sage
+  - label: "745"
+    value: 1,062
+\`\`\`
+
 ### salt-range — many items on one scale
 Right when items each have a value or a range on the SAME scale and the point is to see them side by side: every \
 task's temperature, every jar's capacity. Rows are grouped under optional headings (up to 40 rows in all). A row \
@@ -183,6 +202,26 @@ groups:
             to: 140
           - label: Crisping
             at: 175
+\`\`\`
+
+### salt-timeline — what happens when
+Right for a schedule: a ferment, a brine, a cure. Each item is one event (\`at\`) or one stretch (\`from\`–\`to\`), \
+up to 16, in order. \`unit\` is minutes, hours, days or weeks of elapsed time from the start (day 0) — or \
+\`dates\` with YYYY-MM-DD values, only when the draft gives full calendar dates. Never invent a date or a duration. \
+When only the order matters and not how long each part takes, numbered steps are better.
+
+\`\`\`salt-timeline
+unit: days
+items:
+  - label: Salt and pack
+    at: 0
+  - label: Ferment at room temperature
+    from: 0
+    to: 7
+    tone: sage
+  - label: Move to the fridge
+    from: 7
+    to: 28
 \`\`\`
 
 ## Choosing

@@ -28,6 +28,8 @@
   }
   export interface AxisRow {
     label: string;
+    /** A second, smaller line under the label — a timeline item's time. */
+    detail?: string | undefined;
     /** What the marks say, for a screen reader. */
     said: string;
     marks: readonly AxisMark[];
@@ -49,8 +51,8 @@
   import { DOC_TONE_BAND, DOC_TONE_RULE, DOC_TONE_SOLID } from './docTone';
 
   /**
-   * The shared body of the axis drawings (`DocRangeMap`). Not exported: it takes
-   * geometry already worked out, in percent, and draws it.
+   * The shared body of the axis drawings — `DocRangeMap` and `DocTimeline`. Not
+   * exported: it takes geometry already worked out, in percent, and draws it.
    *
    * A grid of label | plot rows. Each row's plot cell draws its own slice of the
    * bands, gridlines and reference lines, full height, with no gap between rows
@@ -145,6 +147,11 @@
       {#each group.rows as row, r (r)}
         <div class="flex min-h-7 flex-col justify-center py-0.5 text-sm text-foreground">
           <span><span>{row.label}</span><span class="sr-only">{`: ${row.said}`}</span></span>
+          {#if row.detail}
+            <span class="text-xs text-muted-foreground tabular-nums" aria-hidden="true"
+              >{row.detail}</span
+            >
+          {/if}
         </div>
         <div class="relative mx-2" aria-hidden="true" data-row={row.label}>
           {@render backdrop()}

@@ -53,7 +53,9 @@ export { default as Markdown } from './primitives/Markdown/Markdown.svelte';
 export { default as DocCallout } from './primitives/DocBlocks/DocCallout.svelte';
 export { default as DocCards } from './primitives/DocBlocks/DocCards.svelte';
 export { default as DocStats } from './primitives/DocBlocks/DocStats.svelte';
+export { default as DocChart } from './primitives/DocBlocks/DocChart.svelte';
 export { default as DocRangeMap } from './primitives/DocBlocks/DocRangeMap.svelte';
+export { default as DocTimeline } from './primitives/DocBlocks/DocTimeline.svelte';
 // A drawn object, named (ui-spec-v12 §8.30). NOT a `Chip`: a 40px pictogram
 // does not fit a 26px text pill in either direction, and the name says so.
 export { default as PictogramPill } from './primitives/PictogramPill/PictogramPill.svelte';
@@ -154,6 +156,9 @@ export type {
   DocCardGroup,
   DocCardLine,
   DocCardsProps,
+  DocChartItem,
+  DocChartProps,
+  DocChartType,
   DocChip,
   DocFigure,
   DocRangeBand,
@@ -164,6 +169,9 @@ export type {
   DocRangeStage,
   DocStat,
   DocStatsProps,
+  DocTimelineItem,
+  DocTimelineProps,
+  DocTimelineUnit,
   DocTone,
 } from './primitives/DocBlocks/DocBlocks.types';
 export type { SaltBlockProps, SaltBlockRenderer } from './primitives/Markdown/saltBlocks';
