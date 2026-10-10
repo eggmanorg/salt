@@ -262,10 +262,13 @@ const RangeRowSchema = z
   })
   .strict();
 
+/** The most rows one range drawing holds, across all its groups. */
+export const LIBRARY_RANGE_ROW_CAP = 40;
+
 const RangeGroupSchema = z
   .object({
     heading: text(SHORT).optional(),
-    rows: z.array(RangeRowSchema).min(1).max(20),
+    rows: z.array(RangeRowSchema).min(1).max(LIBRARY_RANGE_ROW_CAP),
   })
   .strict();
 
@@ -294,9 +297,6 @@ const RangeLineSchema = z
     tone: LibraryToneSchema.default('warning'),
   })
   .strict();
-
-/** The most rows one range drawing holds, across all its groups. */
-export const LIBRARY_RANGE_ROW_CAP = 40;
 
 export const LibraryRangeBlockSchema = z
   .object({

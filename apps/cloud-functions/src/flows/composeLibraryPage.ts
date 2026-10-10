@@ -81,7 +81,7 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon, a #, or starting with a quote or bracket in double quotes. There are exactly six \
+any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly six \
 kinds — three for laying text out (cards, callout, stats) and three DRAWINGS that Salt draws to scale from figures \
 (chart, range, timeline); never invent another.
 
@@ -166,6 +166,16 @@ items:
     tone: sage
   - label: "745"
     value: 1,062
+\`\`\`
+
+\`\`\`salt-chart
+type: pie
+unit: "%"
+items:
+  - label: Owned
+    value: 62
+  - label: Wanted
+    value: 38
 \`\`\`
 
 ### salt-range — many items on one scale
