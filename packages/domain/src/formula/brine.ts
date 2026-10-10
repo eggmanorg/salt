@@ -39,8 +39,8 @@ export type StatedStrength = {
  * percentages: `component% ÷ member% × 100`.
  *
  * Null when the line is stated against the whole basis — the ordinary answer — and
- * ALSO for a line not named `plain` (a curing salt is a percentage of the meat,
- * always), or a `statedOf` naming nothing this formula can measure against — a
+ * ALSO for a line not named `plain` (a curing salt is a percentage of the basis,
+ * never stated against one member), or a `statedOf` naming nothing this formula can measure against — a
  * member not on `components`, one not in the basis, or one at 0%. `deriveFormula`
  * never writes either, but a stored document is not a derived one (a hand edit, or
  * a writer that did not re-derive), and then "a percentage of the basis" is the
@@ -108,7 +108,8 @@ export type BasisWeighed = {
  *    largest-remainder rule (`reconciledBasisPercents`), so the solve sees a basis
  *    that sums to 100 exactly as a derived one does.
  * 2. Every other line keeps its percentage — 2% of the basis is 2% of the new basis,
- *    and a curing salt stays a percentage of the meat.
+ *    and a curing salt keeps its percentage of the basis, never stated against one
+ *    member; where the basis includes brine water, its grams follow the water too.
  * 3. A plain salt stated against one member (`statedStrength`) is re-expressed so
  *    that strength holds against the member's new grams: 3% of 1500 g of water is
  *    45 g, whatever share of the basis the water now is.

@@ -97,7 +97,7 @@ stays the only stored figure. The strength against the member is derived
 recipe writes "30 g per litre") and never stored beside it. `deriveFormula` keeps
 `statedOf` only on a component named `plain`, only naming another basis member,
 and only on a basis of two or more; anything else is written `null`, so a curing
-salt is always a percentage of the meat and its window is untouched. The solve does
+salt is always a percentage of the basis (never stated against one member) and its window is untouched. The solve does
 not read the field.
 
 On the formula screen, a line stated against a member **holds its strength** when
@@ -116,7 +116,8 @@ turns the weighed grams into a new local formula **upstream of** `solveFormula`,
 the shape `withCureSaltSubstituted` and `withComponentPercentScaled` already have:
 the basis members are re-measured and reconciled to 100 by `deriveFormula`'s own
 largest-remainder rule, every other line keeps its percentage (so a curing salt
-stays a percentage of the meat), a plain salt stated against a member is held at
+keeps its percentage of the basis, never stated against one member; where the basis
+includes brine water, its grams follow the water too), a plain salt stated against a member is held at
 that strength against the member's new grams, and the basis total comes back to be
 solved at as an ordinary `basis` yield. `solveFormula` and `ReferenceYield` are
 unchanged. A box left empty follows the typed ones at the recipe's ratio, and shows

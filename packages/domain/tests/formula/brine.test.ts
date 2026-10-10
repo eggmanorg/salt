@@ -58,7 +58,7 @@ describe('statedStrength', () => {
     expect(statedStrength(salt, waterZero)).toBeNull();
   });
 
-  it('is null for a curing salt carrying a stated member — a cure is a percentage of the meat', () => {
+  it('is null for a curing salt carrying a stated member — a cure is never stated against one member', () => {
     const salt = { ...PICKLE[2], saltProduct: 'cure1' } as FormulaComponent;
     expect(statedStrength(salt, PICKLE)).toBeNull();
     expect(statedStrength({ ...salt, saltProduct: undefined }, PICKLE)).toBeNull();
@@ -186,7 +186,7 @@ describe('withBasisWeighed — the four things it does', () => {
     expect(weighed.basisGrams).toBe(3);
   });
 
-  it('leaves every other line’s percentage as it was — a curing salt stays a percentage of the meat', () => {
+  it('leaves every other line’s percentage as it was — a curing salt keeps its percentage of the basis', () => {
     // A salami: pork and back fat as the basis, Cure #1 inside its window.
     const salami = derived([
       { ingredientId: 'ing-pork', grams: 800, inBasis: true },

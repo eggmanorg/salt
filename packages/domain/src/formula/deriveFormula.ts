@@ -130,7 +130,7 @@ function boundsOn(component: FormulaComponentInput): {
  *
  * THREE CONDITIONS, AND EACH IS PINNED in `tests/formula/deriveFormula.test.ts`:
  *
- * - **Only a plain salt.** A curing salt is a percentage of the meat, always: its
+ * - **Only a plain salt.** A curing salt is a percentage of the basis, never stated against one member: its
  *   window (`boundsOn`) is read against the basis, and a cure stated "of the water"
  *   would be a second reading of the one number Salt refuses on. So anything not
  *   named `plain` — a curing salt, or a line naming no product — is written `null`.

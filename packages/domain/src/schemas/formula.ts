@@ -122,7 +122,7 @@ export const FormulaComponentSchema = z.object({
   // ONLY A PLAIN SALT, ONLY AGAINST ANOTHER BASIS MEMBER, ONLY ON A BASIS OF TWO OR
   // MORE. `deriveFormula`, the one constructor, writes anything else as `null`, and
   // `tests/formula/deriveFormula.test.ts` pins each case — so a curing salt is always
-  // measured against the meat, and `boundsOn` is untouched. A STORED document is not
+  // measured against the whole basis, and `boundsOn` is untouched. A STORED document is not
   // so guarded: a hand edit can name anything here, which is why `statedStrength`
   // (`formula/brine.ts`) answers `null` for a line that is not plain salt or a name
   // that does not resolve to a basis member — and states the two it does not re-ask.

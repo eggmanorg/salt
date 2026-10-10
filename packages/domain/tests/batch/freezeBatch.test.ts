@@ -946,7 +946,7 @@ describe('freezeBatch — the strength a salt was stated at (issue #1657)', () =
     expect(statedById(freezePickle(pickle(null)))[BRINE_SALT]).toBeNull();
   });
 
-  it('freezes null for a curing salt, whatever the formula carries — a cure is a percentage of the meat', () => {
+  it('freezes null for a curing salt, whatever the formula carries — a cure is never stated against one member', () => {
     // A hand-edited document: `deriveFormula` would never write this.
     const edited: Formula = {
       ...pickle(),
