@@ -65,3 +65,12 @@ export const DOC_TONE_RULE: Record<DocTone, string> = {
   warning: 'border-warning',
   muted: 'border-placeholder',
 };
+
+/** A drawn outline and the tint inside it — a shape on a shelf, a flow chart box. */
+export const DOC_TONE_SHAPE: Record<DocTone, string> = {
+  primary: 'fill-primary-tint stroke-primary',
+  sage: 'fill-secondary-tint stroke-secondary',
+  terracotta: 'fill-tertiary-tint stroke-tertiary-variant',
+  warning: 'fill-warning/10 stroke-warning',
+  muted: 'fill-muted stroke-placeholder',
+};

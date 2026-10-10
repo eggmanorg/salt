@@ -267,6 +267,61 @@ describe('LibraryPageView — what it shows', () => {
     expect(body.textContent).toContain('days 0–7');
   });
 
+  it('draws a flow chart, steps and a to-scale shelf from their blocks', async () => {
+    const flow = [
+      '```salt-flow',
+      'nodes:',
+      '  - label: Set?',
+      '  - label: Turn out',
+      'edges:',
+      '  - from: Set?',
+      '    to: Turn out',
+      '    label: "yes"',
+      '```',
+    ].join('\n');
+    const steps = [
+      '```salt-steps',
+      'steps:',
+      '  - text: Render.',
+      '    gauge:',
+      '      at: 125',
+      '      max: 250',
+      '  - text: Crisp.',
+      '```',
+    ].join('\n');
+    const shapes = [
+      '```salt-shapes',
+      'shelves:',
+      '  - items:',
+      '      - label: "740"',
+      '        profile: tapered',
+      '        mouth: 100',
+      '        base: 85',
+      '        height: 75',
+      '        tone: sage',
+      '      - label: "743"',
+      '        profile: tapered',
+      '        mouth: 100',
+      '        base: 85',
+      '        height: 150',
+      '```',
+    ].join('\n');
+    mount(page({ body: `${flow}\n\n${steps}\n\n${shapes}` }));
+    const body = await screen.findByTestId('library-body');
+    expect(body.querySelector('pre')).toBeNull();
+    expect(Array.from(body.querySelectorAll('[data-node]'), (n) => n.textContent?.trim())).toEqual([
+      'Set?',
+      'Turn out',
+    ]);
+    expect(body.querySelector('[data-gauge] [data-mark]')?.getAttribute('style')).toContain(
+      'left: 50%',
+    );
+    const jars = Array.from(body.querySelectorAll<SVGElement>('[data-shape]'), (p) =>
+      parseFloat(p.closest('svg')!.style.height),
+    );
+    expect(jars[1]).toBeCloseTo(2 * jars[0]!, 6);
+  });
+
   it('shows a drawing whose figure is not a number as the text that was written', async () => {
     const broken =
       '```salt-range\ngroups:\n  - rows:\n      - label: a\n        stages:\n          - at: lots\n```';

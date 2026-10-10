@@ -27,9 +27,11 @@ import { reportServerError } from '../observability/reportServerError.js';
 // IT NEVER COSTS A WRITE. `composeLibraryPageForChef` below never throws, and
 // returns `laidOut: false` whenever the layout is not safe to save — a timeout,
 // a model error, a blank or over-long answer, a `salt-*` block that does not
-// parse or is nested where it cannot be checked, or a number token from the
-// draft that is missing from the layout (a figure moved to another item, a lost
-// sign or a changed unit all still pass — `missingFigures`). The handler then
+// parse or is nested where it cannot be checked, a `salt-shapes` measurement
+// that is not a figure in the draft, or a number token from the draft that is
+// missing from the layout (a figure moved to another item, a lost
+// sign or a changed unit all still pass; a number inside a drawing's tags does
+// not count, but one in its `<text>` label does — `missingFigures`). The handler then
 // saves the chef's draft exactly as written. The checks are `checkComposedPage`
 // in `@salt/domain`, pure and pinned there; that the handler honours them is
 // pinned in `chefChat.writeKitchenNote.test.ts`.
@@ -40,8 +42,9 @@ import { reportServerError } from '../observability/reportServerError.js';
  * It runs inside a chef chat turn's tool loop, and a tool run is SILENCE to the
  * stream's 55 s idle timer — the timer covers the model's last chunk before the
  * tool call, the tool run itself, and the chunk after it (`chefChat.ts`, the
- * drain). 25 s leaves the other two more than half the budget, and is still
- * several times a healthy `fast`-tier rewrite of a page-sized body. No retry:
+ * drain). 25 s leaves the other two more than half the budget. Measured: a
+ * `pro` rewrite without a drawing took 18 s, and pages with a drawing took
+ * 45–63 s on both tiers, so those fall back to the draft. No retry:
  * a retry would double the silence, and the fallback — saving the draft — is a
  * good outcome, not a failure the household sees.
  */
@@ -72,7 +75,7 @@ draft is saved instead, so when in doubt, keep the draft's wording.
 - Do not open with the title as a heading: the page already shows its title. Start with one short plain sentence \
 saying what the page is for, if the draft has one.
 - Use ## headings to group, sparingly.
-- No raw HTML, no SVG, no images, no colour words used as styling.
+- No raw HTML and no images — the one exception is a freehand drawing (below). No colour words used as styling.
 
 ## Tables
 A table is right when rows are alike and meant to be compared across (a list of jars with capacity and how many \
@@ -81,9 +84,9 @@ row. Keep cells short; move long explanation out of the table.
 
 ## Blocks
 A block is a fenced code block whose info string is \`salt-<kind>\`, holding YAML. Indent with two spaces. Put \
-any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly six \
-kinds — three for laying text out (cards, callout, stats) and three DRAWINGS that Salt draws to scale from figures \
-(chart, range, timeline); never invent another.
+any value containing a colon or a #, or starting with a quote, a bracket or a symbol (% @ & * ! | > or a backtick), in double quotes. There are exactly nine \
+kinds — three for laying text out (cards, callout, stats), numbered steps (steps), and five DRAWINGS that Salt \
+draws from what you write (chart, range, timeline, flow, shapes); never invent another.
 
 Colour is a TONE, one of: ${TONE_LIST}. Nothing else — never a colour name, a hex code or a class. Use tones to \
 mean something consistent within a page: sage for gentle, low or owned; primary for steady or the main thing; \
@@ -218,7 +221,7 @@ groups:
 Right for a schedule: a ferment, a brine, a cure. Each item is one event (\`at\`) or one stretch (\`from\`–\`to\`), \
 up to 16, in order. \`unit\` is minutes, hours, days or weeks of elapsed time from the start (day 0) — or \
 \`dates\` with YYYY-MM-DD values, only when the draft gives full calendar dates. Never invent a date or a duration. \
-When only the order matters and not how long each part takes, numbered steps are better.
+When only the order matters and not how long each part takes, salt-steps is better.
 
 \`\`\`salt-timeline
 unit: days
@@ -233,6 +236,117 @@ items:
     from: 7
     to: 28
 \`\`\`
+
+### salt-flow — a decision, or a process that branches
+Right when the reader has to choose a path ("is it set? yes → turn out; no → another 10 minutes"). Up to 12 \
+\`nodes\` (boxes), each with a short \`label\` and an optional \`id\` that arrows use instead of the label. \
+\`edges\` are arrows, \`from\` one box \`to\` another, with an optional one- or two-word \`label\` (yes, no). The \
+chart is drawn top to bottom: an arrow can never lead back up (no loops), and no row may need more than three boxes \
+side by side. When nothing branches, salt-steps is better.
+
+\`\`\`salt-flow
+nodes:
+  - id: set
+    label: Is the custard set?
+  - label: Turn out and chill
+    tone: sage
+  - label: Another 10 minutes
+edges:
+  - from: set
+    to: Turn out and chill
+    label: "yes"
+  - from: set
+    to: Another 10 minutes
+    label: "no"
+\`\`\`
+
+### salt-steps — a method in order
+Right for a method the reader follows one step at a time. 2 to 12 steps, each \`text\` (one or two sentences) \
+under an optional short \`label\`. A step may carry a \`gauge\`: one value (\`at\`) or a range (\`from\`–\`to\`) \
+marked on a small scale from \`min\` (default 0) to \`max\`, with a \`unit\` — only when the step has a figure \
+worth seeing against its scale, such as a temperature.
+
+\`\`\`salt-steps
+steps:
+  - label: Render
+    text: Start skin down in a cold pan and bring it up gently.
+    gauge:
+      from: 130
+      to: 140
+      max: 250
+      unit: °
+  - label: Crisp
+    text: Turn the heat up to crisp the skin.
+    gauge:
+      at: 175
+      max: 250
+      unit: °
+\`\`\`
+
+### salt-shapes — vessels drawn to scale
+Right when the page lists jars, tins, pans or crocks and their real sizes. Salt draws each one to scale from its \
+measurements, all in one \`unit\` (mm, cm or in), on \`shelves\` (optional \`heading\`, up to 24 shapes in all). \
+Each shape has a short \`label\`, a \`profile\` and measurements: \`mouth\` (across the opening) and \`height\` \
+always; \`straight\` and \`rounded\` (a rounded bottom) take an optional body \`width\`; \`tapered\` needs its \
+\`base\` width; \`belly\` needs its widest \`width\` and takes an optional \`base\`. Add a short \`caption\` (the \
+capacity), a \`count\` for how many there are, and a tone for the ones the household owns. ONLY use measurements \
+the draft gives: never estimate, look up or guess a size. If the draft does not give the measurements, do not use \
+this block — keep the table. Either way, a shape drawn in text characters (\`\\___/\`, \`( _ )\`) is replaced: by \
+this block, or by the profile in words (tapered, belly).
+
+\`\`\`salt-shapes
+unit: mm
+shelves:
+  - heading: Short
+    items:
+      - label: Small jar
+        profile: tapered
+        mouth: 100
+        base: 85
+        height: 107
+        caption: 580 ml
+        count: 4
+        tone: sage
+  - heading: Tall
+    items:
+      - label: Tall jar
+        profile: belly
+        mouth: 100
+        width: 112
+        height: 165
+        caption: 1,062 ml
+\`\`\`
+
+## Freehand drawing — only when no kind above can show it
+Right only for HOW something physically sits, fits or moves that words struggle with and none of the nine kinds \
+draws: how a clip sits on a lid, a ring on a jar's rim, how a dough is folded. Never for figures — amounts, \
+temperatures, times and sizes go in a table or a block, which Salt draws exactly; a freehand drawing is not to \
+scale and must not look as if it is. At most one on a page, and none if a sentence says it as well.
+
+Write it as one inline \`<svg>\`, with a blank line before and after it and NO blank line inside it:
+- \`viewBox\` only, about \`0 0 320 200\` (wider than tall) — no \`width\` or \`height\`; it is shown across a phone.
+- Draw with \`path\`, \`line\`, \`polyline\`, \`polygon\`, \`rect\`, \`circle\`, \`ellipse\`, \`g\` and \`text\`. \
+Nothing else survives: no \`style\`, \`class\`, gradients, markers, filters, images or links. An arrowhead is a \
+small \`polygon\`.
+- Colour: \`fill\` and \`stroke\` take a tone (${TONE_LIST}) or \`none\`, and nothing else — any other value is \
+drawn muted. Draw outlines in muted, \`fill="none"\`, \`stroke-width="2"\`, round caps and joins. Pick out the one \
+part the drawing is about in one tone; a soft fill is that tone with \`fill-opacity="0.2"\`.
+- Labels: a few short \`text\` labels, \`font-size="13"\`, clear of the lines. No figures in a label.
+- Few lines, simple shapes: a diagram in a good manual, not a picture.
+- Follow it with one line in italics saying what it shows.
+
+<svg viewBox="0 0 320 170">
+  <path d="M50 84 L50 140 Q50 150 60 150 L240 150 Q250 150 250 140 L250 84" fill="none" stroke="muted" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="250" y1="100" x2="300" y2="100" stroke="muted" stroke-width="4" stroke-linecap="round"/>
+  <line x1="44" y1="62" x2="256" y2="82" stroke="primary" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="150" cy="66" r="5" fill="primary"/>
+  <path d="M40 54 Q30 42 40 30 Q50 18 40 6" fill="none" stroke="terracotta" stroke-width="2" stroke-linecap="round"/>
+  <text x="150" y="50" font-size="13" text-anchor="middle" fill="primary">lid, ajar</text>
+  <text x="58" y="26" font-size="13" fill="terracotta">steam</text>
+  <text x="150" y="124" font-size="13" text-anchor="middle" fill="muted">pan</text>
+</svg>
+
+*The lid rests on one side of the rim, leaving a gap for the steam.*
 
 ## Choosing
 Prefer the plainest layout that reads well on a phone. A short page may need no block at all — then return it \

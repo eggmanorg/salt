@@ -56,6 +56,9 @@ export { default as DocStats } from './primitives/DocBlocks/DocStats.svelte';
 export { default as DocChart } from './primitives/DocBlocks/DocChart.svelte';
 export { default as DocRangeMap } from './primitives/DocBlocks/DocRangeMap.svelte';
 export { default as DocTimeline } from './primitives/DocBlocks/DocTimeline.svelte';
+export { default as DocFlowChart } from './primitives/DocBlocks/DocFlowChart.svelte';
+export { default as DocSteps } from './primitives/DocBlocks/DocSteps.svelte';
+export { default as DocShapes } from './primitives/DocBlocks/DocShapes.svelte';
 // A drawn object, named (ui-spec-v12 §8.30). NOT a `Chip`: a 40px pictogram
 // does not fit a 26px text pill in either direction, and the name says so.
 export { default as PictogramPill } from './primitives/PictogramPill/PictogramPill.svelte';
@@ -171,6 +174,18 @@ export type {
   DocStatsProps,
   DocTimelineItem,
   DocTimelineProps,
+  DocFlowChartProps,
+  DocFlowLink,
+  DocFlowNode,
+  DocFlowRow,
+  DocFlowSlot,
+  DocShape,
+  DocShapeProfile,
+  DocShapeShelf,
+  DocShapesProps,
+  DocStep,
+  DocStepGauge,
+  DocStepsProps,
   DocTimelineUnit,
   DocTone,
 } from './primitives/DocBlocks/DocBlocks.types';

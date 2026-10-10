@@ -122,6 +122,31 @@ describe('checkComposedPage', () => {
     expect(checkComposedPage(draft, quoted, 10_000).ok).toBe(false);
   });
 
+  it('does not let a drawing coordinate stand in for a figure the layout dropped', () => {
+    const svg = '<svg viewBox="0 0 200 100"><rect x="130" y="10" width="40" height="20"/></svg>';
+    expect(missingFigures('Render at 130.', `Render later.\n\n${svg}`)).toEqual(['130']);
+    expect(checkComposedPage('Render at 130.', `Render later.\n\n${svg}`, 10_000).ok).toBe(false);
+  });
+
+  it('still counts a figure written as text between tags, and prose with a bare <', () => {
+    expect(missingFigures('Render at 130.', '<svg><text>130</text></svg>')).toEqual([]);
+    expect(missingFigures('Under <5 minutes, 9 < 10.', 'Under <5 minutes, 9 < 10.')).toEqual([]);
+  });
+
+  it('treats an unclosed tag as markup to the end, so it counts fewer figures, never more', () => {
+    expect(missingFigures('Render at 130.', 'Render later <svg x="130"')).toEqual(['130']);
+  });
+
+  it('passes an unchanged body that already holds a drawing', () => {
+    const body = 'Render at 130.\n\n<svg viewBox="0 0 200 100"><rect x="130" y="10"/></svg>';
+    expect(missingFigures(body, body)).toEqual([]);
+    expect(checkComposedPage(body, body, 10_000).ok).toBe(true);
+  });
+
+  it('treats an unclosed tag in the draft as prose, so its figures are still demanded', () => {
+    expect(missingFigures('Keep <5 and 9 <svg 7', 'Keep <5 and 9')).toEqual(['7']);
+  });
+
   it('passes a figure moved to another item — the boundary missingFigures states', () => {
     expect(
       checkComposedPage(
@@ -136,6 +161,39 @@ describe('checkComposedPage', () => {
     expect(checkComposedPage(draft, 'Poached eggs at 90 °C.', 10_000)).toEqual({
       ok: false,
       reason: 'figures lost: 95',
+    });
+  });
+
+  describe('a shape is drawn only from measurements the draft gives', () => {
+    const jars = 'The 742 jar: mouth 100 mm, base 85 mm, 107 mm tall. The 905: 100 mm by 75 mm.';
+    const shapes = (base: string) =>
+      fence(
+        'salt-shapes',
+        [
+          'shelves:',
+          '  - items:',
+          '      - label: "742"',
+          '        profile: tapered',
+          '        mouth: 100',
+          `        base: ${base}`,
+          '        height: 107',
+          '      - label: "905"',
+          '        profile: straight',
+          '        mouth: 100',
+          '        height: 75',
+        ].join('\n'),
+      );
+
+    it('accepts shapes whose every measurement is in the draft', () => {
+      expect(checkComposedPage(jars, `${jars}\n\n${shapes('85')}`, 10_000)).toEqual({ ok: true });
+    });
+
+    it('refuses a measurement the page writer made up', () => {
+      // Every draft figure kept, so only the guessed base can refuse it.
+      expect(checkComposedPage(jars, `${jars}\n\n${shapes('88')}`, 10_000)).toEqual({
+        ok: false,
+        reason: 'salt-shapes: 88 is not a measurement in the draft',
+      });
     });
   });
 });

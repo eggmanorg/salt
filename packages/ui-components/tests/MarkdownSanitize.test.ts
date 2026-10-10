@@ -9,7 +9,16 @@
 // look identical from the outside, and only one of them is safe.
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { sanitize } from 'hast-util-sanitize';
 import Markdown from '../src/primitives/Markdown/Markdown.svelte';
+import {
+  SVG_DEFAULT_PAINT,
+  SVG_PAINTS,
+  svgSanitizeSchema,
+} from '../src/primitives/Markdown/svgSanitizeSchema';
 
 afterEach(() => cleanup());
 
@@ -295,5 +304,90 @@ describe('Markdown sanitizedHtml — the stated limits', () => {
     });
     expect(container.querySelector('a')?.hasAttribute('href')).toBe(false);
     expect(container.innerHTML).not.toContain('alert');
+  });
+});
+
+describe('Markdown sanitizedHtml — colour is a tone (#1663)', () => {
+  // The library's "Salt's colours, never arbitrary ones", for a drawing typed
+  // into a page body. `fill` and `stroke` keep a tone name or `none`; anything
+  // else is drawn in the default tone instead — never dropped to nothing, which
+  // for a stroke would make the line vanish.
+  const drawing = (inner: string, root = ''): HTMLElement =>
+    render(Markdown, {
+      props: { text: `<svg viewBox="0 0 100 100"${root}>${inner}</svg>`, sanitizedHtml: true },
+    }).container;
+
+  it('keeps every tone name, and none, on fill and on stroke', () => {
+    for (const paint of SVG_PAINTS) {
+      const circle = drawing(`<circle r="5" fill="${paint}" stroke="${paint}" />`).querySelector(
+        'circle',
+      );
+      expect([circle?.getAttribute('fill'), circle?.getAttribute('stroke')]).toEqual([
+        paint,
+        paint,
+      ]);
+      cleanup();
+    }
+  });
+
+  it('turns an arbitrary hex, a colour word or a reference into the default tone', () => {
+    for (const paint of ['#ff0000', 'red', 'currentColor', 'url(#glow)', 'Sage', 'rgb(0,0,0)']) {
+      const line = drawing(
+        `<g><line x2="9" fill="${paint}" stroke="${paint}" /></g>`,
+      ).querySelector('line');
+      expect([line?.getAttribute('fill'), line?.getAttribute('stroke')]).toEqual([
+        SVG_DEFAULT_PAINT,
+        SVG_DEFAULT_PAINT,
+      ]);
+      cleanup();
+    }
+  });
+
+  it('inks a drawing that names no fill in the default tone, and leaves its stroke absent', () => {
+    const svg = drawing('<text x="5" y="5">lid</text>').querySelector('svg');
+    expect(svg?.getAttribute('fill')).toBe(SVG_DEFAULT_PAINT);
+    expect(svg?.hasAttribute('stroke')).toBe(false);
+    expect(drawing('', ' fill="none"').querySelector('svg')?.getAttribute('fill')).toBe('none');
+  });
+
+  // The narrowing is the SCHEMA's, not the rewrite's: with the rewrite taken
+  // out of the pipeline a hex is still refused — it just goes missing instead
+  // of turning muted. Asserted on the schema alone, without `Markdown`.
+  it('is the schema that refuses a non-tone paint, rewrite or no rewrite', () => {
+    const tree = sanitize(
+      {
+        type: 'root',
+        children: [
+          {
+            type: 'element',
+            tagName: 'rect',
+            properties: { fill: '#35606e', stroke: 'sage' },
+            children: [],
+          },
+        ],
+      },
+      svgSanitizeSchema,
+    );
+    expect(tree).toMatchObject({ children: [{ properties: { stroke: 'sage' } }] });
+    expect(tree).not.toHaveProperty('children.0.properties.fill');
+  });
+
+  // A tone name paints nothing on its own; `Markdown.svelte`'s style block is
+  // what turns each one into a token. A name added to `SVG_PAINTS` without its
+  // two rules would draw in the browser's default — this goes red first.
+  it('has a style rule painting every tone name, for fill and for stroke', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/primitives/Markdown/Markdown.svelte'),
+      'utf8',
+    );
+    for (const paint of SVG_PAINTS.filter((p) => p !== 'none')) {
+      for (const attribute of ['fill', 'stroke']) {
+        expect(source).toMatch(
+          new RegExp(
+            `:global\\(\\[${attribute}='${paint}'\\]\\) \\{\\n\\s+${attribute}: hsl\\(var\\(--salt-`,
+          ),
+        );
+      }
+    }
   });
 });

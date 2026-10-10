@@ -365,9 +365,12 @@ export const coverageThresholds = {
   // (`DocChart`, `DocTimeline`, `barPercents`, `pieSlices`) arrive fully
   // covered, uncovered counts unmoved at 190/216. The ratchet's figures over
   // the committed tree.
+  // BANKED 90.99/79.6 → 91.45/80.38 in #1663 Phase 4: flow charts, steps and
+  // shapes (`DocFlowChart`, `DocSteps`, `DocShapes`, `docDiagram.ts`) arrive
+  // fully covered, uncovered counts unmoved at 190/216.
   'packages/ui-components/src/**': {
-    lines: 90.99,
-    branches: 79.6,
+    lines: 91.45,
+    branches: 80.38,
     uncoveredLines: 190,
     uncoveredBranches: 216,
   },

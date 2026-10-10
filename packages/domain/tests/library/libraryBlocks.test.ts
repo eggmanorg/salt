@@ -19,6 +19,9 @@ import {
   LibraryRangeBlockSchema,
   LibraryStatsBlockSchema,
   LibraryTimelineBlockSchema,
+  LibraryFlowBlockSchema,
+  LibraryStepsBlockSchema,
+  LibraryShapesBlockSchema,
   parseLibraryBlock,
 } from '@salt/domain/schemas';
 
@@ -179,6 +182,9 @@ describe('colour is a tone, never a value', () => {
     chart: LibraryChartBlockSchema,
     range: LibraryRangeBlockSchema,
     timeline: LibraryTimelineBlockSchema,
+    flow: LibraryFlowBlockSchema,
+    steps: LibraryStepsBlockSchema,
+    shapes: LibraryShapesBlockSchema,
   };
 
   it('covers every kind there is', () => {

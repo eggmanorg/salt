@@ -390,12 +390,14 @@ createdAt` — `createdAt` never changes, so the clock only restarts when the
   entirely rather than sent empty, so today's prompt is byte for byte unchanged for
   everyone else.
 - **The page writer (#1663).** `writeKitchenNote`'s body is the chef's _draft_.
-  Before saving, the handler runs `composeLibraryPage` — a second, `fast`-role
+  Before saving, the handler runs `composeLibraryPage` — a second, `pro`-role
   flow carrying the Library's whole style guide (`salt-*` blocks, tones, when a
-  table beats a card, when a drawing earns its place) — and saves its layout only if `checkComposedPage`
+  table beats a card, when a drawing earns its place, and — on trial — one
+  freehand `<svg>` painted in tones only) — and saves its layout only if `checkComposedPage`
   (`@salt/domain`) accepts it: non-blank, within the length bound, every `salt-*`
   block at the top level (one nested in a list or quote is refused) and parsing,
-  every number token in the draft still somewhere on the page as written — not
+  every `salt-shapes` measurement a figure the draft gives (a drawn-to-scale shape
+  is never from a guessed size), every number token in the draft still somewhere on the page as written — not
   necessarily on the same item, with the same sign or unit. Anything
   else — an error, its 25 s deadline, a refused layout — saves the draft exactly
   as sent and answers `laidOut: false`, which the tool description tells the

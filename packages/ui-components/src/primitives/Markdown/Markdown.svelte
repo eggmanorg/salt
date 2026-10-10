@@ -5,7 +5,12 @@
   import rehypeRaw from 'rehype-raw';
   import rehypeSanitize from 'rehype-sanitize';
   import { cn } from '../../lib/cn';
-  import { rehypeSvgAttributeCase, stripSvgAnchors, svgSanitizeSchema } from './svgSanitizeSchema';
+  import {
+    rehypeSvgAttributeCase,
+    rehypeToneOnlyPaint,
+    stripSvgAnchors,
+    svgSanitizeSchema,
+  } from './svgSanitizeSchema';
   import { rehypeSaltBlocks, SALT_BLOCK_TAG, type SaltBlockRenderer } from './saltBlocks';
 
   let {
@@ -42,6 +47,10 @@
   // `rehype-sanitize` applies the allowlist to what it produced. Reversed, the
   // sanitiser discards the `raw` nodes it has no rule for and no drawing ever
   // renders — `MarkdownSanitize.test.ts` goes red in seven places.
+  // `rehypeToneOnlyPaint` sits between them, the one step before the sanitiser:
+  // it turns a drawing's non-tone `fill`/`stroke` into the default tone, which
+  // after sanitising would already be gone (`svgSanitizeSchema.ts`). The schema
+  // still narrows both attributes to tone names, so this adds no colour route.
   // `stripSvgAnchors` runs right after sanitising: it is the control that
   // keeps a URL-bearing `<a>` out of a drawing (`tagNames`/`attributes` can't,
   // being namespace-blind — see `svgSanitizeSchema.ts`). `rehypeSvgAttributeCase`
@@ -57,6 +66,7 @@
       ? [
           gfmPlugin(),
           { rehypePlugin: rehypeRaw },
+          { rehypePlugin: rehypeToneOnlyPaint },
           { rehypePlugin: [rehypeSanitize, svgSanitizeSchema] },
           { rehypePlugin: stripSvgAnchors },
           { rehypePlugin: rehypeSvgAttributeCase },
@@ -195,6 +205,43 @@
   .salt-md :global(svg) {
     max-width: 100%;
     height: auto;
+  }
+  /* A drawing's colour is a tone NAME (`fill="sage"`), the only paint the
+     sanitiser keeps (`SVG_PAINTS` in `svgSanitizeSchema.ts`). A name is no colour
+     to the browser, so each one is painted here, with the same tokens a block's
+     ink uses (`DOC_TONE_INK` in `docTone.ts`): legible as a line or as text on
+     the card. A soft fill is the same tone with `fill-opacity`. A rule here beats
+     the attribute it matches, as any rule beats a presentation attribute.
+     `MarkdownSanitize.test.ts` reads this block for a rule per name. */
+  .salt-md :global([fill='primary']) {
+    fill: hsl(var(--salt-primary));
+  }
+  .salt-md :global([stroke='primary']) {
+    stroke: hsl(var(--salt-primary));
+  }
+  .salt-md :global([fill='sage']) {
+    fill: hsl(var(--salt-secondary));
+  }
+  .salt-md :global([stroke='sage']) {
+    stroke: hsl(var(--salt-secondary));
+  }
+  .salt-md :global([fill='terracotta']) {
+    fill: hsl(var(--salt-on-tertiary-fixed-variant));
+  }
+  .salt-md :global([stroke='terracotta']) {
+    stroke: hsl(var(--salt-on-tertiary-fixed-variant));
+  }
+  .salt-md :global([fill='warning']) {
+    fill: hsl(var(--salt-warning-text));
+  }
+  .salt-md :global([stroke='warning']) {
+    stroke: hsl(var(--salt-warning-text));
+  }
+  .salt-md :global([fill='muted']) {
+    fill: hsl(var(--salt-foreground));
+  }
+  .salt-md :global([stroke='muted']) {
+    stroke: hsl(var(--salt-foreground));
   }
   .salt-md :global(table) {
     border-collapse: collapse;

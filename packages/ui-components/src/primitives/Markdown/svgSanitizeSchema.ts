@@ -1,5 +1,6 @@
 // spec: ai-kitchen-assistant.md §Surfaces v1.0
 import { defaultSchema, type Schema } from 'hast-util-sanitize';
+import type { DocTone } from '../DocBlocks/DocBlocks.types';
 
 /**
  * The allowlist behind `Markdown`'s `sanitizedHtml` prop — and the whole of the
@@ -60,6 +61,15 @@ import { defaultSchema, type Schema } from 'hast-util-sanitize';
  *     dropped by the same case-blindness. `MarkdownSanitize.test.ts` pins all
  *     three, including that last one. Widening this is one `protocols.href`
  *     override away if `tel:` is ever wanted; it is a product call, not a fix.
+ *
+ * ─── COLOUR IS A TONE ───────────────────────────────────────────────────────
+ *
+ * A drawing's `fill` and `stroke` take a tone name or `none` and nothing else
+ * (`SVG_PAINTS`, issue #1663) — the library's "Salt's colours, never arbitrary
+ * ones", made mechanical rather than asked for in a prompt. It is a DESIGN
+ * control, not a security one: no paint value runs anything. It reaches only
+ * these two attributes, and only on what passes through this schema — the
+ * `salt-*` block primitives draw from validated data and never come here.
  */
 
 /**
@@ -75,7 +85,38 @@ import { defaultSchema, type Schema } from 'hast-util-sanitize';
  * an attribute by that name — a drawing that should be focusable silently
  * isn't. Cosmetic, not a security hole, but stated here rather than implied.
  */
-const PAINT_PLAIN = ['fill', 'stroke', 'opacity', 'transform'] as const;
+const PAINT_PLAIN = ['opacity', 'transform'] as const;
+
+/**
+ * The only values `fill` and `stroke` keep: the five tone names a document
+ * block takes (`DocTone`), and `none`. A `Record` over `DocTone` rather than a
+ * written-out list, so a sixth tone is a compile error here until it is added.
+ *
+ * A tone name is not a colour the browser understands, so on its own it paints
+ * nothing: `Markdown.svelte`'s style block maps each one to its design token
+ * with an attribute selector (`[fill='sage']`), which is how a drawing gets
+ * Salt's colours with no `style` or `class` attribute on this allowlist.
+ * `MarkdownSanitize.test.ts` checks that block has a rule for every name here.
+ */
+const TONE_PAINTS: Record<DocTone, true> = {
+  primary: true,
+  sage: true,
+  terracotta: true,
+  warning: true,
+  muted: true,
+};
+export const SVG_PAINTS: readonly string[] = [...Object.keys(TONE_PAINTS), 'none'];
+
+/** What a paint that is not in `SVG_PAINTS` becomes, and what a drawing inks with when it names none. */
+export const SVG_DEFAULT_PAINT: DocTone = 'muted';
+
+type PropertyDefinition = NonNullable<Schema['attributes']>[string][number];
+
+/** `fill` and `stroke`, each allowed only with a value from `SVG_PAINTS`. */
+const PAINT_TONED: PropertyDefinition[] = [
+  ['fill', ...SVG_PAINTS],
+  ['stroke', ...SVG_PAINTS],
+];
 
 /**
  * Hast property name → the SVG attribute name the browser actually reads.
@@ -104,7 +145,11 @@ const TYPE_HYPHENATED = {
   fontStyle: 'font-style',
 } as const;
 
-const PRESENTATION = [...PAINT_PLAIN, ...Object.keys(PAINT_HYPHENATED)];
+const PRESENTATION: PropertyDefinition[] = [
+  ...PAINT_TONED,
+  ...PAINT_PLAIN,
+  ...Object.keys(PAINT_HYPHENATED),
+];
 const TYPE_SETTING = Object.keys(TYPE_HYPHENATED);
 
 /**
@@ -214,6 +259,47 @@ export function rehypeSvgAttributeCase() {
             node.properties[to] = node.properties[from];
             delete node.properties[from];
           }
+        }
+      }
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) visit(child as MaybeElement);
+      }
+    };
+    visit(tree as MaybeElement);
+  };
+}
+
+const PAINT_SET = new Set(SVG_PAINTS);
+
+/**
+ * Turn every paint that is not a tone into the default tone, and give a drawing
+ * that names no `fill` the default as its ink.
+ *
+ * Runs BEFORE `rehype-sanitize`, the one plugin that does: after it, a paint the
+ * schema refused is already gone and there is nothing left to replace. The
+ * sanitiser alone would DROP the value, leaving the browser's own default —
+ * black for a fill, and NO stroke at all, so a line drawn in `#333` would
+ * vanish from the page. Here it is drawn in `SVG_DEFAULT_PAINT` instead.
+ *
+ * Not a security control, and it adds nothing the schema does not then check:
+ * it writes only a constant, into two attributes the schema still narrows to
+ * `SVG_PAINTS`. Take it out and no colour gets through — lines just go missing.
+ * An absent `stroke` is left absent: no outline is a shape, not a colour.
+ */
+export function rehypeToneOnlyPaint() {
+  return (tree: unknown): void => {
+    const visit = (node: MaybeElement): void => {
+      if (node.type === 'element' && SVG_TAG_SET.has(String(node.tagName))) {
+        // `!`: a hast element always carries `properties`; `MaybeElement` only
+        // types it optional, and a fallback arm here could never run.
+        const properties = node.properties!;
+        for (const name of ['fill', 'stroke']) {
+          if (name in properties && !PAINT_SET.has(String(properties[name]))) {
+            properties[name] = SVG_DEFAULT_PAINT;
+          }
+        }
+        if (node.tagName === 'svg' && !('fill' in properties)) {
+          properties.fill = SVG_DEFAULT_PAINT;
         }
       }
       if (Array.isArray(node.children)) {

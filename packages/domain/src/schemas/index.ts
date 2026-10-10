@@ -185,13 +185,22 @@ export {
   LIBRARY_TONES,
   LIBRARY_CHART_ITEM_CAP,
   LIBRARY_CHART_TYPES,
+  LIBRARY_FLOW_NODE_CAP,
+  LIBRARY_FLOW_WIDTH_CAP,
   LIBRARY_RANGE_ROW_CAP,
+  LIBRARY_SHAPES_CAP,
+  LIBRARY_SHAPE_PROFILES,
+  LIBRARY_SHAPE_UNITS,
+  LIBRARY_STEPS_CAP,
   LIBRARY_TIMELINE_UNITS,
   LibraryCalloutBlockSchema,
   LibraryCardsBlockSchema,
   LibraryChartBlockSchema,
+  LibraryFlowBlockSchema,
   LibraryRangeBlockSchema,
+  LibraryShapesBlockSchema,
   LibraryStatsBlockSchema,
+  LibraryStepsBlockSchema,
   LibraryTimelineBlockSchema,
   LibraryToneSchema,
   libraryDayNumber,
@@ -205,12 +214,22 @@ export type {
   LibraryCardsBlock,
   LibraryChartBlock,
   LibraryFigure,
+  LibraryFlowBlock,
   LibraryRangeBlock,
+  LibraryShapesBlock,
   LibraryStatsBlock,
+  LibraryStepsBlock,
   LibraryTimelineBlock,
   LibraryTimelineUnit,
   LibraryTone,
 } from './libraryBlocks.js';
+export { layoutLibraryFlow } from './libraryFlowLayout.js';
+export type {
+  LibraryFlowLayout,
+  LibraryFlowLink,
+  LibraryFlowRow,
+  LibraryFlowSlot,
+} from './libraryFlowLayout.js';
 
 // Generic kitchen tools (issue #882) — the curated pictogram vocabulary that a
 // recipe's or a plan's WORDS are resolved against at display time. Nothing stores
