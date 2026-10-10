@@ -390,7 +390,7 @@ const GUIDED_PLAN = {
 
 const FORMULA = {
   recipeId: 'r-1',
-  components: [{ ingredientId: 'i-1', percent: 100, inBasis: true, stageId: null }],
+  components: [{ ingredientId: 'i-1', percent: 100, inBasis: true, stageId: null, statedOf: null }],
   referenceYield: { kind: 'basis' as const, grams: 1000 },
   target: null,
   schemaVersion: 1 as const,

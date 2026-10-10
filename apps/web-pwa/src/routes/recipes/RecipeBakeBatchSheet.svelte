@@ -28,6 +28,7 @@
     placeReachesTemperature,
     solveFormula,
     stageTemperatureText,
+    statedStrength,
     withComponentPercentScaled,
     withCureSaltSubstituted,
     type CureSaltSubstitutionFailure,
@@ -57,7 +58,11 @@
   import { KIND_COPY, kindOf } from './recipeKind.js';
   import { describeBoundViolation } from '../../lib/boundViolation.js';
   import { addToast } from '../../lib/toastStore.js';
-  import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
+  import {
+    formatDoughAmount,
+    formatGrams,
+    formatStatedPercent,
+  } from '../../lib/quantityDisplay.js';
 
   // "Bake a batch" (issue #812, phases 1 and 2 of epic #778) — the scale sheet.
   //
@@ -583,6 +588,30 @@
     new Map(flattenIngredients(recipe).map((ingredient) => [ingredient.id, ingredient.rawText])),
   );
 
+  /**
+   * "3% of the Water" for a line stated against one basis member, keyed by the line
+   * (issue #1657). DISPLAY ONLY: the solve does not read `statedOf`, and nothing here
+   * moves a gram.
+   *
+   * OFF `effectiveFormula`, the formula every gram below is solved from — so after a
+   * cure-salt swap moves the plain salt, the strength printed is the one being
+   * weighed out, not the recipe's.
+   *
+   * A MEMBER THAT HAS LEFT THE RECIPE PRINTS NOTHING here, rather than "3% of the "
+   * with no name: there is no line on this sheet for the words to point at.
+   */
+  const statedTextById = $derived.by(() => {
+    const texts = new Map<string, string>();
+    for (const component of effectiveFormula.components) {
+      const strength = statedStrength(component, effectiveFormula.components);
+      if (strength === null) continue;
+      for (const [ingredientId, label] of labelById)
+        if (ingredientId === strength.ingredientId)
+          texts.set(component.ingredientId, formatStatedPercent(strength.percent, label));
+    }
+    return texts;
+  });
+
   const unsolvable = $derived.by(() => {
     if (solved.ok) return null;
     switch (solved.reason.kind) {
@@ -1060,6 +1089,7 @@
       {:else if solved.ok}
         <ul class="flex flex-col gap-1" data-testid="bake-batch-preview">
           {#each solved.solution.components as component (component.ingredientId)}
+            {@const statedText = statedTextById.get(component.ingredientId)}
             <li
               class="flex items-baseline justify-between gap-3 text-sm"
               data-testid="bake-batch-preview-row"
@@ -1074,6 +1104,14 @@
               >
                 {formatGrams(component.grams)}
               </span>
+              {#if statedText !== undefined}
+                <span
+                  class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                  data-testid="bake-batch-preview-stated"
+                >
+                  {statedText}
+                </span>
+              {/if}
             </li>
           {/each}
         </ul>

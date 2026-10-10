@@ -41,6 +41,10 @@ export type FormulaComponentInput = {
   // (issue #1402). The screen has to be able to hand this back on a re-save, which
   // is what makes the choice survive a reload.
   saltProduct?: SaltProduct;
+  // WHAT THIS LINE'S STRENGTH IS STATED AGAINST (issue #1657) — one basis member's
+  // `ingredientId`, or omitted / `null` for the whole basis. The caller's WISH:
+  // `statedOfOn` below decides whether it survives onto the component.
+  statedOf?: string | null;
   // Bounds a caller wants declared on this component, when it has an opinion of its
   // own. A NAMED PRODUCT OUTRANKS THEM: see `boundsOn` below for why there is a
   // precedence rule here at all rather than a merge.
@@ -120,6 +124,36 @@ function boundsOn(component: FormulaComponentInput): {
   return boundsPatch({ minPercent: component.minPercent, maxPercent: component.maxPercent });
 }
 
+/**
+ * Whether a line's "stated against" survives onto the component — the ONE place
+ * that is decided (issue #1657).
+ *
+ * THREE CONDITIONS, AND EACH IS PINNED in `tests/formula/deriveFormula.test.ts`:
+ *
+ * - **Only a plain salt.** A curing salt is a percentage of the meat, always: its
+ *   window (`boundsOn`) is read against the basis, and a cure stated "of the water"
+ *   would be a second reading of the one number Salt refuses on. So anything not
+ *   named `plain` — a curing salt, or a line naming no product — is written `null`.
+ * - **Only another basis member.** The strength is `salt% ÷ member% × 100`, which
+ *   means nothing against a line outside the basis, and nothing useful against the
+ *   line itself.
+ * - **Only on a basis of two or more.** With one member, "of the cabbage" and "of
+ *   the basis" are the same figure, and two spellings of one answer is a state the
+ *   screen could not tell apart.
+ *
+ * A wish that fails any of them is dropped, never refused: the line simply reads as
+ * a percentage of the basis, which is what it is.
+ */
+function statedOfOn(
+  component: FormulaComponentInput,
+  basisIds: ReadonlySet<string>,
+): string | null {
+  const named = component.statedOf ?? null;
+  if (named === null || component.saltProduct !== 'plain') return null;
+  if (named === component.ingredientId || basisIds.size < 2) return null;
+  return basisIds.has(named) ? named : null;
+}
+
 /** One component, measured against the basis before any reconciliation. */
 type Measured = {
   component: FormulaComponentInput;
@@ -171,6 +205,7 @@ function componentsAgainst(
     return { component, exactPercent, percent: roundPercent(exactPercent) };
   });
   const reconciled = reconciledBasisPercents(measured.filter((m) => m.component.inBasis));
+  const basisIds = new Set(components.filter((c) => c.inBasis).map((c) => c.ingredientId));
 
   return measured.map((entry) => {
     const { component } = entry;
@@ -187,6 +222,8 @@ function componentsAgainst(
       stageId: component.stageId ?? null,
       ...(component.density !== undefined ? { density: component.density } : {}),
       ...(component.saltProduct !== undefined ? { saltProduct: component.saltProduct } : {}),
+      // Explicit for `stageId`'s reason: a construction, not a stored read.
+      statedOf: statedOfOn(component, basisIds),
       ...boundsOn(component),
     };
   });

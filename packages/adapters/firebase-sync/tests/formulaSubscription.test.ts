@@ -33,10 +33,10 @@ type ErrorCallback = (err: Error & { code?: string }) => void;
 const FORMULA: Formula = {
   recipeId: 'recipe-1',
   components: [
-    { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-    { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
-    { ingredientId: 'ing-salt', percent: 2, inBasis: false, stageId: null },
-    { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null },
+    { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+    { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null, statedOf: null },
+    { ingredientId: 'ing-salt', percent: 2, inBasis: false, stageId: null, statedOf: null },
+    { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null, statedOf: null },
   ],
   referenceYield: {
     kind: 'target',

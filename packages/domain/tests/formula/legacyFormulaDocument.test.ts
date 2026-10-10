@@ -227,3 +227,34 @@ describe('a formula component written before #1405', () => {
     expect(solved.solution.components.map((c) => c.stageId)).toEqual([null, 'stage-wash']);
   });
 });
+
+// Issue #1657 added `statedOf` to the component with a read default, on `stageId`'s
+// argument: before it, every line was a percentage of the whole basis, so "no key"
+// and `null` are the same fact under two spellings.
+describe('a formula component written before #1657', () => {
+  it('reads as a line stated against the whole basis, which is what it meant', () => {
+    const parsed = FormulaSchema.parse(LEGACY_FORMULA);
+    for (const component of parsed.components) {
+      expect(component.statedOf).toBeNull();
+    }
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('carries a stated member through the parse untouched', () => {
+    const parsed = FormulaSchema.parse({
+      ...LEGACY_FORMULA,
+      components: [
+        { ingredientId: 'ing-cucumber', percent: 50, inBasis: true },
+        { ingredientId: 'ing-water', percent: 50, inBasis: true },
+        {
+          ingredientId: 'ing-salt',
+          percent: 1.5,
+          inBasis: false,
+          saltProduct: 'plain',
+          statedOf: 'ing-water',
+        },
+      ],
+    });
+    expect(parsed.components.map((c) => c.statedOf)).toEqual([null, null, 'ing-water']);
+  });
+});

@@ -747,3 +747,49 @@ describe('RecipeBakeBatchSheet — a refused window', () => {
     expect(screen.queryByTestId('bake-batch-preview')).toBeNull();
   });
 });
+
+// ─── A salt stated against one basis member (issue #1657, phase 1) ─────────────
+//
+// Display only: the sheet prints the strength beside the grams, from the formula it
+// is solving, and moves nothing. The label is the recipe line's own words — the same
+// join the preview row beside it makes.
+describe('RecipeBakeBatchSheet — a salt stated against the water', () => {
+  const BRINE_FORMULA: Formula = {
+    recipeId: RECIPE_ID,
+    schemaVersion: 1,
+    target: null,
+    components: [
+      { ingredientId: 'ing-flour', percent: 50, inBasis: true, stageId: null, statedOf: null },
+      { ingredientId: 'ing-water', percent: 50, inBasis: true, stageId: null, statedOf: null },
+      {
+        ingredientId: 'ing-salt',
+        percent: 1.5,
+        inBasis: false,
+        stageId: null,
+        saltProduct: 'plain',
+        statedOf: 'ing-water',
+      },
+    ],
+    referenceYield: { kind: 'basis', grams: 2000 },
+  };
+
+  it('says what the salt is a percentage of, beside its grams, and nowhere else', async () => {
+    renderSheet(BRINE_FORMULA);
+    await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
+    expect(previewGrams()).toEqual(['1000 g', '1000 g', '30 g']);
+    const stated = screen.getAllByTestId('bake-batch-preview-stated');
+    expect(stated.map((el) => el.textContent?.trim())).toEqual(['3% of the 350 g water']);
+    expect(stated[0]!.closest('[data-ingredient-id]')?.getAttribute('data-ingredient-id')).toBe(
+      'ing-salt',
+    );
+  });
+
+  it('prints nothing for a salt stated against the whole basis', async () => {
+    renderSheet({
+      ...BRINE_FORMULA,
+      components: BRINE_FORMULA.components.map((c) => ({ ...c, statedOf: null })),
+    });
+    await waitFor(() => expect(screen.getByTestId('bake-batch-preview')).toBeInTheDocument());
+    expect(screen.queryByTestId('bake-batch-preview-stated')).toBeNull();
+  });
+});

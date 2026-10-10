@@ -76,11 +76,37 @@ other ingredient is a percentage of that total.
 | ------------------ | ---------------------------- |
 | Bread              | the flours                   |
 | Sauerkraut, kimchi | the vegetables               |
+| A brined pickle    | the vegetables and the water |
 | Coppa, salami      | the green weight of the meat |
 
 The basis is itself a small formula (70% strong white / 30% wholemeal;
 80% cabbage / 15% carrot / 5% fennel), and that second tier is what lets one
 model cover all three. A cure is the degenerate case: one basis member at 100%.
+
+**A brined ferment's basis includes its water** (issue #1657). The cucumbers and
+the water that covers them are both basis members, so the salt is an ordinary
+percentage of everything in the jar — no second storage shape, no "brine liquid"
+line beside the basis. A dry-salted kraut is unchanged: the cabbage alone is the
+basis.
+
+**A plain salt can be stated against one basis member** — "3% of the Water" —
+as well as against the whole basis ("1.5%"). `FormulaComponent.statedOf` names the
+member, or is `null` for the whole basis; `percent` stays percent of the basis and
+stays the only stored figure. The strength against the member is derived
+(`formula/brine.ts`: salt% ÷ member% × 100, salt ÷ that line's weight, the way a
+recipe writes "30 g per litre") and never stored beside it. `deriveFormula` keeps
+`statedOf` only on a component named `plain`, only naming another basis member,
+and only on a basis of two or more; anything else is written `null`, so a curing
+salt is always a percentage of the meat and its window is untouched. The solve does
+not read the field.
+
+On the formula screen, a line stated against a member **holds its strength** when
+that member's weight is committed: retype the water from 1000 g to 1500 g and the
+salt goes from 30 g to 45 g. A line stated against the whole basis keeps its grams
+and lets its percentage move, as every line always has. The hold survives a
+declared total, because the restate scales every line by one factor. The screen
+always says which a line is stated against; the bake sheet prints the same words
+beside the grams and moves nothing.
 
 **A derived basis is reconciled to 100, not merely rounded** (issue #1364). Three
 equal flours round to 33.3333% apiece and sum to 99.9999, so everything measured

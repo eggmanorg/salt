@@ -42,12 +42,14 @@
     deriveFormula,
     firstFormulaYield,
     flattenIngredients,
+    gramsAtStrength,
     gramsFromParsed,
     guessBasisIngredientIds,
     guessSaltProduct,
     roundGrams,
     solveFormula,
     stageAdditions,
+    statedStrength,
     takesIngredients,
     targetYield,
     totalDurationMinutes,
@@ -82,7 +84,12 @@
     type TrayBy,
   } from './doughAnswer.js';
   import { formatMinutes } from '../../lib/durationDisplay.js';
-  import { formatDoughAmount, formatGrams } from '../../lib/quantityDisplay.js';
+  import {
+    formatDoughAmount,
+    formatGrams,
+    formatPercent,
+    formatStatedPercent,
+  } from '../../lib/quantityDisplay.js';
   import { addToast } from '../../lib/toastStore.js';
 
   // The formula screen (issue #806, phase 1 of epic #778) — `/recipes/:id/formula`.
@@ -211,6 +218,11 @@
     // An id, never a label, and never an index: the stages reorder freely through
     // the four producers and a positional reference would silently follow the move.
     stageId: string | null;
+    // WHAT THIS LINE'S STRENGTH IS STATED AGAINST (issue #1657) — one basis member's
+    // id, or `null` for the whole basis. The person's choice, carried into the
+    // derive; `deriveFormula` decides whether it survives (plain salt, another basis
+    // member, a basis of two or more), and the screen shows what survived.
+    statedOf: string | null;
   }
 
   // A stage as the review surface holds it: the real stage, plus the three numeric
@@ -488,6 +500,9 @@
         // no component and therefore goes in at the start, which is the right answer
         // for it too.
         stageId: component?.stageId ?? null,
+        // The stored answer, or the whole basis (issue #1657). Never guessed: which
+        // line a brine is measured against is how the cook reads their recipe.
+        statedOf: component?.statedOf ?? null,
       };
     });
 
@@ -533,6 +548,7 @@
     // the boxes any other way would restate at a figure Save would not write, which
     // is the round-2 defect in its other half.
     rows = rowsRestatedAt(rows, declarationFrom(seeded.mode, seeded.fields, doughGramsOf(rows)));
+    heldStrengths = strengthsIn(rows);
 
     // A formula with no process is a formula with no stages — an empty review
     // surface, not a placeholder one. Nothing here derives or guesses stages; the
@@ -633,7 +649,22 @@
 
   function setInBasis(ingredientId: string, inBasis: boolean): void {
     patchRow(ingredientId, { inBasis });
+    heldStrengths = strengthsIn(rows);
   }
+
+  // WHAT A SALT IS STATED AGAINST (issue #1657). Deliberately does NOT restate, for
+  // `setInBasis`'s reason: it is a way of READING the line, and the stored percent
+  // of the basis — and so every gram on screen — is exactly what it was. What it
+  // changes is what the line holds from now on, which is why the strengths are
+  // taken again here.
+  function setStatedOf(ingredientId: string, statedOf: string | null): void {
+    patchRow(ingredientId, { statedOf });
+    heldStrengths = strengthsIn(rows);
+  }
+
+  // "The whole basis", the one spelling of it a Select can hold — `NO_SALT_PRODUCT`'s
+  // choice, for the same reason.
+  const WHOLE_BASIS = '';
 
   // Naming a curing salt changes which window this line has to sit in, so it
   // restates: the figures on screen must be the ones a save would write, and a
@@ -830,6 +861,9 @@
               // this one IS carried: it is the cook's answer and nothing recomputes
               // it.
               stageId: row.stageId,
+              // WHAT IT IS STATED AGAINST (issue #1657), carried as the cook's answer
+              // the way the stage is. `deriveFormula` drops it where it cannot hold.
+              statedOf: row.statedOf,
             },
           ]
         : [];
@@ -944,11 +978,11 @@
     }),
   );
 
-  const percentById = $derived(
-    derivation.ok
-      ? new Map(derivation.formula.components.map((c) => [c.ingredientId, c.percent]))
-      : new Map<string, number>(),
-  );
+  // The derived components — what Save would write, and what every row's percent
+  // column reads back. A stated line whose member has left the basis therefore reads
+  // as a percentage of the basis at once, without the row having been touched.
+  const derivedComponents = $derived(derivation.ok ? derivation.formula.components : []);
+  const derivedById = $derived(new Map(derivedComponents.map((c) => [c.ingredientId, c])));
 
   // THE SOLVE, WHICH IS WHERE THE RAIL LIVES (issue #1402).
   //
@@ -1015,14 +1049,115 @@
 
   function restateWeightsAtDeclaration(): void {
     rows = rowsRestatedAt(rows, shape);
+    heldStrengths = strengthsIn(rows);
   }
 
-  // Stored at four decimals (`roundPercent`), shown at one: yeast reads 1.4% and
-  // flour reads 100%, not 100.0%.
-  function formatPercent(percent: number | undefined): string {
-    if (percent === undefined) return '—';
-    const text = percent.toFixed(1);
-    return `${text.endsWith('.0') ? text.slice(0, -2) : text}%`;
+  // ─── A salt stated against one line (issue #1657) ─────────────────────────────
+  //
+  // "3% of the Water" HOLDS when the water's weight changes: retype the water as
+  // 1500 g and the salt goes to 45 g. That is the reason to state a brine that way,
+  // and it is the one behaviour here that is not a view. A line stated against the
+  // whole basis behaves exactly as every line always has — its grams stay put and
+  // its percentage moves.
+  //
+  // THE STRENGTH IS TAKEN AT EACH COMMIT, NOT READ LIVE. The water box fires per
+  // keystroke and is cleared on the way to a new figure, so by the time its blur
+  // commits, the live derive is already reading the NEW water against the OLD salt
+  // — a strength nobody chose. So the strengths are held as they stood at the last
+  // commit (seed, every restate, and the two choices that change what a line is
+  // stated against), and a member's commit reads them back. `rowsRestatedAt` itself
+  // scales every row by one factor, which leaves each held ratio where it
+  // was, so a declared total and a held strength never fight.
+  //
+  // FROM THE DOMAIN, not a ratio taken here. `statedStrength` reads the derived
+  // percentages — the same figure the row prints and the bake sheet prints — and
+  // `gramsAtStrength` turns it back into grams.
+  let heldStrengths: ReadonlyMap<string, { memberId: string; percent: number }> = new Map();
+
+  /** Every stated line's strength, keyed by the line, as the rows stand now. */
+  function strengthsIn(from: readonly Row[]): Map<string, { memberId: string; percent: number }> {
+    const derived = deriveFormula({ recipeId, components: componentsFrom(from) });
+    const held = new Map<string, { memberId: string; percent: number }>();
+    if (!derived.ok) return held;
+    for (const component of derived.formula.components) {
+      const strength = statedStrength(component, derived.formula.components);
+      if (strength !== null)
+        held.set(component.ingredientId, {
+          memberId: strength.ingredientId,
+          percent: strength.percent,
+        });
+    }
+    return held;
+  }
+
+  /**
+   * A weight box's commit. When the box is a basis member some salt is stated
+   * against, that salt moves first so its strength holds; then the list restates at
+   * the declaration, exactly as every weight commit always has.
+   *
+   * A MEMBER LEFT EMPTY IS A MEMBER TAKEN OUT, and the hold goes with it. An empty
+   * box leaves its line out of the formula on this page (`setGrams`), so the salt
+   * keeps its grams and — with the water gone from the basis — reads as a
+   * percentage of what is left. Typing a figure back in brings the water back as a
+   * fresh line: the salt is then stated against it at whatever the figures say, and
+   * the percent column shows it. Typing OVER a figure never passes through that
+   * state, because the hold is read at the blur and not per keystroke.
+   */
+  function commitWeight(member: Row): void {
+    const memberGrams = gramsOf(member);
+    if (memberGrams !== null) {
+      rows = rows.map((row) => {
+        const held = heldStrengths.get(row.ingredientId);
+        if (held === undefined || held.memberId !== member.ingredientId) return row;
+        const exactGrams = gramsAtStrength(held.percent, memberGrams);
+        return { ...row, gramsText: String(roundGrams(exactGrams)), exactGrams };
+      });
+    }
+    restateWeightsAtDeclaration();
+  }
+
+  // The rows that make up the basis right now, as the derive will see them.
+  const basisRows = $derived(
+    rows.filter((row) => row.included && row.inBasis && gramsOf(row) !== null),
+  );
+
+  /**
+   * The basis members a line may be stated against, or none when the question does
+   * not arise. Asked only of a line named Plain salt, and only on a basis of two or
+   * more — the same conditions `deriveFormula` keeps the answer under, so the picker
+   * never offers a choice the save would drop. A curing salt is never asked: it is a
+   * percentage of the meat.
+   */
+  function statedOfOptions(row: Row): Row[] {
+    if (!row.included || row.saltProduct !== 'plain' || basisRows.length < 2) return [];
+    return basisRows.filter((member) => member.ingredientId !== row.ingredientId);
+  }
+
+  /** What a row's picker shows — the member Save would write, or the whole basis. */
+  function statedOfValue(row: Row): string {
+    return derivedById.get(row.ingredientId)?.statedOf ?? WHOLE_BASIS;
+  }
+
+  // "3% of the Water" for every line stated against a member, keyed by the line.
+  // The member's label is its row's own words — the heading the person is looking
+  // at — joined by walking the rows, so there is no lookup that could miss.
+  const statedTextById = $derived.by(() => {
+    const texts = new Map<string, string>();
+    for (const component of derivedComponents) {
+      const strength = statedStrength(component, derivedComponents);
+      if (strength === null) continue;
+      for (const member of rows)
+        if (member.ingredientId === strength.ingredientId)
+          texts.set(component.ingredientId, formatStatedPercent(strength.percent, member.rawText));
+    }
+    return texts;
+  });
+
+  /** The figure in a row's percent column — "1.5%", or "3% of the Water". */
+  function percentText(row: Row): string {
+    const component = derivedById.get(row.ingredientId);
+    if (component === undefined) return '—';
+    return statedTextById.get(row.ingredientId) ?? formatPercent(component.percent);
   }
 
   // ─── The two disclosures ──────────────────────────────────────────────────────
@@ -1312,6 +1447,7 @@
               </p>
               {#each rows as row (row.ingredientId)}
                 {@const recipeSaid = recipeSaysInstead(row)}
+                {@const statedOptions = statedOfOptions(row)}
                 <div
                   role="group"
                   aria-label={row.rawText}
@@ -1326,7 +1462,7 @@
                       class:text-muted-foreground={!row.inBasis}
                       data-testid="formula-row-percent"
                     >
-                      {formatPercent(percentById.get(row.ingredientId))}
+                      {percentText(row)}
                     </span>
                   </div>
                   <div class="flex flex-wrap items-center gap-4">
@@ -1337,7 +1473,7 @@
                       placeholder={row.recipeGrams === null ? 'e.g. 100' : ''}
                       value={row.gramsText}
                       onValueChange={(v) => setGrams(row.ingredientId, v)}
-                      onblur={restateWeightsAtDeclaration}
+                      onblur={() => commitWeight(row)}
                       data-testid="formula-row-grams"
                     />
                     <Checkbox
@@ -1396,6 +1532,42 @@
                           {/each}
                         </SelectContent>
                       </Select>
+
+                      <!-- WHAT THIS SALT IS A PERCENTAGE OF (issue #1657). Offered on
+                         a line named Plain salt over a basis of two or more, and
+                         nowhere else: a curing salt is always a percentage of the
+                         meat, and a one-member basis has one answer. The whole basis
+                         is the default and what is stored; naming a member changes
+                         how the line reads and what it holds when that member's
+                         weight is retyped, never the stored percentage. The value is
+                         read back off the derive, so it is what Save would write. -->
+                      {#if statedOptions.length > 0}
+                        {@const statedOf = statedOfValue(row)}
+                        <Select
+                          value={statedOf}
+                          onValueChange={(v) =>
+                            setStatedOf(row.ingredientId, v === WHOLE_BASIS ? null : v)}
+                        >
+                          <SelectTrigger
+                            class="w-52"
+                            aria-label={`What is ${row.rawText} a percentage of?`}
+                            data-testid="formula-row-stated-of"
+                            data-stated-of={statedOf}
+                          >
+                            {statedOf === WHOLE_BASIS
+                              ? 'Of the whole basis'
+                              : `Of the ${labelOf(statedOf)}`}
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={WHOLE_BASIS}>Of the whole basis</SelectItem>
+                            {#each statedOptions as member (member.ingredientId)}
+                              <SelectItem value={member.ingredientId}>
+                                {`Of the ${member.rawText}`}
+                              </SelectItem>
+                            {/each}
+                          </SelectContent>
+                        </Select>
+                      {/if}
 
                       <!-- WHEN THIS GOES IN (issue #1405). Offered only once there
                          are stages to choose between, exactly as the per-stage place

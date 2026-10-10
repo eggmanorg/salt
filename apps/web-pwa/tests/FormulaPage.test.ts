@@ -434,10 +434,10 @@ describe('FormulaPage — the declaration', () => {
       shape: { count: 1, unitDoughGrams: 900 },
     });
     expect(written.components).toEqual([
-      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
-      { ingredientId: 'ing-salt', percent: 2, inBasis: false, stageId: null },
-      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null },
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null, statedOf: null },
+      { ingredientId: 'ing-salt', percent: 2, inBasis: false, stageId: null, statedOf: null },
+      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null, statedOf: null },
     ]);
   });
 });
@@ -450,12 +450,12 @@ describe('FormulaPage — the round trip', () => {
   const STORED: Formula = {
     recipeId: RECIPE_ID,
     components: [
-      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null },
-      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null },
+      { ingredientId: 'ing-flour', percent: 100, inBasis: true, stageId: null, statedOf: null },
+      { ingredientId: 'ing-water', percent: 70, inBasis: false, stageId: null, statedOf: null },
       // Salt was deliberately left out of this formula: no component, so no row.
-      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null },
+      { ingredientId: 'ing-yeast', percent: 1.4, inBasis: false, stageId: null, statedOf: null },
       // Hand-entered: the recipe says "2 eggs" and knows nothing about 100 g.
-      { ingredientId: 'ing-egg', percent: 20, inBasis: false, stageId: null },
+      { ingredientId: 'ing-egg', percent: 20, inBasis: false, stageId: null, statedOf: null },
     ],
     referenceYield: {
       kind: 'target',

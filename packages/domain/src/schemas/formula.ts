@@ -108,6 +108,31 @@ export const FormulaComponentSchema = z.object({
   // thing: no window is read for this component, so the solve has nothing to refuse
   // it against.
   saltProduct: SaltProductSchema.optional(),
+  // WHAT THIS LINE'S STRENGTH IS STATED AGAINST (issue #1657) — the `ingredientId`
+  // of one basis member ("3% of the water"), or `null` for the whole basis, which is
+  // what every line has always meant.
+  //
+  // A VIEW, NOT A FIGURE. `percent` above stays percent of the basis and stays the
+  // only number stored: the strength against the member is derived
+  // (`formula/brine.ts`, salt% ÷ member% × 100) and never written beside it, because
+  // two stored numbers for one quantity drift. What this field changes is how the
+  // screen reads the line and what it holds when that member's weight is retyped —
+  // never the solve, which does not read it.
+  //
+  // ONLY A PLAIN SALT, ONLY AGAINST ANOTHER BASIS MEMBER, ONLY ON A BASIS OF TWO OR
+  // MORE. `deriveFormula`, the one constructor, writes anything else as `null`, and
+  // `tests/formula/deriveFormula.test.ts` pins each case — so a curing salt is always
+  // measured against the meat, and `boundsOn` is untouched. A STORED document is not
+  // so guarded: a hand edit can name anything here, which is why `statedStrength`
+  // (`formula/brine.ts`) answers `null` for a line that is not plain salt or a name
+  // that does not resolve to a basis member — and states the two it does not re-ask.
+  //
+  // A PLAIN FK, document-local, exactly as `stageId` is, and a READ DEFAULT for the
+  // same reason: live formulas were written without the key and `null` is what each
+  // of them meant. `schemaVersion` stays at 1; `legacyFormulaDocument.test.ts` pins
+  // it. An older app re-saving the document strips it (whole-document `setDoc`), and
+  // the line then reads as a percentage of the basis again — its grams do not move.
+  statedOf: z.string().nullable().default(null),
   // The bound seam. Declared per component and enforced generically by the
   // solve, which REFUSES rather than extrapolates — the nitrite limits #1402
   // stamps here are the load-bearing customer, and that must not be a decision a

@@ -649,13 +649,14 @@ describe('withCureSaltSubstituted', () => {
       recipeId: 'recipe-1',
       schemaVersion: 1,
       components: [
-        { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null },
+        { ingredientId: 'ing-meat', percent: 100, inBasis: true, stageId: null, statedOf: null },
         {
           ingredientId: 'ing-salt',
           percent: 0,
           inBasis: false,
           saltProduct: 'plain',
           stageId: null,
+          statedOf: null,
         },
         {
           ingredientId: 'ing-cure',
@@ -665,6 +666,7 @@ describe('withCureSaltSubstituted', () => {
           minPercent: 2,
           maxPercent: 3.15,
           stageId: null,
+          statedOf: null,
         },
       ],
       referenceYield: { kind: 'basis', grams: 1000 },
