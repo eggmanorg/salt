@@ -1,0 +1,64 @@
+import { ErrorCode, failure, success } from '@salt/shared-types';
+import type { DomainError, ReadResult } from '@salt/shared-types';
+import type { FreezerConfig } from '../entities/FreezerConfig.js';
+import type { FreezerItem } from '../entities/FreezerItem.js';
+
+// The rules the item commands share (issue #1684). Internal to the module, like
+// `freezerRules.ts` beside it.
+
+/** An item name, trimmed, or the refusal for a blank one. */
+export function checkItemName(rawName: string): ReadResult<string, DomainError> {
+  const name = rawName.trim();
+  if (!name) {
+    return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_ITEM_NAME });
+  }
+  return success(name);
+}
+
+/** Where it was bought, trimmed; blank is `null` — the link is optional. */
+export function cleanPurchasedFrom(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim() ?? '';
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * A place the setup has, or the refusal. The freezer must be in the config.
+ * A freezer with shelves needs one of them, matched exactly as stored; a freezer
+ * set up with none takes `null`.
+ */
+export function checkPlace(
+  config: FreezerConfig,
+  freezerId: string,
+  shelf: string | null,
+): ReadResult<{ freezerId: string; shelf: string | null }, DomainError> {
+  const freezer = config.freezers.find((f) => f.id === freezerId);
+  const fits =
+    freezer !== undefined &&
+    (freezer.shelves.length === 0
+      ? shelf === null
+      : shelf !== null && freezer.shelves.includes(shelf));
+  if (!fits) {
+    return failure({ kind: 'ValidationError', code: ErrorCode.UNKNOWN_FREEZER_PLACE });
+  }
+  return success({ freezerId, shelf });
+}
+
+/**
+ * Find the item at `number` or fail NotFound, let the caller decide the change
+ * and stamp `updatedAt`. Existence is checked first, as `updateFreezer` does, so
+ * an edit to an item another device removed reports the missing item.
+ */
+export function updateItem(
+  items: readonly FreezerItem[],
+  number: number,
+  now: string,
+  change: (item: FreezerItem) => ReadResult<FreezerItem, DomainError>,
+): ReadResult<FreezerItem, DomainError> {
+  const item = items.find((i) => i.number === number);
+  if (!item) {
+    return failure({ kind: 'NotFound', resource: 'freezerItem', id: String(number) });
+  }
+  const changed = change(item);
+  if (changed.kind !== 'ok') return changed;
+  return success({ ...changed.value, updatedAt: now });
+}

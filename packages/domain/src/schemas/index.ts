@@ -147,6 +147,9 @@ export {
   FREEZER_CONFIG_DOC_ID,
 } from './freezerConfig.js';
 export type { FreezerDoc, FreezerConfigDoc } from './freezerConfig.js';
+// What is in the freezers, one document per bag number (issue #1684).
+export { FreezerItemSchema, FREEZER_ITEMS_COLLECTION, freezerItemDocId } from './freezerItem.js';
+export type { FreezerItemDoc } from './freezerItem.js';
 
 export {
   EquipmentIconSchema,

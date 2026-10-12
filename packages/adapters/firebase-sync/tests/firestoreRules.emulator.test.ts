@@ -1559,6 +1559,75 @@ describe.skipIf(!reachable)('firestore.rules — freezerConfig (issue #1682)', (
   });
 });
 
+describe.skipIf(!reachable)('firestore.rules — freezerItems (issue #1684)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  const item = (name = 'Pork loin') => ({
+    schemaVersion: 1,
+    number: 47,
+    name,
+    freezerId: 'fz-1',
+    shelf: 'B',
+    amount: 5,
+    canonId: null,
+    recipeId: null,
+    purchasedFrom: null,
+    addedAt: '2026-10-12T09:00:00.000Z',
+    updatedAt: '2026-10-12T09:00:00.000Z',
+  });
+
+  function userCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { email: `${uid}@e.org` }).firestore();
+  }
+
+  // Family-shared stock: no owner field, so either member adds, edits, moves and
+  // removes what the other put in.
+  it('lets any signed-in user write, read and delete an item', async () => {
+    const db = userCtx('uid-a');
+    await assertSucceeds(setDoc(doc(db, 'freezerItems', '047'), item()));
+    await assertSucceeds(getDoc(doc(db, 'freezerItems', '047')));
+    await assertSucceeds(getDocs(collection(db, 'freezerItems')));
+    await assertSucceeds(deleteDoc(doc(db, 'freezerItems', '047')));
+  });
+
+  // The rules do NOT refuse a write over a number already in use: a server-side
+  // refusal would make the losing device's item vanish on reconnect. This pins
+  // that the second write lands (docs/data-model.md → freezerItems).
+  it('lets another member overwrite an item at the same number', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'freezerItems', '047'), item());
+    });
+    const db = userCtx('uid-b');
+    await assertSucceeds(setDoc(doc(db, 'freezerItems', '047'), item('Lamb shanks')));
+  });
+
+  it('denies an unauthenticated caller entirely', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'freezerItems', '047')));
+    await assertFails(setDoc(doc(db, 'freezerItems', '047'), item()));
+    await assertFails(deleteDoc(doc(db, 'freezerItems', '047')));
+  });
+});
+
 // kitchenTimers is the FOURTH owner-scoped collection (issue #842), and its rule
 // is the only owner-scoped one that keys on the PATH SEGMENT rather than on a
 // stored field — the document id simply is the uid. These cover both halves of

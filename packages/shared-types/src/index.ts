@@ -76,7 +76,10 @@ export type DomainError =
         | 'libraryPage'
         // A freezer in `freezerConfig/current` (issue #1682) — renamed, re-shelved
         // or removed on one device after another device deleted it.
-        | 'freezer';
+        | 'freezer'
+        // A freezer item, `freezerItems/{number}` (issue #1684) — edited, moved or
+        // removed on one device after another device removed it.
+        | 'freezerItem';
       readonly id: string;
     }
   | {
@@ -209,6 +212,16 @@ export const ErrorCode = {
   DUPLICATE_FREEZER_NAME: 'DUPLICATE_FREEZER_NAME',
   INVALID_SHELF_LABEL: 'INVALID_SHELF_LABEL',
   DUPLICATE_SHELF_LABEL: 'DUPLICATE_SHELF_LABEL',
+  // Freezer stock's refusals (issue #1684): a blank item name; a bag number that
+  // is not a positive whole number, or one an item on this device already
+  // carries; a pack count that is not a whole number of at least one; and a
+  // freezer or shelf that is not in the setup. Somebody typed or picked it —
+  // expected, so each crosses as a ValidationError and is not reported.
+  INVALID_FREEZER_ITEM_NAME: 'INVALID_FREEZER_ITEM_NAME',
+  INVALID_FREEZER_NUMBER: 'INVALID_FREEZER_NUMBER',
+  FREEZER_NUMBER_IN_USE: 'FREEZER_NUMBER_IN_USE',
+  INVALID_FREEZER_AMOUNT: 'INVALID_FREEZER_AMOUNT',
+  UNKNOWN_FREEZER_PLACE: 'UNKNOWN_FREEZER_PLACE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

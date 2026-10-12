@@ -8,8 +8,9 @@ export interface RemoveFreezerInput {
 }
 
 /**
- * Remove a freezer and its shelves. Unconditional, like `setShelves`: what
- * happens to stock on a removed freezer is #1684's to decide once stock exists.
+ * Remove a freezer and its shelves. Unconditional, like `setShelves`, with stock
+ * still in it (#1684): the items are neither deleted nor rewritten, and
+ * `itemsByShelf` files them under Not placed until someone moves them.
  */
 export function removeFreezer(
   config: FreezerConfig,

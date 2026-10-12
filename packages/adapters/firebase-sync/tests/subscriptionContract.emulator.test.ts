@@ -153,6 +153,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import type { DomainError } from '@salt/shared-types';
+import { freezerItemDocId } from '@salt/domain/schemas';
 import * as barrel from '../src/index.js';
 import { clearFirestoreEmulator, resetDefaultApp, PROJECT_ID } from './emulatorHelpers.js';
 
@@ -168,6 +169,7 @@ import { subscribeEquipmentIcons } from '../src/equipmentIconSubscription.js';
 import { subscribeEnrichmentFailures } from '../src/enrichmentFailureSubscription.js';
 import { subscribeEquipmentManifest } from '../src/equipmentManifestSubscription.js';
 import { subscribeFreezerConfig } from '../src/freezerConfigSubscription.js';
+import { subscribeFreezerItems } from '../src/freezerItemSync.js';
 import { subscribeFormula } from '../src/formulaSubscription.js';
 import { subscribeGuidedPlan } from '../src/guidedPlanSubscription.js';
 import { subscribeKitchenMemories } from '../src/kitchenMemorySubscription.js';
@@ -535,6 +537,19 @@ const fx = {
     schemaVersion: 1,
     updatedAt,
     freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+  }),
+  freezerItem: (number: number) => ({
+    schemaVersion: 1,
+    number,
+    name: 'Pork loin',
+    freezerId: 'fz-1',
+    shelf: 'A',
+    amount: 1,
+    canonId: null,
+    recipeId: null,
+    purchasedFrom: null,
+    addedAt: NOW,
+    updatedAt: NOW,
   }),
   formula: (recipeId: string) => ({
     recipeId,
@@ -986,6 +1001,24 @@ const collectionCases: CollectionCase[] = [
     },
   },
   {
+    name: 'subscribeFreezerItems',
+    subscribe: (on, err) =>
+      subscribeFreezerItems((items) => on(items.map((i) => freezerItemDocId(i.number))), err),
+    id: '047',
+    seed: () => writeAs(['freezerItems', '047'], fx.freezerItem(47)),
+    alsoDelivers: {
+      ids: ['003'],
+      seed: () => writeAs(['freezerItems', '003'], fx.freezerItem(3)),
+    },
+    corrupt: { id: 'bad', seed: () => writeAs(['freezerItems', 'bad'], CORRUPT) },
+    // The decoy is recognised by its NUMBER, which is what this row delivers.
+    excluded: {
+      ids: ['999'],
+      what: NESTED_DECOY_WHAT,
+      seed: () => writeAs(nestedPath('freezerItems'), fx.freezerItem(999)),
+    },
+  },
+  {
     name: 'subscribeKitchenTools',
     subscribe: (on, err) => subscribeKitchenTools((tools) => on(tools.map((t) => t.id)), err),
     id: 'whisk',
@@ -1388,7 +1421,7 @@ describe('subscription contract — table coverage', () => {
     // #928 asks for: the shape only exists once to copy from, and the table is
     // what notices when someone copies it anyway.
     expect(tabled).toEqual(exported);
-    expect(exported).toHaveLength(31);
+    expect(exported).toHaveLength(32);
   });
 
   it('every row is uniquely named', () => {

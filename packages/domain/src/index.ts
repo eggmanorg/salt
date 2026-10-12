@@ -152,6 +152,16 @@ export type {
   RenameFreezerInput,
   SetShelvesInput,
   RemoveFreezerInput,
+  FreezerItem,
+  FreezerStorePort,
+  AddFreezerItemInput,
+  EditFreezerItemInput,
+  MoveFreezerItemInput,
+  RemoveFreezerItemInput,
+  ItemsByShelf,
+  FreezerStock,
+  ShelfStock,
+  ItemAge,
 } from './freezer/index.js';
 export {
   emptyFreezerConfig,
@@ -159,6 +169,14 @@ export {
   renameFreezer,
   setShelves,
   removeFreezer,
+  addFreezerItem,
+  editFreezerItem,
+  moveFreezerItem,
+  removeFreezerItem,
+  nextFreeNumber,
+  itemsByShelf,
+  oldestFirst,
+  itemAge,
 } from './freezer/index.js';
 
 // Shopping list module — published surface.
