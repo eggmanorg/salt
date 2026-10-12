@@ -58,6 +58,16 @@ describe('isFeatureEnabled', () => {
 
     expect(isFeatureEnabled('bread')).toBe(false);
   });
+
+  it('asks about the freezer under its own browser-side key (issue #1682)', async () => {
+    // The freezer has no server half, so its key is a literal in featureGate.ts
+    // rather than an import from the adapter — this pins that literal.
+    const { isFeatureEnabled, freezerGate, featureGate } = await fresh();
+
+    expect(isFeatureEnabled('freezer')).toBe(true);
+    expect(isEnabled).toHaveBeenCalledWith('freezer');
+    expect(freezerGate).toBe(featureGate('freezer'));
+  });
 });
 
 describe('featureGate store', () => {

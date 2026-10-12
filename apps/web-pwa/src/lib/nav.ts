@@ -8,6 +8,7 @@ import {
   Settings,
   Shield,
   ShoppingCart,
+  Snowflake,
 } from '@lucide/svelte';
 import type { NavItem } from '@salt/ui-components';
 import { pop, push } from 'svelte-spa-router';
@@ -55,10 +56,15 @@ export const navItems: NavItem[] = [
 // reason: the primary four are full, and a reference page is something you go
 // looking for once in a while rather than a place you live. It is family-shared, so
 // like Batches it is NOT part of "Kitchen".
+//
+// "Freezer" (epic #795) is the third of the kind: what is in each freezer and
+// where, family-shared, looked at when you are about to shop or cook rather than
+// lived in. Settings closes the list, so it goes before that rather than last.
 export const overflowNavItems: NavItem[] = [
   { id: 'batches', label: 'Batches', icon: Hourglass, href: '#/batches' },
   { id: 'equipment', label: 'Equipment', icon: Blender, href: '#/equipment' },
   { id: 'library', label: 'Library', icon: Library, href: '#/library' },
+  { id: 'freezer', label: 'Freezer', icon: Snowflake, href: '#/freezer' },
   { id: 'settings', label: 'Settings', icon: Settings, href: '#/settings' },
 ];
 
@@ -71,10 +77,15 @@ export const overflowNavItems: NavItem[] = [
  * pure function of its argument so the filtering itself is testable without a
  * PostHog stand-in.
  */
-export function overflowNavItemsFor(features: { bread: boolean; library: boolean }): NavItem[] {
+export function overflowNavItemsFor(features: {
+  bread: boolean;
+  library: boolean;
+  freezer: boolean;
+}): NavItem[] {
   return overflowNavItems.filter((item) => {
     if (item.id === 'batches') return features.bread;
     if (item.id === 'library') return features.library;
+    if (item.id === 'freezer') return features.freezer;
     return true;
   });
 }

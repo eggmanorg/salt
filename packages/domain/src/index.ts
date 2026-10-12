@@ -141,6 +141,26 @@ export type {
   KitEntryEquipmentSource,
 } from './equipment/index.js';
 
+// Freezer module (issue #1682, epic #795) — the household's freezers and their
+// shelves, before anything goes in them.
+export type {
+  Freezer,
+  FreezerConfig,
+  FreezerConfigPort,
+  FreezerIdGenerator,
+  AddFreezerInput,
+  RenameFreezerInput,
+  SetShelvesInput,
+  RemoveFreezerInput,
+} from './freezer/index.js';
+export {
+  emptyFreezerConfig,
+  addFreezer,
+  renameFreezer,
+  setShelves,
+  removeFreezer,
+} from './freezer/index.js';
+
 // Shopping list module — published surface.
 export type {
   ShoppingList,

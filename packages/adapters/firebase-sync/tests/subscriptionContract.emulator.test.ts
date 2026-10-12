@@ -167,6 +167,7 @@ import { subscribeDevSettings } from '../src/devSettingsSync.js';
 import { subscribeEquipmentIcons } from '../src/equipmentIconSubscription.js';
 import { subscribeEnrichmentFailures } from '../src/enrichmentFailureSubscription.js';
 import { subscribeEquipmentManifest } from '../src/equipmentManifestSubscription.js';
+import { subscribeFreezerConfig } from '../src/freezerConfigSubscription.js';
 import { subscribeFormula } from '../src/formulaSubscription.js';
 import { subscribeGuidedPlan } from '../src/guidedPlanSubscription.js';
 import { subscribeKitchenMemories } from '../src/kitchenMemorySubscription.js';
@@ -530,6 +531,11 @@ const fx = {
     failedAt: 1_757_030_400_000,
   }),
   equipmentManifest: (updatedAt: string = NOW) => ({ schemaVersion: 1, updatedAt, items: [] }),
+  freezerConfig: (updatedAt: string = NOW) => ({
+    schemaVersion: 1,
+    updatedAt,
+    freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+  }),
   formula: (recipeId: string) => ({
     recipeId,
     components: [],
@@ -1242,6 +1248,19 @@ const documentCases: DocumentCase[] = [
     },
   },
   {
+    name: 'subscribeFreezerConfig',
+    subscribe: (on, err) => subscribeFreezerConfig(on, err),
+    seed: () => writeAs(['freezerConfig', 'current'], fx.freezerConfig()),
+    corrupt: () => writeAs(['freezerConfig', 'current'], CORRUPT),
+    corruptDocId: () => 'current',
+    matches: (d) => has(d, 'updatedAt', NOW),
+    excluded: {
+      what: 'another key in the same collection',
+      seed: () =>
+        writeAs(['freezerConfig', 'not-current'], fx.freezerConfig('2020-01-01T00:00:00.000Z')),
+    },
+  },
+  {
     name: 'subscribeFormula',
     subscribe: (on, err) => subscribeFormula('r1', on, err),
     seed: () => writeAs(['formulas', 'r1'], fx.formula('r1')),
@@ -1369,7 +1388,7 @@ describe('subscription contract — table coverage', () => {
     // #928 asks for: the shape only exists once to copy from, and the table is
     // what notices when someone copies it anyway.
     expect(tabled).toEqual(exported);
-    expect(exported).toHaveLength(30);
+    expect(exported).toHaveLength(31);
   });
 
   it('every row is uniquely named', () => {

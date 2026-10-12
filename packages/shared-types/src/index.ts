@@ -73,7 +73,10 @@ export type DomainError =
         // and the version inside it, and a page the store no longer holds — it
         // was deleted on another device while the history sheet was open — is a
         // not-found rather than a failed write.
-        | 'libraryPage';
+        | 'libraryPage'
+        // A freezer in `freezerConfig/current` (issue #1682) — renamed, re-shelved
+        // or removed on one device after another device deleted it.
+        | 'freezer';
       readonly id: string;
     }
   | {
@@ -197,6 +200,15 @@ export const ErrorCode = {
   // which is the page disappearing rather than an over-long one. Bad input, not a
   // defect, so it crosses as a ValidationError and is deliberately not reported.
   LIBRARY_PAGE_TOO_LONG: 'LIBRARY_PAGE_TOO_LONG',
+  // The freezer setup's four refusals (issue #1682). Configuring the places at
+  // all exists so "Garage" and "garage" cannot become two of them, so a blank or
+  // case-insensitive duplicate name, and a blank or repeated shelf label within
+  // one freezer, are refused and the config is left as it was. Somebody typed it —
+  // expected, so each crosses as a ValidationError and is not reported.
+  INVALID_FREEZER_NAME: 'INVALID_FREEZER_NAME',
+  DUPLICATE_FREEZER_NAME: 'DUPLICATE_FREEZER_NAME',
+  INVALID_SHELF_LABEL: 'INVALID_SHELF_LABEL',
+  DUPLICATE_SHELF_LABEL: 'DUPLICATE_SHELF_LABEL',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
