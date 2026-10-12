@@ -18,7 +18,8 @@
     itemAge,
     recipeHeroUrl,
     itemsByShelf,
-    nextFreeNumber,
+    emptyFreezerConfig,
+    nextBagNumber,
     oldestFirst,
     type FreezerItem,
   } from '@salt/domain';
@@ -73,9 +74,9 @@
   );
   const freezers = $derived(config?.freezers ?? []);
   const items = $derived($freezerItemsState.status === 'loaded' ? $freezerItemsState.items : []);
-  const filed = $derived(
-    itemsByShelf(items, config ?? { schemaVersion: 1, updatedAt: '', freezers: [], suppliers: [] }),
-  );
+  // What an absent document means, for the reads below; nothing writes it from here.
+  const setup = $derived(config ?? emptyFreezerConfig(''));
+  const filed = $derived(itemsByShelf(items, setup));
   // Where each filed item is, by number, for the oldest-first list where the
   // grouping is gone. An item missing from it is under Not placed.
   const places = $derived(
@@ -342,7 +343,7 @@
     bind:open={itemOpen}
     item={editing}
     {freezers}
-    suggestedNumber={nextFreeNumber(items)}
+    suggestedNumber={nextBagNumber(items, setup)}
     suppliers={config?.suppliers ?? []}
   />
   <ManageFreezersSheet
@@ -359,7 +360,7 @@
           <DialogHeader>
             <DialogTitle>That was the last one</DialogTitle>
             <DialogDescription>
-              {`Take #${target.number} ${target.name} off the list? Its number is then free.`}
+              {`Take #${target.number} ${target.name} off the list?`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

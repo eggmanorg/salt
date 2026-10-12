@@ -97,10 +97,20 @@ import ManageFreezersSheet from '../src/routes/freezer/ManageFreezersSheet.svelt
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B', 'C', 'D'] };
 const KITCHEN = { id: 'fz-kitchen', name: 'Kitchen', shelves: [] };
 
-function loaded(freezers: FreezerConfig['freezers'], suppliers: string[] = []): FreezerConfigState {
+function loaded(
+  freezers: FreezerConfig['freezers'],
+  suppliers: string[] = [],
+  highestNumber = 0,
+): FreezerConfigState {
   return {
     status: 'loaded',
-    config: { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers, suppliers },
+    config: {
+      schemaVersion: 1,
+      updatedAt: '2026-10-12T09:00:00.000Z',
+      freezers,
+      suppliers,
+      highestNumber,
+    },
   };
 }
 
@@ -515,13 +525,14 @@ describe('freezer stock — the list (issue #1684)', () => {
 });
 
 describe('freezer stock — the item sheet (issue #1684)', () => {
-  it('adds with the lowest free number pre-filled, at the first freezer and shelf', async () => {
+  it('adds with the next number up pre-filled — a gap is not reused — at the first freezer and shelf', async () => {
+    // No mark stored yet (a household from before it existed): the items set it.
     mockState.set(loaded([GARAGE, KITCHEN]));
     stocked([item(1), item(2), item(4)]);
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe('3');
+    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe('5');
     await fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
       target: { value: 'Pork loin' },
     });
@@ -535,7 +546,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
 
     await waitFor(() =>
       expect(mockAddItem).toHaveBeenCalledWith({
-        number: 3,
+        number: 5,
         name: 'Pork loin',
         freezerId: GARAGE.id,
         shelf: 'A',
@@ -546,6 +557,15 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('counts on past a removed top bag: the mark, not the items, sets the number', async () => {
+    mockState.set(loaded([GARAGE], [], 6));
+    stocked([item(1), item(2), item(3), item(4), item(5)]);
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe('7');
   });
 
   it('takes a typed-over number and another place', async () => {
@@ -851,6 +871,8 @@ describe('freezer stock — taking one out', () => {
     const ask = await screen.findByTestId('freezer-last-one');
     expect(ask).toHaveTextContent('That was the last one');
     expect(ask).toHaveTextContent('Take #47 Pork loin off the list?');
+    // The number does not come back to the count (issue #1693), so nothing says it is free.
+    expect(ask).not.toHaveTextContent(/free/i);
     await fireEvent.click(within(ask).getByTestId('freezer-last-one-remove'));
 
     await waitFor(() => expect(mockRemoveItem).toHaveBeenCalledWith(47));

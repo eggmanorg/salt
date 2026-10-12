@@ -24,7 +24,7 @@ const LATER = '2026-10-12T10:00:00.000Z';
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 
 function config(suppliers: string[] = []): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: NOW, freezers: [GARAGE], suppliers };
+  return { schemaVersion: 1, updatedAt: NOW, freezers: [GARAGE], suppliers, highestNumber: 0 };
 }
 
 function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {

@@ -4,7 +4,7 @@
   write (`useFromFreezer`), so this sheet knows nothing about lists, recipes or
   Firestore. It hands back a bag number and a whole number of packs.
 
-  Taking the last packs removes the entry, freeing its number. The sheet says so
+  Taking the last packs removes the entry. The sheet says so
   before confirming: that notice IS the "remove it?" question #1684's page asks
   after a −1, so there is no second dialog.
 -->
@@ -122,8 +122,7 @@
       </div>
       {#if last}
         <p class="text-xs text-muted-foreground" data-testid="use-from-freezer-last">
-          That is the last of #{entry.number}. Its entry comes out of the freezer and the number is
-          free again.
+          That is the last of #{entry.number}. Its entry comes out of the freezer.
         </p>
       {/if}
     {/if}

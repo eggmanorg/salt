@@ -8,7 +8,9 @@ export interface RemoveFreezerItemInput {
 
 /**
  * The item to delete, or NotFound when this device no longer holds it. Deleting
- * it frees its number: `nextFreeNumber` offers the lowest one not in use.
+ * it leaves the config's `highestNumber` alone, so `nextBagNumber` does not
+ * offer its number again — short of the stale-copy window in docs/data-model.md
+ * → `freezerConfig.highestNumber`. A person can still type it by hand.
  */
 export function removeFreezerItem(
   items: readonly FreezerItem[],

@@ -5,7 +5,7 @@ import type { FreezerItem } from '../entities/FreezerItem.js';
 import { checkItemName, checkPlace, cleanPurchasedFrom } from './itemRules.js';
 
 export interface AddFreezerItemInput {
-  /** The bag number — usually `nextFreeNumber(items)`, or one typed over it. */
+  /** The bag number — usually `nextBagNumber(items, config)`, or one typed over it. */
   readonly number: number;
   readonly name: string;
   readonly freezerId: string;

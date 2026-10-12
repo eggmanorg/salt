@@ -92,8 +92,18 @@ let stop: () => void;
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 
-function config(freezers: FreezerConfig['freezers'], suppliers: string[] = []): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers, suppliers };
+function config(
+  freezers: FreezerConfig['freezers'],
+  suppliers: string[] = [],
+  highestNumber = 0,
+): FreezerConfig {
+  return {
+    schemaVersion: 1,
+    updatedAt: '2026-10-12T09:00:00.000Z',
+    freezers,
+    suppliers,
+    highestNumber,
+  };
 }
 
 beforeEach(() => {
@@ -363,12 +373,15 @@ describe('freezer service — item writes', () => {
     expect(mockSaveItem).not.toHaveBeenCalled();
   });
 
-  it('removes: gone from the store at once, deleted by number, the number free again', async () => {
+  it('removes: gone from the store at once, deleted by number, the mark left alone', async () => {
+    emit(config([GARAGE, KITCHEN], [], 47));
     const result = await removeFreezerItem(47);
 
     expect(result.kind).toBe('ok');
     expect(mockDeleteItem).toHaveBeenCalledWith(47);
     expect(storedItems().map((i) => i.number)).toEqual([1]);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(storedConfig()?.highestNumber).toBe(47);
   });
 
   it('is NotFound removing an item this device no longer holds', async () => {
@@ -532,8 +545,10 @@ describe('freezer service — recounting and linking on edit', () => {
 });
 
 describe('freezer service — the places bought from', () => {
+  // The mark sits above every number added here, so these see the supplier
+  // path alone; the mark's own config write is the next block.
   beforeEach(() => {
-    emit(config([GARAGE], ['Swaledale']));
+    emit(config([GARAGE], ['Swaledale'], 50));
     emitItems([item(1, { purchasedFrom: 'Swaledale' })]);
   });
 
@@ -607,6 +622,65 @@ describe('freezer service — the places bought from', () => {
     expect(storedItems()).toEqual([]);
     expect(mockSave).not.toHaveBeenCalled();
     expect(storedConfig()?.suppliers).toEqual(['Swaledale']);
+  });
+});
+
+describe('freezer service — the bag-number mark (issue #1693)', () => {
+  beforeEach(() => {
+    emit(config([GARAGE], ['Swaledale'], 6));
+    emitItems([item(1), item(2), item(4)]);
+  });
+
+  function savedConfigs(): FreezerConfig[] {
+    return mockSave.mock.calls.map((call) => call[0] as FreezerConfig);
+  }
+
+  it('an add above the mark saves the config once, with the new mark', async () => {
+    await addFreezerItem({ ...ADD, number: 7, purchasedFrom: 'Swaledale' });
+
+    expect(savedConfigs()).toHaveLength(1);
+    expect(savedConfigs()[0]).toMatchObject({ highestNumber: 7, suppliers: ['Swaledale'] });
+    expect(storedConfig()?.highestNumber).toBe(7);
+  });
+
+  it('an add above the mark with a new place saves both in the SAME save', async () => {
+    await addFreezerItem({ ...ADD, number: 120, purchasedFrom: 'Booths' });
+
+    expect(savedConfigs()).toHaveLength(1);
+    expect(savedConfigs()[0]).toMatchObject({
+      highestNumber: 120,
+      suppliers: ['Swaledale', 'Booths'],
+    });
+    expect(storedConfig()).toMatchObject({
+      highestNumber: 120,
+      suppliers: ['Swaledale', 'Booths'],
+    });
+  });
+
+  it('an add at or below the mark with a known place saves no config', async () => {
+    await addFreezerItem({ ...ADD, number: 3, purchasedFrom: 'Swaledale' });
+    await addFreezerItem({ ...ADD, number: 6, purchasedFrom: 'swaledale' });
+
+    expect(mockSaveItem).toHaveBeenCalledTimes(2);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(storedConfig()?.highestNumber).toBe(6);
+  });
+
+  it('a refused add moves no mark', async () => {
+    await addFreezerItem({ ...ADD, number: 4 });
+
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(storedConfig()?.highestNumber).toBe(6);
+  });
+
+  it('an edit never moves the mark, even when it remembers a place', async () => {
+    await updateFreezerItem(4, { name: 'Item 4', purchasedFrom: 'Booths', place: null });
+
+    expect(savedConfigs()).toHaveLength(1);
+    expect(savedConfigs()[0]).toMatchObject({
+      highestNumber: 6,
+      suppliers: ['Swaledale', 'Booths'],
+    });
   });
 });
 

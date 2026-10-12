@@ -45,7 +45,7 @@ export interface CommitFromFreezerInput {
   readonly itemNumber: number;
   /** What to add to its `amount` — negative, from `takeFreezerPacks`. */
   readonly take: number;
-  /** The packs taken were the last: the entry goes too, freeing its number. */
+  /** The packs taken were the last: the entry goes too. */
   readonly removeItem: boolean;
   /** The Kitchen item to write whole, from `commitDefrost`. */
   readonly defrost: Defrost;
