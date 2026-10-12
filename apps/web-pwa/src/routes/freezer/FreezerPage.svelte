@@ -142,15 +142,15 @@
     {#snippet actions()}
       {#if freezers.length > 0}
         <Button size="sm" onclick={openAdd} data-testid="freezer-add">Add</Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onclick={() => (manageOpen = true)}
-          data-testid="freezer-manage"
-        >
-          Manage freezers
-        </Button>
       {/if}
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => (manageOpen = true)}
+        data-testid="freezer-manage"
+      >
+        Manage freezers
+      </Button>
     {/snippet}
 
     {#snippet error()}

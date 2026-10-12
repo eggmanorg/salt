@@ -65,11 +65,14 @@
         packs = String(item.amount);
         purchasedFrom = item.purchasedFrom ?? '';
         // An item under Not placed opens with nothing picked: leaving it so keeps
-        // it where it is, picking a place files it.
+        // it where it is, picking a place files it. That is any item whose stored
+        // place no longer fits: its freezer removed, or its shelf gone from it.
         const home = freezers.find((f) => f.id === item.freezerId);
-        freezerId = home?.id ?? null;
-        shelf =
-          home && item.shelf !== null && home.shelves.includes(item.shelf) ? item.shelf : null;
+        const fits =
+          home !== undefined &&
+          (item.shelf === null ? home.shelves.length === 0 : home.shelves.includes(item.shelf));
+        freezerId = fits ? home.id : null;
+        shelf = fits ? item.shelf : null;
       } else {
         numberDraft = String(suggestedNumber);
         name = '';

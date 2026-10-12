@@ -425,6 +425,9 @@ describe('freezer stock — the list (issue #1684)', () => {
 
     expect(await screen.findByTestId('freezer-not-placed')).toBeInTheDocument();
     expect(screen.queryByTestId('freezer-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('freezer-add')).not.toBeInTheDocument();
+    // A freezer can still be set up again, or the household is stuck.
+    await openSheet('freezer-manage');
   });
 
   it('shows stock under Not placed when the setup document is absent', async () => {
@@ -618,6 +621,28 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     await waitFor(() =>
       expect(mockUpdateItem).toHaveBeenCalledWith(8, {
         name: 'Item 8',
+        purchasedFrom: '',
+        place: null,
+      }),
+    );
+  });
+
+  it('also leaves a Not placed item unfiled when only its shelf is gone', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(9, { freezerId: GARAGE.id, shelf: 'Z' })]);
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getByRole('button', { name: 'Garage' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(9, {
+        name: 'Item 9',
         purchasedFrom: '',
         place: null,
       }),
