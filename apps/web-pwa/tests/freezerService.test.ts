@@ -17,6 +17,7 @@ const {
   mockSubscribeItems,
   mockSaveItem,
   mockDeleteItem,
+  mockTake,
   mockStopConfig,
   mockStopItems,
 } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const {
   mockSubscribeItems: vi.fn(),
   mockSaveItem: vi.fn(),
   mockDeleteItem: vi.fn(),
+  mockTake: vi.fn(),
   mockStopConfig: vi.fn(),
   mockStopItems: vi.fn(),
 }));
@@ -36,6 +38,7 @@ vi.mock('@salt/firebase-sync', () => ({
   subscribeFreezerItems: mockSubscribeItems,
   saveFreezerItem: mockSaveItem,
   deleteFreezerItem: mockDeleteItem,
+  takeFreezerItemAmount: mockTake,
   isAuthTransitioning: () => false,
 }));
 vi.mock('@salt/observability', () => ({
@@ -47,12 +50,14 @@ import {
   addFreezer,
   addFreezerItem,
   freezerConfigState,
+  forgetSupplier,
   freezerItemsState,
   initFreezerSync,
   removeFreezer,
   removeFreezerItem,
   renameFreezer,
   setFreezerShelves,
+  takeOneFreezerPack,
   updateFreezerItem,
 } from '../src/lib/freezerService.js';
 
@@ -68,8 +73,8 @@ let stop: () => void;
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 
-function config(freezers: FreezerConfig['freezers']): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers };
+function config(freezers: FreezerConfig['freezers'], suppliers: string[] = []): FreezerConfig {
+  return { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers, suppliers };
 }
 
 beforeEach(() => {
@@ -77,6 +82,7 @@ beforeEach(() => {
   mockSave.mockResolvedValue(success(undefined));
   mockSaveItem.mockResolvedValue(success(undefined));
   mockDeleteItem.mockResolvedValue(success(undefined));
+  mockTake.mockResolvedValue(success(undefined));
   mockSubscribe.mockImplementation((onConfig: OnConfig, onError: OnError) => {
     emit = onConfig;
     fail = onError;
@@ -362,5 +368,225 @@ describe('freezer service — item writes', () => {
     await removeFreezerItem(1);
 
     await vi.waitFor(() => expect(mockReport).toHaveBeenCalledTimes(2));
+  });
+});
+
+// ─── Taking packs out, and the links (issue #1684 Phase 2) ───────────────────
+
+function storedConfig(): FreezerConfig | null {
+  const state = get(freezerConfigState);
+  return state.status === 'loaded' ? state.config : null;
+}
+
+describe('freezer service — taking a pack out', () => {
+  beforeEach(() => {
+    emit(config([GARAGE]));
+    emitItems([item(1, { amount: 5 }), item(2, { amount: 1 }), item(3, { amount: 0 })]);
+  });
+
+  it('takes one from five: four shown at once, and a decrement of one sent', async () => {
+    const result = await takeOneFreezerPack(1);
+
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(result.value).toMatchObject({ delta: -1, last: false });
+    expect(result.value.item.amount).toBe(4);
+    expect(storedItems().find((i) => i.number === 1)?.amount).toBe(4);
+    expect(mockTake).toHaveBeenCalledWith(1, -1);
+    expect(mockSaveItem).not.toHaveBeenCalled();
+  });
+
+  it('taking the only pack says it was the last, and still sends the decrement', async () => {
+    const result = await takeOneFreezerPack(2);
+
+    expect(result.kind === 'ok' && result.value.last).toBe(true);
+    expect(storedItems().find((i) => i.number === 2)?.amount).toBe(0);
+    expect(mockTake).toHaveBeenCalledWith(2, -1);
+  });
+
+  it('an item already showing none takes nothing, writes nothing, and says it was the last', async () => {
+    const result = await takeOneFreezerPack(3);
+
+    expect(result.kind === 'ok' && result.value).toMatchObject({ delta: 0, last: true });
+    expect(mockTake).not.toHaveBeenCalled();
+    expect(storedItems().find((i) => i.number === 3)?.amount).toBe(0);
+  });
+
+  it('is NotFound for an item this device no longer holds, and writes nothing', async () => {
+    const result = await takeOneFreezerPack(99);
+
+    expect(result).toEqual(failure({ kind: 'NotFound', resource: 'freezerItem', id: '99' }));
+    expect(mockTake).not.toHaveBeenCalled();
+  });
+
+  it('hands a refused decrement to the reporter, by category, without awaiting it', async () => {
+    // The category gate is inside the real port: a NotFound (another phone removed
+    // the item) is dropped there, a StorageError is sent. Here the port is the
+    // mock, so both arrive, each with its category.
+    mockTake.mockResolvedValueOnce(failure({ kind: 'NotFound', resource: 'freezerItem', id: '1' }));
+    const gone = await takeOneFreezerPack(1);
+    expect(gone.kind).toBe('ok');
+    expect(mockTake).toHaveBeenCalledWith(1, -1);
+    expect(storedItems().find((i) => i.number === 1)?.amount).toBe(4);
+
+    mockTake.mockResolvedValueOnce(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    await takeOneFreezerPack(1);
+
+    await vi.waitFor(() => expect(mockReport).toHaveBeenCalledTimes(2));
+    expect(mockReport.mock.calls.map((c) => c[1])).toEqual(['NotFound', 'StorageError']);
+  });
+
+  it('takes nothing before the stock has arrived', async () => {
+    // A fresh subscription: both stores back to loading until the snapshots land.
+    stop = initFreezerSync();
+    emit(config([GARAGE]));
+    expect(await takeOneFreezerPack(1)).toEqual(
+      failure({ kind: 'NetworkError', reason: 'transient' }),
+    );
+    expect(mockTake).not.toHaveBeenCalled();
+  });
+});
+
+describe('freezer service — recounting and linking on edit', () => {
+  beforeEach(() => {
+    emit(config([GARAGE]));
+    emitItems([item(47, { amount: 2, canonId: 'c-pork', recipeId: 'r-stew' })]);
+  });
+
+  it('recounts when a count is given', async () => {
+    const result = await updateFreezerItem(47, {
+      name: 'Item 47',
+      purchasedFrom: null,
+      place: null,
+      amount: 6,
+    });
+
+    expect(result.kind).toBe('ok');
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ number: 47, amount: 6 });
+  });
+
+  it('leaves the count, and the links, alone when they are omitted', async () => {
+    await updateFreezerItem(47, { name: 'Renamed', purchasedFrom: null, place: null });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Renamed',
+      amount: 2,
+      canonId: 'c-pork',
+      recipeId: 'r-stew',
+    });
+  });
+
+  it('refuses a count that is not a whole number of 0 or more, and writes nothing', async () => {
+    const result = await updateFreezerItem(47, {
+      name: 'Item 47',
+      purchasedFrom: null,
+      place: null,
+      amount: -1,
+    });
+
+    expect(result).toEqual(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_AMOUNT }),
+    );
+    expect(mockSaveItem).not.toHaveBeenCalled();
+  });
+
+  it('saves the links given, and clears one given as null', async () => {
+    await updateFreezerItem(47, {
+      name: 'Item 47',
+      purchasedFrom: null,
+      place: null,
+      canonId: 'c-lamb',
+      recipeId: null,
+    });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ canonId: 'c-lamb', recipeId: null });
+  });
+
+  it('saves the links an add is given', async () => {
+    await addFreezerItem({ ...ADD, canonId: 'c-pork', recipeId: 'r-stew' });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({
+      canonId: 'c-pork',
+      recipeId: 'r-stew',
+    });
+  });
+});
+
+describe('freezer service — the places bought from', () => {
+  beforeEach(() => {
+    emit(config([GARAGE], ['Swaledale']));
+    emitItems([item(1, { purchasedFrom: 'Swaledale' })]);
+  });
+
+  it('saves a known place in its remembered spelling, and writes no config', async () => {
+    await addFreezerItem({ ...ADD, purchasedFrom: ' swaledale ' });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ purchasedFrom: 'Swaledale' });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('remembers a new place: the config is saved with it on the end', async () => {
+    await addFreezerItem({ ...ADD, purchasedFrom: ' Booths ' });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ purchasedFrom: 'Booths' });
+    expect(mockSave).toHaveBeenCalledOnce();
+    expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual([
+      'Swaledale',
+      'Booths',
+    ]);
+    expect(storedConfig()?.suppliers).toEqual(['Swaledale', 'Booths']);
+  });
+
+  it('writes no config for a blank place, or none at all', async () => {
+    await addFreezerItem({ ...ADD, purchasedFrom: '  ' });
+    const { purchasedFrom: _omitted, ...withoutPlace } = ADD;
+    await addFreezerItem({ ...withoutPlace, number: 4 });
+
+    expect(mockSaveItem).toHaveBeenCalledTimes(2);
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ purchasedFrom: null });
+    expect(mockSaveItem.mock.calls[1]?.[0]).toMatchObject({ purchasedFrom: null });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('an edit is spelt and remembered the same way', async () => {
+    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'SWALEDALE', place: null });
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ purchasedFrom: 'Swaledale' });
+    expect(mockSave).not.toHaveBeenCalled();
+
+    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'Booths', place: null });
+    expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual([
+      'Swaledale',
+      'Booths',
+    ]);
+  });
+
+  it('remembers a place on an edit made before anybody set up a freezer', async () => {
+    emit(null);
+    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'Booths', place: null });
+
+    expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual(['Booths']);
+  });
+
+  it('reports a refused config save from remembering a place', async () => {
+    mockSave.mockResolvedValue(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    await addFreezerItem({ ...ADD, purchasedFrom: 'Booths' });
+    await vi.waitFor(() => expect(mockReport).toHaveBeenCalledOnce());
+  });
+
+  it('forgets a place: taken off the list and saved, no item changed', async () => {
+    const result = await forgetSupplier('swaledale');
+
+    expect(result.kind).toBe('ok');
+    expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual([]);
+    expect(mockSaveItem).not.toHaveBeenCalled();
+    expect(storedItems()[0]?.purchasedFrom).toBe('Swaledale');
+  });
+
+  it('keeps a place on the list after its only item is removed', async () => {
+    await removeFreezerItem(1);
+
+    expect(storedItems()).toEqual([]);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(storedConfig()?.suppliers).toEqual(['Swaledale']);
   });
 });

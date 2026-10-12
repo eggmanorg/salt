@@ -162,6 +162,10 @@ export type {
   FreezerStock,
   ShelfStock,
   ItemAge,
+  TakeFreezerPacksInput,
+  TakenPacks,
+  SetFreezerItemAmountInput,
+  ForgetSupplierInput,
 } from './freezer/index.js';
 export {
   emptyFreezerConfig,
@@ -177,6 +181,13 @@ export {
   itemsByShelf,
   oldestFirst,
   itemAge,
+  takeFreezerPacks,
+  setFreezerItemAmount,
+  rememberSupplier,
+  forgetSupplier,
+  displayAmount,
+  supplierSuggestions,
+  supplierSpelling,
 } from './freezer/index.js';
 
 // Shopping list module — published surface.

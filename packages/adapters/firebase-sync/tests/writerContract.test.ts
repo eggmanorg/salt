@@ -504,6 +504,7 @@ const FREEZER_CONFIG = {
   schemaVersion: 1 as const,
   updatedAt: '2020-01-01T00:00:00.000Z',
   freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+  suppliers: ['Swaledale'],
 };
 // Written exactly as given: `saveFreezerItem` stamps nothing (issue #1684).
 const FREEZER_ITEM = {
@@ -682,6 +683,7 @@ const writerCases: WriterCase[] = [
           schemaVersion: 1,
           updatedAt: NOW,
           freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+          suppliers: ['Swaledale'],
         },
       },
     ],
@@ -702,6 +704,23 @@ const writerCases: WriterCase[] = [
     name: 'deleteFreezerItem',
     run: () => barrel.deleteFreezerItem(7),
     ops: [{ op: 'delete', path: 'freezerItems/007' }],
+    onSuccess: 'success(undefined)',
+    onFailure: 'failure',
+    errorShape: 'classified',
+  },
+  {
+    name: 'takeFreezerItemAmount',
+    // A partial write: `updateDoc` with an `increment` on `amount`, so takes
+    // from two devices compose — and not `setDoc` with merge, which would
+    // recreate an item another device removed (issue #1684).
+    run: () => barrel.takeFreezerItemAmount(47, -1),
+    ops: [
+      {
+        op: 'update',
+        path: 'freezerItems/047',
+        data: { amount: { __increment: -1 }, updatedAt: NOW },
+      },
+    ],
     onSuccess: 'success(undefined)',
     onFailure: 'failure',
     errorShape: 'classified',
@@ -736,7 +755,7 @@ const writerCases: WriterCase[] = [
   },
   {
     name: 'renameShoppingList',
-    // The one partial write in the package: `updateDoc`, not a full-doc `setDoc`.
+    // A partial write: `updateDoc`, not a full-doc `setDoc`.
     run: () => barrel.renameShoppingList('list-1', 'Fortnightly', NOW),
     ops: [
       { op: 'update', path: 'shoppingLists/list-1', data: { name: 'Fortnightly', updatedAt: NOW } },
@@ -1203,8 +1222,8 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(127);
-    expect(writerCases).toHaveLength(48);
+    expect(exported).toHaveLength(128);
+    expect(writerCases).toHaveLength(49);
   });
 
   it('every row is uniquely named', () => {
@@ -1240,7 +1259,7 @@ describe('writer contract — table coverage', () => {
     expect(named('throws')).toEqual([...RULE_TEN_VIOLATIONS].sort());
     expect(named('throws')).toEqual([]);
     expect(named('swallows')).toEqual([]);
-    expect(named('failure')).toHaveLength(48);
+    expect(named('failure')).toHaveLength(49);
   });
 
   it('a writer that returns a Result classifies its error, and one that throws would not', () => {

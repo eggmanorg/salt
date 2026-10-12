@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 // One entry in a freezer (issue #1684, epic #795) — `freezerItems/{number}`,
-// family-shared, written whole with `setDoc`.
+// family-shared. Adding, editing and moving write it whole with `setDoc`; taking
+// packs out is the one partial write, an `increment` on `amount` and a new
+// `updatedAt` (`takeFreezerItemAmount` in firebase-sync).
 //
 // The document id IS the bag number, zero-padded (`freezerItems/047`), so moving
 // an item to another shelf or freezer rewrites its `freezerId`/`shelf` and never
@@ -27,9 +29,9 @@ export function freezerItemDocId(n: number): string {
 // - `shelf` is one of that freezer's shelf labels, or `null` for a freezer set up
 //   with no shelves.
 // - `amount` is a whole number of packs with NO lower bound: two devices taking
-//   the last pack at once land on -1, and the display clamps (#795, Phase 2).
+//   the last pack at once land on -1, and `displayAmount` clamps it to 0.
 // - `canonId`, `recipeId` and `purchasedFrom` are optional links, `null` when
-//   absent. Nothing writes `canonId`/`recipeId` until Phase 2 offers them.
+//   absent. Each is offered by the item sheet and never required.
 export const FreezerItemSchema = z.object({
   schemaVersion: z.literal(1),
   number: z.number().int().positive(),

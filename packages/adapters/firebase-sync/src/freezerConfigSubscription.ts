@@ -39,6 +39,7 @@ export async function saveFreezerConfig(
       schemaVersion: 1,
       updatedAt: new Date().toISOString(),
       freezers: [...config.freezers],
+      suppliers: [...config.suppliers],
     });
     return success(undefined);
   } catch (err) {

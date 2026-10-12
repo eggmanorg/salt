@@ -15,6 +15,10 @@ export interface AddFreezerItemInput {
   readonly amount: number;
   /** Where it was bought. Optional; blank is none. */
   readonly purchasedFrom?: string | null;
+  /** The ingredient it is, if one was picked. Optional. */
+  readonly canonId?: string | null;
+  /** The recipe it was made from, if one was picked. Optional. */
+  readonly recipeId?: string | null;
   readonly now: string;
 }
 
@@ -49,8 +53,8 @@ export function addFreezerItem(
     freezerId: place.value.freezerId,
     shelf: place.value.shelf,
     amount: input.amount,
-    canonId: null,
-    recipeId: null,
+    canonId: input.canonId ?? null,
+    recipeId: input.recipeId ?? null,
     purchasedFrom: cleanPurchasedFrom(input.purchasedFrom),
     addedAt: input.now,
     updatedAt: input.now,

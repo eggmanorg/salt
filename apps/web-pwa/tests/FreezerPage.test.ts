@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { ErrorCode, failure, success } from '@salt/shared-types';
-import type { FreezerConfig, FreezerItem } from '@salt/domain';
+import {
+  emptyRecipe,
+  type CanonItem,
+  type FreezerConfig,
+  type FreezerItem,
+  type Recipe,
+} from '@salt/domain';
 import type { FreezerConfigState, FreezerItemsState } from '../src/lib/freezerService.js';
 
 // The freezer page, its setup sheet (issue #1682) and its item sheet (issue
@@ -24,6 +30,10 @@ const {
   mockAddItem,
   mockUpdateItem,
   mockRemoveItem,
+  mockTake,
+  mockForget,
+  mockCanon,
+  mockRecipes,
   mockGate,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
@@ -38,6 +48,10 @@ const {
     mockAddItem: vi.fn(),
     mockUpdateItem: vi.fn(),
     mockRemoveItem: vi.fn(),
+    mockTake: vi.fn(),
+    mockForget: vi.fn(),
+    mockCanon: makeStore<readonly CanonItem[]>([]),
+    mockRecipes: makeStore<readonly Recipe[]>([]),
     mockGate: makeStore<{ enabled: boolean; settled: boolean }>({
       enabled: true,
       settled: true,
@@ -53,10 +67,21 @@ vi.mock('../src/lib/freezerService.js', () => ({
   addFreezerItem: mockAddItem,
   updateFreezerItem: mockUpdateItem,
   removeFreezerItem: mockRemoveItem,
+  takeOneFreezerPack: mockTake,
+  forgetSupplier: mockForget,
   addFreezer: mockAdd,
   renameFreezer: mockRename,
   setFreezerShelves: mockSetShelves,
   removeFreezer: mockRemove,
+}));
+vi.mock('../src/lib/canonService.js', () => ({ canonItems: mockCanon }));
+vi.mock('../src/lib/recipeService.js', () => ({
+  recipes: mockRecipes,
+  // The id index, derived from the same stub so one seed serves both.
+  recipesById: {
+    subscribe: (run: (m: ReadonlyMap<string, Recipe>) => void) =>
+      mockRecipes.subscribe((list) => run(new Map(list.map((r) => [r.id, r])))),
+  },
 }));
 vi.mock('../src/lib/featureGate.js', () => ({
   freezerGate: mockGate,
@@ -67,14 +92,15 @@ vi.mock('../src/lib/featureGate.js', () => ({
 import { push } from 'svelte-spa-router';
 import FreezerPage from '../src/routes/freezer/FreezerPage.svelte';
 import FreezerItemSheet from '../src/routes/freezer/FreezerItemSheet.svelte';
+import ManageFreezersSheet from '../src/routes/freezer/ManageFreezersSheet.svelte';
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B', 'C', 'D'] };
 const KITCHEN = { id: 'fz-kitchen', name: 'Kitchen', shelves: [] };
 
-function loaded(freezers: FreezerConfig['freezers']): FreezerConfigState {
+function loaded(freezers: FreezerConfig['freezers'], suppliers: string[] = []): FreezerConfigState {
   return {
     status: 'loaded',
-    config: { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers },
+    config: { schemaVersion: 1, updatedAt: '2026-10-12T09:00:00.000Z', freezers, suppliers },
   };
 }
 
@@ -107,7 +133,11 @@ beforeEach(() => {
   mockState.set({ status: 'loading' });
   mockItems.set({ status: 'loaded', items: [] });
   mockGate.set({ enabled: true, settled: true });
-  for (const fn of [mockAdd, mockRename, mockSetShelves, mockRemove]) fn.mockResolvedValue(OK);
+  mockCanon.set([]);
+  mockRecipes.set([]);
+  for (const fn of [mockAdd, mockRename, mockSetShelves, mockRemove, mockForget]) {
+    fn.mockResolvedValue(OK);
+  }
   for (const fn of [mockAddItem, mockUpdateItem, mockRemoveItem]) {
     fn.mockResolvedValue(success(item(1)));
   }
@@ -511,6 +541,8 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         shelf: 'A',
         amount: 5,
         purchasedFrom: 'Swaledale',
+        canonId: null,
+        recipeId: null,
       }),
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -591,7 +623,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     expect((within(sheet).getByTestId('freezer-item-name') as HTMLInputElement).value).toBe(
       'Pork loin',
     );
-    expect(within(sheet).queryByTestId('freezer-item-packs')).not.toBeInTheDocument();
+    expect((within(sheet).getByTestId('freezer-item-packs') as HTMLInputElement).value).toBe('1');
 
     await fireEvent.click(within(sheet).getByRole('button', { name: 'D' }));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
@@ -601,6 +633,8 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Pork loin',
         purchasedFrom: 'Swaledale',
         place: { freezerId: GARAGE.id, shelf: 'D' },
+        canonId: null,
+        recipeId: null,
       }),
     );
   });
@@ -623,6 +657,8 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Item 8',
         purchasedFrom: '',
         place: null,
+        canonId: null,
+        recipeId: null,
       }),
     );
   });
@@ -645,6 +681,8 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Item 9',
         purchasedFrom: '',
         place: null,
+        canonId: null,
+        recipeId: null,
       }),
     );
   });
@@ -752,5 +790,479 @@ describe('ManageFreezersSheet — stock counts (issue #1684)', () => {
     await waitFor(() => expect(mockSetShelves).toHaveBeenCalledWith('fz-garage', ['A', 'C', 'D']));
     await fireEvent.click(within(sheet).getByRole('button', { name: 'Remove Garage' }));
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith('fz-garage'));
+  });
+});
+
+// ─── Taking packs out, and the links (issue #1684 Phase 2) ───────────────────
+
+function canon(id: string, name: string, synonyms: string[] = []): CanonItem {
+  return {
+    id,
+    name,
+    synonyms,
+    schemaVersion: 5,
+    aisleId: 'a-meat',
+    thumbnail: null,
+    embedding: null,
+    needs_approval: false,
+    shoppingBehavior: 'needed',
+    updatedAt: '',
+  };
+}
+
+function recipe(id: string, title: string, imageUrl: string | null = null): Recipe {
+  return {
+    ...emptyRecipe(id, '2026-10-12T09:00:00.000Z'),
+    title,
+    image: imageUrl === null ? null : { url: imageUrl, source: 'ai' },
+  };
+}
+
+function taken(of: FreezerItem, amount: number, delta: number) {
+  return success({ delta, item: { ...of, amount }, last: amount <= 0 });
+}
+
+describe('freezer stock — taking one out', () => {
+  it('−1 takes one pack of that item, and asks nothing while some are left', async () => {
+    const pork = item(47, { name: 'Pork loin', amount: 5 });
+    mockState.set(loaded([GARAGE]));
+    stocked([pork]);
+    mockTake.mockResolvedValue(taken(pork, 4, -1));
+    render(FreezerPage);
+
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Take one pack of Pork loin' }),
+    );
+
+    await waitFor(() => expect(mockTake).toHaveBeenCalledWith(47));
+    expect(screen.queryByTestId('freezer-last-one')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('freezer-take-error')).not.toBeInTheDocument();
+  });
+
+  it('taking the last one asks whether to remove it, and Remove removes it', async () => {
+    const pork = item(47, { name: 'Pork loin', amount: 1 });
+    mockState.set(loaded([GARAGE]));
+    stocked([pork]);
+    mockTake.mockResolvedValue(taken(pork, 0, -1));
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item-take'));
+
+    const ask = await screen.findByTestId('freezer-last-one');
+    expect(ask).toHaveTextContent('That was the last one');
+    expect(ask).toHaveTextContent('Take #47 Pork loin off the list?');
+    await fireEvent.click(within(ask).getByTestId('freezer-last-one-remove'));
+
+    await waitFor(() => expect(mockRemoveItem).toHaveBeenCalledWith(47));
+    await waitFor(() => expect(screen.queryByTestId('freezer-last-one')).not.toBeInTheDocument());
+  });
+
+  it('Keep it closes the question and removes nothing', async () => {
+    const pork = item(47, { name: 'Pork loin', amount: 0 });
+    mockState.set(loaded([GARAGE]));
+    stocked([pork]);
+    mockTake.mockResolvedValue(taken(pork, 0, 0));
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item-take'));
+    await fireEvent.click(await screen.findByTestId('freezer-last-one-keep'));
+
+    await waitFor(() => expect(screen.queryByTestId('freezer-last-one')).not.toBeInTheDocument());
+    expect(mockRemoveItem).not.toHaveBeenCalled();
+  });
+
+  it('Escape closes the question too, removing nothing', async () => {
+    const pork = item(47, { name: 'Pork loin', amount: 1 });
+    mockState.set(loaded([GARAGE]));
+    stocked([pork]);
+    mockTake.mockResolvedValue(taken(pork, 0, -1));
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item-take'));
+    const ask = await screen.findByTestId('freezer-last-one');
+    await fireEvent.keyDown(ask, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByTestId('freezer-last-one')).not.toBeInTheDocument());
+    expect(mockRemoveItem).not.toHaveBeenCalled();
+  });
+
+  it('says so when another phone took it out, or the take failed, and clears it on the next', async () => {
+    const pork = item(47, { name: 'Pork loin', amount: 5 });
+    mockState.set(loaded([GARAGE]));
+    stocked([pork]);
+    mockTake.mockResolvedValueOnce(
+      failure({ kind: 'NotFound', resource: 'freezerItem', id: '47' }),
+    );
+    render(FreezerPage);
+    const take = await screen.findByTestId('freezer-item-take');
+
+    await fireEvent.click(take);
+    expect(await screen.findByTestId('freezer-take-error')).toHaveTextContent(
+      'That has just been taken out on another phone.',
+    );
+
+    mockTake.mockResolvedValueOnce(failure({ kind: 'NetworkError', reason: 'transient' }));
+    await fireEvent.click(take);
+    await waitFor(() =>
+      expect(screen.getByTestId('freezer-take-error')).toHaveTextContent(
+        "Couldn't take that out yet. Try again.",
+      ),
+    );
+
+    mockTake.mockResolvedValueOnce(taken(pork, 4, -1));
+    await fireEvent.click(take);
+    await waitFor(() => expect(screen.queryByTestId('freezer-take-error')).not.toBeInTheDocument());
+  });
+
+  it('shows a count of zero, or below it, as none left', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(1, { amount: 0 }), item(2, { amount: -1 }), item(3, { amount: 2 })]);
+    render(FreezerPage);
+
+    const rows = await screen.findAllByTestId('freezer-item');
+    expect(rows.map((r) => r.querySelector('span')?.textContent)).toEqual([
+      '#1 Item 1 — none left',
+      '#2 Item 2 — none left',
+      '#3 Item 3 — 2 packs',
+    ]);
+  });
+});
+
+describe('freezer stock — the recipe link on a row', () => {
+  it('links to the recipe, with its hero picture', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRecipes.set([recipe('r-stew', 'Beef stew', 'https://img.example/stew.jpg')]);
+    stocked([item(1, { recipeId: 'r-stew' })]);
+    render(FreezerPage);
+
+    const link = await screen.findByTestId('freezer-item-recipe-link');
+    expect(link).toHaveAttribute('href', '#/recipes/r-stew');
+    expect(link).toHaveAccessibleName('Open Beef stew');
+    expect(link.querySelector('img')?.getAttribute('src')).toContain(
+      'https://img.example/stew.jpg',
+    );
+  });
+
+  it('links with a placeholder when the recipe has no picture yet', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRecipes.set([recipe('r-stew', 'Beef stew')]);
+    stocked([item(1, { recipeId: 'r-stew' })]);
+    render(FreezerPage);
+
+    const link = await screen.findByTestId('freezer-item-recipe-link');
+    expect(link.querySelector('img')).toBeNull();
+    expect(link.querySelector('span')).not.toBeNull();
+  });
+
+  it('shows no link for an unlinked item, or one whose recipe is not here', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(1), item(2, { recipeId: 'r-deleted' })]);
+    render(FreezerPage);
+
+    expect(await screen.findAllByTestId('freezer-item')).toHaveLength(2);
+    expect(screen.queryByTestId('freezer-item-recipe-link')).not.toBeInTheDocument();
+  });
+});
+
+describe('freezer stock — recounting on edit', () => {
+  async function openEdit(of: FreezerItem): Promise<HTMLElement> {
+    mockState.set(loaded([GARAGE]));
+    stocked([of]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    return screen.findByRole('dialog');
+  }
+
+  it('shows the count, and sends it only when it was changed', async () => {
+    const sheet = await openEdit(item(47, { amount: 2 }));
+    const packs = within(sheet).getByTestId('freezer-item-packs') as HTMLInputElement;
+    expect(packs.value).toBe('2');
+
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() => expect(mockUpdateItem).toHaveBeenCalledOnce());
+    expect(mockUpdateItem.mock.calls[0]?.[1]).not.toHaveProperty('amount');
+  });
+
+  it('sends a changed count', async () => {
+    const sheet = await openEdit(item(47, { amount: 2 }));
+
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-packs'), {
+      target: { value: '3' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(47, expect.objectContaining({ amount: 3 })),
+    );
+  });
+
+  it('opens an item in a freezer with no shelves at that freezer', async () => {
+    mockState.set(loaded([GARAGE, KITCHEN]));
+    stocked([item(9, { freezerId: KITCHEN.id, shelf: null })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    expect(within(sheet).getByRole('button', { name: 'Kitchen' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        9,
+        expect.objectContaining({ place: { freezerId: KITCHEN.id, shelf: null } }),
+      ),
+    );
+  });
+
+  it('shows a count below zero as 0, and refuses a bad count in edit words', async () => {
+    mockUpdateItem.mockResolvedValue(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_AMOUNT }),
+    );
+    const sheet = await openEdit(item(47, { amount: -1 }));
+    expect((within(sheet).getByTestId('freezer-item-packs') as HTMLInputElement).value).toBe('0');
+
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-packs'), {
+      target: { value: '' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ amount: Number.NaN }),
+      ),
+    );
+    expect(await within(sheet).findByTestId('freezer-item-error')).toHaveTextContent(
+      'Say how many packs — a whole number, 0 or more.',
+    );
+  });
+});
+
+describe('freezer stock — linking an ingredient and a recipe', () => {
+  function typeName(sheet: HTMLElement, value: string): Promise<boolean> {
+    return fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
+      target: { value },
+    });
+  }
+
+  it('offers the ingredients the name matches — by name or by synonym — and links the one picked', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin'), canon('c-lamb', 'lamb shoulder', ['hogget'])]);
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    expect(within(sheet).queryByTestId('freezer-item-canon-offer')).not.toBeInTheDocument();
+    await typeName(sheet, 'hogget');
+    const offers = await within(sheet).findAllByTestId('freezer-item-canon-offer');
+    expect(offers.map((o) => o.textContent?.trim())).toEqual(['Lamb Shoulder']);
+
+    await typeName(sheet, 'Pork');
+    await fireEvent.click(await within(sheet).findByText('Pork Loin'));
+
+    expect(await within(sheet).findByTestId('freezer-item-canon')).toHaveTextContent(
+      'Ingredient: Pork Loin',
+    );
+    expect(within(sheet).queryByTestId('freezer-item-canon-offer')).not.toBeInTheDocument();
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenCalledWith(expect.objectContaining({ canonId: 'c-pork' })),
+    );
+  });
+
+  it('Unlink takes the ingredient off, and offers it again', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    stocked([item(47, { name: 'Pork loin', canonId: 'c-pork' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    const linked = within(sheet).getByTestId('freezer-item-canon');
+    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
+
+    expect(await within(sheet).findByTestId('freezer-item-canon-offer')).toHaveTextContent(
+      'Pork Loin',
+    );
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(47, expect.objectContaining({ canonId: null })),
+    );
+  });
+
+  it('offers the recipes the name matches, links one, and then offers the ingredients its title matches', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-hock', 'ham hock')]);
+    mockRecipes.set([recipe('r-hock', 'Ham hock'), recipe('r-stew', 'Beef stew')]);
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await typeName(sheet, 'hock');
+    const offers = await within(sheet).findAllByTestId('freezer-item-recipe-offer');
+    expect(offers.map((o) => o.textContent?.trim())).toEqual(['Made from Ham hock']);
+    await fireEvent.click(offers[0] as HTMLElement);
+
+    expect(await within(sheet).findByTestId('freezer-item-recipe')).toHaveTextContent(
+      'Made from: Ham hock',
+    );
+    expect(within(sheet).queryByTestId('freezer-item-recipe-offer')).not.toBeInTheDocument();
+    // Matched by both the name and the recipe's title: offered once.
+    expect(within(sheet).getAllByTestId('freezer-item-canon-offer')).toHaveLength(1);
+
+    // A name that matches nothing: the ingredient is still offered, from the recipe.
+    await typeName(sheet, 'Soup for Tuesday');
+    expect(within(sheet).getByTestId('freezer-item-canon-offer')).toHaveTextContent('Ham Hock');
+
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({ recipeId: 'r-hock', canonId: null }),
+      ),
+    );
+  });
+
+  it('Unlink takes the recipe off', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRecipes.set([recipe('r-hock', 'Ham hock')]);
+    stocked([item(47, { name: 'Ham hock', recipeId: 'r-hock' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    const linked = within(sheet).getByTestId('freezer-item-recipe');
+    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
+
+    expect(await within(sheet).findByTestId('freezer-item-recipe-offer')).toBeInTheDocument();
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(47, expect.objectContaining({ recipeId: null })),
+    );
+  });
+
+  it('keeps links to an ingredient or recipe not on this device, offering others to replace them', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
+    stocked([item(47, { name: 'Pork loin', canonId: 'c-gone', recipeId: 'r-gone' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    expect(within(sheet).queryByTestId('freezer-item-canon')).not.toBeInTheDocument();
+    expect(within(sheet).queryByTestId('freezer-item-recipe')).not.toBeInTheDocument();
+    expect(within(sheet).getAllByTestId('freezer-item-canon-offer')).toHaveLength(1);
+    expect(within(sheet).getAllByTestId('freezer-item-recipe-offer')).toHaveLength(1);
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ canonId: 'c-gone', recipeId: 'r-gone' }),
+      ),
+    );
+  });
+
+  it('lets a link to a deleted ingredient or recipe be replaced by picking an offer', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
+    stocked([item(47, { name: 'Pork loin', canonId: 'c-gone', recipeId: 'r-gone' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-canon-offer'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-recipe-offer'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ canonId: 'c-pork', recipeId: 'r-pork' }),
+      ),
+    );
+  });
+});
+
+describe('freezer stock — the places bought from', () => {
+  it('offers the remembered places as one is typed, and a pick fills the field', async () => {
+    render(FreezerItemSheet, {
+      open: true,
+      item: null,
+      freezers: [GARAGE],
+      suggestedNumber: 1,
+      suppliers: ['Swaledale', 'Booths', 'Swaledale Butchers'],
+    });
+    const sheet = await screen.findByRole('dialog');
+    const field = within(sheet).getByTestId('freezer-item-supplier') as HTMLInputElement;
+
+    // Nothing typed: every place, in order.
+    expect(
+      within(sheet)
+        .getAllByTestId('freezer-item-supplier-offer')
+        .map((o) => o.textContent?.trim()),
+    ).toEqual(['Booths', 'Swaledale', 'Swaledale Butchers']);
+
+    await fireEvent.input(field, { target: { value: 'swale' } });
+    await waitFor(() =>
+      expect(
+        within(sheet)
+          .getAllByTestId('freezer-item-supplier-offer')
+          .map((o) => o.textContent?.trim()),
+      ).toEqual(['Swaledale', 'Swaledale Butchers']),
+    );
+
+    await fireEvent.click(within(sheet).getByText('Swaledale'));
+    await waitFor(() => expect(field.value).toBe('Swaledale'));
+    // Typed in full, it is not offered back.
+    expect(
+      within(sheet)
+        .getAllByTestId('freezer-item-supplier-offer')
+        .map((o) => o.textContent?.trim()),
+    ).toEqual(['Swaledale Butchers']);
+
+    await fireEvent.input(field, { target: { value: 'Tesco' } });
+    await waitFor(() =>
+      expect(within(sheet).queryByTestId('freezer-item-supplier-offers')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('still offers a place after its only item has been removed', async () => {
+    mockState.set(loaded([GARAGE], ['Swaledale']));
+    stocked([]);
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    expect(within(sheet).getByTestId('freezer-item-supplier-offer')).toHaveTextContent('Swaledale');
+  });
+
+  it('lists the places in Manage freezers, and forgets one', async () => {
+    mockState.set(loaded([GARAGE], ['Swaledale', 'Swaledle']));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    const places = within(sheet).getByTestId('manage-suppliers');
+    expect(
+      within(places)
+        .getAllByTestId('manage-supplier')
+        .map((p) => p.textContent?.trim()),
+    ).toEqual(['Swaledale', 'Swaledle']);
+    await fireEvent.click(within(places).getByRole('button', { name: 'Forget Swaledle' }));
+
+    await waitFor(() => expect(mockForget).toHaveBeenCalledWith('Swaledle'));
+  });
+
+  it('Done closes the Manage freezers sheet', async () => {
+    mockState.set(loaded([GARAGE], ['Swaledale']));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    await fireEvent.click(within(sheet).getByTestId('manage-freezers-done'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('shows no places section when none are remembered', async () => {
+    render(ManageFreezersSheet, { open: true, stock: [] });
+    await screen.findByRole('dialog');
+    expect(screen.queryByTestId('manage-suppliers')).not.toBeInTheDocument();
   });
 });

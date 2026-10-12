@@ -4,21 +4,28 @@ import {
   subscribeFreezerItems,
   saveFreezerItem,
   deleteFreezerItem,
+  takeFreezerItemAmount,
 } from '@salt/firebase-sync';
 import {
   addFreezer as addFreezerCommand,
   addFreezerItem as addFreezerItemCommand,
   editFreezerItem,
   emptyFreezerConfig,
+  forgetSupplier as forgetSupplierCommand,
   moveFreezerItem,
+  rememberSupplier,
   removeFreezer as removeFreezerCommand,
   removeFreezerItem as removeFreezerItemCommand,
   renameFreezer as renameFreezerCommand,
+  setFreezerItemAmount,
   setShelves,
+  supplierSpelling,
+  takeFreezerPacks,
   type AddFreezerItemInput,
   type FreezerConfig,
   type FreezerIdGenerator,
   type FreezerItem,
+  type TakenPacks,
 } from '@salt/domain';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
 import { get, writable, type Readable } from 'svelte/store';
@@ -31,7 +38,9 @@ import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 //
 // It is where the two things the domain will not supply are minted: a freezer's
 // id (`crypto.randomUUID()`) and the clock. Each write runs the pure domain
-// command and, on success, applies it to the store and saves the whole document.
+// command and, on success, applies it to the store and saves the whole document
+// — except taking a pack, which sends the command's delta as an `increment`
+// (`takeOneFreezerPack`) so takes on two phones both count.
 //
 // The subscriptions are NOT started at app boot. The freezer page owns their
 // lifecycle (`$effect(() => initFreezerSync())`), so the listeners are open only
@@ -156,6 +165,11 @@ export function removeFreezer(id: string): Promise<ReadResult<FreezerConfig, Dom
   return run((config, now) => removeFreezerCommand(config, { id, now }));
 }
 
+/** Take a place off the remembered supplier list. No item changes. */
+export function forgetSupplier(supplier: string): Promise<ReadResult<FreezerConfig, DomainError>> {
+  return run((config, now) => forgetSupplierCommand(config, { supplier, now }));
+}
+
 // ─── Item writes (issue #1684) ───────────────────────────────────────────────
 
 const NOT_READY: ReadResult<never, DomainError> = failure({
@@ -176,12 +190,31 @@ function itemsAndConfig(): { items: readonly FreezerItem[]; config: FreezerConfi
 
 // Same shape as `run` above: the store first, the verdict at once, the save in
 // the background — an add at the garage freezer with no signal must not hang.
-function saveItem(items: readonly FreezerItem[], item: FreezerItem): void {
+function saveItem(
+  ready: { items: readonly FreezerItem[]; config: FreezerConfig },
+  item: FreezerItem,
+): void {
+  showItem(ready.items, item);
+  void saveFreezerItem(item).then((written) => reportIfFailed(getErrorReporter(), written));
+  remember(ready.config, item.purchasedFrom);
+}
+
+function showItem(items: readonly FreezerItem[], item: FreezerItem): void {
   _items.set({
     status: 'loaded',
     items: [...items.filter((i) => i.number !== item.number), item],
   });
-  void saveFreezerItem(item).then((written) => reportIfFailed(getErrorReporter(), written));
+}
+
+// A saved item's supplier goes on the remembered list — a config write only when
+// the list did not have it (`rememberSupplier` hands back the same config).
+function remember(config: FreezerConfig, purchasedFrom: string | null): void {
+  const result = rememberSupplier(config, purchasedFrom, new Date().toISOString());
+  if (result.kind !== 'ok' || result.value === config) return;
+  _state.set({ status: 'loaded', config: result.value });
+  void saveFreezerConfig(result.value).then((written) =>
+    reportIfFailed(getErrorReporter(), written),
+  );
 }
 
 /**
@@ -196,10 +229,11 @@ export async function addFreezerItem(
   if (!ready) return NOT_READY;
   const result = addFreezerItemCommand(ready.items, ready.config, {
     ...input,
+    purchasedFrom: supplierSpelling(ready.config, input.purchasedFrom ?? null),
     now: new Date().toISOString(),
   });
   if (result.kind !== 'ok') return result;
-  saveItem(ready.items, result.value);
+  saveItem(ready, result.value);
   return result;
 }
 
@@ -211,9 +245,21 @@ export interface FreezerItemChanges {
    * under Not placed can be renamed without being filed somewhere first.
    */
   readonly place: { readonly freezerId: string; readonly shelf: string | null } | null;
+  /**
+   * A corrected pack count; omitted keeps the count this device holds at save
+   * time. Either way the save is whole-document, so a take from another device
+   * that this one has not yet seen is overwritten (LWW).
+   */
+  readonly amount?: number;
+  /** The ingredient and the recipe it links to, `null` for none; omitted leaves them. */
+  readonly canonId?: string | null;
+  readonly recipeId?: string | null;
 }
 
-/** Save the edit sheet: rename, re-source and, if the place changed, move — one write. */
+/**
+ * Save the edit sheet: rename, re-source, relink and, if they changed, move and
+ * recount — one write.
+ */
 export async function updateFreezerItem(
   number: number,
   changes: FreezerItemChanges,
@@ -224,7 +270,9 @@ export async function updateFreezerItem(
   const edited = editFreezerItem(ready.items, {
     number,
     name: changes.name,
-    purchasedFrom: changes.purchasedFrom,
+    purchasedFrom: supplierSpelling(ready.config, changes.purchasedFrom),
+    canonId: changes.canonId,
+    recipeId: changes.recipeId,
     now,
   });
   if (edited.kind !== 'ok') return edited;
@@ -232,11 +280,41 @@ export async function updateFreezerItem(
   const moves =
     place !== null &&
     (place.freezerId !== edited.value.freezerId || place.shelf !== edited.value.shelf);
-  const result = moves
+  const moved = moves
     ? moveFreezerItem([edited.value], ready.config, { number, ...place, now })
     : edited;
+  if (moved.kind !== 'ok') return moved;
+  const result =
+    changes.amount === undefined
+      ? moved
+      : setFreezerItemAmount([moved.value], { number, amount: changes.amount, now });
   if (result.kind !== 'ok') return result;
-  saveItem(ready.items, result.value);
+  saveItem(ready, result.value);
+  return result;
+}
+
+/**
+ * Take one pack out. The count drops on this device at once; the decrement is
+ * sent in the background and not awaited (offline it settles only on
+ * reconnect), and a refusal is reported — an item another device has removed
+ * comes back NotFound, which is not. `last` is the page's cue to offer removing
+ * the entry. An item already showing none takes nothing and writes nothing.
+ */
+export async function takeOneFreezerPack(
+  number: number,
+): Promise<ReadResult<TakenPacks, DomainError>> {
+  const items = get(_items);
+  if (items.status !== 'loaded') return NOT_READY;
+  const result = takeFreezerPacks(items.items, {
+    number,
+    count: 1,
+    now: new Date().toISOString(),
+  });
+  if (result.kind !== 'ok' || result.value.delta === 0) return result;
+  showItem(items.items, result.value.item);
+  void takeFreezerItemAmount(number, result.value.delta).then((written) =>
+    reportIfFailed(getErrorReporter(), written),
+  );
   return result;
 }
 

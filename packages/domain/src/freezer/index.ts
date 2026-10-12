@@ -32,3 +32,14 @@ export { itemsByShelf, oldestFirst } from './queries/itemsByShelf.js';
 export type { ItemsByShelf, FreezerStock, ShelfStock } from './queries/itemsByShelf.js';
 export { itemAge } from './queries/itemAge.js';
 export type { ItemAge } from './queries/itemAge.js';
+
+// Taking packs out, and the remembered suppliers (issue #1684, Phase 2).
+export { takeFreezerPacks } from './commands/takeAmount.js';
+export type { TakeFreezerPacksInput, TakenPacks } from './commands/takeAmount.js';
+export { setFreezerItemAmount } from './commands/setAmount.js';
+export type { SetFreezerItemAmountInput } from './commands/setAmount.js';
+export { rememberSupplier } from './commands/rememberSupplier.js';
+export { forgetSupplier } from './commands/forgetSupplier.js';
+export type { ForgetSupplierInput } from './commands/forgetSupplier.js';
+export { displayAmount } from './queries/displayAmount.js';
+export { supplierSuggestions, supplierSpelling } from './queries/supplierSuggestions.js';
