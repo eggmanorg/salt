@@ -25,8 +25,10 @@ export const FREEZER_CONFIG_DOC_ID = 'current';
 // (Manage freezers removes one by hand), so the item sheet can offer it again.
 // It rides on this document's full-document LWW: a save from a device that had not
 // yet seen another's append drops that entry, and typing the place again puts it
-// back (docs/data-model.md → `freezerItems/{number}`). A document written before
-// the field existed reads as `[]`.
+// back (docs/data-model.md → `freezerItems/{number}`). The reverse also holds: saving
+// an item that remembers a new place writes this whole document, so a device with a
+// stale copy reverts another device's freezer or shelf change. A document written
+// before the field existed reads as `[]`.
 export const FreezerSchema = z.object({
   id: z.string().min(1),
   name: z.string(),

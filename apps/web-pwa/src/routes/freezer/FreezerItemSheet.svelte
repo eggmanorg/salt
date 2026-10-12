@@ -107,9 +107,9 @@
   const OFFERS = 4;
 
   /**
-   * The ingredients whose name or a synonym contains `typed` — the same test the
-   * shopping list's add field makes (ShoppingListPage.svelte, `filterFn`), so
-   * there is one way of matching an ingredient, not two.
+   * The ingredients whose name or a synonym contains `typed` — a copy of the test
+   * the shopping list's add field makes (ShoppingListPage.svelte, `filterFn`); the
+   * two must change together, since unifying them would touch that page.
    */
   function canonMatching(typed: string): { id: string; label: string }[] {
     const q = typed.trim().toLowerCase();
@@ -126,7 +126,7 @@
   const canonById = $derived(canonIndex($canonItems));
   const linkedCanon = $derived(canonId === null ? null : (canonById.get(canonId) ?? null));
   const canonOffers = $derived.by(() => {
-    if (canonId !== null) return [];
+    if (linkedCanon !== null) return [];
     const byName = canonMatching(name);
     const byRecipe = linkedRecipe ? canonMatching(linkedRecipe.title) : [];
     const offers = new Map(byRecipe.map((offer) => [offer.id, offer]));
@@ -135,7 +135,7 @@
   });
   const recipeOffers = $derived.by(() => {
     const q = name.trim().toLowerCase();
-    if (recipeId !== null || !q) return [];
+    if (linkedRecipe !== null || !q) return [];
     return $recipes.filter((r) => r.title.toLowerCase().includes(q)).slice(0, OFFERS);
   });
   // A place already typed in full is not offered back.

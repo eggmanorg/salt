@@ -1140,7 +1140,7 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     );
   });
 
-  it('keeps links to an ingredient or recipe not on this device, showing and offering nothing', async () => {
+  it('keeps links to an ingredient or recipe not on this device, offering others to replace them', async () => {
     mockState.set(loaded([GARAGE]));
     mockCanon.set([canon('c-pork', 'pork loin')]);
     mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
@@ -1151,13 +1151,33 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
 
     expect(within(sheet).queryByTestId('freezer-item-canon')).not.toBeInTheDocument();
     expect(within(sheet).queryByTestId('freezer-item-recipe')).not.toBeInTheDocument();
-    expect(within(sheet).queryByTestId('freezer-item-canon-offer')).not.toBeInTheDocument();
-    expect(within(sheet).queryByTestId('freezer-item-recipe-offer')).not.toBeInTheDocument();
+    expect(within(sheet).getAllByTestId('freezer-item-canon-offer')).toHaveLength(1);
+    expect(within(sheet).getAllByTestId('freezer-item-recipe-offer')).toHaveLength(1);
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
       expect(mockUpdateItem).toHaveBeenCalledWith(
         47,
         expect.objectContaining({ canonId: 'c-gone', recipeId: 'r-gone' }),
+      ),
+    );
+  });
+
+  it('lets a link to a deleted ingredient or recipe be replaced by picking an offer', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
+    stocked([item(47, { name: 'Pork loin', canonId: 'c-gone', recipeId: 'r-gone' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-canon-offer'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-recipe-offer'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ canonId: 'c-pork', recipeId: 'r-pork' }),
       ),
     );
   });

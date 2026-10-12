@@ -204,7 +204,11 @@ limit:** the list rides on the config document's whole-document LWW, so an
 append is lost from it when another device saves the config before seeing the
 append — a Manage-freezers edit, or remembering a different place at the same
 time. Only the suggestion is lost (the item keeps its `purchasedFrom`), and
-typing the place again puts it back; nothing claims the list is complete.
+typing the place again puts it back; nothing claims the list is complete. **The
+reverse direction is worse:** saving an item that remembers a new place calls
+`saveFreezerConfig`, which writes the whole config document, so on a device
+holding a stale copy that save reverts another device's freezer or shelf change,
+and the items of a freezer that change added fall under Not placed.
 
 ## `guidedPlans/{recipeId}`
 
