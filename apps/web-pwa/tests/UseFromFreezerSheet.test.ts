@@ -56,7 +56,11 @@ describe('UseFromFreezerSheet', () => {
     expect(view.queryByTestId('use-from-freezer-last')).not.toBeInTheDocument();
     await fireEvent.click(view.getByTestId('use-from-freezer-more'));
     expect(view.getByTestId('use-from-freezer-more')).toBeDisabled();
-    expect(view.getByTestId('use-from-freezer-last')).toBeInTheDocument();
+    expect(view.getByTestId('use-from-freezer-last')).toHaveTextContent(
+      'That is the last of #47. Its entry comes out of the freezer.',
+    );
+    // Its number does not come back to the count (issue #1693).
+    expect(view.getByTestId('use-from-freezer-last')).not.toHaveTextContent(/free again/i);
 
     await fireEvent.click(view.getByTestId('use-from-freezer-confirm'));
     expect(onConfirm).toHaveBeenCalledWith({ number: 47, count: 2 });

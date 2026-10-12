@@ -160,9 +160,9 @@ item's identity: moving an item rewrites `freezerId`/`shelf` in place and never
 the id. Renumbering would be delete-and-recreate, and nothing offers it.
 
 **Uniqueness, and its limit.** Adding is a plain `setDoc` at the number
-pre-filled from `nextFreeNumber` (the lowest one not in use, so a freed number
-comes back first) or typed over it. The number is checked against the items
-**this device holds** — `FREEZER_NUMBER_IN_USE` — and nothing else checks it: no
+pre-filled from `nextBagNumber` (one past the highest number given out — see
+`freezerConfig.highestNumber` below) or typed over it. The number is checked
+against the items **this device holds** — `FREEZER_NUMBER_IN_USE` — and nothing else checks it: no
 transaction (the browser SDK cannot run one offline, and the garage freezer is
 where signal is worst) and no rules clause. So numbers are unique **except** when
 two devices add the same number before either has seen the other's add — in
@@ -180,7 +180,7 @@ under **Not placed**, computed in memory, until someone moves it. Nothing is
 stored to mark it.
 
 **Writes.** Adding, editing, moving and correcting the count are a
-whole-document `setDoc`, and removing is a `deleteDoc` that frees the number —
+whole-document `setDoc`, and removing is a `deleteDoc` —
 ordinary per-document LWW, so an edit saved from a copy that had not yet seen
 another device's take overwrites it. **Taking a pack is the exception:**
 `takeFreezerItemAmount` is an `updateDoc` of `{ amount: increment(delta),
@@ -206,11 +206,35 @@ limit:** the list rides on the config document's whole-document LWW, so an
 append is lost from it when another device saves the config before seeing the
 append — a Manage-freezers edit, or remembering a different place at the same
 time. Only the suggestion is lost (the item keeps its `purchasedFrom`), and
-typing the place again puts it back; nothing claims the list is complete. **The
-reverse direction is worse:** saving an item that remembers a new place calls
-`saveFreezerConfig`, which writes the whole config document, so on a device
-holding a stale copy that save reverts another device's freezer or shelf change,
-and the items of a freezer that change added fall under Not placed.
+typing the place again puts it back; nothing claims the list is complete. The
+reverse direction, which is worse, is under `freezerConfig.highestNumber`.
+
+**`freezerConfig.highestNumber`.** The highest bag number an add has used,
+suggested or typed (issue #1693), so a removed bag's number is not offered again:
+`nextBagNumber` suggests one more than the greater of this mark and the highest
+number among the items the device holds. An add records its number with
+`recordBagNumber`, which hands back the same config — nothing written — when the
+number is not above the mark; no edit, move, take or removal raises it. A
+config written before the field existed reads as `0`, and taking the items too
+is what gives that household the number after its highest bag with no migration.
+Three limits:
+
+1. **It rides on the config document's whole-document LWW.** A device holding a
+   stale copy — typically one that was offline — can save a LOWER mark over a
+   higher one. A number still on a bag this device holds is not offered again
+   even then (the suggestion takes the items too), but a top number that was
+   both handed out and removed inside that window can be. So "never reused" holds except across
+   that window.
+2. **Nearly every add writes the config document.** An add above the mark —
+   every add at the suggested number, and a typed number past it — saves the
+   config, and so does an add that remembers a new supplier; both changes are
+   composed and saved in ONE `saveFreezerConfig` call. An add at or below the mark
+   writes no config unless it remembers a new supplier. `saveFreezerConfig`
+   writes the whole document, so **on a device holding a stale copy that save
+   reverts another device's freezer or shelf change**, and the items of a freezer
+   that change added fall under Not placed.
+3. **Nothing lowers it on purpose.** A typo of 9999 that is saved moves every
+   later suggestion past it, permanently; removing that bag does not undo it.
 
 ## `defrosts/{number}_{recipeId|manual}` — packs promised out of the freezer
 

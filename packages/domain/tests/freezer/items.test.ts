@@ -6,8 +6,9 @@ import {
   itemAge,
   itemsByShelf,
   moveFreezerItem,
-  nextFreeNumber,
+  nextBagNumber,
   oldestFirst,
+  recordBagNumber,
   removeFreezerItem,
 } from '@salt/domain';
 import type { FreezerConfig, FreezerItem } from '@salt/domain';
@@ -26,7 +27,13 @@ const CONFIG: FreezerConfig = {
   updatedAt: NOW,
   freezers: [GARAGE, CHEST],
   suppliers: [],
+  highestNumber: 0,
 };
+
+/** CONFIG with the bag-number mark at `highestNumber`. */
+function marked(highestNumber: number): FreezerConfig {
+  return { ...CONFIG, highestNumber };
+}
 
 function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
   return {
@@ -84,18 +91,75 @@ describe('FreezerItemSchema', () => {
   });
 });
 
-describe('nextFreeNumber', () => {
-  it('is 1 for an empty freezer', () => {
-    expect(nextFreeNumber([])).toBe(1);
+// Issue #1693: bag numbers count up and are never handed out twice. Each test
+// below goes red if a number can come back as the suggestion.
+describe('nextBagNumber', () => {
+  it('is 1 for an empty freezer with no mark', () => {
+    expect(nextBagNumber([], CONFIG)).toBe(1);
   });
 
-  it('reuses the lowest freed number before the count climbs', () => {
-    expect(nextFreeNumber([item(1), item(2), item(4), item(5)])).toBe(3);
+  it('does NOT reuse a gap: bags 1, 2 and 4 with 1–6 given out before suggest 7', () => {
+    expect(nextBagNumber([item(1), item(2), item(4)], marked(6))).toBe(7);
+  });
+
+  it('removing the top bag does not lower the suggestion while the mark holds it', () => {
+    const items = [item(1), item(2), item(3), item(4), item(5)];
+    expect(nextBagNumber(items, marked(5))).toBe(6);
+    const removed = ok(removeFreezerItem(items, { number: 5 }));
+    expect(
+      nextBagNumber(
+        items.filter((i) => i !== removed),
+        marked(5),
+      ),
+    ).toBe(6);
+  });
+
+  it('falls back to the items when no mark is stored (it reads as 0)', () => {
+    expect(nextBagNumber([item(1), item(2), item(4)], CONFIG)).toBe(5);
+    expect(nextBagNumber([item(12), item(3)], CONFIG)).toBe(13);
+  });
+
+  it('takes the mark when it is above every item', () => {
+    expect(nextBagNumber([item(3)], marked(120))).toBe(121);
+    expect(nextBagNumber([], marked(9))).toBe(10);
+  });
+
+  it('takes an item above the mark — one another device added that this config copy has not seen', () => {
+    expect(nextBagNumber([item(2), item(30)], marked(10))).toBe(31);
   });
 
   it('does not care what order the items come in', () => {
-    expect(nextFreeNumber([item(3), item(1), item(2)])).toBe(4);
-    expect(nextFreeNumber([item(5), item(2), item(1)])).toBe(3);
+    expect(nextBagNumber([item(3), item(1), item(2)], CONFIG)).toBe(4);
+    expect(nextBagNumber([item(5), item(2), item(1)], CONFIG)).toBe(6);
+  });
+});
+
+describe('recordBagNumber', () => {
+  it('hands back the SAME config — nothing to write — for a number not above the mark', () => {
+    const config = marked(6);
+    expect(recordBagNumber(config, 6, LATER)).toBe(config);
+    expect(recordBagNumber(config, 3, LATER)).toBe(config);
+  });
+
+  it('never lowers the mark', () => {
+    expect(recordBagNumber(marked(9999), 7, LATER).highestNumber).toBe(9999);
+  });
+
+  it('stores a higher number with a fresh updatedAt, and changes nothing else', () => {
+    const config = { ...marked(6), suppliers: ['Swaledale'] };
+    expect(recordBagNumber(config, 120, LATER)).toEqual({
+      ...config,
+      highestNumber: 120,
+      updatedAt: LATER,
+    });
+    expect(config.highestNumber).toBe(6);
+  });
+
+  it('moves the next suggestion on: type 120, and 121 is offered', () => {
+    const items = [item(1)];
+    const config = recordBagNumber(marked(1), 120, LATER);
+    expect(nextBagNumber([...items, item(120)], config)).toBe(121);
+    expect(nextBagNumber(items, config)).toBe(121);
   });
 });
 
@@ -237,11 +301,16 @@ describe('moveFreezerItem', () => {
 });
 
 describe('removeFreezerItem', () => {
-  it('gives back the item to delete, after which its number is free', () => {
+  it('gives back the item to delete, and its number is NOT offered again', () => {
     const items = [item(1), item(2), item(3)];
-    const removed = ok(removeFreezerItem(items, { number: 2 }));
-    expect(removed).toBe(items[1]);
-    expect(nextFreeNumber(items.filter((i) => i.number !== removed.number))).toBe(2);
+    const removed = ok(removeFreezerItem(items, { number: 3 }));
+    expect(removed).toBe(items[2]);
+    expect(
+      nextBagNumber(
+        items.filter((i) => i.number !== removed.number),
+        marked(3),
+      ),
+    ).toBe(4);
   });
 
   it('is NotFound when this device no longer holds it', () => {
@@ -300,6 +369,7 @@ describe('itemsByShelf', () => {
       updatedAt: NOW,
       freezers: [],
       suppliers: [],
+      highestNumber: 0,
     });
     expect(filed.notPlaced.map((i) => i.number)).toEqual([1]);
     expect(filed.freezers).toEqual([]);

@@ -25,10 +25,24 @@ export const FREEZER_CONFIG_DOC_ID = 'current';
 // (Manage freezers removes one by hand), so the item sheet can offer it again.
 // It rides on this document's full-document LWW: a save from a device that had not
 // yet seen another's append drops that entry, and typing the place again puts it
-// back (docs/data-model.md → `freezerItems/{number}`). The reverse also holds: saving
-// an item that remembers a new place writes this whole document, so a device with a
-// stale copy reverts another device's freezer or shelf change. A document written
-// before the field existed reads as `[]`.
+// back (docs/data-model.md → `freezerItems/{number}`). A document written before
+// the field existed reads as `[]`.
+//
+// `highestNumber` (issue #1693) is the highest bag number an add has used,
+// suggested or typed, so `nextBagNumber` counts on past a bag that was removed
+// instead of offering its number again. No command but `recordBagNumber` changes
+// it, and that one only raises it — a typo of 9999 that is saved moves every later
+// suggestion past it. It rides on this document's full-document LWW too: a device
+// holding a stale copy (one that was offline) can save a LOWER mark over a higher
+// one. A number still on a bag is not offered again even then, because
+// `nextBagNumber` also takes the highest item; a top number both handed out and
+// removed inside that window can be. A document written before the field existed
+// reads as `0`.
+//
+// The reverse direction holds for both: saving an item that remembers a new place,
+// and adding one above the mark — every add at the suggested number — writes this
+// whole document, so a device with a stale copy reverts another device's freezer
+// or shelf change (docs/data-model.md → `freezerConfig.highestNumber`).
 export const FreezerSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -40,6 +54,7 @@ export const FreezerConfigSchema = z.object({
   updatedAt: z.string(),
   freezers: z.array(FreezerSchema).default([]),
   suppliers: z.array(z.string()).default([]),
+  highestNumber: z.number().int().nonnegative().default(0),
 });
 
 export type FreezerDoc = z.infer<typeof FreezerSchema>;

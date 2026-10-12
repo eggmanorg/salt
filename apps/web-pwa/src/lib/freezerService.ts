@@ -17,6 +17,7 @@ import {
   emptyFreezerConfig,
   forgetSupplier as forgetSupplierCommand,
   moveFreezerItem,
+  recordBagNumber,
   rememberSupplier,
   removeFreezer as removeFreezerCommand,
   removeFreezerItem as removeFreezerItemCommand,
@@ -197,13 +198,18 @@ function itemsAndConfig(): { items: readonly FreezerItem[]; config: FreezerConfi
 
 // Same shape as `run` above: the store first, the verdict at once, the save in
 // the background — an add at the garage freezer with no signal must not hang.
+// `config` is what the item's save leaves the config as: written only when it is
+// not the object `ready` held.
 function saveItem(
   ready: { items: readonly FreezerItem[]; config: FreezerConfig },
   item: FreezerItem,
+  config: FreezerConfig,
 ): void {
   showItem(ready.items, item);
   void saveFreezerItem(item).then((written) => reportIfFailed(getErrorReporter(), written));
-  remember(ready.config, item.purchasedFrom);
+  if (config === ready.config) return;
+  _state.set({ status: 'loaded', config });
+  void saveFreezerConfig(config).then((written) => reportIfFailed(getErrorReporter(), written));
 }
 
 function showItem(items: readonly FreezerItem[], item: FreezerItem): void {
@@ -213,34 +219,41 @@ function showItem(items: readonly FreezerItem[], item: FreezerItem): void {
   });
 }
 
-// A saved item's supplier goes on the remembered list — a config write only when
-// the list did not have it (`rememberSupplier` hands back the same config).
-function remember(config: FreezerConfig, purchasedFrom: string | null): void {
-  const result = rememberSupplier(config, purchasedFrom, new Date().toISOString());
-  if (result.kind !== 'ok' || result.value === config) return;
-  _state.set({ status: 'loaded', config: result.value });
-  void saveFreezerConfig(result.value).then((written) =>
-    reportIfFailed(getErrorReporter(), written),
-  );
+// A saved item's supplier goes on the remembered list — the same config back when
+// the list already had it, so nothing is written.
+function remember(config: FreezerConfig, purchasedFrom: string | null, now: string): FreezerConfig {
+  const result = rememberSupplier(config, purchasedFrom, now);
+  return result.kind === 'ok' ? result.value : config;
 }
 
 /**
  * Put something in the freezer at `input.number`. The number is checked against
  * the items this device holds; an add on another device it has not yet seen is
  * invisible to the check (docs/data-model.md → `freezerItems/{number}`).
+ *
+ * The add's two config changes — a new supplier, and the number moving the
+ * `highestNumber` mark up — are composed onto ONE config value and saved once:
+ * two background saves built from the same starting copy would each drop the
+ * other's change.
  */
 export async function addFreezerItem(
   input: Omit<AddFreezerItemInput, 'now'>,
 ): Promise<ReadResult<FreezerItem, DomainError>> {
   const ready = itemsAndConfig();
   if (!ready) return NOT_READY;
+  const now = new Date().toISOString();
   const result = addFreezerItemCommand(ready.items, ready.config, {
     ...input,
     purchasedFrom: supplierSpelling(ready.config, input.purchasedFrom ?? null),
-    now: new Date().toISOString(),
+    now,
   });
   if (result.kind !== 'ok') return result;
-  saveItem(ready, result.value);
+  const item = result.value;
+  saveItem(
+    ready,
+    item,
+    recordBagNumber(remember(ready.config, item.purchasedFrom, now), item.number, now),
+  );
   return result;
 }
 
@@ -296,7 +309,7 @@ export async function updateFreezerItem(
       ? moved
       : setFreezerItemAmount([moved.value], { number, amount: changes.amount, now });
   if (result.kind !== 'ok') return result;
-  saveItem(ready, result.value);
+  saveItem(ready, result.value, remember(ready.config, result.value.purchasedFrom, now));
   return result;
 }
 
@@ -325,7 +338,10 @@ export async function takeOneFreezerPack(
   return result;
 }
 
-/** Take an item out of the record. Its number is free again. */
+/**
+ * Take an item out of the record. The config's `highestNumber` is left alone, so
+ * the next suggestion still counts on past this number.
+ */
 export async function removeFreezerItem(
   number: number,
 ): Promise<ReadResult<FreezerItem, DomainError>> {
@@ -397,7 +413,7 @@ export interface UseFromFreezerInput {
 
 export interface UsedFromFreezer {
   readonly defrost: Defrost;
-  /** The entry's last packs went: it is removed, freeing its number. */
+  /** The entry's last packs went: it is removed. */
   readonly last: boolean;
   /**
    * The batch, settling when the server answers (offline, on reconnect). A

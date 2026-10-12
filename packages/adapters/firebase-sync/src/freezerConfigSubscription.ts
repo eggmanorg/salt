@@ -29,7 +29,9 @@ export function subscribeFreezerConfig(
   );
 }
 
-// A full-document `setDoc` — document-level LWW, no field transform.
+// A full-document `setDoc` — document-level LWW, no field transform. The fields
+// are listed by hand, so a field added to the schema and missed here is dropped
+// on every save; the tests pin each one.
 export async function saveFreezerConfig(
   config: FreezerConfig,
 ): Promise<ReadResult<void, DomainError>> {
@@ -40,6 +42,7 @@ export async function saveFreezerConfig(
       updatedAt: new Date().toISOString(),
       freezers: [...config.freezers],
       suppliers: [...config.suppliers],
+      highestNumber: config.highestNumber,
     });
     return success(undefined);
   } catch (err) {

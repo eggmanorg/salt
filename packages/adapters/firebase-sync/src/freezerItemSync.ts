@@ -55,7 +55,7 @@ export async function saveFreezerItem(item: FreezerItem): Promise<ReadResult<voi
   }
 }
 
-/** Remove the item at `number`, freeing the number. Deleting an absent one is a no-op. */
+/** Remove the item at `number`. Deleting an absent one is a no-op. */
 export async function deleteFreezerItem(number: number): Promise<ReadResult<void, DomainError>> {
   try {
     const db = getFirestore(getApp());

@@ -27,14 +27,14 @@
   /**
    * Putting something in the freezer, and changing it afterwards (issue #1684).
    *
-   * Adding: the number is pre-filled with the next free one and can be typed
-   * over (the bag may already be marked); then a name, the freezer and shelf, how
-   * many packs, and where it was bought if it was.
+   * Adding: the number is pre-filled with the next one up (`nextBagNumber`) and
+   * can be typed over (the bag may already be marked); then a name, the freezer
+   * and shelf, how many packs, and where it was bought if it was.
    *
    * Editing: the number is shown and fixed — it is the document id and it is
    * written on the bag. The name, the supplier and the place can change; a new
    * place is a move, and a changed pack count corrects the count. Remove deletes
-   * the entry and frees its number.
+   * the entry.
    *
    * The links are offered, never required (Phase 2): as the name is typed, the
    * ingredients and recipes it matches are offered to link; a linked recipe also
@@ -50,7 +50,7 @@
     /** The item being edited, or `null` to add one. */
     item: FreezerItem | null;
     freezers: readonly Freezer[];
-    /** The number an add starts from — the lowest free one. */
+    /** The number an add starts from — `nextBagNumber`, one past the highest given out. */
     suggestedNumber: number;
     /** The remembered places stock has been bought from. */
     suppliers?: readonly string[];
