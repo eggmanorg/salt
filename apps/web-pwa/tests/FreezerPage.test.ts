@@ -288,16 +288,18 @@ describe('ManageFreezersSheet', () => {
     );
   });
 
-  it('says the change did not save when the write fails', async () => {
+  it('says so when the freezer has just been removed', async () => {
     mockState.set(loaded([GARAGE]));
-    mockRemove.mockResolvedValue(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    mockRemove.mockResolvedValue(
+      failure({ kind: 'NotFound', resource: 'freezer', id: 'fz-garage' }),
+    );
     render(FreezerPage);
     const sheet = await openSheet('freezer-manage');
 
     await fireEvent.click(within(sheet).getByRole('button', { name: 'Remove Garage' }));
 
     expect(await within(sheet).findByTestId('manage-freezer-error')).toHaveTextContent(
-      "Couldn't save that. Try again.",
+      'That freezer has just been removed.',
     );
   });
 });

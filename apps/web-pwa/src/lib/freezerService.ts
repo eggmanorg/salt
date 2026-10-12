@@ -68,9 +68,12 @@ export function initFreezerSync(): () => void {
 
 type Command = (config: FreezerConfig, now: string) => ReadResult<FreezerConfig, DomainError>;
 
-// The body every write shares. The store is updated BEFORE the save and left
-// updated if the save is refused: the subscription is the authority and corrects
-// it on its next snapshot, while the caller hears the refusal from the result.
+// The body every write shares. The store is updated BEFORE the save, and the
+// caller gets the domain verdict as soon as it is: the save runs on in the
+// background, because offline `setDoc` does not settle until the connection
+// returns and a caller awaiting it would hang (drafts never cleared, a second tap
+// meeting a "duplicate" refusal). A refused save is reported, and the
+// subscription is the authority that rolls the store back on its next snapshot.
 async function run(command: Command): Promise<ReadResult<FreezerConfig, DomainError>> {
   const state = get(_state);
   if (state.status !== 'loaded') {
@@ -80,8 +83,10 @@ async function run(command: Command): Promise<ReadResult<FreezerConfig, DomainEr
   const result = command(state.config ?? emptyFreezerConfig(now), now);
   if (result.kind !== 'ok') return result;
   _state.set({ status: 'loaded', config: result.value });
-  const written = reportIfFailed(getErrorReporter(), await saveFreezerConfig(result.value));
-  return written.kind === 'err' ? written : result;
+  void saveFreezerConfig(result.value).then((written) =>
+    reportIfFailed(getErrorReporter(), written),
+  );
+  return result;
 }
 
 /** Add a freezer by name, with its shelves if given. */

@@ -131,12 +131,12 @@ describe('freezer service — writes', () => {
     expect(saved.freezers).toEqual([]);
   });
 
-  it('passes a refused save back to the caller and reports it', async () => {
+  it('returns the domain verdict without awaiting the save, and reports a refused save', async () => {
     mockSave.mockResolvedValue(failure({ kind: 'StorageError', reason: 'unavailable' }));
 
     const result = await renameFreezer(GARAGE.id, 'Shed');
 
-    expect(result).toEqual(failure({ kind: 'StorageError', reason: 'unavailable' }));
-    expect(mockReport).toHaveBeenCalledOnce();
+    expect(result.kind).toBe('ok');
+    await vi.waitFor(() => expect(mockReport).toHaveBeenCalledOnce());
   });
 });
