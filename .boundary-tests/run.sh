@@ -28,6 +28,7 @@ packages/domain/src/canon/__boundary_tests__/no-cross-module-subpath.ts|canon ca
 packages/domain/src/canon/__boundary_tests__/no-coordinator.ts|canon cannot import a coordinator
 packages/domain/src/auth/__boundary_tests__/no-cross-module-subpath.ts|auth cannot import sibling module internals (subpath)
 packages/domain/src/equipment/__boundary_tests__/no-cross-module-subpath.ts|equipment cannot import sibling module internals (subpath)
+packages/domain/src/freezer/__boundary_tests__/no-cross-module-subpath.ts|freezer cannot import sibling module internals (subpath)
 packages/domain/src/shoppingList/__boundary_tests__/no-cross-module-subpath.ts|shoppingList cannot import sibling module internals (subpath)
 apps/cloud-functions/src/__boundary_tests__/no-observability.ts|cloud-functions cannot import the default @salt/observability subpath (browser SDK)
 apps/web-pwa/src/__boundary_tests__/no-observability-server.ts|web-pwa cannot import @salt/observability/server (Node SDK)

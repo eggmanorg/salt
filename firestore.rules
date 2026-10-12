@@ -109,6 +109,13 @@ service cloud.firestore {
     match /equipmentManifest/{document} {
       allow read, write: if request.auth != null;
     }
+    // Freezer setup (issue #1682) — single doc, the household's freezers and their
+    // shelves. Family-shared like the equipment manifest; any authenticated user can
+    // read and write. The `freezer` feature flag is browser-side and cosmetic, and
+    // nothing here knows it exists.
+    match /freezerConfig/{document} {
+      allow read, write: if request.auth != null;
+    }
     // Equipment pictograms (issue #877) — one server-written doc per equipment
     // item, holding the appliance description and the generated icon. Since
     // #1465 Phase 2 an ACCESSORY may own one too, keyed by its own uuid, which

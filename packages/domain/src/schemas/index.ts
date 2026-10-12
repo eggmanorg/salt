@@ -139,6 +139,15 @@ export type {
   BorrowedPictureDoc,
 } from './equipmentManifest.js';
 
+// The household's freezers and shelves (issue #1682, epic #795).
+export {
+  FreezerSchema,
+  FreezerConfigSchema,
+  FREEZER_CONFIG_COLLECTION,
+  FREEZER_CONFIG_DOC_ID,
+} from './freezerConfig.js';
+export type { FreezerDoc, FreezerConfigDoc } from './freezerConfig.js';
+
 export {
   EquipmentIconSchema,
   DrawEquipmentIconInputSchema,

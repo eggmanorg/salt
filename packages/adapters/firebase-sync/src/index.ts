@@ -23,6 +23,8 @@ export {
   subscribeEquipmentManifest,
   saveEquipmentManifest,
 } from './equipmentManifestSubscription.js';
+// The household's freezers and shelves (issue #1682).
+export { subscribeFreezerConfig, saveFreezerConfig } from './freezerConfigSubscription.js';
 
 export {
   subscribeEquipmentIcons,

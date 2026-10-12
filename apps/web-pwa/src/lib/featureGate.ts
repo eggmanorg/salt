@@ -34,7 +34,7 @@ import {
  * a typo is a compile error instead of a feature that silently stays hidden
  * forever (a misspelled flag reads as "off" and looks exactly like a working gate).
  */
-export type FeatureKey = 'bread' | 'library' | 'chatSave';
+export type FeatureKey = 'bread' | 'library' | 'chatSave' | 'freezer';
 
 // Feature key → PostHog flag key. Separate from the union so the flag can be
 // renamed in PostHog without touching every call site, and so the app's word for
@@ -64,6 +64,10 @@ const FLAG_KEY: Record<FeatureKey, string> = {
   // on, which is what stops one recorded during a deploy window running a save
   // this bundle was never told about.
   chatSave: CHAT_SAVE_FLAG_KEY,
+  // The browser-only kind (issue #1682, epic #795): the freezer has no server
+  // half yet — no Cloud Function asks whether it is on — so its key stays a
+  // literal here. It moves to @salt/observability the day one does.
+  freezer: 'freezer',
 };
 
 export interface FeatureGate {
@@ -121,6 +125,9 @@ export const breadGate = featureGate('bread');
 
 /** The library — the kitchen facts that are not recipes (epic #1372). */
 export const libraryGate = featureGate('library');
+
+/** The freezer — what is in each freezer, and where (epic #795). */
+export const freezerGate = featureGate('freezer');
 
 // NO `chatSaveGate` STORE, deliberately (issue #1512). Asking the chef to save a
 // recipe (issue #1480) is gated in exactly one place — `consumeSaveIntent` in

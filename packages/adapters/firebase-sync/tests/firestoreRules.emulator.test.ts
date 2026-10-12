@@ -1499,6 +1499,66 @@ describe.skipIf(!reachable)('firestore.rules — libraryPages (epic #1372)', () 
   });
 });
 
+describe.skipIf(!reachable)('firestore.rules — freezerConfig (issue #1682)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  const config = (name = 'Garage') => ({
+    schemaVersion: 1,
+    updatedAt: '2026-10-12T09:00:00.000Z',
+    freezers: [{ id: 'fz-1', name, shelves: ['A', 'B', 'C', 'D'] }],
+  });
+
+  function userCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { email: `${uid}@e.org` }).firestore();
+  }
+
+  // Family-shared, like the equipment manifest: no ownerUid, so either member
+  // writes over the other's setup. The browser-side `freezer` feature key hides
+  // the surface while it is built; it is not a permission boundary and nothing
+  // here knows it exists.
+  it('lets any signed-in user write, read and delete the config', async () => {
+    const db = userCtx('uid-a');
+    await assertSucceeds(setDoc(doc(db, 'freezerConfig', 'current'), config()));
+    await assertSucceeds(getDoc(doc(db, 'freezerConfig', 'current')));
+    await assertSucceeds(deleteDoc(doc(db, 'freezerConfig', 'current')));
+  });
+
+  it('lets another member overwrite the config someone else wrote', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'freezerConfig', 'current'), config());
+    });
+    const db = userCtx('uid-b');
+    await assertSucceeds(getDoc(doc(db, 'freezerConfig', 'current')));
+    await assertSucceeds(setDoc(doc(db, 'freezerConfig', 'current'), config('Kitchen')));
+  });
+
+  it('denies an unauthenticated caller entirely', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'freezerConfig', 'current')));
+    await assertFails(setDoc(doc(db, 'freezerConfig', 'current'), config()));
+    await assertFails(deleteDoc(doc(db, 'freezerConfig', 'current')));
+  });
+});
+
 // kitchenTimers is the FOURTH owner-scoped collection (issue #842), and its rule
 // is the only owner-scoped one that keys on the PATH SEGMENT rather than on a
 // stored field — the document id simply is the uid. These cover both halves of

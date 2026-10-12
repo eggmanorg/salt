@@ -16,7 +16,7 @@
   import { auth } from './lib/auth.svelte.js';
   import { keepAwake } from './lib/keepAwake.svelte.js';
   import { navItems, overflowNavItemsFor, adminNavItem } from './lib/nav.js';
-  import { breadGate, libraryGate } from './lib/featureGate.js';
+  import { breadGate, freezerGate, libraryGate } from './lib/featureGate.js';
   import { routes } from './routes/index.js';
   import { isFullViewportRoute } from './routes/fullViewport.js';
   import { toasts, dismissToast } from './lib/toastStore.js';
@@ -156,7 +156,11 @@
   // that is still being built (issue #831), which nobody outside the test group is
   // meant to know exists — hence a filter rather than a disabled entry.
   const decoratedOverflowNavItems = $derived([
-    ...overflowNavItemsFor({ bread: $breadGate.enabled, library: $libraryGate.enabled }),
+    ...overflowNavItemsFor({
+      bread: $breadGate.enabled,
+      library: $libraryGate.enabled,
+      freezer: $freezerGate.enabled,
+    }),
     ...(isAdmin ? [reviewCount > 0 ? { ...adminNavItem, badge: reviewCount } : adminNavItem] : []),
   ]);
 </script>

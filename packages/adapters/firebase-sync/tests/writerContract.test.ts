@@ -499,6 +499,12 @@ const EQUIPMENT_MANIFEST = {
   updatedAt: '2020-01-01T00:00:00.000Z',
   items: [],
 };
+// Same reasoning: `saveFreezerConfig` stamps the clock (issue #1682).
+const FREEZER_CONFIG = {
+  schemaVersion: 1 as const,
+  updatedAt: '2020-01-01T00:00:00.000Z',
+  freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+};
 
 // ─── The table ──────────────────────────────────────────────────────────────
 
@@ -643,6 +649,26 @@ const writerCases: WriterCase[] = [
         op: 'set',
         path: 'equipmentManifest/current',
         data: { schemaVersion: 1, updatedAt: NOW, items: [] },
+      },
+    ],
+    onSuccess: 'success(undefined)',
+    onFailure: 'failure',
+    errorShape: 'classified',
+  },
+
+  // ── freezer ──────────────────────────────────────────────────────────────
+  {
+    name: 'saveFreezerConfig',
+    run: () => barrel.saveFreezerConfig(FREEZER_CONFIG),
+    ops: [
+      {
+        op: 'set',
+        path: 'freezerConfig/current',
+        data: {
+          schemaVersion: 1,
+          updatedAt: NOW,
+          freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
+        },
       },
     ],
     onSuccess: 'success(undefined)',
@@ -1034,6 +1060,7 @@ const NON_WRITERS: Record<string, 'subscription' | 'read' | 'callable' | 'infras
   subscribeEnrichmentFailures: 'subscription',
   subscribeEquipmentIcons: 'subscription',
   subscribeEquipmentManifest: 'subscription',
+  subscribeFreezerConfig: 'subscription',
   subscribeFormula: 'subscription',
   subscribeGuidedPlan: 'subscription',
   subscribeKitchenMemories: 'subscription',
@@ -1144,8 +1171,8 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(122);
-    expect(writerCases).toHaveLength(45);
+    expect(exported).toHaveLength(124);
+    expect(writerCases).toHaveLength(46);
   });
 
   it('every row is uniquely named', () => {
@@ -1181,7 +1208,7 @@ describe('writer contract — table coverage', () => {
     expect(named('throws')).toEqual([...RULE_TEN_VIOLATIONS].sort());
     expect(named('throws')).toEqual([]);
     expect(named('swallows')).toEqual([]);
-    expect(named('failure')).toHaveLength(45);
+    expect(named('failure')).toHaveLength(46);
   });
 
   it('a writer that returns a Result classifies its error, and one that throws would not', () => {

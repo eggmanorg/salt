@@ -133,6 +133,11 @@ export const routes: RouteDefinition = new Map<
   // table deliberately knows nothing about it (see lib/featureGate.ts).
   ['/library', lazy(() => import('./library/LibraryListPage.svelte'))],
   ['/library/:id', lazy(() => import('./library/LibraryPageView.svelte'))],
+  // The freezer (epic #795, issue #1682) — the household's freezers and shelves.
+  // An ORDINARY shell route, so no entry in ./fullViewport.ts, and lazy-loaded
+  // (#411) for the same reason as the library above. The page sits behind
+  // `<FeatureGuard feature="freezer">`; the route table knows nothing of the gate.
+  ['/freezer', lazy(() => import('./freezer/FreezerPage.svelte'))],
   ['/settings', SettingsPage],
   // Operator area (issues #155, #157). All routes are guarded client-side by
   // AdminGuard; the real boundary is server-side (rules + CF admin checks).

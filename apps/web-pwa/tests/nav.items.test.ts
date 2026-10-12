@@ -59,6 +59,19 @@ describe('navItems', () => {
     });
     expect(navItems.map((i) => i.id)).not.toContain('library');
   });
+
+  it('puts the freezer in the overflow, before Settings, not in the primary four', () => {
+    // Epic #795 / issue #1682: the same kind of destination as the two above, and
+    // Settings closes the list by convention, so it goes before that.
+    const ids = overflowNavItems.map((i) => i.id);
+    expect(overflowNavItems.find((i) => i.id === 'freezer')).toMatchObject({
+      label: 'Freezer',
+      href: '#/freezer',
+    });
+    expect(ids.indexOf('freezer')).toBe(ids.indexOf('settings') - 1);
+    expect(ids.at(-1)).toBe('settings');
+    expect(navItems.map((i) => i.id)).not.toContain('freezer');
+  });
 });
 
 describe('overflowNavItemsFor', () => {
@@ -67,11 +80,11 @@ describe('overflowNavItemsFor', () => {
   // mechanism. What matters here is that the entry is ABSENT rather than present
   // and disabled — nothing may hint that a feature is being withheld.
 
-  const ALL_ON = { bread: true, library: true };
-  const ALL_OFF = { bread: false, library: false };
-  const GATED = { batches: 'bread', library: 'library' } as const;
+  const ALL_ON = { bread: true, library: true, freezer: true };
+  const ALL_OFF = { bread: false, library: false, freezer: false };
+  const GATED = { batches: 'bread', library: 'library', freezer: 'freezer' } as const;
 
-  it('keeps every destination when both features are on for this person', () => {
+  it('keeps every destination when every feature is on for this person', () => {
     expect(overflowNavItemsFor(ALL_ON).map((i) => i.id)).toEqual(overflowNavItems.map((i) => i.id));
   });
 
@@ -81,15 +94,15 @@ describe('overflowNavItemsFor', () => {
     expect(ids).not.toContain(id);
   });
 
-  // The two gates are independent, which is the property a single shared boolean
-  // would silently lose: gating one feature must not take the other's door with it.
+  // The gates are independent, which is the property a single shared boolean
+  // would silently lose: gating one feature must not take another's door with it.
   it.each(Object.entries(GATED))(
-    'leaves the other gated entry alone when %s is off',
-    (_id, feature) => {
+    'leaves the other gated entries alone when %s is off',
+    (id, feature) => {
       const ids = overflowNavItemsFor({ ...ALL_ON, [feature]: false }).map((i) => i.id);
-      const other = Object.entries(GATED).find(([, f]) => f !== feature)?.[0];
+      const others = Object.keys(GATED).filter((other) => other !== id);
 
-      expect(ids).toContain(other);
+      expect(ids).toEqual(expect.arrayContaining(others));
     },
   );
 
