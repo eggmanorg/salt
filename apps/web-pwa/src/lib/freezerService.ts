@@ -1,30 +1,43 @@
-import { subscribeFreezerConfig, saveFreezerConfig } from '@salt/firebase-sync';
+import {
+  subscribeFreezerConfig,
+  saveFreezerConfig,
+  subscribeFreezerItems,
+  saveFreezerItem,
+  deleteFreezerItem,
+} from '@salt/firebase-sync';
 import {
   addFreezer as addFreezerCommand,
+  addFreezerItem as addFreezerItemCommand,
+  editFreezerItem,
   emptyFreezerConfig,
+  moveFreezerItem,
   removeFreezer as removeFreezerCommand,
+  removeFreezerItem as removeFreezerItemCommand,
   renameFreezer as renameFreezerCommand,
   setShelves,
+  type AddFreezerItemInput,
   type FreezerConfig,
   type FreezerIdGenerator,
+  type FreezerItem,
 } from '@salt/domain';
 import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
 import { get, writable, type Readable } from 'svelte/store';
 import { getErrorReporter } from './errorReporter.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 
-// The freezer service (issue #1682, epic #795) — the store over
-// `freezerConfig/current` and the ONE WRITE PATH for it.
+// The freezer service (issue #1682, epic #795) — the stores over
+// `freezerConfig/current` and `freezerItems` (issue #1684), and the ONE WRITE
+// PATH for each.
 //
 // It is where the two things the domain will not supply are minted: a freezer's
 // id (`crypto.randomUUID()`) and the clock. Each write runs the pure domain
 // command and, on success, applies it to the store and saves the whole document.
 //
-// The subscription is NOT started at app boot. The freezer page owns its
-// lifecycle (`$effect(() => initFreezerSync())`), so the listener is open only
+// The subscriptions are NOT started at app boot. The freezer page owns their
+// lifecycle (`$effect(() => initFreezerSync())`), so the listeners are open only
 // while that page is mounted. A person the `freezer` flag hides the feature from
 // has no nav entry to it; typing `#/freezer` does mount the page, and so opens
-// the listener, until the guard sends them home. The data is family-shared, so
+// the listeners, until the guard sends them home. The data is family-shared, so
 // that costs a read and nothing more.
 
 // ─── Reactive store ──────────────────────────────────────────────────────────
@@ -48,20 +61,45 @@ export type FreezerConfigState =
 const _state = writable<FreezerConfigState>({ status: 'loading' });
 export const freezerConfigState: Readable<FreezerConfigState> = _state;
 
+/**
+ * The stock, in the same three states and for the same reason: an item write is
+ * checked against the items this device holds (a number already in use), so
+ * nothing is written before the first snapshot or after the listener has died.
+ */
+export type FreezerItemsState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'loaded'; readonly items: readonly FreezerItem[] }
+  | { readonly status: 'failed' };
+
+const _items = writable<FreezerItemsState>({ status: 'loading' });
+export const freezerItemsState: Readable<FreezerItemsState> = _items;
+
 const ids: FreezerIdGenerator = { newFreezerId: () => crypto.randomUUID() };
 
 // ─── Init / cleanup ──────────────────────────────────────────────────────────
 
-/** Subscribe to the freezer config, for as long as the caller keeps the unsub. */
+/** Subscribe to the config and the stock, for as long as the caller keeps the unsub. */
 export function initFreezerSync(): () => void {
   _state.set({ status: 'loading' });
-  return subscribeFreezerConfig(
+  _items.set({ status: 'loading' });
+  const stopConfig = subscribeFreezerConfig(
     (config) => _state.set({ status: 'loaded', config }),
     (err, rawError) => {
       reportSubscriptionError(getErrorReporter(), err, rawError);
       _state.set({ status: 'failed' });
     },
   );
+  const stopItems = subscribeFreezerItems(
+    (items) => _items.set({ status: 'loaded', items }),
+    (err, rawError) => {
+      reportSubscriptionError(getErrorReporter(), err, rawError);
+      _items.set({ status: 'failed' });
+    },
+  );
+  return () => {
+    stopConfig();
+    stopItems();
+  };
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────────
@@ -116,4 +154,101 @@ export function setFreezerShelves(
 /** Remove a freezer and its shelves. */
 export function removeFreezer(id: string): Promise<ReadResult<FreezerConfig, DomainError>> {
   return run((config, now) => removeFreezerCommand(config, { id, now }));
+}
+
+// ─── Item writes (issue #1684) ───────────────────────────────────────────────
+
+const NOT_READY: ReadResult<never, DomainError> = failure({
+  kind: 'NetworkError',
+  reason: 'transient',
+});
+
+/** The items, and the config an add or a move is checked against — or null while either is unusable. */
+function itemsAndConfig(): { items: readonly FreezerItem[]; config: FreezerConfig } | null {
+  const items = get(_items);
+  const state = get(_state);
+  if (items.status !== 'loaded' || state.status !== 'loaded') return null;
+  return {
+    items: items.items,
+    config: state.config ?? emptyFreezerConfig(new Date().toISOString()),
+  };
+}
+
+// Same shape as `run` above: the store first, the verdict at once, the save in
+// the background — an add at the garage freezer with no signal must not hang.
+function saveItem(items: readonly FreezerItem[], item: FreezerItem): void {
+  _items.set({
+    status: 'loaded',
+    items: [...items.filter((i) => i.number !== item.number), item],
+  });
+  void saveFreezerItem(item).then((written) => reportIfFailed(getErrorReporter(), written));
+}
+
+/**
+ * Put something in the freezer at `input.number`. The number is checked against
+ * the items this device holds; an add on another device it has not yet seen is
+ * invisible to the check (docs/data-model.md → `freezerItems/{number}`).
+ */
+export async function addFreezerItem(
+  input: Omit<AddFreezerItemInput, 'now'>,
+): Promise<ReadResult<FreezerItem, DomainError>> {
+  const ready = itemsAndConfig();
+  if (!ready) return NOT_READY;
+  const result = addFreezerItemCommand(ready.items, ready.config, {
+    ...input,
+    now: new Date().toISOString(),
+  });
+  if (result.kind !== 'ok') return result;
+  saveItem(ready.items, result.value);
+  return result;
+}
+
+export interface FreezerItemChanges {
+  readonly name: string;
+  readonly purchasedFrom: string | null;
+  /**
+   * Where it should be, or `null` to leave its place alone — which is how an item
+   * under Not placed can be renamed without being filed somewhere first.
+   */
+  readonly place: { readonly freezerId: string; readonly shelf: string | null } | null;
+}
+
+/** Save the edit sheet: rename, re-source and, if the place changed, move — one write. */
+export async function updateFreezerItem(
+  number: number,
+  changes: FreezerItemChanges,
+): Promise<ReadResult<FreezerItem, DomainError>> {
+  const ready = itemsAndConfig();
+  if (!ready) return NOT_READY;
+  const now = new Date().toISOString();
+  const edited = editFreezerItem(ready.items, {
+    number,
+    name: changes.name,
+    purchasedFrom: changes.purchasedFrom,
+    now,
+  });
+  if (edited.kind !== 'ok') return edited;
+  const place = changes.place;
+  const moves =
+    place !== null &&
+    (place.freezerId !== edited.value.freezerId || place.shelf !== edited.value.shelf);
+  const result = moves
+    ? moveFreezerItem([edited.value], ready.config, { number, ...place, now })
+    : edited;
+  if (result.kind !== 'ok') return result;
+  saveItem(ready.items, result.value);
+  return result;
+}
+
+/** Take an item out of the record. Its number is free again. */
+export async function removeFreezerItem(
+  number: number,
+): Promise<ReadResult<FreezerItem, DomainError>> {
+  const items = get(_items);
+  if (items.status !== 'loaded') return NOT_READY;
+  const result = removeFreezerItemCommand(items.items, { number });
+  if (result.kind !== 'ok') return result;
+  _items.set({ status: 'loaded', items: items.items.filter((i) => i.number !== number) });
+  void deleteFreezerItem(number).then((written) => reportIfFailed(getErrorReporter(), written));
+  return result;
 }

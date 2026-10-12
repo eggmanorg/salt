@@ -148,6 +148,42 @@ clearing is a `delete` — there is no "cleared" state to model.
 It carries a `setBy` uid, but that is **audit only** and deliberately unpinned in the
 rules: either partner may reschedule the other's shop.
 
+## `freezerItems/{number}` — the doc id is the bag number
+
+One family-shared document per thing in a freezer (issue #1684, epic #795). The
+setup it sits in — freezers and their shelves — is the single
+`freezerConfig/current` document (#1682).
+
+**The id is the bag number, zero-padded** (`freezerItemDocId(47)` → `"047"`; a
+fourth digit is kept, not cut). The number is written on the bag, so it is the
+item's identity: moving an item rewrites `freezerId`/`shelf` in place and never
+the id. Renumbering would be delete-and-recreate, and nothing offers it.
+
+**Uniqueness, and its limit.** Adding is a plain `setDoc` at the number
+pre-filled from `nextFreeNumber` (the lowest one not in use, so a freed number
+comes back first) or typed over it. The number is checked against the items
+**this device holds** — `FREEZER_NUMBER_IN_USE` — and nothing else checks it: no
+transaction (the browser SDK cannot run one offline, and the garage freezer is
+where signal is worst) and no rules clause. So numbers are unique **except** when
+two devices add the same number before either has seen the other's add — in
+practice, while one of them is offline: both writes land, the later one wins,
+and the earlier item's record is replaced. A
+rules clause refusing the second create was rejected because the losing device's
+item would vanish silently on reconnect, which is worse than a visible overwrite.
+The rules emulator test pins that the overwrite is allowed.
+
+**Not placed.** An item points at a freezer by its opaque id and at a shelf by
+its label (`null` in a freezer set up with no shelves). Removing a freezer or a
+shelf, or relabelling a shelf, is allowed with stock on it and rewrites no item;
+`itemsByShelf` files any item whose freezer or shelf the setup no longer has
+under **Not placed**, computed in memory, until someone moves it. Nothing is
+stored to mark it.
+
+**Writes.** Today every write here is a whole-document `setDoc` (add, edit,
+move) or a `deleteDoc` (remove, which frees the number) — ordinary per-document
+LWW. #1684's Phase 2 adds taking a pack as a field transform, the one exception,
+and records it in this section.
+
 ## `guidedPlans/{recipeId}`
 
 The prep list and step notes for one recipe, keyed by the recipe id (issue #751).

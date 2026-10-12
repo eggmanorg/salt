@@ -283,8 +283,8 @@ export const coverageThresholds = {
   // is a denominator that grew under new tested code rather than anything
   // becoming less tested. Nothing moved down.
   'packages/domain/src/**': {
-    lines: 99.19,
-    branches: 93.84,
+    lines: 99.33,
+    branches: 94.92,
     uncoveredLines: 23,
     uncoveredBranches: 143,
   },
@@ -706,10 +706,10 @@ export const coverageThresholds = {
   // `coverage:ratchet:check`'s own block on a full `pnpm test:coverage` run on
   // Linux (the cloud session; CI's logs were unreachable from it), not retyped.
   'apps/web-pwa/src/lib/**': {
-    lines: 80.45,
-    branches: 74.7,
-    uncoveredLines: 732,
-    uncoveredBranches: 553,
+    lines: 81.2,
+    branches: 75.93,
+    uncoveredLines: 731,
+    uncoveredBranches: 552,
   },
   // RE-PINNED 54.58/38.81 → 61.22/46.02 in #947. `EquipmentPhotoDialog.svelte`
   // landed with real tests from the start (`EquipmentPhotoDialog.test.ts`,

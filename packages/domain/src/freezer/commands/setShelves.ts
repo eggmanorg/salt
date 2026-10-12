@@ -11,9 +11,9 @@ export interface SetShelvesInput {
 }
 
 /**
- * Replace a freezer's shelves. Removal is unconditional: nothing can sit on a
- * shelf until freezer stock exists (#1684), which is where removing an occupied
- * shelf gets its answer.
+ * Replace a freezer's shelves. Removing or relabelling a shelf is unconditional,
+ * with stock still on it (#1684): the items keep the old label, and
+ * `itemsByShelf` files them under Not placed until someone moves them.
  */
 export function setShelves(
   config: FreezerConfig,

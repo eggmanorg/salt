@@ -10,7 +10,7 @@
     SheetTitle,
     TextField,
   } from '@salt/ui-components';
-  import type { Freezer } from '@salt/domain';
+  import type { Freezer, FreezerStock, ShelfStock } from '@salt/domain';
   import { ErrorCode, type DomainError, type ReadResult } from '@salt/shared-types';
   import {
     addFreezer,
@@ -29,15 +29,32 @@
    * with nothing saved. The sheet makes no judgement of its own about what is
    * valid, so it cannot disagree with the rules that guard the document.
    *
-   * Removing a freezer or a shelf asks nothing: nothing can be on it yet, and
-   * what happens to stock on a removed place is #1684's to settle.
+   * Removing a freezer or a shelf — or relabelling a shelf — is allowed with
+   * stock still on it, and asks nothing (issue #1684). The stock is not deleted
+   * or rewritten: the freezer page files it under Not placed until someone moves
+   * it. The count beside each freezer and shelf is there so you know before you
+   * tap; it is information, never a gate.
    */
 
   interface Props {
     open: boolean;
-    freezers: readonly Freezer[];
+    /**
+     * Every freezer in the setup, in order, with what is on each of its shelves —
+     * `itemsByShelf(...).freezers`, so the counts come with the freezers they
+     * belong to.
+     */
+    stock: readonly FreezerStock[];
   }
-  let { open = $bindable(), freezers }: Props = $props();
+  let { open = $bindable(), stock }: Props = $props();
+
+  function itemCount(n: number): string {
+    return `${n} ${n === 1 ? 'item' : 'items'}`;
+  }
+
+  /** The labelled shelves — all of them, in a freezer that has any. */
+  function labelled(groups: readonly ShelfStock[]): (ShelfStock & { shelf: string })[] {
+    return groups.filter((g): g is ShelfStock & { shelf: string } => g.shelf !== null);
+  }
 
   // What is typed but not yet saved, per freezer id. A rename draft is dropped
   // once it saves, so the field goes back to showing the stored name.
@@ -125,7 +142,7 @@
     </SheetHeader>
 
     <div class="flex min-h-0 flex-col gap-4 overflow-y-auto">
-      {#each freezers as freezer (freezer.id)}
+      {#each stock as { freezer, count, shelves: groups } (freezer.id)}
         <section
           class="flex flex-col gap-3 rounded border border-border p-3"
           data-testid="manage-freezer"
@@ -154,14 +171,23 @@
             </Button>
           </form>
 
+          <p class="text-xs text-muted-foreground" data-testid="manage-freezer-count">
+            {`${itemCount(count)} in this freezer`}
+          </p>
+
           {#if freezer.shelves.length > 0}
             <ul class="flex flex-wrap gap-2" aria-label={`Shelves in ${freezer.name}`}>
-              {#each freezer.shelves as shelf, i (i)}
+              {#each labelled(groups) as { shelf, items: onShelf }, i (i)}
                 <li
                   class="flex items-center gap-1 rounded border border-border py-0.5 pl-2"
                   data-testid="manage-shelf"
                 >
                   <span class="text-sm">{shelf}</span>
+                  {#if onShelf.length > 0}
+                    <span class="text-xs text-muted-foreground" data-testid="manage-shelf-count">
+                      {`· ${itemCount(onShelf.length)}`}
+                    </span>
+                  {/if}
                   <Button
                     type="button"
                     variant="ghost"

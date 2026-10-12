@@ -116,6 +116,14 @@ service cloud.firestore {
     match /freezerConfig/{document} {
       allow read, write: if request.auth != null;
     }
+    // Freezer stock (issue #1684) — one doc per bag, keyed by the zero-padded bag
+    // number. Family-shared like the config above. Number uniqueness is a client
+    // check against the local cache and nothing here enforces it: a server-side
+    // refusal of a colliding create would make the losing device's item vanish
+    // silently on reconnect (docs/data-model.md → freezerItems).
+    match /freezerItems/{number} {
+      allow read, write: if request.auth != null;
+    }
     // Equipment pictograms (issue #877) — one server-written doc per equipment
     // item, holding the appliance description and the generated icon. Since
     // #1465 Phase 2 an ACCESSORY may own one too, keyed by its own uuid, which
