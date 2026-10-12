@@ -9,7 +9,7 @@ import type {
 } from '@salt/domain';
 import type { ObservabilitySessionMeta } from '@salt/observability';
 import type { E2EFirestoreCacheProbe } from '@salt/firebase-sync';
-import type { ChatSessionDoc } from '@salt/domain/schemas';
+import type { ChatSessionDoc, DefrostDoc } from '@salt/domain/schemas';
 
 export interface SeedCanonItemInput {
   readonly id?: string;
@@ -39,6 +39,9 @@ export interface E2EBridge {
   getShoppingLists(): readonly ShoppingList[];
   getDefaultListId(): string | null | undefined;
   getShoppingListItems(): readonly ShoppingListItem[];
+  // The Kitchen items this device holds (issue #1685) — empty until a page with
+  // the `freezer` gate on has opened the `defrosts` listener.
+  getDefrosts(): readonly DefrostDoc[];
   // Synchronous snapshot of the recipes store. Lets specs assert the parsed /
   // canonical ingredient structure (quantity, unit, item, canonId, matchState)
   // that lives in the store but is only partially surfaced in the DOM.

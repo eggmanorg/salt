@@ -125,10 +125,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // cannot tell you which primitive produced them: `batch.set(p, d)` and a bare
 // `setDoc(p, d)` land the same `{op:'set', path, data}` in this log, and
 // `commit()` is where the rejection is thrown rather than where a write is
-// recorded. Two writers — `deleteShoppingListItems` and `moveShoppingListItems`,
-// the only two in `src/` that call `writeBatch` — depend on atomicity for their
+// recorded. The writers that call `writeBatch` — `deleteShoppingListItems`,
+// `moveShoppingListItems` and `commitFromFreezer` — depend on atomicity for their
 // correctness (a half-applied move is a duplicate on one list and a hole in the
-// other), and without these markers rewriting either as a loop of standalone
+// other), and without these markers rewriting any of them as a loop of standalone
 // `deleteDoc`/`setDoc` calls left this whole file green. So `writeBatch()` logs
 // `{op:'batch'}` and a successful `commit()` logs `{op:'commit'}`, uniformly for
 // every writer: one batch, its writes between the pair, one commit. Two batches
@@ -174,6 +174,7 @@ const h = vi.hoisted(() => {
       ops.push({ op: 'batch' });
       return {
         set: (path: string, data: unknown) => ops.push({ op: 'set', path, data }),
+        update: (path: string, data: unknown) => ops.push({ op: 'update', path, data }),
         delete: (path: string) => ops.push({ op: 'delete', path }),
         // `refuse()` first: a commit that rejected applied nothing, so it must
         // not leave a `commit` in the log.
@@ -520,6 +521,17 @@ const FREEZER_ITEM = {
   addedAt: NOW,
   updatedAt: NOW,
 };
+// Written exactly as given: `saveDefrost` stamps nothing (issue #1685).
+const DEFROST = {
+  schemaVersion: 1 as const,
+  freezerNumber: 47,
+  name: 'Pork loin',
+  location: 'Garage · shelf B',
+  recipeId: 'r-1',
+  recipeTitle: 'Chilli',
+  amount: 1,
+  committedAt: NOW,
+};
 
 // ─── The table ──────────────────────────────────────────────────────────────
 
@@ -721,6 +733,52 @@ const writerCases: WriterCase[] = [
         data: { amount: { __increment: -1 }, updatedAt: NOW },
       },
     ],
+    onSuccess: 'success(undefined)',
+    onFailure: 'failure',
+    errorShape: 'classified',
+  },
+
+  {
+    name: 'commitFromFreezer',
+    // ONE batch (issue #1685): the take, the entry's removal when it was the last
+    // pack, the Kitchen item and the one shopping row — all or nothing. The take
+    // precedes the delete so an item already gone fails the batch `not-found`.
+    run: () =>
+      barrel.commitFromFreezer({
+        itemNumber: 47,
+        take: -1,
+        removeItem: true,
+        defrost: DEFROST,
+        shoppingRow: { listId: 'list-1', itemId: 'item-1' },
+      }),
+    ops: [
+      { op: 'batch' },
+      {
+        op: 'update',
+        path: 'freezerItems/047',
+        data: { amount: { __increment: -1 }, updatedAt: NOW },
+      },
+      { op: 'delete', path: 'freezerItems/047' },
+      { op: 'set', path: 'defrosts/047_r-1', data: DEFROST },
+      { op: 'delete', path: 'shoppingLists/list-1/items/item-1' },
+      { op: 'commit' },
+    ],
+    onSuccess: 'success(undefined)',
+    onFailure: 'failure',
+    errorShape: 'classified',
+  },
+  {
+    name: 'saveDefrost',
+    run: () => barrel.saveDefrost(DEFROST),
+    ops: [{ op: 'set', path: 'defrosts/047_r-1', data: DEFROST }],
+    onSuccess: 'success(undefined)',
+    onFailure: 'failure',
+    errorShape: 'classified',
+  },
+  {
+    name: 'deleteDefrost',
+    run: () => barrel.deleteDefrost('012_manual'),
+    ops: [{ op: 'delete', path: 'defrosts/012_manual' }],
     onSuccess: 'success(undefined)',
     onFailure: 'failure',
     errorShape: 'classified',
@@ -1112,6 +1170,7 @@ const NON_WRITERS: Record<string, 'subscription' | 'read' | 'callable' | 'infras
   subscribeEquipmentManifest: 'subscription',
   subscribeFreezerConfig: 'subscription',
   subscribeFreezerItems: 'subscription',
+  subscribeDefrosts: 'subscription',
   subscribeFormula: 'subscription',
   subscribeGuidedPlan: 'subscription',
   subscribeKitchenMemories: 'subscription',
@@ -1222,8 +1281,8 @@ describe('writer contract — table coverage', () => {
     // A new export must arrive as a row or as a stated non-writer. This is the
     // recurrence guard: a writer added with neither fails here.
     expect(classified).toEqual(exported);
-    expect(exported).toHaveLength(128);
-    expect(writerCases).toHaveLength(49);
+    expect(exported).toHaveLength(132);
+    expect(writerCases).toHaveLength(52);
   });
 
   it('every row is uniquely named', () => {
@@ -1259,7 +1318,7 @@ describe('writer contract — table coverage', () => {
     expect(named('throws')).toEqual([...RULE_TEN_VIOLATIONS].sort());
     expect(named('throws')).toEqual([]);
     expect(named('swallows')).toEqual([]);
-    expect(named('failure')).toHaveLength(49);
+    expect(named('failure')).toHaveLength(52);
   });
 
   it('a writer that returns a Result classifies its error, and one that throws would not', () => {

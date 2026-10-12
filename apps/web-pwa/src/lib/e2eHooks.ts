@@ -19,6 +19,7 @@ import {
   getDefaultListIdSnapshot,
   getItemsSnapshot,
 } from './shoppingListService.svelte.js';
+import { getDefrostsSnapshot } from './freezerService.js';
 import { tagSession, getSessionURL } from './observability.js';
 import { applyStallRecovery } from './stallRecovery.js';
 import type { E2EBridge, SeedCanonItemInput } from './types/e2e.js';
@@ -114,6 +115,9 @@ export function installE2EHooks(): void {
     getShoppingListItems() {
       return getItemsSnapshot();
     },
+
+    // The Kitchen items this device holds (issue #1685).
+    getDefrosts: getDefrostsSnapshot,
 
     getRecipes() {
       return getRecipesSnapshot();

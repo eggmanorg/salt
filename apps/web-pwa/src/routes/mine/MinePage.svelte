@@ -23,12 +23,16 @@
     timerHeat,
     timerProgress,
     withTimerDismissed,
+    type KitchenTask,
     type Recipe,
     type TimerHeat,
   } from '@salt/domain';
   import type { KitchenTimerOrigin } from '@salt/domain/schemas';
   import { kitchenLabel } from '../../lib/membersService.js';
+  import { freezerGate } from '../../lib/featureGate.js';
+  import { initDefrostSync, tickOffDefrost, undoTickOff } from '../../lib/freezerService.js';
   import {
+    kitchenTaskList,
     liveCooks,
     myTimers,
     needsReviewRecipes,
@@ -55,23 +59,26 @@
     type KitchenSection,
   } from '../../lib/kitchenDashboardPrefs.svelte.js';
 
-  // "My Kitchen" (issues #634, #682, #755, #843, #842) — what of mine is running
-  // right now, what is coming at me, and what needs a look. Five sections, in
-  // order:
+  // "My Kitchen" (issues #634, #682, #755, #843, #842, #1685) — what of mine is
+  // running right now, what is coming at me, and what needs a look. Six sections,
+  // in order:
   //
   //   1. Timers       — running and fired-but-undismissed, in one list, from a
   //                     cook or from nobody's cook at all; plus Start a timer
   //   2. Cooking now  — my open cook sessions
-  //   3. Cooking soon — the nights from today onward that I am chef on
-  //   4. Needs review — entries flagged `needs_approval`
-  //   5. Recent chats — a quiet footer, the only thing here not waiting on you
+  //   3. To do        — packs promised out of the freezer, until somebody gets
+  //                     them out (behind the `freezer` gate)
+  //   4. Cooking soon — the nights from today onward that I am chef on
+  //   5. Needs review — entries flagged `needs_approval`
+  //   6. Recent chats — a quiet footer, the only thing here not waiting on you
   //
-  // Cooking soon is the one section that reads plan data, and it is not a
-  // restatement of the planner: which nights are YOURS is a run of days forward
-  // from today that does not stop at the end of a cycle, and the planner renders
-  // weeks. Every card is a projection of a document that exists at this moment:
-  // it appears when true and disappears when resolved. No read state, no
-  // dismissals, nothing stored per user.
+  // Cooking soon and To do read plan data, and neither restates the planner:
+  // which nights are YOURS, and which night a pack is for, are runs of days
+  // forward from today that do not stop at the end of a cycle. Every card is a
+  // projection of a document that exists at this moment: it appears when true and
+  // disappears when resolved. Nothing is stored per user. The one tap that
+  // resolves a card here — Got it out — deletes a FAMILY-SHARED `defrosts`
+  // document, so it clears the item for the whole household, not for one member.
   //
   // NOTHING on this page reads the shopping list, and nothing derived from one
   // may be added. See the `tonight` header in personalViewService for the full
@@ -86,12 +93,17 @@
   // the planner may be holding the same week (see `pruneWeekSubscriptions`).
   onMount(() => subscribeKitchenWeeks());
 
+  // To do's listener, only for a person the `freezer` flag shows it to — a hidden
+  // user never opens it.
+  $effect(() => ($freezerGate.enabled ? initDefrostSync() : undefined));
+  const tasks = $derived($freezerGate.enabled ? $kitchenTaskList : []);
+
   // ─── Workbench ──────────────────────────────────────────────────────────────
   // In-memory only (kitchenDashboardPrefs.svelte.ts) — CLAUDE.md Rule 3 forbids
   // persisting this to browser storage, so it resets on reload.
   let customizeOpen = $state(false);
 
-  const SECTION_TOGGLES: ReadonlyArray<{
+  const ALL_SECTION_TOGGLES: ReadonlyArray<{
     key: KitchenSection;
     label: string;
     description: string;
@@ -102,10 +114,15 @@
       description: 'Running and finished timers, and the button that starts one.',
     },
     { key: 'live', label: 'Cooking now', description: 'Cooks you have open right now.' },
+    { key: 'tasks', label: 'To do', description: 'Things to get out of the freezer.' },
     { key: 'upcoming', label: 'Cooking soon', description: 'Nights from today you are chef on.' },
     { key: 'review', label: 'Needs review', description: "AI imports nobody's read yet." },
     { key: 'chats', label: 'Recent chats', description: 'A shortcut back into a conversation.' },
   ];
+  // To do's toggle only for a person the `freezer` flag shows the section to.
+  const SECTION_TOGGLES = $derived(
+    ALL_SECTION_TOGGLES.filter((t) => t.key !== 'tasks' || $freezerGate.enabled),
+  );
 
   function onDensityChange(value: string): void {
     kitchenPrefs.setDensity(value as KitchenDensity);
@@ -188,6 +205,40 @@
   function openNight(night: UpcomingChefNight): void {
     const first = night.recipes[0];
     push(first ? `/recipes/${first.id}` : `/mealplan/${night.date}`);
+  }
+
+  // ─── To do (issue #1685) ──────────────────────────────────────────────────
+  // A pack's night by its weekday: the window is under a fortnight, and "for
+  // Chilli, Thursday" is how the item is talked about. UTC for the reason above.
+  const WEEKDAY_FORMAT = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' });
+
+  function taskTitle(task: KitchenTask): string {
+    const { defrost } = task;
+    return defrost.recipeId === null ? `Get out: ${defrost.name}` : `Defrost ${defrost.name}`;
+  }
+
+  function taskDetail(task: KitchenTask): string {
+    const { defrost } = task;
+    const packs = `${defrost.amount} ${defrost.amount === 1 ? 'pack' : 'packs'}`;
+    const where = `${defrost.location} · #${defrost.freezerNumber} · ${packs}`;
+    if (defrost.recipeTitle === null) return where;
+    const night =
+      task.forDate === null
+        ? ''
+        : `, ${WEEKDAY_FORMAT.format(new Date(`${task.forDate}T00:00:00.000Z`))}`;
+    return `${where} — for ${defrost.recipeTitle}${night}`;
+  }
+
+  // Deleted for everybody at once; the Undo puts the same document back. The
+  // freezer count is not touched — the pack left it when it was committed.
+  function gotItOut(task: KitchenTask): void {
+    const { defrost } = task;
+    void tickOffDefrost(defrost).then((result) => {
+      if (result.kind !== 'ok') addToast("Couldn't tick that off.", 'destructive');
+    });
+    addToast(`Got ${defrost.name} out.`, 'default', {
+      action: { label: 'Undo', onClick: () => void undoTickOff(defrost) },
+    });
   }
 
   // ─── Timers ───────────────────────────────────────────────────────────────
@@ -350,6 +401,7 @@
   const allClear = $derived(
     $myTimers.length === 0 &&
       $liveCooks.length === 0 &&
+      tasks.length === 0 &&
       $upcomingChefNights.length === 0 &&
       $needsReviewRecipes.length === 0,
   );
@@ -382,6 +434,7 @@
       [
         { key: 'timers', icon: 'Timer', count: $myTimers.length, noun: 'timer' },
         { key: 'live', icon: 'CookingPot', count: $liveCooks.length, noun: 'cooking' },
+        { key: 'tasks', icon: 'ListChecks', count: tasks.length, noun: 'to do' },
         { key: 'upcoming', icon: 'CalendarDays', count: $upcomingChefNights.length, noun: 'ahead' },
         { key: 'review', icon: 'Sparkles', count: $needsReviewRecipes.length, noun: 'to review' },
       ] as const
@@ -392,7 +445,7 @@
         icon: t.icon,
         target: `mine-section-${t.key}`,
         label:
-          t.noun === 'cooking' || t.noun === 'to review'
+          t.noun === 'cooking' || t.noun === 'to review' || t.noun === 'to do'
             ? `${t.count} ${t.noun}`
             : `${t.count} ${t.noun}${t.count === 1 ? '' : 's'}`,
       })),
@@ -634,7 +687,44 @@
     </div>
   {/if}
 
-  <!-- 3. Cooking soon — icons, not photographs: a night is a date, and a 40px
+  <!-- 3. To do — packs promised out of the freezer (issue #1685), soonest night
+       first, then the ones with no night. Nothing leaves on its own: an item
+       stays past its night until somebody taps Got it out. -->
+  {#if kitchenPrefs.sections.tasks && tasks.length > 0}
+    <div
+      class="flex scroll-mt-4 flex-col {listGap}"
+      id="mine-section-tasks"
+      tabindex="-1"
+      data-testid="mine-tasks"
+    >
+      <h2 class="text-sm font-medium text-muted-foreground">To do</h2>
+      {#each tasks as task (task.id)}
+        <Card class={cardPad}>
+          <div class="flex items-center justify-between gap-3" data-testid="mine-task">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-foreground" data-testid="mine-task-title">
+                {taskTitle(task)}
+              </p>
+              <p class="text-xs text-muted-foreground" data-testid="mine-task-detail">
+                {taskDetail(task)}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onclick={() => gotItOut(task)}
+              data-testid="mine-task-done"
+            >
+              {#snippet leading()}<Icon name="Check" size={14} />{/snippet}
+              Got it out
+            </Button>
+          </div>
+        </Card>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- 4. Cooking soon — icons, not photographs: a night is a date, and a 40px
        crop of a generated hero says less than a calendar glyph. -->
   {#if kitchenPrefs.sections.upcoming && $upcomingChefNights.length > 0}
     <div
@@ -671,7 +761,7 @@
     </div>
   {/if}
 
-  <!-- 4. Needs review — imported by AI, not read by a human yet. Icons here too:
+  <!-- 5. Needs review — imported by AI, not read by a human yet. Icons here too:
        an unreviewed import's hero is itself unreviewed. -->
   {#if kitchenPrefs.sections.review && $needsReviewRecipes.length > 0}
     <div
@@ -816,7 +906,7 @@
     {/if}
   {/if}
 
-  <!-- 5. Recent chats — last, because it is a shortcut back into a conversation
+  <!-- 6. Recent chats — last, because it is a shortcut back into a conversation
        rather than something waiting on you. -->
   {#if kitchenPrefs.sections.chats && $recentChats.length > 0}
     <div class="flex flex-col {listGap}" data-testid="mine-chats">

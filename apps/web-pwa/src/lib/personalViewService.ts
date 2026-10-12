@@ -4,12 +4,13 @@ import {
   firstIncompleteStepId,
   heatWantsAttention,
   isCheckInTimerId,
+  kitchenTasks,
   progressOver,
   timerHeat,
   upcomingChefDays,
   type Recipe,
 } from '@salt/domain';
-import type { Day } from '@salt/domain';
+import type { Day, Defrost, KitchenTask } from '@salt/domain';
 import type {
   ChatSessionDoc,
   CookActiveTimerDoc,
@@ -25,6 +26,7 @@ import { kitchenTimers } from './kitchenTimerService.js';
 import { sessions } from './chatService.js';
 import { kitchenAnchorDate, kitchenWeeks } from './mealPlanService.js';
 import { currentMember } from './membersService.js';
+import { defrostsState } from './freezerService.js';
 
 // Personal view composition (issues #634, #682, #755). "Kitchen" is not a
 // dashboard and not an inbox — it answers what of mine is RUNNING right now, what
@@ -440,6 +442,33 @@ const RECENT_CHAT_LIMIT = 5;
  */
 export const recentChats: Readable<readonly ChatSessionDoc[]> = derived(sessions, ($sessions) =>
   [...$sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, RECENT_CHAT_LIMIT),
+);
+
+// ─── To do (issue #1685) ─────────────────────────────────────────────────────
+
+const NO_DEFROSTS: readonly Defrost[] = [];
+
+/**
+ * What Kitchen asks somebody to do — today, packs to get out of the freezer —
+ * in the order `kitchenTasks` decides: soonest due first, then the undated.
+ *
+ * Over the same `kitchenWeeks` and `kitchenAnchorDate` as `upcomingChefNights`,
+ * for the same reason: the night a task is for is looked up only in the weeks
+ * this page holds, on the day those weeks were chosen for. A meal beyond them
+ * reads undated until the window reaches it.
+ *
+ * Empty until the page opens the `defrosts` listener (`initDefrostSync`), which
+ * it does only behind the `freezer` gate. Not in `mineOpenCount`: that badge is
+ * free on every page because its inputs are app-wide, and this one is not.
+ */
+export const kitchenTaskList: Readable<readonly KitchenTask[]> = derived(
+  [defrostsState, kitchenWeeks, kitchenAnchorDate],
+  ([$defrosts, $weeks, $today]) =>
+    kitchenTasks(
+      { defrosts: $defrosts.status === 'loaded' ? $defrosts.defrosts : NO_DEFROSTS },
+      $weeks,
+      $today,
+    ),
 );
 
 // ─── Nav badge ───────────────────────────────────────────────────────────────

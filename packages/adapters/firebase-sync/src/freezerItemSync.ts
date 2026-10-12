@@ -1,4 +1,5 @@
 import { getFirestore, doc, setDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import type { Firestore, WriteBatch } from 'firebase/firestore';
 import { getApp } from 'firebase/app';
 import type { FreezerItem } from '@salt/domain';
 import type { DomainError, ReadResult } from '@salt/shared-types';
@@ -96,7 +97,28 @@ export async function takeFreezerItemAmount(
   }
 }
 
-function isNotFound(err: unknown): boolean {
+/**
+ * The same take, queued on a caller's batch rather than sent alone — for
+ * `commitFromFreezer` (issue #1685), which must apply it atomically with the
+ * Kitchen item and the shopping row. Kept here so the take-a-pack transform has
+ * one home (the `fieldTransforms` test counts the files that import one). A
+ * batch whose take finds the item gone fails `not-found` as a whole; map it with
+ * `isNotFound`.
+ */
+export function queueFreezerTake(
+  batch: WriteBatch,
+  db: Firestore,
+  number: number,
+  delta: number,
+): void {
+  batch.update(doc(db, FREEZER_ITEMS_COLLECTION, freezerItemDocId(number)), {
+    amount: increment(delta),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/** Firestore's `not-found` — an `update` on a document that is not there. */
+export function isNotFound(err: unknown): boolean {
   return (
     typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'not-found'
   );

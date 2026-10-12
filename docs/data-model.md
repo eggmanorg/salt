@@ -192,7 +192,9 @@ replayed later included — so five less two is three; the emulator suite pins i
 none. It is `updateDoc` rather than `canonPurchaseSync`'s `setDoc(…, { merge:
 true })` on purpose: a take arriving after the item was removed fails
 `not-found` (mapped to `NotFound`, which is not reported) instead of recreating
-a partial document that would fail the schema and hold the number.
+a partial document that would fail the schema and hold the number. The same
+take rides inside `commitFromFreezer`'s batch (`defrosts` below) — the same
+transform, queued by `queueFreezerTake` in the same file, not a third one.
 
 **`freezerConfig.suppliers`.** The places stock has been bought from, as a
 `string[]` on the config document, so the item sheet can offer a place after its
@@ -209,6 +211,43 @@ reverse direction is worse:** saving an item that remembers a new place calls
 `saveFreezerConfig`, which writes the whole config document, so on a device
 holding a stale copy that save reverts another device's freezer or shelf change,
 and the items of a freezer that change added fall under Not placed.
+
+## `defrosts/{number}_{recipeId|manual}` — packs promised out of the freezer
+
+One family-shared document per bag committed from the shopping list instead of
+bought (issue #1685): Kitchen lists it under **To do** until somebody taps **Got
+it out**, and the 09:00 push (#1683) scans the same projection, `kitchenTasks`.
+
+**The id is deterministic** — `defrostDocId(number, recipeId)`: the bag number
+padded as `freezerItems` pads it, then the recipe it serves (a "make it
+yourself" row's **producer**) or `manual` for a row added by hand. Firestore
+auto-ids are 20 characters, so `manual` cannot collide with a recipe id.
+
+**No date is stored.** The night is derived from the planner on every read —
+the soonest planned night of `recipeId` from today, across whatever weeks the
+reader holds — so moving the meal moves the item. A hand-added row, an
+unplanned producer, or a meal beyond the held weeks reads **undated**, never
+"not planned".
+
+**A recommit sums.** Committing the same bag to the same id again adds its packs
+to the existing document (`commitDefrost`, read from the subscribed store), as a
+whole-document `setDoc` — ordinary LWW, no field transform, so a commit on
+another phone this one has not yet seen is overwritten.
+
+**One batch.** `commitFromFreezer` writes the stock decrement (the take-a-pack
+`increment` above, queued on the batch), the entry's delete when it was the last
+pack, this document, and the delete of the ONE shopping row it replaces, in a
+single `writeBatch`. The take is queued even before the last pack's delete, so an
+item another phone removed fails the whole batch `not-found` and nothing applies.
+
+**The tick is the app's only delete.** Got it out is a `deleteDoc` by
+anybody, for everybody — a household act, not a per-user dismissal; its Undo
+re-sets the same document from the copy held in memory. No soft-delete, no
+expiry: an item whose night has passed stays until ticked.
+
+**No `resource == null` clause in the rules.** A create guard would refuse the
+recommit that sums onto an existing id, which is the design. The rules emulator
+test pins that the overwrite lands.
 
 ## `guidedPlans/{recipeId}`
 

@@ -5,6 +5,10 @@ import {
   saveFreezerItem,
   deleteFreezerItem,
   takeFreezerItemAmount,
+  subscribeDefrosts,
+  commitFromFreezer,
+  saveDefrost,
+  deleteDefrost,
 } from '@salt/firebase-sync';
 import {
   addFreezer as addFreezerCommand,
@@ -21,13 +25,16 @@ import {
   setShelves,
   supplierSpelling,
   takeFreezerPacks,
+  commitDefrost,
   type AddFreezerItemInput,
+  type Defrost,
   type FreezerConfig,
   type FreezerIdGenerator,
   type FreezerItem,
   type TakenPacks,
 } from '@salt/domain';
-import { failure, type DomainError, type ReadResult } from '@salt/shared-types';
+import { defrostDocId } from '@salt/domain/schemas';
+import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { get, writable, type Readable } from 'svelte/store';
 import { getErrorReporter } from './errorReporter.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
@@ -329,4 +336,166 @@ export async function removeFreezerItem(
   _items.set({ status: 'loaded', items: items.items.filter((i) => i.number !== number) });
   void deleteFreezerItem(number).then((written) => reportIfFailed(getErrorReporter(), written));
   return result;
+}
+
+// ─── Using packs from the freezer (issue #1685) ─────────────────────────────
+//
+// `defrosts` — what Kitchen lists under To do until somebody gets it out. Its
+// listener, like the two above, is page-owned (`initDefrostSync`): Kitchen opens
+// it, and so does the shopping list, whose commit sums onto an existing document
+// read from this store. Both open it only for a person the `freezer` flag shows
+// the feature to.
+
+/** Same three states as the stock, for the same reason: a commit reads the existing document. */
+export type DefrostsState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'loaded'; readonly defrosts: readonly Defrost[] }
+  | { readonly status: 'failed' };
+
+const _defrosts = writable<DefrostsState>({ status: 'loading' });
+export const defrostsState: Readable<DefrostsState> = _defrosts;
+
+/** Subscribe to the Kitchen items, for as long as the caller keeps the unsub. */
+export function initDefrostSync(): () => void {
+  _defrosts.set({ status: 'loading' });
+  return subscribeDefrosts(
+    (defrosts) => _defrosts.set({ status: 'loaded', defrosts }),
+    (err, rawError) => {
+      reportSubscriptionError(getErrorReporter(), err, rawError);
+      _defrosts.set({ status: 'failed' });
+    },
+  );
+}
+
+/** Where an item is, as its freezer's name and shelf — or null when the setup no longer has its place. */
+export function freezerPlace(
+  config: FreezerConfig | null,
+  item: FreezerItem,
+): { readonly freezer: string; readonly shelf: string | null } | null {
+  const freezer = config?.freezers.find((f) => f.id === item.freezerId);
+  if (!freezer) return null;
+  return { freezer: freezer.name, shelf: item.shelf };
+}
+
+/** The place as Kitchen stores and shows it: `Garage · shelf B`. */
+function locationOf(config: FreezerConfig | null, item: FreezerItem): string {
+  const place = freezerPlace(config, item);
+  if (place === null) return 'Not placed';
+  return place.shelf === null ? place.freezer : `${place.freezer} · shelf ${place.shelf}`;
+}
+
+export interface UseFromFreezerInput {
+  /** The bag number the packs come out of. */
+  readonly number: number;
+  /** Whole packs, 1 or more. */
+  readonly count: number;
+  /** The recipe the row is for — a "make it yourself" row's producer — or null for a hand-added row. */
+  readonly recipe: { readonly id: string; readonly title: string | null } | null;
+  /** The ONE shopping row this replaces. */
+  readonly shoppingRow: { readonly listId: string; readonly itemId: string };
+}
+
+export interface UsedFromFreezer {
+  readonly defrost: Defrost;
+  /** The entry's last packs went: it is removed, freeing its number. */
+  readonly last: boolean;
+  /**
+   * The batch, settling when the server answers (offline, on reconnect). A
+   * NotFound here means another phone removed the bag first and NOTHING applied
+   * — the row is back and there is no Kitchen item; the page says so.
+   */
+  readonly written: Promise<ReadResult<void, DomainError>>;
+}
+
+/**
+ * Use packs from the freezer instead of buying them: the count drops (the entry
+ * goes with its last pack), Kitchen gains an item, and the one shopping row goes
+ * — one atomic batch (`commitFromFreezer`). The stores change at once; the batch
+ * is not awaited, like every freezer write, and a refusal is reported (a
+ * NotFound is not).
+ */
+export async function useFromFreezer(
+  input: UseFromFreezerInput,
+): Promise<ReadResult<UsedFromFreezer, DomainError>> {
+  const ready = itemsAndConfig();
+  const defrosts = get(_defrosts);
+  if (!ready || defrosts.status !== 'loaded') return NOT_READY;
+  const now = new Date().toISOString();
+  const taken = takeFreezerPacks(ready.items, { number: input.number, count: input.count, now });
+  if (taken.kind !== 'ok') return taken;
+  const item = taken.value.item;
+  const recipeId = input.recipe?.id ?? null;
+  const id = defrostDocId(input.number, recipeId);
+  const existing =
+    defrosts.defrosts.find((d) => defrostDocId(d.freezerNumber, d.recipeId) === id) ?? null;
+  const committed = commitDefrost(
+    existing,
+    {
+      freezerNumber: input.number,
+      name: item.name,
+      location: locationOf(ready.config, item),
+      recipeId,
+      recipeTitle: input.recipe?.title ?? null,
+      // Zero for a bag already showing none (two phones took its last pack), which
+      // `commitDefrost` refuses: nothing is written.
+      amount: -taken.value.delta,
+    },
+    now,
+  );
+  if (committed.kind !== 'ok') return committed;
+  const defrost = committed.value;
+  const last = taken.value.last;
+
+  _items.set({
+    status: 'loaded',
+    items: last
+      ? ready.items.filter((i) => i.number !== input.number)
+      : [...ready.items.filter((i) => i.number !== input.number), item],
+  });
+  showDefrost(defrosts.defrosts, defrost);
+  const written = commitFromFreezer({
+    itemNumber: input.number,
+    take: taken.value.delta,
+    removeItem: last,
+    defrost,
+    shoppingRow: input.shoppingRow,
+  }).then((result) => reportIfFailed(getErrorReporter(), result));
+  return success({ defrost, last, written });
+}
+
+function showDefrost(defrosts: readonly Defrost[], defrost: Defrost): void {
+  const id = defrostDocId(defrost.freezerNumber, defrost.recipeId);
+  _defrosts.set({
+    status: 'loaded',
+    defrosts: [
+      ...defrosts.filter((d) => defrostDocId(d.freezerNumber, d.recipeId) !== id),
+      defrost,
+    ],
+  });
+}
+
+/** Got it out: the Kitchen item goes, for everybody. The freezer count is untouched — it moved at commit. */
+export function tickOffDefrost(defrost: Defrost): Promise<ReadResult<void, DomainError>> {
+  const id = defrostDocId(defrost.freezerNumber, defrost.recipeId);
+  const state = get(_defrosts);
+  if (state.status === 'loaded') {
+    _defrosts.set({
+      status: 'loaded',
+      defrosts: state.defrosts.filter((d) => defrostDocId(d.freezerNumber, d.recipeId) !== id),
+    });
+  }
+  return deleteDefrost(id).then((result) => reportIfFailed(getErrorReporter(), result));
+}
+
+/** Got it out's Undo: the same document back, whole, at the same id. */
+export function undoTickOff(defrost: Defrost): Promise<ReadResult<void, DomainError>> {
+  const state = get(_defrosts);
+  if (state.status === 'loaded') showDefrost(state.defrosts, defrost);
+  return saveDefrost(defrost).then((result) => reportIfFailed(getErrorReporter(), result));
+}
+
+/** The Kitchen items as this device holds them — the e2e bridge's read. */
+export function getDefrostsSnapshot(): readonly Defrost[] {
+  const state = get(_defrosts);
+  return state.status === 'loaded' ? state.defrosts : [];
 }

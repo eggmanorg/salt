@@ -6,12 +6,14 @@
 // — in-memory only, so it resets to the defaults below on reload or a fresh tab,
 // but survives navigating away from and back to /mine within the same session.
 
-export type KitchenSection = 'timers' | 'live' | 'upcoming' | 'review' | 'chats';
+export type KitchenSection = 'timers' | 'live' | 'tasks' | 'upcoming' | 'review' | 'chats';
 export type KitchenDensity = 'comfortable' | 'compact';
 
 const DEFAULT_SECTIONS: Record<KitchenSection, boolean> = {
   timers: true,
   live: true,
+  // To do (issue #1685) — shown only behind the `freezer` gate, whatever this says.
+  tasks: true,
   upcoming: true,
   review: true,
   chats: true,

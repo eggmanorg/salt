@@ -32,6 +32,9 @@ export {
   deleteFreezerItem,
   takeFreezerItemAmount,
 } from './freezerItemSync.js';
+// Packs promised out of the freezer, until somebody gets them out (issue #1685).
+export { subscribeDefrosts, commitFromFreezer, saveDefrost, deleteDefrost } from './defrostSync.js';
+export type { CommitFromFreezerInput } from './defrostSync.js';
 
 export {
   subscribeEquipmentIcons,
