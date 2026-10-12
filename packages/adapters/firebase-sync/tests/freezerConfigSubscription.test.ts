@@ -56,7 +56,7 @@ describe('subscribeFreezerConfig', () => {
     expect(onConfig).toHaveBeenCalledWith(null);
   });
 
-  it('delivers the parsed config, defaulting a freezer with no shelves to []', () => {
+  it('delivers the parsed config, defaulting a freezer with no shelves and a document with no suppliers to []', () => {
     const onConfig = vi.fn();
     subscribeFreezerConfig(onConfig, () => {});
 
@@ -80,6 +80,8 @@ describe('subscribeFreezerConfig', () => {
         { id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] },
         { id: 'fz-2', name: 'Kitchen', shelves: [] },
       ],
+      // Written before #1684 added the supplier list.
+      suppliers: [],
     });
   });
 
@@ -117,6 +119,7 @@ describe('saveFreezerConfig', () => {
       schemaVersion: 1,
       updatedAt: '1970-01-01T00:00:00.000Z',
       freezers: [],
+      suppliers: [],
     });
     const after = Date.now();
 

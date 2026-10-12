@@ -21,7 +21,12 @@ const LATER = '2026-10-12T10:00:00.000Z';
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 const CHEST = { id: 'fz-chest', name: 'Chest', shelves: [] };
-const CONFIG: FreezerConfig = { schemaVersion: 1, updatedAt: NOW, freezers: [GARAGE, CHEST] };
+const CONFIG: FreezerConfig = {
+  schemaVersion: 1,
+  updatedAt: NOW,
+  freezers: [GARAGE, CHEST],
+  suppliers: [],
+};
 
 function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
   return {
@@ -290,7 +295,12 @@ describe('itemsByShelf', () => {
   });
 
   it('puts everything under Not placed when no freezer is set up', () => {
-    const filed = itemsByShelf([item(1)], { schemaVersion: 1, updatedAt: NOW, freezers: [] });
+    const filed = itemsByShelf([item(1)], {
+      schemaVersion: 1,
+      updatedAt: NOW,
+      freezers: [],
+      suppliers: [],
+    });
     expect(filed.notPlaced.map((i) => i.number)).toEqual([1]);
     expect(filed.freezers).toEqual([]);
   });

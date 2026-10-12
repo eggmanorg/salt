@@ -14,6 +14,7 @@
   import { ErrorCode, type DomainError, type ReadResult } from '@salt/shared-types';
   import {
     addFreezer,
+    forgetSupplier,
     removeFreezer,
     renameFreezer,
     setFreezerShelves,
@@ -34,6 +35,10 @@
    * or rewritten: the freezer page files it under Not placed until someone moves
    * it. The count beside each freezer and shelf is there so you know before you
    * tap; it is information, never a gate.
+   *
+   * Below the freezers, the remembered places stock has been bought from, each
+   * with a remove button for a mistyped one (issue #1684). Removing one changes
+   * no item, and typing the place again remembers it again.
    */
 
   interface Props {
@@ -44,8 +49,10 @@
      * belong to.
      */
     stock: readonly FreezerStock[];
+    /** The remembered places stock has been bought from. */
+    suppliers?: readonly string[];
   }
-  let { open = $bindable(), stock }: Props = $props();
+  let { open = $bindable(), stock, suppliers = [] }: Props = $props();
 
   function itemCount(n: number): string {
     return `${n} ${n === 1 ? 'item' : 'items'}`;
@@ -126,6 +133,10 @@
 
   async function handleRemoveFreezer(freezer: Freezer): Promise<void> {
     settle(freezer.id, await removeFreezer(freezer.id));
+  }
+
+  async function handleForgetSupplier(supplier: string): Promise<void> {
+    await forgetSupplier(supplier);
   }
 
   function renamePending(freezer: Freezer): boolean {
@@ -242,6 +253,32 @@
           </p>
         {/if}
       </form>
+
+      {#if suppliers.length > 0}
+        <section class="flex flex-col gap-2" data-testid="manage-suppliers">
+          <h3 class="text-sm font-medium">Bought from</h3>
+          <ul class="flex flex-wrap gap-2" aria-label="Places bought from">
+            {#each suppliers as supplier (supplier)}
+              <li
+                class="flex items-center gap-1 rounded border border-border py-0.5 pl-2"
+                data-testid="manage-supplier"
+              >
+                <span class="text-sm">{supplier}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  ariaLabel={`Forget ${supplier}`}
+                  onclick={() => void handleForgetSupplier(supplier)}
+                  data-testid="manage-supplier-remove"
+                >
+                  <Icon name="X" size={14} />
+                </Button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
     </div>
 
     <SheetFooter>

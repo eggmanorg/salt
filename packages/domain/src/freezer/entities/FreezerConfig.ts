@@ -13,5 +13,5 @@ export type Freezer = FreezerDoc;
  * real setup with an empty one.
  */
 export function emptyFreezerConfig(now: string): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: now, freezers: [] };
+  return { schemaVersion: 1, updatedAt: now, freezers: [], suppliers: [] };
 }

@@ -26,7 +26,12 @@ export {
 // The household's freezers and shelves (issue #1682).
 export { subscribeFreezerConfig, saveFreezerConfig } from './freezerConfigSubscription.js';
 // What is in them, one document per bag number (issue #1684).
-export { subscribeFreezerItems, saveFreezerItem, deleteFreezerItem } from './freezerItemSync.js';
+export {
+  subscribeFreezerItems,
+  saveFreezerItem,
+  deleteFreezerItem,
+  takeFreezerItemAmount,
+} from './freezerItemSync.js';
 
 export {
   subscribeEquipmentIcons,

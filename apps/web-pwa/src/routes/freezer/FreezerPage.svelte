@@ -1,7 +1,22 @@
 <script lang="ts">
-  import { Button, Chip, ChipGroup, EmptyState, ErrorState, ListPage } from '@salt/ui-components';
   import {
+    Button,
+    Chip,
+    ChipGroup,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    EmptyState,
+    ErrorState,
+    ListPage,
+  } from '@salt/ui-components';
+  import {
+    displayAmount,
     itemAge,
+    recipeHeroUrl,
     itemsByShelf,
     nextFreeNumber,
     oldestFirst,
@@ -12,7 +27,10 @@
     freezerConfigState,
     freezerItemsState,
     initFreezerSync,
+    removeFreezerItem,
+    takeOneFreezerPack,
   } from '../../lib/freezerService.js';
+  import { recipesById } from '../../lib/recipeService.js';
   import FreezerItemSheet from './FreezerItemSheet.svelte';
   import ManageFreezersSheet from './ManageFreezersSheet.svelte';
 
@@ -23,7 +41,8 @@
   // how long it has been in. Anything whose freezer or shelf has been removed
   // from the setup sits under Not placed at the top until someone moves it.
   // Setting the freezers up is the Manage freezers sheet (issue #1682); adding,
-  // editing, moving and removing an item is the item sheet.
+  // editing, moving and removing an item is the item sheet. Each row takes one
+  // pack out with −1; taking the last one asks whether to remove the entry.
   //
   // An ordinary AppShell list page, inside the normal chrome: no `fill`, no
   // selection mode, no entry in fullViewport.ts.
@@ -37,6 +56,10 @@
   let itemOpen = $state(false);
   let editing = $state<FreezerItem | null>(null);
   let view = $state<'shelf' | 'oldest'>('shelf');
+  // The item whose last pack was just taken, while the remove question is open.
+  let lastOne = $state<FreezerItem | null>(null);
+  let confirmOpen = $state(false);
+  let takeError = $state<string | null>(null);
 
   const status = $derived.by(() => {
     const config = $freezerConfigState.status;
@@ -51,7 +74,7 @@
   const freezers = $derived(config?.freezers ?? []);
   const items = $derived($freezerItemsState.status === 'loaded' ? $freezerItemsState.items : []);
   const filed = $derived(
-    itemsByShelf(items, config ?? { schemaVersion: 1, updatedAt: '', freezers: [] }),
+    itemsByShelf(items, config ?? { schemaVersion: 1, updatedAt: '', freezers: [], suppliers: [] }),
   );
   // Where each filed item is, by number, for the oldest-first list where the
   // grouping is gone. An item missing from it is under Not placed.
@@ -73,11 +96,34 @@
   const now = new Date().toISOString();
 
   function packs(amount: number): string {
-    return `${amount} ${amount === 1 ? 'pack' : 'packs'}`;
+    const shown = displayAmount(amount);
+    if (shown === 0) return 'none left';
+    return `${shown} ${shown === 1 ? 'pack' : 'packs'}`;
   }
 
   function title(item: FreezerItem): string {
     return `#${item.number} ${item.name} — ${packs(item.amount)}`;
+  }
+
+  async function takeOne(item: FreezerItem): Promise<void> {
+    const result = await takeOneFreezerPack(item.number);
+    if (result.kind === 'err') {
+      takeError =
+        result.error.kind === 'NotFound'
+          ? 'That has just been taken out on another phone.'
+          : "Couldn't take that out yet. Try again.";
+      return;
+    }
+    takeError = null;
+    if (result.value.last) {
+      lastOne = result.value.item;
+      confirmOpen = true;
+    }
+  }
+
+  async function removeLastOne(item: FreezerItem): Promise<void> {
+    confirmOpen = false;
+    await removeFreezerItem(item.number);
   }
 
   function since(item: FreezerItem): string {
@@ -111,10 +157,26 @@
 </script>
 
 {#snippet row(item: FreezerItem, showPlace: boolean)}
-  <li>
+  {@const recipe = item.recipeId === null ? undefined : $recipesById.get(item.recipeId)}
+  {@const hero = recipe ? recipeHeroUrl(recipe) : null}
+  <li class="flex items-center gap-2">
+    {#if recipe}
+      <a
+        href={`#/recipes/${recipe.id}`}
+        class="shrink-0"
+        aria-label={`Open ${recipe.title}`}
+        data-testid="freezer-item-recipe-link"
+      >
+        {#if hero}
+          <img src={hero} alt="" class="h-10 w-10 rounded object-cover" />
+        {:else}
+          <span class="block h-10 w-10 rounded bg-muted"></span>
+        {/if}
+      </a>
+    {/if}
     <button
       type="button"
-      class="flex w-full flex-col items-start rounded px-2 py-1.5 text-left hover:bg-muted"
+      class="flex min-w-0 flex-1 flex-col items-start rounded px-2 py-1.5 text-left hover:bg-muted"
       onclick={() => openEdit(item)}
       data-testid="freezer-item"
       data-number={item.number}
@@ -124,6 +186,15 @@
         {meta(item, showPlace)}
       </span>
     </button>
+    <Button
+      variant="outline"
+      size="sm"
+      ariaLabel={`Take one pack of ${item.name}`}
+      onclick={() => void takeOne(item)}
+      data-testid="freezer-item-take"
+    >
+      −1
+    </Button>
   </li>
 {/snippet}
 
@@ -176,6 +247,11 @@
     {/snippet}
 
     {#snippet children()}
+      {#if takeError}
+        <p class="mb-3 text-sm text-destructive" role="alert" data-testid="freezer-take-error">
+          {takeError}
+        </p>
+      {/if}
       {#if items.length === 0}
         <p class="mb-3 text-sm text-muted-foreground" data-testid="freezer-contents-empty">
           Nothing in the freezer yet.
@@ -267,6 +343,42 @@
     item={editing}
     {freezers}
     suggestedNumber={nextFreeNumber(items)}
+    suppliers={config?.suppliers ?? []}
   />
-  <ManageFreezersSheet bind:open={manageOpen} stock={filed.freezers} />
+  <ManageFreezersSheet
+    bind:open={manageOpen}
+    stock={filed.freezers}
+    suppliers={config?.suppliers ?? []}
+  />
+
+  {#if lastOne}
+    {@const target = lastOne}
+    <Dialog bind:open={confirmOpen}>
+      <DialogContent>
+        <div class="flex flex-col gap-4" data-testid="freezer-last-one">
+          <DialogHeader>
+            <DialogTitle>That was the last one</DialogTitle>
+            <DialogDescription>
+              {`Take #${target.number} ${target.name} off the list? Its number is then free.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onclick={() => (confirmOpen = false)}
+              data-testid="freezer-last-one-keep"
+            >
+              Keep it
+            </Button>
+            <Button
+              onclick={() => void removeLastOne(target)}
+              data-testid="freezer-last-one-remove"
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  {/if}
 </FeatureGuard>

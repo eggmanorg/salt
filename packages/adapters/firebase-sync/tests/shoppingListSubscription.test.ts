@@ -2,9 +2,8 @@
  * Shopping-list reads — what the two contract nets do not hold (#928, #939).
  *
  * `createShoppingList`, `renameShoppingList` and `deleteShoppingList` moved to
- * `tests/writerContract.test.ts` — including the one partial write in the
- * package, `renameShoppingList`'s `updateDoc`, whose exact payload is a row
- * there. The collection target, the unsubscribe, the delivered id set, the empty
+ * `tests/writerContract.test.ts` — including `renameShoppingList`'s partial
+ * `updateDoc`, whose exact payload is a row there. The collection target, the unsubscribe, the delivered id set, the empty
  * collection and the corrupt-document skip moved to the `subscribeShoppingLists`
  * row of `tests/subscriptionContract.emulator.test.ts`, which seeds a decoy in a
  * same-named subcollection so a widening to `collectionGroup` costs something.

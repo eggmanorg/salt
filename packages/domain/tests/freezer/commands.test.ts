@@ -23,7 +23,7 @@ function makeIds(): FreezerIdGenerator {
 }
 
 function configWith(freezers: FreezerConfig['freezers']): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: NOW, freezers };
+  return { schemaVersion: 1, updatedAt: NOW, freezers, suppliers: [] };
 }
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B', 'C', 'D'] };
@@ -44,7 +44,7 @@ function validationCode(r: { kind: string; error?: unknown }): unknown {
 describe('emptyFreezerConfig', () => {
   it('is a config with no freezers, stamped with the time it was made, that the read schema accepts', () => {
     const config = emptyFreezerConfig(NOW);
-    expect(config).toEqual({ schemaVersion: 1, updatedAt: NOW, freezers: [] });
+    expect(config).toEqual({ schemaVersion: 1, updatedAt: NOW, freezers: [], suppliers: [] });
     expect(FreezerConfigSchema.safeParse(config).success).toBe(true);
   });
 });

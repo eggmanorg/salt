@@ -179,10 +179,32 @@ shelf, or relabelling a shelf, is allowed with stock on it and rewrites no item;
 under **Not placed**, computed in memory, until someone moves it. Nothing is
 stored to mark it.
 
-**Writes.** Today every write here is a whole-document `setDoc` (add, edit,
-move) or a `deleteDoc` (remove, which frees the number) — ordinary per-document
-LWW. #1684's Phase 2 adds taking a pack as a field transform, the one exception,
-and records it in this section.
+**Writes.** Adding, editing, moving and correcting the count are a
+whole-document `setDoc`, and removing is a `deleteDoc` that frees the number —
+ordinary per-document LWW, so an edit saved from a copy that had not yet seen
+another device's take overwrites it. **Taking a pack is the exception:**
+`takeFreezerItemAmount` is an `updateDoc` of `{ amount: increment(delta),
+updatedAt }`, the second sanctioned field transform beside
+`recordCanonPurchases`. Takes from two devices compose — one queued offline and
+replayed later included — so five less two is three; the emulator suite pins it.
+`increment` cannot stop at zero, so two devices taking the last pack land on
+`-1`: the schema has no lower bound on `amount`, and `displayAmount` shows it as
+none. It is `updateDoc` rather than `canonPurchaseSync`'s `setDoc(…, { merge:
+true })` on purpose: a take arriving after the item was removed fails
+`not-found` (mapped to `NotFound`, which is not reported) instead of recreating
+a partial document that would fail the schema and hold the number.
+
+**`freezerConfig.suppliers`.** The places stock has been bought from, as a
+`string[]` on the config document, so the item sheet can offer a place after its
+last item has gone. Saving an item whose `purchasedFrom` is not on the list
+(trimmed, case-insensitive) appends it and saves the config; a place already
+there is saved with the spelling the list has. Manage freezers removes one, and
+no item changes. A config written before the field existed reads as `[]`. **Its
+limit:** the list rides on the config document's whole-document LWW, so an
+append is lost from it when another device saves the config before seeing the
+append — a Manage-freezers edit, or remembering a different place at the same
+time. Only the suggestion is lost (the item keeps its `purchasedFrom`), and
+typing the place again puts it back; nothing claims the list is complete.
 
 ## `guidedPlans/{recipeId}`
 

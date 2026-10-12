@@ -19,6 +19,14 @@ export const FREEZER_CONFIG_DOC_ID = 'current';
 //
 // `shelves` are labels in the order given ("A", "B", "C", "D"); a freezer may
 // have none.
+//
+// `suppliers` (issue #1684) are the places stock has been bought from, remembered
+// when an item is saved and NOT dropped when the last item from there is gone
+// (Manage freezers removes one by hand), so the item sheet can offer it again.
+// It rides on this document's full-document LWW: a save from a device that had not
+// yet seen another's append drops that entry, and typing the place again puts it
+// back (docs/data-model.md → `freezerItems/{number}`). A document written before
+// the field existed reads as `[]`.
 export const FreezerSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -29,6 +37,7 @@ export const FreezerConfigSchema = z.object({
   schemaVersion: z.literal(1),
   updatedAt: z.string(),
   freezers: z.array(FreezerSchema).default([]),
+  suppliers: z.array(z.string()).default([]),
 });
 
 export type FreezerDoc = z.infer<typeof FreezerSchema>;

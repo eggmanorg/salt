@@ -1,4 +1,4 @@
-import { getFirestore, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { getApp } from 'firebase/app';
 import type { FreezerItem } from '@salt/domain';
 import type { DomainError, ReadResult } from '@salt/shared-types';
@@ -14,6 +14,9 @@ import { subscribeCollection } from './subscribeCollection.js';
 // What is in the freezers (issue #1684) — `freezerItems/{number}`, one document
 // per bag number, family-shared. The id is the number zero-padded
 // (`freezerItemDocId`), so a move rewrites the document in place.
+//
+// `increment` is a Firebase SDK sentinel, so Rule 2 confines it to this package,
+// as in `canonPurchaseSync.ts`; the domain hands over a delta, never a sentinel.
 
 /**
  * Every item, live. A LIST read, so it follows the list contract: a document the
@@ -60,4 +63,41 @@ export async function deleteFreezerItem(number: number): Promise<ReadResult<void
   } catch (err) {
     return failure(classifyFirestoreError(err));
   }
+}
+
+/**
+ * Take packs out: `amount` moves by `delta` (negative) as a server-applied
+ * transform, so two devices taking at once — one replaying an offline queue —
+ * both count: five less two is three. It cannot stop at zero; `displayAmount`
+ * clamps what is shown.
+ *
+ * `updateDoc`, NOT `canonPurchaseSync`'s `setDoc(…, { merge: true })`: a take
+ * arriving after another device removed the item must not recreate a partial
+ * `{ amount, updatedAt }` document that fails the schema and holds the number.
+ * `updateDoc` refuses with `not-found` instead, which `classifyFirestoreError`
+ * would report as a StorageError; it is mapped here to NotFound, which is not.
+ */
+export async function takeFreezerItemAmount(
+  number: number,
+  delta: number,
+): Promise<ReadResult<void, DomainError>> {
+  try {
+    const db = getFirestore(getApp());
+    await updateDoc(doc(db, FREEZER_ITEMS_COLLECTION, freezerItemDocId(number)), {
+      amount: increment(delta),
+      updatedAt: new Date().toISOString(),
+    });
+    return success(undefined);
+  } catch (err) {
+    if (isNotFound(err)) {
+      return failure({ kind: 'NotFound', resource: 'freezerItem', id: String(number) });
+    }
+    return failure(classifyFirestoreError(err));
+  }
+}
+
+function isNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'not-found'
+  );
 }
