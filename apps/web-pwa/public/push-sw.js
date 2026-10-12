@@ -4,12 +4,13 @@
 // auto-update flow (skipWaiting/clientsClaim/deferred reload); this file adds ONLY
 // the push + notificationclick listeners, so that contract is untouched.
 //
-// Five notification kinds ride this one path, distinguished by `payload.type`:
+// Six notification kinds ride this one path, distinguished by `payload.type`:
 //   - 'cook-timer'        (#544) — deep-links via `url` since #1127, `sessionId` FALLBACK, has an in-app equivalent
 //   - 'shopping-reminder' (#629) — deep-links via `url`, has none
 //   - 'batch-stage'       (#812) — deep-links via `url`, has none
 //   - 'kitchen-timer'     (#842) — deep-links via `url`, has an in-app equivalent
 //   - 'batch-readings'    (#1406) — the weekly "what is under way" nudge; deep-links via `url` to the batches LIST, has none
+//   - 'kitchen-reminder'  (#1683) — the 09:00 "due in Kitchen today" nudge; deep-links via `url` to Kitchen, has none
 // Everything that differs between them is payload-driven; nothing here is
 // hard-coded per feature except the foreground rule below and the fallback copy
 // each kind uses when a payload arrives without any.
@@ -52,6 +53,14 @@ var SALT_FALLBACK_COPY = {
     title: 'Something is under way',
     body: 'Check on it and add a note.',
     tag: 'batch-readings',
+  },
+  // Kind-neutral (#1683): the morning reminder scans everything Kitchen holds, so
+  // a payload that lost its words cannot know whether it was a pack to defrost or
+  // a later kind of task. It never says "defrost".
+  'kitchen-reminder': {
+    title: 'Something to do in Kitchen',
+    body: 'Open Kitchen to see what and where.',
+    tag: 'kitchen-reminder',
   },
 };
 

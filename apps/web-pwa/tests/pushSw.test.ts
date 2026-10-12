@@ -114,6 +114,15 @@ const BATCH_READINGS = {
   renotify: false,
 };
 
+const KITCHEN_REMINDER = {
+  type: 'kitchen-reminder',
+  tag: 'kitchen::2026-10-14',
+  url: '/#/mine',
+  title: "Defrost the pork loin for tomorrow's chilli",
+  body: 'Garage · shelf B · #47',
+  renotify: false,
+};
+
 const FOCUSED_CLIENT: FakeClient = { focused: true, visibilityState: 'visible' };
 
 beforeEach(() => {
@@ -226,6 +235,36 @@ describe('push-sw — push', () => {
     const [title, opts] = showNotification.mock.calls[0]! as [string, ShownOptions];
     expect(title).toBe('Something is under way');
     expect(opts.body).toBe('Check on it and add a note.');
+  });
+
+  it('shows the 09:00 Kitchen reminder while a window is focused, and never re-buzzes', async () => {
+    // #1683: no in-app alert duplicates it, so the app merely being open must not
+    // swallow it; `renotify: false` plus the date-keyed tag lets a duplicate
+    // Scheduler delivery replace it silently.
+    const { listeners, showNotification } = loadSw([FOCUSED_CLIENT]);
+    const { event, settle } = pushEvent(KITCHEN_REMINDER);
+    listeners.get('push')!(event);
+    await settle();
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    const [title, opts] = showNotification.mock.calls[0]!;
+    expect(title).toBe("Defrost the pork loin for tomorrow's chilli");
+    expect(opts).toBeDefined();
+    expect(opts!.tag).toBe('kitchen::2026-10-14');
+    expect(opts!.renotify).toBe(false);
+    expect(opts!.data.url).toBe('/#/mine');
+  });
+
+  it('falls back to KITCHEN copy, not cook-timer copy, for a Kitchen push with no title', async () => {
+    // Kind-neutral: the reminder scans every kind of Kitchen task, so the fallback
+    // cannot know it was a defrost.
+    const { listeners, showNotification } = loadSw([]);
+    const { event, settle } = pushEvent({ type: 'kitchen-reminder', url: '/#/mine' });
+    listeners.get('push')!(event);
+    await settle();
+    const [title, opts] = showNotification.mock.calls[0]! as [string, ShownOptions];
+    expect(title).toBe('Something to do in Kitchen');
+    expect(opts.body).toBe('Open Kitchen to see what and where.');
+    expect(opts.tag).toBe('kitchen-reminder');
   });
 
   it('falls back to SHOPPING copy, not cook-timer copy, for a shop push with no title', async () => {

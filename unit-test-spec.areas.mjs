@@ -311,9 +311,16 @@ export const violationCeilings = {
   // exists to close. UT-A1 and UT-C2 do NOT move — every assertion checks the
   // written payload, and the recipe fixture is built with `@salt/domain`'s
   // `emptyRecipe` and `newStep`.
+  //
+  // UT-B1 35 → 36 (issue #1683). ONE new file:
+  // `maintenance/remindKitchenTasks.test.ts`, for the 09:00 Kitchen reminder. Its
+  // six mocks are `remindBatchReadings.test.ts`'s six, for #1406's reason: a
+  // scheduled push function has no caller to inject through, so the scheduler
+  // shim, `defineSecret`, the logger, `sendWebPush`, the observability flush and
+  // Firestore are each a module boundary, and only the last two are the subject.
   'apps/cloud-functions': {
     'UT-A1': 3,
-    'UT-B1': 35,
+    'UT-B1': 36,
     'UT-C2': 4,
     'UT-E4': 0,
     'UT-G1': 0,
