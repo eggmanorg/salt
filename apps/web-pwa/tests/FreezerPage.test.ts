@@ -240,4 +240,64 @@ describe('ManageFreezersSheet', () => {
 
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith('fz-garage'));
   });
+
+  it('says a renamed freezer has just been removed when the rename finds it gone', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRename.mockResolvedValue(failure({ kind: 'NotFound', resource: 'freezer', id: 'x' }));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    await fireEvent.input(within(sheet).getByTestId('manage-freezer-name'), {
+      target: { value: 'Shed' },
+    });
+    await fireEvent.click(await within(sheet).findByTestId('manage-freezer-rename'));
+
+    expect(await within(sheet).findByTestId('manage-freezer-error')).toHaveTextContent(
+      'That freezer has just been removed.',
+    );
+    // The draft is kept: the field still shows what was typed, not the stored name.
+    expect((within(sheet).getByTestId('manage-freezer-name') as HTMLInputElement).value).toBe(
+      'Shed',
+    );
+  });
+
+  it('submitting the name with nothing typed renames nothing', async () => {
+    mockState.set(loaded([GARAGE]));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    const form = within(sheet).getByTestId('manage-freezer-name').closest('form');
+    await fireEvent.submit(form as HTMLFormElement);
+
+    expect(mockRename).not.toHaveBeenCalled();
+  });
+
+  it('adding a shelf with nothing typed sends a blank label, and shows its refusal', async () => {
+    mockState.set(loaded([KITCHEN]));
+    mockSetShelves.mockResolvedValue(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_SHELF_LABEL }),
+    );
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    await fireEvent.click(within(sheet).getByTestId('manage-shelf-add'));
+
+    await waitFor(() => expect(mockSetShelves).toHaveBeenCalledWith('fz-kitchen', ['']));
+    expect(await within(sheet).findByTestId('manage-freezer-error')).toHaveTextContent(
+      'Give the shelf a label.',
+    );
+  });
+
+  it('says the change did not save when the write fails', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRemove.mockResolvedValue(failure({ kind: 'StorageError', reason: 'unavailable' }));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'Remove Garage' }));
+
+    expect(await within(sheet).findByTestId('manage-freezer-error')).toHaveTextContent(
+      "Couldn't save that. Try again.",
+    );
+  });
 });
