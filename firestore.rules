@@ -124,6 +124,14 @@ service cloud.firestore {
     match /freezerItems/{number} {
       allow read, write: if request.auth != null;
     }
+    // Packs promised out of the freezer (issue #1685) — `{number}_{recipeId|manual}`,
+    // family-shared. Written by "Use from the freezer" in the same batch as the
+    // stock decrement; deleted by Got it out, by anybody, for everybody. No
+    // `resource == null` create guard: the id is deterministic and a recommit to
+    // it SUMS onto the existing document by design (docs/data-model.md → defrosts).
+    match /defrosts/{defrostId} {
+      allow read, write: if request.auth != null;
+    }
     // Equipment pictograms (issue #877) — one server-written doc per equipment
     // item, holding the appliance description and the generated icon. Since
     // #1465 Phase 2 an ACCESSORY may own one too, keyed by its own uuid, which

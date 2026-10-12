@@ -46,11 +46,22 @@
     groupItemsByAisle,
     groupItemsByRecipe,
     resolveItemDisplayName,
+    displayAmount,
+    freezerStockFor,
   } from '@salt/domain';
-  import type { ShoppingListItem, AisleRow, AmountSubtotal } from '@salt/domain';
+  import type { ShoppingListItem, AisleRow, AmountSubtotal, FreezerItem } from '@salt/domain';
   import { canonItems, aisles, purchaseCounts } from '../../lib/canonService.js';
   import { canonIndex } from '../../lib/canonIndex.js';
-  import { recipes } from '../../lib/recipeService.js';
+  import { recipes, recipesById } from '../../lib/recipeService.js';
+  import { freezerGate } from '../../lib/featureGate.js';
+  import {
+    freezerConfigState,
+    freezerItemsState,
+    freezerPlace,
+    initDefrostSync,
+    initFreezerSync,
+    useFromFreezer,
+  } from '../../lib/freezerService.js';
   import {
     lists,
     defaultListId,
@@ -86,6 +97,7 @@
   import { tick as hapticTick } from '../../lib/haptics.js';
   import ShoppingItemRow from './ShoppingItemRow.svelte';
   import CheckOffButton from './CheckOffButton.svelte';
+  import UseFromFreezerSheet from './UseFromFreezerSheet.svelte';
   import type { BulkAction } from '@salt/ui-components';
 
   interface Props {
@@ -792,6 +804,103 @@
   // `describeSource` moved to `lib/shoppingSource.ts` (issue #933) — the row had
   // its own second answer, and the two disagreed about a hand-added item with no
   // attributed adder.
+
+  // ─── Use from the freezer (issue #1685) ─────────────────────────────────────
+  // A row whose ingredient is in a freezer says where, and offers to use it
+  // instead of buying it. Everything here is behind the `freezer` gate: with it
+  // off, neither listener opens and no row changes.
+  //
+  // Both listeners: the stock and its setup (the badge names the freezer), and
+  // the Kitchen items (a commit sums onto an existing one, read from that store).
+  $effect(() => {
+    if (!$freezerGate.enabled) return;
+    const stopFreezer = initFreezerSync();
+    const stopDefrosts = initDefrostSync();
+    return () => {
+      stopFreezer();
+      stopDefrosts();
+    };
+  });
+
+  const freezerItems = $derived(
+    $freezerGate.enabled && $freezerItemsState.status === 'loaded' ? $freezerItemsState.items : [],
+  );
+  const freezerConfig = $derived(
+    $freezerConfigState.status === 'loaded' ? $freezerConfigState.config : null,
+  );
+
+  function placeOf(item: FreezerItem): string {
+    const place = freezerPlace(freezerConfig, item);
+    if (place === null) return 'Not placed';
+    return place.shelf === null ? place.freezer : `${place.freezer}, shelf ${place.shelf}`;
+  }
+
+  function packs(n: number): string {
+    return `${n} ${n === 1 ? 'pack' : 'packs'}`;
+  }
+
+  // What a row's freezer line says: the oldest matching bag, and how many more.
+  // Nothing for a checked row (it is bought) or while selecting.
+  function freezerLine(item: ShoppingListItem): string | undefined {
+    if (item.checked || selectionMode) return undefined;
+    const [oldest, ...more] = freezerStockFor(freezerItems, item.canonId);
+    if (!oldest) return undefined;
+    const line = `${placeOf(oldest)} · #${oldest.number} · ${packs(displayAmount(oldest.amount))}`;
+    return more.length > 0 ? `${line} · ${more.length} more` : line;
+  }
+
+  let useOpen = $state(false);
+  let useTarget = $state<ShoppingListItem | null>(null);
+  const useStock = $derived(useTarget ? freezerStockFor(freezerItems, useTarget.canonId) : []);
+
+  function openUseFromFreezer(item: ShoppingListItem): void {
+    useTarget = item;
+    useOpen = true;
+  }
+
+  // The recipe the row is for: its first source, the only one written today
+  // (`isRecipeSourced`). A "make it yourself" row's source IS its producer.
+  function recipeOf(item: ShoppingListItem): { id: string; title: string | null } | null {
+    const source = item.sources[0];
+    if (source?.kind !== 'recipe') return null;
+    return {
+      id: source.recipeId,
+      title: source.label ?? $recipesById.get(source.recipeId)?.title ?? null,
+    };
+  }
+
+  const GONE = 'That pack is no longer in the freezer.';
+
+  async function confirmUseFromFreezer(choice: { number: number; count: number }): Promise<void> {
+    const item = useTarget;
+    if (!item) return;
+    const result = await useFromFreezer({
+      number: choice.number,
+      count: choice.count,
+      recipe: recipeOf(item),
+      shoppingRow: { listId: params.listId, itemId: item.id },
+    });
+    if (result.kind === 'err') {
+      addToast(
+        result.error.kind === 'NotFound' ? GONE : "Couldn't use that from the freezer.",
+        'destructive',
+      );
+      return;
+    }
+    const { defrost, last } = result.value;
+    addToast(
+      last
+        ? `${defrost.name} is in Kitchen to get out. That was the last of #${defrost.freezerNumber}.`
+        : `${defrost.name} is in Kitchen to get out.`,
+      'success',
+    );
+    // Another phone removed the bag first: the batch applied nothing, so the row
+    // is back and there is no Kitchen item.
+    void result.value.written.then((written) => {
+      if (written.kind === 'err' && written.error.kind === 'NotFound')
+        addToast(GONE, 'destructive');
+    });
+  }
 </script>
 
 {#snippet verifyControls(ids: string[])}
@@ -854,6 +963,8 @@
     onEdit={openEditSheet}
     onToggleChecked={handleToggleChecked}
     onDelete={handleSwipeDelete}
+    freezerStock={freezerLine(item)}
+    onUseFromFreezer={openUseFromFreezer}
   />
 {/snippet}
 
@@ -1152,6 +1263,15 @@
                               {row.contributors.length} recipes
                             </span>
                           {/if}
+                          {#if freezerStockFor(freezerItems, row.canonId).length > 0}
+                            <!-- A hint only: each recipe's own line in the
+                                 breakdown offers the choice (issue #1685), so a
+                                 pack is never committed to two meals at once. -->
+                            <span
+                              class="block text-xs text-primary"
+                              data-testid="shopping-combined-freezer-hint">in the freezer</span
+                            >
+                          {/if}
                         </DisclosureTrigger>
                         {#if row.needsCheck && !rowExiting}
                           {@render verifyControls(flaggedIds(row))}
@@ -1290,6 +1410,14 @@
     {/snippet}
   </ListPage>
 {/if}
+
+<UseFromFreezerSheet
+  bind:open={useOpen}
+  itemName={useTarget ? displayLabel(useTarget) : ''}
+  stock={useStock}
+  {placeOf}
+  onConfirm={(choice) => void confirmUseFromFreezer(choice)}
+/>
 
 <!-- Edit item sheet -->
 <Sheet

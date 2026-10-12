@@ -43,3 +43,9 @@ export { forgetSupplier } from './commands/forgetSupplier.js';
 export type { ForgetSupplierInput } from './commands/forgetSupplier.js';
 export { displayAmount } from './queries/displayAmount.js';
 export { supplierSuggestions, supplierSpelling } from './queries/supplierSuggestions.js';
+
+// Using a pack from the freezer instead of buying it (issue #1685).
+export type { Defrost } from './entities/Defrost.js';
+export { commitDefrost } from './commands/commitDefrost.js';
+export type { CommitDefrostInput } from './commands/commitDefrost.js';
+export { freezerStockFor } from './queries/freezerStockFor.js';

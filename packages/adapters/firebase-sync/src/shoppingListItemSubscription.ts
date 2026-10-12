@@ -16,8 +16,8 @@ import { classifyFirestoreError } from './firestoreErrors.js';
 import { parseDocuments } from './schemaParsing.js';
 import { subscribeCollection } from './subscribeCollection.js';
 
-const LISTS_COLLECTION = 'shoppingLists';
-const ITEMS_SUB = 'items';
+export const LISTS_COLLECTION = 'shoppingLists';
+export const ITEMS_SUB = 'items';
 
 export function subscribeShoppingListItems(
   listId: string,

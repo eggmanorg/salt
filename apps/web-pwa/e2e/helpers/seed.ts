@@ -238,6 +238,24 @@ export async function seedGuidedPlan(plan: GuidedPlanDoc): Promise<void> {
   }
 }
 
+// Any document, written straight into the emulator BEFORE the app boots
+// (issue #1685) — for household setup a spec needs in place when the first
+// listener attaches, for the same post-attach drop hazard as the seeds above:
+// the freezer setup and its stock, and shopping rows already matched to a canon
+// (which the canonicalisation trigger leaves alone: it acts only on `pending`).
+export async function seedDocumentBeforeBoot(path: string, document: object): Promise<void> {
+  const res = await fetch(`${FIRESTORE_DOCUMENTS_BASE_URL}/${path}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: toFirestoreFields(document) }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `seedDocumentBeforeBoot(${path}) failed: HTTP ${res.status} ${await res.text()}`,
+    );
+  }
+}
+
 // The REST document encoding, derived from the value rather than hand-written per
 // field. The seeds above spell theirs out because each is three or four flat
 // fields; a plan is two arrays of maps, one of which contains a third, and forty

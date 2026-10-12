@@ -1628,6 +1628,69 @@ describe.skipIf(!reachable)('firestore.rules — freezerItems (issue #1684)', ()
   });
 });
 
+describe.skipIf(!reachable)('firestore.rules — defrosts (issue #1685)', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: HOST,
+        port: PORT,
+        rules: readFileSync(RULES_PATH, 'utf8'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await testEnv?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+  });
+
+  const defrost = (amount = 1) => ({
+    schemaVersion: 1,
+    freezerNumber: 47,
+    name: 'Pork loin',
+    location: 'Garage · shelf B',
+    recipeId: 'r-1',
+    recipeTitle: 'Chilli',
+    amount,
+    committedAt: '2026-10-12T09:00:00.000Z',
+  });
+
+  function userCtx(uid: string) {
+    return testEnv.authenticatedContext(uid, { email: `${uid}@e.org` }).firestore();
+  }
+
+  // Family-shared: one member commits a pack, the other gets it out — the tick
+  // is a household deletion, not a per-user dismissal.
+  it('lets one member write it and another read and delete it', async () => {
+    await assertSucceeds(setDoc(doc(userCtx('uid-a'), 'defrosts', '047_r-1'), defrost()));
+    const other = userCtx('uid-b');
+    await assertSucceeds(getDocs(collection(other, 'defrosts')));
+    await assertSucceeds(deleteDoc(doc(other, 'defrosts', '047_r-1')));
+  });
+
+  // No `resource == null` guard: a recommit to the same id sums onto the
+  // existing document, so the overwrite must land.
+  it('lets a recommit overwrite the existing document', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'defrosts', '047_r-1'), defrost());
+    });
+    await assertSucceeds(setDoc(doc(userCtx('uid-b'), 'defrosts', '047_r-1'), defrost(2)));
+  });
+
+  it('denies an unauthenticated caller entirely', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'defrosts', '047_r-1')));
+    await assertFails(setDoc(doc(db, 'defrosts', '047_r-1'), defrost()));
+    await assertFails(deleteDoc(doc(db, 'defrosts', '047_r-1')));
+  });
+});
+
 // kitchenTimers is the FOURTH owner-scoped collection (issue #842), and its rule
 // is the only owner-scoped one that keys on the PATH SEGMENT rather than on a
 // stored field — the document id simply is the uid. These cover both halves of

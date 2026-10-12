@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ErrorCode, failure, success } from '@salt/shared-types';
-import type { FreezerConfig, FreezerItem } from '@salt/domain';
+import type { Defrost, FreezerConfig, FreezerItem } from '@salt/domain';
 
 // The freezer service (issue #1682) — the store over `freezerConfig/current` and
 // the one write path for it.
@@ -20,7 +20,15 @@ const {
   mockTake,
   mockStopConfig,
   mockStopItems,
+  mockSubscribeDefrosts,
+  mockCommit,
+  mockSaveDefrost,
+  mockDeleteDefrost,
 } = vi.hoisted(() => ({
+  mockSubscribeDefrosts: vi.fn(),
+  mockCommit: vi.fn(),
+  mockSaveDefrost: vi.fn(),
+  mockDeleteDefrost: vi.fn(),
   mockSubscribe: vi.fn(),
   mockSave: vi.fn(),
   mockReport: vi.fn(),
@@ -39,6 +47,10 @@ vi.mock('@salt/firebase-sync', () => ({
   saveFreezerItem: mockSaveItem,
   deleteFreezerItem: mockDeleteItem,
   takeFreezerItemAmount: mockTake,
+  subscribeDefrosts: mockSubscribeDefrosts,
+  commitFromFreezer: mockCommit,
+  saveDefrost: mockSaveDefrost,
+  deleteDefrost: mockDeleteDefrost,
   isAuthTransitioning: () => false,
 }));
 vi.mock('@salt/observability', () => ({
@@ -59,6 +71,13 @@ import {
   setFreezerShelves,
   takeOneFreezerPack,
   updateFreezerItem,
+  defrostsState,
+  freezerPlace,
+  getDefrostsSnapshot,
+  initDefrostSync,
+  tickOffDefrost,
+  undoTickOff,
+  useFromFreezer,
 } from '../src/lib/freezerService.js';
 
 type OnConfig = (config: FreezerConfig | null) => void;
@@ -588,5 +607,206 @@ describe('freezer service — the places bought from', () => {
     expect(storedItems()).toEqual([]);
     expect(mockSave).not.toHaveBeenCalled();
     expect(storedConfig()?.suppliers).toEqual(['Swaledale']);
+  });
+});
+
+// ─── Using packs from the freezer (issue #1685) ─────────────────────────────
+
+describe('freezer service — use from the freezer', () => {
+  type OnDefrosts = (defrosts: Defrost[]) => void;
+  let emitDefrosts: OnDefrosts;
+  let failDefrosts: OnError;
+
+  const CHILLI = { id: 'r-chilli', title: 'Chilli' };
+  const ROW = { listId: 'list-1', itemId: 'i1' };
+
+  beforeEach(() => {
+    mockCommit.mockResolvedValue(success(undefined));
+    mockSaveDefrost.mockResolvedValue(success(undefined));
+    mockDeleteDefrost.mockResolvedValue(success(undefined));
+    mockSubscribeDefrosts.mockImplementation((onDefrosts: OnDefrosts, onError: OnError) => {
+      emitDefrosts = onDefrosts;
+      failDefrosts = onError;
+      return vi.fn();
+    });
+    initDefrostSync();
+    emit(config([GARAGE]));
+    emitItems([item(47, { name: 'Pork loin', shelf: 'B', amount: 3 }), item(12, { amount: 1 })]);
+    emitDefrosts([]);
+  });
+
+  it('writes nothing until the Kitchen items have loaded', async () => {
+    initDefrostSync();
+
+    const result = await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result).toEqual(failure({ kind: 'NetworkError', reason: 'transient' }));
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it('takes the packs, writes the Kitchen item and removes the row, in one commit', async () => {
+    const result = await useFromFreezer({ number: 47, count: 2, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result.kind === 'ok' && result.value.last).toBe(false);
+    const defrost = {
+      schemaVersion: 1,
+      freezerNumber: 47,
+      name: 'Pork loin',
+      location: 'Garage · shelf B',
+      recipeId: 'r-chilli',
+      recipeTitle: 'Chilli',
+      amount: 2,
+      committedAt: expect.any(String),
+    };
+    expect(mockCommit).toHaveBeenCalledWith({
+      itemNumber: 47,
+      take: -2,
+      removeItem: false,
+      defrost,
+      shoppingRow: ROW,
+    });
+    expect(storedItems().find((i) => i.number === 47)?.amount).toBe(1);
+    expect(getDefrostsSnapshot()).toEqual([defrost]);
+  });
+
+  it('removes the entry with its last pack', async () => {
+    const result = await useFromFreezer({ number: 12, count: 1, recipe: null, shoppingRow: ROW });
+
+    expect(result.kind === 'ok' && result.value.last).toBe(true);
+    expect(mockCommit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        removeItem: true,
+        defrost: expect.objectContaining({ recipeId: null }),
+      }),
+    );
+    expect(storedItems().some((i) => i.number === 12)).toBe(false);
+  });
+
+  it('sums onto a Kitchen item already at the same id', async () => {
+    emitDefrosts([
+      {
+        schemaVersion: 1,
+        freezerNumber: 47,
+        name: 'Pork loin',
+        location: 'Garage · shelf B',
+        recipeId: 'r-chilli',
+        recipeTitle: 'Chilli',
+        amount: 1,
+        committedAt: '2026-10-11T09:00:00.000Z',
+      },
+    ]);
+
+    await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(mockCommit.mock.calls[0]?.[0].defrost).toMatchObject({
+      amount: 2,
+      committedAt: '2026-10-11T09:00:00.000Z',
+    });
+  });
+
+  it('is NotFound for a bag this device no longer holds, and writes nothing', async () => {
+    const result = await useFromFreezer({ number: 99, count: 1, recipe: null, shoppingRow: ROW });
+
+    expect(result).toEqual(failure({ kind: 'NotFound', resource: 'freezerItem', id: '99' }));
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it('hands the page the server’s answer, and the refusal to the reporter by category', async () => {
+    // The category gate is inside the real port, which drops a NotFound; here
+    // the port is the mock, so it arrives with its category.
+    const gone = failure({ kind: 'NotFound', resource: 'freezerItem', id: '47' });
+    mockCommit.mockResolvedValue(gone);
+
+    const result = await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') return;
+    expect(await result.value.written).toEqual(gone);
+    expect(mockReport.mock.calls.map((c) => c[1])).toEqual(['NotFound']);
+  });
+
+  it('Got it out deletes the item at its id; Undo writes the same one back', async () => {
+    const defrost: Defrost = {
+      schemaVersion: 1,
+      freezerNumber: 12,
+      name: 'Beef mince',
+      location: 'Garage · shelf A',
+      recipeId: null,
+      recipeTitle: null,
+      amount: 1,
+      committedAt: '2026-10-11T09:00:00.000Z',
+    };
+    emitDefrosts([defrost]);
+
+    await tickOffDefrost(defrost);
+    expect(mockDeleteDefrost).toHaveBeenCalledWith('012_manual');
+    expect(getDefrostsSnapshot()).toEqual([]);
+
+    await undoTickOff(defrost);
+    expect(mockSaveDefrost).toHaveBeenCalledWith(defrost);
+    expect(getDefrostsSnapshot()).toEqual([defrost]);
+  });
+
+  it('a dead listener leaves the Kitchen items unwritable', async () => {
+    failDefrosts({ kind: 'StorageError' });
+
+    expect(get(defrostsState)).toEqual({ status: 'failed' });
+    expect(await useFromFreezer({ number: 47, count: 1, recipe: null, shoppingRow: ROW })).toEqual(
+      failure({ kind: 'NetworkError', reason: 'transient' }),
+    );
+  });
+
+  it('stores where the bag was: the freezer alone without shelves, or Not placed', async () => {
+    emit(config([{ id: 'fz-chest', name: 'Chest', shelves: [] }]));
+    emitItems([
+      item(5, { freezerId: 'fz-chest', shelf: null, amount: 2 }),
+      item(6, { freezerId: 'fz-gone', amount: 2 }),
+    ]);
+
+    await useFromFreezer({ number: 5, count: 1, recipe: null, shoppingRow: ROW });
+    await useFromFreezer({ number: 6, count: 1, recipe: null, shoppingRow: ROW });
+
+    expect(mockCommit.mock.calls.map((c) => c[0].defrost.location)).toEqual([
+      'Chest',
+      'Not placed',
+    ]);
+  });
+
+  it('a bag already showing none is refused, and writes nothing', async () => {
+    emitItems([item(47, { amount: 0 })]);
+
+    expect(await useFromFreezer({ number: 47, count: 1, recipe: null, shoppingRow: ROW })).toEqual(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_AMOUNT }),
+    );
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it('ticks off and undoes even before the listener has delivered', async () => {
+    initDefrostSync();
+    const defrost: Defrost = {
+      schemaVersion: 1,
+      freezerNumber: 47,
+      name: 'Pork loin',
+      location: 'Garage · shelf B',
+      recipeId: 'r-chilli',
+      recipeTitle: 'Chilli',
+      amount: 1,
+      committedAt: '2026-10-11T09:00:00.000Z',
+    };
+
+    await tickOffDefrost(defrost);
+    await undoTickOff(defrost);
+
+    expect(mockDeleteDefrost).toHaveBeenCalledWith('047_r-chilli');
+    expect(mockSaveDefrost).toHaveBeenCalledWith(defrost);
+    expect(getDefrostsSnapshot()).toEqual([]);
+  });
+
+  it('names a bag’s place, or nothing when its freezer is gone', () => {
+    expect(freezerPlace(config([GARAGE]), item(1, { shelf: 'B' }))).toEqual({
+      freezer: 'Garage',
+      shelf: 'B',
+    });
+    expect(freezerPlace(config([]), item(1))).toBeNull();
   });
 });

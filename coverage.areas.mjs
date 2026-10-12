@@ -643,11 +643,18 @@ export const coverageThresholds = {
   // 37145371497, job 111268086270); this branch measures 86.94/77.21
   // (1628/1716) on ubuntu-latest (run 37188647761, job 111395961846). Both
   // uncovered counts fell against the merge base, so the gain is earned.
+  // BANKED in #1685, the ratchet's own paste block: both floors UP (lines
+  // 86.93 → 87.72, branches 77.2 → 78.27 — the area's branch ratio rose more
+  // than the 1.00-point tolerance) and uncovered lines DOWN 1628 → 1618. The
+  // branch ceiling rises 1716 → 1726 for the new freezer UI (the shopping row's
+  // freezer line, UseFromFreezerSheet, Kitchen's To do), which is tested
+  // (ShoppingListPage.freezer, UseFromFreezerSheet, MinePage) but compiles to
+  // more template branches than jsdom reaches.
   'apps/web-pwa/src/routes/**': {
-    lines: 86.93,
-    branches: 77.2,
-    uncoveredLines: 1628,
-    uncoveredBranches: 1716,
+    lines: 87.72,
+    branches: 78.27,
+    uncoveredLines: 1618,
+    uncoveredBranches: 1726,
   },
   // RE-PINNED in #1233, and it is the dedup shape this file's header and
   // `scripts/check-coverage-ratchet.mjs` both name (the #1113 precedent): the

@@ -8,12 +8,16 @@
   — it is a different shape — but shares this row's `CheckOffButton` and the same
   `salt-row-collapse` shell, so both celebrate identically.
 
+  A row whose ingredient is in a freezer (issue #1685) carries a second line —
+  where it is, and Use from the freezer — when the page passes `freezerStock`.
+  Without it the row renders exactly as it always has.
+
   The outermost element is the collapse shell, not the row: `salt-row-collapse`
   walks the row's real height to zero on the way out, which needs a wrapper it can
   own. `data-testid="shopping-item-row"` stays on the row proper.
 -->
 <script lang="ts">
-  import { CanonIcon, Icon, RowSelectCheckbox, Spinner } from '@salt/ui-components';
+  import { Button, CanonIcon, Icon, RowSelectCheckbox, Spinner } from '@salt/ui-components';
   import type { ListSelection } from '@salt/ui-components';
   import {
     isRecipeSourced,
@@ -86,6 +90,13 @@
     onToggleChecked: (item: ShoppingListItem) => void;
     /** Delete this single row through the shared deferred-delete + undo snackbar. */
     onDelete: (item: ShoppingListItem) => void;
+    /**
+     * Where this row's ingredient is in a freezer — "Garage, shelf B · #47 · 1
+     * pack" — or absent when it is in none, the gate is off, or the row cannot be
+     * used from one (checked, selecting). Absent renders nothing extra.
+     */
+    freezerStock?: string | undefined;
+    onUseFromFreezer?: (item: ShoppingListItem) => void;
   }
 
   let {
@@ -106,6 +117,8 @@
     onEdit,
     onToggleChecked,
     onDelete,
+    freezerStock,
+    onUseFromFreezer,
   }: Props = $props();
 
   // ─── Match-reveal move (#571 Treatment 2, lively list Phase 3) ───────────────
@@ -442,6 +455,25 @@
     {:else}
       <div class={rowClass} data-testid="shopping-item-row" data-item-id={item.id}>
         {@render rowContents()}
+      </div>
+    {/if}
+    {#if freezerStock && onUseFromFreezer}
+      <!-- Under the row rather than in it: the row has no width to spare beside
+           its label and check, and a nested button inside the edit target is not
+           allowed. Inside the collapse shell, so it leaves with the row. -->
+      <div
+        class="flex items-center justify-between gap-2 pb-1 {subordinate ? 'pl-8' : 'pl-14'} pr-1"
+        data-testid="shopping-item-freezer"
+      >
+        <span class="min-w-0 truncate text-xs text-primary">in the freezer · {freezerStock}</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          onclick={() => onUseFromFreezer(item)}
+          data-testid="shopping-item-use-from-freezer"
+        >
+          Use from the freezer
+        </Button>
       </div>
     {/if}
   </div>

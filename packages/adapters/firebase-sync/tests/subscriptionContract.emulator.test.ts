@@ -153,7 +153,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import type { DomainError } from '@salt/shared-types';
-import { freezerItemDocId } from '@salt/domain/schemas';
+import { defrostDocId, freezerItemDocId } from '@salt/domain/schemas';
 import * as barrel from '../src/index.js';
 import { clearFirestoreEmulator, resetDefaultApp, PROJECT_ID } from './emulatorHelpers.js';
 
@@ -170,6 +170,7 @@ import { subscribeEnrichmentFailures } from '../src/enrichmentFailureSubscriptio
 import { subscribeEquipmentManifest } from '../src/equipmentManifestSubscription.js';
 import { subscribeFreezerConfig } from '../src/freezerConfigSubscription.js';
 import { subscribeFreezerItems } from '../src/freezerItemSync.js';
+import { subscribeDefrosts } from '../src/defrostSync.js';
 import { subscribeFormula } from '../src/formulaSubscription.js';
 import { subscribeGuidedPlan } from '../src/guidedPlanSubscription.js';
 import { subscribeKitchenMemories } from '../src/kitchenMemorySubscription.js';
@@ -550,6 +551,16 @@ const fx = {
     purchasedFrom: null,
     addedAt: NOW,
     updatedAt: NOW,
+  }),
+  defrost: (freezerNumber: number) => ({
+    schemaVersion: 1,
+    freezerNumber,
+    name: 'Pork loin',
+    location: 'Garage · shelf A',
+    recipeId: null,
+    recipeTitle: null,
+    amount: 1,
+    committedAt: NOW,
   }),
   formula: (recipeId: string) => ({
     recipeId,
@@ -1019,6 +1030,24 @@ const collectionCases: CollectionCase[] = [
     },
   },
   {
+    name: 'subscribeDefrosts',
+    subscribe: (on, err) =>
+      subscribeDefrosts((ds) => on(ds.map((d) => defrostDocId(d.freezerNumber, d.recipeId))), err),
+    id: '047_manual',
+    seed: () => writeAs(['defrosts', '047_manual'], fx.defrost(47)),
+    alsoDelivers: {
+      ids: ['003_manual'],
+      seed: () => writeAs(['defrosts', '003_manual'], fx.defrost(3)),
+    },
+    corrupt: { id: 'bad', seed: () => writeAs(['defrosts', 'bad'], CORRUPT) },
+    // The decoy is recognised by the id its fields derive, which is what this row delivers.
+    excluded: {
+      ids: ['999_manual'],
+      what: NESTED_DECOY_WHAT,
+      seed: () => writeAs(nestedPath('defrosts'), fx.defrost(999)),
+    },
+  },
+  {
     name: 'subscribeKitchenTools',
     subscribe: (on, err) => subscribeKitchenTools((tools) => on(tools.map((t) => t.id)), err),
     id: 'whisk',
@@ -1421,7 +1450,7 @@ describe('subscription contract — table coverage', () => {
     // #928 asks for: the shape only exists once to copy from, and the table is
     // what notices when someone copies it anyway.
     expect(tabled).toEqual(exported);
-    expect(exported).toHaveLength(32);
+    expect(exported).toHaveLength(33);
   });
 
   it('every row is uniquely named', () => {

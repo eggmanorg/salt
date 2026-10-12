@@ -23,6 +23,7 @@ const {
   mockMember,
   mockKitchenTimers,
   mockRecipesById,
+  mockDefrosts,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   const recipes = makeStore<unknown[]>([]);
@@ -44,6 +45,7 @@ const {
     mockToday: makeStore<string>(''),
     mockMember: makeStore<unknown>(null),
     mockKitchenTimers: makeStore<unknown>(null),
+    mockDefrosts: makeStore<unknown>({ status: 'loading' }),
   };
 });
 
@@ -63,8 +65,10 @@ vi.mock('../src/lib/mealPlanService.js', () => ({
   kitchenAnchorDate: mockToday,
 }));
 vi.mock('../src/lib/membersService.js', () => ({ currentMember: mockMember }));
+vi.mock('../src/lib/freezerService.js', () => ({ defrostsState: mockDefrosts }));
 
 import {
+  kitchenTaskList,
   firedTimers,
   liveCooks,
   mineOpenCount,
@@ -695,5 +699,47 @@ describe('mineOpenCount', () => {
     mockRecipes._set([recipe('r1', 'Never reviewed', { needs_approval: true } as Partial<Recipe>)]);
     expect(get(needsReviewRecipes)).toHaveLength(1);
     expect(get(mineOpenCount)).toBe(0);
+  });
+});
+
+// To do (issue #1685): the projection is `kitchenTasks` in the domain suite.
+// What is this service's is WHICH weeks and WHICH today it projects over — the
+// same pair as Cooking soon — and that nothing shows before the listener has.
+describe('kitchenTaskList', () => {
+  const defrost = {
+    schemaVersion: 1,
+    freezerNumber: 47,
+    name: 'Pork loin',
+    location: 'Garage · shelf B',
+    recipeId: 'r-chilli',
+    recipeTitle: 'Chilli',
+    amount: 1,
+    committedAt: '2026-06-08T09:00:00.000Z',
+  };
+
+  afterEach(() => {
+    mockDefrosts._set({ status: 'loading' });
+    mockKitchenWeeks._set([]);
+    mockToday._set('');
+  });
+
+  it('is empty until the Kitchen items have loaded', () => {
+    expect(get(kitchenTaskList)).toEqual([]);
+  });
+
+  it('finds the night in the kitchen weeks, from the kitchen’s today', () => {
+    mockKitchenWeeks._set([setDayRecipes(emptyWeek('2026-06-08'), '2026-06-11', ['r-chilli'])]);
+    mockToday._set('2026-06-10');
+    mockDefrosts._set({ status: 'loaded', defrosts: [defrost] });
+
+    expect(get(kitchenTaskList)).toEqual([
+      {
+        kind: 'defrost',
+        id: 'defrost:047_r-chilli',
+        forDate: '2026-06-11',
+        dueDate: '2026-06-10',
+        defrost,
+      },
+    ]);
   });
 });

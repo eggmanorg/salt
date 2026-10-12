@@ -166,6 +166,8 @@ export type {
   TakenPacks,
   SetFreezerItemAmountInput,
   ForgetSupplierInput,
+  Defrost,
+  CommitDefrostInput,
 } from './freezer/index.js';
 export {
   emptyFreezerConfig,
@@ -188,6 +190,8 @@ export {
   displayAmount,
   supplierSuggestions,
   supplierSpelling,
+  commitDefrost,
+  freezerStockFor,
 } from './freezer/index.js';
 
 // Shopping list module — published surface.
@@ -541,7 +545,10 @@ export type { ShopDayHeadlineInput } from './shoppingDay/index.js';
 // "Kitchen": which nights from today onward are yours to cook, across however
 // many week documents the caller is holding. Pure, no per-user storage and no
 // clock.
-export { upcomingChefDays, dayForDate } from './personalView/index.js';
+export { upcomingChefDays, dayForDate, kitchenTasks } from './personalView/index.js';
+// What Kitchen asks somebody to do (issue #1685) — the one projection Kitchen
+// renders and the 09:00 push (#1683) scans.
+export type { KitchenTask, KitchenTaskSources, DefrostTask } from './personalView/index.js';
 // Kitchen-memory module (issue #816) — reading a composer line as the one chat
 // command the app has. Pure string work by design: capture involves no AI at all.
 export { parseChatCommand } from './memory/index.js';

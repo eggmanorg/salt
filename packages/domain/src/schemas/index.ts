@@ -150,6 +150,9 @@ export type { FreezerDoc, FreezerConfigDoc } from './freezerConfig.js';
 // What is in the freezers, one document per bag number (issue #1684).
 export { FreezerItemSchema, FREEZER_ITEMS_COLLECTION, freezerItemDocId } from './freezerItem.js';
 export type { FreezerItemDoc } from './freezerItem.js';
+// Packs promised out of the freezer, until somebody gets them out (issue #1685).
+export { DefrostSchema, DEFROSTS_COLLECTION, defrostDocId } from './defrost.js';
+export type { DefrostDoc } from './defrost.js';
 
 export {
   EquipmentIconSchema,

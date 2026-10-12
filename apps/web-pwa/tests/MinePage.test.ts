@@ -28,6 +28,12 @@ const {
   mockSubscribeKitchenWeeks,
   mockStartKitchenTimer,
   mockDismissKitchenTimer,
+  mockKitchenTasks,
+  mockFreezerGate,
+  mockInitDefrostSync,
+  mockStopDefrostSync,
+  mockTickOff,
+  mockUndoTickOff,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   const mockKitchenTeardown = vi.fn();
@@ -50,6 +56,15 @@ const {
     mockSubscribeKitchenWeeks: vi.fn(() => mockKitchenTeardown),
     mockStartKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
     mockDismissKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+    mockKitchenTasks: makeStore<unknown[]>([]),
+    mockFreezerGate: makeStore<{ enabled: boolean; settled: boolean }>({
+      enabled: true,
+      settled: true,
+    }),
+    mockInitDefrostSync: vi.fn(),
+    mockStopDefrostSync: vi.fn(),
+    mockTickOff: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
+    mockUndoTickOff: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
   };
 });
 
@@ -63,6 +78,14 @@ vi.mock('../src/lib/personalViewService.js', () => ({
   timerNowMs: mockTimerNowMs,
   tonight: mockTonight,
   upcomingChefNights: mockUpcomingNights,
+  kitchenTaskList: mockKitchenTasks,
+}));
+// To do (issue #1685): its listener, its two writes, and the gate it sits behind.
+vi.mock('../src/lib/featureGate.js', () => ({ freezerGate: mockFreezerGate }));
+vi.mock('../src/lib/freezerService.js', () => ({
+  initDefrostSync: mockInitDefrostSync,
+  tickOffDefrost: mockTickOff,
+  undoTickOff: mockUndoTickOff,
 }));
 // Since #828 the page's heading and the header's link read ONE derivation of the
 // name, so mirror it here over the same mocked member rather than stubbing a
@@ -224,6 +247,11 @@ beforeEach(() => {
   mockTonight._set(null);
   mockRecipes._set([]);
   mockSubscribeKitchenWeeks.mockReturnValue(mockKitchenTeardown);
+  mockKitchenTasks._set([]);
+  mockFreezerGate._set({ enabled: true, settled: true });
+  mockInitDefrostSync.mockReturnValue(mockStopDefrostSync);
+  mockTickOff.mockResolvedValue({ kind: 'ok', value: undefined });
+  mockUndoTickOff.mockResolvedValue({ kind: 'ok', value: undefined });
   mockTimerNowMs._set(NOW);
   mockCurrentMember._set(alex);
   // The workbench is a module-level singleton (in-memory only, CLAUDE.md Rule 3),
@@ -1178,5 +1206,130 @@ describe('MinePage — hero URL rule (issue #933 characterisation)', () => {
     mockLiveCooks._set([liveCook('r-hero', 'Hero None')]);
     const { queryByTestId } = render(MinePage);
     expect(queryByTestId('mine-live-banner')).not.toBeInTheDocument();
+  });
+});
+
+// To do (issue #1685) — packs promised out of the freezer. The projection is
+// `kitchenTasks` in the domain suite; these assert the SCREEN: the gate, the
+// copy, Got it out and its Undo.
+describe('MinePage — to do', () => {
+  const porkLoin = {
+    schemaVersion: 1,
+    freezerNumber: 47,
+    name: 'Pork loin',
+    location: 'Garage · shelf B',
+    recipeId: 'recipe-chilli',
+    recipeTitle: 'Chilli',
+    amount: 1,
+    committedAt: '2026-08-05T09:00:00.000Z',
+  };
+  const mince = {
+    ...porkLoin,
+    freezerNumber: 12,
+    name: 'Beef mince',
+    location: 'Kitchen · shelf A',
+    recipeId: null,
+    recipeTitle: null,
+    amount: 2,
+  };
+  const tasks = [
+    {
+      kind: 'defrost',
+      id: 'defrost:047_recipe-chilli',
+      forDate: '2026-08-06',
+      dueDate: '2026-08-05',
+      defrost: porkLoin,
+    },
+    { kind: 'defrost', id: 'defrost:012_manual', forDate: null, dueDate: null, defrost: mince },
+  ];
+
+  it('says what, exactly where, how much, and the night it is for', () => {
+    mockKitchenTasks._set(tasks);
+    const { getByTestId, getAllByTestId } = render(MinePage);
+
+    expect(getByTestId('mine-tasks')).toBeInTheDocument();
+    const titles = getAllByTestId('mine-task-title').map((n) => n.textContent?.trim());
+    const details = getAllByTestId('mine-task-detail').map((n) => n.textContent?.trim());
+    expect(titles).toEqual(['Defrost Pork loin', 'Get out: Beef mince']);
+    expect(details).toEqual([
+      'Garage · shelf B · #47 · 1 pack — for Chilli, Thursday',
+      'Kitchen · shelf A · #12 · 2 packs',
+    ]);
+  });
+
+  it('opens the Kitchen items listener only behind the gate', () => {
+    render(MinePage);
+    expect(mockInitDefrostSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the freezer gate off: no section, no toggle, no listener', async () => {
+    mockFreezerGate._set({ enabled: false, settled: true });
+    mockKitchenTasks._set(tasks);
+    const { queryByTestId, getByTestId } = render(MinePage);
+
+    expect(queryByTestId('mine-tasks')).not.toBeInTheDocument();
+    expect(mockInitDefrostSync).not.toHaveBeenCalled();
+    await fireEvent.click(getByTestId('mine-customize-open'));
+    await tick();
+    expect(queryByTestId('mine-customize-section-tasks')).not.toBeInTheDocument();
+  });
+
+  it('Got it out deletes the item, and the toast’s Undo puts the same one back', async () => {
+    mockKitchenTasks._set(tasks);
+    const { getAllByTestId } = render(MinePage);
+
+    await fireEvent.click(getAllByTestId('mine-task-done')[0]!);
+
+    expect(mockTickOff).toHaveBeenCalledWith(porkLoin);
+    const [, , options] = mockAddToast.mock.calls.at(-1) as [
+      string,
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(options.action.label).toBe('Undo');
+    options.action.onClick();
+    expect(mockUndoTickOff).toHaveBeenCalledWith(porkLoin);
+  });
+
+  it('a recipe with no night in view is "for" it, undated', () => {
+    mockKitchenTasks._set([
+      {
+        kind: 'defrost',
+        id: 'defrost:003_recipe-ragu',
+        forDate: null,
+        dueDate: null,
+        defrost: { ...porkLoin, freezerNumber: 3, recipeId: 'recipe-ragu', recipeTitle: 'Ragù' },
+      },
+    ]);
+    const { getByTestId } = render(MinePage);
+
+    expect(getByTestId('mine-task-detail').textContent?.trim()).toBe(
+      'Garage · shelf B · #3 · 1 pack — for Ragù',
+    );
+  });
+
+  it('says so when Got it out could not be written', async () => {
+    mockKitchenTasks._set(tasks);
+    mockTickOff.mockResolvedValueOnce({ kind: 'err', error: { kind: 'StorageError' } });
+    const { getAllByTestId } = render(MinePage);
+
+    await fireEvent.click(getAllByTestId('mine-task-done')[0]!);
+    await tick();
+    await tick();
+
+    expect(mockAddToast).toHaveBeenCalledWith("Couldn't tick that off.", 'destructive');
+  });
+
+  it('counts To do on the glance strip', () => {
+    mockKitchenTasks._set(tasks);
+    const { getAllByTestId } = render(MinePage);
+
+    expect(getAllByTestId('mine-stat-chip').map((c) => c.textContent?.trim())).toContain('2 to do');
+  });
+
+  it('stops the page reading as all-clear', () => {
+    mockKitchenTasks._set(tasks);
+    const { queryByTestId } = render(MinePage);
+    expect(queryByTestId('mine-empty')).not.toBeInTheDocument();
   });
 });
