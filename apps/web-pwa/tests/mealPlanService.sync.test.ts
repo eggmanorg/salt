@@ -219,6 +219,17 @@ describe('mealPlanService — subscriptions', () => {
     expect(get(mealPlanConfigLoaded)).toBe(true);
     expect(get(firstDayOfWeek)).toBe('mon'); // now a settled answer, same value
   });
+
+  it('is settled once a snapshot reports no config doc at all', () => {
+    // A household with no `mealPlanConfig` doc gets a null snapshot: that is a
+    // settled answer (the 'mon' default), not one still pending.
+    const { emitConfig } = wireSubscriptions();
+    initMealPlanSync();
+    expect(get(mealPlanConfigLoaded)).toBe(false);
+
+    emitConfig(null);
+    expect(get(mealPlanConfigLoaded)).toBe(true);
+  });
 });
 
 describe('mealPlanService — navigation', () => {
