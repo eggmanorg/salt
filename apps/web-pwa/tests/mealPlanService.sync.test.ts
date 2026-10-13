@@ -905,6 +905,42 @@ describe('mealPlanService — kitchen weeks', () => {
     expect(get(kitchenWeeksLoaded)).toBe(true);
   });
 
+  // A household that never saved a config doc gets a `null` snapshot, and for it
+  // 'mon' IS the week: "read, and absent" must count, or no recipe row could ever
+  // be used from its freezer.
+  it('is loaded when the config doc does not exist', () => {
+    vi.setSystemTime(Date.parse('2026-06-10T12:00:00.000Z')); // Wednesday: one 'mon' week
+    __resetMealPlanServiceForTest();
+    const { emitConfig, emitWeekFor } = wireSubscriptions();
+    initMealPlanSync();
+    subscribeKitchenWeeks();
+
+    emitConfig(null);
+    expect(get(kitchenWeeksLoaded)).toBe(false); // the week has not landed
+
+    emitWeekFor(THIS_WEEK, null);
+    expect(get(kitchenWeeksLoaded)).toBe(true);
+  });
+
+  // Sign-out tears the sync down; a config read under the old session must not
+  // let a commit through before the next one has read its own.
+  it('is not loaded after the sync is torn down, until the config is read again', () => {
+    vi.setSystemTime(Date.parse('2026-06-10T12:00:00.000Z'));
+    __resetMealPlanServiceForTest();
+    const { emitConfig, emitWeekFor } = wireSubscriptions();
+    const stopSync = initMealPlanSync();
+    emitConfig(CONFIG);
+
+    stopSync();
+    initMealPlanSync();
+    subscribeKitchenWeeks();
+    emitWeekFor(THIS_WEEK, null);
+    expect(get(kitchenWeeksLoaded)).toBe(false);
+
+    emitConfig(CONFIG);
+    expect(get(kitchenWeeksLoaded)).toBe(true);
+  });
+
   it('is not loaded once the page lets the weeks go', () => {
     const { emitWeekFor } = bootAt(`${TODAY}T12:00:00.000Z`);
     const teardown = subscribeKitchenWeeks();

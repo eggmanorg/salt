@@ -78,6 +78,11 @@ function without<T>(record: Record<string, T>, key: string): Record<string, T> {
 // ─── Reactive stores ──────────────────────────────────────────────────────────
 
 const _config = writable<MealPlanConfig | null>(null);
+// Whether the config listener has answered at all — with a document OR with
+// "there is none". `_config` alone cannot say: a household that never saved a
+// config reads as `null` before AND after its snapshot lands, and for it the
+// 'mon' fallback is the real answer, not a guess (#1696).
+const _configRead = writable<boolean>(false);
 const _template = writable<MealPlanTemplate | null>(null);
 // Loaded week documents, keyed by start date. A key is present only while we
 // hold a real document for that week; absent means "no doc" (the readers fall
@@ -169,16 +174,17 @@ export const kitchenAnchorDate: Readable<string> = _kitchenToday;
 
 /**
  * Whether `kitchenWeeks` is the household's whole answer yet (#1696): the config
- * doc has been read, every held kitchen week's first snapshot has landed, and the
- * slot is anchored. Until then a missing week is indistinguishable from an
+ * listener has answered (a missing config doc counts — then 'mon' is the real
+ * week, not a fallback), every held kitchen week's first snapshot has landed, and
+ * the slot is anchored. Until then a missing week is indistinguishable from an
  * unplanned one — `kitchenWeeks` drops both — and the weeks may be keyed on the
  * `'mon'` fallback (#1448). A reader that STORES what it computes from these
  * weeks must wait for this; a reader that only displays them need not.
  */
 export const kitchenWeeksLoaded: Readable<boolean> = derived(
-  [_config, _kitchenStarts, _kitchenToday, _loading],
-  ([$c, $starts, $today, $l]) =>
-    $c !== null && $today !== '' && $starts.length > 0 && $starts.every((s) => $l[s] === false),
+  [_configRead, _kitchenStarts, _kitchenToday, _loading],
+  ([$read, $starts, $today, $l]) =>
+    $read && $today !== '' && $starts.length > 0 && $starts.every((s) => $l[s] === false),
 );
 
 // ─── Subscriptions / navigation ───────────────────────────────────────────────
@@ -353,6 +359,7 @@ export function initMealPlanSync(): () => void {
   configUnsub = subscribeMealPlanConfig(
     (c) => {
       _config.set(c);
+      _configRead.set(true);
       // firstDayOfWeek may have changed which date this week starts on.
       syncWeekSubscription();
       // And with it which document today's nights live in. `firstDay()` answers
@@ -379,6 +386,7 @@ export function initMealPlanSync(): () => void {
     configUnsub?.();
     templateUnsub?.();
     configUnsub = templateUnsub = null;
+    _configRead.set(false);
     _extensionStart.set('');
     kitchenActive = false;
     _kitchenStarts.set([]);
@@ -825,6 +833,7 @@ export function __resetMealPlanServiceForTest(): void {
   templateWrites.discardAll();
   latestWeekUpdatedAt.clear();
   _config.set(null);
+  _configRead.set(false);
   _template.set(null);
   _weeks.set({});
   _anchorDate.set(todayIso());
@@ -835,8 +844,10 @@ export function __resetMealPlanServiceForTest(): void {
   _loading.set({});
 }
 
+// Stands in for the config snapshot, so it marks the config as read as one does.
 export function seedMealPlanConfig(config: MealPlanConfig | null): void {
   _config.set(config);
+  _configRead.set(true);
 }
 
 export function seedMealPlanTemplate(template: MealPlanTemplate | null): void {
