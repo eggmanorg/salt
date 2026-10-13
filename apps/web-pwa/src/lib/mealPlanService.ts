@@ -142,7 +142,7 @@ export const firstDayOfWeek: Readable<Weekday> = derived(
 // legitimate "no such document" answer for the wrong week must not be told
 // apart from "this week is genuinely empty" (issue #1448 review, finding 1 —
 // see `RecipeAddToPlannerSheet.svelte`'s `known` gate).
-export const mealPlanConfigLoaded: Readable<boolean> = derived(_config, ($c) => $c !== null);
+export const mealPlanConfigLoaded: Readable<boolean> = derived(_configRead, ($r) => $r);
 
 // The displayed week — falls back to an unsaved empty week (only persisted on
 // first edit / load-template) so the editor always has seven days to render.
