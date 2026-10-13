@@ -39,7 +39,13 @@ import { defrostDocId } from '@salt/domain/schemas';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { get, writable, type Readable } from 'svelte/store';
 import { getErrorReporter } from './errorReporter.js';
-import { kitchenAnchorDate, kitchenWeeks, kitchenWeeksLoaded } from './mealPlanService.js';
+import {
+  kitchenAnchorDate,
+  kitchenWeeks,
+  kitchenWeeksLoaded,
+  reanchorKitchenWeeks,
+} from './mealPlanService.js';
+import { todayIso } from './today.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 
 // The freezer service (issue #1682, epic #795) — the stores over
@@ -447,6 +453,13 @@ export async function useFromFreezer(
   const recipeId = input.recipe?.id ?? null;
   // A hand-added row has no night to look up, so it never waits on the planner.
   if (recipeId !== null && !get(kitchenWeeksLoaded)) return NOT_READY;
+  // `kitchenWeeksLoaded` stays true over a stale anchor (a page left open past
+  // midnight): re-anchor, and refuse this attempt rather than store a night that
+  // has already passed.
+  if (recipeId !== null && get(kitchenAnchorDate) !== todayIso()) {
+    reanchorKitchenWeeks();
+    return NOT_READY;
+  }
   const forDate =
     recipeId === null
       ? null

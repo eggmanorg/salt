@@ -21,6 +21,8 @@ const {
   mockTake,
   mockStopConfig,
   mockStopItems,
+  mockReanchor,
+  mockToday,
   mockSubscribeDefrosts,
   mockCommit,
   mockSaveDefrost,
@@ -39,6 +41,8 @@ const {
   mockTake: vi.fn(),
   mockStopConfig: vi.fn(),
   mockStopItems: vi.fn(),
+  mockReanchor: vi.fn(),
+  mockToday: { value: '2026-10-14' },
 }));
 
 vi.mock('@salt/firebase-sync', () => ({
@@ -65,8 +69,10 @@ vi.mock('../src/lib/mealPlanService.js', async () => {
     kitchenWeeks: writable<readonly MealPlanWeek[]>([]),
     kitchenAnchorDate: writable(''),
     kitchenWeeksLoaded: writable(false),
+    reanchorKitchenWeeks: mockReanchor,
   };
 });
+vi.mock('../src/lib/today.js', () => ({ todayIso: () => mockToday.value }));
 
 import { get, type Writable } from 'svelte/store';
 import * as mealPlan from '../src/lib/mealPlanService.js';
@@ -720,6 +726,7 @@ describe('freezer service — use from the freezer', () => {
   }
 
   beforeEach(() => {
+    mockToday.value = TODAY;
     kitchenWeeks.set([plannedWeek()]);
     kitchenAnchorDate.set(TODAY);
     kitchenWeeksLoaded.set(true);
@@ -811,6 +818,7 @@ describe('freezer service — use from the freezer', () => {
   });
 
   it('stores the soonest night from today on that the Kitchen weeks plan the recipe', async () => {
+    mockToday.value = '2026-10-16';
     kitchenAnchorDate.set('2026-10-16');
 
     await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
@@ -836,6 +844,18 @@ describe('freezer service — use from the freezer', () => {
 
     expect(result.kind).toBe('ok');
     expect(mockCommit.mock.calls[0]?.[0].defrost.forDate).toBeNull();
+  });
+
+  it('writes nothing, and re-anchors, when the Kitchen weeks are anchored on a past day', async () => {
+    // A page left open past midnight: still "loaded", but over yesterday's weeks.
+    kitchenAnchorDate.set('2026-10-13');
+
+    const result = await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result).toEqual(failure({ kind: 'NetworkError', reason: 'transient' }));
+    expect(mockReanchor).toHaveBeenCalledTimes(1);
+    expect(mockCommit).not.toHaveBeenCalled();
+    expect(storedItems().find((i) => i.number === 47)?.amount).toBe(3);
   });
 
   it('writes nothing for a recipe row until the Kitchen weeks have loaded', async () => {

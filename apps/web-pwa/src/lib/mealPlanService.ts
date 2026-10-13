@@ -173,13 +173,18 @@ export const kitchenWeeks: Readable<readonly MealPlanWeek[]> = derived(
 export const kitchenAnchorDate: Readable<string> = _kitchenToday;
 
 /**
- * Whether `kitchenWeeks` is the household's whole answer yet (#1696): the config
+ * Whether `kitchenWeeks` has finished its FIRST load (#1696): the config
  * listener has answered (a missing config doc counts — then 'mon' is the real
  * week, not a fallback), every held kitchen week's first snapshot has landed, and
  * the slot is anchored. Until then a missing week is indistinguishable from an
  * unplanned one — `kitchenWeeks` drops both — and the weeks may be keyed on the
  * `'mon'` fallback (#1448). A reader that STORES what it computes from these
  * weeks must wait for this; a reader that only displays them need not.
+ *
+ * It does NOT say the weeks are current: the anchor only moves when something
+ * re-syncs the slot, so a page left open across midnight stays `true` over
+ * yesterday's weeks. A storing reader also compares `kitchenAnchorDate` with
+ * `todayIso()` and calls `reanchorKitchenWeeks` on a mismatch.
  */
 export const kitchenWeeksLoaded: Readable<boolean> = derived(
   [_configRead, _kitchenStarts, _kitchenToday, _loading],
@@ -329,6 +334,16 @@ function syncKitchenSubscriptions(): void {
   _kitchenStarts.set(starts);
   for (const start of starts) subscribeWeekDoc(start);
   pruneWeekSubscriptions();
+}
+
+/**
+ * Re-assert the kitchen slot against today's date (#1696). For a reader that
+ * found `kitchenAnchorDate` behind `todayIso()` (a PWA left open across midnight
+ * keeps its JS state); the new weeks load asynchronously, so the reader treats
+ * that attempt as not ready. No-op unless a page holds the kitchen weeks.
+ */
+export function reanchorKitchenWeeks(): void {
+  syncKitchenSubscriptions();
 }
 
 /**
