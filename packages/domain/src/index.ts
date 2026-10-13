@@ -275,6 +275,7 @@ export {
   setAttendeeHomeTime,
   setAttendeeNote,
   latestHomeTimeFor,
+  nextPlannedNight,
 } from './mealPlan/index.js';
 
 // Recipe module — published surface (issue #179).

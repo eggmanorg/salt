@@ -247,16 +247,30 @@ padded as `freezerItems` pads it, then the recipe it serves (a "make it
 yourself" row's **producer**) or `manual` for a row added by hand. Firestore
 auto-ids are 20 characters, so `manual` cannot collide with a recipe id.
 
-**No date is stored.** The night is derived from the planner on every read —
-the soonest planned night of `recipeId` from today, across whatever weeks the
-reader holds — so moving the meal moves the item. A hand-added row, an
-unplanned producer, or a meal beyond the held weeks reads **undated**, never
-"not planned".
+**The night is stored, once, at commit** (`forDate`, `YYYY-MM-DD` or `null`;
+issue #1696). `useFromFreezer` works it out as `nextPlannedNight` over the
+Kitchen weeks the Shopping list page holds while the freezer is on — the
+soonest stored date key from today whose day plans `recipeId` — and nothing
+re-dates it afterwards: Kitchen and the 09:00 push read the field and no
+planner. So planning the recipe again never re-dates or re-buzzes an old,
+un-ticked item, and moving the meal leaves the item on its original night (a
+cost accepted with the decision). A commit before those weeks and the planner
+config have loaded is refused, never stored `null`: an undated item is
+permanent and never buzzes.
+
+**`null` is undated:** a hand-added row (no lookup), a "make it yourself"
+producer the planner does not hold, a recipe not planned in the held weeks at
+that moment — the window is today's week, plus the next one in a cycle's last
+three days, so a meal planned further out stays undated for good — and every
+document written before #1696, which has no field and reads as `null` through
+the schema's default. No migration, no backfill; `schemaVersion` stays `1`.
 
 **A recommit sums.** Committing the same bag to the same id again adds its packs
 to the existing document (`commitDefrost`, read from the subscribed store), as a
 whole-document `setDoc` — ordinary LWW, no field transform, so a commit on
-another phone this one has not yet seen is overwritten.
+another phone this one has not yet seen is overwritten, its night included. The
+recommit's `forDate` replaces the stored one, `null` included: a fresh commit
+onto a stale, un-ticked item is dated by the fresh meal.
 
 **One batch.** `commitFromFreezer` writes the stock decrement (the take-a-pack
 `increment` above, queued on the batch), the entry's delete when it was the last

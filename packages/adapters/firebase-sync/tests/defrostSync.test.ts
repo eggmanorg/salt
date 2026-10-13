@@ -42,6 +42,7 @@ const INPUT = {
     recipeTitle: null,
     amount: 1,
     committedAt: '2026-10-12T09:00:00.000Z',
+    forDate: null,
   },
 };
 

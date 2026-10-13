@@ -21,6 +21,8 @@ const {
   mockFreezerItems,
   mockFreezerConfig,
   mockUseFromFreezer,
+  mockSubscribeKitchenWeeks,
+  mockReleaseKitchenWeeks,
 } = await vi.hoisted(async () => {
   const { makeStore } = await import('./support/testStore.js');
   return {
@@ -45,6 +47,8 @@ const {
       },
     }),
     mockUseFromFreezer: vi.fn(),
+    mockSubscribeKitchenWeeks: vi.fn(),
+    mockReleaseKitchenWeeks: vi.fn(),
   };
 });
 
@@ -92,6 +96,9 @@ vi.mock('../src/lib/freezerService.js', () => ({
   initFreezerSync: vi.fn(() => () => {}),
   initDefrostSync: vi.fn(() => () => {}),
   useFromFreezer: mockUseFromFreezer,
+}));
+vi.mock('../src/lib/mealPlanService.js', () => ({
+  subscribeKitchenWeeks: mockSubscribeKitchenWeeks,
 }));
 
 import ShoppingListPage from '../src/routes/shopping/ShoppingListPage.svelte';
@@ -163,6 +170,9 @@ beforeEach(() => {
   mockFreezerGate._set({ enabled: true, settled: true });
   mockFreezerItems._set({ status: 'loaded', items: [bag(47)] });
   mockUseFromFreezer.mockReset();
+  mockSubscribeKitchenWeeks.mockReset();
+  mockReleaseKitchenWeeks.mockReset();
+  mockSubscribeKitchenWeeks.mockReturnValue(mockReleaseKitchenWeeks);
   mockUseFromFreezer.mockResolvedValue({
     kind: 'ok',
     value: {
@@ -203,6 +213,30 @@ describe('ShoppingListPage — use from the freezer', () => {
 
     await view.findAllByTestId('shopping-item-row');
     expect(view.queryByTestId('shopping-item-freezer')).not.toBeInTheDocument();
+  });
+
+  // #1696: a commit dates its night from the Kitchen weeks, so the page holds
+  // them — but only for a person the freezer is shown to.
+  it('holds the Kitchen weeks while the freezer is on, and lets them go on leaving', async () => {
+    mockItems._set([item({ id: 'i1', sources: fromRecipe('Chilli', 'r-chilli') })]);
+    const view = render(ShoppingListPage, props);
+    await view.findAllByTestId('shopping-item-row');
+
+    expect(mockSubscribeKitchenWeeks).toHaveBeenCalledTimes(1);
+    expect(mockReleaseKitchenWeeks).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    expect(mockReleaseKitchenWeeks).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the freezer gate off, claims no Kitchen weeks', async () => {
+    mockFreezerGate._set({ enabled: false, settled: true });
+    mockItems._set([item({ id: 'i1', sources: fromRecipe('Chilli', 'r-chilli') })]);
+    const view = render(ShoppingListPage, props);
+    await view.findAllByTestId('shopping-item-row');
+
+    expect(mockSubscribeKitchenWeeks).not.toHaveBeenCalled();
   });
 
   it('hands over the row, its recipe and the bag', async () => {

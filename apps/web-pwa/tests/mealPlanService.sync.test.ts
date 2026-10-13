@@ -32,6 +32,7 @@ import {
   mealPlanConfigLoaded,
   kitchenWeeks,
   kitchenAnchorDate,
+  kitchenWeeksLoaded,
   subscribeKitchenWeeks,
   mealPlanTemplate,
   initMealPlanSync,
@@ -879,6 +880,40 @@ describe('mealPlanService — kitchen weeks', () => {
     expect(fs.subscribeMealPlanWeek.mock.calls.map((c) => c[0])).toEqual(['2026-06-05']);
     expect(get(kitchenAnchorDate)).toBe('');
     expect(get(kitchenWeeks)).toEqual([]);
+  });
+
+  // #1696: a defrost STORES the night it computes from these weeks, so a commit
+  // must wait until they are the household's whole answer — not the 'mon'
+  // fallback's weeks, and not a week whose snapshot has yet to land.
+  it('is loaded only once the config, and every held week, have been read', () => {
+    vi.setSystemTime(Date.parse('2026-06-12T12:00:00.000Z')); // Friday: two weeks held
+    __resetMealPlanServiceForTest();
+    const { emitConfig, emitWeekFor } = wireSubscriptions();
+    initMealPlanSync();
+    expect(get(kitchenWeeksLoaded)).toBe(false); // not claimed
+
+    subscribeKitchenWeeks();
+    expect(get(kitchenWeeksLoaded)).toBe(false); // no config yet
+
+    emitConfig(CONFIG);
+    expect(get(kitchenWeeksLoaded)).toBe(false); // neither week has landed
+
+    emitWeekFor(THIS_WEEK, weekWithNote(THIS_WEEK, 'roast', '2026-06-08T10:00:00.000Z'));
+    expect(get(kitchenWeeksLoaded)).toBe(false); // next week still out
+
+    emitWeekFor(NEXT_WEEK, null); // absent: read, and empty
+    expect(get(kitchenWeeksLoaded)).toBe(true);
+  });
+
+  it('is not loaded once the page lets the weeks go', () => {
+    const { emitWeekFor } = bootAt(`${TODAY}T12:00:00.000Z`);
+    const teardown = subscribeKitchenWeeks();
+    emitWeekFor(THIS_WEEK, null);
+    expect(get(kitchenWeeksLoaded)).toBe(true);
+
+    teardown();
+
+    expect(get(kitchenWeeksLoaded)).toBe(false);
   });
 
   it('widens weekIsKnown, so an add to a kitchen week writes what it holds', async () => {

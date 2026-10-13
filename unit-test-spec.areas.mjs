@@ -232,9 +232,17 @@ export const violationCeilings = {
   // written against a kit that EXISTS. This one is about the third state that
   // suite never had — a kit that was asked for and could not be worked out — and
   // its records arrive on a subscription that file does not wire at all.
+  //
+  // UT-B1 50 → 51 (issue #1696). No new file: `ShoppingListPage.freezer.test.ts`
+  // goes from five `vi.mock` calls to six, and the sixth is the seam under test.
+  // The page now claims the Kitchen weeks (`mealPlanService.subscribeKitchenWeeks`)
+  // while the freezer is on, so a commit can date its night; the suite asserts
+  // the claim is taken behind the gate and released on unmount, which it cannot
+  // do without standing in for that module — the real one opens Firestore week
+  // subscriptions. The other five are the page's existing service seams.
   'apps/web-pwa': {
     'UT-A1': 5,
-    'UT-B1': 50,
+    'UT-B1': 51,
     'UT-C1': 0,
     'UT-C2': 25,
     'UT-C3': 30,

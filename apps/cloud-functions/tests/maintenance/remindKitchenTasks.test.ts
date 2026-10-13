@@ -3,10 +3,13 @@ import type { DefrostDoc, MealPlanWeekDoc, PushSubscriptionDoc } from '@salt/dom
 import type { KitchenTask } from '@salt/domain';
 
 // Unit-level (mock-based, no emulator) coverage of the 09:00 Kitchen reminder
-// (issue #1683). DefrostSchema / MealPlanWeekSchema / MealPlanConfigSchema /
-// PushSubscriptionSchema and `@salt/domain`'s `kitchenTasks` are all kept REAL,
-// so what is asserted here is what Kitchen itself would compute. The preamble is
-// `remindShoppingDay.test.ts`'s, mock for mock.
+// (issue #1683). DefrostSchema / PushSubscriptionSchema and `@salt/domain`'s
+// `kitchenTasks` are kept REAL, so what is asserted here is what Kitchen itself
+// would compute. The preamble is `remindShoppingDay.test.ts`'s, mock for mock.
+//
+// The night is STORED on the defrost (#1696). The mock still serves a planner —
+// `mealPlanConfig` and `mealPlans` answer if asked — so a test can prove the
+// handler never asks.
 
 vi.mock('firebase-functions/v2/scheduler', () => ({
   onSchedule: (_opts: unknown, handler: unknown) => handler,
@@ -36,8 +39,8 @@ vi.mock('@salt/observability/server', () => ({
 }));
 
 // Collection-aware Firestore mock. `mockReads` records every collection/doc the
-// handler touched, which is how "one read and return" and "no recipe read" are
-// asserted.
+// handler touched, which is how "one read and return", "no recipe read" and "no
+// planner read" are asserted.
 type FakeDoc = { id: string; data: () => unknown; ref: { delete: () => Promise<void> } };
 let mockDefrostDocs: FakeDoc[] = [];
 let mockDefrostsThrow = false;
@@ -99,8 +102,7 @@ const { remindKitchenTasks, kitchenReminderCopy } =
 
 const run = () => (remindKitchenTasks as unknown as () => Promise<void>)();
 
-// 08:00Z on Wednesday 2026-10-14 is 09:00 BST — the instant the cron fires. With
-// a Monday-first planner, today and tomorrow (Thursday 15th) share one week.
+// 08:00Z on Wednesday 2026-10-14 is 09:00 BST — the instant the cron fires.
 const CRON_INSTANT = new Date('2026-10-14T08:00:00.000Z');
 const TODAY = '2026-10-14';
 const TOMORROW = '2026-10-15';
@@ -115,6 +117,7 @@ function defrost(overrides: Partial<DefrostDoc> = {}): DefrostDoc {
     recipeTitle: 'chilli',
     amount: 1,
     committedAt: '2026-10-10T18:00:00.000Z',
+    forDate: TOMORROW,
     ...overrides,
   };
 }
@@ -175,9 +178,8 @@ describe('remindKitchenTasks', () => {
     expect(mockFlush).toHaveBeenCalled();
   });
 
-  it("broadcasts one push naming the item and tomorrow's meal, with no recipe read", async () => {
+  it("broadcasts one push for tomorrow's stored night, reading no recipe and no planner", async () => {
     mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
 
     await run();
 
@@ -192,12 +194,7 @@ describe('remindKitchenTasks', () => {
     });
     expect(payloadOf(1)).toEqual(payloadOf(0));
     // The title comes from the doc's denormalised `recipeTitle`; nothing else is read.
-    expect(mockReads).toEqual([
-      'defrosts',
-      'mealPlanConfig/singleton',
-      'mealPlans/2026-10-12',
-      'pushSubscriptions',
-    ]);
+    expect(mockReads).toEqual(['defrosts', 'pushSubscriptions']);
     expect(mockLogger.info).toHaveBeenCalledWith('remindKitchenTasks: reminded', {
       date: TODAY,
       due: 1,
@@ -211,7 +208,6 @@ describe('remindKitchenTasks', () => {
       defrostDoc(defrost()),
       defrostDoc(defrost({ freezerNumber: 12, name: 'beef stock', recipeId: 'ragu' })),
     ];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli', 'ragu'] }) };
     mockSubsDocs = [fakeDoc('a', makeSub('a'))];
 
     await run();
@@ -223,100 +219,51 @@ describe('remindKitchenTasks', () => {
     });
   });
 
-  it('sends nothing when the meal is the day after tomorrow', async () => {
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { '2026-10-16': ['chilli'] }) };
+  it('sends nothing when the stored night is the day after tomorrow', async () => {
+    mockDefrostDocs = [defrostDoc(defrost({ forDate: '2026-10-16' }))];
 
     await run();
 
     expect(mockSendWebPush).not.toHaveBeenCalled();
   });
 
-  it('sends nothing when the recipe is planned nowhere (undated)', async () => {
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['something-else'] }) };
+  it('sends nothing when the stored night is tonight (its morning was yesterday)', async () => {
+    mockDefrostDocs = [defrostDoc(defrost({ forDate: TODAY }))];
 
     await run();
 
     expect(mockSendWebPush).not.toHaveBeenCalled();
   });
 
-  it('sends nothing for a pack taken out by hand (undated)', async () => {
-    mockDefrostDocs = [defrostDoc(defrost({ recipeId: null, recipeTitle: null }))];
+  it('sends nothing for an undated pack, stored null or written before #1696', async () => {
+    const { forDate: _omitted, ...legacy } = defrost({ freezerNumber: 3 });
+    mockDefrostDocs = [
+      defrostDoc(defrost({ forDate: null })),
+      defrostDoc(defrost({ freezerNumber: 12, recipeId: null, recipeTitle: null, forDate: null })),
+      fakeDoc('003_chilli', legacy),
+    ];
+
+    await run();
+
+    expect(mockSendWebPush).not.toHaveBeenCalled();
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('a past stored night sends nothing, whatever the planner says', async () => {
+    // The re-buzz #1696 exists to stop: an un-ticked pack from three weeks ago,
+    // and its recipe planned again for tomorrow. Were the night re-derived from
+    // the planner, this item would be due today.
+    mockDefrostDocs = [defrostDoc(defrost({ forDate: '2026-09-24' }))];
     mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
 
     await run();
 
     expect(mockSendWebPush).not.toHaveBeenCalled();
-  });
-
-  it('sends nothing when the meal is tonight (its morning was yesterday)', async () => {
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TODAY]: ['chilli'] }) };
-
-    await run();
-
-    expect(mockSendWebPush).not.toHaveBeenCalled();
-  });
-
-  it("reads both weeks when tomorrow begins a new one, and finds tomorrow's meal", async () => {
-    // A Thursday-first planner: today (Wed) closes the week of the 8th, tomorrow
-    // opens the week of the 15th.
-    mockConfig = { firstDayOfWeek: 'thu', schemaVersion: 1 };
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = {
-      '2026-10-08': week('2026-10-08', { [TODAY]: [] }),
-      '2026-10-15': week('2026-10-15', { [TOMORROW]: ['chilli'] }),
-    };
-
-    await run();
-
-    expect(mockReads).toContain('mealPlans/2026-10-08');
-    expect(mockReads).toContain('mealPlans/2026-10-15');
-    expect(mockSendWebPush).toHaveBeenCalledTimes(2);
-  });
-
-  it('treats an absent week as no meals, and still finds the meal in the other', async () => {
-    mockConfig = { firstDayOfWeek: 'thu', schemaVersion: 1 };
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-15': week('2026-10-15', { [TOMORROW]: ['chilli'] }) };
-
-    await run();
-
-    expect(mockLogger.info).toHaveBeenCalledWith('remindKitchenTasks: no meal plan week', {
-      weekId: '2026-10-08',
-    });
-    expect(mockSendWebPush).toHaveBeenCalledTimes(2);
-  });
-
-  it('falls back to a Monday-first week when mealPlanConfig is absent', async () => {
-    mockConfig = undefined;
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
-
-    await run();
-
-    expect(mockReads.filter((r) => r.startsWith('mealPlans/'))).toEqual(['mealPlans/2026-10-12']);
-    expect(mockSendWebPush).toHaveBeenCalledTimes(2);
-  });
-
-  it('treats an invalid week as no meals, logging it rather than throwing', async () => {
-    mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': { days: 'not-a-record' } };
-
-    await run();
-
-    expect(mockSendWebPush).not.toHaveBeenCalled();
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      'remindKitchenTasks: invalid meal plan week, skipping',
-      expect.objectContaining({ weekId: '2026-10-12' }),
-    );
-    expect(mockReport).not.toHaveBeenCalled();
+    expect(mockReads).toEqual(['defrosts']);
   });
 
   it('skips an invalid defrost doc while the valid one still sends', async () => {
     mockDefrostDocs = [fakeDoc('999_bad', { name: 'no number' }), defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
     mockSubsDocs = [fakeDoc('a', makeSub('a'))];
 
     await run();
@@ -331,7 +278,6 @@ describe('remindKitchenTasks', () => {
 
   it("prunes a subscription that is gone, reports one that failed, and skips one that won't parse", async () => {
     mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
     const dead = fakeDoc('dead', makeSub('dead'));
     const flaky = fakeDoc('flaky', makeSub('flaky'));
     const junk = fakeDoc('junk', { endpoint: 42 });
@@ -354,7 +300,6 @@ describe('remindKitchenTasks', () => {
   it('sends nothing when VAPID is not provisioned', async () => {
     mockVapidKey = '';
     mockDefrostDocs = [defrostDoc(defrost())];
-    mockWeeks = { '2026-10-12': week('2026-10-12', { [TOMORROW]: ['chilli'] }) };
 
     await run();
 

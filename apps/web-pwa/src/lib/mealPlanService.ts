@@ -167,6 +167,20 @@ export const kitchenWeeks: Readable<readonly MealPlanWeek[]> = derived(
 /** The date `kitchenWeeks` was computed for, or '' when the slot is empty. */
 export const kitchenAnchorDate: Readable<string> = _kitchenToday;
 
+/**
+ * Whether `kitchenWeeks` is the household's whole answer yet (#1696): the config
+ * doc has been read, every held kitchen week's first snapshot has landed, and the
+ * slot is anchored. Until then a missing week is indistinguishable from an
+ * unplanned one — `kitchenWeeks` drops both — and the weeks may be keyed on the
+ * `'mon'` fallback (#1448). A reader that STORES what it computes from these
+ * weeks must wait for this; a reader that only displays them need not.
+ */
+export const kitchenWeeksLoaded: Readable<boolean> = derived(
+  [_config, _kitchenStarts, _kitchenToday, _loading],
+  ([$c, $starts, $today, $l]) =>
+    $c !== null && $today !== '' && $starts.length > 0 && $starts.every((s) => $l[s] === false),
+);
+
 // ─── Subscriptions / navigation ───────────────────────────────────────────────
 
 let configUnsub: (() => void) | null = null;

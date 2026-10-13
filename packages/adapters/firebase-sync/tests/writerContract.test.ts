@@ -532,6 +532,7 @@ const DEFROST = {
   recipeTitle: 'Chilli',
   amount: 1,
   committedAt: NOW,
+  forDate: '2026-10-15',
 };
 
 // ─── The table ──────────────────────────────────────────────────────────────
