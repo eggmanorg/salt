@@ -1094,6 +1094,8 @@ export { remindShoppingDay } from './maintenance/remindShoppingDay.js';
 // ninety-day dry has exactly one stage. Ships dark, with no flag: bread's longest wait
 // is an overnight retard, so no batch in production can qualify.
 export { remindBatchReadings } from './maintenance/remindBatchReadings.js';
+// The 09:00 Kitchen reminder (#1683, epic #795): one push for what Kitchen's #1685 To do list holds due today.
+export { remindKitchenTasks } from './maintenance/remindKitchenTasks.js';
 export { snapshotVolumetrics } from './maintenance/snapshotVolumetrics.js';
 export { requestEmailOtp } from './callables/requestEmailOtp.js';
 export { verifyEmailOtp } from './callables/verifyEmailOtp.js';
