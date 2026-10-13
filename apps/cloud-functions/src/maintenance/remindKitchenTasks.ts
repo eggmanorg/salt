@@ -2,23 +2,8 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import {
-  DEFROSTS_COLLECTION,
-  DefrostSchema,
-  MealPlanConfigSchema,
-  MealPlanWeekSchema,
-  PushSubscriptionSchema,
-} from '@salt/domain/schemas';
-import {
-  addCalendarDays,
-  dateInZone,
-  kitchenTasks,
-  weekStartFor,
-  type Defrost,
-  type KitchenTask,
-  type MealPlanWeek,
-  type Weekday,
-} from '@salt/domain';
+import { DEFROSTS_COLLECTION, DefrostSchema, PushSubscriptionSchema } from '@salt/domain/schemas';
+import { dateInZone, kitchenTasks, type Defrost, type KitchenTask } from '@salt/domain';
 import { flushServerObservability } from '@salt/observability/server';
 import { sendWebPush } from '../adapters/sendWebPush.js';
 import { reportServerError } from '../observability/reportServerError.js';
@@ -34,12 +19,17 @@ import { reportServerError } from '../observability/reportServerError.js';
 //
 // WHAT NEVER PUSHES, and why there is no filter for most of it:
 //   - a ticked-off item is a DELETED `defrosts` doc, so it is never read;
-//   - an UNDATED task (`dueDate === null` — a hand-added pack, a meal not on the
-//     planner) has no night to time a buzz against;
+//   - an UNDATED task (`dueDate === null` — a hand-added pack, a meal not planned
+//     in Kitchen's weeks when the pack was used, a doc from before #1696) has no
+//     night to time a buzz against;
 //   - a task whose `dueDate` is already PAST stays in Kitchen, but its one morning
-//     has gone. One buzz per item, on the morning before its night, needs no
-//     memory: the date is derived afresh from the planner each run.
-// The last two are the single `dueDate === today` filter in the handler.
+//     has gone;
+//   - a task whose recipe is planned again, or whose meal moves: the night is
+//     STORED on the doc when the pack is used (#1696) and this function reads no
+//     planner, so an item is due on exactly one date. Only another commit to the
+//     same doc — a person acting — changes it, and that may buzz again. Pinned by
+//     the test "a past stored night sends nothing, whatever the planner says".
+// The last three are the single `dueDate === today` filter in the handler.
 const vapidPrivateKey = defineSecret('VAPID_PRIVATE_KEY');
 const vapidPublicKey = defineSecret('VAPID_PUBLIC_KEY');
 const posthogApiKey = defineSecret('POSTHOG_API_KEY');
@@ -47,10 +37,6 @@ const posthogApiKey = defineSecret('POSTHOG_API_KEY');
 // A deploy-time constant, and "today" is computed in the same zone; why it is
 // not read from `appSettings` is argued in `remindShoppingDay.ts`.
 const REMINDER_TIME_ZONE = 'Europe/London';
-
-// The planner's default when `mealPlanConfig/singleton` is absent or invalid —
-// the browser's own fallback (`mealPlanService.ts`, `DEFAULT_FIRST_DAY`).
-const DEFAULT_FIRST_DAY: Weekday = 'mon';
 
 /**
  * The notification's words for the tasks due this morning. Chosen per task
@@ -80,7 +66,8 @@ export function kitchenReminderCopy(due: readonly KitchenTask[]): {
   const [only] = defrosts;
   if (defrosts.length === 1 && only) {
     return {
-      // A dated defrost always has a recipe; the null branch is defensive.
+      // The app dates only a defrost with a recipe (`useFromFreezer`); the null
+      // branch covers a doc written any other way.
       title:
         only.recipeTitle === null
           ? `Defrost the ${only.name} for tomorrow`
@@ -112,42 +99,6 @@ async function readDefrosts(db: Firestore): Promise<Defrost[]> {
   return defrosts;
 }
 
-/**
- * The weeks holding today and tomorrow — one doc when they share a week. Kitchen
- * may hold more (the next week, late in a cycle), but a task due today is one
- * whose soonest night is tomorrow, so these two dates are the whole question.
- * An absent or invalid week counts as no meals that week.
- */
-async function readWeeks(db: Firestore, today: string, tomorrow: string): Promise<MealPlanWeek[]> {
-  const configSnap = await db.collection('mealPlanConfig').doc('singleton').get();
-  const parsedConfig = MealPlanConfigSchema.safeParse(configSnap.data());
-  const firstDayOfWeek = parsedConfig.success
-    ? parsedConfig.data.firstDayOfWeek
-    : DEFAULT_FIRST_DAY;
-
-  const weekIds = [
-    ...new Set([weekStartFor(today, firstDayOfWeek), weekStartFor(tomorrow, firstDayOfWeek)]),
-  ];
-  const weeks: MealPlanWeek[] = [];
-  for (const weekId of weekIds) {
-    const snap = await db.collection('mealPlans').doc(weekId).get();
-    if (!snap.exists) {
-      logger.info('remindKitchenTasks: no meal plan week', { weekId });
-      continue;
-    }
-    const parsed = MealPlanWeekSchema.safeParse(snap.data());
-    if (!parsed.success) {
-      logger.error('remindKitchenTasks: invalid meal plan week, skipping', {
-        weekId,
-        error: parsed.error.message,
-      });
-      continue;
-    }
-    weeks.push(parsed.data);
-  }
-  return weeks;
-}
-
 export const remindKitchenTasks = onSchedule(
   {
     schedule: '0 9 * * *',
@@ -163,7 +114,6 @@ export const remindKitchenTasks = onSchedule(
     const db = getFirestore();
     try {
       const today = dateInZone(new Date(), REMINDER_TIME_ZONE);
-      const tomorrow = addCalendarDays(today, 1);
 
       // (a) Every source `kitchenTasks` takes. Empty — the cost on nearly every
       // day — means one collection read and nothing else.
@@ -172,8 +122,7 @@ export const remindKitchenTasks = onSchedule(
 
       // (b) Which of them are due this morning, by the projection Kitchen itself
       // renders, so the list and the buzz cannot disagree.
-      const weeks = await readWeeks(db, today, tomorrow);
-      const due = kitchenTasks({ defrosts }, weeks, today).filter((task) => task.dueDate === today);
+      const due = kitchenTasks({ defrosts }).filter((task) => task.dueDate === today);
       if (due.length === 0) return;
 
       // (c) VAPID material, exactly as `remindShoppingDay` resolves it.

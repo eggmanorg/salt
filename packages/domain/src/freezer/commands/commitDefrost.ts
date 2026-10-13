@@ -12,6 +12,11 @@ export interface CommitDefrostInput {
   readonly recipeTitle: string | null;
   /** Whole packs, 1 or more. */
   readonly amount: number;
+  /**
+   * `YYYY-MM-DD` of the night the packs are for, worked out by the caller at this
+   * commit (`nextPlannedNight`), or null for none (#1696).
+   */
+  readonly forDate: string | null;
 }
 
 /**
@@ -24,6 +29,11 @@ export interface CommitDefrostInput {
  * count, and an overwrite would show one. The first commit's `committedAt` is
  * kept, so the item keeps its place among the undated ones; the snapshots
  * (`name`, `location`, `recipeTitle`) take the newer values.
+ *
+ * `forDate` takes this commit's night too, `null` included (#1696). It is the
+ * recipe's soonest planned night as of now, so it is when the first of the summed
+ * packs is needed — and a fresh commit onto a stale, un-ticked item is dated by
+ * the fresh meal, not by a night long gone.
  *
  * The sum is only as fresh as `existing`: a commit on another phone that this
  * one's store has not yet seen is overwritten (document-level LWW).
@@ -45,5 +55,6 @@ export function commitDefrost(
     recipeTitle: input.recipeTitle,
     amount: (existing?.amount ?? 0) + input.amount,
     committedAt: existing?.committedAt ?? now,
+    forDate: input.forDate,
   });
 }

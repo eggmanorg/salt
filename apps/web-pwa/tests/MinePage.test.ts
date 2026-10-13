@@ -26,6 +26,7 @@ const {
   mockPersistRecipe,
   mockKitchenTeardown,
   mockSubscribeKitchenWeeks,
+  mockKitchenAnchorDate,
   mockStartKitchenTimer,
   mockDismissKitchenTimer,
   mockKitchenTasks,
@@ -54,6 +55,7 @@ const {
     mockPersistRecipe: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
     mockKitchenTeardown,
     mockSubscribeKitchenWeeks: vi.fn(() => mockKitchenTeardown),
+    mockKitchenAnchorDate: makeStore<string>('2026-08-05'),
     mockStartKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
     mockDismissKitchenTimer: vi.fn().mockResolvedValue({ kind: 'ok', value: undefined }),
     mockKitchenTasks: makeStore<unknown[]>([]),
@@ -103,6 +105,7 @@ vi.mock('../src/lib/membersService.js', async () => {
 // The page owns the meal-plan week subscriptions "Cooking soon" projects over.
 vi.mock('../src/lib/mealPlanService.js', () => ({
   subscribeKitchenWeeks: mockSubscribeKitchenWeeks,
+  kitchenAnchorDate: mockKitchenAnchorDate,
 }));
 vi.mock('../src/lib/cookSessionService.js', () => ({
   persistCookSession: mockPersist,
@@ -247,6 +250,7 @@ beforeEach(() => {
   mockTonight._set(null);
   mockRecipes._set([]);
   mockSubscribeKitchenWeeks.mockReturnValue(mockKitchenTeardown);
+  mockKitchenAnchorDate._set('2026-08-05');
   mockKitchenTasks._set([]);
   mockFreezerGate._set({ enabled: true, settled: true });
   mockInitDefrostSync.mockReturnValue(mockStopDefrostSync);
@@ -1222,6 +1226,7 @@ describe('MinePage — to do', () => {
     recipeTitle: 'Chilli',
     amount: 1,
     committedAt: '2026-08-05T09:00:00.000Z',
+    forDate: '2026-08-06',
   };
   const mince = {
     ...porkLoin,
@@ -1231,6 +1236,7 @@ describe('MinePage — to do', () => {
     recipeId: null,
     recipeTitle: null,
     amount: 2,
+    forDate: null,
   };
   const tasks = [
     {
@@ -1254,6 +1260,28 @@ describe('MinePage — to do', () => {
     expect(details).toEqual([
       'Garage · shelf B · #47 · 1 pack — for Chilli, Thursday',
       'Kitchen · shelf A · #12 · 2 packs',
+    ]);
+  });
+
+  // #1696: a stored night can be weeks old, and a bare weekday would read as the
+  // coming one — so a night before today carries its date.
+  it('a night already gone shows its date; tonight keeps the bare weekday', () => {
+    mockKitchenAnchorDate._set('2026-08-20');
+    mockKitchenTasks._set([
+      { ...tasks[0], forDate: '2026-08-06', dueDate: '2026-08-05' },
+      {
+        kind: 'defrost',
+        id: 'defrost:009_recipe-chilli',
+        forDate: '2026-08-20',
+        dueDate: '2026-08-19',
+        defrost: { ...porkLoin, freezerNumber: 9, forDate: '2026-08-20' },
+      },
+    ]);
+    const { getAllByTestId } = render(MinePage);
+
+    expect(getAllByTestId('mine-task-detail').map((n) => n.textContent?.trim())).toEqual([
+      'Garage · shelf B · #47 · 1 pack — for Chilli, Thursday 6 August',
+      'Garage · shelf B · #9 · 1 pack — for Chilli, Thursday',
     ]);
   });
 

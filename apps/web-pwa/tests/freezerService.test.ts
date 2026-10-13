@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ErrorCode, failure, success } from '@salt/shared-types';
-import type { Defrost, FreezerConfig, FreezerItem } from '@salt/domain';
+import type { Defrost, FreezerConfig, FreezerItem, MealPlanWeek } from '@salt/domain';
+import { emptyWeek, setDayRecipes } from '@salt/domain';
 
 // The freezer service (issue #1682) — the store over `freezerConfig/current` and
 // the one write path for it.
@@ -20,6 +21,8 @@ const {
   mockTake,
   mockStopConfig,
   mockStopItems,
+  mockReanchor,
+  mockToday,
   mockSubscribeDefrosts,
   mockCommit,
   mockSaveDefrost,
@@ -38,6 +41,8 @@ const {
   mockTake: vi.fn(),
   mockStopConfig: vi.fn(),
   mockStopItems: vi.fn(),
+  mockReanchor: vi.fn(),
+  mockToday: { value: '2026-10-14' },
 }));
 
 vi.mock('@salt/firebase-sync', () => ({
@@ -56,8 +61,21 @@ vi.mock('@salt/firebase-sync', () => ({
 vi.mock('@salt/observability', () => ({
   createObservabilityErrorReportingAdapter: () => ({ report: mockReport }),
 }));
+// The Kitchen weeks a commit dates its night from (#1696): plain stores here, set
+// per test. Their own loading rule is `mealPlanService.sync.test.ts`'s.
+vi.mock('../src/lib/mealPlanService.js', async () => {
+  const { writable } = await import('svelte/store');
+  return {
+    kitchenWeeks: writable<readonly MealPlanWeek[]>([]),
+    kitchenAnchorDate: writable(''),
+    kitchenWeeksLoaded: writable(false),
+    reanchorKitchenWeeks: mockReanchor,
+  };
+});
+vi.mock('../src/lib/today.js', () => ({ todayIso: () => mockToday.value }));
 
-import { get } from 'svelte/store';
+import { get, type Writable } from 'svelte/store';
+import * as mealPlan from '../src/lib/mealPlanService.js';
 import {
   addFreezer,
   addFreezerItem,
@@ -694,7 +712,24 @@ describe('freezer service — use from the freezer', () => {
   const CHILLI = { id: 'r-chilli', title: 'Chilli' };
   const ROW = { listId: 'list-1', itemId: 'i1' };
 
+  const kitchenWeeks = mealPlan.kitchenWeeks as Writable<readonly MealPlanWeek[]>;
+  const kitchenAnchorDate = mealPlan.kitchenAnchorDate as Writable<string>;
+  const kitchenWeeksLoaded = mealPlan.kitchenWeeksLoaded as Writable<boolean>;
+
+  // Wednesday 14 October: chilli is planned Tuesday (gone), Thursday and Sunday.
+  const TODAY = '2026-10-14';
+  function plannedWeek(): MealPlanWeek {
+    return ['2026-10-13', '2026-10-15', '2026-10-18'].reduce(
+      (w, d) => setDayRecipes(w, d, ['r-chilli']),
+      emptyWeek('2026-10-12'),
+    );
+  }
+
   beforeEach(() => {
+    mockToday.value = TODAY;
+    kitchenWeeks.set([plannedWeek()]);
+    kitchenAnchorDate.set(TODAY);
+    kitchenWeeksLoaded.set(true);
     mockCommit.mockResolvedValue(success(undefined));
     mockSaveDefrost.mockResolvedValue(success(undefined));
     mockDeleteDefrost.mockResolvedValue(success(undefined));
@@ -731,6 +766,7 @@ describe('freezer service — use from the freezer', () => {
       recipeTitle: 'Chilli',
       amount: 2,
       committedAt: expect.any(String),
+      forDate: '2026-10-15',
     };
     expect(mockCommit).toHaveBeenCalledWith({
       itemNumber: 47,
@@ -767,6 +803,7 @@ describe('freezer service — use from the freezer', () => {
         recipeTitle: 'Chilli',
         amount: 1,
         committedAt: '2026-10-11T09:00:00.000Z',
+        forDate: '2026-09-24',
       },
     ]);
 
@@ -775,7 +812,62 @@ describe('freezer service — use from the freezer', () => {
     expect(mockCommit.mock.calls[0]?.[0].defrost).toMatchObject({
       amount: 2,
       committedAt: '2026-10-11T09:00:00.000Z',
+      // The stale night on the item gives way to this commit's.
+      forDate: '2026-10-15',
     });
+  });
+
+  it('stores the soonest night from today on that the Kitchen weeks plan the recipe', async () => {
+    mockToday.value = '2026-10-16';
+    kitchenAnchorDate.set('2026-10-16');
+
+    await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(mockCommit.mock.calls[0]?.[0].defrost.forDate).toBe('2026-10-18');
+  });
+
+  it('stores no night for a recipe the Kitchen weeks do not plan', async () => {
+    await useFromFreezer({
+      number: 47,
+      count: 1,
+      recipe: { id: 'r-pie', title: 'Pie' },
+      shoppingRow: ROW,
+    });
+
+    expect(mockCommit.mock.calls[0]?.[0].defrost.forDate).toBeNull();
+  });
+
+  it('a hand-added row stores no night, and does not wait on the planner', async () => {
+    kitchenWeeksLoaded.set(false);
+
+    const result = await useFromFreezer({ number: 12, count: 1, recipe: null, shoppingRow: ROW });
+
+    expect(result.kind).toBe('ok');
+    expect(mockCommit.mock.calls[0]?.[0].defrost.forDate).toBeNull();
+  });
+
+  it('writes nothing, and re-anchors, when the Kitchen weeks are anchored on a past day', async () => {
+    // A page left open past midnight: still "loaded", but over yesterday's weeks.
+    kitchenAnchorDate.set('2026-10-13');
+
+    const result = await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result).toEqual(failure({ kind: 'NetworkError', reason: 'transient' }));
+    expect(mockReanchor).toHaveBeenCalledTimes(1);
+    expect(mockCommit).not.toHaveBeenCalled();
+    expect(storedItems().find((i) => i.number === 47)?.amount).toBe(3);
+  });
+
+  it('writes nothing for a recipe row until the Kitchen weeks have loaded', async () => {
+    // Computed from a half-read planner, the night would be stored null — for
+    // good, and silently: an undated item never buzzes.
+    kitchenWeeksLoaded.set(false);
+
+    const result = await useFromFreezer({ number: 47, count: 1, recipe: CHILLI, shoppingRow: ROW });
+
+    expect(result).toEqual(failure({ kind: 'NetworkError', reason: 'transient' }));
+    expect(mockCommit).not.toHaveBeenCalled();
+    expect(storedItems().find((i) => i.number === 47)?.amount).toBe(3);
   });
 
   it('is NotFound for a bag this device no longer holds, and writes nothing', async () => {
@@ -809,6 +901,7 @@ describe('freezer service — use from the freezer', () => {
       recipeTitle: null,
       amount: 1,
       committedAt: '2026-10-11T09:00:00.000Z',
+      forDate: null,
     };
     emitDefrosts([defrost]);
 
@@ -866,6 +959,7 @@ describe('freezer service — use from the freezer', () => {
       recipeTitle: 'Chilli',
       amount: 1,
       committedAt: '2026-10-11T09:00:00.000Z',
+      forDate: null,
     };
 
     await tickOffDefrost(defrost);

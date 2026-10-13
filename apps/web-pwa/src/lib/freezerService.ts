@@ -27,6 +27,7 @@ import {
   supplierSpelling,
   takeFreezerPacks,
   commitDefrost,
+  nextPlannedNight,
   type AddFreezerItemInput,
   type Defrost,
   type FreezerConfig,
@@ -38,6 +39,13 @@ import { defrostDocId } from '@salt/domain/schemas';
 import { failure, success, type DomainError, type ReadResult } from '@salt/shared-types';
 import { get, writable, type Readable } from 'svelte/store';
 import { getErrorReporter } from './errorReporter.js';
+import {
+  kitchenAnchorDate,
+  kitchenWeeks,
+  kitchenWeeksLoaded,
+  reanchorKitchenWeeks,
+} from './mealPlanService.js';
+import { todayIso } from './today.js';
 import { reportIfFailed, reportSubscriptionError } from './errorReporting.js';
 
 // The freezer service (issue #1682, epic #795) — the stores over
@@ -429,6 +437,12 @@ export interface UsedFromFreezer {
  * — one atomic batch (`commitFromFreezer`). The stores change at once; the batch
  * is not awaited, like every freezer write, and a refusal is reported (a
  * NotFound is not).
+ *
+ * The Kitchen item is dated here, once (#1696): the recipe's next planned night
+ * in the Kitchen weeks, which the caller's page must be holding
+ * (`subscribeKitchenWeeks`). A recipe row is refused as not ready until those
+ * weeks have loaded — a night computed from a half-read planner would be stored
+ * undated for good.
  */
 export async function useFromFreezer(
   input: UseFromFreezerInput,
@@ -436,11 +450,24 @@ export async function useFromFreezer(
   const ready = itemsAndConfig();
   const defrosts = get(_defrosts);
   if (!ready || defrosts.status !== 'loaded') return NOT_READY;
+  const recipeId = input.recipe?.id ?? null;
+  // A hand-added row has no night to look up, so it never waits on the planner.
+  if (recipeId !== null && !get(kitchenWeeksLoaded)) return NOT_READY;
+  // `kitchenWeeksLoaded` stays true over a stale anchor (a page left open past
+  // midnight): re-anchor, and refuse this attempt rather than store a night that
+  // has already passed.
+  if (recipeId !== null && get(kitchenAnchorDate) !== todayIso()) {
+    reanchorKitchenWeeks();
+    return NOT_READY;
+  }
+  const forDate =
+    recipeId === null
+      ? null
+      : nextPlannedNight(get(kitchenWeeks), recipeId, get(kitchenAnchorDate));
   const now = new Date().toISOString();
   const taken = takeFreezerPacks(ready.items, { number: input.number, count: input.count, now });
   if (taken.kind !== 'ok') return taken;
   const item = taken.value.item;
-  const recipeId = input.recipe?.id ?? null;
   const id = defrostDocId(input.number, recipeId);
   const existing =
     defrosts.defrosts.find((d) => defrostDocId(d.freezerNumber, d.recipeId) === id) ?? null;
@@ -455,6 +482,7 @@ export async function useFromFreezer(
       // Zero for a bag already showing none (two phones took its last pack), which
       // `commitDefrost` refuses: nothing is written.
       amount: -taken.value.delta,
+      forDate,
     },
     now,
   );

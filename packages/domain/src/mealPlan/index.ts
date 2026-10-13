@@ -25,6 +25,9 @@ export {
 // what a meal's cook plan defaults its serve time to.
 export { latestHomeTimeFor } from './queries/latestHomeTimeFor.js';
 
+// The night a pack used from the freezer is for, worked out once at commit (#1696).
+export { nextPlannedNight } from './queries/nextPlannedNight.js';
+
 export { emptyDay, emptyWeek, emptyTemplate } from './commands/emptyDay.js';
 export { instantiateWeek } from './commands/instantiateWeek.js';
 export {

@@ -51,6 +51,7 @@ const DEFROST: Defrost = {
   recipeTitle: 'Chilli',
   amount: 1,
   committedAt: NOW,
+  forDate: '2026-10-15',
 };
 
 const ROW = { listId: 'list-1', itemId: 'item-1' };

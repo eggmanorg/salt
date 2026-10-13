@@ -703,11 +703,12 @@ describe('mineOpenCount', () => {
 });
 
 // To do (issue #1685): the projection is `kitchenTasks` in the domain suite.
-// What is this service's is WHICH weeks and WHICH today it projects over — the
-// same pair as Cooking soon — and that nothing shows before the listener has.
+// What is this service's is that it reads the `defrosts` and NOTHING of the
+// planner — each night is stored on its defrost (#1696) — and that nothing shows
+// before the listener has.
 describe('kitchenTaskList', () => {
   const defrost = {
-    schemaVersion: 1,
+    schemaVersion: 1 as const,
     freezerNumber: 47,
     name: 'Pork loin',
     location: 'Garage · shelf B',
@@ -715,6 +716,7 @@ describe('kitchenTaskList', () => {
     recipeTitle: 'Chilli',
     amount: 1,
     committedAt: '2026-06-08T09:00:00.000Z',
+    forDate: '2026-06-11',
   };
 
   afterEach(() => {
@@ -727,9 +729,10 @@ describe('kitchenTaskList', () => {
     expect(get(kitchenTaskList)).toEqual([]);
   });
 
-  it('finds the night in the kitchen weeks, from the kitchen’s today', () => {
-    mockKitchenWeeks._set([setDayRecipes(emptyWeek('2026-06-08'), '2026-06-11', ['r-chilli'])]);
-    mockToday._set('2026-06-10');
+  it('dates each task by its stored night, whatever the kitchen weeks plan', () => {
+    // The weeks plan chilli on the 13th, not the stored 11th: the stored night wins.
+    mockKitchenWeeks._set([setDayRecipes(emptyWeek('2026-06-08'), '2026-06-13', ['r-chilli'])]);
+    mockToday._set('2026-06-12');
     mockDefrosts._set({ status: 'loaded', defrosts: [defrost] });
 
     expect(get(kitchenTaskList)).toEqual([

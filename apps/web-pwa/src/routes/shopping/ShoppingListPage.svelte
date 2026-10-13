@@ -62,6 +62,7 @@
     initFreezerSync,
     useFromFreezer,
   } from '../../lib/freezerService.js';
+  import { subscribeKitchenWeeks } from '../../lib/mealPlanService.js';
   import {
     lists,
     defaultListId,
@@ -812,13 +813,17 @@
   //
   // Both listeners: the stock and its setup (the badge names the freezer), and
   // the Kitchen items (a commit sums onto an existing one, read from that store).
+  // And the Kitchen weeks (#1696): a commit stores the night its recipe is next
+  // planned, read from the same window Kitchen holds.
   $effect(() => {
     if (!$freezerGate.enabled) return;
     const stopFreezer = initFreezerSync();
     const stopDefrosts = initDefrostSync();
+    const stopKitchenWeeks = subscribeKitchenWeeks();
     return () => {
       stopFreezer();
       stopDefrosts();
+      stopKitchenWeeks();
     };
   });
 

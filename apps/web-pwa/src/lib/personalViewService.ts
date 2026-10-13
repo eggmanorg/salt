@@ -452,23 +452,17 @@ const NO_DEFROSTS: readonly Defrost[] = [];
  * What Kitchen asks somebody to do — today, packs to get out of the freezer —
  * in the order `kitchenTasks` decides: soonest due first, then the undated.
  *
- * Over the same `kitchenWeeks` and `kitchenAnchorDate` as `upcomingChefNights`,
- * for the same reason: the night a task is for is looked up only in the weeks
- * this page holds, on the day those weeks were chosen for. A meal beyond them
- * reads undated until the window reaches it.
+ * From the `defrosts` alone: each task's night is the one stored on its
+ * document when the pack was used (#1696), so this list reads no planner week.
  *
  * Empty until the page opens the `defrosts` listener (`initDefrostSync`), which
  * it does only behind the `freezer` gate. Not in `mineOpenCount`: that badge is
  * free on every page because its inputs are app-wide, and this one is not.
  */
 export const kitchenTaskList: Readable<readonly KitchenTask[]> = derived(
-  [defrostsState, kitchenWeeks, kitchenAnchorDate],
-  ([$defrosts, $weeks, $today]) =>
-    kitchenTasks(
-      { defrosts: $defrosts.status === 'loaded' ? $defrosts.defrosts : NO_DEFROSTS },
-      $weeks,
-      $today,
-    ),
+  defrostsState,
+  ($defrosts) =>
+    kitchenTasks({ defrosts: $defrosts.status === 'loaded' ? $defrosts.defrosts : NO_DEFROSTS }),
 );
 
 // ─── Nav badge ───────────────────────────────────────────────────────────────

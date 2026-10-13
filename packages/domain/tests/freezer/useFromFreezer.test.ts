@@ -16,6 +16,7 @@ const INPUT = {
   recipeId: 'recipe-chilli',
   recipeTitle: 'Chilli',
   amount: 1,
+  forDate: '2026-10-15',
 };
 
 function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
@@ -42,6 +43,16 @@ describe('defrostDocId', () => {
   });
 });
 
+describe('DefrostSchema', () => {
+  it('reads a document written before #1696, with no forDate, as undated', () => {
+    const { forDate: _omitted, ...legacy } = { schemaVersion: 1, ...INPUT, committedAt: NOW };
+
+    const parsed = DefrostSchema.safeParse(legacy);
+
+    expect(parsed.success && parsed.data.forDate).toBeNull();
+  });
+});
+
 describe('commitDefrost', () => {
   it('creates the Kitchen item, valid against the schema', () => {
     const result = commitDefrost(null, INPUT, NOW);
@@ -63,6 +74,31 @@ describe('commitDefrost', () => {
       committedAt: NOW,
       location: 'Garage · shelf A',
     });
+  });
+
+  // #1696: the night is fixed at commit, and a recommit's night replaces the
+  // stored one — a stale night left on an un-ticked item must not capture a fresh
+  // commit.
+  it('stores the night the commit is for', () => {
+    const result = commitDefrost(null, INPUT, NOW);
+
+    expect(result.kind === 'ok' && result.value.forDate).toBe('2026-10-15');
+  });
+
+  it.each([
+    ['a later night', '2026-10-22'],
+    ['no night', null],
+  ])('a recommit takes the new commit’s night: %s', (_label, forDate) => {
+    const existing: Defrost = {
+      schemaVersion: 1,
+      ...INPUT,
+      forDate: '2026-09-18',
+      committedAt: NOW,
+    };
+
+    const result = commitDefrost(existing, { ...INPUT, forDate }, LATER);
+
+    expect(result.kind === 'ok' && result.value.forDate).toBe(forDate);
   });
 
   it.each([0, -1, 1.5])('refuses %s packs', (amount) => {

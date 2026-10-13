@@ -45,7 +45,7 @@
     type MineTimer,
     type UpcomingChefNight,
   } from '../../lib/personalViewService.js';
-  import { subscribeKitchenWeeks } from '../../lib/mealPlanService.js';
+  import { kitchenAnchorDate, subscribeKitchenWeeks } from '../../lib/mealPlanService.js';
   import { persistCookSession, removeCookSession } from '../../lib/cookSessionService.js';
   import { dismissKitchenTimer, startKitchenTimer } from '../../lib/kitchenTimerService.js';
   import { persistRecipe, recipes } from '../../lib/recipeService.js';
@@ -72,13 +72,14 @@
   //   5. Needs review — entries flagged `needs_approval`
   //   6. Recent chats — a quiet footer, the only thing here not waiting on you
   //
-  // Cooking soon and To do read plan data, and neither restates the planner:
-  // which nights are YOURS, and which night a pack is for, are runs of days
-  // forward from today that do not stop at the end of a cycle. Every card is a
-  // projection of a document that exists at this moment: it appears when true and
-  // disappears when resolved. Nothing is stored per user. The one tap that
-  // resolves a card here — Got it out — deletes a FAMILY-SHARED `defrosts`
-  // document, so it clears the item for the whole household, not for one member.
+  // Cooking soon reads plan data without restating the planner: which nights are
+  // YOURS is a run of days forward from today that does not stop at the end of a
+  // cycle. To do reads no plan at all — a pack's night was stored on it when it
+  // was used from the freezer (#1696). Every card is a projection of a document
+  // that exists at this moment: it appears when true and disappears when
+  // resolved. Nothing is stored per user. The one tap that resolves a card here —
+  // Got it out — deletes a FAMILY-SHARED `defrosts` document, so it clears the
+  // item for the whole household, not for one member.
   //
   // NOTHING on this page reads the shopping list, and nothing derived from one
   // may be added. See the `tonight` header in personalViewService for the full
@@ -208,9 +209,23 @@
   }
 
   // ─── To do (issue #1685) ──────────────────────────────────────────────────
-  // A pack's night by its weekday: the window is under a fortnight, and "for
-  // Chilli, Thursday" is how the item is talked about. UTC for the reason above.
+  // A pack's night by its weekday — "for Chilli, Thursday" is how the item is
+  // talked about — while that night is today or ahead. A night already gone gets
+  // its date as well: it is stored at commit (#1696) and can be weeks old, and a
+  // bare "Thursday" would read as the coming one. Today is the day the Kitchen
+  // weeks were opened for, as Cooking soon's is. UTC for the reason above.
   const WEEKDAY_FORMAT = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long' });
+  const PAST_NIGHT_FORMAT = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  function taskNight(forDate: string): string {
+    const format = forDate < $kitchenAnchorDate ? PAST_NIGHT_FORMAT : WEEKDAY_FORMAT;
+    return format.format(new Date(`${forDate}T00:00:00.000Z`));
+  }
 
   function taskTitle(task: KitchenTask): string {
     const { defrost } = task;
@@ -222,10 +237,7 @@
     const packs = `${defrost.amount} ${defrost.amount === 1 ? 'pack' : 'packs'}`;
     const where = `${defrost.location} · #${defrost.freezerNumber} · ${packs}`;
     if (defrost.recipeTitle === null) return where;
-    const night =
-      task.forDate === null
-        ? ''
-        : `, ${WEEKDAY_FORMAT.format(new Date(`${task.forDate}T00:00:00.000Z`))}`;
+    const night = task.forDate === null ? '' : `, ${taskNight(task.forDate)}`;
     return `${where} — for ${defrost.recipeTitle}${night}`;
   }
 
