@@ -15,14 +15,14 @@
   },
   "devDependencies": {
     "@lucide/svelte": "^1.50.0",
-    "@storybook/addon-a11y": "^10.6.1",
-    "@storybook/svelte": "^10.6.1",
-    "@storybook/svelte-vite": "^10.6.1",
+    "@storybook/addon-a11y": "^10.6.2",
+    "@storybook/svelte": "^10.6.2",
+    "@storybook/svelte-vite": "^10.6.2",
     "@sveltejs/vite-plugin-svelte": "^7",
     "@tailwindcss/vite": "^4",
-    "chromatic": "^18.11.0",
-    "storybook": "^10.6.1",
-    "svelte-check": "^4.7.6",
+    "chromatic": "^18.13.0",
+    "storybook": "^10.6.2",
+    "svelte-check": "^4.7.7",
     "tailwindcss": "^4",
     "vite": "^8"
   }
