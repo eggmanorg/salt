@@ -6,6 +6,12 @@ Headings mirror the command's sections. The helper briefs live in [`.claude/agen
 
 ## Standing rules
 
+### Re-read after compaction
+
+When a session nears its context limit Claude Code compacts it, and an invoked command comes back only in part: the [skills docs](https://code.claude.com/docs/en/skills) (read 2026-10-31) say compaction keeps the first 5,000 tokens of each invoked skill — a slash command is one — within 25,000 for all of them, and advise putting the most important instructions at the top. At ~4 bytes a token that cut falls inside `salt-campaign.md`'s **Dispatch** section, at the budget-breach steps of a ~10K-token file, so a compacted coordinator would carry on with no Review, Merge queue, Decision envelope, Sweep or Finish rules; in `salt-run.md` (~7.5K) it falls just after step 3, dropping the commit, CI, handoff and pause-condition rules. A `campaign-worker` is worse off: it reads `salt-run.md` with a Read rather than invoking it, and compaction summarises tool results, so nothing of it comes back.
+
+This is the docs' stated behaviour, not an incident seen here. The fix is one sentence near each file's top telling the agent to re-read it whole, and `scripts/tests/campaignAgents.test.mjs` pins that sentence inside the opening the docs say survives. Reordering the files so the rules that matter most come first is the larger alternative, and the next step if a compacted run is ever seen to skip the re-read.
+
 ### Reaching GitHub
 
 Campaign #1064 established the whole `gh`-present / `gh`-absent split the hard way: the empty-stdout trap on plain `gh issue view` / `gh pr view` in a non-TTY session, the sandbox requirement, the session proxy refusing `api.github.com` and the permission classifier refusing `gh` in a cloud session, and `issue_read` silently stripping raw angle brackets from an issue body. Each was rediscovered at least once before being written down; the command states them so nobody rediscovers them again.
@@ -56,7 +62,13 @@ A subagent with no model of its own inherits its parent's, so one selection at t
 
 The coordinator itself runs on `opus` because it adjudicates technical disputes without reading the code, and its merges are irreversible.
 
+**Why each helper names an effort.** A helper with no `effort` in its frontmatter runs at whatever level the session was launched with, so a campaign started at `low` would build and review everything at `low`, and nothing in the run would say so — the same silent inheritance as the model. Each definition now sets one, and `campaignAgents.test.mjs` pins it: `high` for the three roles whose judgment is the product (worker, reviewer, filer), which is what Daniel's own `effortLevel: high` already gave them; `medium` for the three Sonnet roles that apply a choice already made; `low` for the Haiku extractor. `CLAUDE_CODE_EFFORT_LEVEL` and an `Agent` call's own `effort` parameter still override it. The levels are unmeasured. Anthropic's guide says Opus 5.5 at `medium` matches Opus 5 at `high` on coding, so the worker at `medium` is the obvious experiment if cost matters — to be judged on a campaign's results, not adopted on that claim.
+
 **Why the coordinator records where it runs.** The same command costs different amounts depending on what launched Claude Code. The desktop app's Code tab (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`) delivers its own connectors and extensions in-process — Home Assistant, Blender, Gmail, Calendar, computer-use, Chrome — and no Claude Code setting reaches them ([docs](https://code.claude.com/docs/en/mcp#how-connectors-reach-claude-code)). Across the 25 campaigns of 17–24 Sep 2026, the median first-call context was 97K for a desktop-tab coordinator and 62K for its subagents (21 campaigns, 304 subagents), against 63K and 30K under `claude remote-control` (`sdk-cli`; 4 campaigns, 43 subagents). That baseline is re-read on every call. Daniel had been choosing between the two by accident, so the check makes the choice visible; it never stops a run, because the command runs unattended and a stop would hold the fleet until Daniel is back. The remote-control sample is small, and part of the gap may be version drift (#1613).
+
+### Early stops
+
+Anthropic's [Opus 5.5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#unattended-agentic-runs) (read 2026-10-31) reports that on long multi-part tasks the model sometimes ends a turn on a progress update instead of a tool call, and that an unattended loop treating that as the end of the task stops there. A subagent's last turn _is_ its return, so a helper that does this hands the coordinator half a phase in prose, with no fixed block to route. The guide's two remedies are both used: each helper's brief names the early stops to avoid, and the coordinator — the harness, here — sends a short continue message when a return comes back without its block, giving up after two so a genuinely stuck helper ends. The extractor carries no paragraph: it is one fetch-and-transcribe on Haiku with nothing to stop partway through. Added on the guide's word, not after an incident in this repo.
 
 ## Setup
 
