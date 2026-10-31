@@ -4,6 +4,10 @@
   write (`useFromFreezer`), so this sheet knows nothing about lists, recipes or
   Firestore. It hands back a bag number and a whole number of packs.
 
+  It starts at the packs the row needs (`packsForNeed`, issue #1712): the row's
+  amount over the bag's weight per pack, rounded up and capped at what the bag
+  holds — or 1 when the two cannot be compared.
+
   Taking the last packs removes the entry. The sheet says so
   before confirming: that notice IS the "remove it?" question #1684's page asks
   after a −1, so there is no second dialog.
@@ -20,7 +24,8 @@
     SheetHeader,
     SheetTitle,
   } from '@salt/ui-components';
-  import { displayAmount, type FreezerItem } from '@salt/domain';
+  import { displayAmount, packsForNeed, type FreezerItem, type PackNeed } from '@salt/domain';
+  import { formatPackWeight } from '../../lib/quantityDisplay.js';
 
   interface Props {
     open: boolean;
@@ -28,21 +33,28 @@
     itemName: string;
     /** The matching entries, oldest first (`freezerStockFor`). */
     stock: readonly FreezerItem[];
+    /** What the row needs — its own amount and unit, per recipe on a shared row. */
+    need: PackNeed;
     /** Where an entry is: "Garage, shelf B". */
     placeOf: (item: FreezerItem) => string;
     onConfirm: (choice: { number: number; count: number }) => void;
   }
 
-  let { open = $bindable(), itemName, stock, placeOf, onConfirm }: Props = $props();
+  let { open = $bindable(), itemName, stock, need, placeOf, onConfirm }: Props = $props();
 
   let chosen = $state<number | null>(null);
   let count = $state(1);
 
-  // Every opening starts on the oldest bag and one pack.
+  /** The packs a bag starts at for this row. */
+  function startFor(item: FreezerItem | undefined): number {
+    return item ? packsForNeed(need, item.packWeight, displayAmount(item.amount)) : 1;
+  }
+
+  // Every opening starts on the oldest bag, at the packs the row needs from it.
   $effect(() => {
     if (open) {
       chosen = stock[0]?.number ?? null;
-      count = 1;
+      count = startFor(stock[0]);
     }
   });
 
@@ -54,9 +66,15 @@
     return `${n} ${n === 1 ? 'pack' : 'packs'}`;
   }
 
+  // "4 × 500 g" for a bag with a weight per pack; "4 packs" for one without.
+  function holding(item: FreezerItem): string {
+    const n = displayAmount(item.amount);
+    return item.packWeight && n > 0 ? `${n} × ${formatPackWeight(item.packWeight)}` : packs(n);
+  }
+
   function choose(value: string): void {
     chosen = Number(value);
-    count = 1;
+    count = startFor(stock.find((i) => i.number === chosen));
   }
 
   function confirm(): void {
@@ -82,14 +100,14 @@
         {#each stock as item (item.number)}
           <RadioGroupItem
             value={String(item.number)}
-            label={`#${item.number} ${item.name} — ${placeOf(item)} · ${packs(displayAmount(item.amount))}`}
+            label={`#${item.number} ${item.name} — ${placeOf(item)} · ${holding(item)}`}
           />
         {/each}
       </RadioGroup>
     {:else if entry}
       <p class="text-sm text-foreground" data-testid="use-from-freezer-entry">
         #{entry.number}
-        {entry.name} — {placeOf(entry)} · {packs(held)}
+        {entry.name} — {placeOf(entry)} · {holding(entry)}
       </p>
     {/if}
 

@@ -1416,13 +1416,17 @@
   </ListPage>
 {/if}
 
-<UseFromFreezerSheet
-  bind:open={useOpen}
-  itemName={useTarget ? displayLabel(useTarget) : ''}
-  stock={useStock}
-  {placeOf}
-  onConfirm={(choice) => void confirmUseFromFreezer(choice)}
-/>
+<!-- Mounted from the first "Use from the freezer" on: it always has a row. -->
+{#if useTarget}
+  <UseFromFreezerSheet
+    bind:open={useOpen}
+    itemName={displayLabel(useTarget)}
+    stock={useStock}
+    need={useTarget}
+    {placeOf}
+    onConfirm={(choice) => void confirmUseFromFreezer(choice)}
+  />
+{/if}
 
 <!-- Edit item sheet -->
 <Sheet

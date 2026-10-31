@@ -18,7 +18,8 @@
  * Covers:
  * - A recipe row → Use from the freezer → the row goes, the Kitchen item is
  *   stored, Kitchen shows it → Got it out → it is gone.
- * - A row shared by two recipes → committing one recipe's line leaves the other.
+ * - A row shared by two recipes → committing one recipe's line leaves the other,
+ *   its pack count worked out from that recipe's own amount (issue #1712).
  * - A row whose ingredient is in no freezer has no freezer line.
  */
 import { expect, test } from './fixtures/test';
@@ -62,9 +63,11 @@ async function seedHousehold(): Promise<string> {
     freezers: [{ id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] }],
     suppliers: [],
   });
-  for (const [number, name, canonId] of [
-    [47, 'Pork loin', PORK],
-    [12, 'Beef mince', MINCE],
+  // Pork in 500 g packs, so a 500 g row starts at one; mince in 250 g packs and
+  // four of them, so a 500 g row starts at two — and a combined 1 kg would be four.
+  for (const [number, name, canonId, amount, grams] of [
+    [47, 'Pork loin', PORK, 2, 500],
+    [12, 'Beef mince', MINCE, 4, 250],
   ] as const) {
     await seedDocumentBeforeBoot(`freezerItems/${String(number).padStart(3, '0')}`, {
       schemaVersion: 1,
@@ -72,10 +75,11 @@ async function seedHousehold(): Promise<string> {
       name,
       freezerId: 'fz-garage',
       shelf: 'B',
-      amount: 2,
+      amount,
       canonId,
       recipeId: null,
       purchasedFrom: null,
+      packWeight: { amount: grams, unit: 'g' },
       addedAt: NOW,
       updatedAt: NOW,
     });
@@ -173,6 +177,8 @@ test.describe('use from the freezer', () => {
     await expect(breakdown.getByTestId('shopping-item-use-from-freezer')).toHaveCount(2);
 
     await breakdown.getByTestId('shopping-item-use-from-freezer').first().click();
+    // The recipe's own 500 g over 250 g packs (issue #1712), not the row's 1 kg.
+    await expect(page.getByTestId('use-from-freezer-count')).toHaveText('2');
     await page.getByTestId('use-from-freezer-confirm').click();
 
     await expect.poll(() => rowIds(page), { timeout: SYNC_TIMEOUT }).toHaveLength(1);
