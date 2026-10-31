@@ -13,10 +13,10 @@
   "dependencies": {
     "@salt/domain": "workspace:*",
     "@salt/shared-types": "workspace:*",
-    "firebase": "^12.19.0"
+    "firebase": "^13.0.0"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.2",
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@types/node": "^26.6.5"
   }
 }
