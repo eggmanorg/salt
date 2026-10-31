@@ -928,7 +928,9 @@ describe('RecipeListPage — sections', () => {
     await user.click(screen.getByTestId('recipe-new-special'));
 
     expect(await screen.findByTestId('recipe-new-name')).toBeInTheDocument();
-    expect(screen.getByText("Chef's Specials")).toBeInTheDocument();
+    // The sheet's title, by role: the menu item carries the same words and can
+    // still be mid-close when the sheet mounts, so a bare getByText finds both.
+    expect(screen.getByRole('heading', { name: "Chef's Specials" })).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 
