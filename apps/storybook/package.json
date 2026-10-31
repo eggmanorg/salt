@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@salt/ui-components": "workspace:*",
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.3"
   },
   "devDependencies": {
-    "@lucide/svelte": "^1.50.0",
+    "@lucide/svelte": "^1.63.0",
     "@storybook/addon-a11y": "^10.6.5",
     "@storybook/svelte": "^10.6.5",
     "@storybook/svelte-vite": "^10.6.5",
