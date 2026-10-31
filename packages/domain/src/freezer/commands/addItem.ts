@@ -1,8 +1,8 @@
 import { ErrorCode, failure, success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
-import type { FreezerItem } from '../entities/FreezerItem.js';
-import { checkItemName, checkPlace, cleanPurchasedFrom } from './itemRules.js';
+import type { FreezerItem, PackWeight } from '../entities/FreezerItem.js';
+import { checkItemName, checkPackWeight, checkPlace, cleanPurchasedFrom } from './itemRules.js';
 
 export interface AddFreezerItemInput {
   /** The bag number — usually `nextBagNumber(items, config)`, or one typed over it. */
@@ -13,6 +13,8 @@ export interface AddFreezerItemInput {
   readonly shelf: string | null;
   /** How many packs, a whole number of at least one. */
   readonly amount: number;
+  /** What one pack weighs, in g or ml — required and above zero. */
+  readonly packWeight: PackWeight | null;
   /** Where it was bought. Optional; blank is none. */
   readonly purchasedFrom?: string | null;
   /** The ingredient it is, if one was picked. Optional. */
@@ -44,6 +46,8 @@ export function addFreezerItem(
   if (!Number.isInteger(input.amount) || input.amount < 1) {
     return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_AMOUNT });
   }
+  const packWeight = checkPackWeight(input.packWeight);
+  if (packWeight.kind !== 'ok') return packWeight;
   const place = checkPlace(config, input.freezerId, input.shelf);
   if (place.kind !== 'ok') return place;
   return success({
@@ -56,6 +60,7 @@ export function addFreezerItem(
     canonId: input.canonId ?? null,
     recipeId: input.recipeId ?? null,
     purchasedFrom: cleanPurchasedFrom(input.purchasedFrom),
+    packWeight: packWeight.value,
     addedAt: input.now,
     updatedAt: input.now,
   });

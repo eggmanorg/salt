@@ -24,6 +24,7 @@
     type FreezerItem,
   } from '@salt/domain';
   import FeatureGuard from '../../components/FeatureGuard.svelte';
+  import { formatPackWeight } from '../../lib/quantityDisplay.js';
   import {
     freezerConfigState,
     freezerItemsState,
@@ -102,8 +103,15 @@
     return `${shown} ${shown === 1 ? 'pack' : 'packs'}`;
   }
 
+  // "4 × 500 g" when the bag has a weight per pack (issue #1712); one written
+  // before weights, or one with none left, reads as the count alone.
   function title(item: FreezerItem): string {
-    return `#${item.number} ${item.name} — ${packs(item.amount)}`;
+    const shown = displayAmount(item.amount);
+    const count =
+      item.packWeight && shown > 0
+        ? `${shown} × ${formatPackWeight(item.packWeight)}`
+        : packs(item.amount);
+    return `#${item.number} ${item.name} — ${count}`;
   }
 
   async function takeOne(item: FreezerItem): Promise<void> {

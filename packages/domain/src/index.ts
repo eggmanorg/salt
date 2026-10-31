@@ -153,6 +153,7 @@ export type {
   SetShelvesInput,
   RemoveFreezerInput,
   FreezerItem,
+  PackWeight,
   FreezerStorePort,
   AddFreezerItemInput,
   EditFreezerItemInput,

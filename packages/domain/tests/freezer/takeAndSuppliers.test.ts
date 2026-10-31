@@ -20,6 +20,7 @@ import { FreezerConfigSchema } from '@salt/domain/schemas';
 
 const NOW = '2026-10-12T09:00:00.000Z';
 const LATER = '2026-10-12T10:00:00.000Z';
+const WEIGHT = { amount: 500, unit: 'g' } as const;
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 
@@ -38,6 +39,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: null,
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -156,6 +158,7 @@ describe('the links', () => {
       freezerId: GARAGE.id,
       shelf: 'A',
       amount: 2,
+      packWeight: WEIGHT,
       now: NOW,
     };
     const linked = ok(addFreezerItem([], config(), { ...input, canonId: 'c-1', recipeId: 'r-1' }));
@@ -168,7 +171,13 @@ describe('the links', () => {
   it('change on edit when given, and are left alone when omitted', () => {
     const before = item(47, { canonId: 'c-1', recipeId: 'r-1' });
     const kept = ok(
-      editFreezerItem([before], { number: 47, name: 'Stew', purchasedFrom: null, now: LATER }),
+      editFreezerItem([before], {
+        number: 47,
+        name: 'Stew',
+        purchasedFrom: null,
+        packWeight: WEIGHT,
+        now: LATER,
+      }),
     );
     expect([kept.canonId, kept.recipeId]).toEqual(['c-1', 'r-1']);
 
@@ -177,6 +186,7 @@ describe('the links', () => {
         number: 47,
         name: 'Stew',
         purchasedFrom: null,
+        packWeight: WEIGHT,
         canonId: null,
         recipeId: 'r-2',
         now: LATER,

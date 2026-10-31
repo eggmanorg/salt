@@ -30,6 +30,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: 'canon-pork',
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,

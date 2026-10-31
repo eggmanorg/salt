@@ -17,7 +17,7 @@ export { removeFreezer } from './commands/removeFreezer.js';
 export type { RemoveFreezerInput } from './commands/removeFreezer.js';
 
 // What is in the freezers (issue #1684).
-export type { FreezerItem } from './entities/FreezerItem.js';
+export type { FreezerItem, PackWeight } from './entities/FreezerItem.js';
 export type { FreezerStorePort } from './ports/FreezerStorePort.js';
 export { addFreezerItem } from './commands/addItem.js';
 export type { AddFreezerItemInput } from './commands/addItem.js';

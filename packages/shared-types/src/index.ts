@@ -222,6 +222,11 @@ export const ErrorCode = {
   FREEZER_NUMBER_IN_USE: 'FREEZER_NUMBER_IN_USE',
   INVALID_FREEZER_AMOUNT: 'INVALID_FREEZER_AMOUNT',
   UNKNOWN_FREEZER_PLACE: 'UNKNOWN_FREEZER_PLACE',
+  // A bag's weight per pack (issue #1712) that is missing, not a positive finite
+  // number, or in a unit other than g or ml. Required on every add and edit.
+  // Somebody typed it — expected, so it crosses as a ValidationError and is not
+  // reported.
+  INVALID_FREEZER_PACK_WEIGHT: 'INVALID_FREEZER_PACK_WEIGHT',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

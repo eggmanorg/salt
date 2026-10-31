@@ -241,11 +241,14 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: null,
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
     ...over,
   };
 }
+
+const WEIGHT = { amount: 500, unit: 'g' } as const;
 
 const ADD = {
   number: 3,
@@ -254,6 +257,7 @@ const ADD = {
   shelf: 'B',
   amount: 5,
   purchasedFrom: 'Swaledale',
+  packWeight: WEIGHT,
 };
 
 function storedItems(): readonly FreezerItem[] {
@@ -291,9 +295,16 @@ describe('freezer service — the stock it may write from', () => {
 
     expect(get(freezerItemsState)).toEqual({ status: 'failed' });
     expect(mockReport).toHaveBeenCalledOnce();
-    expect((await updateFreezerItem(1, { name: 'X', purchasedFrom: null, place: null })).kind).toBe(
-      'err',
-    );
+    expect(
+      (
+        await updateFreezerItem(1, {
+          name: 'X',
+          purchasedFrom: null,
+          packWeight: WEIGHT,
+          place: null,
+        })
+      ).kind,
+    ).toBe('err');
     expect(mockSaveItem).not.toHaveBeenCalled();
   });
 });
@@ -336,6 +347,7 @@ describe('freezer service — item writes', () => {
     const result = await updateFreezerItem(47, {
       name: 'Pork shoulder',
       purchasedFrom: 'Swaledale',
+      packWeight: WEIGHT,
       place: { freezerId: KITCHEN.id, shelf: null },
     });
 
@@ -354,7 +366,12 @@ describe('freezer service — item writes', () => {
   it('leaves the place alone when none is given — an item under Not placed stays there', async () => {
     emitItems([item(8, { freezerId: 'fz-removed' })]);
 
-    const result = await updateFreezerItem(8, { name: 'Lamb', purchasedFrom: null, place: null });
+    const result = await updateFreezerItem(8, {
+      name: 'Lamb',
+      purchasedFrom: null,
+      packWeight: WEIGHT,
+      place: null,
+    });
 
     expect(result.kind).toBe('ok');
     expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({
@@ -368,6 +385,7 @@ describe('freezer service — item writes', () => {
     const same = await updateFreezerItem(8, {
       name: 'Lamb',
       purchasedFrom: null,
+      packWeight: WEIGHT,
       place: { freezerId: 'fz-removed', shelf: 'Q' },
     });
     expect(same.kind).toBe('ok');
@@ -375,6 +393,7 @@ describe('freezer service — item writes', () => {
     const moved = await updateFreezerItem(8, {
       name: 'Lamb',
       purchasedFrom: null,
+      packWeight: WEIGHT,
       place: { freezerId: GARAGE.id, shelf: 'Q' },
     });
     expect(moved).toEqual(
@@ -384,7 +403,12 @@ describe('freezer service — item writes', () => {
   });
 
   it('refuses a blank name on edit', async () => {
-    const result = await updateFreezerItem(47, { name: ' ', purchasedFrom: null, place: null });
+    const result = await updateFreezerItem(47, {
+      name: ' ',
+      purchasedFrom: null,
+      packWeight: WEIGHT,
+      place: null,
+    });
     expect(result).toEqual(
       failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_ITEM_NAME }),
     );
@@ -507,6 +531,7 @@ describe('freezer service — recounting and linking on edit', () => {
     const result = await updateFreezerItem(47, {
       name: 'Item 47',
       purchasedFrom: null,
+      packWeight: WEIGHT,
       place: null,
       amount: 6,
     });
@@ -516,7 +541,12 @@ describe('freezer service — recounting and linking on edit', () => {
   });
 
   it('leaves the count, and the links, alone when they are omitted', async () => {
-    await updateFreezerItem(47, { name: 'Renamed', purchasedFrom: null, place: null });
+    await updateFreezerItem(47, {
+      name: 'Renamed',
+      purchasedFrom: null,
+      packWeight: WEIGHT,
+      place: null,
+    });
 
     expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({
       name: 'Renamed',
@@ -530,6 +560,7 @@ describe('freezer service — recounting and linking on edit', () => {
     const result = await updateFreezerItem(47, {
       name: 'Item 47',
       purchasedFrom: null,
+      packWeight: WEIGHT,
       place: null,
       amount: -1,
     });
@@ -544,6 +575,7 @@ describe('freezer service — recounting and linking on edit', () => {
     await updateFreezerItem(47, {
       name: 'Item 47',
       purchasedFrom: null,
+      packWeight: WEIGHT,
       place: null,
       canonId: 'c-lamb',
       recipeId: null,
@@ -601,11 +633,21 @@ describe('freezer service — the places bought from', () => {
   });
 
   it('an edit is spelt and remembered the same way', async () => {
-    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'SWALEDALE', place: null });
+    await updateFreezerItem(1, {
+      name: 'Item 1',
+      purchasedFrom: 'SWALEDALE',
+      packWeight: WEIGHT,
+      place: null,
+    });
     expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ purchasedFrom: 'Swaledale' });
     expect(mockSave).not.toHaveBeenCalled();
 
-    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'Booths', place: null });
+    await updateFreezerItem(1, {
+      name: 'Item 1',
+      purchasedFrom: 'Booths',
+      packWeight: WEIGHT,
+      place: null,
+    });
     expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual([
       'Swaledale',
       'Booths',
@@ -614,7 +656,12 @@ describe('freezer service — the places bought from', () => {
 
   it('remembers a place on an edit made before anybody set up a freezer', async () => {
     emit(null);
-    await updateFreezerItem(1, { name: 'Item 1', purchasedFrom: 'Booths', place: null });
+    await updateFreezerItem(1, {
+      name: 'Item 1',
+      purchasedFrom: 'Booths',
+      packWeight: WEIGHT,
+      place: null,
+    });
 
     expect((mockSave.mock.calls[0]?.[0] as FreezerConfig).suppliers).toEqual(['Booths']);
   });
@@ -692,7 +739,12 @@ describe('freezer service — the bag-number mark (issue #1693)', () => {
   });
 
   it('an edit never moves the mark, even when it remembers a place', async () => {
-    await updateFreezerItem(4, { name: 'Item 4', purchasedFrom: 'Booths', place: null });
+    await updateFreezerItem(4, {
+      name: 'Item 4',
+      purchasedFrom: 'Booths',
+      packWeight: WEIGHT,
+      place: null,
+    });
 
     expect(savedConfigs()).toHaveLength(1);
     expect(savedConfigs()[0]).toMatchObject({
