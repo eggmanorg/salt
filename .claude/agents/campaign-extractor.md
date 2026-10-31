@@ -2,6 +2,7 @@
 name: campaign-extractor
 description: /salt-campaign's footprint extractor — reads one issue body and transcribes its phases' deliverables, Must-not-touch entries and dependencies into a fixed block. Spawned only by /salt-campaign; the dispatch prompt names the issue number.
 model: haiku
+effort: low
 ---
 
 You are a footprint extractor for a `/salt-campaign` run. The model is `haiku` because this is fixed extraction against a known heading set. Your dispatch prompt names one issue, `#N`.

@@ -36,6 +36,18 @@ const ROLES = {
   'campaign-filer': 'opus',
 };
 
+// docs/campaign-rationale.md → Models: judgment roles at the `high` Daniel's
+// settings already gave them, closed-scope Sonnet roles lower, Haiku lowest.
+const EFFORT = {
+  'campaign-extractor': 'low',
+  'campaign-worker': 'high',
+  'pr-reviewer': 'high',
+  'campaign-fixer': 'medium',
+  'campaign-sweeper': 'medium',
+  'campaign-resolver': 'medium',
+  'campaign-filer': 'high',
+};
+
 /** The `key: value` lines between a file's leading `---` fences. */
 const frontmatter = (src) => {
   const m = src.match(/^---\n([\s\S]*?)\n---\n/);
@@ -60,6 +72,11 @@ describe('campaign agent definitions', () => {
     // A `#` after whitespace opens a YAML comment, so the harness silently cuts
     // the description there — the reviewer's once ended at "under".
     expect(fm.description).not.toMatch(/\s#/);
+  });
+
+  it.each(Object.entries(EFFORT))('%s pins effort %s', (name, effort) => {
+    // Without it a helper inherits the launching session's effort, silently.
+    expect(frontmatter(read(`.claude/agents/${name}.md`)).effort).toBe(effort);
   });
 
   it.each(Object.keys(ROLES))('%s carries no tools restriction', (name) => {
@@ -426,5 +443,59 @@ describe('rejects route by a reason word, and a filed finding adopts itself (#16
     const filer = read('.claude/agents/campaign-filer.md');
     expect(filer).toMatch(/An already-filed `#d` is rewritten, never duplicated/);
     expect(filer).toMatch(/`gh issue edit d --body-file <file>` instead of `gh issue create`/);
+  });
+});
+
+// Claude Code keeps only the opening of an invoked command through a
+// compaction (docs/campaign-rationale.md → Re-read after compaction). These pin
+// that each long prompt tells the agent to re-read it, and that the sentence
+// sits inside an opening that survives — 8,000 bytes is well under the 5,000
+// tokens the docs name. What they cannot pin: that a compacted agent notices
+// and re-reads, or that the harness's kept window stays the size the docs say.
+describe('the long prompts survive a compaction', () => {
+  const REREAD = /After a compaction, re-read this file whole/;
+
+  it.each(['.claude/commands/salt-run.md', '.claude/commands/salt-campaign.md'])(
+    '%s says to re-read it, near its top',
+    (file) => {
+      const src = read(file);
+      expect(src).toMatch(REREAD);
+      expect(src.search(REREAD)).toBeLessThan(8_000);
+    },
+  );
+
+  it('campaign-worker.md re-reads salt-run.md, which it holds only as a Read', () => {
+    expect(read('.claude/agents/campaign-worker.md')).toMatch(
+      /After a compaction, re-read `\.claude\/commands\/salt-run\.md` whole/,
+    );
+  });
+
+  it('the rationale doc carries the entry both prompts link to', () => {
+    expect(read('docs/campaign-rationale.md')).toMatch(/^### Re-read after compaction$/m);
+  });
+});
+
+// Opus 5.5 can end a turn on a progress note, which for a subagent is its
+// return (docs/campaign-rationale.md → Early stops). These pin each helper's
+// paragraph and the coordinator's bounded nudge. What they cannot pin: that a
+// helper actually keeps going, or that the coordinator stops after two nudges.
+describe('helpers do not stop early, and the coordinator nudges twice at most', () => {
+  const HELPERS = Object.keys(ROLES).filter((name) => name !== 'campaign-extractor');
+
+  it.each(HELPERS)('%s says its turn ends only at its return', (name) => {
+    expect(read(`.claude/agents/${name}.md`)).toMatch(
+      /\*\*Your turn ends at your return, nowhere else\.\*\*/,
+    );
+  });
+
+  it('salt-campaign.md treats a return without its block as an early stop', () => {
+    const src = read('.claude/commands/salt-campaign.md');
+    expect(src).toMatch(/A return missing its fixed block is an early stop/);
+    expect(src).toMatch(/`SendMessage` the agent to finish, at most twice/);
+    expect(src).toMatch(/a reviewer's or extractor's a fresh respawn/);
+  });
+
+  it('the rationale doc carries the entry they link to', () => {
+    expect(read('docs/campaign-rationale.md')).toMatch(/^### Early stops$/m);
   });
 });

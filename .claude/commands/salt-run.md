@@ -14,9 +14,9 @@ No argument given? If the current branch ends in `-<digits>`, that is the issue 
 
 You own two things end to end: the **spec contract** (the issue's phases are the scope — nothing more, nothing less) and the **git history** (branch, commits, PR). Everything else is yours to delegate or do directly as the work warrants.
 
-Delegate breadth — codebase sweeps, independent implementation, CI-log triage — and keep judgment: validation against the real diff, the git operations, and every decision the issue's audit trail depends on. Search and mechanical fan-out can run on a cheaper model — `Agent(…, model: "haiku")`, or `"sonnet"` where the sweep has to reason about what it finds. Implementation and validation should not.
+**After a compaction, re-read this file whole before your next step:** only its opening survives one ([why](../../docs/campaign-rationale.md#re-read-after-compaction)).
 
-GitHub through the `gh` CLI throughout, or — where `gh` is absent — the GitHub MCP server, per the table in _Standing rules_.
+Delegate breadth — codebase sweeps, independent implementation, CI-log triage — and keep judgment: validation against the real diff, the git operations, and every decision the issue's audit trail depends on. Search and mechanical fan-out can run on a cheaper model — `Agent(…, model: "haiku")`, or `"sonnet"` where the sweep has to reason about what it finds. Implementation and validation should not.
 
 Keep the loop's order: it is built so a run neither re-derives what the issue holds nor waits serially on what could overlap.
 
@@ -250,8 +250,6 @@ Phase N. [1-2 sentences on what this phase delivers and why.]
 - [Another if needed]
 
 Refs #ISSUE_NUMBER
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
 `Refs #ISSUE_NUMBER` on every phase commit including the last — the PR closes the issue. No `#N` anywhere but that footer.

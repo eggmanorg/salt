@@ -23,6 +23,7 @@ Success is a clean tree when Daniel comes back: every issue merged to main, or p
 
 ## Standing rules
 
+- **After a compaction, re-read this file whole before acting**: only its opening survives one ([why](../../docs/campaign-rationale.md#re-read-after-compaction)).
 - **Context hygiene is a hard rule.** Never read source files, diffs, CI logs or test output; a Read under `packages/`, `apps/` or `docs/` is a delegation. You read structured agent returns, the reviewer's summary, and `gh`/`git` status output — not even issue bodies, which are extracted for you (Setup 2). File names are not diffs: `git diff --name-only`, `gh pr view --json files` and `git status` are yours. **Hardest for a retry and the sweep**: hand over a one-line reason and the ledger row, take back the structured return, and never read what went wrong — the agent does.
 - **Unattended by default.** A question (AskUserQuestion included) blocks the fleet for hours. Decide inside the envelope below; outside it, park the branch and keep the queue moving.
 - **CLAUDE.md is binding**, for you and every agent you spawn.
@@ -84,6 +85,8 @@ Otherwise stay silent — no "checking…" or "confirmed". Each message: the sta
 ## Models
 
 Each helper is a subagent under `.claude/agents/`, its model in its frontmatter; you run on `opus`. **Spawn them as `Agent(subagent_type: "<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
+
+**A return missing its fixed block is an early stop:** `SendMessage` the agent to finish, at most twice; then a worker's is `BLOCKED: early stop`, a reviewer's or extractor's a fresh respawn, any other's a reject of all it was handed ([why](../../docs/campaign-rationale.md#early-stops)).
 
 Your own model propagates to any agent spawned without one: if you are not on Opus, say so once in the ledger's **Plan** block before dispatching.
 
