@@ -82,10 +82,21 @@ const ASSETS = join(DIST, 'assets');
 // +1.35 kB — chunking, not code, is what varies) plus one more #1297-sized
 // third-party shock. It is sized to that stated need, not rounded up, and it is
 // not a licence for eager-bundle growth: the OTel/Leaflet/CF-schema content
-// markers below still catch the named libraries at any ceiling. The standing
-// advice from #1297 is unchanged — the next raise should be refused in favour of
-// getting posthog.js (~90 kB gz) out of the boot graph.
-const BOOT_GZIP_CEILING_KB = 510;
+// markers below still catch the named libraries at any ceiling.
+//
+// Raised 510 -> 528 in #1701 (2026-10-31), authorised by Daniel, who declined
+// the #1297 advice to move posthog.js out of the boot graph instead: every
+// session downloads it anyway, so deferring it moves no bytes and only shifts
+// parse time behind first paint, a gain his ~5 users on recent phones would not
+// see, and it would cost a pre-load buffer for errors raised before PostHog
+// exists. Nothing of ours grew. Against main's 507.94 kB, firebase 12.19 -> 13.0
+// measured 515.71 kB (#1701) and the production-minor-patch group (posthog-js
+// 1.435.8 -> 1.438.21, @lucide/svelte 1.50 -> 1.61, bits-ui, svelte, genkit)
+// measured 515.56 kB (#1706). Those are two independent ~+7.7 kB deltas, so
+// about 523.3 kB together. 528 KB leaves ~4.7 kB above that, one #1297-sized
+// third-party shock, as the #1512 raise did. Deferring posthog.js is the lever if
+// this ceiling is hit again, but it is no longer the standing plan.
+const BOOT_GZIP_CEILING_KB = 528;
 
 // Raw (un-gzipped) ceiling for the settings page's own chunk. Leaflet is 145 kB
 // and Phase 2 moved it out; the chunk measured 34.4 kB after, against 183.7 kB
