@@ -86,7 +86,7 @@ Otherwise stay silent — no "checking…" or "confirmed". Each message: the sta
 
 Each helper is a subagent under `.claude/agents/`, its model in its frontmatter; you run on `opus`. **Spawn them as `Agent(subagent_type: "<role>", prompt: <the parameters>)` and never pass `model:`** — the `Agent` tool's `model` parameter overrides the frontmatter. The prompt carries only the parameters each section names; the brief is the agent file.
 
-**A return missing its fixed block is an early stop:** `SendMessage` the agent to finish, at most twice; then a worker's is `BLOCKED: early stop`, any other's a reject of all it was handed ([why](../../docs/campaign-rationale.md#early-stops)).
+**A return missing its fixed block is an early stop:** `SendMessage` the agent to finish, at most twice; then a worker's is `BLOCKED: early stop`, a reviewer's or extractor's a fresh respawn, any other's a reject of all it was handed ([why](../../docs/campaign-rationale.md#early-stops)).
 
 Your own model propagates to any agent spawned without one: if you are not on Opus, say so once in the ledger's **Plan** block before dispatching.
 

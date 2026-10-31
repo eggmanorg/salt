@@ -492,6 +492,7 @@ describe('helpers do not stop early, and the coordinator nudges twice at most', 
     const src = read('.claude/commands/salt-campaign.md');
     expect(src).toMatch(/A return missing its fixed block is an early stop/);
     expect(src).toMatch(/`SendMessage` the agent to finish, at most twice/);
+    expect(src).toMatch(/a reviewer's or extractor's a fresh respawn/);
   });
 
   it('the rationale doc carries the entry they link to', () => {
