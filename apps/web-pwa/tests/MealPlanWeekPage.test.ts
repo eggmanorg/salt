@@ -2097,6 +2097,10 @@ describe('MealPlanWeekPage — shop the week, in sequence (#724, Phase 2)', () =
     await screen.findByTestId('shop-week-list');
     await userEvent.click(screen.getByTestId('shop-week-confirm'));
     await screen.findByTestId('recipe-add-review-list');
+    // Since the #1706 bump (bits-ui 2.20 / svelte 5.57.3) the shop-week sheet can
+    // still be unmounting when the review sheet opens, and both name the recipe.
+    // Wait for the hand-off to finish, as cancelShopWeek does.
+    await waitFor(() => expect(screen.queryByTestId('shop-week-list')).not.toBeInTheDocument());
   }
 
   it('names each recipe and its place in the run, and offers Skip rather than Cancel', async () => {
