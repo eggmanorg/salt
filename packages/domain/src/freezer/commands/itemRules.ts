@@ -41,8 +41,10 @@ export function checkPackWeight(
 
 /**
  * A place the setup has, or the refusal. The freezer must be in the config.
- * A freezer with shelves needs one of them, matched exactly as stored; a freezer
- * set up with none takes `null`.
+ * The shelf is one of its shelves, matched exactly as stored, or `null`: in a
+ * freezer set up with none that is the only place; in one with shelves it is
+ * "no shelf yet" — a bag labelled in the kitchen before anyone has seen where
+ * it fits, filed by `itemsByShelf` until it is moved onto one.
  */
 export function checkPlace(
   config: FreezerConfig,
@@ -50,11 +52,7 @@ export function checkPlace(
   shelf: string | null,
 ): ReadResult<{ freezerId: string; shelf: string | null }, DomainError> {
   const freezer = config.freezers.find((f) => f.id === freezerId);
-  const fits =
-    freezer !== undefined &&
-    (freezer.shelves.length === 0
-      ? shelf === null
-      : shelf !== null && freezer.shelves.includes(shelf));
+  const fits = freezer !== undefined && (shelf === null || freezer.shelves.includes(shelf));
   if (!fits) {
     return failure({ kind: 'ValidationError', code: ErrorCode.UNKNOWN_FREEZER_PLACE });
   }

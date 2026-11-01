@@ -12,7 +12,13 @@ export interface FreezerStock {
   readonly freezer: Freezer;
   /** In the freezer's shelf order. */
   readonly shelves: readonly ShelfStock[];
-  /** How many items are on all its shelves together. */
+  /**
+   * Items in this freezer with no shelf yet (`shelf: null` in a freezer that has
+   * shelves), by number — always empty for a freezer with none, whose one group
+   * in `shelves` holds them.
+   */
+  readonly unshelved: readonly FreezerItem[];
+  /** How many items are in it — on its shelves and not yet on one, together. */
   readonly count: number;
 }
 
@@ -43,7 +49,17 @@ export function itemsByShelf(items: readonly FreezerItem[], config: FreezerConfi
       for (const i of on) placed.add(i);
       return { shelf, items: [...on].sort(byNumber) };
     });
-    return { freezer, shelves, count: shelves.reduce((n, s) => n + s.items.length, 0) };
+    const unshelved =
+      freezer.shelves.length > 0
+        ? items.filter((i) => i.freezerId === freezer.id && i.shelf === null).sort(byNumber)
+        : [];
+    for (const i of unshelved) placed.add(i);
+    return {
+      freezer,
+      shelves,
+      unshelved,
+      count: shelves.reduce((n, s) => n + s.items.length, unshelved.length),
+    };
   });
   return { notPlaced: items.filter((i) => !placed.has(i)).sort(byNumber), freezers };
 }

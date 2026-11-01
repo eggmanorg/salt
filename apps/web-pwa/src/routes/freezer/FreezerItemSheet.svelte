@@ -35,7 +35,8 @@
    *
    * Adding: the number is pre-filled with the next one up (`nextBagNumber`) and
    * can be typed over (the bag may already be marked); then a name, the freezer
-   * and shelf, how many packs, what one pack weighs (g or ml, issue #1712), and
+   * and shelf — or "Not yet", for packs labelled in the kitchen before anyone
+   * has seen which shelf they fit on — how many packs, what one pack weighs (g or ml, issue #1712), and
    * where it was bought if it was.
    *
    * Editing: the number is shown and fixed — it is the document id and it is
@@ -94,10 +95,10 @@
         // An item under Not placed opens with nothing picked: leaving it so keeps
         // it where it is, picking a place files it. That is any item whose stored
         // place no longer fits: its freezer removed, or its shelf gone from it.
+        // One with no shelf yet fits, and opens with "Not yet" picked.
         const home = freezers.find((f) => f.id === item.freezerId);
         const fits =
-          home !== undefined &&
-          (item.shelf === null ? home.shelves.length === 0 : home.shelves.includes(item.shelf));
+          home !== undefined && (item.shelf === null || home.shelves.includes(item.shelf));
         freezerId = fits ? home.id : null;
         shelf = fits ? item.shelf : null;
       } else {
@@ -179,7 +180,7 @@
             ? 'Say how many packs — a whole number, 0 or more.'
             : 'Say how many packs — a whole number, 1 or more.';
         case ErrorCode.UNKNOWN_FREEZER_PLACE:
-          return 'Pick a freezer and a shelf.';
+          return 'Pick a freezer.';
         case ErrorCode.INVALID_FREEZER_PACK_WEIGHT:
           return 'Say how much one pack weighs.';
       }
@@ -341,6 +342,14 @@
                 {label}
               </Chip>
             {/each}
+            <Chip
+              variant="filter"
+              pressed={shelf === null}
+              onclick={() => (shelf = null)}
+              data-testid="freezer-item-shelf-none"
+            >
+              Not yet
+            </Chip>
           </ChipGroup>
         </div>
       {/if}

@@ -9,7 +9,7 @@ export interface AddFreezerItemInput {
   readonly number: number;
   readonly name: string;
   readonly freezerId: string;
-  /** One of the freezer's shelves, or `null` for a freezer with none. */
+  /** One of the freezer's shelves, or `null` for none — none yet, in a freezer that has them. */
   readonly shelf: string | null;
   /** How many packs, a whole number of at least one. */
   readonly amount: number;

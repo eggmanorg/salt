@@ -7,7 +7,7 @@ import { checkPlace, updateItem } from './itemRules.js';
 export interface MoveFreezerItemInput {
   readonly number: number;
   readonly freezerId: string;
-  /** One of the freezer's shelves, or `null` for a freezer with none. */
+  /** One of the freezer's shelves, or `null` for none — none yet, in a freezer that has them. */
   readonly shelf: string | null;
   readonly now: string;
 }
