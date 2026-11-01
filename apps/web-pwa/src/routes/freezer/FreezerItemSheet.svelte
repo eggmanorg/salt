@@ -252,7 +252,7 @@
 
     <form
       id="freezer-item-form"
-      class="flex min-h-0 flex-col gap-4 overflow-y-auto"
+      class="flex min-h-0 flex-col gap-4 overflow-y-auto salt-focus-gutter"
       onsubmit={(e) => void handleSubmit(e)}
       data-testid="freezer-item-form"
     >
@@ -398,11 +398,11 @@
       {/if}
     </form>
 
-    <SheetFooter>
+    <SheetFooter class={item ? 'justify-between' : ''}>
       {#if item}
         {@const target = item}
         <Button
-          variant="outline"
+          variant="destructive"
           onclick={() => void handleRemove(target)}
           data-testid="freezer-item-remove"
         >

@@ -1278,7 +1278,7 @@
           either way.
         </DialogDescription>
       </DialogHeader>
-      <div class="flex max-h-[60dvh] flex-col gap-1.5 overflow-y-auto">
+      <div class="flex max-h-[60dvh] flex-col gap-1.5 overflow-y-auto salt-focus-gutter">
         {@render shopWeekOptions(dates, $weekShopDay, extensionDates.length ? 'This week' : null)}
         {#if extensionDates.length}
           {@render shopWeekOptions(extensionDates, $extensionWeekShopDay, 'Next week')}

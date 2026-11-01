@@ -185,7 +185,7 @@
     {/if}
     <button
       type="button"
-      class="flex min-w-0 flex-1 flex-col items-start rounded px-2 py-1.5 text-left hover:bg-muted"
+      class="salt-focus-ring-inset flex min-w-0 flex-1 flex-col items-start rounded px-2 py-1.5 text-left hover:bg-muted"
       onclick={() => openEdit(item)}
       data-testid="freezer-item"
       data-number={item.number}

@@ -393,7 +393,10 @@
       <SheetTitle>How did it go?</SheetTitle>
     </SheetHeader>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-testid="batch-log-sheet">
+    <div
+      class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto salt-focus-gutter"
+      data-testid="batch-log-sheet"
+    >
       <p class="-mt-2 text-sm text-muted-foreground">
         Anything you note here stays on this batch. All of it is optional.
       </p>

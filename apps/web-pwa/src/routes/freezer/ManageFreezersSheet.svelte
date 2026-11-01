@@ -152,7 +152,7 @@
       <SheetDescription>Name each freezer and give it its shelves.</SheetDescription>
     </SheetHeader>
 
-    <div class="flex min-h-0 flex-col gap-4 overflow-y-auto">
+    <div class="flex min-h-0 flex-col gap-4 overflow-y-auto salt-focus-gutter">
       {#each stock as { freezer, count, shelves: groups } (freezer.id)}
         <section
           class="flex flex-col gap-3 rounded border border-border p-3"
@@ -203,6 +203,7 @@
                     type="button"
                     variant="ghost"
                     size="icon"
+                    class="salt-focus-ring-inset"
                     ariaLabel={`Remove shelf ${shelf}`}
                     onclick={() => void handleRemoveShelf(freezer, shelf)}
                     data-testid="manage-shelf-remove"
@@ -268,6 +269,7 @@
                   type="button"
                   variant="ghost"
                   size="icon"
+                  class="salt-focus-ring-inset"
                   ariaLabel={`Forget ${supplier}`}
                   onclick={() => void handleForgetSupplier(supplier)}
                   data-testid="manage-supplier-remove"
