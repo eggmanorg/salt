@@ -26,8 +26,8 @@ export function freezerItemDocId(n: number): string {
 //
 // - `freezerId` is a freezer's opaque id from `freezerConfig/current`. It may name
 //   a freezer since removed; the item then shows under Not placed.
-// - `shelf` is one of that freezer's shelf labels, or `null` for a freezer set up
-//   with no shelves.
+// - `shelf` is one of that freezer's shelf labels, or `null`: the only place in a
+//   freezer set up with no shelves, and "no shelf yet" in one that has them.
 // - `amount` is a whole number of packs with NO lower bound: two devices taking
 //   the last pack at once land on -1, and `displayAmount` clamps it to 0.
 // - `canonId`, `recipeId` and `purchasedFrom` are optional links, `null` when

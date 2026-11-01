@@ -30,6 +30,7 @@
     freezerItemsState,
     initFreezerSync,
     removeFreezerItem,
+    shelveFreezerItem,
     takeOneFreezerPack,
   } from '../../lib/freezerService.js';
   import { recipesById } from '../../lib/recipeService.js';
@@ -42,6 +43,9 @@
   // shelves, and the items on it — or, switched to oldest-first, every item by
   // how long it has been in. Anything whose freezer or shelf has been removed
   // from the setup sits under Not placed at the top until someone moves it.
+  // Packs added with no shelf yet — labelled in the kitchen, shelved once
+  // someone is at the freezer — head their freezer's card, each with a chip per
+  // shelf that puts it there in one tap.
   // Setting the freezers up is the Manage freezers sheet (issue #1682); adding,
   // editing, moving and removing an item is the item sheet. Each row takes one
   // pack out with −1; taking the last one asks whether to remove the entry.
@@ -82,14 +86,15 @@
   // grouping is gone. An item missing from it is under Not placed.
   const places = $derived(
     new Map(
-      filed.freezers.flatMap(({ freezer, shelves }) =>
-        shelves.flatMap(({ shelf, items: on }) =>
-          on.map((i) => [
+      filed.freezers.flatMap(({ freezer, shelves, unshelved }) => [
+        ...unshelved.map((i): [number, string] => [i.number, `${freezer.name}, no shelf yet`]),
+        ...shelves.flatMap(({ shelf, items: on }) =>
+          on.map((i): [number, string] => [
             i.number,
             shelf === null ? freezer.name : `${freezer.name}, shelf ${shelf}`,
           ]),
         ),
-      ),
+      ]),
     ),
   );
 
@@ -128,6 +133,16 @@
       lastOne = result.value.item;
       confirmOpen = true;
     }
+  }
+
+  async function shelve(item: FreezerItem, shelf: string): Promise<void> {
+    const result = await shelveFreezerItem(item.number, item.freezerId, shelf);
+    takeError =
+      result.kind === 'ok'
+        ? null
+        : result.error.kind === 'NotFound'
+          ? 'That has just been taken out on another phone.'
+          : "Couldn't move that yet. Try again.";
   }
 
   async function removeLastOne(item: FreezerItem): Promise<void> {
@@ -320,6 +335,40 @@
                 {stock.freezer.name}
               </h2>
               <ul class="flex flex-col gap-2">
+                {#if stock.unshelved.length > 0}
+                  <li
+                    class="rounded border border-dashed border-primary px-3 py-2"
+                    data-testid="freezer-unshelved"
+                  >
+                    <span class="block text-sm font-medium">No shelf yet</span>
+                    <span class="mb-1 block text-xs text-muted-foreground">
+                      Tap the shelf each one fits on.
+                    </span>
+                    <ul class="flex flex-col gap-2">
+                      {#each stock.unshelved as item (item.number)}
+                        <li class="flex flex-col gap-1" data-testid="freezer-unshelved-item">
+                          <ul class="flex flex-col">
+                            {@render row(item, false)}
+                          </ul>
+                          <ChipGroup
+                            class="pl-2"
+                            ariaLabel={`Shelf for #${item.number} ${item.name}`}
+                          >
+                            {#each stock.freezer.shelves as label (label)}
+                              <Chip
+                                variant="filter"
+                                onclick={() => void shelve(item, label)}
+                                data-testid="freezer-unshelved-shelf"
+                              >
+                                {label}
+                              </Chip>
+                            {/each}
+                          </ChipGroup>
+                        </li>
+                      {/each}
+                    </ul>
+                  </li>
+                {/if}
                 {#each stock.shelves as shelf, i (i)}
                   <li
                     class="rounded border border-dashed border-border px-3 py-2"

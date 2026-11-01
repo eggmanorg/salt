@@ -210,6 +210,11 @@ describe('addFreezerItem', () => {
     expect(added).toMatchObject({ freezerId: CHEST.id, shelf: null });
   });
 
+  it('takes no shelf yet in a freezer that has shelves', () => {
+    const added = ok(addFreezerItem([], CONFIG, { ...ADD, freezerId: GARAGE.id, shelf: null }));
+    expect(added).toMatchObject({ freezerId: GARAGE.id, shelf: null });
+  });
+
   it('refuses a number this device already holds', () => {
     expect(errorOf(addFreezerItem([item(47)], CONFIG, ADD))).toEqual({
       kind: 'ValidationError',
@@ -241,7 +246,6 @@ describe('addFreezerItem', () => {
   it.each([
     ['a freezer the setup does not have', { freezerId: 'fz-gone', shelf: 'A' }],
     ['a shelf the freezer does not have', { freezerId: GARAGE.id, shelf: 'Z' }],
-    ['no shelf in a freezer that has shelves', { freezerId: GARAGE.id, shelf: null }],
     ['a shelf in a freezer with none', { freezerId: CHEST.id, shelf: 'A' }],
   ])('refuses %s', (_what, place) => {
     expect(errorOf(addFreezerItem([], CONFIG, { ...ADD, ...place }))).toEqual({
@@ -384,6 +388,7 @@ describe('itemsByShelf', () => {
         id: f.freezer.id,
         count: f.count,
         shelves: f.shelves.map((s) => [s.shelf, s.items.map((i) => i.number)]),
+        unshelved: f.unshelved.map((i) => i.number),
       })),
     ).toEqual([
       {
@@ -393,8 +398,9 @@ describe('itemsByShelf', () => {
           ['A', [2, 4]],
           ['B', [9]],
         ],
+        unshelved: [],
       },
-      { id: CHEST.id, count: 0, shelves: [[null, []]] },
+      { id: CHEST.id, count: 0, shelves: [[null, []]], unshelved: [] },
     ]);
   });
 
@@ -403,15 +409,38 @@ describe('itemsByShelf', () => {
       item(1, { freezerId: 'fz-removed' }),
       item(5, { shelf: 'C' }),
       item(3, { freezerId: CHEST.id, shelf: 'A' }),
-      item(2, { shelf: null }),
       item(4),
     ];
     const filed = itemsByShelf(items, CONFIG);
 
-    expect(filed.notPlaced.map((i) => i.number)).toEqual([1, 2, 3, 5]);
+    expect(filed.notPlaced.map((i) => i.number)).toEqual([1, 3, 5]);
     expect(filed.freezers[0]?.shelves[0]?.items.map((i) => i.number)).toEqual([4]);
     const total = filed.notPlaced.length + filed.freezers.reduce((n, f) => n + f.count, 0);
     expect(total).toBe(items.length);
+  });
+
+  it('files an item with no shelf yet under its freezer, counted, and not under Not placed', () => {
+    const items = [item(7, { shelf: null }), item(4), item(2, { shelf: null })];
+    const filed = itemsByShelf(items, CONFIG);
+
+    expect(filed.notPlaced).toEqual([]);
+    const garage = filed.freezers[0];
+    expect(garage?.unshelved.map((i) => i.number)).toEqual([2, 7]);
+    expect(garage?.shelves.map((s) => s.items.map((i) => i.number))).toEqual([[4], []]);
+    expect(garage?.count).toBe(3);
+  });
+
+  it('moves an item with no shelf yet onto one', () => {
+    const before = item(7, { shelf: null });
+    const moved = ok(
+      moveFreezerItem([before], CONFIG, {
+        number: 7,
+        freezerId: GARAGE.id,
+        shelf: 'B',
+        now: LATER,
+      }),
+    );
+    expect(moved).toEqual({ ...before, shelf: 'B', updatedAt: LATER });
   });
 
   it('puts everything under Not placed when no freezer is set up', () => {

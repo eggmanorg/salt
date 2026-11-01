@@ -87,6 +87,7 @@ import {
   removeFreezerItem,
   renameFreezer,
   setFreezerShelves,
+  shelveFreezerItem,
   takeOneFreezerPack,
   updateFreezerItem,
   defrostsState,
@@ -400,6 +401,29 @@ describe('freezer service — item writes', () => {
       failure({ kind: 'ValidationError', code: ErrorCode.UNKNOWN_FREEZER_PLACE }),
     );
     expect(mockSaveItem).toHaveBeenCalledOnce();
+  });
+
+  it('shelves a pack with no shelf yet: one write, only the shelf changes, no config write', async () => {
+    const before = item(12, { shelf: null, name: 'Lamb mince' });
+    emitItems([before]);
+
+    const result = await shelveFreezerItem(12, GARAGE.id, 'B');
+
+    expect(result.kind).toBe('ok');
+    expect(mockSaveItem).toHaveBeenCalledOnce();
+    const saved = mockSaveItem.mock.calls[0]?.[0] as FreezerItem;
+    expect({ ...saved, updatedAt: before.updatedAt }).toEqual({ ...before, shelf: 'B' });
+    expect(storedItems().find((i) => i.number === 12)?.shelf).toBe('B');
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('refuses to shelve a pack onto a shelf the freezer does not have, and writes nothing', async () => {
+    emitItems([item(12, { shelf: null })]);
+    const result = await shelveFreezerItem(12, GARAGE.id, 'Z');
+    expect(result).toEqual(
+      failure({ kind: 'ValidationError', code: ErrorCode.UNKNOWN_FREEZER_PLACE }),
+    );
+    expect(mockSaveItem).not.toHaveBeenCalled();
   });
 
   it('refuses a blank name on edit', async () => {

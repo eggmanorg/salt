@@ -31,6 +31,7 @@ const {
   mockUpdateItem,
   mockRemoveItem,
   mockTake,
+  mockShelve,
   mockForget,
   mockCanon,
   mockRecipes,
@@ -49,6 +50,7 @@ const {
     mockUpdateItem: vi.fn(),
     mockRemoveItem: vi.fn(),
     mockTake: vi.fn(),
+    mockShelve: vi.fn(),
     mockForget: vi.fn(),
     mockCanon: makeStore<readonly CanonItem[]>([]),
     mockRecipes: makeStore<readonly Recipe[]>([]),
@@ -68,6 +70,7 @@ vi.mock('../src/lib/freezerService.js', () => ({
   updateFreezerItem: mockUpdateItem,
   removeFreezerItem: mockRemoveItem,
   takeOneFreezerPack: mockTake,
+  shelveFreezerItem: mockShelve,
   forgetSupplier: mockForget,
   addFreezer: mockAdd,
   renameFreezer: mockRename,
@@ -149,7 +152,7 @@ beforeEach(() => {
   for (const fn of [mockAdd, mockRename, mockSetShelves, mockRemove, mockForget]) {
     fn.mockResolvedValue(OK);
   }
-  for (const fn of [mockAddItem, mockUpdateItem, mockRemoveItem]) {
+  for (const fn of [mockAddItem, mockUpdateItem, mockRemoveItem, mockShelve]) {
     fn.mockResolvedValue(success(item(1)));
   }
 });
@@ -459,6 +462,44 @@ describe('freezer stock — the list (issue #1684)', () => {
     expect(list.firstElementChild).toBe(group);
   });
 
+  it('heads a freezer with its packs that have no shelf yet, and shelves one in a tap', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(1), item(12, { name: 'Lamb mince', shelf: null })]);
+    render(FreezerPage);
+
+    const group = await screen.findByTestId('freezer-unshelved');
+    const card = screen.getByTestId('freezer-card');
+    expect(group.parentElement?.firstElementChild).toBe(group);
+    expect(card.contains(group)).toBe(true);
+    expect(within(group).getByTestId('freezer-item')).toHaveAttribute('data-number', '12');
+    expect(screen.queryByTestId('freezer-not-placed')).not.toBeInTheDocument();
+
+    const shelves = within(group).getByRole('group', { name: 'Shelf for #12 Lamb mince' });
+    expect(
+      within(shelves)
+        .getAllByRole('button')
+        .map((b) => b.textContent?.trim()),
+    ).toEqual(['A', 'B', 'C', 'D']);
+    await fireEvent.click(within(shelves).getByRole('button', { name: 'C' }));
+    expect(mockShelve).toHaveBeenCalledWith(12, GARAGE.id, 'C');
+  });
+
+  it('says so when shelving a pack finds it gone', async () => {
+    mockShelve.mockResolvedValue({
+      kind: 'err',
+      error: { kind: 'NotFound', resource: 'freezerItem', id: '12' },
+    });
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12, { shelf: null })]);
+    render(FreezerPage);
+
+    const group = await screen.findByTestId('freezer-unshelved');
+    await fireEvent.click(within(group).getByRole('button', { name: 'A' }));
+    expect(await screen.findByTestId('freezer-take-error')).toHaveTextContent(
+      'That has just been taken out on another phone.',
+    );
+  });
+
   it('shows the stock even when every freezer has been removed', async () => {
     mockState.set(loaded([]));
     stocked([item(4, { freezerId: 'fz-removed' })]);
@@ -611,6 +652,49 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     );
   });
 
+  it('adds with no shelf yet when Not yet is picked', async () => {
+    mockState.set(loaded([GARAGE]));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
+      target: { value: 'Lamb mince' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-shelf-none'));
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-weight'), {
+      target: { value: '500' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({ freezerId: GARAGE.id, shelf: null }),
+      ),
+    );
+  });
+
+  it('opens an item with no shelf yet at its freezer, with Not yet picked', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12, { shelf: null, packWeight: { amount: 500, unit: 'g' } })]);
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getByTestId('freezer-item-shelf-none')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'B' }));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({ place: { freezerId: GARAGE.id, shelf: 'B' } }),
+      ),
+    );
+  });
+
   it('sends a blank number as not-a-number, for the domain to refuse', async () => {
     mockState.set(loaded([GARAGE]));
     mockAddItem.mockResolvedValue(
@@ -636,7 +720,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     [ErrorCode.FREEZER_NUMBER_IN_USE, 'Something in the freezer already has that number.'],
     [ErrorCode.INVALID_FREEZER_ITEM_NAME, 'Say what it is.'],
     [ErrorCode.INVALID_FREEZER_AMOUNT, 'Say how many packs — a whole number, 1 or more.'],
-    [ErrorCode.UNKNOWN_FREEZER_PLACE, 'Pick a freezer and a shelf.'],
+    [ErrorCode.UNKNOWN_FREEZER_PLACE, 'Pick a freezer.'],
     [ErrorCode.INVALID_FREEZER_PACK_WEIGHT, 'Say how much one pack weighs.'],
   ])('shows the refusal for %s and stays open', async (code, message) => {
     mockState.set(loaded([GARAGE]));
@@ -796,7 +880,7 @@ describe('FreezerItemSheet on its own', () => {
       ),
     );
     expect(await within(sheet).findByTestId('freezer-item-error')).toHaveTextContent(
-      'Pick a freezer and a shelf.',
+      'Pick a freezer.',
     );
   });
 

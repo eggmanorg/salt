@@ -326,6 +326,29 @@ export async function updateFreezerItem(
 }
 
 /**
+ * Put an item on a shelf and change nothing else — the one-tap move a pack with
+ * no shelf yet offers on the freezer page, once someone is at the freezer and
+ * can see where it fits.
+ */
+export async function shelveFreezerItem(
+  number: number,
+  freezerId: string,
+  shelf: string,
+): Promise<ReadResult<FreezerItem, DomainError>> {
+  const ready = itemsAndConfig();
+  if (!ready) return NOT_READY;
+  const result = moveFreezerItem(ready.items, ready.config, {
+    number,
+    freezerId,
+    shelf,
+    now: new Date().toISOString(),
+  });
+  if (result.kind !== 'ok') return result;
+  saveItem(ready, result.value, ready.config);
+  return result;
+}
+
+/**
  * Take one pack out. The count drops on this device at once; the decrement is
  * sent in the background and not awaited (offline it settles only on
  * reconnect), and a refusal is reported — an item another device has removed

@@ -173,7 +173,10 @@ item would vanish silently on reconnect, which is worse than a visible overwrite
 The rules emulator test pins that the overwrite is allowed.
 
 **Not placed.** An item points at a freezer by its opaque id and at a shelf by
-its label (`null` in a freezer set up with no shelves). Removing a freezer or a
+its label, or `null` — the only place in a freezer set up with no shelves, and
+**no shelf yet** in one that has them (packs labelled in the kitchen before
+anyone has seen which shelf they fit on; `itemsByShelf` files them as the
+freezer's `unshelved` until someone moves them). Removing a freezer or a
 shelf, or relabelling a shelf, is allowed with stock on it and rewrites no item;
 `itemsByShelf` files any item whose freezer or shelf the setup no longer has
 under **Not placed**, computed in memory, until someone moves it. Nothing is
