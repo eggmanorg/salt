@@ -301,7 +301,7 @@
     </p>
 
     <div
-      class="relative max-h-[50vh] flex-1 overflow-y-auto"
+      class="relative max-h-[50vh] flex-1 overflow-y-auto salt-focus-gutter"
       bind:this={listEl}
       data-testid="planner-add-nights"
     >

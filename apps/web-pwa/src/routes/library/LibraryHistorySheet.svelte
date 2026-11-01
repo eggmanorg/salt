@@ -133,7 +133,10 @@
           Edit this page and the version you replaced turns up here.
         </p>
       {:else}
-        <ul class="flex min-h-0 flex-col gap-2 overflow-y-auto" data-testid="library-history-list">
+        <ul
+          class="flex min-h-0 flex-col gap-2 overflow-y-auto salt-focus-gutter"
+          data-testid="library-history-list"
+        >
           {#each revisions as revision, index (index)}
             <li>
               <button

@@ -911,7 +911,10 @@
       {recipe.title}
     </p>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-testid="bake-batch-sheet">
+    <div
+      class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto salt-focus-gutter"
+      data-testid="bake-batch-sheet"
+    >
       <!-- ─── What are you filling? ───────────────────────────────────────────── -->
       <!-- The tin leads because that is how the question gets asked in a kitchen:
            "I have a 900 g loaf tin, what do I put in to fill it." A UK tin is sold

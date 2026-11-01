@@ -437,7 +437,7 @@
            scrolling region is constrained HERE, by the host: the header and
            footer stay put and only the day's detail moves. -->
       <MealDayDetail
-        class="max-h-[70dvh] overflow-y-auto"
+        class="max-h-[70dvh] overflow-y-auto salt-focus-gutter"
         {day}
         {members}
         {recipes}

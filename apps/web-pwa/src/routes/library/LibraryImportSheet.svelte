@@ -103,7 +103,7 @@
       </SheetDescription>
     </SheetHeader>
 
-    <div class="flex min-h-0 flex-col gap-4 overflow-y-auto">
+    <div class="flex min-h-0 flex-col gap-4 overflow-y-auto salt-focus-gutter">
       <Textarea
         label="Pasted content"
         placeholder="Paste here…"
