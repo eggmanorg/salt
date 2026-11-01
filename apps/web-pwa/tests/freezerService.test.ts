@@ -285,6 +285,9 @@ describe('freezer service — the stock it may write from', () => {
     expect(await removeFreezerItem(1)).toEqual(
       failure({ kind: 'NetworkError', reason: 'transient' }),
     );
+    expect(await shelveFreezerItem(1, GARAGE.id, 'A')).toEqual(
+      failure({ kind: 'NetworkError', reason: 'transient' }),
+    );
     expect(mockSaveItem).not.toHaveBeenCalled();
     expect(mockDeleteItem).not.toHaveBeenCalled();
   });

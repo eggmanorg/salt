@@ -500,6 +500,21 @@ describe('freezer stock — the list (issue #1684)', () => {
     );
   });
 
+  it('says a shelving failed for any other reason, and clears it once one succeeds', async () => {
+    mockShelve.mockResolvedValueOnce(failure({ kind: 'NetworkError', reason: 'transient' }));
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12, { shelf: null })]);
+    render(FreezerPage);
+
+    const group = await screen.findByTestId('freezer-unshelved');
+    await fireEvent.click(within(group).getByRole('button', { name: 'A' }));
+    expect(await screen.findByTestId('freezer-take-error')).toHaveTextContent(
+      "Couldn't move that yet. Try again.",
+    );
+    await fireEvent.click(within(group).getByRole('button', { name: 'B' }));
+    await waitFor(() => expect(screen.queryByTestId('freezer-take-error')).not.toBeInTheDocument());
+  });
+
   it('shows the stock even when every freezer has been removed', async () => {
     mockState.set(loaded([]));
     stocked([item(4, { freezerId: 'fz-removed' })]);
@@ -534,16 +549,17 @@ describe('freezer stock — the list (issue #1684)', () => {
       item(1, { addedAt: '2026-09-01T00:00:00.000Z' }),
       item(2, { freezerId: KITCHEN.id, shelf: null, addedAt: '2026-06-01T00:00:00.000Z' }),
       item(3, { freezerId: 'fz-removed', addedAt: '2026-07-01T00:00:00.000Z' }),
+      item(4, { shelf: null, addedAt: '2026-10-01T00:00:00.000Z' }),
     ]);
     render(FreezerPage);
 
     await fireEvent.click(await screen.findByTestId('freezer-view-oldest'));
 
     const rows = within(screen.getByTestId('freezer-oldest')).getAllByTestId('freezer-item');
-    expect(rows.map((r) => r.dataset['number'])).toEqual(['2', '3', '1']);
+    expect(rows.map((r) => r.dataset['number'])).toEqual(['2', '3', '1', '4']);
     expect(
       rows.map((r) => within(r).getByTestId('freezer-item-meta').textContent?.split(' · ').pop()),
-    ).toEqual(['Kitchen', 'Not placed', 'Garage, shelf A']);
+    ).toEqual(['Kitchen', 'Not placed', 'Garage, shelf A', 'Garage, no shelf yet']);
     expect(screen.queryByTestId('freezer-list')).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByTestId('freezer-view-shelf'));
