@@ -1258,8 +1258,8 @@ describe('MinePage — to do', () => {
     const details = getAllByTestId('mine-task-detail').map((n) => n.textContent?.trim());
     expect(titles).toEqual(['Defrost Pork loin', 'Get out: Beef mince']);
     expect(details).toEqual([
-      'Garage · shelf B · #47 · 1 pack — for Chilli, Thursday',
-      'Kitchen · shelf A · #12 · 2 packs',
+      'Garage · shelf B · #0047 · 1 pack — for Chilli, Thursday',
+      'Kitchen · shelf A · #0012 · 2 packs',
     ]);
   });
 
@@ -1280,8 +1280,8 @@ describe('MinePage — to do', () => {
     const { getAllByTestId } = render(MinePage);
 
     expect(getAllByTestId('mine-task-detail').map((n) => n.textContent?.trim())).toEqual([
-      'Garage · shelf B · #47 · 1 pack — for Chilli, Thursday 6 August',
-      'Garage · shelf B · #9 · 1 pack — for Chilli, Thursday',
+      'Garage · shelf B · #0047 · 1 pack — for Chilli, Thursday 6 August',
+      'Garage · shelf B · #0009 · 1 pack — for Chilli, Thursday',
     ]);
   });
 
@@ -1332,7 +1332,7 @@ describe('MinePage — to do', () => {
     const { getByTestId } = render(MinePage);
 
     expect(getByTestId('mine-task-detail').textContent?.trim()).toBe(
-      'Garage · shelf B · #3 · 1 pack — for Ragù',
+      'Garage · shelf B · #0003 · 1 pack — for Ragù',
     );
   });
 

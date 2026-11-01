@@ -14,6 +14,7 @@
     ListPage,
   } from '@salt/ui-components';
   import {
+    formatBagNumber,
     displayAmount,
     itemAge,
     recipeHeroUrl,
@@ -111,7 +112,7 @@
       item.packWeight && shown > 0
         ? `${shown} × ${formatPackWeight(item.packWeight)}`
         : packs(item.amount);
-    return `#${item.number} ${item.name} — ${count}`;
+    return `#${formatBagNumber(item.number)} ${item.name} — ${count}`;
   }
 
   async function takeOne(item: FreezerItem): Promise<void> {
@@ -368,7 +369,7 @@
           <DialogHeader>
             <DialogTitle>That was the last one</DialogTitle>
             <DialogDescription>
-              {`Take #${target.number} ${target.name} off the list?`}
+              {`Take #${formatBagNumber(target.number)} ${target.name} off the list?`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

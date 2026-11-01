@@ -189,7 +189,7 @@ describe('remindKitchenTasks', () => {
       tag: `kitchen::${TODAY}`,
       url: '/#/mine',
       title: "Defrost the pork loin for tomorrow's chilli",
-      body: 'Garage · shelf B · #47',
+      body: 'Garage · shelf B · #0047',
       renotify: false,
     });
     expect(payloadOf(1)).toEqual(payloadOf(0));
@@ -333,14 +333,14 @@ describe('kitchenReminderCopy', () => {
   it('names the item, the meal and where the bag is for a single defrost', () => {
     expect(kitchenReminderCopy([task()])).toEqual({
       title: "Defrost the pork loin for tomorrow's chilli",
-      body: 'Garage · shelf B · #47',
+      body: 'Garage · shelf B · #0047',
     });
   });
 
   it('drops the meal from the title when the defrost carries no recipe title', () => {
     expect(kitchenReminderCopy([task({ recipeTitle: null })])).toEqual({
       title: 'Defrost the pork loin for tomorrow',
-      body: 'Garage · shelf B · #47',
+      body: 'Garage · shelf B · #0047',
     });
   });
 

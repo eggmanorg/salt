@@ -137,7 +137,7 @@ test.describe('use from the freezer', () => {
       timeout: SYNC_TIMEOUT,
     });
     await expect(page.getByTestId('shopping-item-freezer')).toContainText(
-      'in the freezer · Garage, shelf B · #47 · 2 packs',
+      'in the freezer · Garage, shelf B · #0047 · 2 packs',
     );
 
     await page.getByTestId('shopping-item-use-from-freezer').click();
@@ -151,7 +151,7 @@ test.describe('use from the freezer', () => {
       timeout: SYNC_TIMEOUT,
     });
     await expect(page.getByTestId('mine-task-detail')).toContainText(
-      'Garage · shelf B · #47 · 1 pack — for Chilli',
+      'Garage · shelf B · #0047 · 1 pack — for Chilli',
     );
 
     await page.getByTestId('mine-task-done').click();

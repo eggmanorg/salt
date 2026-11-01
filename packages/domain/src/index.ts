@@ -182,6 +182,7 @@ export {
   moveFreezerItem,
   removeFreezerItem,
   nextBagNumber,
+  formatBagNumber,
   recordBagNumber,
   itemsByShelf,
   oldestFirst,

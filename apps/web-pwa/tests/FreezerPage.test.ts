@@ -426,8 +426,8 @@ describe('freezer stock — the list (issue #1684)', () => {
     )[1] as HTMLElement;
     const rows = within(shelfB).getAllByTestId('freezer-item');
     expect(rows.map((r) => r.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      '#3 Prawns — 5 packs in since 5 Aug · 2 days',
-      '#47 Pork loin — 1 pack in since 12 Jun · 8 weeks',
+      '#0003 Prawns — 5 packs in since 5 Aug · 2 days',
+      '#0047 Pork loin — 1 pack in since 12 Jun · 8 weeks',
     ]);
     expect(within(cards[1] as HTMLElement).getByTestId('freezer-item')).toHaveTextContent(
       'in since 7 Aug · today',
@@ -533,7 +533,9 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe('5');
+    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe(
+      '0005',
+    );
     await fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
       target: { value: 'Pork loin' },
     });
@@ -574,7 +576,9 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe('7');
+    expect((within(sheet).getByTestId('freezer-item-number') as HTMLInputElement).value).toBe(
+      '0007',
+    );
   });
 
   it('takes a typed-over number and another place', async () => {
@@ -665,7 +669,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     await fireEvent.click(await screen.findByTestId('freezer-item'));
     const sheet = await screen.findByRole('dialog');
     const number = within(sheet).getByTestId('freezer-item-number') as HTMLInputElement;
-    expect(number.value).toBe('47');
+    expect(number.value).toBe('0047');
     expect(number.readOnly).toBe(true);
     expect((within(sheet).getByTestId('freezer-item-name') as HTMLInputElement).value).toBe(
       'Pork loin',
@@ -907,7 +911,7 @@ describe('freezer stock — taking one out', () => {
 
     const ask = await screen.findByTestId('freezer-last-one');
     expect(ask).toHaveTextContent('That was the last one');
-    expect(ask).toHaveTextContent('Take #47 Pork loin off the list?');
+    expect(ask).toHaveTextContent('Take #0047 Pork loin off the list?');
     // The number does not come back to the count (issue #1693), so nothing says it is free.
     expect(ask).not.toHaveTextContent(/free/i);
     await fireEvent.click(within(ask).getByTestId('freezer-last-one-remove'));
@@ -989,12 +993,12 @@ describe('freezer stock — taking one out', () => {
 
     const rows = await screen.findAllByTestId('freezer-item');
     expect(rows.map((r) => r.querySelector('span')?.textContent)).toEqual([
-      '#12 Beef mince — 4 × 500 g',
-      '#13 Lamb — 1 × 1.5 kg',
-      '#31 Chicken stock — 2 × 1 l',
-      '#32 Soup — 3 × 750 ml',
-      '#40 Old bag — 4 packs',
-      '#41 Gone — none left',
+      '#0012 Beef mince — 4 × 500 g',
+      '#0013 Lamb — 1 × 1.5 kg',
+      '#0031 Chicken stock — 2 × 1 l',
+      '#0032 Soup — 3 × 750 ml',
+      '#0040 Old bag — 4 packs',
+      '#0041 Gone — none left',
     ]);
   });
 
@@ -1005,9 +1009,9 @@ describe('freezer stock — taking one out', () => {
 
     const rows = await screen.findAllByTestId('freezer-item');
     expect(rows.map((r) => r.querySelector('span')?.textContent)).toEqual([
-      '#1 Item 1 — none left',
-      '#2 Item 2 — none left',
-      '#3 Item 3 — 2 packs',
+      '#0001 Item 1 — none left',
+      '#0002 Item 2 — none left',
+      '#0003 Item 3 — 2 packs',
     ]);
   });
 });

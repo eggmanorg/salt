@@ -99,7 +99,7 @@ describe('UseFromFreezerSheet', () => {
     await fireEvent.click(view.getByTestId('use-from-freezer-more'));
     expect(view.getByTestId('use-from-freezer-more')).toBeDisabled();
     expect(view.getByTestId('use-from-freezer-last')).toHaveTextContent(
-      'That is the last of #47. Its entry comes out of the freezer.',
+      'That is the last of #0047. Its entry comes out of the freezer.',
     );
     // Its number does not come back to the count (issue #1693).
     expect(view.getByTestId('use-from-freezer-last')).not.toHaveTextContent(/free again/i);
@@ -133,7 +133,9 @@ describe('UseFromFreezerSheet — starting at what the row needs', () => {
     const { view } = sheetFor([bagOf(12, { amount: 2 })], { amount: 3, unit: 'kg' });
 
     expect((await view.findByTestId('use-from-freezer-count')).textContent).toBe('2');
-    expect(view.getByTestId('use-from-freezer-last')).toHaveTextContent('That is the last of #12.');
+    expect(view.getByTestId('use-from-freezer-last')).toHaveTextContent(
+      'That is the last of #0012.',
+    );
   });
 
   it('works the count out again for the weight of another bag', async () => {
@@ -144,9 +146,9 @@ describe('UseFromFreezerSheet — starting at what the row needs', () => {
 
     expect((await view.findByTestId('use-from-freezer-count')).textContent).toBe('2');
     expect(
-      view.getByRole('radio', { name: /#14 Beef mince — Garage, shelf B · 6 × 250 g/ }),
+      view.getByRole('radio', { name: /#0014 Beef mince — Garage, shelf B · 6 × 250 g/ }),
     ).toBeInTheDocument();
-    await fireEvent.click(view.getByRole('radio', { name: /#14/ }));
+    await fireEvent.click(view.getByRole('radio', { name: /#0014/ }));
     expect(view.getByTestId('use-from-freezer-count').textContent).toBe('4');
   });
 
