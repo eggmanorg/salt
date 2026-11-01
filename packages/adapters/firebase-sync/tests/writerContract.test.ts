@@ -519,6 +519,7 @@ const FREEZER_ITEM = {
   canonId: null,
   recipeId: null,
   purchasedFrom: 'Swaledale',
+  packWeight: { amount: 500, unit: 'g' as const },
   addedAt: NOW,
   updatedAt: NOW,
 };

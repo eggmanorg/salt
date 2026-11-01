@@ -179,6 +179,18 @@ shelf, or relabelling a shelf, is allowed with stock on it and rewrites no item;
 under **Not placed**, computed in memory, until someone moves it. Nothing is
 stored to mark it.
 
+**`packWeight`** (issue #1712) is `{ amount, unit: 'g' | 'ml' }` — what ONE
+pack under this number weighs, stored once on the entry rather than per pack, so
+every pack under a number shares it by shape. It describes the pack, never what
+is left: `amount` stays whole packs and a take stays −1. `addFreezerItem` and
+`editFreezerItem` refuse a missing, non-finite, zero or negative weight
+(`INVALID_FREEZER_PACK_WEIGHT`), so every entry added or edited since #1712
+carries one. **Its limit:** a document written before it has no field and reads
+as `null` (`.nullable().default(null)`), and keeps reading so until someone
+edits it — required on read would make the list read skip the bag, hiding it
+while it still holds its number. Move, recount and take carry the field through
+untouched. `schemaVersion` stays `1`.
+
 **Writes.** Adding, editing, moving and correcting the count are a
 whole-document `setDoc`, and removing is a `deleteDoc` —
 ordinary per-document LWW, so an edit saved from a copy that had not yet seen

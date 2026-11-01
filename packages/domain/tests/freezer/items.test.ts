@@ -10,6 +10,8 @@ import {
   oldestFirst,
   recordBagNumber,
   removeFreezerItem,
+  setFreezerItemAmount,
+  takeFreezerPacks,
 } from '@salt/domain';
 import type { FreezerConfig, FreezerItem } from '@salt/domain';
 import { FreezerItemSchema, freezerItemDocId } from '@salt/domain/schemas';
@@ -19,6 +21,7 @@ import { FreezerItemSchema, freezerItemDocId } from '@salt/domain/schemas';
 
 const NOW = '2026-10-12T09:00:00.000Z';
 const LATER = '2026-10-12T10:00:00.000Z';
+const WEIGHT = { amount: 500, unit: 'g' } as const;
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 const CHEST = { id: 'fz-chest', name: 'Chest', shelves: [] };
@@ -46,6 +49,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: null,
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -69,6 +73,7 @@ const ADD = {
   shelf: 'B',
   amount: 5,
   purchasedFrom: ' Swaledale ',
+  packWeight: WEIGHT,
   now: NOW,
 };
 
@@ -88,6 +93,19 @@ describe('FreezerItemSchema', () => {
   it('refuses a fractional amount and a non-positive number', () => {
     expect(FreezerItemSchema.safeParse(item(1, { amount: 1.5 })).success).toBe(false);
     expect(FreezerItemSchema.safeParse(item(0)).success).toBe(false);
+  });
+
+  // Issue #1712: a bag written before weights has no field. It must read, as
+  // `null`, rather than drop off the page while still holding its number.
+  it('reads a document written before pack weights as packWeight null', () => {
+    const { packWeight: _absent, ...before1712 } = item(1);
+    const read = FreezerItemSchema.safeParse(before1712);
+    expect(read.success && read.data.packWeight).toBe(null);
+  });
+
+  it('reads a pack weight in g or ml', () => {
+    const read = FreezerItemSchema.safeParse(item(1, { packWeight: { amount: 1, unit: 'ml' } }));
+    expect(read.success && read.data.packWeight).toEqual({ amount: 1, unit: 'ml' });
   });
 });
 
@@ -175,6 +193,7 @@ describe('addFreezerItem', () => {
       canonId: null,
       recipeId: null,
       purchasedFrom: 'Swaledale',
+      packWeight: { amount: 500, unit: 'g' },
       addedAt: NOW,
       updatedAt: NOW,
     });
@@ -233,18 +252,36 @@ describe('addFreezerItem', () => {
 });
 
 describe('editFreezerItem', () => {
-  it('changes the name and supplier and nothing else but updatedAt', () => {
+  it('changes the name, supplier and weight and nothing else but updatedAt', () => {
     const before = item(5, { amount: 3, purchasedFrom: 'Swaledale' });
     const edited = ok(
-      editFreezerItem([before], { number: 5, name: ' Lamb ', purchasedFrom: '', now: LATER }),
+      editFreezerItem([before], {
+        number: 5,
+        name: ' Lamb ',
+        purchasedFrom: '',
+        packWeight: WEIGHT,
+        now: LATER,
+      }),
     );
-    expect(edited).toEqual({ ...before, name: 'Lamb', purchasedFrom: null, updatedAt: LATER });
+    expect(edited).toEqual({
+      ...before,
+      name: 'Lamb',
+      purchasedFrom: null,
+      packWeight: WEIGHT,
+      updatedAt: LATER,
+    });
   });
 
   it('edits an item whose place has been removed without filing it anywhere', () => {
     const orphan = item(5, { freezerId: 'fz-gone' });
     const edited = ok(
-      editFreezerItem([orphan], { number: 5, name: 'X', purchasedFrom: null, now: LATER }),
+      editFreezerItem([orphan], {
+        number: 5,
+        name: 'X',
+        purchasedFrom: null,
+        packWeight: WEIGHT,
+        now: LATER,
+      }),
     );
     expect(edited.freezerId).toBe('fz-gone');
   });
@@ -252,14 +289,28 @@ describe('editFreezerItem', () => {
   it('refuses a blank name', () => {
     expect(
       errorOf(
-        editFreezerItem([item(5)], { number: 5, name: ' ', purchasedFrom: null, now: LATER }),
+        editFreezerItem([item(5)], {
+          number: 5,
+          name: ' ',
+          purchasedFrom: null,
+          packWeight: WEIGHT,
+          now: LATER,
+        }),
       ),
     ).toEqual({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_ITEM_NAME });
   });
 
   it('is NotFound when another device has removed it', () => {
     expect(
-      errorOf(editFreezerItem([], { number: 5, name: 'X', purchasedFrom: null, now: LATER })),
+      errorOf(
+        editFreezerItem([], {
+          number: 5,
+          name: 'X',
+          purchasedFrom: null,
+          packWeight: WEIGHT,
+          now: LATER,
+        }),
+      ),
     ).toEqual({ kind: 'NotFound', resource: 'freezerItem', id: '5' });
   });
 });
@@ -407,5 +458,71 @@ describe('itemAge', () => {
 
   it('is zero rather than NaN for an unreadable stamp', () => {
     expect(itemAge('not a date', NOW)).toEqual({ days: 0, weeks: 0 });
+  });
+});
+
+// Issue #1712: every add and edit carries a weight per pack, and nothing else
+// that writes an item changes it.
+describe('pack weight', () => {
+  const REFUSED = { kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT };
+  const BAD: [string, FreezerItem['packWeight']][] = [
+    ['missing', null],
+    ['not a number', { amount: Number.NaN, unit: 'g' }],
+    ['infinite', { amount: Number.POSITIVE_INFINITY, unit: 'g' }],
+    ['zero', { amount: 0, unit: 'g' }],
+    ['negative', { amount: -250, unit: 'ml' }],
+    ['in another unit', { amount: 1, unit: 'kg' as 'g' }],
+  ];
+
+  it.each(BAD)('add refuses a weight that is %s', (_, packWeight) => {
+    expect(errorOf(addFreezerItem([], CONFIG, { ...ADD, packWeight }))).toEqual(REFUSED);
+  });
+
+  it.each(BAD)('edit refuses a weight that is %s', (_, packWeight) => {
+    expect(
+      errorOf(
+        editFreezerItem([item(5)], {
+          number: 5,
+          name: 'X',
+          purchasedFrom: null,
+          packWeight,
+          now: LATER,
+        }),
+      ),
+    ).toEqual(REFUSED);
+  });
+
+  it('takes g and ml, fractions included', () => {
+    expect(ok(addFreezerItem([], CONFIG, ADD)).packWeight).toEqual(WEIGHT);
+    const stock = { amount: 1.5, unit: 'ml' } as const;
+    expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: stock })).packWeight).toEqual(stock);
+  });
+
+  it('edit changes it, and gives a bag from before weights one', () => {
+    const before1712 = item(5, { packWeight: null });
+    const edited = ok(
+      editFreezerItem([before1712], {
+        number: 5,
+        name: 'X',
+        purchasedFrom: null,
+        packWeight: { amount: 1000, unit: 'ml' },
+        now: LATER,
+      }),
+    );
+    expect(edited.packWeight).toEqual({ amount: 1000, unit: 'ml' });
+  });
+
+  it('a move, a recount and a take leave it as it was', () => {
+    const bag = item(5, { amount: 3, packWeight: WEIGHT });
+    const moved = ok(
+      moveFreezerItem([bag], CONFIG, { number: 5, freezerId: CHEST.id, shelf: null, now: LATER }),
+    );
+    const recounted = ok(setFreezerItemAmount([bag], { number: 5, amount: 2, now: LATER }));
+    const taken = ok(takeFreezerPacks([bag], { number: 5, count: 1, now: LATER }));
+    expect([moved.packWeight, recounted.packWeight, taken.item.packWeight]).toEqual([
+      WEIGHT,
+      WEIGHT,
+      WEIGHT,
+    ]);
   });
 });

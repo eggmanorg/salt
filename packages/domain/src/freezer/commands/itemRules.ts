@@ -1,7 +1,7 @@
 import { ErrorCode, failure, success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
-import type { FreezerItem } from '../entities/FreezerItem.js';
+import type { FreezerItem, PackWeight } from '../entities/FreezerItem.js';
 
 // The rules the item commands share (issue #1684). Internal to the module, like
 // `freezerRules.ts` beside it.
@@ -19,6 +19,24 @@ export function checkItemName(rawName: string): ReadResult<string, DomainError> 
 export function cleanPurchasedFrom(raw: string | null | undefined): string | null {
   const trimmed = raw?.trim() ?? '';
   return trimmed ? trimmed : null;
+}
+
+/**
+ * A weight per pack, or the refusal: the amount a finite number above zero, the
+ * unit g or ml. Missing is refused too — every add and edit carries one (#1712).
+ */
+export function checkPackWeight(
+  raw: PackWeight | null | undefined,
+): ReadResult<PackWeight, DomainError> {
+  if (
+    !raw ||
+    !Number.isFinite(raw.amount) ||
+    raw.amount <= 0 ||
+    (raw.unit !== 'g' && raw.unit !== 'ml')
+  ) {
+    return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT });
+  }
+  return success({ amount: raw.amount, unit: raw.unit });
 }
 
 /**

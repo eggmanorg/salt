@@ -33,6 +33,7 @@ import {
   type FreezerConfig,
   type FreezerIdGenerator,
   type FreezerItem,
+  type PackWeight,
   type TakenPacks,
 } from '@salt/domain';
 import { defrostDocId } from '@salt/domain/schemas';
@@ -268,6 +269,8 @@ export async function addFreezerItem(
 export interface FreezerItemChanges {
   readonly name: string;
   readonly purchasedFrom: string | null;
+  /** What one pack weighs — required, as on an add. */
+  readonly packWeight: PackWeight | null;
   /**
    * Where it should be, or `null` to leave its place alone — which is how an item
    * under Not placed can be renamed without being filed somewhere first.
@@ -285,8 +288,8 @@ export interface FreezerItemChanges {
 }
 
 /**
- * Save the edit sheet: rename, re-source, relink and, if they changed, move and
- * recount — one write.
+ * Save the edit sheet: rename, re-source, re-weigh, relink and, if they changed,
+ * move and recount — one write.
  */
 export async function updateFreezerItem(
   number: number,
@@ -299,6 +302,7 @@ export async function updateFreezerItem(
     number,
     name: changes.name,
     purchasedFrom: supplierSpelling(ready.config, changes.purchasedFrom),
+    packWeight: changes.packWeight,
     canonId: changes.canonId,
     recipeId: changes.recipeId,
     now,

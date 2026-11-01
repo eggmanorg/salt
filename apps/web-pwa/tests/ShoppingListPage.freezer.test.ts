@@ -147,6 +147,7 @@ function bag(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: 'c-pork',
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
     ...over,
@@ -255,6 +256,21 @@ describe('ShoppingListPage — use from the freezer', () => {
     });
   });
 
+  // Issue #1712: the sheet starts at what the row needs from the bag.
+  it('starts at the packs the row needs: 1.2 kg from 500 g bags is 3', async () => {
+    mockFreezerItems._set({
+      status: 'loaded',
+      items: [bag(47, { amount: 4, packWeight: { amount: 500, unit: 'g' } })],
+    });
+    mockItems._set([item({ id: 'i1', amount: 1.2, unit: 'kg', sources: [{ kind: 'manual' }] })]);
+    const view = render(ShoppingListPage, props);
+
+    await fireEvent.click(await view.findByTestId('shopping-item-use-from-freezer'));
+    expect((await view.findByTestId('use-from-freezer-count')).textContent).toBe('3');
+    await fireEvent.click(view.getByTestId('use-from-freezer-confirm'));
+    expect(mockUseFromFreezer).toHaveBeenCalledWith(expect.objectContaining({ count: 3 }));
+  });
+
   it('a hand-added row is for no recipe', async () => {
     mockItems._set([item({ id: 'i1', sources: [{ kind: 'manual' }] })]);
     const view = render(ShoppingListPage, props);
@@ -268,6 +284,12 @@ describe('ShoppingListPage — use from the freezer', () => {
   });
 
   it('a combined row hints, and each recipe in its breakdown offers its own', async () => {
+    // 100 g packs, so each recipe's own amount gives its own count (#1712): the
+    // pie's 300 g starts at 3, where the combined 500 g would start at 5.
+    mockFreezerItems._set({
+      status: 'loaded',
+      items: [bag(47, { amount: 10, packWeight: { amount: 100, unit: 'g' } })],
+    });
     mockItems._set([
       item({ id: 'i1', amount: 200, unit: 'g', sources: fromRecipe('Chilli', 'r-chilli') }),
       item({ id: 'i2', amount: 300, unit: 'g', sources: fromRecipe('Cottage pie', 'r-pie') }),
@@ -283,9 +305,11 @@ describe('ShoppingListPage — use from the freezer', () => {
     expect(offers).toHaveLength(2);
 
     await fireEvent.click(offers[1]!);
+    expect((await view.findByTestId('use-from-freezer-count')).textContent).toBe('3');
     await fireEvent.click(await view.findByTestId('use-from-freezer-confirm'));
     expect(mockUseFromFreezer).toHaveBeenCalledWith(
       expect.objectContaining({
+        count: 3,
         recipe: { id: 'r-pie', title: 'Cottage pie' },
         shoppingRow: { listId: 'list-1', itemId: 'i2' },
       }),

@@ -17,7 +17,7 @@ export { removeFreezer } from './commands/removeFreezer.js';
 export type { RemoveFreezerInput } from './commands/removeFreezer.js';
 
 // What is in the freezers (issue #1684).
-export type { FreezerItem } from './entities/FreezerItem.js';
+export type { FreezerItem, PackWeight } from './entities/FreezerItem.js';
 export type { FreezerStorePort } from './ports/FreezerStorePort.js';
 export { addFreezerItem } from './commands/addItem.js';
 export type { AddFreezerItemInput } from './commands/addItem.js';
@@ -50,3 +50,7 @@ export type { Defrost } from './entities/Defrost.js';
 export { commitDefrost } from './commands/commitDefrost.js';
 export type { CommitDefrostInput } from './commands/commitDefrost.js';
 export { freezerStockFor } from './queries/freezerStockFor.js';
+
+// How many packs a shopping row's need comes to (issue #1712).
+export { packsForNeed } from './queries/packsForNeed.js';
+export type { PackNeed } from './queries/packsForNeed.js';

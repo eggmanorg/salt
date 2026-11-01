@@ -153,6 +153,7 @@ export type {
   SetShelvesInput,
   RemoveFreezerInput,
   FreezerItem,
+  PackWeight,
   FreezerStorePort,
   AddFreezerItemInput,
   EditFreezerItemInput,
@@ -168,6 +169,7 @@ export type {
   ForgetSupplierInput,
   Defrost,
   CommitDefrostInput,
+  PackNeed,
 } from './freezer/index.js';
 export {
   emptyFreezerConfig,
@@ -193,6 +195,7 @@ export {
   supplierSpelling,
   commitDefrost,
   freezerStockFor,
+  packsForNeed,
 } from './freezer/index.js';
 
 // Shopping list module — published surface.

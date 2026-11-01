@@ -11,7 +11,12 @@
     SheetTitle,
     TextField,
   } from '@salt/ui-components';
-  import { supplierSuggestions, type Freezer, type FreezerItem } from '@salt/domain';
+  import {
+    supplierSuggestions,
+    type Freezer,
+    type FreezerItem,
+    type PackWeight,
+  } from '@salt/domain';
   import { ErrorCode, type DomainError, type ReadResult } from '@salt/shared-types';
   import { untrack } from 'svelte';
   import { canonIndex } from '../../lib/canonIndex.js';
@@ -29,12 +34,14 @@
    *
    * Adding: the number is pre-filled with the next one up (`nextBagNumber`) and
    * can be typed over (the bag may already be marked); then a name, the freezer
-   * and shelf, how many packs, and where it was bought if it was.
+   * and shelf, how many packs, what one pack weighs (g or ml, issue #1712), and
+   * where it was bought if it was.
    *
    * Editing: the number is shown and fixed — it is the document id and it is
-   * written on the bag. The name, the supplier and the place can change; a new
-   * place is a move, and a changed pack count corrects the count. Remove deletes
-   * the entry.
+   * written on the bag. The name, the supplier, the weight per pack and the
+   * place can change; a new place is a move, and a changed pack count corrects
+   * the count. An entry saved before weights opens with the weight blank, and
+   * cannot be saved until one is given. Remove deletes the entry.
    *
    * The links are offered, never required (Phase 2): as the name is typed, the
    * ingredients and recipes it matches are offered to link; a linked recipe also
@@ -62,6 +69,8 @@
   let freezerId = $state<string | null>(null);
   let shelf = $state<string | null>(null);
   let packs = $state('1');
+  let weight = $state('');
+  let weightUnit = $state<PackWeight['unit']>('g');
   let purchasedFrom = $state('');
   let canonId = $state<string | null>(null);
   let recipeId = $state<string | null>(null);
@@ -76,6 +85,8 @@
         numberDraft = String(item.number);
         name = item.name;
         packs = String(Math.max(item.amount, 0));
+        weight = item.packWeight ? String(item.packWeight.amount) : '';
+        weightUnit = item.packWeight?.unit ?? 'g';
         purchasedFrom = item.purchasedFrom ?? '';
         canonId = item.canonId;
         recipeId = item.recipeId;
@@ -92,6 +103,8 @@
         numberDraft = String(suggestedNumber);
         name = '';
         packs = '1';
+        weight = '';
+        weightUnit = 'g';
         purchasedFrom = '';
         canonId = null;
         recipeId = null;
@@ -166,6 +179,8 @@
             : 'Say how many packs — a whole number, 1 or more.';
         case ErrorCode.UNKNOWN_FREEZER_PLACE:
           return 'Pick a freezer and a shelf.';
+        case ErrorCode.INVALID_FREEZER_PACK_WEIGHT:
+          return 'Say how much one pack weighs.';
       }
     }
     if (err.kind === 'NotFound') return 'This has just been taken out on another phone.';
@@ -180,8 +195,8 @@
     open = false;
   }
 
-  /** The field as a number, or NaN — the domain refuses what is not a whole one. */
-  function whole(text: string): number {
+  /** The field as a number, or NaN when blank — the domain decides what it takes. */
+  function numberIn(text: string): number {
     return text.trim() === '' ? Number.NaN : Number(text);
   }
 
@@ -197,8 +212,9 @@
         await updateFreezerItem(item.number, {
           name,
           purchasedFrom,
+          packWeight: { amount: numberIn(weight), unit: weightUnit },
           place: freezerId === null ? null : { freezerId, shelf },
-          ...(recount ? { amount: whole(packs) } : {}),
+          ...(recount ? { amount: numberIn(packs) } : {}),
           canonId,
           recipeId,
         }),
@@ -207,11 +223,12 @@
     }
     settle(
       await addFreezerItem({
-        number: whole(numberDraft),
+        number: numberIn(numberDraft),
         name,
         freezerId: freezerId ?? '',
         shelf,
-        amount: whole(packs),
+        amount: numberIn(packs),
+        packWeight: { amount: numberIn(weight), unit: weightUnit },
         purchasedFrom,
         canonId,
         recipeId,
@@ -331,6 +348,28 @@
         bind:value={packs}
         data-testid="freezer-item-packs"
       />
+
+      <div class="flex items-end gap-2">
+        <TextField
+          label="Weight per pack"
+          inputmode="decimal"
+          placeholder="e.g. 500"
+          bind:value={weight}
+          data-testid="freezer-item-weight"
+        />
+        <ChipGroup ariaLabel="Weight unit" data-testid="freezer-item-weight-units">
+          {#each ['g', 'ml'] as const as unit (unit)}
+            <Chip
+              variant="filter"
+              pressed={unit === weightUnit}
+              onclick={() => (weightUnit = unit)}
+              data-testid="freezer-item-weight-unit"
+            >
+              {unit}
+            </Chip>
+          {/each}
+        </ChipGroup>
+      </div>
 
       <TextField
         label="Bought from (optional)"

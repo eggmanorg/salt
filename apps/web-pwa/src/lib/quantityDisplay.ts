@@ -27,7 +27,7 @@
 // `tests/sharedHelperGuard.test.ts` is what keeps this the only one: it walks the
 // whole of `src` and fails on a second declaration of this name.
 
-import { doughAmountGrams, roundGrams } from '@salt/domain';
+import { doughAmountGrams, roundGrams, type PackWeight } from '@salt/domain';
 
 /** A gram figure, already rounded by whoever decided what the number is. */
 export function formatGrams(grams: number): string {
@@ -43,8 +43,22 @@ export function formatGrams(grams: number): string {
  */
 export function formatDoughWeight(grams: number): string {
   if (grams < 1000) return formatGrams(grams);
-  const kilos = (grams / 1000).toFixed(1);
-  return `${kilos.endsWith('.0') ? kilos.slice(0, -2) : kilos} kg`;
+  return inThousands(grams, 'kg');
+}
+
+/**
+ * A freezer bag's weight per pack (issue #1712): "500 g", "750 ml", and in kilos
+ * or litres from 1000 up — "1.5 kg", "1 l" — worded as `formatDoughWeight` is.
+ */
+export function formatPackWeight(weight: PackWeight): string {
+  if (weight.amount < 1000) return `${weight.amount} ${weight.unit}`;
+  return inThousands(weight.amount, weight.unit === 'g' ? 'kg' : 'l');
+}
+
+// 1800 → "1.8 <unit>": at most one decimal, and a trailing `.0` dropped.
+function inThousands(amount: number, unit: string): string {
+  const big = (amount / 1000).toFixed(1);
+  return `${big.endsWith('.0') ? big.slice(0, -2) : big} ${unit}`;
 }
 
 /**

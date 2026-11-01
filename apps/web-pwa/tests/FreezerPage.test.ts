@@ -127,6 +127,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     canonId: null,
     recipeId: null,
     purchasedFrom: null,
+    packWeight: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
     ...over,
@@ -539,6 +540,13 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     await fireEvent.input(within(sheet).getByTestId('freezer-item-packs'), {
       target: { value: '5' },
     });
+    expect(within(sheet).getByRole('button', { name: 'g' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-weight'), {
+      target: { value: '500' },
+    });
     await fireEvent.input(within(sheet).getByTestId('freezer-item-supplier'), {
       target: { value: 'Swaledale' },
     });
@@ -551,6 +559,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         freezerId: GARAGE.id,
         shelf: 'A',
         amount: 5,
+        packWeight: { amount: 500, unit: 'g' },
         purchasedFrom: 'Swaledale',
         canonId: null,
         recipeId: null,
@@ -583,11 +592,21 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     expect(within(sheet).queryByTestId('freezer-item-shelves')).not.toBeInTheDocument();
     await fireEvent.click(within(sheet).getByRole('button', { name: 'Garage' }));
     await fireEvent.click(within(sheet).getByRole('button', { name: 'C' }));
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-weight'), {
+      target: { value: '1.5' },
+    });
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'ml' }));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
 
     await waitFor(() =>
       expect(mockAddItem).toHaveBeenCalledWith(
-        expect.objectContaining({ number: 47, freezerId: GARAGE.id, shelf: 'C', amount: 1 }),
+        expect.objectContaining({
+          number: 47,
+          freezerId: GARAGE.id,
+          shelf: 'C',
+          amount: 1,
+          packWeight: { amount: 1.5, unit: 'ml' },
+        }),
       ),
     );
   });
@@ -618,6 +637,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     [ErrorCode.INVALID_FREEZER_ITEM_NAME, 'Say what it is.'],
     [ErrorCode.INVALID_FREEZER_AMOUNT, 'Say how many packs — a whole number, 1 or more.'],
     [ErrorCode.UNKNOWN_FREEZER_PLACE, 'Pick a freezer and a shelf.'],
+    [ErrorCode.INVALID_FREEZER_PACK_WEIGHT, 'Say how much one pack weighs.'],
   ])('shows the refusal for %s and stays open', async (code, message) => {
     mockState.set(loaded([GARAGE]));
     mockAddItem.mockResolvedValue(failure({ kind: 'ValidationError', code }));
@@ -632,7 +652,14 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
 
   it('edits with the number fixed, and moves it when another shelf is picked', async () => {
     mockState.set(loaded([GARAGE, KITCHEN]));
-    stocked([item(47, { name: 'Pork loin', shelf: 'B', purchasedFrom: 'Swaledale' })]);
+    stocked([
+      item(47, {
+        name: 'Pork loin',
+        shelf: 'B',
+        purchasedFrom: 'Swaledale',
+        packWeight: { amount: 750, unit: 'ml' },
+      }),
+    ]);
     render(FreezerPage);
 
     await fireEvent.click(await screen.findByTestId('freezer-item'));
@@ -644,6 +671,13 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       'Pork loin',
     );
     expect((within(sheet).getByTestId('freezer-item-packs') as HTMLInputElement).value).toBe('1');
+    expect((within(sheet).getByTestId('freezer-item-weight') as HTMLInputElement).value).toBe(
+      '750',
+    );
+    expect(within(sheet).getByRole('button', { name: 'ml' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
     await fireEvent.click(within(sheet).getByRole('button', { name: 'D' }));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
@@ -652,6 +686,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       expect(mockUpdateItem).toHaveBeenCalledWith(47, {
         name: 'Pork loin',
         purchasedFrom: 'Swaledale',
+        packWeight: { amount: 750, unit: 'ml' },
         place: { freezerId: GARAGE.id, shelf: 'D' },
         canonId: null,
         recipeId: null,
@@ -676,6 +711,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       expect(mockUpdateItem).toHaveBeenCalledWith(8, {
         name: 'Item 8',
         purchasedFrom: '',
+        packWeight: { amount: Number.NaN, unit: 'g' },
         place: null,
         canonId: null,
         recipeId: null,
@@ -700,6 +736,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       expect(mockUpdateItem).toHaveBeenCalledWith(9, {
         name: 'Item 9',
         purchasedFrom: '',
+        packWeight: { amount: Number.NaN, unit: 'g' },
         place: null,
         canonId: null,
         recipeId: null,
@@ -934,6 +971,31 @@ describe('freezer stock — taking one out', () => {
     mockTake.mockResolvedValueOnce(taken(pork, 4, -1));
     await fireEvent.click(take);
     await waitFor(() => expect(screen.queryByTestId('freezer-take-error')).not.toBeInTheDocument());
+  });
+
+  // Issue #1712: the count with the weight of one pack, in kilos or litres from
+  // 1000 up; a bag from before weights, or one with none left, reads as before.
+  it('shows the weight per pack beside the count', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([
+      item(12, { name: 'Beef mince', amount: 4, packWeight: { amount: 500, unit: 'g' } }),
+      item(13, { name: 'Lamb', amount: 1, packWeight: { amount: 1500, unit: 'g' } }),
+      item(31, { name: 'Chicken stock', amount: 2, packWeight: { amount: 1000, unit: 'ml' } }),
+      item(32, { name: 'Soup', amount: 3, packWeight: { amount: 750, unit: 'ml' } }),
+      item(40, { name: 'Old bag', amount: 4, packWeight: null }),
+      item(41, { name: 'Gone', amount: 0, packWeight: { amount: 500, unit: 'g' } }),
+    ]);
+    render(FreezerPage);
+
+    const rows = await screen.findAllByTestId('freezer-item');
+    expect(rows.map((r) => r.querySelector('span')?.textContent)).toEqual([
+      '#12 Beef mince — 4 × 500 g',
+      '#13 Lamb — 1 × 1.5 kg',
+      '#31 Chicken stock — 2 × 1 l',
+      '#32 Soup — 3 × 750 ml',
+      '#40 Old bag — 4 packs',
+      '#41 Gone — none left',
+    ]);
   });
 
   it('shows a count of zero, or below it, as none left', async () => {

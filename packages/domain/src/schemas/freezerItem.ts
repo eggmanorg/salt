@@ -32,6 +32,20 @@ export function freezerItemDocId(n: number): string {
 //   the last pack at once land on -1, and `displayAmount` clamps it to 0.
 // - `canonId`, `recipeId` and `purchasedFrom` are optional links, `null` when
 //   absent. Each is offered by the item sheet and never required.
+// - `packWeight` is what ONE pack under this number weighs (issue #1712) — on the
+//   entry, not per pack, so every pack under a number shares it by shape. It is a
+//   property of the pack, never a measure of what is left: `amount` stays whole
+//   packs. `addFreezerItem` and `editFreezerItem` refuse a missing or non-positive
+//   one, so every entry added or edited since #1712 carries it; an entry written
+//   before reads `null` here until someone edits it, and the read takes it so
+//   rather than dropping the bag. The read checks shape only.
+export const PackWeightSchema = z.object({
+  amount: z.number(),
+  unit: z.enum(['g', 'ml']),
+});
+
+export type PackWeightDoc = z.infer<typeof PackWeightSchema>;
+
 export const FreezerItemSchema = z.object({
   schemaVersion: z.literal(1),
   number: z.number().int().positive(),
@@ -42,6 +56,7 @@ export const FreezerItemSchema = z.object({
   canonId: z.string().nullable(),
   recipeId: z.string().nullable(),
   purchasedFrom: z.string().nullable(),
+  packWeight: PackWeightSchema.nullable().default(null),
   addedAt: z.string(),
   updatedAt: z.string(),
 });
