@@ -1402,6 +1402,36 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     );
   });
 
+  it('offers the words an item was saved with back among the ingredients, and picking them links nothing', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-bol', 'bolognese sauce'), canon('c-beef', 'beef mince', ['bolo'])]);
+    stocked([item(47, { name: 'Bolognese', canonId: null })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    await typeName(sheet, 'mince');
+    await waitFor(() => expect(optionsShown(sheet)).toEqual(['Beef Mince', 'Create "mince"']));
+    await typeName(sheet, 'bolo');
+    // Its own words first, then the ingredients — by name, then by synonym.
+    await waitFor(() =>
+      expect(optionsShown(sheet)).toEqual([
+        'Bolognese',
+        'Beef Mince',
+        'Bolognese Sauce',
+        'Create "bolo"',
+      ]),
+    );
+    await fireEvent.click(within(sheet).getByRole('option', { name: 'Bolognese' }));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ name: 'Bolognese', canonId: null }),
+      ),
+    );
+  });
+
   it('a changed description drops a link it no longer names', async () => {
     mockState.set(loaded([GARAGE]));
     mockCanon.set([canon('c-pork', 'pork loin')]);
@@ -1456,6 +1486,8 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     const sheet = await openSheet('freezer-add');
 
     const picker = within(sheet).getByTestId('freezer-item-recipe-picker');
+    await fireEvent.input(picker, { target: { value: 'curry' } });
+    expect(await within(sheet).findByText('No matches')).toBeInTheDocument();
     await fireEvent.input(picker, { target: { value: 'hock' } });
     await waitFor(() => expect(optionsShown(sheet)).toEqual(['Ham hock']));
     await fireEvent.click(within(sheet).getByRole('option', { name: 'Ham hock' }));

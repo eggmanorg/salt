@@ -181,10 +181,12 @@
       : [{ value: descriptionSeed, label: descriptionSeed }, ...canonOptions],
   );
 
-  /** By name or by synonym — the test the shopping list's add field makes. */
+  /**
+   * By name or by synonym — the test the shopping list's add field makes. The
+   * dropdown filters only on typed text, so `input` is never blank here.
+   */
   function descriptionFilter(input: string, option: { value: string; label: string }): boolean {
     const q = input.trim().toLowerCase();
-    if (!q) return true;
     const canon = option.value.startsWith(CANON)
       ? canonById.get(option.value.slice(CANON.length))
       : undefined;
@@ -366,11 +368,10 @@
                 {#each filteredItems as option, i (option.value)}
                   <ComboboxItem item={option} index={i} />
                 {/each}
+                <!-- Typed words always make an option — the create row, or the
+                     ingredient they name exactly — so the list is never empty. -->
                 {#if showCreate}
                   <ComboboxCreate />
-                {/if}
-                {#if filteredItems.length === 0 && !showCreate}
-                  <ComboboxEmpty>No matches</ComboboxEmpty>
                 {/if}
               {/snippet}
             </ComboboxContent>
