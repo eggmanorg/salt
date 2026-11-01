@@ -50,6 +50,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     recipeId: null,
     purchasedFrom: null,
     packWeight: null,
+    notes: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -103,9 +104,19 @@ describe('FreezerItemSchema', () => {
     expect(read.success && read.data.packWeight).toBe(null);
   });
 
-  it('reads a pack weight in g or ml', () => {
+  it('reads a pack size in g, ml or a count', () => {
     const read = FreezerItemSchema.safeParse(item(1, { packWeight: { amount: 1, unit: 'ml' } }));
     expect(read.success && read.data.packWeight).toEqual({ amount: 1, unit: 'ml' });
+    const counted = FreezerItemSchema.safeParse(
+      item(1, { packWeight: { amount: 6, unit: 'count' } }),
+    );
+    expect(counted.success && counted.data.packWeight).toEqual({ amount: 6, unit: 'count' });
+  });
+
+  it('reads a document written before notes as notes null', () => {
+    const { notes: _absent, ...beforeNotes } = item(1);
+    const read = FreezerItemSchema.safeParse(beforeNotes);
+    expect(read.success && read.data.notes).toBe(null);
   });
 });
 
@@ -194,6 +205,7 @@ describe('addFreezerItem', () => {
       recipeId: null,
       purchasedFrom: 'Swaledale',
       packWeight: { amount: 500, unit: 'g' },
+      notes: null,
       addedAt: NOW,
       updatedAt: NOW,
     });
@@ -203,6 +215,13 @@ describe('addFreezerItem', () => {
     expect(
       ok(addFreezerItem([], CONFIG, { ...ADD, purchasedFrom: '  ' })).purchasedFrom,
     ).toBeNull();
+  });
+
+  it('keeps the notes trimmed, and takes blank notes as none', () => {
+    expect(ok(addFreezerItem([], CONFIG, { ...ADD, notes: ' For Sunday ' })).notes).toBe(
+      'For Sunday',
+    );
+    expect(ok(addFreezerItem([], CONFIG, { ...ADD, notes: '  ' })).notes).toBeNull();
   });
 
   it('puts an item in a freezer with no shelves at shelf null', () => {
@@ -274,6 +293,14 @@ describe('editFreezerItem', () => {
       packWeight: WEIGHT,
       updatedAt: LATER,
     });
+  });
+
+  it('changes the notes when given, clears blank ones, and leaves them when omitted', () => {
+    const before = item(5, { notes: 'Spicy' });
+    const edit = { number: 5, name: 'X', purchasedFrom: null, packWeight: WEIGHT, now: LATER };
+    expect(ok(editFreezerItem([before], { ...edit, notes: ' Mild ' })).notes).toBe('Mild');
+    expect(ok(editFreezerItem([before], { ...edit, notes: ' ' })).notes).toBeNull();
+    expect(ok(editFreezerItem([before], edit)).notes).toBe('Spicy');
   });
 
   it('edits an item whose place has been removed without filing it anywhere', () => {
@@ -501,6 +528,7 @@ describe('pack weight', () => {
     ['zero', { amount: 0, unit: 'g' }],
     ['negative', { amount: -250, unit: 'ml' }],
     ['in another unit', { amount: 1, unit: 'kg' as 'g' }],
+    ['a fraction of a count', { amount: 1.5, unit: 'count' }],
   ];
 
   it.each(BAD)('add refuses a weight that is %s', (_, packWeight) => {
@@ -521,10 +549,14 @@ describe('pack weight', () => {
     ).toEqual(REFUSED);
   });
 
-  it('takes g and ml, fractions included', () => {
+  it('takes g and ml, fractions included, and a whole count', () => {
     expect(ok(addFreezerItem([], CONFIG, ADD)).packWeight).toEqual(WEIGHT);
     const stock = { amount: 1.5, unit: 'ml' } as const;
     expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: stock })).packWeight).toEqual(stock);
+    const sausages = { amount: 6, unit: 'count' } as const;
+    expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: sausages })).packWeight).toEqual(
+      sausages,
+    );
   });
 
   it('edit changes it, and gives a bag from before weights one', () => {

@@ -38,6 +38,7 @@ function item(amount: number): FreezerItem {
     recipeId: null,
     purchasedFrom: null,
     packWeight: null,
+    notes: null,
     addedAt: NOW,
     updatedAt: NOW,
   };

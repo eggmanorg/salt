@@ -15,15 +15,16 @@ export function checkItemName(rawName: string): ReadResult<string, DomainError> 
   return success(name);
 }
 
-/** Where it was bought, trimmed; blank is `null` — the link is optional. */
-export function cleanPurchasedFrom(raw: string | null | undefined): string | null {
+/** Optional free text — where it was bought, the notes — trimmed; blank is `null`. */
+export function cleanOptionalText(raw: string | null | undefined): string | null {
   const trimmed = raw?.trim() ?? '';
   return trimmed ? trimmed : null;
 }
 
 /**
- * A weight per pack, or the refusal: the amount a finite number above zero, the
- * unit g or ml. Missing is refused too — every add and edit carries one (#1712).
+ * A pack size, or the refusal: the amount a finite number above zero — a whole
+ * one for a count — and the unit g, ml or count. Missing is refused too — every
+ * add and edit carries one (#1712).
  */
 export function checkPackWeight(
   raw: PackWeight | null | undefined,
@@ -32,7 +33,8 @@ export function checkPackWeight(
     !raw ||
     !Number.isFinite(raw.amount) ||
     raw.amount <= 0 ||
-    (raw.unit !== 'g' && raw.unit !== 'ml')
+    (raw.unit !== 'g' && raw.unit !== 'ml' && raw.unit !== 'count') ||
+    (raw.unit === 'count' && !Number.isInteger(raw.amount))
   ) {
     return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT });
   }

@@ -269,8 +269,10 @@ export async function addFreezerItem(
 export interface FreezerItemChanges {
   readonly name: string;
   readonly purchasedFrom: string | null;
-  /** What one pack weighs — required, as on an add. */
+  /** How big one pack is — required, as on an add. */
   readonly packWeight: PackWeight | null;
+  /** The notes, blank for none; omitted leaves them. */
+  readonly notes?: string | null;
   /**
    * Where it should be, or `null` to leave its place alone — which is how an item
    * under Not placed can be renamed without being filed somewhere first.
@@ -303,6 +305,7 @@ export async function updateFreezerItem(
     name: changes.name,
     purchasedFrom: supplierSpelling(ready.config, changes.purchasedFrom),
     packWeight: changes.packWeight,
+    notes: changes.notes,
     canonId: changes.canonId,
     recipeId: changes.recipeId,
     now,

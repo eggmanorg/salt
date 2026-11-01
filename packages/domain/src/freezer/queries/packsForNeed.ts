@@ -6,16 +6,19 @@ export interface PackNeed {
   readonly unit?: string | undefined;
 }
 
-// Metric units only (issue #1712), each as its factor to g or ml. Anything else —
-// a count, `lb`, `cup`, a container word — has no entry and so no conversion.
-interface Metric {
+// Each unit a need can be compared in, as its factor to g, ml or a count of
+// pieces (issue #1712). A row with no unit is a count ("6" sausages), and so is
+// the `count` sentinel product-form rows are written with. Anything else — `lb`,
+// `cup`, a container word — has no entry and so no conversion.
+interface Measure {
   readonly unit: PackWeight['unit'];
   readonly factor: number;
 }
 
-const METRIC: ReadonlyMap<string, Metric> = new Map(
+const MEASURES: ReadonlyMap<string, Measure> = new Map(
   (
     [
+      ['count', 1, ['', 'count']],
       ['g', 1, ['g', 'gram', 'grams', 'gramme', 'grammes']],
       ['g', 1000, ['kg', 'kilo', 'kilos', 'kilogram', 'kilograms']],
       ['ml', 1, ['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters']],
@@ -23,7 +26,7 @@ const METRIC: ReadonlyMap<string, Metric> = new Map(
       ['ml', 100, ['dl']],
       ['ml', 1000, ['l', 'litre', 'litres', 'liter', 'liters']],
     ] as const
-  ).flatMap(([unit, factor, words]) => words.map((w): [string, Metric] => [w, { unit, factor }])),
+  ).flatMap(([unit, factor, words]) => words.map((w): [string, Measure] => [w, { unit, factor }])),
 );
 
 // Float noise allowed over a whole pack before rounding up: 1.1 dl converts to
@@ -36,23 +39,24 @@ const TOLERANCE = 1e-9;
  * and never more than the bag holds (`held`), never fewer than one.
  *
  * It starts at 1 whenever the need cannot be compared with the pack: no amount,
- * a unit that is not metric weight or volume, grams against millilitres (there
- * is no density), or a bag with no usable weight. Units are matched trimmed and
- * case-insensitively, since a hand-added row keeps the casing it was typed in.
+ * a unit that is not metric weight, volume or a count, two different kinds —
+ * grams against millilitres (there is no density), or a count against either —
+ * or a bag with no usable size. Units are matched trimmed and case-insensitively,
+ * since a hand-added row keeps the casing it was typed in.
  */
 export function packsForNeed(need: PackNeed, packWeight: PackWeight | null, held: number): number {
-  const metric = METRIC.get(need.unit?.trim().toLowerCase() ?? '');
+  const measure = MEASURES.get(need.unit?.trim().toLowerCase() ?? '');
   if (
-    metric === undefined ||
+    measure === undefined ||
     need.amount === undefined ||
     !Number.isFinite(need.amount) ||
     need.amount <= 0 ||
     packWeight === null ||
     !(packWeight.amount > 0) ||
-    metric.unit !== packWeight.unit
+    measure.unit !== packWeight.unit
   ) {
     return 1;
   }
-  const packs = Math.ceil((need.amount * metric.factor) / packWeight.amount - TOLERANCE);
+  const packs = Math.ceil((need.amount * measure.factor) / packWeight.amount - TOLERANCE);
   return Math.max(1, Math.min(held, packs));
 }
