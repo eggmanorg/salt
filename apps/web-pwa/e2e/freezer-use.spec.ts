@@ -80,6 +80,7 @@ async function seedHousehold(): Promise<string> {
       recipeId: null,
       purchasedFrom: null,
       packWeight: { amount: grams, unit: 'g' },
+      notes: null,
       addedAt: NOW,
       updatedAt: NOW,
     });

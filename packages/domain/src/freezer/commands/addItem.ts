@@ -2,7 +2,7 @@ import { ErrorCode, failure, success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
 import type { FreezerItem, PackWeight } from '../entities/FreezerItem.js';
-import { checkItemName, checkPackWeight, checkPlace, cleanPurchasedFrom } from './itemRules.js';
+import { checkItemName, checkPackWeight, checkPlace, cleanOptionalText } from './itemRules.js';
 
 export interface AddFreezerItemInput {
   /** The bag number — usually `nextBagNumber(items, config)`, or one typed over it. */
@@ -13,10 +13,12 @@ export interface AddFreezerItemInput {
   readonly shelf: string | null;
   /** How many packs, a whole number of at least one. */
   readonly amount: number;
-  /** What one pack weighs, in g or ml — required and above zero. */
+  /** How big one pack is, in g, ml or a count — required and above zero. */
   readonly packWeight: PackWeight | null;
   /** Where it was bought. Optional; blank is none. */
   readonly purchasedFrom?: string | null;
+  /** Anything worth saying about the bag. Optional; blank is none. */
+  readonly notes?: string | null;
   /** The ingredient it is, if one was picked. Optional. */
   readonly canonId?: string | null;
   /** The recipe it was made from, if one was picked. Optional. */
@@ -59,8 +61,9 @@ export function addFreezerItem(
     amount: input.amount,
     canonId: input.canonId ?? null,
     recipeId: input.recipeId ?? null,
-    purchasedFrom: cleanPurchasedFrom(input.purchasedFrom),
+    purchasedFrom: cleanOptionalText(input.purchasedFrom),
     packWeight: packWeight.value,
+    notes: cleanOptionalText(input.notes),
     addedAt: input.now,
     updatedAt: input.now,
   });

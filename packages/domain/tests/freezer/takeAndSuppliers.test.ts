@@ -40,6 +40,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     recipeId: null,
     purchasedFrom: null,
     packWeight: null,
+    notes: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,

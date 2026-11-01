@@ -32,7 +32,10 @@ export function freezerItemDocId(n: number): string {
 //   the last pack at once land on -1, and `displayAmount` clamps it to 0.
 // - `canonId`, `recipeId` and `purchasedFrom` are optional links, `null` when
 //   absent. Each is offered by the item sheet and never required.
-// - `packWeight` is what ONE pack under this number weighs (issue #1712) — on the
+// - `notes` is free text about the bag, `null` when there is none. An entry
+//   written before it has no field and reads `null`.
+// - `packWeight` is how big ONE pack under this number is (issue #1712) — a
+//   weight in g, a volume in ml, or a count of pieces (`count`: six sausages) — on the
 //   entry, not per pack, so every pack under a number shares it by shape. It is a
 //   property of the pack, never a measure of what is left: `amount` stays whole
 //   packs. `addFreezerItem` and `editFreezerItem` refuse a missing or non-positive
@@ -41,7 +44,7 @@ export function freezerItemDocId(n: number): string {
 //   rather than dropping the bag. The read checks shape only.
 export const PackWeightSchema = z.object({
   amount: z.number(),
-  unit: z.enum(['g', 'ml']),
+  unit: z.enum(['g', 'ml', 'count']),
 });
 
 export type PackWeightDoc = z.infer<typeof PackWeightSchema>;
@@ -57,6 +60,7 @@ export const FreezerItemSchema = z.object({
   recipeId: z.string().nullable(),
   purchasedFrom: z.string().nullable(),
   packWeight: PackWeightSchema.nullable().default(null),
+  notes: z.string().nullable().default(null),
   addedAt: z.string(),
   updatedAt: z.string(),
 });

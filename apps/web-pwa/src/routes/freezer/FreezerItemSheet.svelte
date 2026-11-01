@@ -3,12 +3,20 @@
     Button,
     Chip,
     ChipGroup,
+    Combobox,
+    ComboboxContent,
+    ComboboxCreate,
+    ComboboxEmpty,
+    ComboboxField,
+    ComboboxInput,
+    ComboboxItem,
     Sheet,
     SheetContent,
     SheetDescription,
     SheetFooter,
     SheetHeader,
     SheetTitle,
+    Textarea,
     TextField,
   } from '@salt/ui-components';
   import {
@@ -34,21 +42,25 @@
    * Putting something in the freezer, and changing it afterwards (issue #1684).
    *
    * Adding: the number is pre-filled with the next one up (`nextBagNumber`) and
-   * can be typed over (the bag may already be marked); then a name, the freezer
-   * and shelf — or "Not yet", for packs labelled in the kitchen before anyone
-   * has seen which shelf they fit on — how many packs, what one pack weighs (g or ml, issue #1712), and
-   * where it was bought if it was.
+   * can be typed over (the bag may already be marked); then a description, the
+   * freezer and shelf — or "Not yet", for packs labelled in the kitchen before
+   * anyone has seen which shelf they fit on — how many packs, how big one pack
+   * is (g, ml or a count, issue #1712), where it was bought if it was, and notes.
+   * The sheet opens with the description focused, not the number.
    *
    * Editing: the number is shown and fixed — it is the document id and it is
-   * written on the bag. The name, the supplier, the weight per pack and the
-   * place can change; a new place is a move, and a changed pack count corrects
-   * the count. An entry saved before weights opens with the weight blank, and
-   * cannot be saved until one is given. Remove deletes the entry.
+   * written on the bag. The description, the supplier, the pack size, the notes
+   * and the place can change; a new place is a move, and a changed pack count
+   * corrects the count. An entry saved before pack sizes opens with the size
+   * blank, and cannot be saved until one is given. Remove deletes the entry.
    *
-   * The links are offered, never required (Phase 2): as the name is typed, the
-   * ingredients and recipes it matches are offered to link; a linked recipe also
-   * offers the ingredients matching its title. As the supplier is typed, the
-   * remembered places it matches are offered.
+   * The links are offered, never required (Phase 2), through the same dropdown
+   * the shopping list's add field uses. The description is an ingredient picked
+   * from it — which links that ingredient — or words typed freely, which link the
+   * ingredient only when they are its name exactly. An entry opened for editing
+   * keeps the link it has until its description is changed. The recipe it was
+   * made from and the place it was bought are picked the same way; a new place
+   * can be typed.
    *
    * Every refusal comes from the domain command through the service, as in the
    * Manage freezers sheet, so the sheet makes no judgement of its own.
@@ -74,9 +86,16 @@
   let weight = $state('');
   let weightUnit = $state<PackWeight['unit']>('g');
   let purchasedFrom = $state('');
+  let notes = $state('');
   let canonId = $state<string | null>(null);
   let recipeId = $state<string | null>(null);
   let error = $state<string | null>(null);
+  // What each dropdown shows as the sheet opens. A dropdown shows only what one of
+  // its options says, so words typed freely are seeded as an option of their own
+  // (as `RecipeKitPanel` does) — otherwise an edit would open with them blank.
+  let descriptionSeed = $state('');
+  let supplierSeed = $state('');
+  let descriptionEl = $state<HTMLDivElement | undefined>(undefined);
 
   // A fresh form each time the sheet opens, from whatever it was opened on.
   $effect(() => {
@@ -90,8 +109,15 @@
         weight = item.packWeight ? String(item.packWeight.amount) : '';
         weightUnit = item.packWeight?.unit ?? 'g';
         purchasedFrom = item.purchasedFrom ?? '';
+        notes = item.notes ?? '';
         canonId = item.canonId;
         recipeId = item.recipeId;
+        const linked = item.canonId === null ? undefined : canonById.get(item.canonId);
+        descriptionSeed =
+          linked !== undefined && sameWords(titleCase(linked.name), item.name)
+            ? canonValue(linked.id)
+            : item.name;
+        supplierSeed = purchasedFrom;
         // An item under Not placed opens with nothing picked: leaving it so keeps
         // it where it is, picking a place files it. That is any item whose stored
         // place no longer fits: its freezer removed, or its shelf gone from it.
@@ -108,8 +134,11 @@
         weight = '';
         weightUnit = 'g';
         purchasedFrom = '';
+        notes = '';
         canonId = null;
         recipeId = null;
+        descriptionSeed = '';
+        supplierSeed = '';
         freezerId = freezers[0]?.id ?? null;
         shelf = freezers[0]?.shelves[0] ?? null;
       }
@@ -118,47 +147,86 @@
 
   const chosen = $derived(freezers.find((f) => f.id === freezerId) ?? null);
 
-  // How many of each kind of link to offer at once.
-  const OFFERS = 4;
+  // The description field is the first thing to fill in, so it — not the bag
+  // number above it — takes the focus as the sheet opens. Focusing it here, as the
+  // sheet's content mounts, beats the dialog's own first-field focus, which skips
+  // when something inside already has it.
+  $effect(() => {
+    const input = descriptionEl?.querySelector('input');
+    if (open && input) input.focus({ preventScroll: true });
+  });
 
-  /**
-   * The ingredients whose name or a synonym contains `typed` — a copy of the test
-   * the shopping list's add field makes (ShoppingListPage.svelte, `filterFn`); the
-   * two must change together, since unifying them would touch that page.
-   */
-  function canonMatching(typed: string): { id: string; label: string }[] {
-    const q = typed.trim().toLowerCase();
-    if (!q) return [];
-    return $canonItems
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) || c.synonyms.some((s) => s.toLowerCase().includes(q)),
-      )
-      .map((c) => ({ id: c.id, label: titleCase(c.name) }));
+  // An ingredient's option is told apart from words typed freely by this prefix.
+  const CANON = 'canon:';
+  function canonValue(id: string): string {
+    return `${CANON}${id}`;
+  }
+
+  function sameWords(a: string, b: string): boolean {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+
+  // Indexed, not scanned (issue #939): the dropdown calls `filterFn` once per
+  // ingredient on every keystroke.
+  const canonById = $derived(canonIndex($canonItems));
+  const canonByName = $derived(new Map($canonItems.map((c) => [c.name.trim().toLowerCase(), c])));
+  const canonOptions = $derived(
+    [...$canonItems]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((c) => ({ value: canonValue(c.id), label: titleCase(c.name) })),
+  );
+  const descriptionOptions = $derived(
+    descriptionSeed === '' || descriptionSeed.startsWith(CANON)
+      ? canonOptions
+      : [{ value: descriptionSeed, label: descriptionSeed }, ...canonOptions],
+  );
+
+  /** By name or by synonym — the test the shopping list's add field makes. */
+  function descriptionFilter(input: string, option: { value: string; label: string }): boolean {
+    const q = input.trim().toLowerCase();
+    if (!q) return true;
+    const canon = option.value.startsWith(CANON)
+      ? canonById.get(option.value.slice(CANON.length))
+      : undefined;
+    return (
+      option.label.toLowerCase().includes(q) ||
+      (canon?.synonyms.some((s) => s.toLowerCase().includes(q)) ?? false)
+    );
+  }
+
+  /** Words typed freely: the ingredient they name exactly, if any, is the link. */
+  function describe(text: string): void {
+    name = text;
+    canonId = canonByName.get(text.trim().toLowerCase())?.id ?? null;
+  }
+
+  function pickDescription(value: string): void {
+    const canon = value.startsWith(CANON) ? canonById.get(value.slice(CANON.length)) : undefined;
+    if (canon === undefined) {
+      describe(value);
+      return;
+    }
+    name = titleCase(canon.name);
+    canonId = canon.id;
   }
 
   const linkedRecipe = $derived(recipeId === null ? null : ($recipesById.get(recipeId) ?? null));
-  const canonById = $derived(canonIndex($canonItems));
-  const linkedCanon = $derived(canonId === null ? null : (canonById.get(canonId) ?? null));
-  const canonOffers = $derived.by(() => {
-    if (linkedCanon !== null) return [];
-    const byName = canonMatching(name);
-    const byRecipe = linkedRecipe ? canonMatching(linkedRecipe.title) : [];
-    const offers = new Map(byRecipe.map((offer) => [offer.id, offer]));
-    for (const c of byName) if (!offers.has(c.id)) offers.set(c.id, c);
-    return [...offers.values()].slice(0, OFFERS);
-  });
-  const recipeOffers = $derived.by(() => {
-    const q = name.trim().toLowerCase();
-    if (linkedRecipe !== null || !q) return [];
-    return $recipes.filter((r) => r.title.toLowerCase().includes(q)).slice(0, OFFERS);
-  });
-  // A place already typed in full is not offered back.
-  const supplierOffers = $derived(
-    supplierSuggestions({ suppliers: [...suppliers] }, purchasedFrom)
-      .filter((s) => s.toLowerCase() !== purchasedFrom.trim().toLowerCase())
-      .slice(0, OFFERS),
+  const recipeOptions = $derived(
+    [...$recipes]
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((r) => ({ value: r.id, label: r.title })),
   );
+
+  // The remembered places, alphabetical; a place typed in that is not among them
+  // yet is seeded as its own option.
+  const supplierOptions = $derived.by(() => {
+    const places = supplierSuggestions({ suppliers: [...suppliers] }, '');
+    const seeded =
+      supplierSeed.trim() === '' || places.some((p) => sameWords(p, supplierSeed))
+        ? places
+        : [supplierSeed, ...places];
+    return seeded.map((p) => ({ value: p, label: p }));
+  });
 
   function pickFreezer(freezer: Freezer): void {
     if (freezer.id === freezerId) return;
@@ -174,7 +242,7 @@
         case ErrorCode.FREEZER_NUMBER_IN_USE:
           return 'Something in the freezer already has that number.';
         case ErrorCode.INVALID_FREEZER_ITEM_NAME:
-          return 'Say what it is.';
+          return 'Give it a description.';
         case ErrorCode.INVALID_FREEZER_AMOUNT:
           return item
             ? 'Say how many packs — a whole number, 0 or more.'
@@ -182,7 +250,9 @@
         case ErrorCode.UNKNOWN_FREEZER_PLACE:
           return 'Pick a freezer.';
         case ErrorCode.INVALID_FREEZER_PACK_WEIGHT:
-          return 'Say how much one pack weighs.';
+          return weightUnit === 'count'
+            ? 'Say how many are in one pack — a whole number.'
+            : 'Say how much one pack weighs.';
       }
     }
     if (err.kind === 'NotFound') return 'This has just been taken out on another phone.';
@@ -215,6 +285,7 @@
           name,
           purchasedFrom,
           packWeight: { amount: numberIn(weight), unit: weightUnit },
+          notes,
           place: freezerId === null ? null : { freezerId, shelf },
           ...(recount ? { amount: numberIn(packs) } : {}),
           canonId,
@@ -232,6 +303,7 @@
         amount: numberIn(packs),
         packWeight: { amount: numberIn(weight), unit: weightUnit },
         purchasedFrom,
+        notes,
         canonId,
         recipeId,
       }),
@@ -267,50 +339,44 @@
         bind:value={numberDraft}
         data-testid="freezer-item-number"
       />
-      <TextField
-        label="What is it?"
-        placeholder="e.g. Pork loin"
-        bind:value={name}
-        data-testid="freezer-item-name"
-      />
-
-      {#if linkedCanon}
-        <div class="flex items-center gap-2" data-testid="freezer-item-canon">
-          <span class="text-sm">{`Ingredient: ${titleCase(linkedCanon.name)}`}</span>
-          <Button variant="ghost" size="sm" onclick={() => (canonId = null)}>Unlink</Button>
+      <div class="flex flex-col gap-1.5">
+        <span id="freezer-item-name-label" class="text-sm font-medium">Description</span>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          bind:this={descriptionEl}
+          oninput={(e) => describe((e.target as HTMLInputElement).value)}
+        >
+          <Combobox
+            items={descriptionOptions}
+            value={descriptionSeed}
+            allowCustom={true}
+            openOnClick={false}
+            filterFn={descriptionFilter}
+            onValueChange={pickDescription}
+            placeholder="e.g. Pork loin"
+          >
+            <ComboboxField class="w-full">
+              <ComboboxInput
+                aria-labelledby="freezer-item-name-label"
+                data-testid="freezer-item-name"
+              />
+            </ComboboxField>
+            <ComboboxContent>
+              {#snippet children({ filteredItems, showCreate })}
+                {#each filteredItems as option, i (option.value)}
+                  <ComboboxItem item={option} index={i} />
+                {/each}
+                {#if showCreate}
+                  <ComboboxCreate />
+                {/if}
+                {#if filteredItems.length === 0 && !showCreate}
+                  <ComboboxEmpty>No matches</ComboboxEmpty>
+                {/if}
+              {/snippet}
+            </ComboboxContent>
+          </Combobox>
         </div>
-      {:else if canonOffers.length > 0}
-        <ChipGroup ariaLabel="Link an ingredient" data-testid="freezer-item-canon-offers">
-          {#each canonOffers as offer (offer.id)}
-            <Chip
-              variant="filter"
-              onclick={() => (canonId = offer.id)}
-              data-testid="freezer-item-canon-offer"
-            >
-              {offer.label}
-            </Chip>
-          {/each}
-        </ChipGroup>
-      {/if}
-
-      {#if linkedRecipe}
-        <div class="flex items-center gap-2" data-testid="freezer-item-recipe">
-          <span class="text-sm">{`Made from: ${linkedRecipe.title}`}</span>
-          <Button variant="ghost" size="sm" onclick={() => (recipeId = null)}>Unlink</Button>
-        </div>
-      {:else if recipeOffers.length > 0}
-        <ChipGroup ariaLabel="Made from a recipe" data-testid="freezer-item-recipe-offers">
-          {#each recipeOffers as recipe (recipe.id)}
-            <Chip
-              variant="filter"
-              onclick={() => (recipeId = recipe.id)}
-              data-testid="freezer-item-recipe-offer"
-            >
-              {`Made from ${recipe.title}`}
-            </Chip>
-          {/each}
-        </ChipGroup>
-      {/if}
+      </div>
 
       <div class="flex flex-col gap-2">
         <span class="text-sm font-medium">Freezer</span>
@@ -363,14 +429,14 @@
 
       <div class="flex items-end gap-2">
         <TextField
-          label="Weight per pack"
-          inputmode="decimal"
-          placeholder="e.g. 500"
+          label="Pack size"
+          inputmode={weightUnit === 'count' ? 'numeric' : 'decimal'}
+          placeholder={weightUnit === 'count' ? 'e.g. 6' : 'e.g. 500'}
           bind:value={weight}
           data-testid="freezer-item-weight"
         />
-        <ChipGroup ariaLabel="Weight unit" data-testid="freezer-item-weight-units">
-          {#each ['g', 'ml'] as const as unit (unit)}
+        <ChipGroup ariaLabel="Pack size unit" data-testid="freezer-item-weight-units">
+          {#each ['g', 'ml', 'count'] as const as unit (unit)}
             <Chip
               variant="filter"
               pressed={unit === weightUnit}
@@ -383,25 +449,83 @@
         </ChipGroup>
       </div>
 
-      <TextField
-        label="Bought from (optional)"
-        placeholder="e.g. Swaledale"
-        bind:value={purchasedFrom}
-        data-testid="freezer-item-supplier"
+      <div class="flex flex-col gap-1.5">
+        <span id="freezer-item-recipe-label" class="text-sm font-medium"
+          >Made from a recipe (optional)</span
+        >
+        {#if linkedRecipe}
+          <div class="flex items-center gap-2" data-testid="freezer-item-recipe">
+            <span class="text-sm">{linkedRecipe.title}</span>
+            <Button variant="ghost" size="sm" onclick={() => (recipeId = null)}>Unlink</Button>
+          </div>
+        {:else}
+          <Combobox
+            items={recipeOptions}
+            value=""
+            restrict
+            placeholder="Pick a recipe…"
+            onValueChange={(id) => (recipeId = id)}
+          >
+            <ComboboxField class="w-full">
+              <ComboboxInput
+                aria-labelledby="freezer-item-recipe-label"
+                data-testid="freezer-item-recipe-picker"
+              />
+            </ComboboxField>
+            <ComboboxContent>
+              {#snippet children({ filteredItems })}
+                {#each filteredItems as option, i (option.value)}
+                  <ComboboxItem item={option} index={i} />
+                {/each}
+                {#if filteredItems.length === 0}
+                  <ComboboxEmpty>No matches</ComboboxEmpty>
+                {/if}
+              {/snippet}
+            </ComboboxContent>
+          </Combobox>
+        {/if}
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span id="freezer-item-supplier-label" class="text-sm font-medium"
+          >Bought from (optional)</span
+        >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div oninput={(e) => (purchasedFrom = (e.target as HTMLInputElement).value)}>
+          <Combobox
+            items={supplierOptions}
+            value={supplierSeed}
+            allowCustom={true}
+            placeholder="e.g. Swaledale"
+            onValueChange={(place) => (purchasedFrom = place)}
+          >
+            <ComboboxField class="w-full">
+              <ComboboxInput
+                aria-labelledby="freezer-item-supplier-label"
+                data-testid="freezer-item-supplier"
+              />
+            </ComboboxField>
+            <ComboboxContent>
+              {#snippet children({ filteredItems, showCreate })}
+                {#each filteredItems as option, i (option.value)}
+                  <ComboboxItem item={option} index={i} />
+                {/each}
+                {#if showCreate}
+                  <ComboboxCreate />
+                {/if}
+              {/snippet}
+            </ComboboxContent>
+          </Combobox>
+        </div>
+      </div>
+
+      <Textarea
+        label="Notes (optional)"
+        placeholder="e.g. Mild — for the children"
+        rows={3}
+        bind:value={notes}
+        data-testid="freezer-item-notes"
       />
-      {#if supplierOffers.length > 0}
-        <ChipGroup ariaLabel="Places bought from before" data-testid="freezer-item-supplier-offers">
-          {#each supplierOffers as place (place)}
-            <Chip
-              variant="filter"
-              onclick={() => (purchasedFrom = place)}
-              data-testid="freezer-item-supplier-offer"
-            >
-              {place}
-            </Chip>
-          {/each}
-        </ChipGroup>
-      {/if}
 
       {#if error}
         <p class="text-sm text-destructive" role="alert" data-testid="freezer-item-error">

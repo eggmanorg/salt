@@ -10,6 +10,7 @@ const G500: PackWeight = { amount: 500, unit: 'g' };
 const G100: PackWeight = { amount: 100, unit: 'g' };
 const ML500: PackWeight = { amount: 500, unit: 'ml' };
 const L1: PackWeight = { amount: 1000, unit: 'ml' };
+const SIX: PackWeight = { amount: 6, unit: 'count' };
 
 describe('packsForNeed', () => {
   it.each<[string, PackNeed, PackWeight, number]>([
@@ -32,6 +33,9 @@ describe('packsForNeed', () => {
     ['" Litres " spaced and spelled out', { amount: 1, unit: ' Litres ' }, ML500, 2],
     ['"grams" spelled out', { amount: 800, unit: 'grams' }, G500, 2],
     ['a need below one pack is 1', { amount: 50, unit: 'g' }, G500, 1],
+    ['8 with no unit over packs of 6 rounds up to 2', { amount: 8 }, SIX, 2],
+    ['12 counted over packs of 6 is 2', { amount: 12, unit: 'count' }, SIX, 2],
+    ['" Count " spaced and in capitals', { amount: 13, unit: ' Count ' }, SIX, 3],
   ])('%s', (_, need, weight, expected) => {
     expect(packsForNeed(need, weight, 20)).toBe(expected);
   });
@@ -47,10 +51,12 @@ describe('packsForNeed', () => {
   it.each<[string, PackNeed, PackWeight | null, number]>([
     ['g against an ml bag', { amount: 1000, unit: 'g' }, ML500, 10],
     ['ml against a g bag', { amount: 1000, unit: 'ml' }, G500, 10],
-    ['a counted row', { amount: 3, unit: 'count' }, G500, 10],
+    ['a counted row against a g bag', { amount: 3, unit: 'count' }, G500, 10],
+    ['g against a counted bag', { amount: 1000, unit: 'g' }, SIX, 10],
+    ['a container word against a counted bag', { amount: 2, unit: 'tins' }, SIX, 10],
     ['a container word', { amount: 2, unit: 'tins' }, G500, 10],
     ['an imperial unit', { amount: 2, unit: 'lb' }, G500, 10],
-    ['no unit', { amount: 1000 }, G500, 10],
+    ['no unit against a g bag', { amount: 1000 }, G500, 10],
     ['no amount', { unit: 'g' }, G500, 10],
     ['a zero amount', { amount: 0, unit: 'g' }, G500, 10],
     ['a bag with no weight', { amount: 1000, unit: 'g' }, null, 10],

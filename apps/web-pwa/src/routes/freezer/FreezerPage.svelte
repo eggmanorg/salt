@@ -210,6 +210,14 @@
       <span class="text-xs text-muted-foreground" data-testid="freezer-item-meta">
         {meta(item, showPlace)}
       </span>
+      {#if item.notes}
+        <span
+          class="line-clamp-2 text-xs text-muted-foreground italic"
+          data-testid="freezer-item-notes"
+        >
+          {item.notes}
+        </span>
+      {/if}
     </button>
     <Button
       variant="outline"

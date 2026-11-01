@@ -131,6 +131,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     recipeId: null,
     purchasedFrom: null,
     packWeight: null,
+    notes: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
     ...over,
@@ -609,6 +610,9 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     await fireEvent.input(within(sheet).getByTestId('freezer-item-supplier'), {
       target: { value: 'Swaledale' },
     });
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-notes'), {
+      target: { value: 'For Sunday' },
+    });
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
 
     await waitFor(() =>
@@ -620,6 +624,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         amount: 5,
         packWeight: { amount: 500, unit: 'g' },
         purchasedFrom: 'Swaledale',
+        notes: 'For Sunday',
         canonId: null,
         recipeId: null,
       }),
@@ -693,6 +698,76 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     );
   });
 
+  it('opens with the description focused, not the number — adding and editing', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12)]);
+    render(FreezerPage);
+
+    let sheet = await openSheet('freezer-add');
+    await waitFor(() => expect(within(sheet).getByTestId('freezer-item-name')).toHaveFocus());
+    expect(within(sheet).getByText('Description')).toBeInTheDocument();
+    await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    sheet = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(sheet).getByTestId('freezer-item-name')).toHaveFocus());
+  });
+
+  it('takes a pack size as a count', async () => {
+    mockState.set(loaded([GARAGE]));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
+      target: { value: 'Sausages' },
+    });
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'count' }));
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-weight'), {
+      target: { value: '6' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({ packWeight: { amount: 6, unit: 'count' } }),
+      ),
+    );
+  });
+
+  it('says what a count must be when one is refused', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockAddItem.mockResolvedValue(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT }),
+    );
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'count' }));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    expect(await within(sheet).findByTestId('freezer-item-error')).toHaveTextContent(
+      'Say how many are in one pack — a whole number.',
+    );
+  });
+
+  it('opens an item with its notes, and sends them changed', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12, { notes: 'Spicy', packWeight: { amount: 500, unit: 'g' } })]);
+    render(FreezerPage);
+
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+    const field = within(sheet).getByTestId('freezer-item-notes') as HTMLTextAreaElement;
+    expect(field.value).toBe('Spicy');
+    await fireEvent.input(field, { target: { value: 'Mild' } });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenCalledWith(12, expect.objectContaining({ notes: 'Mild' })),
+    );
+  });
+
   it('opens an item with no shelf yet at its freezer, with Not yet picked', async () => {
     mockState.set(loaded([GARAGE]));
     stocked([item(12, { shelf: null, packWeight: { amount: 500, unit: 'g' } })]);
@@ -738,7 +813,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
 
   it.each([
     [ErrorCode.FREEZER_NUMBER_IN_USE, 'Something in the freezer already has that number.'],
-    [ErrorCode.INVALID_FREEZER_ITEM_NAME, 'Say what it is.'],
+    [ErrorCode.INVALID_FREEZER_ITEM_NAME, 'Give it a description.'],
     [ErrorCode.INVALID_FREEZER_AMOUNT, 'Say how many packs — a whole number, 1 or more.'],
     [ErrorCode.UNKNOWN_FREEZER_PLACE, 'Pick a freezer.'],
     [ErrorCode.INVALID_FREEZER_PACK_WEIGHT, 'Say how much one pack weighs.'],
@@ -791,6 +866,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Pork loin',
         purchasedFrom: 'Swaledale',
         packWeight: { amount: 750, unit: 'ml' },
+        notes: '',
         place: { freezerId: GARAGE.id, shelf: 'D' },
         canonId: null,
         recipeId: null,
@@ -816,6 +892,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Item 8',
         purchasedFrom: '',
         packWeight: { amount: Number.NaN, unit: 'g' },
+        notes: '',
         place: null,
         canonId: null,
         recipeId: null,
@@ -841,6 +918,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         name: 'Item 9',
         purchasedFrom: '',
         packWeight: { amount: Number.NaN, unit: 'g' },
+        notes: '',
         place: null,
         canonId: null,
         recipeId: null,
@@ -1086,6 +1164,8 @@ describe('freezer stock — taking one out', () => {
       item(13, { name: 'Lamb', amount: 1, packWeight: { amount: 1500, unit: 'g' } }),
       item(31, { name: 'Chicken stock', amount: 2, packWeight: { amount: 1000, unit: 'ml' } }),
       item(32, { name: 'Soup', amount: 3, packWeight: { amount: 750, unit: 'ml' } }),
+      item(33, { name: 'Sausages', amount: 2, packWeight: { amount: 6, unit: 'count' } }),
+      item(34, { name: 'Bun', amount: 5, packWeight: { amount: 1, unit: 'count' } }),
       item(40, { name: 'Old bag', amount: 4, packWeight: null }),
       item(41, { name: 'Gone', amount: 0, packWeight: { amount: 500, unit: 'g' } }),
     ]);
@@ -1097,9 +1177,23 @@ describe('freezer stock — taking one out', () => {
       '#0013 Lamb — 1 × 1.5 kg',
       '#0031 Chicken stock — 2 × 1 l',
       '#0032 Soup — 3 × 750 ml',
+      '#0033 Sausages — 2 × 6 pieces',
+      '#0034 Bun — 5 × 1 piece',
       '#0040 Old bag — 4 packs',
       '#0041 Gone — none left',
     ]);
+  });
+
+  it('shows the notes under an item, and nothing for one with none', async () => {
+    mockState.set(loaded([GARAGE]));
+    stocked([item(12, { notes: 'Mild — for the children' }), item(13)]);
+    render(FreezerPage);
+
+    const rows = await screen.findAllByTestId('freezer-item');
+    expect(within(rows[0] as HTMLElement).getByTestId('freezer-item-notes')).toHaveTextContent(
+      'Mild — for the children',
+    );
+    expect(within(rows[1] as HTMLElement).queryByTestId('freezer-item-notes')).toBeNull();
   });
 
   it('shows a count of zero, or below it, as none left', async () => {
@@ -1235,31 +1329,80 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     });
   }
 
-  it('offers the ingredients the name matches — by name or by synonym — and links the one picked', async () => {
+  function optionsShown(sheet: HTMLElement): (string | undefined)[] {
+    return within(sheet)
+      .queryAllByRole('option')
+      .map((o) => o.textContent?.trim());
+  }
+
+  it('offers the ingredients the description matches — by name or by synonym — and links the one picked', async () => {
     mockState.set(loaded([GARAGE]));
     mockCanon.set([canon('c-pork', 'pork loin'), canon('c-lamb', 'lamb shoulder', ['hogget'])]);
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    expect(within(sheet).queryByTestId('freezer-item-canon-offer')).not.toBeInTheDocument();
+    expect(within(sheet).queryAllByRole('option')).toHaveLength(0);
     await typeName(sheet, 'hogget');
-    const offers = await within(sheet).findAllByTestId('freezer-item-canon-offer');
-    expect(offers.map((o) => o.textContent?.trim())).toEqual(['Lamb Shoulder']);
+    await waitFor(() => expect(optionsShown(sheet)).toEqual(['Lamb Shoulder', 'Create "hogget"']));
 
     await typeName(sheet, 'Pork');
-    await fireEvent.click(await within(sheet).findByText('Pork Loin'));
+    await fireEvent.click(await within(sheet).findByRole('option', { name: 'Pork Loin' }));
 
-    expect(await within(sheet).findByTestId('freezer-item-canon')).toHaveTextContent(
-      'Ingredient: Pork Loin',
-    );
-    expect(within(sheet).queryByTestId('freezer-item-canon-offer')).not.toBeInTheDocument();
+    const field = within(sheet).getByTestId('freezer-item-name') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe('Pork Loin'));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(mockAddItem).toHaveBeenCalledWith(expect.objectContaining({ canonId: 'c-pork' })),
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Pork Loin', canonId: 'c-pork' }),
+      ),
     );
   });
 
-  it('Unlink takes the ingredient off, and offers it again', async () => {
+  it('takes words typed freely as the description, linking an ingredient only when they are its name', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    // Refused, so the sheet stays open for the second save.
+    mockAddItem.mockResolvedValue(failure({ kind: 'NetworkError', reason: 'transient' }));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await typeName(sheet, 'Pork loin steaks');
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ name: 'Pork loin steaks', canonId: null }),
+      ),
+    );
+
+    await typeName(sheet, ' pork LOIN ');
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ name: ' pork LOIN ', canonId: 'c-pork' }),
+      ),
+    );
+  });
+
+  it('opens an item with its own description, and keeps its link until the description is changed', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    stocked([item(47, { name: 'Pork chops', canonId: 'c-pork' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    const field = within(sheet).getByTestId('freezer-item-name') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe('Pork chops'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenLastCalledWith(
+        47,
+        expect.objectContaining({ name: 'Pork chops', canonId: 'c-pork' }),
+      ),
+    );
+  });
+
+  it('a changed description drops a link it no longer names', async () => {
     mockState.set(loaded([GARAGE]));
     mockCanon.set([canon('c-pork', 'pork loin')]);
     stocked([item(47, { name: 'Pork loin', canonId: 'c-pork' })]);
@@ -1267,80 +1410,34 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     await fireEvent.click(await screen.findByTestId('freezer-item'));
     const sheet = await screen.findByRole('dialog');
 
-    const linked = within(sheet).getByTestId('freezer-item-canon');
-    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
-
-    expect(await within(sheet).findByTestId('freezer-item-canon-offer')).toHaveTextContent(
-      'Pork Loin',
+    await waitFor(() =>
+      expect((within(sheet).getByTestId('freezer-item-name') as HTMLInputElement).value).toBe(
+        'Pork Loin',
+      ),
     );
+    await typeName(sheet, 'Bolognese');
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(mockUpdateItem).toHaveBeenCalledWith(47, expect.objectContaining({ canonId: null })),
-    );
-  });
-
-  it('offers the recipes the name matches, links one, and then offers the ingredients its title matches', async () => {
-    mockState.set(loaded([GARAGE]));
-    mockCanon.set([canon('c-hock', 'ham hock')]);
-    mockRecipes.set([recipe('r-hock', 'Ham hock'), recipe('r-stew', 'Beef stew')]);
-    render(FreezerPage);
-    const sheet = await openSheet('freezer-add');
-
-    await typeName(sheet, 'hock');
-    const offers = await within(sheet).findAllByTestId('freezer-item-recipe-offer');
-    expect(offers.map((o) => o.textContent?.trim())).toEqual(['Made from Ham hock']);
-    await fireEvent.click(offers[0] as HTMLElement);
-
-    expect(await within(sheet).findByTestId('freezer-item-recipe')).toHaveTextContent(
-      'Made from: Ham hock',
-    );
-    expect(within(sheet).queryByTestId('freezer-item-recipe-offer')).not.toBeInTheDocument();
-    // Matched by both the name and the recipe's title: offered once.
-    expect(within(sheet).getAllByTestId('freezer-item-canon-offer')).toHaveLength(1);
-
-    // A name that matches nothing: the ingredient is still offered, from the recipe.
-    await typeName(sheet, 'Soup for Tuesday');
-    expect(within(sheet).getByTestId('freezer-item-canon-offer')).toHaveTextContent('Ham Hock');
-
-    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
-    await waitFor(() =>
-      expect(mockAddItem).toHaveBeenCalledWith(
-        expect.objectContaining({ recipeId: 'r-hock', canonId: null }),
+      expect(mockUpdateItem).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({ name: 'Bolognese', canonId: null }),
       ),
     );
   });
 
-  it('Unlink takes the recipe off', async () => {
-    mockState.set(loaded([GARAGE]));
-    mockRecipes.set([recipe('r-hock', 'Ham hock')]);
-    stocked([item(47, { name: 'Ham hock', recipeId: 'r-hock' })]);
-    render(FreezerPage);
-    await fireEvent.click(await screen.findByTestId('freezer-item'));
-    const sheet = await screen.findByRole('dialog');
-
-    const linked = within(sheet).getByTestId('freezer-item-recipe');
-    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
-
-    expect(await within(sheet).findByTestId('freezer-item-recipe-offer')).toBeInTheDocument();
-    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
-    await waitFor(() =>
-      expect(mockUpdateItem).toHaveBeenCalledWith(47, expect.objectContaining({ recipeId: null })),
-    );
-  });
-
-  it('keeps links to an ingredient or recipe not on this device, offering others to replace them', async () => {
+  it('keeps a link to an ingredient not on this device', async () => {
     mockState.set(loaded([GARAGE]));
     mockCanon.set([canon('c-pork', 'pork loin')]);
-    mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
     stocked([item(47, { name: 'Pork loin', canonId: 'c-gone', recipeId: 'r-gone' })]);
     render(FreezerPage);
     await fireEvent.click(await screen.findByTestId('freezer-item'));
     const sheet = await screen.findByRole('dialog');
 
-    expect(within(sheet).queryByTestId('freezer-item-canon')).not.toBeInTheDocument();
-    expect(within(sheet).queryByTestId('freezer-item-recipe')).not.toBeInTheDocument();
-    expect(within(sheet).getAllByTestId('freezer-item-canon-offer')).toHaveLength(1);
-    expect(within(sheet).getAllByTestId('freezer-item-recipe-offer')).toHaveLength(1);
+    await waitFor(() =>
+      expect((within(sheet).getByTestId('freezer-item-name') as HTMLInputElement).value).toBe(
+        'Pork loin',
+      ),
+    );
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
       expect(mockUpdateItem).toHaveBeenCalledWith(
@@ -1350,29 +1447,37 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     );
   });
 
-  it('lets a link to a deleted ingredient or recipe be replaced by picking an offer', async () => {
+  it('links the recipe picked from the dropdown, and Unlink takes it off', async () => {
     mockState.set(loaded([GARAGE]));
-    mockCanon.set([canon('c-pork', 'pork loin')]);
-    mockRecipes.set([recipe('r-pork', 'Pork loin roast')]);
-    stocked([item(47, { name: 'Pork loin', canonId: 'c-gone', recipeId: 'r-gone' })]);
+    mockRecipes.set([recipe('r-stew', 'Beef stew'), recipe('r-hock', 'Ham hock')]);
+    // Refused, so the sheet stays open for the second save.
+    mockAddItem.mockResolvedValue(failure({ kind: 'NetworkError', reason: 'transient' }));
     render(FreezerPage);
-    await fireEvent.click(await screen.findByTestId('freezer-item'));
-    const sheet = await screen.findByRole('dialog');
+    const sheet = await openSheet('freezer-add');
 
-    await fireEvent.click(within(sheet).getByTestId('freezer-item-canon-offer'));
-    await fireEvent.click(within(sheet).getByTestId('freezer-item-recipe-offer'));
+    const picker = within(sheet).getByTestId('freezer-item-recipe-picker');
+    await fireEvent.input(picker, { target: { value: 'hock' } });
+    await waitFor(() => expect(optionsShown(sheet)).toEqual(['Ham hock']));
+    await fireEvent.click(within(sheet).getByRole('option', { name: 'Ham hock' }));
+
+    expect(await within(sheet).findByTestId('freezer-item-recipe')).toHaveTextContent('Ham hock');
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(mockUpdateItem).toHaveBeenCalledWith(
-        47,
-        expect.objectContaining({ canonId: 'c-pork', recipeId: 'r-pork' }),
-      ),
+      expect(mockAddItem).toHaveBeenLastCalledWith(expect.objectContaining({ recipeId: 'r-hock' })),
+    );
+
+    const linked = within(sheet).getByTestId('freezer-item-recipe');
+    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
+    expect(within(sheet).getByTestId('freezer-item-recipe-picker')).toBeInTheDocument();
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(expect.objectContaining({ recipeId: null })),
     );
   });
 });
 
 describe('freezer stock — the places bought from', () => {
-  it('offers the remembered places as one is typed, and a pick fills the field', async () => {
+  it('offers the remembered places, narrows them as one is typed, and a pick fills the field', async () => {
     render(FreezerItemSheet, {
       open: true,
       item: null,
@@ -1382,35 +1487,42 @@ describe('freezer stock — the places bought from', () => {
     });
     const sheet = await screen.findByRole('dialog');
     const field = within(sheet).getByTestId('freezer-item-supplier') as HTMLInputElement;
-
-    // Nothing typed: every place, in order.
-    expect(
+    const shown = () =>
       within(sheet)
-        .getAllByTestId('freezer-item-supplier-offer')
-        .map((o) => o.textContent?.trim()),
-    ).toEqual(['Booths', 'Swaledale', 'Swaledale Butchers']);
+        .queryAllByRole('option')
+        .map((o) => o.textContent?.trim());
+
+    // Tapped with nothing typed: every place, in order.
+    await fireEvent.click(field);
+    await waitFor(() => expect(shown()).toEqual(['Booths', 'Swaledale', 'Swaledale Butchers']));
 
     await fireEvent.input(field, { target: { value: 'swale' } });
     await waitFor(() =>
-      expect(
-        within(sheet)
-          .getAllByTestId('freezer-item-supplier-offer')
-          .map((o) => o.textContent?.trim()),
-      ).toEqual(['Swaledale', 'Swaledale Butchers']),
+      expect(shown()).toEqual(['Swaledale', 'Swaledale Butchers', 'Create "swale"']),
     );
 
-    await fireEvent.click(within(sheet).getByText('Swaledale'));
+    await fireEvent.click(within(sheet).getByRole('option', { name: 'Swaledale' }));
     await waitFor(() => expect(field.value).toBe('Swaledale'));
-    // Typed in full, it is not offered back.
-    expect(
-      within(sheet)
-        .getAllByTestId('freezer-item-supplier-offer')
-        .map((o) => o.textContent?.trim()),
-    ).toEqual(['Swaledale Butchers']);
 
     await fireEvent.input(field, { target: { value: 'Tesco' } });
+    await waitFor(() => expect(shown()).toEqual(['Create "Tesco"']));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(within(sheet).queryByTestId('freezer-item-supplier-offers')).not.toBeInTheDocument(),
+      expect(mockAddItem).toHaveBeenCalledWith(expect.objectContaining({ purchasedFrom: 'Tesco' })),
+    );
+  });
+
+  it('opens an item at a place no longer remembered with that place filled in', async () => {
+    mockState.set(loaded([GARAGE], ['Booths']));
+    stocked([item(47, { purchasedFrom: 'Swaledale' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    await waitFor(() =>
+      expect((within(sheet).getByTestId('freezer-item-supplier') as HTMLInputElement).value).toBe(
+        'Swaledale',
+      ),
     );
   });
 
@@ -1420,7 +1532,8 @@ describe('freezer stock — the places bought from', () => {
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    expect(within(sheet).getByTestId('freezer-item-supplier-offer')).toHaveTextContent('Swaledale');
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-supplier'));
+    expect(await within(sheet).findByRole('option', { name: 'Swaledale' })).toBeInTheDocument();
   });
 
   it('lists the places in Manage freezers, and forgets one', async () => {

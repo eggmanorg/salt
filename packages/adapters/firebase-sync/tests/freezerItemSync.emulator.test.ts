@@ -82,6 +82,7 @@ function item(amount: number): FreezerItem {
     recipeId: null,
     purchasedFrom: null,
     packWeight: { amount: 500, unit: 'g' },
+    notes: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
   };
