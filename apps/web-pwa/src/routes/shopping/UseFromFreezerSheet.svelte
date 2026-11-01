@@ -24,7 +24,13 @@
     SheetHeader,
     SheetTitle,
   } from '@salt/ui-components';
-  import { displayAmount, packsForNeed, type FreezerItem, type PackNeed } from '@salt/domain';
+  import {
+    displayAmount,
+    formatBagNumber,
+    packsForNeed,
+    type FreezerItem,
+    type PackNeed,
+  } from '@salt/domain';
   import { formatPackWeight } from '../../lib/quantityDisplay.js';
 
   interface Props {
@@ -100,13 +106,13 @@
         {#each stock as item (item.number)}
           <RadioGroupItem
             value={String(item.number)}
-            label={`#${item.number} ${item.name} — ${placeOf(item)} · ${holding(item)}`}
+            label={`#${formatBagNumber(item.number)} ${item.name} — ${placeOf(item)} · ${holding(item)}`}
           />
         {/each}
       </RadioGroup>
     {:else if entry}
       <p class="text-sm text-foreground" data-testid="use-from-freezer-entry">
-        #{entry.number}
+        #{formatBagNumber(entry.number)}
         {entry.name} — {placeOf(entry)} · {holding(entry)}
       </p>
     {/if}
@@ -140,7 +146,7 @@
       </div>
       {#if last}
         <p class="text-xs text-muted-foreground" data-testid="use-from-freezer-last">
-          That is the last of #{entry.number}. Its entry comes out of the freezer.
+          That is the last of #{formatBagNumber(entry.number)}. Its entry comes out of the freezer.
         </p>
       {/if}
     {/if}

@@ -196,7 +196,7 @@ describe('ShoppingListPage — use from the freezer', () => {
     const view = render(ShoppingListPage, props);
 
     const line = await view.findByTestId('shopping-item-freezer');
-    expect(line.textContent).toContain('in the freezer · Garage, shelf B · #47 · 1 pack');
+    expect(line.textContent).toContain('in the freezer · Garage, shelf B · #0047 · 1 pack');
   });
 
   it('renders nothing extra for a row whose ingredient is in no freezer', async () => {
@@ -333,10 +333,10 @@ describe('ShoppingListPage — use from the freezer', () => {
     const view = render(ShoppingListPage, props);
 
     const line = await view.findByTestId('shopping-item-freezer');
-    expect(line.textContent).toContain('Not placed · #12 · 2 packs · 1 more');
+    expect(line.textContent).toContain('Not placed · #0012 · 2 packs · 1 more');
 
     await fireEvent.click(view.getByTestId('shopping-item-use-from-freezer'));
-    await fireEvent.click(await view.findByRole('radio', { name: /#47/ }));
+    await fireEvent.click(await view.findByRole('radio', { name: /#0047/ }));
     await fireEvent.click(view.getByTestId('use-from-freezer-more'));
     await fireEvent.click(view.getByTestId('use-from-freezer-more'));
     await fireEvent.click(view.getByTestId('use-from-freezer-fewer'));

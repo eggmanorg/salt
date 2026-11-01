@@ -18,6 +18,7 @@
   import { onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
   import {
+    formatBagNumber,
     recipeHeroUrl,
     isChatReadOnly,
     timerHeat,
@@ -235,7 +236,7 @@
   function taskDetail(task: KitchenTask): string {
     const { defrost } = task;
     const packs = `${defrost.amount} ${defrost.amount === 1 ? 'pack' : 'packs'}`;
-    const where = `${defrost.location} · #${defrost.freezerNumber} · ${packs}`;
+    const where = `${defrost.location} · #${formatBagNumber(defrost.freezerNumber)} · ${packs}`;
     if (defrost.recipeTitle === null) return where;
     const night = task.forDate === null ? '' : `, ${taskNight(task.forDate)}`;
     return `${where} — for ${defrost.recipeTitle}${night}`;

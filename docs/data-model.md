@@ -155,7 +155,7 @@ setup it sits in — freezers and their shelves — is the single
 `freezerConfig/current` document (#1682).
 
 **The id is the bag number, zero-padded** (`freezerItemDocId(47)` → `"047"`; a
-fourth digit is kept, not cut). The number is written on the bag, so it is the
+fourth digit is kept, not cut). That padding is an id detail only: the UI and the defrost push show the number as four digits (`#0047`) via the domain `formatBagNumber`, display only — the stored `number` stays a plain integer. The number is written on the bag, so it is the
 item's identity: moving an item rewrites `freezerId`/`shelf` in place and never
 the id. Renumbering would be delete-and-recreate, and nothing offers it.
 

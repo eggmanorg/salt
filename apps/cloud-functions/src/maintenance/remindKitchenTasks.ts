@@ -3,7 +3,13 @@ import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { DEFROSTS_COLLECTION, DefrostSchema, PushSubscriptionSchema } from '@salt/domain/schemas';
-import { dateInZone, kitchenTasks, type Defrost, type KitchenTask } from '@salt/domain';
+import {
+  dateInZone,
+  formatBagNumber,
+  kitchenTasks,
+  type Defrost,
+  type KitchenTask,
+} from '@salt/domain';
 import { flushServerObservability } from '@salt/observability/server';
 import { sendWebPush } from '../adapters/sendWebPush.js';
 import { reportServerError } from '../observability/reportServerError.js';
@@ -72,7 +78,7 @@ export function kitchenReminderCopy(due: readonly KitchenTask[]): {
         only.recipeTitle === null
           ? `Defrost the ${only.name} for tomorrow`
           : `Defrost the ${only.name} for tomorrow's ${only.recipeTitle}`,
-      body: `${only.location} · #${only.freezerNumber}`,
+      body: `${only.location} · #${formatBagNumber(only.freezerNumber)}`,
     };
   }
   return {

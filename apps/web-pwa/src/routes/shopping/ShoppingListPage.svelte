@@ -41,6 +41,7 @@
   import { onDestroy, tick } from 'svelte';
   import { push } from 'svelte-spa-router';
   import {
+    formatBagNumber,
     daysBetween,
     shopDayHeadline,
     groupItemsByAisle,
@@ -850,7 +851,7 @@
     if (item.checked || selectionMode) return undefined;
     const [oldest, ...more] = freezerStockFor(freezerItems, item.canonId);
     if (!oldest) return undefined;
-    const line = `${placeOf(oldest)} · #${oldest.number} · ${packs(displayAmount(oldest.amount))}`;
+    const line = `${placeOf(oldest)} · #${formatBagNumber(oldest.number)} · ${packs(displayAmount(oldest.amount))}`;
     return more.length > 0 ? `${line} · ${more.length} more` : line;
   }
 
@@ -895,7 +896,7 @@
     const { defrost, last } = result.value;
     addToast(
       last
-        ? `${defrost.name} is in Kitchen to get out. That was the last of #${defrost.freezerNumber}.`
+        ? `${defrost.name} is in Kitchen to get out. That was the last of #${formatBagNumber(defrost.freezerNumber)}.`
         : `${defrost.name} is in Kitchen to get out.`,
       'success',
     );

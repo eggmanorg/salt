@@ -28,6 +28,7 @@ export type { MoveFreezerItemInput } from './commands/moveItem.js';
 export { removeFreezerItem } from './commands/removeItem.js';
 export type { RemoveFreezerItemInput } from './commands/removeItem.js';
 export { nextBagNumber } from './queries/nextBagNumber.js';
+export { formatBagNumber } from './queries/formatBagNumber.js';
 export { recordBagNumber } from './commands/recordBagNumber.js';
 export { itemsByShelf, oldestFirst } from './queries/itemsByShelf.js';
 export type { ItemsByShelf, FreezerStock, ShelfStock } from './queries/itemsByShelf.js';

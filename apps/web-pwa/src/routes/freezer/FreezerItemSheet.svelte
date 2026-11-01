@@ -12,6 +12,7 @@
     TextField,
   } from '@salt/ui-components';
   import {
+    formatBagNumber,
     supplierSuggestions,
     type Freezer,
     type FreezerItem,
@@ -82,7 +83,7 @@
     untrack(() => {
       error = null;
       if (item) {
-        numberDraft = String(item.number);
+        numberDraft = formatBagNumber(item.number);
         name = item.name;
         packs = String(Math.max(item.amount, 0));
         weight = item.packWeight ? String(item.packWeight.amount) : '';
@@ -100,7 +101,7 @@
         freezerId = fits ? home.id : null;
         shelf = fits ? item.shelf : null;
       } else {
-        numberDraft = String(suggestedNumber);
+        numberDraft = formatBagNumber(suggestedNumber);
         name = '';
         packs = '1';
         weight = '';
@@ -244,7 +245,9 @@
 <Sheet bind:open side="bottom">
   <SheetContent class="flex flex-col gap-4">
     <SheetHeader>
-      <SheetTitle>{item ? `#${item.number} ${item.name}` : 'Add to the freezer'}</SheetTitle>
+      <SheetTitle
+        >{item ? `#${formatBagNumber(item.number)} ${item.name}` : 'Add to the freezer'}</SheetTitle
+      >
       <SheetDescription>
         {item ? 'Change it, move it, or take it off the list.' : 'Write the number on the bag.'}
       </SheetDescription>
