@@ -241,10 +241,15 @@ function showItem(items: readonly FreezerItem[], item: FreezerItem): void {
 // A saved item's supplier and container go on the remembered lists — the same
 // config back when the lists already had them, so nothing is written.
 function remember(config: FreezerConfig, item: FreezerItem, now: string): FreezerConfig {
-  const supplied = rememberSupplier(config, item.purchasedFrom, now);
-  const withSupplier = supplied.kind === 'ok' ? supplied.value : config;
-  const contained = rememberContainer(withSupplier, item.container, now);
-  return contained.kind === 'ok' ? contained.value : withSupplier;
+  const supplied = orUnchanged(rememberSupplier(config, item.purchasedFrom, now), config);
+  return orUnchanged(rememberContainer(supplied, item.container, now), supplied);
+}
+
+function orUnchanged(
+  result: ReadResult<FreezerConfig, DomainError>,
+  config: FreezerConfig,
+): FreezerConfig {
+  return result.kind === 'ok' ? result.value : config;
 }
 
 /**
