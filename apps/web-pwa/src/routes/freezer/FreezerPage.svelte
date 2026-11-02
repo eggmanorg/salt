@@ -110,14 +110,16 @@
   }
 
   // "4 × 500 g" when the bag has a weight per pack (issue #1712); one written
-  // before weights, or one with none left, reads as the count alone.
+  // before weights, or one with none left, reads as the count alone. What the
+  // packs are in follows — "· Deli pot" — so it can be looked for by its shape.
   function title(item: FreezerItem): string {
     const shown = displayAmount(item.amount);
     const count =
       item.packWeight && shown > 0
         ? `${shown} × ${formatPackWeight(item.packWeight)}`
         : packs(item.amount);
-    return `#${formatBagNumber(item.number)} ${item.name} — ${count}`;
+    const pack = item.container ? ` · ${item.container}` : '';
+    return `#${formatBagNumber(item.number)} ${item.name} — ${count}${pack}`;
   }
 
   async function takeOne(item: FreezerItem): Promise<void> {
@@ -411,11 +413,13 @@
     {freezers}
     suggestedNumber={nextBagNumber(items, setup)}
     suppliers={config?.suppliers ?? []}
+    containers={config?.containers ?? []}
   />
   <ManageFreezersSheet
     bind:open={manageOpen}
     stock={filed.freezers}
     suppliers={config?.suppliers ?? []}
+    containers={config?.containers ?? []}
   />
 
   {#if lastOne}

@@ -6,9 +6,9 @@ export interface PackNeed {
   readonly unit?: string | undefined;
 }
 
-// Each unit a need can be compared in, as its factor to g, ml or a count of
-// pieces (issue #1712). A row with no unit is a count ("6" sausages), and so is
-// the `count` sentinel product-form rows are written with. Anything else — `lb`,
+// Each unit a need can be compared in, as its factor to g, ml, a count of
+// pieces or servings (issue #1712). A row with no unit is a count ("6" sausages),
+// and so is the `count` sentinel product-form rows are written with. Anything else — `lb`,
 // `cup`, a container word — has no entry and so no conversion.
 interface Measure {
   readonly unit: PackWeight['unit'];
@@ -19,6 +19,7 @@ const MEASURES: ReadonlyMap<string, Measure> = new Map(
   (
     [
       ['count', 1, ['', 'count']],
+      ['servings', 1, ['serving', 'servings']],
       ['g', 1, ['g', 'gram', 'grams', 'gramme', 'grammes']],
       ['g', 1000, ['kg', 'kilo', 'kilos', 'kilogram', 'kilograms']],
       ['ml', 1, ['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters']],
@@ -39,8 +40,8 @@ const TOLERANCE = 1e-9;
  * and never more than the bag holds (`held`), never fewer than one.
  *
  * It starts at 1 whenever the need cannot be compared with the pack: no amount,
- * a unit that is not metric weight, volume or a count, two different kinds —
- * grams against millilitres (there is no density), or a count against either —
+ * a unit that is not metric weight, volume, a count or servings, two different
+ * kinds — grams against millilitres (there is no density), or a count against either —
  * or a bag with no usable size. Units are matched trimmed and case-insensitively,
  * since a hand-added row keeps the casing it was typed in.
  */

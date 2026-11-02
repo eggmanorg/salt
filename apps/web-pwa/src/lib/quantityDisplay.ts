@@ -49,11 +49,14 @@ export function formatDoughWeight(grams: number): string {
 /**
  * A freezer bag's pack size (issue #1712): "500 g", "750 ml", and in kilos or
  * litres from 1000 up — "1.5 kg", "1 l" — worded as `formatDoughWeight` is. A
- * count reads as pieces — "6 pieces", "1 piece" — and is never put in thousands.
+ * count reads as pieces — "6 pieces", "1 piece" — and servings as servings — "4
+ * servings", "1 serving"; neither is put in thousands.
  */
 export function formatPackWeight(weight: PackWeight): string {
   if (weight.unit === 'count')
     return `${weight.amount} ${weight.amount === 1 ? 'piece' : 'pieces'}`;
+  if (weight.unit === 'servings')
+    return `${weight.amount} ${weight.amount === 1 ? 'serving' : 'servings'}`;
   if (weight.amount < 1000) return `${weight.amount} ${weight.unit}`;
   return inThousands(weight.amount, weight.unit === 'g' ? 'kg' : 'l');
 }

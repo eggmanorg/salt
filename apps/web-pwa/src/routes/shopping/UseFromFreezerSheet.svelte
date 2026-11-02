@@ -72,10 +72,13 @@
     return `${n} ${n === 1 ? 'pack' : 'packs'}`;
   }
 
-  // "4 × 500 g" for a bag with a weight per pack; "4 packs" for one without.
+  // "4 × 500 g" for a bag with a weight per pack; "4 packs" for one without; and
+  // what they are in, "· Deli pot", when it was given.
   function holding(item: FreezerItem): string {
     const n = displayAmount(item.amount);
-    return item.packWeight && n > 0 ? `${n} × ${formatPackWeight(item.packWeight)}` : packs(n);
+    const held =
+      item.packWeight && n > 0 ? `${n} × ${formatPackWeight(item.packWeight)}` : packs(n);
+    return item.container ? `${held} · ${item.container}` : held;
   }
 
   function choose(value: string): void {

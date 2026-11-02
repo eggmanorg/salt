@@ -121,6 +121,7 @@ function config(
     updatedAt: '2026-10-12T09:00:00.000Z',
     freezers,
     suppliers,
+    containers: [],
     highestNumber,
   };
 }
@@ -244,6 +245,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
     ...over,
@@ -619,6 +621,43 @@ describe('freezer service — recounting and linking on edit', () => {
       canonId: 'c-pork',
       recipeId: 'r-stew',
     });
+  });
+});
+
+describe('freezer service — the containers', () => {
+  beforeEach(() => {
+    emit({ ...config([GARAGE], ['Swaledale'], 50), containers: ['Deli pot'] });
+    emitItems([item(1)]);
+  });
+
+  it('saves a known container in its remembered spelling, and writes no config', async () => {
+    await addFreezerItem({ ...ADD, purchasedFrom: 'Swaledale', container: ' deli POT ' });
+
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ container: 'Deli pot' });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('remembers a new container and a new place in one config save', async () => {
+    await addFreezerItem({ ...ADD, purchasedFrom: 'Booths', container: 'Tub' });
+
+    expect(mockSave).toHaveBeenCalledOnce();
+    expect(mockSave.mock.calls[0]?.[0]).toMatchObject({
+      suppliers: ['Swaledale', 'Booths'],
+      containers: ['Deli pot', 'Tub'],
+    });
+  });
+
+  it('an edit spells and remembers it the same way, and leaves it when omitted', async () => {
+    const edit = { name: 'Item 1', purchasedFrom: 'Swaledale', packWeight: WEIGHT, place: null };
+    await updateFreezerItem(1, { ...edit, container: 'DELI POT' });
+    expect(mockSaveItem.mock.calls[0]?.[0]).toMatchObject({ container: 'Deli pot' });
+    expect(mockSave).not.toHaveBeenCalled();
+
+    await updateFreezerItem(1, { ...edit, container: 'Box' });
+    expect(mockSave.mock.calls[0]?.[0]).toMatchObject({ containers: ['Deli pot', 'Box'] });
+
+    await updateFreezerItem(1, edit);
+    expect(mockSaveItem.mock.calls[2]?.[0]).toMatchObject({ container: 'Box' });
   });
 });
 

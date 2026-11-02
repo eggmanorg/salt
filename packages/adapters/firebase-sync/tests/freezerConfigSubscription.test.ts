@@ -56,7 +56,7 @@ describe('subscribeFreezerConfig', () => {
     expect(onConfig).toHaveBeenCalledWith(null);
   });
 
-  it('delivers the parsed config, defaulting no shelves and no suppliers to [] and no mark to 0', () => {
+  it('delivers the parsed config, defaulting no shelves and no suppliers to [], no containers to the four kinds and no mark to 0', () => {
     const onConfig = vi.fn();
     subscribeFreezerConfig(onConfig, () => {});
 
@@ -82,6 +82,8 @@ describe('subscribeFreezerConfig', () => {
       ],
       // Written before #1684 added the supplier list.
       suppliers: [],
+      // Written before the container list: it starts with the four kinds.
+      containers: ['Bag', 'Box', 'Deli pot', 'Vacuum bag'],
       // Written before #1693 added the bag-number mark: the items set the count.
       highestNumber: 0,
     });
@@ -122,6 +124,7 @@ describe('saveFreezerConfig', () => {
       updatedAt: '1970-01-01T00:00:00.000Z',
       freezers: [],
       suppliers: [],
+      containers: [],
       highestNumber: 0,
     });
     const after = Date.now();
@@ -136,12 +139,13 @@ describe('saveFreezerConfig', () => {
   // The payload lists its fields by hand: a schema field missed there is dropped
   // on every save — for `highestNumber`, every freezer, shelf or supplier edit
   // would put the bag-number count back to the items' highest (issue #1693).
-  it('writes every field of the config, the bag-number mark included', async () => {
+  it('writes every field of the config, the containers and the bag-number mark included', async () => {
     const config = {
       schemaVersion: 1 as const,
       updatedAt: '1970-01-01T00:00:00.000Z',
       freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A'] }],
       suppliers: ['Swaledale'],
+      containers: ['Deli pot'],
       highestNumber: 120,
     };
     await saveFreezerConfig(config);

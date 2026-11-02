@@ -13,12 +13,14 @@ export interface AddFreezerItemInput {
   readonly shelf: string | null;
   /** How many packs, a whole number of at least one. */
   readonly amount: number;
-  /** How big one pack is, in g, ml or a count — required and above zero. */
+  /** How big one pack is, in g, ml, a count or servings — required and above zero. */
   readonly packWeight: PackWeight | null;
   /** Where it was bought. Optional; blank is none. */
   readonly purchasedFrom?: string | null;
   /** Anything worth saying about the bag. Optional; blank is none. */
   readonly notes?: string | null;
+  /** What the packs are in — "Deli pot". Optional; blank is none. */
+  readonly container?: string | null;
   /** The ingredient it is, if one was picked. Optional. */
   readonly canonId?: string | null;
   /** The recipe it was made from, if one was picked. Optional. */
@@ -64,6 +66,7 @@ export function addFreezerItem(
     purchasedFrom: cleanOptionalText(input.purchasedFrom),
     packWeight: packWeight.value,
     notes: cleanOptionalText(input.notes),
+    container: cleanOptionalText(input.container),
     addedAt: input.now,
     updatedAt: input.now,
   });

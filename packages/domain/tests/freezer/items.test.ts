@@ -30,6 +30,7 @@ const CONFIG: FreezerConfig = {
   updatedAt: NOW,
   freezers: [GARAGE, CHEST],
   suppliers: [],
+  containers: [],
   highestNumber: 0,
 };
 
@@ -51,6 +52,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -104,13 +106,17 @@ describe('FreezerItemSchema', () => {
     expect(read.success && read.data.packWeight).toBe(null);
   });
 
-  it('reads a pack size in g, ml or a count', () => {
+  it('reads a pack size in g, ml, a count or servings', () => {
     const read = FreezerItemSchema.safeParse(item(1, { packWeight: { amount: 1, unit: 'ml' } }));
     expect(read.success && read.data.packWeight).toEqual({ amount: 1, unit: 'ml' });
     const counted = FreezerItemSchema.safeParse(
       item(1, { packWeight: { amount: 6, unit: 'count' } }),
     );
     expect(counted.success && counted.data.packWeight).toEqual({ amount: 6, unit: 'count' });
+    const served = FreezerItemSchema.safeParse(
+      item(1, { packWeight: { amount: 4, unit: 'servings' } }),
+    );
+    expect(served.success && served.data.packWeight).toEqual({ amount: 4, unit: 'servings' });
   });
 
   it('reads a document written before notes as notes null', () => {
@@ -206,6 +212,7 @@ describe('addFreezerItem', () => {
       purchasedFrom: 'Swaledale',
       packWeight: { amount: 500, unit: 'g' },
       notes: null,
+      container: null,
       addedAt: NOW,
       updatedAt: NOW,
     });
@@ -476,6 +483,7 @@ describe('itemsByShelf', () => {
       updatedAt: NOW,
       freezers: [],
       suppliers: [],
+      containers: [],
       highestNumber: 0,
     });
     expect(filed.notPlaced.map((i) => i.number)).toEqual([1]);
@@ -529,6 +537,7 @@ describe('pack weight', () => {
     ['negative', { amount: -250, unit: 'ml' }],
     ['in another unit', { amount: 1, unit: 'kg' as 'g' }],
     ['a fraction of a count', { amount: 1.5, unit: 'count' }],
+    ['a fraction of a serving', { amount: 2.5, unit: 'servings' }],
   ];
 
   it.each(BAD)('add refuses a weight that is %s', (_, packWeight) => {
@@ -549,7 +558,7 @@ describe('pack weight', () => {
     ).toEqual(REFUSED);
   });
 
-  it('takes g and ml, fractions included, and a whole count', () => {
+  it('takes g and ml, fractions included, and a whole count or number of servings', () => {
     expect(ok(addFreezerItem([], CONFIG, ADD)).packWeight).toEqual(WEIGHT);
     const stock = { amount: 1.5, unit: 'ml' } as const;
     expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: stock })).packWeight).toEqual(stock);
@@ -557,6 +566,8 @@ describe('pack weight', () => {
     expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: sausages })).packWeight).toEqual(
       sausages,
     );
+    const stew = { amount: 4, unit: 'servings' } as const;
+    expect(ok(addFreezerItem([], CONFIG, { ...ADD, packWeight: stew })).packWeight).toEqual(stew);
   });
 
   it('edit changes it, and gives a bag from before weights one', () => {
