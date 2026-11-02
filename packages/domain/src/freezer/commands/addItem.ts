@@ -13,7 +13,7 @@ export interface AddFreezerItemInput {
   readonly shelf: string | null;
   /** How many packs, a whole number of at least one. */
   readonly amount: number;
-  /** How big one pack is, in g, ml or a count — required and above zero. */
+  /** How big one pack is, in g, ml, a count or servings — required and above zero. */
   readonly packWeight: PackWeight | null;
   /** Where it was bought. Optional; blank is none. */
   readonly purchasedFrom?: string | null;

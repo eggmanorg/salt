@@ -182,9 +182,9 @@ shelf, or relabelling a shelf, is allowed with stock on it and rewrites no item;
 under **Not placed**, computed in memory, until someone moves it. Nothing is
 stored to mark it.
 
-**`packWeight`** (issue #1712) is `{ amount, unit: 'g' | 'ml' | 'count' }` —
-how big ONE pack under this number is (a weight, a volume, or a whole count of
-pieces: six sausages), stored once on the entry rather than per pack, so
+**`packWeight`** (issue #1712) is `{ amount, unit: 'g' | 'ml' | 'count' | 'servings' }` —
+how big ONE pack under this number is (a weight, a volume, a whole count of
+pieces: six sausages, or a whole number of servings: a stew for four), stored once on the entry rather than per pack, so
 every pack under a number shares it by shape. It describes the pack, never what
 is left: `amount` stays whole packs and a take stays −1. `addFreezerItem` and
 `editFreezerItem` refuse a missing, non-finite, zero or negative weight
@@ -195,7 +195,8 @@ edits it — required on read would make the list read skip the bag, hiding it
 while it still holds its number. Move, recount and take carry the field through
 untouched. `schemaVersion` stays `1`. **`count` is newer than the field:** a
 client built before it reads a counted bag as a schema failure and skips it,
-until that client reloads onto the current build.
+until that client reloads onto the current build. `servings` is newer again and
+carries the same limit.
 
 **`notes`** is free text about the bag, `null` when there is none (trimmed;
 blank is `null`). A document written before it has no field and reads `null`

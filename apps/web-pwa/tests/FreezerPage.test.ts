@@ -735,6 +735,34 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     );
   });
 
+  it('takes a pack size in servings, and says what they must be when refused', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockAddItem.mockResolvedValueOnce(
+      failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT }),
+    );
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
+      target: { value: 'Beef stew' },
+    });
+    await fireEvent.click(within(sheet).getByRole('button', { name: 'servings' }));
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-weight'), {
+      target: { value: '4' },
+    });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    expect(await within(sheet).findByTestId('freezer-item-error')).toHaveTextContent(
+      'Say how many servings are in one pack — a whole number.',
+    );
+
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ packWeight: { amount: 4, unit: 'servings' } }),
+      ),
+    );
+  });
+
   it('says what a count must be when one is refused', async () => {
     mockState.set(loaded([GARAGE]));
     mockAddItem.mockResolvedValue(
@@ -1166,6 +1194,8 @@ describe('freezer stock — taking one out', () => {
       item(32, { name: 'Soup', amount: 3, packWeight: { amount: 750, unit: 'ml' } }),
       item(33, { name: 'Sausages', amount: 2, packWeight: { amount: 6, unit: 'count' } }),
       item(34, { name: 'Bun', amount: 5, packWeight: { amount: 1, unit: 'count' } }),
+      item(35, { name: 'Stew', amount: 2, packWeight: { amount: 4, unit: 'servings' } }),
+      item(36, { name: 'Pie', amount: 1, packWeight: { amount: 1, unit: 'servings' } }),
       item(40, { name: 'Old bag', amount: 4, packWeight: null }),
       item(41, { name: 'Gone', amount: 0, packWeight: { amount: 500, unit: 'g' } }),
     ]);
@@ -1179,6 +1209,8 @@ describe('freezer stock — taking one out', () => {
       '#0032 Soup — 3 × 750 ml',
       '#0033 Sausages — 2 × 6 pieces',
       '#0034 Bun — 5 × 1 piece',
+      '#0035 Stew — 2 × 4 servings',
+      '#0036 Pie — 1 × 1 serving',
       '#0040 Old bag — 4 packs',
       '#0041 Gone — none left',
     ]);
@@ -1322,7 +1354,7 @@ describe('freezer stock — recounting on edit', () => {
   });
 });
 
-describe('freezer stock — linking an ingredient and a recipe', () => {
+describe('freezer stock — linking an ingredient or a recipe', () => {
   function typeName(sheet: HTMLElement, value: string): Promise<boolean> {
     return fireEvent.input(within(sheet).getByTestId('freezer-item-name'), {
       target: { value },
@@ -1477,33 +1509,87 @@ describe('freezer stock — linking an ingredient and a recipe', () => {
     );
   });
 
-  it('links the recipe picked from the dropdown, and Unlink takes it off', async () => {
+  it('offers recipes beside the ingredients, and links whichever is picked — one or the other', async () => {
     mockState.set(loaded([GARAGE]));
-    mockRecipes.set([recipe('r-stew', 'Beef stew'), recipe('r-hock', 'Ham hock')]);
+    mockCanon.set([canon('c-hock', 'ham hock')]);
+    mockRecipes.set([recipe('r-stew', 'Beef stew'), recipe('r-hock', 'Ham hock soup')]);
     // Refused, so the sheet stays open for the second save.
     mockAddItem.mockResolvedValue(failure({ kind: 'NetworkError', reason: 'transient' }));
     render(FreezerPage);
     const sheet = await openSheet('freezer-add');
 
-    const picker = within(sheet).getByTestId('freezer-item-recipe-picker');
-    await fireEvent.input(picker, { target: { value: 'curry' } });
-    expect(await within(sheet).findByText('No matches')).toBeInTheDocument();
-    await fireEvent.input(picker, { target: { value: 'hock' } });
-    await waitFor(() => expect(optionsShown(sheet)).toEqual(['Ham hock']));
-    await fireEvent.click(within(sheet).getByRole('option', { name: 'Ham hock' }));
-
-    expect(await within(sheet).findByTestId('freezer-item-recipe')).toHaveTextContent('Ham hock');
+    expect(within(sheet).queryByText(/Made from a recipe/)).not.toBeInTheDocument();
+    await typeName(sheet, 'hock');
+    // One alphabetical list; a recipe's row says it is one.
+    await waitFor(() =>
+      expect(
+        within(sheet)
+          .queryAllByRole('option')
+          .map((o) => o.textContent?.replace(/\s+/g, ' ').trim()),
+      ).toEqual(['Ham Hock', 'Ham hock soup Recipe', 'Create "hock"']),
+    );
+    await fireEvent.click(within(sheet).getByRole('option', { name: /Ham hock soup/ }));
+    const field = within(sheet).getByTestId('freezer-item-name') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe('Ham hock soup'));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(mockAddItem).toHaveBeenLastCalledWith(expect.objectContaining({ recipeId: 'r-hock' })),
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ name: 'Ham hock soup', recipeId: 'r-hock', canonId: null }),
+      ),
     );
 
-    const linked = within(sheet).getByTestId('freezer-item-recipe');
-    await fireEvent.click(within(linked).getByRole('button', { name: 'Unlink' }));
-    expect(within(sheet).getByTestId('freezer-item-recipe-picker')).toBeInTheDocument();
+    await typeName(sheet, 'hock');
+    await fireEvent.click(await within(sheet).findByRole('option', { name: 'Ham Hock' }));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
     await waitFor(() =>
-      expect(mockAddItem).toHaveBeenLastCalledWith(expect.objectContaining({ recipeId: null })),
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ name: 'Ham Hock', canonId: 'c-hock', recipeId: null }),
+      ),
+    );
+  });
+
+  it('links the recipe that words typed freely name exactly, when no ingredient has that name', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockCanon.set([canon('c-pork', 'pork loin')]);
+    mockRecipes.set([recipe('r-stew', 'Beef stew'), recipe('r-pork', 'Pork loin')]);
+    mockAddItem.mockResolvedValue(failure({ kind: 'NetworkError', reason: 'transient' }));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-add');
+
+    await typeName(sheet, ' beef STEW ');
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canonId: null, recipeId: 'r-stew' }),
+      ),
+    );
+
+    // An ingredient of the same name wins.
+    await typeName(sheet, 'Pork loin');
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canonId: 'c-pork', recipeId: null }),
+      ),
+    );
+  });
+
+  it('opens an item made from a recipe with the recipe picked, and keeps the link', async () => {
+    mockState.set(loaded([GARAGE]));
+    mockRecipes.set([recipe('r-stew', 'Beef stew')]);
+    stocked([item(47, { name: 'Beef stew', recipeId: 'r-stew' })]);
+    render(FreezerPage);
+    await fireEvent.click(await screen.findByTestId('freezer-item'));
+    const sheet = await screen.findByRole('dialog');
+
+    const field = within(sheet).getByTestId('freezer-item-name') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe('Beef stew'));
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockUpdateItem).toHaveBeenLastCalledWith(
+        47,
+        expect.objectContaining({ name: 'Beef stew', recipeId: 'r-stew' }),
+      ),
     );
   });
 });

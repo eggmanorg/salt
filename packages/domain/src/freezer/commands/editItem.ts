@@ -8,7 +8,7 @@ export interface EditFreezerItemInput {
   readonly name: string;
   readonly purchasedFrom: string | null;
   /**
-   * How big one pack is, in g, ml or a count — required on every edit, so an entry saved
+   * How big one pack is, in g, ml, a count or servings — required on every edit, so an entry saved
    * before #1712 with none cannot be saved again until one is given.
    */
   readonly packWeight: PackWeight | null;

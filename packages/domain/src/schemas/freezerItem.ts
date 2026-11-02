@@ -35,7 +35,8 @@ export function freezerItemDocId(n: number): string {
 // - `notes` is free text about the bag, `null` when there is none. An entry
 //   written before it has no field and reads `null`.
 // - `packWeight` is how big ONE pack under this number is (issue #1712) — a
-//   weight in g, a volume in ml, or a count of pieces (`count`: six sausages) — on the
+//   weight in g, a volume in ml, a count of pieces (`count`: six sausages) or of
+//   servings (`servings`: a stew for four) — on the
 //   entry, not per pack, so every pack under a number shares it by shape. It is a
 //   property of the pack, never a measure of what is left: `amount` stays whole
 //   packs. `addFreezerItem` and `editFreezerItem` refuse a missing or non-positive
@@ -44,7 +45,7 @@ export function freezerItemDocId(n: number): string {
 //   rather than dropping the bag. The read checks shape only.
 export const PackWeightSchema = z.object({
   amount: z.number(),
-  unit: z.enum(['g', 'ml', 'count']),
+  unit: z.enum(['g', 'ml', 'count', 'servings']),
 });
 
 export type PackWeightDoc = z.infer<typeof PackWeightSchema>;
