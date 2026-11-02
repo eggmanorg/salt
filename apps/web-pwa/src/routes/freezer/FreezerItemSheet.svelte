@@ -19,6 +19,7 @@
     TextField,
   } from '@salt/ui-components';
   import {
+    containerSuggestions,
     formatBagNumber,
     supplierSuggestions,
     type Freezer,
@@ -44,12 +45,13 @@
    * can be typed over (the bag may already be marked); then a description, the
    * freezer and shelf — or "Not yet", for packs labelled in the kitchen before
    * anyone has seen which shelf they fit on — how many packs, how big one pack
-   * is (g, ml, a count or servings, issue #1712), where it was bought if it was,
-   * and notes.
+   * is (g, ml, a count or servings, issue #1712), what the packs are in (a deli
+   * pot, a vacuum bag), where it was bought if it was, and notes.
    * The sheet opens with the description focused, not the number.
    *
    * Editing: the number is shown and fixed — it is the document id and it is
-   * written on the bag. The description, the supplier, the pack size, the notes
+   * written on the bag. The description, the supplier, the pack size, the
+   * container, the notes
    * and the place can change; a new place is a move, and a changed pack count
    * corrects the count. An entry saved before pack sizes opens with the size
    * blank, and cannot be saved until one is given. Remove deletes the entry.
@@ -60,7 +62,8 @@
    * links the recipe — one or the other. Words typed freely link the ingredient
    * they name exactly, or failing that the recipe they name exactly. An entry
    * opened for editing keeps the links it has until its description is changed.
-   * The place it was bought is picked the same way, and a new place can be typed.
+   * The place it was bought and the container are picked from their remembered
+   * lists, and a new one can be typed.
    *
    * Every refusal comes from the domain command through the service, as in the
    * Manage freezers sheet, so the sheet makes no judgement of its own.
@@ -75,8 +78,17 @@
     suggestedNumber: number;
     /** The remembered places stock has been bought from. */
     suppliers?: readonly string[];
+    /** The remembered containers packs go into. */
+    containers?: readonly string[];
   }
-  let { open = $bindable(), item, freezers, suggestedNumber, suppliers = [] }: Props = $props();
+  let {
+    open = $bindable(),
+    item,
+    freezers,
+    suggestedNumber,
+    suppliers = [],
+    containers = [],
+  }: Props = $props();
 
   let numberDraft = $state('');
   let name = $state('');
@@ -86,6 +98,7 @@
   let weight = $state('');
   let weightUnit = $state<PackWeight['unit']>('g');
   let purchasedFrom = $state('');
+  let container = $state('');
   let notes = $state('');
   let canonId = $state<string | null>(null);
   let recipeId = $state<string | null>(null);
@@ -95,6 +108,7 @@
   // (as `RecipeKitPanel` does) — otherwise an edit would open with them blank.
   let descriptionSeed = $state('');
   let supplierSeed = $state('');
+  let containerSeed = $state('');
   let descriptionEl = $state<HTMLDivElement | undefined>(undefined);
 
   // A fresh form each time the sheet opens, from whatever it was opened on.
@@ -109,6 +123,7 @@
         weight = item.packWeight ? String(item.packWeight.amount) : '';
         weightUnit = item.packWeight?.unit ?? 'g';
         purchasedFrom = item.purchasedFrom ?? '';
+        container = item.container ?? '';
         notes = item.notes ?? '';
         canonId = item.canonId;
         recipeId = item.recipeId;
@@ -121,6 +136,7 @@
               ? canonValue(linkedCanon.id)
               : item.name;
         supplierSeed = purchasedFrom;
+        containerSeed = container;
         // An item under Not placed opens with nothing picked: leaving it so keeps
         // it where it is, picking a place files it. That is any item whose stored
         // place no longer fits: its freezer removed, or its shelf gone from it.
@@ -137,11 +153,13 @@
         weight = '';
         weightUnit = 'g';
         purchasedFrom = '';
+        container = '';
         notes = '';
         canonId = null;
         recipeId = null;
         descriptionSeed = '';
         supplierSeed = '';
+        containerSeed = '';
         freezerId = freezers[0]?.id ?? null;
         shelf = freezers[0]?.shelves[0] ?? null;
       }
@@ -252,6 +270,16 @@
     return seeded.map((p) => ({ value: p, label: p }));
   });
 
+  // The remembered containers the same way.
+  const containerOptions = $derived.by(() => {
+    const kinds = containerSuggestions({ containers: [...containers] }, '');
+    const seeded =
+      containerSeed.trim() === '' || kinds.some((k) => sameWords(k, containerSeed))
+        ? kinds
+        : [containerSeed, ...kinds];
+    return seeded.map((k) => ({ value: k, label: k }));
+  });
+
   function pickFreezer(freezer: Freezer): void {
     if (freezer.id === freezerId) return;
     freezerId = freezer.id;
@@ -312,6 +340,7 @@
           purchasedFrom,
           packWeight: { amount: numberIn(weight), unit: weightUnit },
           notes,
+          container,
           place: freezerId === null ? null : { freezerId, shelf },
           ...(recount ? { amount: numberIn(packs) } : {}),
           canonId,
@@ -330,6 +359,7 @@
         packWeight: { amount: numberIn(weight), unit: weightUnit },
         purchasedFrom,
         notes,
+        container,
         canonId,
         recipeId,
       }),
@@ -477,6 +507,39 @@
             </Chip>
           {/each}
         </ChipGroup>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span id="freezer-item-container-label" class="text-sm font-medium"
+          >Container (optional)</span
+        >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div oninput={(e) => (container = (e.target as HTMLInputElement).value)}>
+          <Combobox
+            items={containerOptions}
+            value={containerSeed}
+            allowCustom={true}
+            placeholder="e.g. Deli pot"
+            onValueChange={(kind) => (container = kind)}
+          >
+            <ComboboxField class="w-full">
+              <ComboboxInput
+                aria-labelledby="freezer-item-container-label"
+                data-testid="freezer-item-container"
+              />
+            </ComboboxField>
+            <ComboboxContent>
+              {#snippet children({ filteredItems, showCreate })}
+                {#each filteredItems as option, i (option.value)}
+                  <ComboboxItem item={option} index={i} />
+                {/each}
+                {#if showCreate}
+                  <ComboboxCreate />
+                {/if}
+              {/snippet}
+            </ComboboxContent>
+          </Combobox>
+        </div>
       </div>
 
       <div class="flex flex-col gap-1.5">

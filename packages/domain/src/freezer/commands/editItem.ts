@@ -14,6 +14,8 @@ export interface EditFreezerItemInput {
   readonly packWeight: PackWeight | null;
   /** The notes, blank or `null` for none; left as they are when omitted. */
   readonly notes?: string | null | undefined;
+  /** What the packs are in, blank or `null` for none; left as it is when omitted. */
+  readonly container?: string | null | undefined;
   /** The ingredient it is, or `null` for none; left as it is when omitted. */
   readonly canonId?: string | null | undefined;
   /** The recipe it was made from, or `null` for none; left as it is when omitted. */
@@ -22,7 +24,7 @@ export interface EditFreezerItemInput {
 }
 
 /**
- * Rename an item, change where it was bought, its pack size, its notes, or what it
+ * Rename an item, change where it was bought, its pack size, its container, its notes, or what it
  * links to. Its number, place and count are left alone — the number is written
  * on the bag, a move is `moveFreezerItem` and a recount `setFreezerItemAmount`.
  */
@@ -41,6 +43,8 @@ export function editFreezerItem(
       purchasedFrom: cleanOptionalText(input.purchasedFrom),
       packWeight: packWeight.value,
       notes: input.notes === undefined ? item.notes : cleanOptionalText(input.notes),
+      container:
+        input.container === undefined ? item.container : cleanOptionalText(input.container),
       canonId: input.canonId === undefined ? item.canonId : input.canonId,
       recipeId: input.recipeId === undefined ? item.recipeId : input.recipeId,
     });

@@ -202,6 +202,12 @@ carries the same limit.
 blank is `null`). A document written before it has no field and reads `null`
 (`.nullable().default(null)`). An edit that omits it leaves it as it is.
 
+**`container`** is what the packs are in — "Deli pot", "Vacuum bag" — `null`
+when none was given, so a bag can be looked for by its shape before its number
+is read. Optional, spelt and remembered against `freezerConfig.containers`
+exactly as `purchasedFrom` is against `suppliers`. A document written before it
+has no field and reads `null`; an edit that omits it leaves it.
+
 **Writes.** Adding, editing, moving and correcting the count are a
 whole-document `setDoc`, and removing is a `deleteDoc` —
 ordinary per-document LWW, so an edit saved from a copy that had not yet seen
@@ -231,6 +237,14 @@ append — a Manage-freezers edit, or remembering a different place at the same
 time. Only the suggestion is lost (the item keeps its `purchasedFrom`), and
 typing the place again puts it back; nothing claims the list is complete. The
 reverse direction, which is worse, is under `freezerConfig.highestNumber`.
+
+**`freezerConfig.containers`.** The kinds of pack stock goes into, kept and
+offered the same way as `suppliers`, with the same LWW limit. One difference: a
+config written before the field existed reads as `DEFAULT_FREEZER_CONTAINERS`
+(Bag, Box, Deli pot, Vacuum bag) rather than `[]`, and `emptyFreezerConfig`
+starts there too, so the first add has something to pick. The default applies
+only to an ABSENT field — a list emptied in Manage freezers is stored as `[]`
+and stays empty.
 
 **`freezerConfig.highestNumber`.** The highest bag number an add has used,
 suggested or typed (issue #1693), so a removed bag's number is not offered again:

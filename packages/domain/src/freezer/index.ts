@@ -40,11 +40,16 @@ export { takeFreezerPacks } from './commands/takeAmount.js';
 export type { TakeFreezerPacksInput, TakenPacks } from './commands/takeAmount.js';
 export { setFreezerItemAmount } from './commands/setAmount.js';
 export type { SetFreezerItemAmountInput } from './commands/setAmount.js';
-export { rememberSupplier } from './commands/rememberSupplier.js';
-export { forgetSupplier } from './commands/forgetSupplier.js';
-export type { ForgetSupplierInput } from './commands/forgetSupplier.js';
+export { rememberSupplier, rememberContainer } from './commands/rememberSupplier.js';
+export { forgetSupplier, forgetContainer } from './commands/forgetSupplier.js';
+export type { ForgetSupplierInput, ForgetContainerInput } from './commands/forgetSupplier.js';
 export { displayAmount } from './queries/displayAmount.js';
-export { supplierSuggestions, supplierSpelling } from './queries/supplierSuggestions.js';
+export {
+  supplierSuggestions,
+  supplierSpelling,
+  containerSuggestions,
+  containerSpelling,
+} from './queries/supplierSuggestions.js';
 
 // Using a pack from the freezer instead of buying it (issue #1685).
 export type { Defrost } from './entities/Defrost.js';

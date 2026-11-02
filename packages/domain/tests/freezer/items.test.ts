@@ -30,6 +30,7 @@ const CONFIG: FreezerConfig = {
   updatedAt: NOW,
   freezers: [GARAGE, CHEST],
   suppliers: [],
+  containers: [],
   highestNumber: 0,
 };
 
@@ -51,6 +52,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -210,6 +212,7 @@ describe('addFreezerItem', () => {
       purchasedFrom: 'Swaledale',
       packWeight: { amount: 500, unit: 'g' },
       notes: null,
+      container: null,
       addedAt: NOW,
       updatedAt: NOW,
     });
@@ -480,6 +483,7 @@ describe('itemsByShelf', () => {
       updatedAt: NOW,
       freezers: [],
       suppliers: [],
+      containers: [],
       highestNumber: 0,
     });
     expect(filed.notPlaced.map((i) => i.number)).toEqual([1]);

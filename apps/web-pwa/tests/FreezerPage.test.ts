@@ -33,6 +33,7 @@ const {
   mockTake,
   mockShelve,
   mockForget,
+  mockForgetContainer,
   mockCanon,
   mockRecipes,
   mockGate,
@@ -52,6 +53,7 @@ const {
     mockTake: vi.fn(),
     mockShelve: vi.fn(),
     mockForget: vi.fn(),
+    mockForgetContainer: vi.fn(),
     mockCanon: makeStore<readonly CanonItem[]>([]),
     mockRecipes: makeStore<readonly Recipe[]>([]),
     mockGate: makeStore<{ enabled: boolean; settled: boolean }>({
@@ -72,6 +74,7 @@ vi.mock('../src/lib/freezerService.js', () => ({
   takeOneFreezerPack: mockTake,
   shelveFreezerItem: mockShelve,
   forgetSupplier: mockForget,
+  forgetContainer: mockForgetContainer,
   addFreezer: mockAdd,
   renameFreezer: mockRename,
   setFreezerShelves: mockSetShelves,
@@ -104,6 +107,7 @@ function loaded(
   freezers: FreezerConfig['freezers'],
   suppliers: string[] = [],
   highestNumber = 0,
+  containers: string[] = [],
 ): FreezerConfigState {
   return {
     status: 'loaded',
@@ -112,6 +116,7 @@ function loaded(
       updatedAt: '2026-10-12T09:00:00.000Z',
       freezers,
       suppliers,
+      containers,
       highestNumber,
     },
   };
@@ -132,6 +137,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: '2026-10-12T09:00:00.000Z',
     updatedAt: '2026-10-12T09:00:00.000Z',
     ...over,
@@ -150,7 +156,14 @@ beforeEach(() => {
   mockGate.set({ enabled: true, settled: true });
   mockCanon.set([]);
   mockRecipes.set([]);
-  for (const fn of [mockAdd, mockRename, mockSetShelves, mockRemove, mockForget]) {
+  for (const fn of [
+    mockAdd,
+    mockRename,
+    mockSetShelves,
+    mockRemove,
+    mockForget,
+    mockForgetContainer,
+  ]) {
     fn.mockResolvedValue(OK);
   }
   for (const fn of [mockAddItem, mockUpdateItem, mockRemoveItem, mockShelve]) {
@@ -610,6 +623,9 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
     await fireEvent.input(within(sheet).getByTestId('freezer-item-supplier'), {
       target: { value: 'Swaledale' },
     });
+    await fireEvent.input(within(sheet).getByTestId('freezer-item-container'), {
+      target: { value: 'Deli pot' },
+    });
     await fireEvent.input(within(sheet).getByTestId('freezer-item-notes'), {
       target: { value: 'For Sunday' },
     });
@@ -625,6 +641,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         packWeight: { amount: 500, unit: 'g' },
         purchasedFrom: 'Swaledale',
         notes: 'For Sunday',
+        container: 'Deli pot',
         canonId: null,
         recipeId: null,
       }),
@@ -865,6 +882,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         shelf: 'B',
         purchasedFrom: 'Swaledale',
         packWeight: { amount: 750, unit: 'ml' },
+        container: 'Vacuum bag',
       }),
     ]);
     render(FreezerPage);
@@ -885,6 +903,9 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
       'aria-pressed',
       'true',
     );
+    expect((within(sheet).getByTestId('freezer-item-container') as HTMLInputElement).value).toBe(
+      'Vacuum bag',
+    );
 
     await fireEvent.click(within(sheet).getByRole('button', { name: 'D' }));
     await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
@@ -895,6 +916,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         purchasedFrom: 'Swaledale',
         packWeight: { amount: 750, unit: 'ml' },
         notes: '',
+        container: 'Vacuum bag',
         place: { freezerId: GARAGE.id, shelf: 'D' },
         canonId: null,
         recipeId: null,
@@ -921,6 +943,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         purchasedFrom: '',
         packWeight: { amount: Number.NaN, unit: 'g' },
         notes: '',
+        container: '',
         place: null,
         canonId: null,
         recipeId: null,
@@ -947,6 +970,7 @@ describe('freezer stock — the item sheet (issue #1684)', () => {
         purchasedFrom: '',
         packWeight: { amount: Number.NaN, unit: 'g' },
         notes: '',
+        container: '',
         place: null,
         canonId: null,
         recipeId: null,
@@ -1196,6 +1220,12 @@ describe('freezer stock — taking one out', () => {
       item(34, { name: 'Bun', amount: 5, packWeight: { amount: 1, unit: 'count' } }),
       item(35, { name: 'Stew', amount: 2, packWeight: { amount: 4, unit: 'servings' } }),
       item(36, { name: 'Pie', amount: 1, packWeight: { amount: 1, unit: 'servings' } }),
+      item(37, {
+        name: 'Chilli',
+        amount: 3,
+        packWeight: { amount: 2, unit: 'servings' },
+        container: 'Deli pot',
+      }),
       item(40, { name: 'Old bag', amount: 4, packWeight: null }),
       item(41, { name: 'Gone', amount: 0, packWeight: { amount: 500, unit: 'g' } }),
     ]);
@@ -1211,6 +1241,7 @@ describe('freezer stock — taking one out', () => {
       '#0034 Bun — 5 × 1 piece',
       '#0035 Stew — 2 × 4 servings',
       '#0036 Pie — 1 × 1 serving',
+      '#0037 Chilli — 3 × 2 servings · Deli pot',
       '#0040 Old bag — 4 packs',
       '#0041 Gone — none left',
     ]);
@@ -1683,5 +1714,53 @@ describe('freezer stock — the places bought from', () => {
     render(ManageFreezersSheet, { open: true, stock: [] });
     await screen.findByRole('dialog');
     expect(screen.queryByTestId('manage-suppliers')).not.toBeInTheDocument();
+  });
+});
+
+describe('freezer stock — the containers', () => {
+  it('offers the remembered containers, and a new one can be typed', async () => {
+    render(FreezerItemSheet, {
+      open: true,
+      item: null,
+      freezers: [GARAGE],
+      suggestedNumber: 1,
+      containers: ['Vacuum bag', 'Deli pot', 'Bag', 'Box'],
+    });
+    const sheet = await screen.findByRole('dialog');
+    const field = within(sheet).getByTestId('freezer-item-container') as HTMLInputElement;
+    const shown = () =>
+      within(sheet)
+        .queryAllByRole('option')
+        .map((o) => o.textContent?.trim());
+
+    await fireEvent.click(field);
+    await waitFor(() => expect(shown()).toEqual(['Bag', 'Box', 'Deli pot', 'Vacuum bag']));
+    await fireEvent.input(field, { target: { value: 'bag' } });
+    // "bag" is a remembered kind already, so it offers no create row.
+    await waitFor(() => expect(shown()).toEqual(['Bag', 'Vacuum bag']));
+    await fireEvent.click(within(sheet).getByRole('option', { name: 'Vacuum bag' }));
+    await waitFor(() => expect(field.value).toBe('Vacuum bag'));
+
+    await fireEvent.input(field, { target: { value: 'Tub' } });
+    await fireEvent.click(within(sheet).getByTestId('freezer-item-save'));
+    await waitFor(() =>
+      expect(mockAddItem).toHaveBeenCalledWith(expect.objectContaining({ container: 'Tub' })),
+    );
+  });
+
+  it('lists the containers in Manage freezers, and forgets one', async () => {
+    mockState.set(loaded([GARAGE], [], 0, ['Deli pot', 'Box']));
+    render(FreezerPage);
+    const sheet = await openSheet('freezer-manage');
+
+    const kinds = within(sheet).getByTestId('manage-containers');
+    expect(
+      within(kinds)
+        .getAllByTestId('manage-container')
+        .map((k) => k.textContent?.trim()),
+    ).toEqual(['Deli pot', 'Box']);
+    await fireEvent.click(within(kinds).getByRole('button', { name: 'Forget Box' }));
+
+    await waitFor(() => expect(mockForgetContainer).toHaveBeenCalledWith('Box'));
   });
 });

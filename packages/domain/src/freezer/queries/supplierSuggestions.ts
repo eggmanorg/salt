@@ -1,5 +1,5 @@
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
-import { supplierKey } from '../commands/supplierRules.js';
+import { matchingIn, spellingIn } from '../commands/supplierRules.js';
 
 /**
  * The remembered places whose name contains what has been typed, compared
@@ -9,10 +9,15 @@ export function supplierSuggestions(
   config: Pick<FreezerConfig, 'suppliers'>,
   typed: string,
 ): string[] {
-  const q = supplierKey(typed);
-  return [...config.suppliers]
-    .filter((s) => supplierKey(s).includes(q))
-    .sort((a, b) => a.localeCompare(b));
+  return matchingIn(config.suppliers, typed);
+}
+
+/** The same over the remembered containers. */
+export function containerSuggestions(
+  config: Pick<FreezerConfig, 'containers'>,
+  typed: string,
+): string[] {
+  return matchingIn(config.containers, typed);
 }
 
 /**
@@ -21,8 +26,10 @@ export function supplierSuggestions(
  * when blank.
  */
 export function supplierSpelling(config: FreezerConfig, typed: string | null): string | null {
-  const place = typed?.trim() ?? '';
-  if (!place) return null;
-  const key = supplierKey(place);
-  return config.suppliers.find((s) => supplierKey(s) === key) ?? place;
+  return spellingIn(config.suppliers, typed);
+}
+
+/** The same for a typed container ("deli POT" → "Deli pot"). */
+export function containerSpelling(config: FreezerConfig, typed: string | null): string | null {
+  return spellingIn(config.containers, typed);
 }
