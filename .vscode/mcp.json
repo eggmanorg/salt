@@ -1,16 +1,5 @@
 {
 	"servers": {
-		"github": {
-			"type": "stdio",
-			"command": "npx",
-			"args": [
-				"-y",
-				"@modelcontextprotocol/server-github"
-			],
-			"env": {
-				"GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_PERSONAL_ACCESS_TOKEN}"
-			}
-		},
 		"appmap": {
 			"type": "stdio",
 			"command": "${userHome}/.appmap/bin/appmap",
@@ -18,6 +7,18 @@
 				"query",
 				"mcp"
 			]
-		}
+    },
+    "appmap-gold-traces": {
+      "type": "stdio",
+      "command": "${userHome}/.appmap/bin/appmap",
+      "args": [
+        "query",
+        "mcp",
+        "--appmap-dir",
+        "gold_traces/baseline/appmaps",
+        "--query-db",
+        "tmp/gold_traces_query.db"
+      ]
+    }
 	}
 }
