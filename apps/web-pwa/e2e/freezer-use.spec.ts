@@ -81,6 +81,7 @@ async function seedHousehold(): Promise<string> {
       purchasedFrom: null,
       packWeight: { amount: grams, unit: 'g' },
       notes: null,
+      container: null,
       addedAt: NOW,
       updatedAt: NOW,
     });

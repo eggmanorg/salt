@@ -42,6 +42,7 @@ export async function saveFreezerConfig(
       updatedAt: new Date().toISOString(),
       freezers: [...config.freezers],
       suppliers: [...config.suppliers],
+      containers: [...config.containers],
       highestNumber: config.highestNumber,
     });
     return success(undefined);

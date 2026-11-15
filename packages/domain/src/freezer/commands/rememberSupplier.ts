@@ -1,7 +1,7 @@
 import { success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
-import { supplierKey } from './supplierRules.js';
+import { rememberIn } from './supplierRules.js';
 
 /**
  * Add the place an item was bought from to the remembered list. Returns the
@@ -14,8 +14,16 @@ export function rememberSupplier(
   purchasedFrom: string | null,
   now: string,
 ): ReadResult<FreezerConfig, DomainError> {
-  const place = purchasedFrom?.trim() ?? '';
-  const key = supplierKey(place);
-  if (!place || config.suppliers.some((s) => supplierKey(s) === key)) return success(config);
-  return success({ ...config, updatedAt: now, suppliers: [...config.suppliers, place] });
+  const suppliers = rememberIn(config.suppliers, purchasedFrom);
+  return success(suppliers === null ? config : { ...config, updatedAt: now, suppliers });
+}
+
+/** The same for what an item's packs are in, on the remembered containers. */
+export function rememberContainer(
+  config: FreezerConfig,
+  container: string | null,
+  now: string,
+): ReadResult<FreezerConfig, DomainError> {
+  const containers = rememberIn(config.containers, container);
+  return success(containers === null ? config : { ...config, updatedAt: now, containers });
 }

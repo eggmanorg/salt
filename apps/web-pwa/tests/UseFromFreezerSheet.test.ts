@@ -20,6 +20,7 @@ function bagOf(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: { amount: 500, unit: 'g' },
     notes: null,
+    container: null,
     addedAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
     ...over,
@@ -79,6 +80,7 @@ describe('UseFromFreezerSheet', () => {
       purchasedFrom: null,
       packWeight: null,
       notes: null,
+      container: null,
       addedAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z',
     };
@@ -108,6 +110,15 @@ describe('UseFromFreezerSheet', () => {
 
     await fireEvent.click(view.getByTestId('use-from-freezer-confirm'));
     expect(onConfirm).toHaveBeenCalledWith({ number: 47, count: 2 });
+  });
+});
+
+describe('UseFromFreezerSheet — what the packs are in', () => {
+  it('names the container after the packs, so the bag can be found by its shape', async () => {
+    const { view } = sheetFor([bagOf(12, { container: 'Vacuum bag' })], {});
+    expect((await view.findByTestId('use-from-freezer-entry')).textContent).toContain(
+      '4 × 500 g · Vacuum bag',
+    );
   });
 });
 

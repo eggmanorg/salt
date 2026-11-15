@@ -6,6 +6,13 @@ import type { FreezerItem, PackWeight } from '../entities/FreezerItem.js';
 // The rules the item commands share (issue #1684). Internal to the module, like
 // `freezerRules.ts` beside it.
 
+const PACK_UNITS: ReadonlySet<string> = new Set<PackWeight['unit']>([
+  'g',
+  'ml',
+  'count',
+  'servings',
+]);
+
 /** An item name, trimmed, or the refusal for a blank one. */
 export function checkItemName(rawName: string): ReadResult<string, DomainError> {
   const name = rawName.trim();
@@ -23,8 +30,8 @@ export function cleanOptionalText(raw: string | null | undefined): string | null
 
 /**
  * A pack size, or the refusal: the amount a finite number above zero — a whole
- * one for a count — and the unit g, ml or count. Missing is refused too — every
- * add and edit carries one (#1712).
+ * one for a count or servings — and the unit g, ml, count or servings. Missing is
+ * refused too — every add and edit carries one (#1712).
  */
 export function checkPackWeight(
   raw: PackWeight | null | undefined,
@@ -33,8 +40,8 @@ export function checkPackWeight(
     !raw ||
     !Number.isFinite(raw.amount) ||
     raw.amount <= 0 ||
-    (raw.unit !== 'g' && raw.unit !== 'ml' && raw.unit !== 'count') ||
-    (raw.unit === 'count' && !Number.isInteger(raw.amount))
+    !PACK_UNITS.has(raw.unit) ||
+    ((raw.unit === 'count' || raw.unit === 'servings') && !Number.isInteger(raw.amount))
   ) {
     return failure({ kind: 'ValidationError', code: ErrorCode.INVALID_FREEZER_PACK_WEIGHT });
   }

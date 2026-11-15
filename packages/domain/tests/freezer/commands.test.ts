@@ -23,7 +23,14 @@ function makeIds(): FreezerIdGenerator {
 }
 
 function configWith(freezers: FreezerConfig['freezers']): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: NOW, freezers, suppliers: [], highestNumber: 0 };
+  return {
+    schemaVersion: 1,
+    updatedAt: NOW,
+    freezers,
+    suppliers: [],
+    containers: [],
+    highestNumber: 0,
+  };
 }
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B', 'C', 'D'] };
@@ -42,13 +49,14 @@ function validationCode(r: { kind: string; error?: unknown }): unknown {
 }
 
 describe('emptyFreezerConfig', () => {
-  it('is a config with no freezers, stamped with the time it was made, that the read schema accepts', () => {
+  it('is a config with no freezers, stamped with the time it was made, offering the starting containers, that the read schema accepts', () => {
     const config = emptyFreezerConfig(NOW);
     expect(config).toEqual({
       schemaVersion: 1,
       updatedAt: NOW,
       freezers: [],
       suppliers: [],
+      containers: ['Bag', 'Box', 'Deli pot', 'Vacuum bag'],
       highestNumber: 0,
     });
     expect(FreezerConfigSchema.safeParse(config).success).toBe(true);

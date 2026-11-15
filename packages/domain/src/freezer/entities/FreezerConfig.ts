@@ -1,4 +1,8 @@
-import type { FreezerConfigDoc, FreezerDoc } from '../../schemas/freezerConfig.js';
+import {
+  DEFAULT_FREEZER_CONTAINERS,
+  type FreezerConfigDoc,
+  type FreezerDoc,
+} from '../../schemas/freezerConfig.js';
 
 // Wire shape of the freezerConfig/current Firestore document (issue #1682).
 // `updatedAt` is stamped by each command from the `now` it is given, and again
@@ -13,5 +17,12 @@ export type Freezer = FreezerDoc;
  * real setup with an empty one.
  */
 export function emptyFreezerConfig(now: string): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: now, freezers: [], suppliers: [], highestNumber: 0 };
+  return {
+    schemaVersion: 1,
+    updatedAt: now,
+    freezers: [],
+    suppliers: [],
+    containers: [...DEFAULT_FREEZER_CONTAINERS],
+    highestNumber: 0,
+  };
 }

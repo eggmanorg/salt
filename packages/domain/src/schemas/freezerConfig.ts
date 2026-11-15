@@ -28,6 +28,12 @@ export const FREEZER_CONFIG_DOC_ID = 'current';
 // back (docs/data-model.md → `freezerItems/{number}`). A document written before
 // the field existed reads as `[]`.
 //
+// `containers` are the kinds of pack stock goes into — deli pot, box, bag — kept
+// and offered the same way as `suppliers`, so a bag can be looked for by its shape
+// before anyone reads its number. A document written before the field existed reads
+// as `DEFAULT_FREEZER_CONTAINERS`, so the list starts with something to pick; once
+// the document is saved the list is stored, and one emptied by hand stays empty.
+//
 // `highestNumber` (issue #1693) is the highest bag number an add has used,
 // suggested or typed, so `nextBagNumber` counts on past a bag that was removed
 // instead of offering its number again. No command but `recordBagNumber` changes
@@ -39,10 +45,17 @@ export const FREEZER_CONFIG_DOC_ID = 'current';
 // removed inside that window can be. A document written before the field existed
 // reads as `0`.
 //
-// The reverse direction holds for both: saving an item that remembers a new place,
-// and adding one above the mark — every add at the suggested number — writes this
-// whole document, so a device with a stale copy reverts another device's freezer
+// The reverse direction holds for all three: saving an item that remembers a new
+// place or container, and adding one above the mark — every add at the suggested
+// number — writes this whole document, so a device with a stale copy reverts another device's freezer
 // or shelf change (docs/data-model.md → `freezerConfig.highestNumber`).
+export const DEFAULT_FREEZER_CONTAINERS: readonly string[] = [
+  'Bag',
+  'Box',
+  'Deli pot',
+  'Vacuum bag',
+];
+
 export const FreezerSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -54,6 +67,7 @@ export const FreezerConfigSchema = z.object({
   updatedAt: z.string(),
   freezers: z.array(FreezerSchema).default([]),
   suppliers: z.array(z.string()).default([]),
+  containers: z.array(z.string()).default(() => [...DEFAULT_FREEZER_CONTAINERS]),
   highestNumber: z.number().int().nonnegative().default(0),
 });
 

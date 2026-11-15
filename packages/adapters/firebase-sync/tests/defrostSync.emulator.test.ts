@@ -39,6 +39,7 @@ function item(amount: number): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: NOW,
     updatedAt: NOW,
   };

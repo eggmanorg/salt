@@ -14,10 +14,13 @@ import {
   addFreezer as addFreezerCommand,
   addFreezerItem as addFreezerItemCommand,
   editFreezerItem,
+  containerSpelling,
   emptyFreezerConfig,
+  forgetContainer as forgetContainerCommand,
   forgetSupplier as forgetSupplierCommand,
   moveFreezerItem,
   recordBagNumber,
+  rememberContainer,
   rememberSupplier,
   removeFreezer as removeFreezerCommand,
   removeFreezerItem as removeFreezerItemCommand,
@@ -187,6 +190,13 @@ export function forgetSupplier(supplier: string): Promise<ReadResult<FreezerConf
   return run((config, now) => forgetSupplierCommand(config, { supplier, now }));
 }
 
+/** Take a container off the remembered list. No item changes. */
+export function forgetContainer(
+  container: string,
+): Promise<ReadResult<FreezerConfig, DomainError>> {
+  return run((config, now) => forgetContainerCommand(config, { container, now }));
+}
+
 // ─── Item writes (issue #1684) ───────────────────────────────────────────────
 
 const NOT_READY: ReadResult<never, DomainError> = failure({
@@ -228,10 +238,17 @@ function showItem(items: readonly FreezerItem[], item: FreezerItem): void {
   });
 }
 
-// A saved item's supplier goes on the remembered list — the same config back when
-// the list already had it, so nothing is written.
-function remember(config: FreezerConfig, purchasedFrom: string | null, now: string): FreezerConfig {
-  const result = rememberSupplier(config, purchasedFrom, now);
+// A saved item's supplier and container go on the remembered lists — the same
+// config back when the lists already had them, so nothing is written.
+function remember(config: FreezerConfig, item: FreezerItem, now: string): FreezerConfig {
+  const supplied = orUnchanged(rememberSupplier(config, item.purchasedFrom, now), config);
+  return orUnchanged(rememberContainer(supplied, item.container, now), supplied);
+}
+
+function orUnchanged(
+  result: ReadResult<FreezerConfig, DomainError>,
+  config: FreezerConfig,
+): FreezerConfig {
   return result.kind === 'ok' ? result.value : config;
 }
 
@@ -240,7 +257,7 @@ function remember(config: FreezerConfig, purchasedFrom: string | null, now: stri
  * the items this device holds; an add on another device it has not yet seen is
  * invisible to the check (docs/data-model.md → `freezerItems/{number}`).
  *
- * The add's two config changes — a new supplier, and the number moving the
+ * The add's config changes — a new supplier or container, and the number moving the
  * `highestNumber` mark up — are composed onto ONE config value and saved once:
  * two background saves built from the same starting copy would each drop the
  * other's change.
@@ -254,15 +271,12 @@ export async function addFreezerItem(
   const result = addFreezerItemCommand(ready.items, ready.config, {
     ...input,
     purchasedFrom: supplierSpelling(ready.config, input.purchasedFrom ?? null),
+    container: containerSpelling(ready.config, input.container ?? null),
     now,
   });
   if (result.kind !== 'ok') return result;
   const item = result.value;
-  saveItem(
-    ready,
-    item,
-    recordBagNumber(remember(ready.config, item.purchasedFrom, now), item.number, now),
-  );
+  saveItem(ready, item, recordBagNumber(remember(ready.config, item, now), item.number, now));
   return result;
 }
 
@@ -273,6 +287,8 @@ export interface FreezerItemChanges {
   readonly packWeight: PackWeight | null;
   /** The notes, blank for none; omitted leaves them. */
   readonly notes?: string | null;
+  /** What the packs are in, blank for none; omitted leaves it. */
+  readonly container?: string | null;
   /**
    * Where it should be, or `null` to leave its place alone — which is how an item
    * under Not placed can be renamed without being filed somewhere first.
@@ -306,6 +322,10 @@ export async function updateFreezerItem(
     purchasedFrom: supplierSpelling(ready.config, changes.purchasedFrom),
     packWeight: changes.packWeight,
     notes: changes.notes,
+    container:
+      changes.container === undefined
+        ? undefined
+        : containerSpelling(ready.config, changes.container),
     canonId: changes.canonId,
     recipeId: changes.recipeId,
     now,
@@ -324,7 +344,7 @@ export async function updateFreezerItem(
       ? moved
       : setFreezerItemAmount([moved.value], { number, amount: changes.amount, now });
   if (result.kind !== 'ok') return result;
-  saveItem(ready, result.value, remember(ready.config, result.value.purchasedFrom, now));
+  saveItem(ready, result.value, remember(ready.config, result.value, now));
   return result;
 }
 

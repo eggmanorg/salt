@@ -506,6 +506,7 @@ const FREEZER_CONFIG = {
   updatedAt: '2020-01-01T00:00:00.000Z',
   freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
   suppliers: ['Swaledale'],
+  containers: [],
   highestNumber: 47,
 };
 // Written exactly as given: `saveFreezerItem` stamps nothing (issue #1684).
@@ -521,6 +522,7 @@ const FREEZER_ITEM = {
   purchasedFrom: 'Swaledale',
   packWeight: { amount: 500, unit: 'g' as const },
   notes: null,
+  container: null,
   addedAt: NOW,
   updatedAt: NOW,
 };
@@ -700,6 +702,7 @@ const writerCases: WriterCase[] = [
           updatedAt: NOW,
           freezers: [{ id: 'fz-1', name: 'Garage', shelves: ['A', 'B'] }],
           suppliers: ['Swaledale'],
+          containers: [],
           highestNumber: 47,
         },
       },

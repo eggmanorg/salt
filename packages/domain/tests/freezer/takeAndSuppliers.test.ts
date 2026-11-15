@@ -4,8 +4,12 @@ import {
   addFreezerItem,
   displayAmount,
   editFreezerItem,
+  containerSpelling,
+  containerSuggestions,
   emptyFreezerConfig,
+  forgetContainer,
   forgetSupplier,
+  rememberContainer,
   rememberSupplier,
   setFreezerItemAmount,
   supplierSpelling,
@@ -24,8 +28,15 @@ const WEIGHT = { amount: 500, unit: 'g' } as const;
 
 const GARAGE = { id: 'fz-garage', name: 'Garage', shelves: ['A', 'B'] };
 
-function config(suppliers: string[] = []): FreezerConfig {
-  return { schemaVersion: 1, updatedAt: NOW, freezers: [GARAGE], suppliers, highestNumber: 0 };
+function config(suppliers: string[] = [], containers: string[] = []): FreezerConfig {
+  return {
+    schemaVersion: 1,
+    updatedAt: NOW,
+    freezers: [GARAGE],
+    suppliers,
+    containers,
+    highestNumber: 0,
+  };
 }
 
 function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
@@ -41,6 +52,7 @@ function item(number: number, over: Partial<FreezerItem> = {}): FreezerItem {
     purchasedFrom: null,
     packWeight: null,
     notes: null,
+    container: null,
     addedAt: NOW,
     updatedAt: NOW,
     ...over,
@@ -277,5 +289,80 @@ describe('supplierSpelling', () => {
     expect(supplierSpelling(list, ' Booths ')).toBe('Booths');
     expect(supplierSpelling(list, '  ')).toBeNull();
     expect(supplierSpelling(list, null)).toBeNull();
+  });
+});
+
+describe('the container', () => {
+  const input = {
+    number: 1,
+    name: 'Stew',
+    freezerId: GARAGE.id,
+    shelf: 'A',
+    amount: 2,
+    packWeight: WEIGHT,
+    now: NOW,
+  };
+
+  it('is saved on add, trimmed, and blank or absent is none', () => {
+    expect(ok(addFreezerItem([], config(), { ...input, container: ' Deli pot ' })).container).toBe(
+      'Deli pot',
+    );
+    expect(ok(addFreezerItem([], config(), { ...input, container: '  ' })).container).toBeNull();
+    expect(ok(addFreezerItem([], config(), input)).container).toBeNull();
+  });
+
+  it('changes on edit when given, and is left alone when omitted', () => {
+    const before = item(47, { container: 'Box' });
+    const edit = { number: 47, name: 'Stew', purchasedFrom: null, packWeight: WEIGHT, now: LATER };
+    expect(ok(editFreezerItem([before], edit)).container).toBe('Box');
+    expect(ok(editFreezerItem([before], { ...edit, container: 'Bag' })).container).toBe('Bag');
+    expect(ok(editFreezerItem([before], { ...edit, container: '' })).container).toBeNull();
+  });
+});
+
+describe('the remembered containers', () => {
+  it('start with the four kinds, on an empty config and on a document written before the list', () => {
+    const kinds = ['Bag', 'Box', 'Deli pot', 'Vacuum bag'];
+    expect(emptyFreezerConfig(NOW).containers).toEqual(kinds);
+    const parsed = FreezerConfigSchema.parse({ schemaVersion: 1, updatedAt: NOW, freezers: [] });
+    expect(parsed.containers).toEqual(kinds);
+  });
+
+  it('keep a list emptied by hand empty', () => {
+    const parsed = FreezerConfigSchema.parse({
+      schemaVersion: 1,
+      updatedAt: NOW,
+      freezers: [],
+      containers: [],
+    });
+    expect(parsed.containers).toEqual([]);
+  });
+
+  it('remember a new kind, trimmed, and hand back the same config for one they have or a blank', () => {
+    expect(ok(rememberContainer(config([], ['Box']), ' Tub ', LATER))).toEqual({
+      ...config([], ['Box', 'Tub']),
+      updatedAt: LATER,
+    });
+    const before = config([], ['Deli pot']);
+    for (const typed of ['deli POT', ' ', null]) {
+      expect(ok(rememberContainer(before, typed, LATER))).toBe(before);
+    }
+  });
+
+  it('forget a kind matched in any case, leaving the suppliers alone', () => {
+    expect(
+      ok(forgetContainer(config(['Booths'], ['Box', 'Bag']), { container: 'box', now: LATER })),
+    ).toEqual({ ...config(['Booths'], ['Bag']), updatedAt: LATER });
+    const before = config([], ['Bag']);
+    expect(ok(forgetContainer(before, { container: 'Box', now: LATER }))).toBe(before);
+  });
+
+  it('are offered alphabetically, narrowed by what is typed, and saved in their remembered spelling', () => {
+    const list = config([], ['Vacuum bag', 'Box', 'Bag']);
+    expect(containerSuggestions(list, '')).toEqual(['Bag', 'Box', 'Vacuum bag']);
+    expect(containerSuggestions(list, 'BAG')).toEqual(['Bag', 'Vacuum bag']);
+    expect(containerSpelling(list, ' vacuum BAG ')).toBe('Vacuum bag');
+    expect(containerSpelling(list, ' Tub ')).toBe('Tub');
+    expect(containerSpelling(list, '')).toBeNull();
   });
 });

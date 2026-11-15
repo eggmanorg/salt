@@ -1,7 +1,7 @@
 import { success } from '@salt/shared-types';
 import type { DomainError, ReadResult } from '@salt/shared-types';
 import type { FreezerConfig } from '../entities/FreezerConfig.js';
-import { supplierKey } from './supplierRules.js';
+import { forgetIn } from './supplierRules.js';
 
 export interface ForgetSupplierInput {
   readonly supplier: string;
@@ -17,8 +17,20 @@ export function forgetSupplier(
   config: FreezerConfig,
   input: ForgetSupplierInput,
 ): ReadResult<FreezerConfig, DomainError> {
-  const key = supplierKey(input.supplier);
-  const suppliers = config.suppliers.filter((s) => supplierKey(s) !== key);
-  if (suppliers.length === config.suppliers.length) return success(config);
-  return success({ ...config, updatedAt: input.now, suppliers });
+  const suppliers = forgetIn(config.suppliers, input.supplier);
+  return success(suppliers === null ? config : { ...config, updatedAt: input.now, suppliers });
+}
+
+export interface ForgetContainerInput {
+  readonly container: string;
+  readonly now: string;
+}
+
+/** The same for a remembered container: no item changes, and typing it again brings it back. */
+export function forgetContainer(
+  config: FreezerConfig,
+  input: ForgetContainerInput,
+): ReadResult<FreezerConfig, DomainError> {
+  const containers = forgetIn(config.containers, input.container);
+  return success(containers === null ? config : { ...config, updatedAt: input.now, containers });
 }

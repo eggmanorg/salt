@@ -14,6 +14,7 @@
   import { ErrorCode, type DomainError, type ReadResult } from '@salt/shared-types';
   import {
     addFreezer,
+    forgetContainer,
     forgetSupplier,
     removeFreezer,
     renameFreezer,
@@ -38,7 +39,8 @@
    *
    * Below the freezers, the remembered places stock has been bought from, each
    * with a remove button for a mistyped one (issue #1684). Removing one changes
-   * no item, and typing the place again remembers it again.
+   * no item, and typing the place again remembers it again. The remembered
+   * containers are listed and forgotten the same way.
    */
 
   interface Props {
@@ -51,8 +53,10 @@
     stock: readonly FreezerStock[];
     /** The remembered places stock has been bought from. */
     suppliers?: readonly string[];
+    /** The remembered containers packs go into. */
+    containers?: readonly string[];
   }
-  let { open = $bindable(), stock, suppliers = [] }: Props = $props();
+  let { open = $bindable(), stock, suppliers = [], containers = [] }: Props = $props();
 
   function itemCount(n: number): string {
     return `${n} ${n === 1 ? 'item' : 'items'}`;
@@ -137,6 +141,10 @@
 
   async function handleForgetSupplier(supplier: string): Promise<void> {
     await forgetSupplier(supplier);
+  }
+
+  async function handleForgetContainer(container: string): Promise<void> {
+    await forgetContainer(container);
   }
 
   function renamePending(freezer: Freezer): boolean {
@@ -273,6 +281,33 @@
                   ariaLabel={`Forget ${supplier}`}
                   onclick={() => void handleForgetSupplier(supplier)}
                   data-testid="manage-supplier-remove"
+                >
+                  <Icon name="X" size={14} />
+                </Button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      {#if containers.length > 0}
+        <section class="flex flex-col gap-2" data-testid="manage-containers">
+          <h3 class="text-sm font-medium">Containers</h3>
+          <ul class="flex flex-wrap gap-2" aria-label="Containers">
+            {#each containers as container (container)}
+              <li
+                class="flex items-center gap-1 rounded border border-border py-0.5 pl-2"
+                data-testid="manage-container"
+              >
+                <span class="text-sm">{container}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  class="salt-focus-ring-inset"
+                  ariaLabel={`Forget ${container}`}
+                  onclick={() => void handleForgetContainer(container)}
+                  data-testid="manage-container-remove"
                 >
                   <Icon name="X" size={14} />
                 </Button>
