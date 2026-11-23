@@ -505,8 +505,9 @@
                when, and inventing one from `updatedAt` would be a later write's
                timestamp dressed up as the moment the cook gave up. -->
             · abandoned{#if run.abandonedAt !== null}
-              <span data-testid="batch-detail-abandoned-at">{formatWhen(run.abandonedAt)}</span
-              >{/if}{/if}
+              <span data-testid="batch-detail-abandoned-at">
+                {formatWhen(run.abandonedAt)}
+              </span>{/if}{/if}
         </p>
 
         <!-- ─── The invitation ────────────────────────────────────────────────────

@@ -455,9 +455,9 @@
 {#if item === null}
   <div class="p-4 sm:p-6">
     <p class="text-sm text-muted-foreground">Equipment item not found.</p>
-    <Button variant="outline" class="mt-4" onclick={() => push('/equipment')}
-      >Back to kitchen</Button
-    >
+    <Button variant="outline" class="mt-4" onclick={() => push('/equipment')}>
+      Back to kitchen
+    </Button>
   </div>
 {:else}
   <DetailPage

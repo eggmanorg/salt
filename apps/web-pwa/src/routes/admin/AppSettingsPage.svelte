@@ -457,9 +457,9 @@
                     <p class="text-sm font-medium">{FLOW_LABELS[flowId]}</p>
                     <p class="mt-1 text-sm" data-testid="app-settings-flow-effective-{flowId}">
                       Effective model:
-                      <code class="rounded bg-muted px-1 py-0.5 text-xs"
-                        >{$effectiveFlowModels[flowId]}</code
-                      >
+                      <code class="rounded bg-muted px-1 py-0.5 text-xs">
+                        {$effectiveFlowModels[flowId]}
+                      </code>
                       {#if flowHasOverride[flowId]}
                         <span class="text-muted-foreground">(override)</span>
                       {:else}

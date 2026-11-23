@@ -564,9 +564,9 @@
     >
       {#snippet actions()}
         <Button size="sm" variant="outline" onclick={() => goBack('/admin')}>Back to admin</Button>
-        <Button size="sm" onclick={() => openCreate()} data-testid="kitchen-tool-add"
-          >Add tool</Button
-        >
+        <Button size="sm" onclick={() => openCreate()} data-testid="kitchen-tool-add">
+          Add tool
+        </Button>
       {/snippet}
 
       {#snippet children()}

@@ -438,23 +438,28 @@
                  is how the row's tap gives way to "change this" while editing,
                  exactly as the ingredient row's inspect tap does. -->
             {#if kitIconFor(group.entry)}
-              <span class="min-w-0 flex-1"
-                >{sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
+              <span class="min-w-0 flex-1">
+                {sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
                     class="block text-xs text-muted-foreground"
-                    data-testid="recipe-kit-accessories">{accessoryTail(group.accessories)}</span
-                  >{/if}</span
-              >
+                    data-testid="recipe-kit-accessories"
+                  >
+                    {accessoryTail(group.accessories)}
+                  </span>{/if}
+              </span>
             {:else}
               <button
                 type="button"
                 class="min-w-0 flex-1 text-left underline decoration-dotted decoration-muted-foreground underline-offset-4"
                 onclick={() => onPicture(group.entry.label)}
                 data-testid="recipe-kit-picture-btn"
-                >{sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
-                    class="block text-xs text-muted-foreground no-underline"
-                    data-testid="recipe-kit-accessories">{accessoryTail(group.accessories)}</span
-                  >{/if}</button
               >
+                {sentenceCase(group.entry.label)}{#if group.accessories.length > 0}<span
+                    class="block text-xs text-muted-foreground no-underline"
+                    data-testid="recipe-kit-accessories"
+                  >
+                    {accessoryTail(group.accessories)}
+                  </span>{/if}
+              </button>
             {/if}
           </li>
         {/each}

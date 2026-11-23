@@ -133,9 +133,9 @@
         >
           <Icon name="Minus" size={16} />
         </Button>
-        <span class="min-w-6 text-center text-sm tabular-nums" data-testid="use-from-freezer-count"
-          >{count}</span
-        >
+        <span class="min-w-6 text-center text-sm tabular-nums" data-testid="use-from-freezer-count">
+          {count}
+        </span>
         <Button
           size="icon"
           variant="outline"

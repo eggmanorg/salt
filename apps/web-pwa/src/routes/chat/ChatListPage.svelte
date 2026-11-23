@@ -148,9 +148,9 @@
         <DialogDescription>This action cannot be undone.</DialogDescription>
       </DialogHeader>
       <DialogFooter>
-        <Button variant="outline" onclick={() => (deleteId = null)} disabled={deleteBusy}
-          >Cancel</Button
-        >
+        <Button variant="outline" onclick={() => (deleteId = null)} disabled={deleteBusy}>
+          Cancel
+        </Button>
         <Button
           variant="destructive"
           onclick={handleDelete}

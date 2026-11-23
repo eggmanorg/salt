@@ -135,9 +135,9 @@
          truncated: the sentence is the whole of what this phase adds and a word
          cut off mid-name is worth less than the row's extra line. -->
     {#if proposalSentence}
-      <span class="block text-xs text-muted-foreground" data-testid="kitchen-tool-gap-proposal"
-        >{proposalSentence}</span
-      >
+      <span class="block text-xs text-muted-foreground" data-testid="kitchen-tool-gap-proposal">
+        {proposalSentence}
+      </span>
     {/if}
   </div>
   <!--

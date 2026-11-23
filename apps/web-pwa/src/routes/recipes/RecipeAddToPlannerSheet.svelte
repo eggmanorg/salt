@@ -380,9 +380,9 @@
     </div>
 
     <SheetFooter class="flex justify-end gap-2">
-      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}
-        >Cancel</Button
-      >
+      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}>
+        Cancel
+      </Button>
       <Button
         size="sm"
         onclick={handleConfirm}

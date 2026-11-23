@@ -253,9 +253,9 @@
           <Icon name="ArrowLeft" size={16} />
           Back
         </Button>
-        <Button size="sm" data-testid="aisle-add-button" onclick={() => (addOpen = true)}
-          >Add</Button
-        >
+        <Button size="sm" data-testid="aisle-add-button" onclick={() => (addOpen = true)}>
+          Add
+        </Button>
       {/snippet}
       {#snippet selectionBar()}
         <SelectAllCheckbox {selection} />
@@ -368,15 +368,17 @@
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onclick={() => (addOpen = false)} disabled={addBusy}
-            >Cancel</Button
-          >
+          <Button variant="outline" onclick={() => (addOpen = false)} disabled={addBusy}>
+            Cancel
+          </Button>
           <Button
             data-testid="aisle-add-submit"
             onclick={handleAdd}
             loading={addBusy}
-            disabled={addBusy}>Add</Button
+            disabled={addBusy}
           >
+            Add
+          </Button>
         </DialogFooter>
       </div>
     </DialogContent>

@@ -47,8 +47,10 @@
                     'rounded-full px-1.5 font-semibold tabular-nums',
                     DOC_TONE_TINT[shape.tone ?? 'muted'],
                   )}
-                  data-count>{`×${shape.count.text}`}</span
+                  data-count
                 >
+                  {`×${shape.count.text}`}
+                </span>
               {/if}
               <svg
                 viewBox={`0 0 ${shapeExtent(box)} ${box.height}`}
@@ -71,9 +73,9 @@
             </div>
             <span class="mt-1 font-semibold whitespace-nowrap text-foreground">{shape.label}</span>
             <!-- Always a line, so every shelf's labels are one height and its line stays level. -->
-            <span class="min-h-4 whitespace-nowrap text-muted-foreground"
-              >{shape.caption ?? ''}</span
-            >
+            <span class="min-h-4 whitespace-nowrap text-muted-foreground">
+              {shape.caption ?? ''}
+            </span>
           </div>
         {/each}
       </div>

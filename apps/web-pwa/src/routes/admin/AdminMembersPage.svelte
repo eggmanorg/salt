@@ -164,9 +164,9 @@
               </div>
               <div class="flex items-center gap-1">
                 <Button variant="ghost" size="sm" onclick={() => openEdit(member)}>Edit</Button>
-                <Button variant="ghost" size="sm" onclick={() => (deleteTarget = member)}
-                  >Remove</Button
-                >
+                <Button variant="ghost" size="sm" onclick={() => (deleteTarget = member)}>
+                  Remove
+                </Button>
               </div>
             </div>
           {/snippet}

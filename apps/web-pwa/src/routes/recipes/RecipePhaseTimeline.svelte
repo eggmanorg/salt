@@ -81,10 +81,10 @@
       <li class="flex flex-wrap items-baseline gap-x-2">
         <span class="font-medium text-foreground">{block.label}</span>
         <span class="tabular-nums">{formatMinutes(block.elapsedMinutes)}</span>
-        <span class="tabular-nums"
-          >{formatMinutes(block.handsOnMinutes)} hands-on ·
-          {formatMinutes(block.handsOffMinutes)} hands-off</span
-        >
+        <span class="tabular-nums">
+          {formatMinutes(block.handsOnMinutes)} hands-on ·
+          {formatMinutes(block.handsOffMinutes)} hands-off
+        </span>
         {#if block.compressed}
           <!-- The one thing the reader cannot get from the numbers: that this
                block's width is not to scale. Said per phase rather than once at the

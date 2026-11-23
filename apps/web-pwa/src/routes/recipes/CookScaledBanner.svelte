@@ -27,8 +27,8 @@
   data-testid="cook-mode-scaled"
 >
   <Icon name="Users" size={16} class="shrink-0 text-tertiary" />
-  <span class="flex-1"
-    >Amounts are scaled for {servings} — the recipe is written for {base}. The method, the timings
-    and any tin or pan size are as written.</span
-  >
+  <span class="flex-1">
+    Amounts are scaled for {servings} — the recipe is written for {base}. The method, the timings
+    and any tin or pan size are as written.
+  </span>
 </div>

@@ -44,8 +44,10 @@
                 <svg
                   class="absolute -top-1.5 left-1/2 size-2 -translate-x-1/2 fill-placeholder"
                   viewBox="0 0 10 10"
-                  aria-hidden="true"><path d="M 0 0 L 10 0 L 5 9 Z" /></svg
+                  aria-hidden="true"
                 >
+                  <path d="M 0 0 L 10 0 L 5 9 Z" />
+                </svg>
               {/if}
               <!-- Its own element: text beside the `{#if}` compiles a `?? ''` no test can reach. -->
               <span>{slot.node.label}</span>
@@ -89,8 +91,10 @@
             <span
               class="absolute -translate-x-1/2 -translate-y-1/2 rounded bg-card px-1 text-xs whitespace-nowrap text-muted-foreground"
               style:left={pct(x1 + (at(r + 1, link.to).centre - x1) * LABEL_AT)}
-              style:top={pct(LABEL_AT * 100)}>{link.label}</span
+              style:top={pct(LABEL_AT * 100)}
             >
+              {link.label}
+            </span>
           {/if}
         {/each}
       </div>

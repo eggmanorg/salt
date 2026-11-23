@@ -366,9 +366,9 @@
         </DialogDescription>
       </DialogHeader>
       <DialogFooter>
-        <Button variant="outline" onclick={() => (reopenDialogOpen = false)} disabled={reopening}
-          >Cancel</Button
-        >
+        <Button variant="outline" onclick={() => (reopenDialogOpen = false)} disabled={reopening}>
+          Cancel
+        </Button>
         <Button onclick={handleReopen} loading={reopening} data-testid="chat-reopen-confirm">
           Reopen
         </Button>

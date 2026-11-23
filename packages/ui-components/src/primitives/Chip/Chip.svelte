@@ -37,7 +37,7 @@
        it, but a consumer asserting on the text does see it — the recipe page's
        attribution chip is asserted exactly. The 4px gap comes from
        `.salt-chip--fact`'s `gap-1`, never from a space in the markup. -->
-  <span class={cn(chipVariants({ variant, pressed: false, tone }), className)} {...rest}
-    >{#if icon}<Icon name={icon} size={12} />{/if}{@render children?.()}</span
-  >
+  <span class={cn(chipVariants({ variant, pressed: false, tone }), className)} {...rest}>
+    {#if icon}<Icon name={icon} size={12} />{/if}{@render children?.()}
+  </span>
 {/if}

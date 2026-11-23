@@ -239,10 +239,9 @@
               <span
                 id={`shop-week-title-${night.date}-${entry.recipe.id}`}
                 class="min-w-0 flex-1 truncate"
-                >{entry.recipe.title}{group.adopted.length > 0
-                  ? ` · ${group.adopted.length}`
-                  : ''}</span
               >
+                {entry.recipe.title}{group.adopted.length > 0 ? ` · ${group.adopted.length}` : ''}
+              </span>
             </div>
           {/each}
         </div>

@@ -339,8 +339,10 @@
             class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {handsOff
               ? 'border-2 border-primary bg-card text-primary'
               : 'bg-primary text-primary-foreground'}"
-            aria-hidden="true">{idx + 1}</span
+            aria-hidden="true"
           >
+            {idx + 1}
+          </span>
           <div class="flex min-w-0 flex-1 flex-col gap-2">
             <div class="flex items-start gap-2">
               <EditableZone
@@ -353,8 +355,9 @@
                 onOpen={seedDraft}
               >
                 {#snippet view()}
-                  <span class="min-w-0 flex-1" data-testid="recipe-view-step-text">{step.text}</span
-                  >
+                  <span class="min-w-0 flex-1" data-testid="recipe-view-step-text">
+                    {step.text}
+                  </span>
                 {/snippet}
                 {#snippet edit(close)}
                   <div class="flex w-full flex-col gap-2">
@@ -507,8 +510,10 @@
                      replaced it draws its hands-off time on the teal tint.) -->
                   <span
                     class="inline-flex items-center rounded-full bg-secondary-container px-2 py-0.5 text-xs font-medium text-secondary-container-foreground"
-                    data-testid="recipe-view-step-handsoff">Hands-off</span
+                    data-testid="recipe-view-step-handsoff"
                   >
+                    Hands-off
+                  </span>
                 {/if}
                 <EditableZone
                   {editing}

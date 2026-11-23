@@ -647,9 +647,9 @@
             onValueChange={(v) => saveUnit(v as CanonItemUnit)}
             disabled={unitBusy}
           >
-            <SelectTrigger data-testid="canon-detail-unit-select" aria-label="Bought by"
-              >{editingUnit}</SelectTrigger
-            >
+            <SelectTrigger data-testid="canon-detail-unit-select" aria-label="Bought by">
+              {editingUnit}
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="g">g</SelectItem>
               <SelectItem value="ml">ml</SelectItem>

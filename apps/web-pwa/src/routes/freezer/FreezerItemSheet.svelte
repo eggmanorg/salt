@@ -374,9 +374,9 @@
 <Sheet bind:open side="bottom">
   <SheetContent class="flex flex-col gap-4">
     <SheetHeader>
-      <SheetTitle
-        >{item ? `#${formatBagNumber(item.number)} ${item.name}` : 'Add to the freezer'}</SheetTitle
-      >
+      <SheetTitle>
+        {item ? `#${formatBagNumber(item.number)} ${item.name}` : 'Add to the freezer'}
+      </SheetTitle>
       <SheetDescription>
         {item ? 'Change it, move it, or take it off the list.' : 'Write the number on the bag.'}
       </SheetDescription>
@@ -510,9 +510,9 @@
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <span id="freezer-item-container-label" class="text-sm font-medium"
-          >Container (optional)</span
-        >
+        <span id="freezer-item-container-label" class="text-sm font-medium">
+          Container (optional)
+        </span>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div oninput={(e) => (container = (e.target as HTMLInputElement).value)}>
           <Combobox
@@ -543,9 +543,9 @@
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <span id="freezer-item-supplier-label" class="text-sm font-medium"
-          >Bought from (optional)</span
-        >
+        <span id="freezer-item-supplier-label" class="text-sm font-medium">
+          Bought from (optional)
+        </span>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div oninput={(e) => (purchasedFrom = (e.target as HTMLInputElement).value)}>
           <Combobox

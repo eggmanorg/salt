@@ -28,8 +28,9 @@
     >
       <span
         class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground tabular-nums"
-        >{i + 1}</span
       >
+        {i + 1}
+      </span>
       <div class="grid min-w-0 flex-1 gap-1">
         {#if step.label}
           <span class="font-semibold text-foreground">{step.label}</span>
@@ -51,9 +52,9 @@
                 data-mark
               ></span>
             </span>
-            <span class="text-xs font-semibold whitespace-nowrap text-foreground tabular-nums"
-              >{said(g)}</span
-            >
+            <span class="text-xs font-semibold whitespace-nowrap text-foreground tabular-nums">
+              {said(g)}
+            </span>
             <span class="flex justify-between text-xs text-muted-foreground tabular-nums">
               <span>{withUnit(g.min.text, g.unit)}</span><span>{withUnit(g.max.text, g.unit)}</span>
             </span>
