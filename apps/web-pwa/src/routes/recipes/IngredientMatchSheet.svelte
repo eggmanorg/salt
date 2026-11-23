@@ -181,8 +181,10 @@
               {#if canon.needs_approval}
                 <span
                   class="shrink-0 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
-                  data-testid="ingredient-match-canon-review">Review</span
+                  data-testid="ingredient-match-canon-review"
                 >
+                  Review
+                </span>
               {/if}
             </p>
             <p class="text-xs text-muted-foreground">
@@ -206,8 +208,10 @@
               {#if form.needs_approval}
                 <span
                   class="shrink-0 rounded-full bg-review/20 px-2 py-0.5 text-xs font-medium text-review-text"
-                  data-testid="ingredient-match-form-review">Review</span
+                  data-testid="ingredient-match-form-review"
                 >
+                  Review
+                </span>
               {/if}
             </p>
             {#if yieldLine}

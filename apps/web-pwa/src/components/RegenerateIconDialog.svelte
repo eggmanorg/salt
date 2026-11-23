@@ -99,8 +99,9 @@
         }}
       />
       <DialogFooter>
-        <Button variant="outline" onclick={() => onOpenChange(false)} disabled={busy}>Cancel</Button
-        >
+        <Button variant="outline" onclick={() => onOpenChange(false)} disabled={busy}>
+          Cancel
+        </Button>
         <Button
           data-testid="{testidPrefix}-regenerate-confirm"
           onclick={confirm}

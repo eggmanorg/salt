@@ -331,14 +331,17 @@
            summed down the column. Lead with this contributor's own wording
            instead; the recipe name follows from the showSource block below. -->
       {#each item.originalText?.length ? item.originalText : [titleCase(resolveItemDisplayName(item))] as line (line)}
-        <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">{line}</span
-        >
+        <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">
+          {line}
+        </span>
       {/each}
     {:else if productForm}
       <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">
         {titleCase(canonMap.get(item.canonId ?? '')?.name ?? '')}{' '}<span
-          class="text-muted-foreground">×{item.amount}</span
+          class="text-muted-foreground"
         >
+          ×{item.amount}
+        </span>
       </span>
       <!-- The headline is the PARENT product ("Lime ×3"), which by design reads
            nothing like the recipe's own line, so show the wording that justified
@@ -349,13 +352,15 @@
         {#each item.originalText as line (line)}
           <span
             class="block text-xs text-muted-foreground"
-            data-testid="shopping-item-original-text">{line}</span
+            data-testid="shopping-item-original-text"
           >
+            {line}
+          </span>
         {/each}
       {:else}
-        <span class="block text-xs text-muted-foreground truncate"
-          >{resolveItemDisplayName(item)}</span
-        >
+        <span class="block text-xs text-muted-foreground truncate">
+          {resolveItemDisplayName(item)}
+        </span>
       {/if}
     {:else if recipeQuantity}
       <!-- A recipe row reads the way the recipe detail page reads it: the
@@ -380,16 +385,20 @@
            scaled count with an unscaled weight. -->
       <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">
         {recipeQuantity}{' '}{displayLabel(item)}{#if item.measureNote}<span
-            class="ml-1 text-xs text-muted-foreground">({item.measureNote})</span
-          >{:else if item.weightGrams !== undefined}<span class="ml-1 text-xs text-muted-foreground"
-            >({item.weightGrams}g)</span
-          >{/if}
+            class="ml-1 text-xs text-muted-foreground"
+          >
+            ({item.measureNote})
+          </span>{:else if item.weightGrams !== undefined}<span
+            class="ml-1 text-xs text-muted-foreground"
+          >
+            ({item.weightGrams}g)
+          </span>{/if}
       </span>
     {:else}
       <span class="block truncate {done ? 'line-through text-muted-foreground' : ''}">
-        {displayLabel(item)}{#if amountStr}{' '}<span class="text-muted-foreground"
-            >({amountStr})</span
-          >{/if}
+        {displayLabel(item)}{#if amountStr}{' '}<span class="text-muted-foreground">
+            ({amountStr})
+          </span>{/if}
       </span>
     {/if}
     {#if item.notes}

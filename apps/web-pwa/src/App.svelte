@@ -200,8 +200,10 @@
             // of respecting it (#1620).
             void keepAwake.release();
             void auth.signOut();
-          }}>Sign out</Button
+          }}
         >
+          Sign out
+        </Button>
       {/snippet}
       <Router {routes} />
     </AppShell>

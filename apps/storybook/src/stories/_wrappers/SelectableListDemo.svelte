@@ -38,9 +38,11 @@
   <SelectableList {items} {selection}>
     {#snippet row(item, { selected })}
       <div class="flex items-center justify-between gap-3">
-        <span class={selected ? 'text-sm font-semibold text-foreground' : 'text-sm text-foreground'}
-          >{item.label}</span
+        <span
+          class={selected ? 'text-sm font-semibold text-foreground' : 'text-sm text-foreground'}
         >
+          {item.label}
+        </span>
         <span class="text-xs text-muted-foreground">{item.aisle}</span>
       </div>
     {/snippet}

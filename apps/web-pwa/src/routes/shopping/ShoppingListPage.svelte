@@ -1233,12 +1233,13 @@
                         >
                           {#if count}
                             <span class="block truncate">
-                              {rowLabel(row)}{' '}<span class="text-muted-foreground"
-                                >×{count.amount}</span
-                              >{#if count.weightGrams !== undefined}<span
+                              {rowLabel(row)}{' '}<span class="text-muted-foreground">
+                                ×{count.amount}
+                              </span>{#if count.weightGrams !== undefined}<span
                                   class="ml-1 text-xs text-muted-foreground"
-                                  >({count.weightGrams}g)</span
-                                >{/if}
+                                >
+                                  ({count.weightGrams}g)
+                                </span>{/if}
                             </span>
                             <span
                               class="flex items-center gap-1 text-xs text-muted-foreground/70 truncate"
@@ -1248,11 +1249,11 @@
                             </span>
                           {:else if counted}
                             <span class="block truncate">
-                              {rowLabel(row)}{' '}<span class="text-muted-foreground"
-                                >×{counted.amount}</span
-                              ><span class="ml-1 text-xs text-muted-foreground"
-                                >({counted.weightGrams}g)</span
-                              >
+                              {rowLabel(row)}{' '}<span class="text-muted-foreground">
+                                ×{counted.amount}
+                              </span><span class="ml-1 text-xs text-muted-foreground">
+                                ({counted.weightGrams}g)
+                              </span>
                             </span>
                             <span class="flex items-center gap-1 text-xs text-muted-foreground/70">
                               <DisclosureChevron {expanded} size={12} />
@@ -1260,9 +1261,11 @@
                             </span>
                           {:else}
                             <span class="block truncate">
-                              {rowLabel(row)}{#if amountStr}{' '}<span class="text-muted-foreground"
-                                  >({amountStr})</span
-                                >{/if}
+                              {rowLabel(row)}{#if amountStr}{' '}<span
+                                  class="text-muted-foreground"
+                                >
+                                  ({amountStr})
+                                </span>{/if}
                             </span>
                             <span class="flex items-center gap-1 text-xs text-muted-foreground/70">
                               <DisclosureChevron {expanded} size={12} />
@@ -1275,8 +1278,10 @@
                                  pack is never committed to two meals at once. -->
                             <span
                               class="block text-xs text-primary"
-                              data-testid="shopping-combined-freezer-hint">in the freezer</span
+                              data-testid="shopping-combined-freezer-hint"
                             >
+                              in the freezer
+                            </span>
                           {/if}
                         </DisclosureTrigger>
                         {#if row.needsCheck && !rowExiting}

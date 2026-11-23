@@ -1401,9 +1401,12 @@
                   <p class="text-sm">{leavening.reason}</p>
                   <p class="flex flex-wrap items-baseline gap-x-2 text-sm">
                     <span class="min-w-0 truncate">{leavening.label}</span>
-                    <span class="font-medium tabular-nums" data-testid="bake-batch-leavening-figure"
-                      >{leavening.text}</span
+                    <span
+                      class="font-medium tabular-nums"
+                      data-testid="bake-batch-leavening-figure"
                     >
+                      {leavening.text}
+                    </span>
                   </p>
                   <p class="text-xs text-muted-foreground">
                     The suggestion is the words; the percentage and the grams are worked out here,
@@ -1501,9 +1504,9 @@
     </div>
 
     <SheetFooter class="flex justify-end gap-2">
-      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}
-        >Cancel</Button
-      >
+      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}>
+        Cancel
+      </Button>
       {#if mode === 'endAt' && activeProposal === null}
         <Button
           size="sm"

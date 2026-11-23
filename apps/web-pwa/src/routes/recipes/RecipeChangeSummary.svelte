@@ -423,8 +423,10 @@
       <p data-testid="recipe-change-inline">
         {#each card.parts as part, i (i)}
           {#if part.kind === 'same'}{part.text}{:else if part.kind === 'del'}<del
-              class={`${REMOVED} decoration-1`}>{part.text}</del
-            >{:else}<ins class={`${ADDED} no-underline`}>{part.text}</ins>{/if}
+              class={`${REMOVED} decoration-1`}
+            >
+              {part.text}
+            </del>{:else}<ins class={`${ADDED} no-underline`}>{part.text}</ins>{/if}
         {/each}
       </p>
     {:else}

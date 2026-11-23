@@ -269,11 +269,12 @@
                 <!-- Suppress the required amount on a made header: it's label-only
                      (the sub-entries carry their own amounts), so showing it here
                      misleads. -->
-                {#if amountLabel(row) && !row.make}<span class="text-muted-foreground"
-                    >({amountLabel(row)})</span
-                  >{/if}
-                {#if row.isOptional}<span class="text-xs text-muted-foreground">(optional)</span
-                  >{/if}
+                {#if amountLabel(row) && !row.make}<span class="text-muted-foreground">
+                    ({amountLabel(row)})
+                  </span>{/if}
+                {#if row.isOptional}<span class="text-xs text-muted-foreground">
+                    (optional)
+                  </span>{/if}
               </span>
               <!-- A product-form row is labelled with the PARENT product ("Lime"),
                    which deliberately reads nothing like the recipe's own line, and
@@ -285,8 +286,10 @@
                 {#each row.originalText as line (line)}
                   <span
                     class="block text-xs text-muted-foreground"
-                    data-testid="recipe-add-review-original-text">{line}</span
+                    data-testid="recipe-add-review-original-text"
                   >
+                    {line}
+                  </span>
                 {/each}
               {/if}
               {#if row.producers.length > 0}
@@ -416,12 +419,12 @@
                   <div class="flex-1 min-w-0">
                     <span class="block truncate">
                       {rowLabel(sub)}
-                      {#if amountLabel(sub)}<span class="text-muted-foreground"
-                          >({amountLabel(sub)})</span
-                        >{/if}
-                      {#if sub.isOptional}<span class="text-xs text-muted-foreground"
-                          >(optional)</span
-                        >{/if}
+                      {#if amountLabel(sub)}<span class="text-muted-foreground">
+                          ({amountLabel(sub)})
+                        </span>{/if}
+                      {#if sub.isOptional}<span class="text-xs text-muted-foreground">
+                          (optional)
+                        </span>{/if}
                     </span>
                     <!-- Same terms as a top-level row: a made producer's own
                          ingredients collapse identically (buildMadeSubRows spreads
@@ -430,8 +433,10 @@
                       {#each sub.originalText as line (line)}
                         <span
                           class="block text-xs text-muted-foreground"
-                          data-testid="recipe-add-review-original-text">{line}</span
+                          data-testid="recipe-add-review-original-text"
                         >
+                          {line}
+                        </span>
                       {/each}
                     {/if}
                   </div>
@@ -463,9 +468,9 @@
       <!-- "Skip" in a sequence: closing does not abandon the errand, it moves on
            to the next recipe — and what has already been confirmed is on the list
            either way. -->
-      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}
-        >{sequence ? 'Skip' : 'Cancel'}</Button
-      >
+      <Button variant="ghost" size="sm" onclick={() => (open = false)} disabled={busy}>
+        {sequence ? 'Skip' : 'Cancel'}
+      </Button>
       <!-- Nothing selected is nothing to do. Already reachable before kinds
            existed by toggling every row off: the sheet let you press "Add 0 to
            list" and then told you nothing had been added. -->

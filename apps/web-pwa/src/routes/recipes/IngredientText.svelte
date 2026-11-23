@@ -250,13 +250,19 @@
 </script>
 
 {#if showQuantity && amount}{amount}{/if}{#if part === 'all' && amount}{' '}{/if}{#if showName}{#if parsed && amount}{nameText}{#if preparation}<span
-        class="text-xs text-muted-foreground">{preparation}</span
-      >{/if}{:else}{rawText}{/if}{#if notes}<span class="ml-1 text-xs text-muted-foreground"
-      >({notes})</span
-    >{/if}{/if}{#if showDisplay && amount && displayNote}<span
+        class="text-xs text-muted-foreground"
+      >
+        {preparation}
+      </span>{/if}{:else}{rawText}{/if}{#if notes}<span class="ml-1 text-xs text-muted-foreground">
+      ({notes})
+    </span>{/if}{/if}{#if showDisplay && amount && displayNote}<span
     class="text-xs text-muted-foreground"
     class:ml-1={part === 'all'}
-    class:block={part === 'display'}>({displayNote})</span
-  >{/if}{#if showName && ingredient.isOptional}<span class="ml-1 text-xs text-muted-foreground"
-    >(optional)</span
-  >{/if}
+    class:block={part === 'display'}
+  >
+    ({displayNote})
+  </span>{/if}{#if showName && ingredient.isOptional}<span
+    class="ml-1 text-xs text-muted-foreground"
+  >
+    (optional)
+  </span>{/if}

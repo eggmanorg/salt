@@ -276,8 +276,9 @@
                 data-testid="equipment-candidate"
               >
                 <span class="font-medium">{candidate.name}</span>
-                <span class="mt-0.5 block text-xs text-muted-foreground">{candidate.rationale}</span
-                >
+                <span class="mt-0.5 block text-xs text-muted-foreground">
+                  {candidate.rationale}
+                </span>
               </button>
             </li>
           {/each}

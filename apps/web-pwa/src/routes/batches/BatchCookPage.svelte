@@ -1014,8 +1014,9 @@
                       >
                         <span class="min-w-0 flex-1">
                           {#if quantity.label === ''}
-                            <span class="italic text-muted-foreground">no longer in the recipe</span
-                            >
+                            <span class="italic text-muted-foreground">
+                              no longer in the recipe
+                            </span>
                           {:else}
                             {quantity.label}
                           {/if}

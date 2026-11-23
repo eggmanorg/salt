@@ -18,9 +18,9 @@
 
 <ChipGroup ariaLabel="Facts" data-testid="group">
   {#if variant === 'fact'}
-    <Chip variant="fact" {tone} icon={withIcon ? 'Users' : undefined} data-testid="chip"
-      >{label}</Chip
-    >
+    <Chip variant="fact" {tone} icon={withIcon ? 'Users' : undefined} data-testid="chip">
+      {label}
+    </Chip>
   {:else}
     <Chip variant="tag" data-testid="chip">{label}</Chip>
   {/if}

@@ -35,8 +35,10 @@
                       'inline-flex items-center rounded-full px-2 text-xs font-semibold whitespace-nowrap tabular-nums',
                       DOC_TONE_TINT[chip.tone],
                     )}
-                    data-tone={chip.tone}>{chip.label}</span
+                    data-tone={chip.tone}
                   >
+                    {chip.label}
+                  </span>
                 {/each}
               </span>
             {/if}
@@ -45,8 +47,9 @@
             <div class="grid grid-cols-[auto_1fr] items-baseline gap-2">
               <span
                 class="text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
-                >{line.label ?? ''}</span
               >
+                {line.label ?? ''}
+              </span>
               <span class="text-foreground">{line.text}</span>
             </div>
           {/each}

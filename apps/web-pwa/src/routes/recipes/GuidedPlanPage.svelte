@@ -808,12 +808,13 @@
             <!-- ─── One step ──────────────────────────────────────────────── -->
             <div class="flex flex-col gap-4" data-testid="guided-plan-step">
               <p class="text-lg" data-testid="guided-plan-step-text">
-                <span class="mr-1 font-medium text-muted-foreground">{stepIndex + 1}.</span
-                >{step.text}
+                <span class="mr-1 font-medium text-muted-foreground">
+                  {stepIndex + 1}.
+                </span>{step.text}
                 {#if step.timer}
-                  <span class="ml-1 text-xs text-muted-foreground"
-                    >({formatMinutes(step.timer.durationMinutes)} timer)</span
-                  >
+                  <span class="ml-1 text-xs text-muted-foreground">
+                    ({formatMinutes(step.timer.durationMinutes)} timer)
+                  </span>
                 {/if}
               </p>
               {#if step.note}

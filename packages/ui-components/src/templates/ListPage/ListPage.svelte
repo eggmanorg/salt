@@ -85,12 +85,13 @@
       <div class="flex items-center gap-2 shrink-0">
         {#if selectionBar}
           {#if selectionMode}
-            <Button variant="outline" size="sm" onclick={() => (selectionMode = false)}>Done</Button
-            >
+            <Button variant="outline" size="sm" onclick={() => (selectionMode = false)}>
+              Done
+            </Button>
           {:else}
-            <Button variant="outline" size="sm" onclick={() => (selectionMode = true)}
-              >Select</Button
-            >
+            <Button variant="outline" size="sm" onclick={() => (selectionMode = true)}>
+              Select
+            </Button>
           {/if}
         {/if}
         {#if actions}

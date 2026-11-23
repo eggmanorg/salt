@@ -712,8 +712,10 @@
                       aria-label={marker.label}
                       onclick={() => handleRematch(group, ingredient)}
                       disabled={rowBusy(ingredient)}
-                      data-testid="match-state-unmatched">{rowBusy(ingredient) ? '…' : '✗'}</button
+                      data-testid="match-state-unmatched"
                     >
+                      {rowBusy(ingredient) ? '…' : '✗'}
+                    </button>
                   {:else if marker?.glyph === 'no-amount'}
                     <!-- Terracotta, like the ⚠ — this line looks finished too. The
                          glyph and the action are the ✗'s, because the remedy is the
@@ -729,8 +731,10 @@
                       aria-label={marker.label}
                       onclick={() => handleRematch(group, ingredient)}
                       disabled={rowBusy(ingredient)}
-                      data-testid="match-state-no-amount">{rowBusy(ingredient) ? '…' : '?'}</button
+                      data-testid="match-state-no-amount"
                     >
+                      {rowBusy(ingredient) ? '…' : '?'}
+                    </button>
                   {:else if marker?.glyph === 'mismatched'}
                     <!-- Terracotta, the palette's warning accent (design.md), and
                          never the ✗'s red: the two say different things and want
@@ -745,8 +749,10 @@
                       title={marker.label}
                       aria-label={marker.label}
                       onclick={() => inspectMatch(ingredient)}
-                      data-testid="match-state-mismatched">⚠</button
+                      data-testid="match-state-mismatched"
                     >
+                      ⚠
+                    </button>
                   {/if}
                 {/if}
               </div>

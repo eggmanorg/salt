@@ -79,9 +79,9 @@
               <!-- No blur-to-close on this one field: every toolbar button is a
                    press that takes focus off the textarea, and closing on blur
                    would shut the editor the moment you reached for Bold. -->
-              <Button variant="ghost" size="sm" onclick={close} data-testid="recipe-notes-done"
-                >Done</Button
-              >
+              <Button variant="ghost" size="sm" onclick={close} data-testid="recipe-notes-done">
+                Done
+              </Button>
             </div>
             <Textarea
               bind:element={notesEl}

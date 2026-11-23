@@ -130,8 +130,10 @@
             anchor(tick.at),
           )}
           style:left={pct(tick.at)}
-          data-tick>{tick.label}</span
+          data-tick
         >
+          {tick.label}
+        </span>
       {/each}
     </div>
 
@@ -148,9 +150,9 @@
         <div class="flex min-h-7 flex-col justify-center py-0.5 text-sm text-foreground">
           <span><span>{row.label}</span><span class="sr-only">{`: ${row.said}`}</span></span>
           {#if row.detail}
-            <span class="text-xs text-muted-foreground tabular-nums" aria-hidden="true"
-              >{row.detail}</span
-            >
+            <span class="text-xs text-muted-foreground tabular-nums" aria-hidden="true">
+              {row.detail}
+            </span>
           {/if}
         </div>
         <div class="relative mx-2" aria-hidden="true" data-row={row.label}>
@@ -179,8 +181,10 @@
               style:width={mark.point ? undefined : `${mark.to - mark.from}%`}
               title={mark.title}
               data-tone={mark.tone}
-              data-mark>{mark.number ?? ''}</span
+              data-mark
             >
+              {mark.number ?? ''}
+            </span>
           {/each}
         </div>
       {/each}

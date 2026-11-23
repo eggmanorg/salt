@@ -1972,9 +1972,9 @@
       <p class="text-sm text-muted-foreground">Loading…</p>
     {:else}
       <p class="text-sm text-muted-foreground">Recipe not found.</p>
-      <Button variant="outline" class="mt-4" onclick={() => push('/recipes')}
-        >Back to recipes</Button
-      >
+      <Button variant="outline" class="mt-4" onclick={() => push('/recipes')}>
+        Back to recipes
+      </Button>
     {/if}
   </div>
 {:else}

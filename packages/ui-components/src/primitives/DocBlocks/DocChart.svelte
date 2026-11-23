@@ -44,9 +44,9 @@
             data-mark
           ></span>
         </span>
-        <span class="text-right whitespace-nowrap text-foreground tabular-nums"
-          >{withUnit(item.value.text, unit)}</span
-        >
+        <span class="text-right whitespace-nowrap text-foreground tabular-nums">
+          {withUnit(item.value.text, unit)}
+        </span>
       {/each}
     </div>
   {:else if type === 'column'}
@@ -55,9 +55,9 @@
       style:grid-template-columns={`repeat(${items.length}, minmax(0, 1fr))`}
     >
       {#each items as item, i (i)}
-        <span class="text-center text-xs text-foreground tabular-nums"
-          >{withUnit(item.value.text, unit)}</span
-        >
+        <span class="text-center text-xs text-foreground tabular-nums">
+          {withUnit(item.value.text, unit)}
+        </span>
       {/each}
       {#each items as item, i (i)}
         <span class="relative h-32" aria-hidden="true">
@@ -75,8 +75,9 @@
       {#each items as item, i (i)}
         <span
           class="border-t border-border pt-1 text-center text-xs break-words text-muted-foreground"
-          >{item.label}</span
         >
+          {item.label}
+        </span>
       {/each}
     </div>
   {:else}
@@ -103,9 +104,9 @@
               aria-hidden="true"
             ></span>
             <span class="min-w-0 flex-1 text-foreground">{item.label}</span>
-            <span class="whitespace-nowrap text-foreground tabular-nums"
-              >{withUnit(item.value.text, unit)}</span
-            >
+            <span class="whitespace-nowrap text-foreground tabular-nums">
+              {withUnit(item.value.text, unit)}
+            </span>
           </span>
         {/each}
       </div>

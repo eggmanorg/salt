@@ -131,8 +131,10 @@
       class="pointer-events-none select-none font-semibold leading-none text-accent-foreground motion-reduce:hidden"
       style="font-size: {Math.round(size * 0.5)}px;"
       aria-hidden="true"
-      data-testid="canon-icon-initial">{initial}</span
+      data-testid="canon-icon-initial"
     >
+      {initial}
+    </span>
   {/if}
   {#if shimmer}
     <span

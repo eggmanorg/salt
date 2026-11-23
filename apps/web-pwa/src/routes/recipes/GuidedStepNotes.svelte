@@ -331,9 +331,9 @@
                   if (minutes !== null) edit.onSetCheckIn(i, { ...checkIn, atMinutes: minutes });
                 }}
               >
-                <span class="font-medium text-foreground"
-                  >{formatMinutes(checkIn.atMinutes)} in</span
-                >
+                <span class="font-medium text-foreground">
+                  {formatMinutes(checkIn.atMinutes)} in
+                </span>
               </GuidedPlanLine>
               <span>—</span>
               <GuidedPlanLine

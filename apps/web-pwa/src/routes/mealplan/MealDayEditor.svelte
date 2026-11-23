@@ -348,8 +348,10 @@
             data-testid={`${testid}-header-temp`}
           >
             <span class="font-semibold">{weather.tempHigh}°</span><span
-              class="font-normal opacity-80">/{weather.tempLow}°</span
+              class="font-normal opacity-80"
             >
+              /{weather.tempLow}°
+            </span>
           </span>
         </span>
       {/if}
